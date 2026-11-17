@@ -231,7 +231,7 @@ mod tests {
             .unwrap()
             .rows
             .into_iter()
-            .map(|row| (row.period, row.input_tokens))
+            .map(|row| (row.usage.period, row.usage.input_tokens))
             .collect()
     }
 

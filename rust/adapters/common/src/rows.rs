@@ -6,25 +6,6 @@ use ccusage_core::{
     LoadedEntry, ModelBreakdown, Result, SessionAccumulator, UsageSummary, json_float,
 };
 
-/// One row a source contributes to the unified report: a period, the agent it
-/// belongs to, and that agent's usage in the period.
-#[derive(Debug, Clone)]
-pub struct UnifiedRow {
-    pub period: String,
-    pub agent: &'static str,
-    pub models_used: Vec<String>,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub total_tokens: u64,
-    pub total_cost: f64,
-    pub metadata: Option<Value>,
-    pub metadata_agents: Option<Vec<&'static str>>,
-    pub agent_breakdowns: Option<Vec<UnifiedRow>>,
-    pub model_breakdowns: Vec<ModelBreakdown>,
-}
-
 #[derive(Debug, Clone)]
 pub struct RowUsage {
     pub period: String,
@@ -59,33 +40,13 @@ impl std::ops::DerefMut for SourceRow {
     }
 }
 
-impl From<UnifiedRow> for SourceRow {
-    fn from(row: UnifiedRow) -> Self {
-        Self {
-            agent: row.agent,
-            usage: RowUsage {
-                period: row.period,
-                models_used: row.models_used,
-                input_tokens: row.input_tokens,
-                output_tokens: row.output_tokens,
-                cache_creation_tokens: row.cache_creation_tokens,
-                cache_read_tokens: row.cache_read_tokens,
-                total_tokens: row.total_tokens,
-                total_cost: row.total_cost,
-                model_breakdowns: row.model_breakdowns,
-            },
-            metadata: row.metadata,
-        }
-    }
-}
-
 /// Converts a source's summaries into its unified rows, dropping the ones with
 /// neither tokens nor cost.
 pub fn summary_rows(
     agent: &'static str,
     summaries: Vec<UsageSummary>,
     include_project_path: bool,
-) -> Vec<UnifiedRow> {
+) -> Vec<SourceRow> {
     summaries
         .into_iter()
         .filter_map(|summary| {
@@ -102,20 +63,20 @@ pub fn summary_rows(
                 return None;
             }
             let metadata = summary_metadata(&summary, include_project_path);
-            Some(UnifiedRow {
-                period,
+            Some(SourceRow {
                 agent,
-                models_used: summary.models_used,
-                input_tokens: summary.input_tokens,
-                output_tokens: summary.output_tokens,
-                cache_creation_tokens: summary.cache_creation_tokens,
-                cache_read_tokens: summary.cache_read_tokens,
-                total_tokens,
-                total_cost: summary.total_cost,
                 metadata,
-                metadata_agents: Some(vec![agent]),
-                agent_breakdowns: None,
-                model_breakdowns: summary.model_breakdowns,
+                usage: RowUsage {
+                    period,
+                    models_used: summary.models_used,
+                    input_tokens: summary.input_tokens,
+                    output_tokens: summary.output_tokens,
+                    cache_creation_tokens: summary.cache_creation_tokens,
+                    cache_read_tokens: summary.cache_read_tokens,
+                    total_tokens,
+                    total_cost: summary.total_cost,
+                    model_breakdowns: summary.model_breakdowns,
+                },
             })
         })
         .collect()

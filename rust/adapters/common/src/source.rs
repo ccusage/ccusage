@@ -18,7 +18,7 @@ use ccusage_core::{
     summary_period,
 };
 
-use crate::{pipeline, rows::UnifiedRow};
+use crate::{pipeline, rows::SourceRow};
 
 /// One usage source registered for the unified report.
 pub trait UsageSource: Sync {
@@ -176,7 +176,7 @@ impl<'a> UsageLoadContext<'a> {
 }
 
 pub struct LoadedRows {
-    pub rows: Vec<UnifiedRow>,
+    pub rows: Vec<SourceRow>,
     pub detected: bool,
     pub diagnostics: Diagnostics,
 }

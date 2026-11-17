@@ -7,7 +7,7 @@ use std::{
 
 use ccusage_adapter_common::{
     claims,
-    rows::{SourceRow, UnifiedRow},
+    rows::SourceRow,
     source::{LoadKind, LoadRequest, PricingSupply, ProgressOwner, SourceOptions, UsageSource},
 };
 
@@ -254,10 +254,7 @@ fn load_day_rows(
         sources,
         pricing,
         |row, diagnostics| match ReportDay::parse(&row.period) {
-            Some(day) => Some(DayRow {
-                day,
-                row: SourceRow::from(row),
-            }),
+            Some(day) => Some(DayRow { day, row }),
             None => {
                 diagnostics.record(Skip::unit(
                     Path::new(&row.period),
@@ -274,7 +271,7 @@ fn load_session_rows(
     shared: &SharedArgs,
     sources: &[RunSource<'_>],
     pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
-) -> Result<BaseRows<UnifiedRow>> {
+) -> Result<BaseRows<SourceRow>> {
     load_base_rows(LoadKind::Session, shared, sources, pricing, |row, _| {
         Some(row)
     })
@@ -285,7 +282,7 @@ fn load_base_rows<R>(
     shared: &SharedArgs,
     sources: &[RunSource<'_>],
     pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
-    admit: impl Fn(UnifiedRow, &Diagnostics) -> Option<R>,
+    admit: impl Fn(SourceRow, &Diagnostics) -> Option<R>,
 ) -> Result<BaseRows<R>> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
@@ -366,12 +363,8 @@ fn load_specs<'a>(
     specs
 }
 
-fn finish_sessions(rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<ReportRow> {
-    let mut rows = rows
-        .into_iter()
-        .map(SourceRow::from)
-        .map(ReportRow::Source)
-        .collect::<Vec<_>>();
+fn finish_sessions(rows: Vec<SourceRow>, shared: &SharedArgs) -> Vec<ReportRow> {
+    let mut rows = rows.into_iter().map(ReportRow::Source).collect::<Vec<_>>();
     rows.sort_by(|a, b| {
         let cost_order = match ccusage_report::session_cost_ordering(shared) {
             crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
@@ -632,7 +625,7 @@ mod tests {
 
     fn finish_rows(
         kind: AgentReportKind,
-        rows: Vec<UnifiedRow>,
+        rows: Vec<SourceRow>,
         shared: &SharedArgs,
         start_of_week: WeekDay,
     ) -> Option<Vec<ReportRow>> {
@@ -645,7 +638,7 @@ mod tests {
         }
     }
 
-    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> UnifiedRow {
+    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> SourceRow {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
@@ -1184,10 +1177,7 @@ mod tests {
                 ccusage_core::cli::WeekDay::Sunday,
             ),
         )?;
-        Ok(summary_rows("pi", summaries, true)
-            .into_iter()
-            .map(SourceRow::from)
-            .collect())
+        Ok(summary_rows("pi", summaries, true).into_iter().collect())
     }
 
     fn usage_fingerprint(

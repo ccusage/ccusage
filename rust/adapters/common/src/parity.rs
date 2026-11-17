@@ -142,7 +142,7 @@ fn unified_totals<S: EntrySource>(
     )
     .unwrap_or_else(|error| panic!("unified {kind:?} load failed: {error}"))
     .rows;
-    let sum = |tokens: fn(&crate::rows::UnifiedRow) -> u64| {
+    let sum = |tokens: fn(&crate::rows::SourceRow) -> u64| {
         rows.iter().map(tokens).fold(0, u64::saturating_add)
     };
     Totals {

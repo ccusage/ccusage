@@ -29,7 +29,7 @@ use crate::{
 use ccusage_adapter_codex::{self as codex, CodexGroup, CodexModelUsage};
 use ccusage_adapter_common::{
     filter_loaded_entries_by_date,
-    rows::{RowUsage, SourceRow, UnifiedRow},
+    rows::{RowUsage, SourceRow},
 };
 use ccusage_test_support::{EnvVarsGuard, fs_fixture, instant, set_modified};
 
@@ -37,34 +37,29 @@ use ccusage_test_support::{EnvVarsGuard, fs_fixture, instant, set_modified};
 /// call the loader.
 pub(crate) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
 
-pub(crate) fn aggregate_periods(rows: Vec<UnifiedRow>, bucket: Bucket) -> Option<Vec<ReportRow>> {
+pub(crate) fn aggregate_periods(rows: Vec<SourceRow>, bucket: Bucket) -> Option<Vec<ReportRow>> {
     rows.into_iter()
-        .map(|row| {
-            ReportDay::parse(&row.period).map(|day| DayRow {
-                day,
-                row: SourceRow::from(row),
-            })
-        })
+        .map(|row| ReportDay::parse(&row.period).map(|day| DayRow { day, row }))
         .collect::<Option<Vec<_>>>()
         .map(|rows| aggregate_rows(rows, bucket))
 }
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
     AgentRows {
-        rows: vec![UnifiedRow {
-            period: "2026-01-02".to_string(),
+        rows: vec![SourceRow {
             agent,
-            models_used: Vec::new(),
-            input_tokens: 1,
-            output_tokens: 0,
-            cache_creation_tokens: 0,
-            cache_read_tokens: 0,
-            total_tokens: 1,
-            total_cost: 0.0,
             metadata: None,
-            metadata_agents: Some(vec![agent]),
-            agent_breakdowns: None,
-            model_breakdowns: Vec::new(),
+            usage: RowUsage {
+                period: "2026-01-02".to_string(),
+                models_used: Vec::new(),
+                input_tokens: 1,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                total_tokens: 1,
+                total_cost: 0.0,
+                model_breakdowns: Vec::new(),
+            },
         }],
         detected: true,
         diagnostics: Diagnostics::new(agent),
@@ -113,35 +108,35 @@ fn loads_agent_rows_concurrently() {
 fn aggregates_daily_agent_rows_by_period() {
     let rows = aggregate_periods(
         vec![
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
+            SourceRow {
                 agent: "codex",
-                models_used: vec!["gpt-5".to_string()],
-                input_tokens: 100,
-                output_tokens: 20,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 10,
-                total_tokens: 120,
-                total_cost: 0.01,
                 metadata: None,
-                metadata_agents: Some(vec!["codex"]),
-                agent_breakdowns: None,
-                model_breakdowns: Vec::new(),
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["gpt-5".to_string()],
+                    input_tokens: 100,
+                    output_tokens: 20,
+                    cache_creation_tokens: 0,
+                    cache_read_tokens: 10,
+                    total_tokens: 120,
+                    total_cost: 0.01,
+                    model_breakdowns: Vec::new(),
+                },
             },
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
+            SourceRow {
                 agent: "claude",
-                models_used: vec!["claude-sonnet-4-20250514".to_string()],
-                input_tokens: 50,
-                output_tokens: 25,
-                cache_creation_tokens: 5,
-                cache_read_tokens: 3,
-                total_tokens: 83,
-                total_cost: 0.02,
                 metadata: None,
-                metadata_agents: Some(vec!["claude"]),
-                agent_breakdowns: None,
-                model_breakdowns: Vec::new(),
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["claude-sonnet-4-20250514".to_string()],
+                    input_tokens: 50,
+                    output_tokens: 25,
+                    cache_creation_tokens: 5,
+                    cache_read_tokens: 3,
+                    total_tokens: 83,
+                    total_cost: 0.02,
+                    model_breakdowns: Vec::new(),
+                },
             },
         ],
         Bucket::Day,
@@ -214,29 +209,29 @@ fn buckets_unified_weekly_rows_by_requested_start_of_week() {
     assert_eq!(periods(WeekDay::Sunday), ["2026-01-04"]);
 }
 
-fn extreme_all_row(period: &str, tokens: u64) -> UnifiedRow {
-    UnifiedRow {
-        period: period.to_string(),
+fn extreme_all_row(period: &str, tokens: u64) -> SourceRow {
+    SourceRow {
         agent: "codex",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: tokens,
-        output_tokens: tokens,
-        cache_creation_tokens: tokens,
-        cache_read_tokens: tokens,
-        total_tokens: tokens,
-        total_cost: 0.0,
         metadata: None,
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: vec![ModelBreakdown {
-            model_name: "gpt-5".to_string(),
+        usage: RowUsage {
+            period: period.to_string(),
+            models_used: vec!["gpt-5".to_string()],
             input_tokens: tokens,
             output_tokens: tokens,
             cache_creation_tokens: tokens,
             cache_read_tokens: tokens,
-            extra_total_tokens: tokens,
-            ..ModelBreakdown::default()
-        }],
+            total_tokens: tokens,
+            total_cost: 0.0,
+            model_breakdowns: vec![ModelBreakdown {
+                model_name: "gpt-5".to_string(),
+                input_tokens: tokens,
+                output_tokens: tokens,
+                cache_creation_tokens: tokens,
+                cache_read_tokens: tokens,
+                extra_total_tokens: tokens,
+                ..ModelBreakdown::default()
+            }],
+        },
     }
 }
 
@@ -244,74 +239,74 @@ fn extreme_all_row(period: &str, tokens: u64) -> UnifiedRow {
 fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
     let rows = aggregate_periods(
         vec![
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
+            SourceRow {
                 agent: "claude",
-                models_used: vec!["claude-sonnet-4-20250514".to_string()],
-                input_tokens: 10,
-                output_tokens: 5,
-                cache_creation_tokens: 1,
-                cache_read_tokens: 2,
-                total_tokens: 18,
-                total_cost: 0.01,
                 metadata: None,
-                metadata_agents: Some(vec!["claude"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![ModelBreakdown {
-                    model_name: "claude-sonnet-4-20250514".to_string(),
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["claude-sonnet-4-20250514".to_string()],
                     input_tokens: 10,
                     output_tokens: 5,
                     cache_creation_tokens: 1,
                     cache_read_tokens: 2,
-                    cost: 0.01,
-                    ..ModelBreakdown::default()
-                }],
+                    total_tokens: 18,
+                    total_cost: 0.01,
+                    model_breakdowns: vec![ModelBreakdown {
+                        model_name: "claude-sonnet-4-20250514".to_string(),
+                        input_tokens: 10,
+                        output_tokens: 5,
+                        cache_creation_tokens: 1,
+                        cache_read_tokens: 2,
+                        cost: 0.01,
+                        ..ModelBreakdown::default()
+                    }],
+                },
             },
-            UnifiedRow {
-                period: "2026-01-15".to_string(),
+            SourceRow {
                 agent: "claude",
-                models_used: vec!["claude-opus-4-20250514".to_string()],
-                input_tokens: 20,
-                output_tokens: 10,
-                cache_creation_tokens: 2,
-                cache_read_tokens: 4,
-                total_tokens: 36,
-                total_cost: 0.05,
                 metadata: None,
-                metadata_agents: Some(vec!["claude"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![ModelBreakdown {
-                    model_name: "claude-opus-4-20250514".to_string(),
+                usage: RowUsage {
+                    period: "2026-01-15".to_string(),
+                    models_used: vec!["claude-opus-4-20250514".to_string()],
                     input_tokens: 20,
                     output_tokens: 10,
                     cache_creation_tokens: 2,
                     cache_read_tokens: 4,
-                    cost: 0.05,
-                    ..ModelBreakdown::default()
-                }],
+                    total_tokens: 36,
+                    total_cost: 0.05,
+                    model_breakdowns: vec![ModelBreakdown {
+                        model_name: "claude-opus-4-20250514".to_string(),
+                        input_tokens: 20,
+                        output_tokens: 10,
+                        cache_creation_tokens: 2,
+                        cache_read_tokens: 4,
+                        cost: 0.05,
+                        ..ModelBreakdown::default()
+                    }],
+                },
             },
-            UnifiedRow {
-                period: "2026-01-20".to_string(),
+            SourceRow {
                 agent: "codex",
-                models_used: vec!["gpt-5".to_string()],
-                input_tokens: 30,
-                output_tokens: 15,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 6,
-                total_tokens: 51,
-                total_cost: 0.02,
                 metadata: None,
-                metadata_agents: Some(vec!["codex"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![ModelBreakdown {
-                    model_name: "gpt-5".to_string(),
+                usage: RowUsage {
+                    period: "2026-01-20".to_string(),
+                    models_used: vec!["gpt-5".to_string()],
                     input_tokens: 30,
                     output_tokens: 15,
                     cache_creation_tokens: 0,
                     cache_read_tokens: 6,
-                    cost: 0.02,
-                    ..ModelBreakdown::default()
-                }],
+                    total_tokens: 51,
+                    total_cost: 0.02,
+                    model_breakdowns: vec![ModelBreakdown {
+                        model_name: "gpt-5".to_string(),
+                        input_tokens: 30,
+                        output_tokens: 15,
+                        cache_creation_tokens: 0,
+                        cache_read_tokens: 6,
+                        cost: 0.02,
+                        ..ModelBreakdown::default()
+                    }],
+                },
             },
         ],
         Bucket::Month,
@@ -614,20 +609,20 @@ fn renders_by_agent_json_breakdowns_when_requested() {
 #[test]
 fn omits_by_agent_json_breakdowns_by_default() {
     let rows = aggregate_periods(
-        vec![UnifiedRow {
-            period: "2026-01-02".to_string(),
+        vec![SourceRow {
             agent: "codex",
-            models_used: vec!["gpt-5".to_string()],
-            input_tokens: 100,
-            output_tokens: 20,
-            cache_creation_tokens: 0,
-            cache_read_tokens: 10,
-            total_tokens: 120,
-            total_cost: 0.01,
             metadata: None,
-            metadata_agents: Some(vec!["codex"]),
-            agent_breakdowns: None,
-            model_breakdowns: Vec::new(),
+            usage: RowUsage {
+                period: "2026-01-02".to_string(),
+                models_used: vec!["gpt-5".to_string()],
+                input_tokens: 100,
+                output_tokens: 20,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 10,
+                total_tokens: 120,
+                total_cost: 0.01,
+                model_breakdowns: Vec::new(),
+            },
         }],
         Bucket::Day,
     )
@@ -2873,11 +2868,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
         CostMode::Display,
     );
 
-    let report = report_json_with_agents(
-        &[ReportRow::Source(SourceRow::from(row))],
-        AgentReportKind::Daily,
-        false,
-    );
+    let report = report_json_with_agents(&[ReportRow::Source(row)], AgentReportKind::Daily, false);
 
     assert!(report["totals"].get("unpricedModels").is_none());
     assert!(
@@ -2891,76 +2882,76 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
 fn aggregates_model_breakdowns_across_agents() {
     let rows = aggregate_periods(
         vec![
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
+            SourceRow {
                 agent: "codex",
-                models_used: vec!["gpt-5".to_string()],
-                input_tokens: 10,
-                output_tokens: 5,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 2,
-                total_tokens: 17,
-                total_cost: 0.03,
                 metadata: None,
-                metadata_agents: Some(vec!["codex"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![
-                    ModelBreakdown {
-                        model_name: "gpt-5".to_string(),
-                        input_tokens: 10,
-                        output_tokens: 5,
-                        cache_creation_tokens: 0,
-                        cache_read_tokens: 2,
-                        cost: 0.03,
-                        ..ModelBreakdown::default()
-                    },
-                    ModelBreakdown {
-                        model_name: "gpt-5-mini".to_string(),
-                        input_tokens: 1,
-                        ..ModelBreakdown::default()
-                    },
-                ],
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["gpt-5".to_string()],
+                    input_tokens: 10,
+                    output_tokens: 5,
+                    cache_creation_tokens: 0,
+                    cache_read_tokens: 2,
+                    total_tokens: 17,
+                    total_cost: 0.03,
+                    model_breakdowns: vec![
+                        ModelBreakdown {
+                            model_name: "gpt-5".to_string(),
+                            input_tokens: 10,
+                            output_tokens: 5,
+                            cache_creation_tokens: 0,
+                            cache_read_tokens: 2,
+                            cost: 0.03,
+                            ..ModelBreakdown::default()
+                        },
+                        ModelBreakdown {
+                            model_name: "gpt-5-mini".to_string(),
+                            input_tokens: 1,
+                            ..ModelBreakdown::default()
+                        },
+                    ],
+                },
             },
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
+            SourceRow {
                 agent: "claude",
-                models_used: vec!["gpt-5".to_string(), "claude-sonnet-4-20250514".to_string()],
-                input_tokens: 30,
-                output_tokens: 20,
-                cache_creation_tokens: 3,
-                cache_read_tokens: 4,
-                total_tokens: 57,
-                total_cost: 0.07,
                 metadata: None,
-                metadata_agents: Some(vec!["claude"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![
-                    ModelBreakdown {
-                        model_name: "gpt-5".to_string(),
-                        input_tokens: 8,
-                        output_tokens: 3,
-                        cache_creation_tokens: 1,
-                        cache_read_tokens: 2,
-                        cache_creation_1h_tokens: Some(1),
-                        cost: 0.01,
-                        missing_pricing: true,
-                        ..ModelBreakdown::default()
-                    },
-                    ModelBreakdown {
-                        model_name: "claude-sonnet-4-20250514".to_string(),
-                        input_tokens: 22,
-                        output_tokens: 17,
-                        cache_creation_tokens: 2,
-                        cache_read_tokens: 2,
-                        cost: 0.06,
-                        ..ModelBreakdown::default()
-                    },
-                    ModelBreakdown {
-                        model_name: "gpt-5-mini".to_string(),
-                        input_tokens: 2,
-                        ..ModelBreakdown::default()
-                    },
-                ],
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["gpt-5".to_string(), "claude-sonnet-4-20250514".to_string()],
+                    input_tokens: 30,
+                    output_tokens: 20,
+                    cache_creation_tokens: 3,
+                    cache_read_tokens: 4,
+                    total_tokens: 57,
+                    total_cost: 0.07,
+                    model_breakdowns: vec![
+                        ModelBreakdown {
+                            model_name: "gpt-5".to_string(),
+                            input_tokens: 8,
+                            output_tokens: 3,
+                            cache_creation_tokens: 1,
+                            cache_read_tokens: 2,
+                            cache_creation_1h_tokens: Some(1),
+                            cost: 0.01,
+                            missing_pricing: true,
+                            ..ModelBreakdown::default()
+                        },
+                        ModelBreakdown {
+                            model_name: "claude-sonnet-4-20250514".to_string(),
+                            input_tokens: 22,
+                            output_tokens: 17,
+                            cache_creation_tokens: 2,
+                            cache_read_tokens: 2,
+                            cost: 0.06,
+                            ..ModelBreakdown::default()
+                        },
+                        ModelBreakdown {
+                            model_name: "gpt-5-mini".to_string(),
+                            input_tokens: 2,
+                            ..ModelBreakdown::default()
+                        },
+                    ],
+                },
             },
         ],
         Bucket::Day,

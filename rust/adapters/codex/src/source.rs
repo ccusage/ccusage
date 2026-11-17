@@ -2,7 +2,7 @@ use ccusage_core::Diagnostics;
 use serde_json::json;
 
 use ccusage_adapter_common::{
-    rows::UnifiedRow,
+    rows::{RowUsage, SourceRow},
     source::{LoadRequest, LoadedRows, UsageSource},
 };
 use ccusage_core::{ModelBreakdown, PricingMap, Result, cli::CostMode, progress::UsageLoadAgent};
@@ -66,7 +66,7 @@ pub fn unified_row_from_group(
     pricing: &PricingMap,
     speed: crate::CodexSpeedPolicy,
     mode: CostMode,
-) -> UnifiedRow {
+) -> SourceRow {
     let mut model_breakdowns = group
         .models
         .iter()
@@ -93,27 +93,27 @@ pub fn unified_row_from_group(
         .collect::<Vec<_>>();
     model_breakdowns.sort_by(|left, right| right.cost.total_cmp(&left.cost));
 
-    UnifiedRow {
-        period: period.to_string(),
+    SourceRow {
         agent: "codex",
-        models_used: group.models.keys().cloned().collect(),
-        input_tokens: non_cached_input_tokens(
-            group.input_tokens,
-            group.cached_input_tokens,
-            group.cache_creation_tokens,
-        ),
-        output_tokens: group.output_tokens,
-        cache_creation_tokens: group.cache_creation_tokens,
-        cache_read_tokens: group.cached_input_tokens,
-        total_tokens: group.total_tokens,
-        total_cost: calculate_group_cost(group, pricing, speed),
         metadata: Some(json!({
             "lastActivity": group.last_activity,
             "reasoningOutputTokens": group.reasoning_output_tokens,
         })),
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns,
+        usage: RowUsage {
+            period: period.to_string(),
+            models_used: group.models.keys().cloned().collect(),
+            input_tokens: non_cached_input_tokens(
+                group.input_tokens,
+                group.cached_input_tokens,
+                group.cache_creation_tokens,
+            ),
+            output_tokens: group.output_tokens,
+            cache_creation_tokens: group.cache_creation_tokens,
+            cache_read_tokens: group.cached_input_tokens,
+            total_tokens: group.total_tokens,
+            total_cost: calculate_group_cost(group, pricing, speed),
+            model_breakdowns,
+        },
     }
 }
 
@@ -159,7 +159,7 @@ mod diagnostic_tests {
         }
     }
 
-    fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<UnifiedRow> {
+    fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<SourceRow> {
         SOURCE
             .load_rows(&LoadRequest {
                 kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
@@ -286,11 +286,11 @@ mod diagnostic_tests {
                 .map(|(period, group)| {
                     unified_row_from_group(period, group, &pricing, speed, shared.mode)
                 })
-                .map(|row| (row.period, row.total_tokens))
+                .map(|row| (row.usage.period, row.usage.total_tokens))
                 .collect::<Vec<_>>();
             let unified = unified_codex_rows(&shared, kind)
                 .into_iter()
-                .map(|row| (row.period, row.total_tokens))
+                .map(|row| (row.usage.period, row.usage.total_tokens))
                 .collect::<Vec<_>>();
 
             assert_eq!(unified, focused, "{kind:?}");

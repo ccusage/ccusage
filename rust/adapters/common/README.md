@@ -67,7 +67,7 @@ layers.
 - `pipeline::run_focused`
 - `pipeline::focused_rows`
 - `pipeline::load_rows`
-- `rows::UnifiedRow`
+- `rows::{SourceRow, RowUsage}`
 - `rows::summary_rows`
 - `claims::ClaudeCounted`
 
