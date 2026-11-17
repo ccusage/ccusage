@@ -620,15 +620,13 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
     if options.no_offline == Some(true) {
         shared.offline = false;
     }
-    if let Some(color) = options.color {
-        shared.color = color;
+    if options.color == Some(true) {
+        shared.color = true;
         shared.no_color = false;
     }
-    if let Some(no_color) = options.no_color {
-        shared.no_color = no_color;
-        if no_color {
-            shared.color = false;
-        }
+    if options.no_color == Some(true) {
+        shared.color = false;
+        shared.no_color = true;
     }
     if let Some(timezone) = options.timezone {
         shared.timezone = Some(timezone);

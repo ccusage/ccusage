@@ -330,6 +330,39 @@ fn color_flags_override_the_opposite_config_value() {
 }
 
 #[test]
+fn false_negation_and_color_keys_leave_lower_config_layers_in_force() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{
+            "defaults": { "noColor": true, "offline": true, "cache": false },
+            "commands": {
+                "daily": { "color": false, "noOffline": false },
+                "statusline": { "noOffline": false, "noCache": false }
+            }
+        }"#,
+    });
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    for report in ["daily", "statusline"] {
+        let argv = ["ccusage", report, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        match parse_with_config(&argv, &config) {
+            Command::Statusline(args) => {
+                assert!(args.offline);
+                assert!(!args.cache);
+            }
+            command => {
+                let shared = command.shared().unwrap();
+                assert!(shared.offline);
+                assert_eq!((shared.color, shared.no_color), (false, true));
+            }
+        }
+    }
+}
+
+#[test]
 fn the_last_offline_flag_wins() {
     for (flags, expected) in [
         (["--offline", "--no-offline"], false),
