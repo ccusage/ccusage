@@ -87,6 +87,7 @@ in
           staticCommonArgs
           // {
             cargoArtifacts = staticCargoArtifacts;
+            doInstallCheck = true;
             # Exposed so CI can pin the deps-only artifacts with a Nix profile
             # root and keep them on the sticky disk across runs; otherwise the
             # store path is unreferenced once the binary is built and the disk's

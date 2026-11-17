@@ -44,6 +44,11 @@ let
     cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
     strictDeps = true;
     doCheck = false;
+    installCheckPhase = ''
+      runHook preInstallCheck
+      test "$("$out/bin/ccusage" --version)" = "ccusage ${version}"
+      runHook postInstallCheck
+    '';
     cargoExtraArgs = "-p ccusage --bin ccusage";
     CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
     CCUSAGE_VERSION = version;
@@ -115,6 +120,7 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
+    doInstallCheck = true;
     postInstall = lib.optionalString stdenv.hostPlatform.isDarwin ''
       # The nixpkgs Darwin stdenv cc-wrapper injects -liconv into the link even
       # when libiconv is absent from buildInputs.  dead_strip_dylibs (set in

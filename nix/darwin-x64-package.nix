@@ -73,6 +73,7 @@ in
           crossCommonArgs
           // {
             cargoArtifacts = crossCargoArtifacts;
+            doInstallCheck = false;
             passthru = {
               cargoArtifacts = crossCargoArtifacts;
               dependencyArtifacts = crossDependencyArtifacts;
