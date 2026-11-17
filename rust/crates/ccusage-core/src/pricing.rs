@@ -129,6 +129,28 @@ pub struct Pricing {
 pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LongContextMode {
+    Marginal,
+    WholeRequest,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LongContextRates {
+    pub input: Option<f64>,
+    pub output: Option<f64>,
+    pub cache_create: Option<f64>,
+    pub cache_create_1h: Option<f64>,
+    pub cache_read: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LongContext {
+    pub threshold: u64,
+    pub rates: LongContextRates,
+    pub mode: LongContextMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProviderFamily {
     Anthropic,
     OpenAi,
@@ -184,6 +206,39 @@ impl ProviderFamily {
 }
 
 impl Pricing {
+    pub fn long_context(self) -> Option<LongContext> {
+        let rates = LongContextRates {
+            input: self.input_above_200k,
+            output: self.output_above_200k,
+            cache_create: self.cache_create_above_200k,
+            cache_create_1h: self.one_hour_cache_creation_rate_above_200k(),
+            cache_read: self.cache_read_above_200k,
+        };
+        if self.long_context_threshold.is_none()
+            && [
+                rates.input,
+                rates.output,
+                rates.cache_create,
+                rates.cache_create_1h,
+                rates.cache_read,
+            ]
+            .into_iter()
+            .all(|rate| rate.is_none())
+        {
+            return None;
+        }
+        Some(LongContext {
+            threshold: self
+                .long_context_threshold
+                .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            rates,
+            mode: match self.long_context_threshold {
+                Some(_) => LongContextMode::WholeRequest,
+                None => LongContextMode::Marginal,
+            },
+        })
+    }
+
     pub fn cache_creation_rate(self) -> f64 {
         self.cache_create
             .unwrap_or_else(|| self.family.absent_cache_write(self.input))
@@ -958,7 +1013,7 @@ impl ModelsDevCost {
     /// would price everything between the two thresholds at the base rate.
     /// Bands keyed by anything but context are skipped, because the runtime
     /// compares the threshold against an input-token count.
-    fn long_context_tier(&self) -> Option<LongContextRates> {
+    fn long_context_tier(&self) -> Option<ModelsDevLongContextRates> {
         self.tiers
             .as_deref()?
             .iter()
@@ -968,7 +1023,7 @@ impl ModelsDevCost {
                     return None;
                 }
                 let threshold = bound.size.filter(|size| *size > 0)?;
-                Some(LongContextRates {
+                Some(ModelsDevLongContextRates {
                     threshold,
                     input: tier.input.map(per_token),
                     output: tier.output.map(per_token),
@@ -2234,7 +2289,7 @@ fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
 /// models.dev `cost.tiers` band and applied on top of loaded pricing entries
 /// by `fill_long_context_rates_from_models_dev`.
 #[derive(Clone, Copy)]
-struct LongContextRates {
+struct ModelsDevLongContextRates {
     threshold: u64,
     input: Option<f64>,
     output: Option<f64>,
@@ -3231,6 +3286,35 @@ mod tests {
         assert_eq!(direct.output, 19.0);
         assert!(pricing.has_user_override("scheduled-alias"));
         assert!(!base.has_user_override("deepseek-v4-flash"));
+    }
+
+    #[test]
+    fn long_context_view_names_the_existing_source_billing_modes() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "marginal": {"input_cost_per_token": 1, "output_cost_per_token": 2,
+                "input_cost_per_token_above_200k_tokens": 3},
+            "flat": {"input_cost_per_token": 1, "output_cost_per_token": 2}
+        }"#,
+        );
+        let marginal = pricing.find("marginal").unwrap().long_context().unwrap();
+        assert_eq!(marginal.mode, super::LongContextMode::Marginal);
+        assert_eq!(marginal.threshold, 200_000);
+        assert_eq!(marginal.rates.input, Some(3.0));
+        assert!(pricing.find("flat").unwrap().long_context().is_none());
+
+        pricing.load_models_dev_json_for_tests(
+            r#"{
+            "whole": {"cost": {"input": 1, "output": 2, "tiers": [{
+                "input": 3, "tier": {"type": "context", "size": 272000}
+            }]}}
+        }"#,
+        );
+        let whole = pricing.find("whole").unwrap().long_context().unwrap();
+        assert_eq!(whole.mode, super::LongContextMode::WholeRequest);
+        assert_eq!(whole.threshold, 272_000);
+        assert_eq!(whole.rates.input, Some(3e-6));
     }
 
     #[test]
