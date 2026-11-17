@@ -1,5 +1,7 @@
 use crate::aggregate::load_groups_with_diagnostics;
 use ccusage_core::Diagnostics;
+#[cfg(test)]
+use ccusage_core::cli::AgentReportKind;
 use serde_json::json;
 
 use ccusage_adapter_common::{
@@ -8,7 +10,7 @@ use ccusage_adapter_common::{
 };
 use ccusage_core::{
     ModelBreakdown, PricingMap, Result,
-    cli::{AgentReportKind, CostMode},
+    cli::CostMode,
     log_level,
     progress::{UsageLoadAgent, track_usage_load},
 };

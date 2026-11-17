@@ -6,7 +6,6 @@ use ccusage_adapter_common::{
 use ccusage_core::Diagnostics;
 use ccusage_core::{
     ReportWindow, Result,
-    cli::AgentReportKind,
     progress::{UsageLoadAgent, track_usage_load},
 };
 
