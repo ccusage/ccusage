@@ -63,6 +63,11 @@ let
       # targets; ccusage uses no iconv symbols, and a /nix/store libiconv
       # crashes non-Nix Macs, so dead-strip unused dylibs.
       lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs "
+      # NOTE(2026-07-27, #1428): each per-adapter crate instantiates the shared
+      # generics for its own types and stable Rust cannot share them, so many copies
+      # are byte-identical. --icf=all folds them; it is sound because nothing
+      # depends on distinct `fn` addresses. Darwin links with lld for this because
+      # ld64 has no identical-code folding.
       + linkerRustflags
       + " -C link-arg=-Wl,--icf=all";
     nativeBuildInputs = [
