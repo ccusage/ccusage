@@ -3,15 +3,13 @@ use serde_json::{Value, json};
 
 use crate::{
     CodexSpeedPolicy, PricingMap,
-    aggregate::aggregate_events,
     cli::{AgentReportKind, CostMode, SharedArgs},
     parser::{CodexForkReplay, visit_codex_session_file_with_diagnostics},
     report::report_from_groups,
-    test_support::load_groups_from_directory,
+    test_support::{load_groups_from_directory, load_rollouts, service_tier_line},
     types::{
         CodexRawUsage,
-        CodexServiceTier::{Fast, Flex, Standard, Ultrafast},
-        CodexTokenUsageEvent,
+        CodexServiceTier::{self, Fast, Flex, Standard, Ultrafast},
     },
 };
 
@@ -193,31 +191,13 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
         AgentReportKind::Monthly,
         AgentReportKind::Session,
     ] {
-        let events = crate::test_support::rollout_events(fixture.root());
-        let expected_groups = aggregate_events(&events, kind, Some("UTC")).unwrap();
-        let expected = report_from_groups(
-            &expected_groups,
-            kind,
-            &pricing,
-            CodexSpeedPolicy::Auto(Standard),
-            CostMode::Auto,
-        );
-        assert_eq!(expected["totals"]["totalTokens"], 320);
-        for single_thread in [true, false] {
+        let reports = [true, false].map(|single_thread| {
             let shared = SharedArgs {
                 timezone: Some("UTC".into()),
                 single_thread,
                 ..SharedArgs::default()
             };
             let groups = load_groups_from_directory(fixture.root(), &shared, kind).unwrap();
-            let actual = report_from_groups(
-                &groups,
-                kind,
-                &pricing,
-                CodexSpeedPolicy::Auto(Standard),
-                CostMode::Auto,
-            );
-            assert_eq!(actual, expected);
             assert_eq!(groups.len(), 1);
             assert_eq!(
                 groups.values().next().unwrap().models["gpt-5"]
@@ -225,16 +205,36 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
                     .input_tokens,
                 300
             );
-        }
+            report_from_groups(
+                &groups,
+                kind,
+                &pricing,
+                CodexSpeedPolicy::Auto(Standard),
+                CostMode::Auto,
+            )
+        });
+        assert_eq!(reports[0]["totals"]["totalTokens"], 320);
+        assert_eq!(reports[0], reports[1]);
     }
 }
 
 #[test]
 fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
-    let fixture = fs_fixture!({
-        "first.jsonl": compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300),
-    });
-    let loaded = crate::test_support::rollout_events(fixture.root()).remove(0);
+    let rollout = |tier: Option<CodexServiceTier>| {
+        let marker = tier.map(|tier| {
+            let name = match tier {
+                Standard => "default",
+                Fast => "priority",
+                Flex => "flex",
+                Ultrafast => "ultrafast",
+            };
+            service_tier_line("2026-09-01T00:00:00Z", name)
+        });
+        marker
+            .into_iter()
+            .chain([compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300)])
+            .collect::<Vec<_>>()
+    };
     for (first_tier, copy_tier, merged_tier) in [
         (None, Fast, Fast),
         (None, Ultrafast, Ultrafast),
@@ -243,19 +243,15 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
         (Some(Ultrafast), Standard, Standard),
         (Some(Standard), Ultrafast, Standard),
     ] {
-        let first = CodexTokenUsageEvent {
-            service_tier: first_tier,
-            ..loaded.clone()
-        };
-        let duplicate = CodexTokenUsageEvent {
-            session_id: "copied-session".into(),
-            service_tier: Some(copy_tier),
-            ..loaded.clone()
-        };
-        let groups =
-            aggregate_events(&[first, duplicate], AgentReportKind::Session, Some("UTC")).unwrap();
+        let groups = load_rollouts(
+            &[
+                ("a-first.jsonl", &rollout(first_tier)),
+                ("b-copy.jsonl", &rollout(Some(copy_tier))),
+            ],
+            AgentReportKind::Session,
+        );
         assert_eq!(groups.len(), 1);
-        let usage = &groups["first"].models["gpt-5"];
+        let usage = &groups["a-first"].models["gpt-5"];
         let recorded = [
             (Standard, usage.recorded_standard_usage),
             (Fast, usage.recorded_fast_usage),

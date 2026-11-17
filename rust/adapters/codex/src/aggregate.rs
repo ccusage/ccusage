@@ -928,35 +928,6 @@ fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::C
     target.is_fallback |= source.is_fallback;
 }
 
-#[cfg(test)]
-pub(crate) fn aggregate_events(
-    events: &[CodexTokenUsageEvent],
-    kind: AgentReportKind,
-    timezone: Option<&str>,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    let shared = SharedArgs {
-        timezone: timezone.map(str::to_owned),
-        ..SharedArgs::default()
-    };
-    let timezone = resolve_tz(timezone);
-    let seen = create_dedupe_shards();
-    let mut groups = BTreeMap::new();
-    let mut provenance = CodexEventProvenance::new(0);
-    for event in events {
-        add_event_to_groups(
-            event,
-            kind,
-            &timezone,
-            &shared,
-            &seen,
-            &mut groups,
-            &mut provenance,
-        )?;
-    }
-    apply_recorded_usage_from_shards(&mut groups, &seen, &shared, kind);
-    Ok(groups)
-}
-
 fn has_date_bounds(shared: &SharedArgs) -> bool {
     shared.since.is_some() || shared.until.is_some()
 }
@@ -972,7 +943,10 @@ mod tests {
         CodexModelUsage, CodexSpeedPolicy, PricingMap,
         model_aliases::set_model_aliases_for_tests,
         paths::CodexUsageSource,
-        test_support::{directory_source, load_groups_from_directory, load_groups_from_sources},
+        test_support::{
+            directory_source, load_groups_from_directory, load_groups_from_sources, load_rollouts,
+            service_tier_line, token_count_line,
+        },
     };
 
     #[test]
@@ -1056,26 +1030,20 @@ mod tests {
 
     #[test]
     fn stores_timestamped_usage_only_for_time_dependent_models() {
-        let event = |model: &str| CodexTokenUsageEvent {
-            session_id: "session-1".to_string(),
-            response_id: None,
-            timestamp: "2026-08-17T01:00:00.000Z".to_string(),
-            model: Some(model.to_string()),
-            input_tokens: 1_000_000,
-            cached_input_tokens: 0,
-            cache_creation_tokens: 0,
-            output_tokens: 0,
-            reasoning_output_tokens: 0,
-            total_tokens: 1_000_000,
-            is_fallback_model: false,
-            service_tier: None,
+        let line = |model: &str| {
+            token_count_line(
+                "2026-08-17T01:00:00.000Z",
+                model,
+                json!({"input_tokens": 1_000_000, "output_tokens": 0, "total_tokens": 1_000_000}),
+            )
         };
-        let groups = aggregate_events(
-            &[event("gpt-5"), event("deepseek-v4-flash")],
+        let groups = load_rollouts(
+            &[(
+                "session-1.jsonl",
+                &[line("gpt-5"), line("deepseek-v4-flash")],
+            )],
             AgentReportKind::Daily,
-            Some("UTC"),
-        )
-        .unwrap();
+        );
         let models = &groups["2026-08-17"].models;
 
         assert!(models["gpt-5"].timestamped_usage.is_empty());
@@ -1084,22 +1052,23 @@ mod tests {
 
     #[test]
     fn records_flex_usage_in_model_buckets() {
-        let event = CodexTokenUsageEvent {
-            session_id: "session-1".to_string(),
-            timestamp: "2026-08-17T01:00:00.000Z".to_string(),
-            model: Some("gpt-test".to_string()),
-            input_tokens: 1_000,
-            cached_input_tokens: 100,
-            cache_creation_tokens: 50,
-            output_tokens: 25,
-            reasoning_output_tokens: 5,
-            total_tokens: 1_025,
-            is_fallback_model: false,
-            service_tier: Some(CodexServiceTier::Flex),
-            response_id: None,
-        };
+        let rollout = [
+            service_tier_line("2026-08-17T00:59:00.000Z", "flex"),
+            token_count_line(
+                "2026-08-17T01:00:00.000Z",
+                "gpt-test",
+                json!({
+                    "input_tokens": 1_000,
+                    "cached_input_tokens": 100,
+                    "cache_write_input_tokens": 50,
+                    "output_tokens": 25,
+                    "reasoning_output_tokens": 5,
+                    "total_tokens": 1_025,
+                }),
+            ),
+        ];
 
-        let groups = aggregate_events(&[event], AgentReportKind::Daily, Some("UTC")).unwrap();
+        let groups = load_rollouts(&[("session-1.jsonl", &rollout)], AgentReportKind::Daily);
         let usage = &groups["2026-08-17"].models["gpt-test"];
 
         assert_eq!(usage.input_tokens, 1_000);
@@ -1880,7 +1849,7 @@ mod tests {
         }
     }
 
-    fn token_count_line(timestamp: &str, last: u64, total: u64) -> String {
+    fn fork_token_count_line(timestamp: &str, last: u64, total: u64) -> String {
         json!({
             "timestamp": timestamp,
             "type": "event_msg",
@@ -1905,8 +1874,8 @@ mod tests {
                 "payload": {"id": "parent-xyz"},
             })
             .to_string(),
-            token_count_line("2026-05-12T08:01:00.000Z", 1_000, 1_000),
-            token_count_line("2026-05-12T08:02:00.000Z", 500, 1_500),
+            fork_token_count_line("2026-05-12T08:01:00.000Z", 1_000, 1_000),
+            fork_token_count_line("2026-05-12T08:02:00.000Z", 500, 1_500),
         ]
         .join("\n");
         let fork = [
@@ -1916,9 +1885,9 @@ mod tests {
                 "payload": {"id": "fork-abc", "forked_from_id": "parent-xyz"},
             })
             .to_string(),
-            token_count_line("2026-05-12T08:03:00.000Z", 1_000, 1_000),
-            token_count_line("2026-05-12T08:03:00.000Z", 500, 1_500),
-            token_count_line("2026-05-12T08:04:00.000Z", 100, 1_600),
+            fork_token_count_line("2026-05-12T08:03:00.000Z", 1_000, 1_000),
+            fork_token_count_line("2026-05-12T08:03:00.000Z", 500, 1_500),
+            fork_token_count_line("2026-05-12T08:04:00.000Z", 100, 1_600),
         ]
         .join("\n");
         let fixture = fs_fixture!({

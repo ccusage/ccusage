@@ -1,7 +1,5 @@
 use crate::aggregate::load_groups_with_diagnostics;
 use ccusage_core::Diagnostics;
-#[cfg(test)]
-use ccusage_core::cli::AgentReportKind;
 use serde_json::json;
 
 use ccusage_adapter_common::{
@@ -135,7 +133,7 @@ pub fn unified_row_from_group(
 mod diagnostic_tests {
     use super::*;
     use ccusage_adapter_common::source::SourceOptions;
-    use ccusage_core::cli::SharedArgs;
+    use ccusage_core::cli::{AgentReportKind, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
 
     fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<UnifiedRow> {

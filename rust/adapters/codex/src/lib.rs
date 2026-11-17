@@ -22,8 +22,6 @@ mod test_support;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
-#[cfg(test)]
-use aggregate::aggregate_events;
 pub use aggregate::load_groups;
 
 pub use report::{
@@ -41,12 +39,6 @@ pub use types::{
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
 use report::{print_table_from_groups, report_from_groups, session_detail_json};
-
-#[cfg(test)]
-use crate::cli::{AgentReportKind, CostMode};
-
-#[cfg(test)]
-use serde_json::Value;
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
@@ -136,57 +128,47 @@ mod tests {
 
     use super::report::report_from_groups;
     use super::*;
-    use crate::cli::SharedArgs;
-    use crate::test_support::load_groups_from_directory;
-    use crate::{CodexModelUsage, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket};
+    use crate::cli::{AgentReportKind, CostMode, SharedArgs};
+    use crate::test_support::{load_groups_from_directory, load_rollouts, token_count_line};
+    use crate::{CodexModelUsage, CodexServiceTier, CodexUsageBucket};
     use ccusage_test_support::fs_fixture;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
-    fn events_report(
-        events: &[CodexTokenUsageEvent],
+    fn rollout_report(
+        lines: &[String],
         kind: AgentReportKind,
-        timezone: Option<&str>,
         pricing: &PricingMap,
         speed: CodexSpeedPolicy,
-    ) -> Result<Value> {
-        let groups = aggregate_events(events, kind, timezone)?;
-        Ok(report_from_groups(
-            &groups,
-            kind,
-            pricing,
-            speed,
-            CostMode::Calculate,
-        ))
+    ) -> Value {
+        let groups = load_rollouts(&[("session.jsonl", lines)], kind);
+        report_from_groups(&groups, kind, pricing, speed, CostMode::Calculate)
     }
 
-    fn usage_event(
+    fn usage_line(
         timestamp: &str,
         model: &str,
         input_tokens: u64,
         cached_input_tokens: u64,
         output_tokens: u64,
         reasoning_output_tokens: u64,
-    ) -> CodexTokenUsageEvent {
-        CodexTokenUsageEvent {
-            session_id: "codex-session".to_string(),
-            response_id: None,
-            timestamp: timestamp.to_string(),
-            model: Some(model.to_string()),
-            input_tokens,
-            cached_input_tokens,
-            cache_creation_tokens: 0,
-            output_tokens,
-            reasoning_output_tokens,
-            total_tokens: input_tokens + output_tokens,
-            is_fallback_model: false,
-            service_tier: None,
-        }
+    ) -> String {
+        token_count_line(
+            timestamp,
+            model,
+            json!({
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+                "reasoning_output_tokens": reasoning_output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            }),
+        )
     }
 
     #[test]
     fn builds_codex_daily_json_report() {
         let pricing = PricingMap::load_embedded();
-        let events = [usage_event(
+        let lines = [usage_line(
             "2026-01-02T00:00:01.000Z",
             "gpt-5",
             100,
@@ -195,14 +177,12 @@ mod tests {
             0,
         )];
 
-        let report = events_report(
-            &events,
+        let report = rollout_report(
+            &lines,
             AgentReportKind::Daily,
-            Some("UTC"),
             &pricing,
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-        )
-        .unwrap();
+        );
 
         assert_eq!(report["daily"][0]["date"], "2026-01-02");
         assert_eq!(report["daily"][0]["inputTokens"], 90);
@@ -224,20 +204,18 @@ mod tests {
     #[test]
     fn prices_codex_versioned_and_fast_models_from_embedded_pricing() {
         let pricing = PricingMap::load_embedded();
-        let cost = |event: CodexTokenUsageEvent, tier: CodexServiceTier| {
-            events_report(
-                &[event],
+        let cost = |line: String, tier: CodexServiceTier| {
+            rollout_report(
+                &[line],
                 AgentReportKind::Daily,
-                Some("UTC"),
                 &pricing,
                 CodexSpeedPolicy::Forced(tier),
-            )
-            .unwrap()["daily"][0]["costUSD"]
+            )["daily"][0]["costUSD"]
                 .as_f64()
                 .unwrap()
         };
-        let versioned = usage_event("2026-01-02T00:00:01.000Z", "gpt-5.3-codex", 120, 30, 11, 3);
-        let gpt_5_4 = usage_event("2026-03-18T00:00:01.000Z", "gpt-5.4", 100, 40, 10, 0);
+        let versioned = usage_line("2026-01-02T00:00:01.000Z", "gpt-5.3-codex", 120, 30, 11, 3);
+        let gpt_5_4 = usage_line("2026-03-18T00:00:01.000Z", "gpt-5.4", 100, 40, 10, 0);
 
         assert!((cost(versioned, CodexServiceTier::Standard) - 0.00031675).abs() < f64::EPSILON);
         assert!((cost(gpt_5_4.clone(), CodexServiceTier::Standard) - 0.00031).abs() < f64::EPSILON);
@@ -257,7 +235,7 @@ mod tests {
                 }
             }"#,
         );
-        let events = [usage_event(
+        let lines = [usage_line(
             "2026-01-02T00:00:01.000Z",
             "gpt-test",
             10,
@@ -266,14 +244,12 @@ mod tests {
             0,
         )];
         let cost = |tier| {
-            events_report(
-                &events,
+            rollout_report(
+                &lines,
                 AgentReportKind::Daily,
-                Some("UTC"),
                 &pricing,
                 CodexSpeedPolicy::Forced(tier),
-            )
-            .unwrap()["daily"][0]["costUSD"]
+            )["daily"][0]["costUSD"]
                 .clone()
         };
 
@@ -384,27 +360,19 @@ mod tests {
     #[test]
     fn reports_non_cached_codex_input_separately_from_cached_input() {
         let pricing = PricingMap::default();
-        let report = events_report(
-            &[CodexTokenUsageEvent {
-                session_id: "session-1".to_string(),
-                response_id: None,
-                timestamp: "2026-01-02T00:00:00.000Z".to_string(),
-                model: Some("gpt-5".to_string()),
-                input_tokens: 100,
-                cached_input_tokens: 90,
-                cache_creation_tokens: 0,
-                output_tokens: 5,
-                reasoning_output_tokens: 0,
-                total_tokens: 105,
-                is_fallback_model: false,
-                service_tier: None,
-            }],
+        let report = rollout_report(
+            &[usage_line(
+                "2026-01-02T00:00:00.000Z",
+                "gpt-5",
+                100,
+                90,
+                5,
+                0,
+            )],
             AgentReportKind::Daily,
-            Some("UTC"),
             &pricing,
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-        )
-        .unwrap();
+        );
 
         assert_eq!(report["daily"][0]["inputTokens"], 10);
         assert_eq!(report["daily"][0]["cacheCreationTokens"], 0);
@@ -435,34 +403,19 @@ mod tests {
                 }
             }"#,
         );
-        let event = |timestamp: &str| CodexTokenUsageEvent {
-            session_id: "session-1".to_string(),
-            response_id: None,
-            timestamp: timestamp.to_string(),
-            model: Some("deepseek-v4-flash".to_string()),
-            input_tokens: 1_000_000,
-            cached_input_tokens: 0,
-            cache_creation_tokens: 0,
-            output_tokens: 0,
-            reasoning_output_tokens: 0,
-            total_tokens: 1_000_000,
-            is_fallback_model: false,
-            service_tier: None,
-        };
-        let events = vec![
-            event("2026-08-16T15:59:59.000Z"),
-            event("2026-08-16T16:00:00.000Z"),
-            event("2026-08-17T01:00:00.000Z"),
+        let line = |timestamp: &str| usage_line(timestamp, "deepseek-v4-flash", 1_000_000, 0, 0, 0);
+        let lines = [
+            line("2026-08-16T15:59:59.000Z"),
+            line("2026-08-16T16:00:00.000Z"),
+            line("2026-08-17T01:00:00.000Z"),
         ];
 
-        let report = events_report(
-            &events,
+        let report = rollout_report(
+            &lines,
             AgentReportKind::Daily,
-            Some("UTC"),
             &pricing,
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-        )
-        .unwrap();
+        );
 
         assert!((report["totals"]["costUSD"].as_f64().unwrap() - 0.80).abs() < 1e-12);
         assert!((report["daily"][0]["costUSD"].as_f64().unwrap() - 0.36).abs() < 1e-12);
@@ -580,43 +533,29 @@ mod tests {
             ("private-codex-beta", "gpt-5.5"),
         ]);
         let pricing = PricingMap::default();
-        let report = events_report(
+        let report = rollout_report(
             &[
-                CodexTokenUsageEvent {
-                    session_id: "session-1".to_string(),
-                    response_id: None,
-                    timestamp: "2026-01-02T00:00:00.000Z".to_string(),
-                    model: Some("private-codex-alpha".to_string()),
-                    input_tokens: 100,
-                    cached_input_tokens: 10,
-                    cache_creation_tokens: 0,
-                    output_tokens: 5,
-                    reasoning_output_tokens: 0,
-                    total_tokens: 105,
-                    is_fallback_model: false,
-                    service_tier: None,
-                },
-                CodexTokenUsageEvent {
-                    session_id: "session-1".to_string(),
-                    response_id: None,
-                    timestamp: "2026-01-02T00:00:01.000Z".to_string(),
-                    model: Some("private-codex-beta".to_string()),
-                    input_tokens: 50,
-                    cached_input_tokens: 5,
-                    cache_creation_tokens: 0,
-                    output_tokens: 3,
-                    reasoning_output_tokens: 0,
-                    total_tokens: 53,
-                    is_fallback_model: false,
-                    service_tier: None,
-                },
+                usage_line(
+                    "2026-01-02T00:00:00.000Z",
+                    "private-codex-alpha",
+                    100,
+                    10,
+                    5,
+                    0,
+                ),
+                usage_line(
+                    "2026-01-02T00:00:01.000Z",
+                    "private-codex-beta",
+                    50,
+                    5,
+                    3,
+                    0,
+                ),
             ],
             AgentReportKind::Daily,
-            Some("UTC"),
             &pricing,
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-        )
-        .unwrap();
+        );
 
         let models = report["daily"][0]["models"].as_object().unwrap();
         assert!(models.contains_key("gpt-5.5"));
@@ -1411,98 +1350,52 @@ mod tests {
                 }
             }"#,
         );
-        let events = vec![
-            CodexTokenUsageEvent {
-                session_id: "/workspace/api/session-a.jsonl".to_string(),
-                response_id: None,
-                timestamp: "2026-01-02T00:00:00.000Z".to_string(),
-                model: Some("gpt-5.3-codex".to_string()),
-                input_tokens: 140,
-                cached_input_tokens: 40,
-                cache_creation_tokens: 0,
-                output_tokens: 5,
-                reasoning_output_tokens: 2,
-                total_tokens: 147,
-                is_fallback_model: false,
-                service_tier: None,
-            },
-            CodexTokenUsageEvent {
-                session_id: "/workspace/api/session-a.jsonl".to_string(),
-                response_id: None,
-                timestamp: "2026-01-02T00:05:00.000Z".to_string(),
-                model: Some("gpt-5.3-codex".to_string()),
-                input_tokens: 70,
-                cached_input_tokens: 70,
-                cache_creation_tokens: 0,
-                output_tokens: 10,
-                reasoning_output_tokens: 0,
-                total_tokens: 80,
-                is_fallback_model: true,
-                service_tier: None,
-            },
-            CodexTokenUsageEvent {
-                session_id: "/workspace/web/session-b.jsonl".to_string(),
-                response_id: None,
-                timestamp: "2026-01-05T23:59:59.000Z".to_string(),
-                model: Some("gpt-5-mini".to_string()),
-                input_tokens: 10,
-                cached_input_tokens: 0,
-                cache_creation_tokens: 0,
-                output_tokens: 2,
-                reasoning_output_tokens: 0,
-                total_tokens: 12,
-                is_fallback_model: false,
-                service_tier: None,
-            },
-            CodexTokenUsageEvent {
-                session_id: "ignored-missing-model".to_string(),
-                response_id: None,
-                timestamp: "2026-01-06T00:00:00.000Z".to_string(),
-                model: None,
-                input_tokens: 999,
-                cached_input_tokens: 0,
-                cache_creation_tokens: 0,
-                output_tokens: 999,
-                reasoning_output_tokens: 0,
-                total_tokens: 1_998,
-                is_fallback_model: false,
-                service_tier: None,
-            },
+        let usage = |input: u64, cached: u64, output: u64, reasoning: u64, total: u64| {
+            json!({
+                "input_tokens": input,
+                "cached_input_tokens": cached,
+                "output_tokens": output,
+                "reasoning_output_tokens": reasoning,
+                "total_tokens": total,
+            })
+        };
+        let session_a = [
+            token_count_line(
+                "2026-02-06T00:00:00.000Z",
+                "gpt-5.3-codex",
+                usage(140, 40, 5, 2, 147),
+            ),
+            token_count_line(
+                "2026-02-06T00:05:00.000Z",
+                "codex-auto-review",
+                usage(70, 70, 10, 0, 80),
+            ),
         ];
+        let session_b = [token_count_line(
+            "2026-02-09T23:59:59.000Z",
+            "gpt-5-mini",
+            usage(10, 0, 2, 0, 12),
+        )];
+        let report = |kind, speed| {
+            let groups = load_rollouts(
+                &[
+                    ("workspace/api/session-a.jsonl", &session_a),
+                    ("workspace/web/session-b.jsonl", &session_b),
+                ],
+                kind,
+            );
+            report_from_groups(&groups, kind, &pricing, speed, CostMode::Calculate)
+        };
+        let standard = CodexSpeedPolicy::Forced(CodexServiceTier::Standard);
 
         insta::assert_json_snapshot!(serde_json::json!({
-            "daily": events_report(
-                &events,
-                AgentReportKind::Daily,
-                Some("UTC"),
-                &pricing,
-                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-            )
-            .unwrap(),
-            "weekly": events_report(
-                &events,
-                AgentReportKind::Weekly,
-                Some("UTC"),
-                &pricing,
-                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-            )
-            .unwrap(),
-            "monthly": events_report(
-                &events,
-                AgentReportKind::Monthly,
-                Some("UTC"),
-                &pricing,
-                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-            )
-            .unwrap(),
-            "sessionFast": events_report(
-                &events,
+            "daily": report(AgentReportKind::Daily, standard),
+            "weekly": report(AgentReportKind::Weekly, standard),
+            "monthly": report(AgentReportKind::Monthly, standard),
+            "sessionFast": report(
                 AgentReportKind::Session,
-                Some("UTC"),
-                &pricing,
                 CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
-            )
-            .unwrap(),
+            ),
         }));
     }
 }

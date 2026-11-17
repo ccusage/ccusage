@@ -6,6 +6,8 @@ use std::{
 };
 
 use ccusage_core::Diagnostics;
+use ccusage_test_support::Fixture;
+use serde_json::{Value, json};
 
 use crate::{
     CodexGroup, CodexTokenUsageEvent, Result, TimestampMs, aggregate,
@@ -39,6 +41,45 @@ pub(crate) fn load_groups_from_directory(
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     load_groups_from_sources(&[directory_source(dir)], shared, kind)
+}
+
+pub(crate) fn token_count_line(timestamp: &str, model: &str, last_token_usage: Value) -> String {
+    json!({
+        "timestamp": timestamp,
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": { "model": model, "last_token_usage": last_token_usage },
+        },
+    })
+    .to_string()
+}
+
+pub(crate) fn service_tier_line(timestamp: &str, service_tier: &str) -> String {
+    json!({
+        "timestamp": timestamp,
+        "type": "event_msg",
+        "payload": {
+            "type": "thread_settings_applied",
+            "thread_settings": { "service_tier": service_tier },
+        },
+    })
+    .to_string()
+}
+
+pub(crate) fn load_rollouts(
+    rollouts: &[(&str, &[String])],
+    kind: AgentReportKind,
+) -> BTreeMap<String, CodexGroup> {
+    let fixture = Fixture::new();
+    for (path, lines) in rollouts {
+        let _ = fixture.write_file(path, lines.join("\n"));
+    }
+    let shared = SharedArgs {
+        timezone: Some("UTC".to_string()),
+        ..SharedArgs::default()
+    };
+    load_groups_from_directory(fixture.root(), &shared, kind).unwrap()
 }
 
 pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
