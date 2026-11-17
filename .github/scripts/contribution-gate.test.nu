@@ -4,6 +4,7 @@
 use ./contribution-gate/coauthor.nu [coauthor-validation is-implementation-pull-request]
 use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/core.nu [parse-issue-number]
+use ./contribution-gate/access.nu [approved-entries approval-update approval-capability]
 use ./contribution-gate/mutations.nu [is-contribution-gate-comment]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
@@ -875,7 +876,97 @@ def test-contribution-gate-comment []: nothing -> nothing {
     ) false
 }
 
+def test-contributor-approval-records []: nothing -> nothing {
+    let content = "# Approvals
+Alice issue
+bad unknown
+malformed
+"
+    (expect
+        'invalid capabilities grant no access'
+        (approval-capability (approved-entries $content) bad)
+        null
+    )
+    let update = approval-update $content alice pr
+    expect 'upgrades an existing contributor' $update.status updated
+    expect 'preserves comments and malformed entries' $update.content "# Approvals
+Alice pr
+bad unknown
+malformed
+"
+    (expect
+        'reads the upgraded capability'
+        (approval-capability (approved-entries $update.content) ALICE)
+        pr
+    )
+    (expect
+        'never downgrades PR approval'
+        (approval-update $update.content alice issue | get status)
+        already
+    )
+    expect 'adds a new contributor' (approval-update $content Bob issue | get content) "# Approvals
+Alice issue
+bad unknown
+malformed
+Bob issue
+"
+}
+
+def test-contributor-approval-operation []: nothing -> nothing {
+    let fixture = mktemp -d
+    let caller = pwd
+    let script = $env.FILE_PWD | path join contribution-gate.nu
+    try {
+        mkdir ($fixture | path join .github) ($fixture | path join bin)
+        let approved = $fixture | path join .github/APPROVED_CONTRIBUTORS
+        'Alice issue' | save $approved
+        let event = $fixture | path join event.json
+        {
+            comment: {
+                body: lgtm
+                user: {login: maintainer}
+            }
+            issue: {
+                number: 42
+                user: {login: Alice}
+            }
+        } | to json | save $event
+        let output = $fixture | path join output
+        [
+            $"#!($nu.current-exe)"
+            'def --wrapped main [...args: string] {'
+            '    if $env.TEST_PERMISSION == "error" { print --stderr "HTTP 500"; exit 1 }'
+            '    {permission: $env.TEST_PERMISSION} | to json | print'
+            '}'
+        ] | str join "\n" | save ($fixture | path join bin/gh)
+        ^chmod +x ($fixture | path join bin/gh)
+        cd $fixture
+        [read error write] | each {|permission|
+            let result = with-env {
+                PATH: ($env.PATH | prepend ($fixture | path join bin))
+                TEST_PERMISSION: $permission
+                GITHUB_REPOSITORY: test/repo
+                GITHUB_EVENT_PATH: $event
+                GITHUB_OUTPUT: $output
+            } {
+                nu $script approve-contributor | complete
+            }
+            expect 'permission lookup failure is reported' ($result.exit_code != 0) ($permission == error)
+            let expected = if $permission == write { "Alice pr\n" } else { 'Alice issue' }
+            expect 'approval changes only with verified write access' (open --raw $approved) $expected
+        } | ignore
+    } catch {|err|
+        cd $caller
+        rm -rf $fixture
+        error make $err
+    }
+    cd $caller
+    rm -rf $fixture
+}
+
 def main [] {
+    test-contributor-approval-records
+    test-contributor-approval-operation
     test-coauthor-validation
     test-coauthor-email
     test-implementation-commit-args

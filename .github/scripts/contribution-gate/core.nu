@@ -1,3 +1,5 @@
+export const APPROVAL_CAPABILITIES = [issue pr]
+
 export const PRIORITY_LABELS = [
     'priority:critical'
     'priority:high'
