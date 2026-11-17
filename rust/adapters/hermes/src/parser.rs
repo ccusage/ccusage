@@ -616,7 +616,7 @@ mod pricing_identity_tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let model = "deepseek.v4.flash";
-        let entry = HermesEntry {
+        let mut entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
             timestamp_text: String::new(),
             session_id: "s".into(),
@@ -640,6 +640,17 @@ mod pricing_identity_tests {
         );
         assert!(
             (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.0015).abs() < 1e-12
+        );
+        entry.model = "deepseek.v4.pro".into();
+        assert_eq!(
+            model_candidates(&entry),
+            vec![
+                ("deepseek/deepseek.v4.pro".into(), MatchKind::Exact),
+                ("deepseek.v4.pro".into(), MatchKind::Fuzzy),
+            ]
+        );
+        assert!(
+            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.00528).abs() < 1e-12
         );
     }
 }
