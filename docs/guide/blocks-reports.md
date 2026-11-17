@@ -42,7 +42,7 @@ ccusage estimates Claude Code blocks from usage timestamps, using a **5-hour win
 - **Block Duration**: Lasts 5 hours from the start time
 - **Rolling Windows**: New blocks start with activity after the previous block expires
 
-The Block Start column shows the start time in the report timezone, followed by how long the block was in use.
+The Block Start column shows the start time in the report timezone, followed by how long the block was in use. Without `--timezone`, block times use the system timezone. JSON timestamps remain UTC.
 
 ### Rows
 
@@ -58,7 +58,7 @@ The `%` column compares each block with the token limit. Without `--token-limit`
 
 ### Show Active Block Only
 
-Focus on your current session with detailed projections. The detail view prints Block Started in the report timezone:
+Focus on your current session with detailed projections. The detail view prints Block Started in the report timezone, using the system timezone when `--timezone` is omitted:
 
 ```bash
 ccusage blocks --active

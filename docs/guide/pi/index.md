@@ -322,7 +322,7 @@ This excerpt keeps two project sessions with the same ID and the Total row; the 
 
 ### Session Identification
 
-The Session column shows the session ID, shortened with `…` when the table is wider than the terminal; `sessionId` in the JSON output always holds the full ID. In JSON output, `projectPath` holds the project folder name from `~/.pi/agent/sessions/{project}/`.
+The Session column shows the session ID, shortened with `…` when the table is wider than the terminal; `sessionId` in the JSON output always holds the full ID. In JSON output, `projectPath` holds the project folder name from `~/.pi/agent/sessions/{project}/`. When projects share a session ID, the table shows separate rows with that same ID; use `--json` and `projectPath` to distinguish them.
 
 ### JSON Output
 

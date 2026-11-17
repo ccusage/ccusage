@@ -91,7 +91,7 @@ ccusage searches for configuration files in these locations, in order:
 
 The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at an existing `projects/` directory is read as its parent.
 
-ccusage uses the first valid file in that order; files are never merged, so a local project config replaces your user config rather than extending it. A discovered file that cannot be read, parsed, or validated produces a warning and the search continues. With `--config`, an unreadable or invalid file is an error; ccusage does not search other locations or fall back to defaults. Validation covers the complete file, including settings for other commands, and errors name the file and JSON field path. Unknown keys produce warnings while valid settings remain effective. Configuration files are optional; if no valid discovered file is found, ccusage uses built-in defaults.
+ccusage uses the first existing file in that order; files are never merged, so a local project config replaces your user config rather than extending it. In a discovered file, an invalid optional field produces a warning naming the file and JSON path; valid settings in that file remain effective. ccusage never replaces that file with a lower-priority config. Invalid date bounds and invalid `pi.stores` remain errors. An unreadable file or invalid JSON is an error because its settings cannot be recovered. With `--config`, every invalid field is an error. Validation covers the complete file, including settings for other commands. Unknown keys warn; `LOG_LEVEL=0` suppresses warnings. Configuration files are optional; when none exists, ccusage uses built-in defaults.
 
 ## Basic Configuration
 
@@ -396,6 +396,8 @@ For a source-focused command, or each source within a unified report, options ar
 }
 ```
 
+The `tokenLimit` value accepts a non-negative integer or a string, including `"max"`.
+
 ### Statusline
 
 ```json
@@ -507,7 +509,7 @@ For a complete configuration example, see [`ccusage.example.json`](https://githu
 Settings are applied in this priority order (highest to lowest):
 
 1. **Command-line arguments** (e.g., `--json`, `--offline`)
-2. **The one configuration file ccusage reads**: the `--config` file, or else the first valid file among `.ccusage/ccusage.json`, `~/.config/claude/ccusage.json`, and `~/.claude/ccusage.json` (see [Configuration File Locations](#configuration-file-locations))
+2. **The one configuration file ccusage reads**: the `--config` file, or else the first existing file among `.ccusage/ccusage.json`, `~/.config/claude/ccusage.json`, and `~/.claude/ccusage.json` (see [Configuration File Locations](#configuration-file-locations))
 3. **Built-in defaults**
 
 Example, in `.ccusage/ccusage.json`:
@@ -554,12 +556,14 @@ team-configs/
 
 ### Config Not Being Applied
 
-ccusage does not report why a configuration file was ignored, so check each cause:
+Check the diagnostic and the selected file:
 
-1. Check the file location is correct, and that no earlier file in the [search order](#configuration-file-locations) exists and shadows it
-2. Verify the JSON syntax is valid; a file that does not parse is skipped
-3. Ensure option names match exactly; unknown keys are ignored
-4. Ensure option values have the expected types; a value of the wrong type is ignored
+1. Check that no earlier file in the [search order](#configuration-file-locations) shadows it.
+2. Validate JSON syntax; unreadable files and invalid JSON stop loading.
+3. Check exact option names; unknown keys produce warnings.
+4. In discovered files, correct each invalid field named in a warning. Other valid settings remain effective. Invalid date bounds and named Pi stores stop the command.
+
+Warnings follow `LOG_LEVEL`; use a value above `0` to see them.
 
 ### Invalid JSON
 

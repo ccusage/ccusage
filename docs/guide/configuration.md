@@ -256,7 +256,7 @@ env | grep -E "CLAUDE|CODEX|LOG_LEVEL"
 LOG_LEVEL=4 ccusage daily
 ```
 
-`--debug` does not trace configuration loading. ccusage warns when a discovered file cannot be read, parsed, or validated, then continues the search. An invalid explicit `--config` file is an error. Unknown keys warn while valid settings remain effective. If settings seem ignored, check the warning and its JSON field path, validate the file with `jq . < .ccusage/ccusage.json`, and check whether an earlier valid file in the [search order](/guide/config-files#configuration-file-locations) shadows it.
+Configuration diagnostics name the selected file and JSON path. In a discovered file, invalid optional fields warn while valid settings remain effective; ccusage does not fall through to another file. Invalid dates, invalid named Pi stores, unreadable files and invalid JSON are errors. An explicit `--config` file is strict. Unknown keys warn, and `LOG_LEVEL=0` suppresses warnings. Check the [search order](/guide/config-files#configuration-file-locations) when a different file shadows the one you edited.
 
 ## Best Practices
 
