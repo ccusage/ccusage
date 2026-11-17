@@ -51,6 +51,13 @@
 			"enabled": false
 		},
 		{
+			"description": "The flake's nixpkgs owns the pnpm version; checks.pnpm-version requires packageManager to follow it.",
+			"matchManagers": ["npm"],
+			"matchDepTypes": ["packageManager"],
+			"matchPackageNames": ["pnpm"],
+			"enabled": false
+		},
+		{
 			"description": "remeda and zod must match the pinned models-dev input's bun.lock.",
 			"matchFileNames": ["nix/tools/models-dev-gen/package.json"],
 			"matchPackageNames": ["remeda", "zod"],
