@@ -172,7 +172,7 @@ ccusage daily --by-agent --json
 			"agent": "claude",
 			"cacheCreationTokens": 250,
 			"cacheReadTokens": 16000,
-			"inputTokens": 2320,
+			"inputTokens": 2353,
 			"metadata": {
 				"lastActivity": "2026-01-02T10:00:00.000Z"
 			},
@@ -180,10 +180,10 @@ ccusage daily --by-agent --json
 				{
 					"cacheCreationTokens": 50,
 					"cacheReadTokens": 9000,
-					"cost": 0.5090975000000001,
-					"inputTokens": 1420,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
 					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 410,
+					"outputTokens": 454,
 					"storedCost": 0.5
 				},
 				{
@@ -196,19 +196,19 @@ ccusage daily --by-agent --json
 				}
 			],
 			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
-			"outputTokens": 810,
+			"outputTokens": 854,
 			"period": "sess-beta-1",
-			"totalCost": 0.5668475000000001,
-			"totalTokens": 19380
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
 		}
 	],
 	"totals": {
 		"cacheCreationTokens": 17765,
-		"cacheReadTokens": 1312617,
-		"inputTokens": 1348380,
-		"outputTokens": 59040,
-		"totalCost": 28.142211175000003,
-		"totalTokens": 2741219,
+		"cacheReadTokens": 1309617,
+		"inputTokens": 1346608,
+		"outputTokens": 58601,
+		"totalCost": 28.137213300000003,
+		"totalTokens": 2736008,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -225,7 +225,6 @@ ccusage daily --by-agent --json
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
-			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
@@ -372,11 +371,11 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 	],
 	"totals": {
 		"cacheCreationTokens": 17765,
-		"cacheReadTokens": 1312617,
-		"inputTokens": 1348380,
-		"outputTokens": 59040,
-		"totalCost": 28.142211175000003,
-		"totalTokens": 2741219,
+		"cacheReadTokens": 1309617,
+		"inputTokens": 1346608,
+		"outputTokens": 58601,
+		"totalCost": 28.137213300000003,
+		"totalTokens": 2736008,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -393,7 +392,6 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
-			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
@@ -424,7 +422,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"agent": "claude",
 			"cacheCreationTokens": 250,
 			"cacheReadTokens": 16000,
-			"inputTokens": 2320,
+			"inputTokens": 2353,
 			"metadata": {
 				"lastActivity": "2026-01-02T10:00:00.000Z"
 			},
@@ -432,10 +430,10 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 				{
 					"cacheCreationTokens": 50,
 					"cacheReadTokens": 9000,
-					"cost": 0.5090975000000001,
-					"inputTokens": 1420,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
 					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 410,
+					"outputTokens": 454,
 					"storedCost": 0.5
 				},
 				{
@@ -448,19 +446,19 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 				}
 			],
 			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
-			"outputTokens": 810,
+			"outputTokens": 854,
 			"period": "sess-beta-1",
-			"totalCost": 0.5668475000000001,
-			"totalTokens": 19380
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 18465,
-		"cacheReadTokens": 1323217,
-		"inputTokens": 1350408,
-		"outputTokens": 60062,
-		"totalCost": 29.017382175000026,
-		"totalTokens": 2755589,
+		"cacheCreationTokens": 17865,
+		"cacheReadTokens": 1311217,
+		"inputTokens": 1348169,
+		"outputTokens": 58867,
+		"totalCost": 28.920893300000024,
+		"totalTokens": 2739555,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -477,7 +475,6 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
-			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
@@ -508,16 +505,16 @@ This excerpt shows one session; `totals` covers the complete report.
 			"cacheCreationTokens": 250,
 			"cacheReadTokens": 16000,
 			"firstActivity": "2025-12-31T23:50:00.000Z",
-			"inputTokens": 2320,
+			"inputTokens": 2353,
 			"lastActivity": "2026-01-02T10:00:00.000Z",
 			"modelBreakdowns": [
 				{
 					"cacheCreationTokens": 50,
 					"cacheReadTokens": 9000,
-					"cost": 0.5090975000000001,
-					"inputTokens": 1420,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
 					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 410,
+					"outputTokens": 454,
 					"storedCost": 0.5
 				},
 				{
@@ -530,20 +527,20 @@ This excerpt shows one session; `totals` covers the complete report.
 				}
 			],
 			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
-			"outputTokens": 810,
+			"outputTokens": 854,
 			"projectPath": "-Users-dev-beta",
 			"sessionId": "sess-beta-1",
-			"totalCost": 0.5668475000000001,
-			"totalTokens": 19380
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 3100,
-		"cacheReadTokens": 53200,
-		"inputTokens": 8594,
-		"outputTokens": 4390,
-		"totalCost": 0.935817,
-		"totalTokens": 69284,
+		"cacheCreationTokens": 2500,
+		"cacheReadTokens": 44200,
+		"inputTokens": 8127,
+		"outputTokens": 3634,
+		"totalCost": 0.844326,
+		"totalTokens": 58461,
 		"unpricedModels": ["mystery-model-9000"]
 	}
 }

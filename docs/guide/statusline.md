@@ -115,7 +115,7 @@ The statusline displays a compact, single-line summary. For the hook payload in 
 When using `--cost-source both`, the session cost shows both Claude Code and ccusage calculations:
 
 ```text
-🤖 Sonnet 4 (high) | 💰 ($1.23 cc / $0.28 ccusage) session / $0.06 today / $0.06 block (1h 0m left) | 🔥 $0.02/hr | 🧠 50,000 (25%)
+🤖 Sonnet 4 (high) | 💰 ($1.23 cc / $0.19 ccusage) session / $0.06 today / $0.06 block (1h 0m left) | 🔥 $0.02/hr | 🧠 50,000 (25%)
 ```
 
 The reasoning effort level next to the model name comes from Claude Code (2.1.119+). All current Claude models report it; for older Claude Code versions or models without the effort parameter, the model segment is just the model name, such as `🤖 Opus 4.1`.
@@ -208,7 +208,7 @@ bun x ccusage statusline --cost-source both
 **Output differences:**
 
 - **Single cost modes** (`auto`, `ccusage`, `cc`): `💰 $1.23 session`
-- **Both mode**: `💰 ($1.23 cc / $0.28 ccusage) session`
+- **Both mode**: `💰 ($1.23 cc / $0.19 ccusage) session`
 
 ## Configuration
 

@@ -123,7 +123,7 @@ Each source row is followed by one `└─` row per model with that model's toke
 │ Date     │ Agent        │ Models       │      Input │    Output │      Cache │  Cache Read │       Total │      Cost │
 │          │              │              │            │           │     Create │             │      Tokens │     (USD) │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│ 2025     │ All          │              │     66,794 │    19,832 │      6,111 │     185,616 │     278,963 │    $11.66 │
+│ 2025     │ All          │              │     66,414 │    19,742 │      6,111 │     185,616 │     278,493 │    $11.66 │
 │ 12-31    │              │              │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │ - Amp        │ - gpt-5      │      2,300 │       700 │        200 │      12,000 │      15,200 │     $0.01 │
@@ -133,7 +133,7 @@ Each source row is followed by one `└─` row per model with that model's toke
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─ haiku-4-5 │        900 │       400 │        200 │       7,000 │       8,500 │     $0.00 │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│ Total    │              │              │  1,348,380 │    59,040 │     17,765 │   1,312,617 │   2,741,219 │    $28.14 │
+│ Total    │              │              │  1,346,608 │    58,601 │     17,765 │   1,309,617 │   2,736,008 │    $28.14 │
 └──────────┴──────────────┴──────────────┴────────────┴───────────┴────────────┴─────────────┴─────────────┴───────────┘
 ```
 
@@ -177,11 +177,11 @@ Each row is one `period` (the date) with `agent: "all"`; `metadata.agents` lists
 	],
 	"totals": {
 		"cacheCreationTokens": 17765,
-		"cacheReadTokens": 1312617,
-		"inputTokens": 1348380,
-		"outputTokens": 59040,
-		"totalCost": 28.142211175000003,
-		"totalTokens": 2741219,
+		"cacheReadTokens": 1309617,
+		"inputTokens": 1346608,
+		"outputTokens": 58601,
+		"totalCost": 28.137213300000003,
+		"totalTokens": 2736008,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -198,7 +198,6 @@ Each row is one `period` (the date) with `agent: "all"`; `metadata.agents` lists
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
-			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",

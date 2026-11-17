@@ -74,7 +74,7 @@ For Codex, use the `sessionId` from `ccusage codex session --json`. The lookup a
 │          │                    │ - [pi] claude-sonnet-4    │            │           │               │             │               │             │
 │          │                    │ - [pi] gpt-5              │            │           │               │             │               │             │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
-│ Total    │                    │                           │  1,350,408 │    60,062 │        18,465 │   1,323,217 │     2,755,589 │      $29.02 │
+│ Total    │                    │                           │  1,348,169 │    58,867 │        17,865 │   1,311,217 │     2,739,555 │      $28.92 │
 └──────────┴────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
@@ -166,16 +166,16 @@ Each session row is followed by one `└─` row per model. This excerpt from a 
 │ Session  │ Models        │     Input │    Output │       Cache │ Cache Read │      Total │ Cost (USD) │ Last         │
 │          │               │           │           │      Create │            │     Tokens │            │ Activity     │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
-│ sess-be… │ - opus-4      │     2,320 │       810 │         250 │     16,000 │     19,380 │      $0.57 │ 2026-01-02   │
+│ sess-be… │ - opus-4      │     2,353 │       854 │         250 │     16,000 │     19,457 │      $0.57 │ 2026-01-02   │
 │          │ - sonnet-4    │           │           │             │            │            │            │              │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
-│ └─       │               │     1,420 │       410 │          50 │      9,000 │     10,880 │      $0.51 │              │
+│ └─       │               │     1,453 │       454 │          50 │      9,000 │     10,957 │      $0.51 │              │
 │ sonnet-4 │               │           │           │             │            │            │            │              │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
 │ └─       │               │       900 │       400 │         200 │      7,000 │      8,500 │      $0.06 │              │
 │ opus-4   │               │           │           │             │            │            │            │              │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
-│ Total    │               │     8,594 │     4,390 │       3,100 │     53,200 │     69,284 │      $0.94 │              │
+│ Total    │               │     8,127 │     3,634 │       2,500 │     44,200 │     58,461 │      $0.84 │              │
 └──────────┴───────────────┴───────────┴───────────┴─────────────┴────────────┴────────────┴────────────┴──────────────┘
 ```
 
@@ -196,7 +196,7 @@ Each unified session row carries its `agent`, and `period` holds the session ID.
 			"agent": "claude",
 			"cacheCreationTokens": 250,
 			"cacheReadTokens": 16000,
-			"inputTokens": 2320,
+			"inputTokens": 2353,
 			"metadata": {
 				"lastActivity": "2026-01-02T10:00:00.000Z"
 			},
@@ -204,10 +204,10 @@ Each unified session row carries its `agent`, and `period` holds the session ID.
 				{
 					"cacheCreationTokens": 50,
 					"cacheReadTokens": 9000,
-					"cost": 0.5090975000000001,
-					"inputTokens": 1420,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
 					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 410,
+					"outputTokens": 454,
 					"storedCost": 0.5
 				},
 				{
@@ -220,19 +220,19 @@ Each unified session row carries its `agent`, and `period` holds the session ID.
 				}
 			],
 			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
-			"outputTokens": 810,
+			"outputTokens": 854,
 			"period": "sess-beta-1",
-			"totalCost": 0.5668475000000001,
-			"totalTokens": 19380
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 18465,
-		"cacheReadTokens": 1323217,
-		"inputTokens": 1350408,
-		"outputTokens": 60062,
-		"totalCost": 29.017382175000026,
-		"totalTokens": 2755589,
+		"cacheCreationTokens": 17865,
+		"cacheReadTokens": 1311217,
+		"inputTokens": 1348169,
+		"outputTokens": 58867,
+		"totalCost": 28.920893300000024,
+		"totalTokens": 2739555,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -249,7 +249,6 @@ Each unified session row carries its `agent`, and `period` holds the session ID.
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
-			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
