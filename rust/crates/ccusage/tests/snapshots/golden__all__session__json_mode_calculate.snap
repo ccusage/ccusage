@@ -742,6 +742,57 @@ exit: 0
       "totalTokens": 45345
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 1440,
+      "cacheReadTokens": 30000,
+      "inputTokens": 22520,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.018570000000000003,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 822
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 26000,
+          "cost": 0.0019804099999999997,
+          "inputTokens": 2050,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 543
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-v4-pro",
+        "deepseek-flash",
+        "unknown"
+      ],
+      "outputTokens": 2175,
+      "period": "sess-alpha",
+      "totalCost": 0.027210409999999997,
+      "totalTokens": 56385
+    },
+    {
       "agent": "zcode",
       "cacheCreationTokens": 130,
       "cacheReadTokens": 1000,
@@ -813,57 +864,6 @@ exit: 0
       "period": "s-alpha",
       "totalCost": 0.025241,
       "totalTokens": 5870
-    },
-    {
-      "agent": "dsh",
-      "cacheCreationTokens": 1440,
-      "cacheReadTokens": 30000,
-      "inputTokens": 22520,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 240,
-          "cacheReadTokens": 4000,
-          "cost": 0.018570000000000003,
-          "inputTokens": 1380,
-          "modelName": "anthropic/claude-sonnet-4.5",
-          "outputTokens": 822
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
-        },
-        {
-          "cacheCreationTokens": 1200,
-          "cacheReadTokens": 26000,
-          "cost": 0.0019804099999999997,
-          "inputTokens": 2050,
-          "modelName": "deepseek-v4-pro",
-          "outputTokens": 543
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 90,
-          "missingPricing": true,
-          "modelName": "unknown",
-          "outputTokens": 10
-        }
-      ],
-      "modelsUsed": [
-        "anthropic/claude-sonnet-4.5",
-        "deepseek-v4-pro",
-        "deepseek-flash",
-        "unknown"
-      ],
-      "outputTokens": 2175,
-      "period": "sess-alpha",
-      "totalCost": 0.023880409999999998,
-      "totalTokens": 56385
     },
     {
       "agent": "pi",
@@ -3408,6 +3408,38 @@ exit: 0
       "totalTokens": 600
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 2100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.000768,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0003132,
+          "inputTokens": 600,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 60
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro",
+        "deepseek-flash"
+      ],
+      "outputTokens": 310,
+      "period": "fork-beta",
+      "totalCost": 0.0010812,
+      "totalTokens": 5410
+    },
+    {
       "agent": "copilot",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -3726,38 +3758,6 @@ exit: 0
       "period": "ses-v2-fork-before",
       "totalCost": 0.0007199999999999999,
       "totalTokens": 36
-    },
-    {
-      "agent": "dsh",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 3000,
-      "inputTokens": 2100,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.000384,
-          "inputTokens": 1500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 250
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0003132,
-          "inputTokens": 600,
-          "modelName": "deepseek-v4-pro",
-          "outputTokens": 60
-        }
-      ],
-      "modelsUsed": [
-        "deepseek-v4-pro",
-        "deepseek-flash"
-      ],
-      "outputTokens": 310,
-      "period": "fork-beta",
-      "totalCost": 0.0006972,
-      "totalTokens": 5410
     },
     {
       "agent": "hermes",
@@ -5401,7 +5401,7 @@ exit: 0
     "cacheReadTokens": 1311187,
     "inputTokens": 1347159,
     "outputTokens": 58747,
-    "totalCost": 4.790819800000008,
+    "totalCost": 4.794533800000008,
     "totalTokens": 2738355,
     "unpricedModels": [
       "GLM-5.3",

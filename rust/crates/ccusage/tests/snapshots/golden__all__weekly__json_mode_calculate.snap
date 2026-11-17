@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1309587,
     "inputTokens": 1345534,
     "outputTokens": 58475,
-    "totalCost": 4.782124800000001,
+    "totalCost": 4.785838800000001,
     "totalTokens": 2734738,
     "unpricedModels": [
       "GLM-5.3",
@@ -451,6 +451,14 @@ exit: 0
           "outputTokens": 210
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.007427999999999999,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 1200,
           "cost": 0.0071719999999999996,
@@ -482,14 +490,6 @@ exit: 0
           "inputTokens": 5350,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 1193
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037139999999999994,
-          "inputTokens": 20500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 1050
         },
         {
           "cacheCreationTokens": 0,
@@ -990,7 +990,7 @@ exit: 0
       ],
       "outputTokens": 56328,
       "period": "2025-12-29",
-      "totalCost": 4.729579050000002,
+      "totalCost": 4.733293050000002,
       "totalTokens": 2719790
     },
     {

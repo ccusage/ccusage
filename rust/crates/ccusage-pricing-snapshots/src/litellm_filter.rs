@@ -72,6 +72,7 @@ fn is_embedded_model(model: &str) -> bool {
         || model.starts_with("openai/")
         || model.starts_with("azure/")
         || model.starts_with("zai/")
+        || model.starts_with("deepseek")
         || model.starts_with("openrouter/openai/")
 }
 

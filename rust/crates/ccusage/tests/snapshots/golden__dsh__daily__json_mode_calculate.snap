@@ -109,7 +109,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
+          "cost": 0.006659999999999999,
           "inputTokens": 19000,
           "modelName": "deepseek-flash",
           "outputTokens": 800
@@ -130,7 +130,7 @@ exit: 0
         "unknown"
       ],
       "outputTokens": 1372,
-      "totalCost": 0.013860000000000003,
+      "totalCost": 0.01719,
       "totalTokens": 21352
     },
     {
@@ -158,7 +158,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.000384,
+          "cost": 0.000768,
           "inputTokens": 1500,
           "modelName": "deepseek-flash",
           "outputTokens": 250
@@ -170,7 +170,7 @@ exit: 0
         "deepseek-flash"
       ],
       "outputTokens": 600,
-      "totalCost": 0.0078105,
+      "totalCost": 0.008194499999999999,
       "totalTokens": 11500
     }
   ],
@@ -179,7 +179,7 @@ exit: 0
     "cacheReadTokens": 39000,
     "inputTokens": 30820,
     "outputTokens": 3856,
-    "totalCost": 0.026417660000000003,
+    "totalCost": 0.030131659999999998,
     "totalTokens": 75666,
     "unpricedModels": [
       "dsh-mystery-1",

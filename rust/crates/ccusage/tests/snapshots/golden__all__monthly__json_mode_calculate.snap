@@ -655,6 +655,14 @@ exit: 0
           "outputTokens": 310
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.007427999999999999,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
           "cost": 0.0070550000000000005,
@@ -701,14 +709,6 @@ exit: 0
           "inputTokens": 940,
           "modelName": "[pi] claude-haiku-4-5-20251001",
           "outputTokens": 410
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037139999999999994,
-          "inputTokens": 20500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 1050
         },
         {
           "cacheCreationTokens": 0,
@@ -1162,7 +1162,7 @@ exit: 0
       ],
       "outputTokens": 28192,
       "period": "2026-01",
-      "totalCost": 3.7468362699999997,
+      "totalCost": 3.7505502699999993,
       "totalTokens": 2278740
     },
     {
@@ -1199,7 +1199,7 @@ exit: 0
     "cacheReadTokens": 1309587,
     "inputTokens": 1345534,
     "outputTokens": 58475,
-    "totalCost": 4.782124799999999,
+    "totalCost": 4.785838799999999,
     "totalTokens": 2734738,
     "unpricedModels": [
       "GLM-5.3",

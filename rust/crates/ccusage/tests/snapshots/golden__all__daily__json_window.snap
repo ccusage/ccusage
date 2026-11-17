@@ -545,6 +545,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0050999999999999995,
           "inputTokens": 600,
@@ -598,14 +606,6 @@ exit: 0
           "inputTokens": 513,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 254
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 0,
@@ -911,7 +911,7 @@ exit: 0
       ],
       "outputTokens": 17487,
       "period": "2026-01-01",
-      "totalCost": 3.7016685700000003,
+      "totalCost": 3.70499857,
       "totalTokens": 1608272
     }
   ],
@@ -920,7 +920,7 @@ exit: 0
     "cacheReadTokens": 668244,
     "inputTokens": 1171429,
     "outputTokens": 37349,
-    "totalCost": 15.365885325,
+    "totalCost": 15.369215324999999,
     "totalTokens": 1887685,
     "unpricedModels": [
       "GLM-5.3",

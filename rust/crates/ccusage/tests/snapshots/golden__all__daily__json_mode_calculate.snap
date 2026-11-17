@@ -927,6 +927,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0050999999999999995,
           "inputTokens": 600,
@@ -988,14 +996,6 @@ exit: 0
           "inputTokens": 513,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 254
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 0,
@@ -1328,7 +1328,7 @@ exit: 0
       ],
       "outputTokens": 17487,
       "period": "2026-01-01",
-      "totalCost": 2.83688107,
+      "totalCost": 2.8402110699999996,
       "totalTokens": 1608272
     },
     {
@@ -1491,6 +1491,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.000768,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
@@ -1504,14 +1512,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "devstral-medium-latest",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.000384,
-          "inputTokens": 1500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 250
         },
         {
           "cacheCreationTokens": 0,
@@ -1669,7 +1669,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 0.9099552,
+      "totalCost": 0.9103391999999999,
       "totalTokens": 670468
     },
     {
@@ -1706,7 +1706,7 @@ exit: 0
     "cacheReadTokens": 1309587,
     "inputTokens": 1345534,
     "outputTokens": 58475,
-    "totalCost": 4.782124799999999,
+    "totalCost": 4.7858388,
     "totalTokens": 2734738,
     "unpricedModels": [
       "GLM-5.3",

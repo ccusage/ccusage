@@ -1019,7 +1019,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
+          "cost": 0.006659999999999999,
           "inputTokens": 19000,
           "modelName": "deepseek-flash",
           "outputTokens": 800
@@ -1050,7 +1050,7 @@ exit: 0
       ],
       "outputTokens": 1615,
       "period": "sess-alpha",
-      "totalCost": 0.01502841,
+      "totalCost": 0.018358410000000002,
       "totalTokens": 41645
     },
     {
@@ -3057,7 +3057,7 @@ exit: 0
     "cacheReadTokens": 568564,
     "inputTokens": 872619,
     "outputTokens": 35635,
-    "totalCost": 15.049085925000005,
+    "totalCost": 15.052415925000005,
     "totalTokens": 1487531,
     "unpricedModels": [
       "GLM-5.3",

@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.136743300000003,
+    "totalCost": 28.140457299999998,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
@@ -1383,20 +1383,20 @@ exit: 0
               "outputTokens": 822
             },
             {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 3000,
+              "cost": 0.007427999999999999,
+              "inputTokens": 20500,
+              "modelName": "deepseek-flash",
+              "outputTokens": 1050
+            },
+            {
               "cacheCreationTokens": 1500,
               "cacheReadTokens": 32000,
               "cost": 0.00413366,
               "inputTokens": 5350,
               "modelName": "deepseek-v4-pro",
               "outputTokens": 1193
-            },
-            {
-              "cacheCreationTokens": 0,
-              "cacheReadTokens": 3000,
-              "cost": 0.0037139999999999994,
-              "inputTokens": 20500,
-              "modelName": "deepseek-flash",
-              "outputTokens": 1050
             },
             {
               "cacheCreationTokens": 0,
@@ -1425,7 +1425,7 @@ exit: 0
             "unknown"
           ],
           "outputTokens": 3775,
-          "totalCost": 0.026417660000000003,
+          "totalCost": 0.030131659999999998,
           "totalTokens": 75085
         },
         {
@@ -2528,6 +2528,14 @@ exit: 0
           "outputTokens": 210
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.007427999999999999,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 1200,
           "cost": 0.0071719999999999996,
@@ -2559,14 +2567,6 @@ exit: 0
           "inputTokens": 5350,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 1193
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037139999999999994,
-          "inputTokens": 20500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 1050
         },
         {
           "cacheCreationTokens": 50,
@@ -3023,7 +3023,7 @@ exit: 0
       ],
       "outputTokens": 56328,
       "period": "2025-12-29",
-      "totalCost": 24.30201505,
+      "totalCost": 24.305729049999997,
       "totalTokens": 2719790
     },
     {

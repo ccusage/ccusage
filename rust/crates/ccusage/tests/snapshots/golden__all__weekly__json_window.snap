@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 668244,
     "inputTokens": 1171429,
     "outputTokens": 37349,
-    "totalCost": 15.365885325000004,
+    "totalCost": 15.369215325000004,
     "totalTokens": 1887685,
     "unpricedModels": [
       "GLM-5.3",
@@ -279,6 +279,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
           "cost": 0.00524957,
           "inputTokens": 1511,
@@ -308,14 +316,6 @@ exit: 0
           "inputTokens": 1850,
           "modelName": "kimi-for-coding",
           "outputTokens": 695
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 50,
@@ -693,7 +693,7 @@ exit: 0
       ],
       "outputTokens": 37349,
       "period": "2025-12-29",
-      "totalCost": 15.365885325000004,
+      "totalCost": 15.369215325000004,
       "totalTokens": 1887685
     }
   ]

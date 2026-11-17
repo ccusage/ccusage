@@ -3719,6 +3719,7 @@ mod tests {
             ("gemini-3-5-flash", 1.5, 9.0),
             ("glm-4-7", 0.6, 2.2),
             ("deepseek/deepseek.v4.flash", 0.3, 1.2),
+            ("deepseek/deepseek.v4.pro", 1.32, 3.96),
         ] {
             let rates = pricing
                 .resolve(&[(model, super::MatchKind::Fuzzy)])

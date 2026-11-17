@@ -867,6 +867,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 700,
           "cost": 0.0052250000000000005,
           "inputTokens": 1000,
@@ -896,14 +904,6 @@ exit: 0
           "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 50,
@@ -1260,7 +1260,7 @@ exit: 0
       ],
       "outputTokens": 33440,
       "period": "2026-01-01",
-      "totalCost": 15.12736312,
+      "totalCost": 15.13069312,
       "totalTokens": 1850960
     },
     {
@@ -1446,6 +1446,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.000768,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
@@ -1459,14 +1467,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "devstral-medium-latest",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.000384,
-          "inputTokens": 1500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 250
         },
         {
           "cacheCreationTokens": 0,
@@ -1625,7 +1625,7 @@ exit: 0
       ],
       "outputTokens": 10955,
       "period": "2026-01-02",
-      "totalCost": 3.2490427,
+      "totalCost": 3.2494267,
       "totalTokens": 668623
     },
     {
@@ -1701,7 +1701,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.1367433,
+    "totalCost": 28.1404573,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

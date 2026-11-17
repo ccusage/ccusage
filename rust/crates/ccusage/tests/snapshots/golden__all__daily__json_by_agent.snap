@@ -3237,7 +3237,7 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
-              "cost": 0.0033299999999999996,
+              "cost": 0.006659999999999999,
               "inputTokens": 19000,
               "modelName": "deepseek-flash",
               "outputTokens": 800
@@ -3258,7 +3258,7 @@ exit: 0
             "unknown"
           ],
           "outputTokens": 1372,
-          "totalCost": 0.013860000000000003,
+          "totalCost": 0.01719,
           "totalTokens": 21352
         },
         {
@@ -3977,6 +3977,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0050999999999999995,
           "inputTokens": 600,
@@ -4030,14 +4038,6 @@ exit: 0
           "inputTokens": 513,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 254
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 0,
@@ -4343,7 +4343,7 @@ exit: 0
       ],
       "outputTokens": 17487,
       "period": "2026-01-01",
-      "totalCost": 3.7016685700000003,
+      "totalCost": 3.70499857,
       "totalTokens": 1608272
     },
     {
@@ -4698,7 +4698,7 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 3000,
-              "cost": 0.000384,
+              "cost": 0.000768,
               "inputTokens": 1500,
               "modelName": "deepseek-flash",
               "outputTokens": 250
@@ -4710,7 +4710,7 @@ exit: 0
             "deepseek-flash"
           ],
           "outputTokens": 600,
-          "totalCost": 0.0078105,
+          "totalCost": 0.008194499999999999,
           "totalTokens": 11500
         },
         {
@@ -5290,6 +5290,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.000768,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
@@ -5303,14 +5311,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "devstral-medium-latest",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.000384,
-          "inputTokens": 1500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 250
         },
         {
           "cacheCreationTokens": 0,
@@ -5459,7 +5459,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 3.2671126999999998,
+      "totalCost": 3.2674966999999997,
       "totalTokens": 670468
     },
     {
@@ -5520,7 +5520,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.136743300000003,
+    "totalCost": 28.140457300000005,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

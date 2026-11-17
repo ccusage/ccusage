@@ -870,6 +870,13 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "inputTokens": 600,
           "modelName": "[pi] claude-sonnet-4-20250514",
@@ -916,13 +923,6 @@ exit: 0
           "inputTokens": 513,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 254
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 0,
@@ -1353,6 +1353,13 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 40,
           "modelName": "grok-4",
@@ -1364,13 +1371,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "devstral-medium-latest",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "inputTokens": 1500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 250
         },
         {
           "cacheCreationTokens": 0,

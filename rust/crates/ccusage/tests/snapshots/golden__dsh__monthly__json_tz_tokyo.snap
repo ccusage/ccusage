@@ -73,7 +73,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.0037139999999999994,
+          "cost": 0.007427999999999999,
           "inputTokens": 20500,
           "modelName": "deepseek-flash",
           "outputTokens": 1050
@@ -104,7 +104,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 2712,
-      "totalCost": 0.024141300000000004,
+      "totalCost": 0.0278553,
       "totalTokens": 61592
     }
   ],
@@ -113,7 +113,7 @@ exit: 0
     "cacheReadTokens": 39000,
     "inputTokens": 30820,
     "outputTokens": 3856,
-    "totalCost": 0.026417660000000003,
+    "totalCost": 0.030131659999999998,
     "totalTokens": 75666,
     "unpricedModels": [
       "dsh-mystery-1",

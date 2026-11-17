@@ -610,6 +610,14 @@ exit: 0
           "outputTokens": 957
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.007427999999999999,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
           "cost": 0.0070550000000000005,
@@ -666,14 +674,6 @@ exit: 0
           "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037139999999999994,
-          "inputTokens": 20500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 1050
         },
         {
           "cacheCreationTokens": 1500,
@@ -1107,7 +1107,7 @@ exit: 0
       ],
       "outputTokens": 44645,
       "period": "2026-01",
-      "totalCost": 18.40325582,
+      "totalCost": 18.406969819999997,
       "totalTokens": 2525733
     },
     {
@@ -1144,7 +1144,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.1367433,
+    "totalCost": 28.140457299999994,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
