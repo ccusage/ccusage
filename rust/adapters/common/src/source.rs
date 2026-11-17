@@ -140,6 +140,36 @@ pub enum LoaderPricing<'a> {
     Source,
 }
 
+impl<'a> LoaderPricing<'a> {
+    pub(crate) fn for_load(
+        supply: PricingSupply,
+        shared: &SharedArgs,
+        supplied: Option<&'a PricingMap>,
+    ) -> Result<Self> {
+        match (supply, supplied) {
+            (PricingSupply::Pipeline, _) => {
+                ReportPricing::for_load(shared, supplied).map(Self::Pipeline)
+            }
+            (PricingSupply::Source, Some(pricing)) => {
+                Ok(Self::Pipeline(ReportPricing::Supplied(pricing)))
+            }
+            (PricingSupply::Source, None) => Ok(Self::Source),
+        }
+    }
+
+    pub fn as_map(&self) -> Result<Option<&PricingMap>> {
+        match self {
+            Self::Pipeline(pricing) => pricing.get().map(Some),
+            Self::Source => Ok(None),
+        }
+    }
+
+    pub fn get(&self) -> Result<&PricingMap> {
+        self.as_map()?
+            .ok_or_else(|| cli_error("the source owns its pricing"))
+    }
+}
+
 pub struct UsageLoadContext<'a> {
     pub shared: &'a SharedArgs,
     window: OnceLock<ReportWindow>,
@@ -329,46 +359,17 @@ impl EntryDescriptor {
 }
 
 /// What a loader is given for one load, focused or unified.
-pub struct LoadContext<'a, P = Option<&'a PricingMap>> {
+pub struct LoadContext<'a> {
     pub shared: &'a SharedArgs,
     /// The kind being loaded, for a loader whose input depends on it.
     pub kind: AgentReportKind,
     /// The report window, as a hint for a loader that can skip input early.
     pub window: &'a ReportWindow,
     /// Present for [`PricingSupply::Pipeline`] sources.
-    pub pricing: P,
+    pub pricing: LoaderPricing<'a>,
     pub options: SourceOptions<'a>,
     /// Where the loader records what it skipped.
     pub diagnostics: &'a Diagnostics,
-}
-
-impl<'a> LoadContext<'a> {
-    /// The pricing a [`PricingSupply::Pipeline`] source is handed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a context built without it, which the pipeline
-    /// never does for such a source.
-    pub fn pipeline_pricing(&self) -> Result<&'a PricingMap> {
-        self.pricing
-            .ok_or_else(|| cli_error("the report pipeline did not supply pricing"))
-    }
-}
-
-impl LoadContext<'_, LoaderPricing<'_>> {
-    pub(crate) fn resolve_pricing(&self) -> Result<LoadContext<'_>> {
-        Ok(LoadContext {
-            shared: self.shared,
-            kind: self.kind,
-            window: self.window,
-            pricing: match &self.pricing {
-                LoaderPricing::Pipeline(pricing) => Some(pricing.get()?),
-                LoaderPricing::Source => None,
-            },
-            options: self.options,
-            diagnostics: self.diagnostics,
-        })
-    }
 }
 
 /// A source whose loader yields `Vec<LoadedEntry>`.

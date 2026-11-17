@@ -17,8 +17,8 @@ use ccusage_core::{
 use crate::{
     rows::summary_rows,
     source::{
-        Detection, EntrySource, LoadContext, LoadRequest, LoadedRows, LoaderPricing, PricingSupply,
-        ProgressOwner, ReportPricing, SourceOptions, WindowMode,
+        Detection, EntrySource, LoadContext, LoadRequest, LoadedRows, LoaderPricing, ProgressOwner,
+        SourceOptions, WindowMode,
     },
 };
 
@@ -44,10 +44,7 @@ pub fn focused_rows(
 ) -> Result<Vec<UsageSummary>> {
     let descriptor = source.descriptor();
     let shared = &args.shared;
-    let pricing = match descriptor.pricing {
-        PricingSupply::Pipeline => LoaderPricing::Pipeline(ReportPricing::for_load(shared, None)?),
-        PricingSupply::Source => LoaderPricing::Source,
-    };
+    let pricing = LoaderPricing::for_load(descriptor.pricing, shared, None)?;
     let window = ReportWindow::from_shared(shared);
     let diagnostics = Diagnostics::new(descriptor.id);
     let cx = LoadContext {
@@ -76,12 +73,7 @@ pub fn focused_rows(
 pub fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let descriptor = source.descriptor();
     let shared = request.shared;
-    let pricing = match descriptor.pricing {
-        PricingSupply::Pipeline => LoaderPricing::Pipeline(request.pricing_or_load()?),
-        PricingSupply::Source => request.pricing.map_or(LoaderPricing::Source, |pricing| {
-            LoaderPricing::Pipeline(ReportPricing::Supplied(pricing))
-        }),
-    };
+    let pricing = LoaderPricing::for_load(descriptor.pricing, shared, request.pricing)?;
     let window = ReportWindow::from_shared(shared);
     let diagnostics = Diagnostics::new(descriptor.id);
     let cx = LoadContext {
@@ -106,14 +98,14 @@ pub fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<
 
 fn load(
     source: &dyn EntrySource,
-    cx: &LoadContext<'_, LoaderPricing<'_>>,
+    cx: &LoadContext<'_>,
     progress: ProgressOwner,
 ) -> Result<Vec<LoadedEntry>> {
-    let cx = cx.resolve_pricing()?;
+    cx.pricing.as_map()?;
     progress.run(
         UsageLoadAgent(source.descriptor().label),
         cx.shared.json,
-        || source.load_entries(&cx),
+        || source.load_entries(cx),
     )
 }
 
@@ -126,10 +118,10 @@ fn detect(detection: Detection, entries: &[LoadedEntry]) -> bool {
     }
 }
 
-fn summarize_in_window<P>(
+fn summarize_in_window(
     mode: WindowMode,
     mut entries: Vec<LoadedEntry>,
-    cx: &LoadContext<'_, P>,
+    cx: &LoadContext<'_>,
     summarize: impl FnOnce(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
 ) -> Result<Vec<UsageSummary>> {
     if mode == WindowMode::SessionLastActivity && cx.kind == AgentReportKind::Session {

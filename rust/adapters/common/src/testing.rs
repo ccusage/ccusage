@@ -6,7 +6,7 @@ use ccusage_core::{
     cli::{AgentReportKind, SharedArgs},
 };
 
-use crate::source::{EntrySource, LoadContext, PricingSupply, ReportPricing, SourceOptions};
+use crate::source::{EntrySource, LoadContext, LoaderPricing, SourceOptions};
 
 /// Loads `source` with `shared` and `options` as a daily report would, before
 /// the date window is applied. `pricing` is what the pipeline would hand a
@@ -23,14 +23,7 @@ pub fn load_entries(
 ) -> Result<(Vec<LoadedEntry>, Diagnostics)> {
     let window = ReportWindow::from_shared(shared);
     let diagnostics = Diagnostics::new(source.descriptor().id);
-    let supplied = match source.descriptor().pricing {
-        PricingSupply::Pipeline => Some(ReportPricing::for_load(shared, pricing)?),
-        PricingSupply::Source => None,
-    };
-    let pricing = match &supplied {
-        Some(pricing) => Some(pricing.get()?),
-        None => pricing,
-    };
+    let pricing = LoaderPricing::for_load(source.descriptor().pricing, shared, pricing)?;
     let entries = source.load_entries(&LoadContext {
         shared,
         kind: AgentReportKind::Daily,

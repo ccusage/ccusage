@@ -14,7 +14,7 @@ use super::{
 };
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.get()?;
     let tz = cx.window.timezone();
     let db_paths = hermes_state_db_paths()?;
     let loaded = load_state_db_entries(&db_paths, cx.shared.single_thread, cx.diagnostics);
@@ -202,7 +202,9 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+            ),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

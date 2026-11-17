@@ -40,7 +40,7 @@ impl EntrySource for Fake {
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         self.saw_pricing
-            .store(cx.pricing.is_some(), Ordering::Relaxed);
+            .store(cx.pricing.as_map()?.is_some(), Ordering::Relaxed);
         if self.skips_a_unit {
             cx.diagnostics.record(Skip::unit(
                 Path::new("/data/broken.json"),

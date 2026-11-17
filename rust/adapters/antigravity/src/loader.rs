@@ -13,7 +13,7 @@ use super::{
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.get()?;
     let mut events = Vec::new();
     for database_path in conversation_db_paths(cx.diagnostics, cx.shared.debug)? {
         match parse_sqlite_file(&database_path, cx.diagnostics) {
@@ -1437,7 +1437,9 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+            ),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

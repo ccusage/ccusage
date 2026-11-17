@@ -13,7 +13,7 @@ use ccusage_adapter_common::{
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.get()?;
     let tz = cx.window.timezone();
     let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
@@ -217,7 +217,9 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+            ),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

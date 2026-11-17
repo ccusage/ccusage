@@ -30,7 +30,7 @@ use crate::{
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.get()?;
     let tz = cx.window.timezone();
     let sources = super::paths::paths(cx.diagnostics)?;
     let parsed = read_typed_units(&sources, shared.single_thread, cx.diagnostics, |source| {
@@ -3126,7 +3126,9 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+            ),
             options: Default::default(),
             diagnostics: &diagnostics,
         };

@@ -37,6 +37,10 @@ layers.
   without publishing returns an error to its consumer.
 - `source::LoadRequest` and `LoadedRows` carry source-neutral loads at day or
   session granularity. `ProgressOwner::run` controls their progress output.
+- `source::LoadContext` gives entry loaders native `LoaderPricing` supply.
+  `ReportPricing` holds supplied, pending or Display pricing; Display costs
+  do not load a price table. `UsageLoadContext` shares lazy pricing and report
+  windows between format-specific sources.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
 - `jsonl` — the streaming JSONL parsing helpers, including diagnostics for
   selected records that fail to decode without discarding later records.
@@ -48,6 +52,7 @@ layers.
 - `report::print_table_for_agent`
 - `roots::{resolve, RootsEnv}` for normalized list or single directory roots
 - `source::{EntryDescriptor, SummaryKind, SessionScope, SessionShape}`
+- `source::{LoadContext, LoaderPricing, ReportPricing, UsageLoadContext}`
 - `collect_files_with_extension`, `collect_files_matching`,
   `visit_usage_files` and `dir_entries`, which record directories, entries
   and file types they cannot read in a `Diagnostics`

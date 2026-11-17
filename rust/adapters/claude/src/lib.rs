@@ -41,7 +41,7 @@ use crate::{
     daily::DedupEntry as _,
     debug_log,
     fast::{FxHashMap, LinePrefilter},
-    log_level, progress,
+    progress,
 };
 
 pub(crate) use paths::{

@@ -15,7 +15,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.get()?;
     let loaded = load_entries_from_databases(&db_paths, cx, pricing);
     let mut entries = dedupe_first_wins(loaded, |(id, _)| id.clone())
         .into_iter()
@@ -275,7 +275,9 @@ mod tests {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
                 window: &window,
-                pricing: Some(&pricing),
+                pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                    ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                ),
                 options: SourceOptions::default(),
                 diagnostics: &diagnostics,
             };
@@ -316,7 +318,9 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+            ),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

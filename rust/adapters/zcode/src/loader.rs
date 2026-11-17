@@ -40,7 +40,7 @@ struct Schema {
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.get()?;
     let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
     let loaded = load_entries_from_databases(&db_paths, tz, shared, pricing, cx.diagnostics);
@@ -542,7 +542,9 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
+                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+            ),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

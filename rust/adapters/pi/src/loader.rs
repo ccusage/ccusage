@@ -32,6 +32,7 @@ fn load_entries_for_context(
     paths: &[PathBuf],
     store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx.pricing.as_map()?;
     let shared = cx.shared;
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();
@@ -52,7 +53,7 @@ fn load_entries_for_context(
                 path,
                 cx.window.timezone(),
                 shared.mode,
-                cx.pricing,
+                pricing,
                 store_name,
                 cx.diagnostics,
             )
@@ -242,6 +243,7 @@ mod tests {
         path: PathBuf,
         pricing: Option<&PricingMap>,
     ) -> Vec<LoadedEntry> {
+        ccusage_test_support::install_pricing_snapshots();
         ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,
             shared,
@@ -256,6 +258,7 @@ mod tests {
     }
 
     fn load_store(shared: &SharedArgs, paths: Vec<PathBuf>) -> Vec<LoadedEntry> {
+        ccusage_test_support::install_pricing_snapshots();
         ccusage_adapter_common::testing::load_entries(
             &crate::NamedStore::new("omp", paths),
             shared,
