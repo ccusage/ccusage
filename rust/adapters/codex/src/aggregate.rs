@@ -346,6 +346,12 @@ struct CodexAggregateRun<'a> {
 
 impl CodexAggregateRun<'_> {
     fn chunk_file_indexes(&self, worker_count: usize) -> Vec<Vec<usize>> {
+        if worker_count == 1 {
+            return vec![
+                self.selection
+                    .map_or_else(|| (0..self.files.len()).collect(), <[usize]>::to_vec),
+            ];
+        }
         let Some(selection) = self.selection else {
             return crate::chunk_file_indexes_by_size(self.files, worker_count);
         };
