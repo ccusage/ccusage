@@ -1,6 +1,6 @@
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
+    pricing::AgentModel,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -270,15 +270,17 @@ fn read_session_file_data_with_context(
         };
         let raw_model = message.model.clone();
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
-        let model = raw_model
+        let identity = raw_model
+            .as_deref()
+            .map(|model| AgentModel::new(context.name, model));
+        let override_candidate = identity
             .as_ref()
-            .map(|model| format!("[{}] {model}", context.name));
-        let candidates = store_pricing_candidates(raw_model.as_deref(), model.as_deref(), pricing);
-        let source_cost = source_cost_for_mode(
-            display_cost,
-            mode,
-            pricing_override_model(raw_model.as_deref(), model.as_deref(), pricing).is_some(),
-        );
+            .and_then(|model| model.overriding_candidate(pricing));
+        let candidates: Vec<_> = override_candidate
+            .into_iter()
+            .chain(identity.iter().flat_map(AgentModel::candidates))
+            .collect();
+        let source_cost = source_cost_for_mode(display_cost, mode, override_candidate.is_some());
         let priced = price_entry(
             EntryPricing {
                 usage,
@@ -316,13 +318,8 @@ fn read_session_file_data_with_context(
                 .map(|model| crate::model_aliases::resolve_model_name(model).into_owned())
         })
         .flatten();
-        let stored_cost = pi_stored_cost(
-            raw_model.as_deref(),
-            model.as_deref(),
-            display_cost,
-            mode,
-            pricing,
-        );
+        let stored_cost = stored_cost_for_mode(source_cost, mode);
+        let model = identity.map(AgentModel::into_display);
         let data = UsageEntry {
             session_id: Some(session_id.clone()),
             timestamp: timestamp_text,
@@ -537,28 +534,6 @@ fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
         )
 }
 
-fn pricing_override_model<'a>(
-    raw_model: Option<&'a str>,
-    display_model: Option<&'a str>,
-    pricing: Option<&PricingMap>,
-) -> Option<&'a str> {
-    let pricing = pricing?;
-    display_model
-        .filter(|model| pricing.has_user_override(model))
-        .or_else(|| raw_model.filter(|model| pricing.has_user_override(model)))
-}
-
-fn pi_stored_cost(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    display_cost: Option<f64>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<f64> {
-    let has_override = pricing_override_model(raw_model, display_model, pricing).is_some();
-    stored_cost_for_mode(source_cost_for_mode(display_cost, mode, has_override), mode)
-}
-
 fn source_cost_for_mode(
     display_cost: Option<f64>,
     mode: CostMode,
@@ -569,19 +544,6 @@ fn source_cost_for_mode(
         CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0),
         _ => display_cost,
     }
-}
-
-fn store_pricing_candidates<'a>(
-    raw_model: Option<&'a str>,
-    display_model: Option<&'a str>,
-    pricing: Option<&PricingMap>,
-) -> Vec<(&'a str, MatchKind)> {
-    pricing_override_model(raw_model, display_model, pricing)
-        .into_iter()
-        .map(|model| (model, MatchKind::Fuzzy))
-        .chain(display_model.map(|model| (model, MatchKind::StrictExact)))
-        .chain(raw_model.map(|model| (model, MatchKind::Fuzzy)))
-        .collect()
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -614,6 +576,7 @@ pub(crate) fn entry_id(entry: &LoadedEntry) -> PiEntryId {
 
 #[cfg(test)]
 mod tests {
+    use ccusage_core::pricing::MatchKind;
 
     use super::*;
     use ccusage_test_support::fs_fixture;
@@ -1242,12 +1205,23 @@ mod pricing_identity_tests {
 
     #[test]
     fn adapter_pricing_identity() {
-        assert_eq!(
-            store_pricing_candidates(Some("gpt-5.2"), Some("[pi] gpt-5.2"), None),
-            vec![
-                ("[pi] gpt-5.2", MatchKind::StrictExact),
-                ("gpt-5.2", MatchKind::Fuzzy),
-            ]
-        );
+        let fixture = ccusage_test_support::fs_fixture!({
+            "sessions/p/s.jsonl": r#"{"type":"message","timestamp":"2026-11-17T10:00:00Z","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1000,"output":0}}}"#
+        });
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let rows = read_session_file_data_for_store_with_diagnostics(
+            &fixture.path("sessions/p/s.jsonl"),
+            &fixture.path("sessions"),
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            Some(&pricing),
+            "pi",
+            &Diagnostics::new("pi"),
+        )
+        .unwrap()
+        .entries;
+        assert_eq!(rows[0].model.as_deref(), Some("[pi] gpt-5.2"));
+        assert!((rows[0].cost - 0.00175).abs() < 1e-12);
     }
 }

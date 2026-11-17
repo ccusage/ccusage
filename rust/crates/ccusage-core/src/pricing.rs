@@ -181,6 +181,43 @@ pub enum MatchKind {
     Fuzzy,
 }
 
+pub struct AgentModel<'a> {
+    raw: &'a str,
+    display: String,
+}
+
+impl<'a> AgentModel<'a> {
+    pub fn new(agent: &str, raw: &'a str) -> Self {
+        Self {
+            raw,
+            display: format!("[{agent}] {raw}"),
+        }
+    }
+
+    pub fn display(&self) -> &str {
+        &self.display
+    }
+
+    pub fn into_display(self) -> String {
+        self.display
+    }
+
+    pub fn candidates(&self) -> [(&str, MatchKind); 2] {
+        [
+            (self.display(), MatchKind::StrictExact),
+            (self.raw, MatchKind::Fuzzy),
+        ]
+    }
+
+    pub fn overriding_candidate(&self, pricing: Option<&PricingMap>) -> Option<(&str, MatchKind)> {
+        let pricing = pricing?;
+        [self.display(), self.raw]
+            .into_iter()
+            .find(|model| pricing.has_user_override(model))
+            .map(|model| (model, MatchKind::Fuzzy))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProviderFamily {
     Anthropic,

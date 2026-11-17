@@ -1,6 +1,6 @@
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
+    pricing::AgentModel,
 };
 use std::{fs, path::Path, sync::Arc};
 
@@ -175,7 +175,6 @@ pub(super) struct OpenClawEntry {
     timestamp: TimestampMs,
     timestamp_text: String,
     session_id: String,
-    pricing_model: String,
     model: String,
     provider: Option<String>,
     input_tokens: u64,
@@ -383,8 +382,7 @@ fn parse_transcript_message(
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: session_id.to_string(),
-        pricing_model: model.clone(),
-        model: format!("[openclaw] {model}"),
+        model,
         provider,
         input_tokens: raw_usage.input_tokens,
         output_tokens: raw_usage.output_tokens,
@@ -402,6 +400,7 @@ pub(super) fn entry_to_loaded(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
+    let identity = AgentModel::new("openclaw", &entry.model);
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
         output_tokens: entry.output_tokens,
@@ -416,7 +415,7 @@ pub(super) fn entry_to_loaded(
         version: entry.provider.clone(),
         message: UsageMessage {
             usage,
-            model: Some(entry.model.clone()),
+            model: Some(identity.display().to_owned()),
             id: entry.event_id,
         },
         cost_usd: entry.cost,
@@ -424,10 +423,7 @@ pub(super) fn entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let candidates = [
-        (entry.model.as_str(), MatchKind::StrictExact),
-        (entry.pricing_model.as_str(), MatchKind::Fuzzy),
-    ];
+    let candidates = identity.candidates();
     let priced = price_entry(
         EntryPricing {
             usage,
@@ -443,7 +439,7 @@ pub(super) fn entry_to_loaded(
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
-        .then(|| crate::model_aliases::resolve_model_name(&entry.pricing_model).into_owned());
+        .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
@@ -460,7 +456,7 @@ pub(super) fn entry_to_loaded(
         ),
         credits: None,
         message_count: None,
-        model: Some(entry.model),
+        model: Some(identity.into_display()),
         data,
         usage_limit_reset_time: None,
         missing_pricing_model,
