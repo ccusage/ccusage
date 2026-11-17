@@ -60,7 +60,6 @@ export def existing-implementation-pull-request [pull_requests: list<record>, re
             [
                 (($pull_request | get --optional user.login) == 'github-actions[bot]')
                 (($pull_request | get --optional head.repo.full_name) == $repo)
-                (($head_ref | describe) == 'string')
                 (($head_ref | describe) == 'string' and ($head_ref | str starts-with $head_prefix))
             ]
             | all {|valid| $valid}

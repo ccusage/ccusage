@@ -57,7 +57,7 @@ def approved-capability [username: string]: nothing -> any {
 }
 
 def bot-author [username: string]: nothing -> bool {
-    ($username | str ends-with '[bot]') or $username == 'dependabot[bot]'
+    $username | str ends-with '[bot]'
 }
 
 def author-access [kind: string]: nothing -> record {
