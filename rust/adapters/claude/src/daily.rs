@@ -1295,6 +1295,58 @@ mod tests {
     }
 
     #[test]
+    fn daily_advisor_gate_preserves_the_previous_extraction() {
+        let iterations = [
+            r#"{"type":"advisor_message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"advisor\u005fmessage","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"advisor\\u005fmessage","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"message","cache_creation":{"ephemeral_5m_input_tokens":7}}"#,
+            r#"{"type":"advisor_message","type":"message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"message","type":"advisor_message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":null}"#,
+            r#"{"type":["advisor_message"]}"#,
+            r#"{"kind":"advisor_message"}"#,
+            r#"null"#,
+            r#"[]"#,
+        ];
+        let mut state = 0x3c6e_f372_fe94_f82b_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        let mut skipped = 0;
+        let mut retained = 0;
+        for _ in 0..5_000 {
+            let entries = (0..next(6))
+                .map(|_| iterations[next(iterations.len())])
+                .collect::<Vec<_>>()
+                .join(",");
+            let usage =
+                format!(r#"{{"input_tokens":1,"output_tokens":2,"iterations":[{entries}]}}"#);
+            let message = format!(r#"{{"model":"parent","usage":{usage}}}"#);
+            for line in [
+                format!(r#"{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}"#),
+                format!(
+                    r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
+                ),
+            ] {
+                let parsed = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
+                let previous = super::advisor_usages_from_line(line.as_bytes());
+                if parsed.message.usage.has_advisor_iteration {
+                    retained += 1;
+                } else {
+                    skipped += 1;
+                    assert!(previous.is_empty(), "{line}");
+                }
+            }
+        }
+        assert!(skipped > 0);
+        assert!(retained > 0);
+    }
+
+    #[test]
     fn reads_top_level_advisor_iterations_beside_an_agent_progress_record() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": r#"{"sessionId":"session-a","message":{"usage":{"input_tokens":5,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"data":{"message":{"timestamp":"2026-05-22T02:34:40.000Z","requestId":"req-a","message":{"id":"msg-a","model":"main-model","usage":{"input_tokens":100,"output_tokens":1}}}}}"#,
