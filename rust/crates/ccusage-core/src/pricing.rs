@@ -14,6 +14,10 @@ use crate::{
     fast::{FxHashMap, FxHashSet},
 };
 
+mod builtin_pricing;
+
+use builtin_pricing::BUILTIN_PRICING;
+
 const FAST_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("fast-multiplier-overrides.json");
 const FLEX_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("flex-multiplier-overrides.json");
 const ULTRAFAST_MULTIPLIER_OVERRIDES_JSON: &str =
@@ -1802,7 +1806,7 @@ impl PricingMap {
             speed
                 .for_model(model)
                 .or(speed.for_model(resolved_model.as_ref()))
-                .applied_to(Pricing { ..Pricing::empty() }),
+                .applied_to(Pricing::empty()),
         )
     }
 
@@ -1929,11 +1933,6 @@ const fn rates(input: f64, output: f64, cache_create: f64, cache_read: f64) -> P
         ..Pricing::empty()
     }
 }
-
-#[path = "builtin-pricing.rs"]
-mod builtin_pricing;
-
-use builtin_pricing::BUILTIN_PRICING;
 
 enum OverrideBase<'a> {
     Override(&'a str),
@@ -2999,11 +2998,9 @@ mod tests {
         assert_eq!(kimi_k25.input, 0.6e-6);
         assert_eq!(kimi_k25.output, 3e-6);
         assert_eq!(kimi_k25.cache_read, Some(0.1e-6));
-        assert!(kimi_k25.cache_read.is_some());
         assert_eq!(kimi_k26.input, 0.95e-6);
         assert_eq!(kimi_k26.output, 4e-6);
         assert_eq!(kimi_k26.cache_read, Some(0.16e-6));
-        assert!(kimi_k26.cache_read.is_some());
         assert_eq!(pricing.context_limit("moonshot/kimi-k2.5"), Some(262_144));
         assert_eq!(pricing.context_limit("moonshot/kimi-k2.6"), Some(262_144));
     }
@@ -3333,7 +3330,6 @@ mod tests {
             "zai/glm-test.5",
             Pricing {
                 cache_read: Some(0.03),
-
                 ..Pricing::empty()
             },
         );
@@ -3405,7 +3401,6 @@ mod tests {
         assert_eq!(kimi_k3.input, 3e-6);
         assert_eq!(kimi_k3.output, 15e-6);
         assert_eq!(kimi_k3.cache_read, Some(0.3e-6));
-        assert!(kimi_k3.cache_read.is_some());
         assert!(
             pricing
                 .context_limit("moonshot/kimi-k3")
@@ -3424,7 +3419,6 @@ mod tests {
         assert_eq!(glm_51.output, 4.4e-6);
         assert_eq!(glm_51.cache_create, Some(0.0));
         assert_eq!(glm_51.cache_read, Some(0.26e-6));
-        assert!(glm_51.cache_read.is_some());
 
         let glm_5 = pricing.find("glm-5").unwrap();
         assert_eq!(glm_5.input, 1.0e-6);
@@ -3484,7 +3478,6 @@ mod tests {
         let zeroed = Pricing {
             cache_create: Some(0.0),
             cache_read: Some(0.03),
-
             ..Pricing::empty()
         };
 
@@ -3593,7 +3586,6 @@ mod tests {
         assert_eq!(entry.output, 10e-6);
         assert_eq!(entry.cache_create, Some(1.25e-6));
         assert_eq!(entry.cache_read, Some(0.1e-6));
-        assert!(entry.cache_read.is_some());
         assert_eq!(entry.input_above_200k, Some(2e-6));
         assert_eq!(entry.output_above_200k, Some(20e-6));
         assert_eq!(entry.cache_create_above_200k, Some(2.5e-6));
@@ -3770,7 +3762,6 @@ mod tests {
         assert!((fallback.output - 8e-6).abs() < f64::EPSILON);
         assert!((fallback.cache_create.unwrap() - 2.5e-6).abs() < f64::EPSILON);
         assert!((fallback.cache_read.unwrap() - 0.2e-6).abs() < f64::EPSILON);
-        assert!(fallback.cache_read.is_some());
         assert_eq!(fallback.input_above_200k, None);
         assert_eq!(fallback.output_above_200k, None);
         assert_eq!(fallback.fast_multiplier, 1.0);
@@ -4645,7 +4636,6 @@ mod tests {
         assert_eq!(gpt_55.input, 5e-6);
         assert_eq!(gpt_55.output, 30e-6);
         assert_eq!(gpt_55.cache_read, Some(0.5e-6));
-        assert!(gpt_55.cache_read.is_some());
         assert_eq!(gpt_55.fast_multiplier, 2.5);
         assert_eq!(pricing.context_limit("gpt-5.5"), Some(1_050_000));
     }
@@ -5521,15 +5511,6 @@ mod tests {
                 output: 25e-6,
                 cache_create: Some(6.25e-6),
                 cache_read: Some(0.5e-6),
-
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
                 ..Pricing::empty()
             },
         );
@@ -5540,15 +5521,6 @@ mod tests {
                 output: 75e-6,
                 cache_create: Some(18.75e-6),
                 cache_read: Some(1.5e-6),
-
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
                 ..Pricing::empty()
             },
         );
@@ -5566,15 +5538,6 @@ mod tests {
                 output: 75e-6,
                 cache_create: Some(18.75e-6),
                 cache_read: Some(1.5e-6),
-
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
                 ..Pricing::empty()
             },
         );
@@ -5717,15 +5680,6 @@ mod tests {
                 output: 0.0,
                 cache_create: Some(0.0),
                 cache_read: Some(0.0),
-
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
                 ..Pricing::empty()
             },
         );
@@ -5736,15 +5690,6 @@ mod tests {
                 output: 0.0,
                 cache_create: Some(0.0),
                 cache_read: Some(0.0),
-
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
                 ..Pricing::empty()
             },
         );
@@ -5808,7 +5753,6 @@ mod tests {
             assert_eq!(entry.output, 2e-6);
             assert_eq!(entry.cache_create, Some(3e-6));
             assert_eq!(entry.cache_read, Some(4e-7));
-            assert!(entry.cache_read.is_some());
             assert_eq!(entry.fast_multiplier, 2.0);
             assert_eq!(pricing.context_limit("custom-model"), Some(123_456));
         }
@@ -5849,15 +5793,8 @@ mod tests {
                     output: 20e-6,
                     cache_create: Some(30e-6),
                     cache_read: Some(40e-6),
-
                     input_above_200k: Some(15e-6),
-                    output_above_200k: None,
-                    cache_create_above_200k: None,
-                    cache_read_above_200k: None,
-                    long_context_threshold: None,
                     fast_multiplier: 1.5,
-                    ultrafast_multiplier: 1.0,
-                    flex_multiplier: 1.0,
                     ..Pricing::empty()
                 },
             );
@@ -5873,7 +5810,6 @@ mod tests {
             assert_eq!(entry.output, 20e-6);
             assert_eq!(entry.cache_create, Some(30e-6));
             assert_eq!(entry.cache_read, Some(40e-6));
-            assert!(entry.cache_read.is_some());
             assert_eq!(entry.input_above_200k, Some(15e-6));
             assert_eq!(entry.fast_multiplier, 1.5);
             assert_eq!(entry.flex_multiplier, 0.5);
@@ -5934,17 +5870,8 @@ mod tests {
                 Pricing {
                     input: 3e-6,
                     output: 15e-6,
-                    cache_create: None,
-                    cache_read: None,
-
-                    input_above_200k: None,
-                    output_above_200k: None,
                     cache_create_above_200k: Some(4.6875e-6),
                     cache_read_above_200k: Some(3.75e-7),
-                    long_context_threshold: None,
-                    fast_multiplier: 1.0,
-                    ultrafast_multiplier: 1.0,
-                    flex_multiplier: 1.0,
                     ..Pricing::empty()
                 },
             );
@@ -5961,7 +5888,7 @@ mod tests {
             assert_eq!(entry.cache_create, None);
             assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
             assert_eq!(entry.cache_read, None);
-            assert!((entry.input * 0.1 - 2e-7).abs() < 1e-15);
+            assert!((entry.cache_read_rate_at(entry.input) - 2e-7).abs() < 1e-15);
             assert_eq!(entry.cache_create_above_200k, Some(4.6875e-6));
             assert_eq!(entry.cache_read_above_200k, Some(3.75e-7));
         }
@@ -5977,14 +5904,6 @@ mod tests {
                     output: 10e-6,
                     cache_create: Some(0.0),
                     cache_read: Some(0.0),
-                    input_above_200k: None,
-                    output_above_200k: None,
-                    cache_create_above_200k: None,
-                    cache_read_above_200k: None,
-                    long_context_threshold: None,
-                    fast_multiplier: 1.0,
-                    ultrafast_multiplier: 1.0,
-                    flex_multiplier: 1.0,
                     ..Pricing::empty()
                 },
             );
@@ -6007,17 +5926,6 @@ mod tests {
                 Pricing {
                     input: 3e-6,
                     output: 15e-6,
-                    cache_create: None,
-                    cache_read: None,
-
-                    input_above_200k: None,
-                    output_above_200k: None,
-                    cache_create_above_200k: None,
-                    cache_read_above_200k: None,
-                    long_context_threshold: None,
-                    fast_multiplier: 1.0,
-                    ultrafast_multiplier: 1.0,
-                    flex_multiplier: 1.0,
                     ..Pricing::empty()
                 },
             );
