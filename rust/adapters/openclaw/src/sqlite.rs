@@ -168,6 +168,7 @@ fn read_agent_database(
                     event_json.as_bytes(),
                     &database.path,
                     row_number,
+                    None,
                     diagnostics,
                     Some(super::parser::is_usage_envelope),
                 ) else {

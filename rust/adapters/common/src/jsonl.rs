@@ -157,13 +157,22 @@ pub fn decode_record<T: DeserializeOwned>(
     content: &[u8],
     unit: &Path,
     number: u32,
+    row_id: Option<&str>,
     diagnostics: &Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
 ) -> Option<T> {
     match serde_json::from_slice(content) {
         Ok(record) => Some(record),
         Err(error) => {
-            record_decode_error(content, error, unit, number, false, diagnostics, is_usage);
+            record_decode_error(
+                content,
+                error,
+                unit,
+                number,
+                false,
+                &diagnostics.for_row(row_id),
+                is_usage,
+            );
             None
         }
     }
@@ -884,6 +893,7 @@ mod tests {
                 b" \t\r",
                 Path::new("/logs/state.db"),
                 1,
+                None,
                 &database_diagnostics,
                 Some(|_| true),
             )

@@ -413,13 +413,17 @@ impl From<sqlite::Error> for UnreadableRow {
     }
 }
 
+fn row_diagnostics(statement: &sqlite::Statement<'_>, diagnostics: &Diagnostics) -> Diagnostics {
+    diagnostics.for_row(statement.read::<String, _>(0).ok().as_deref())
+}
+
 fn scan_rows<T>(
     mut statement: sqlite::Statement<'_>,
     context: &DatabaseLoadContext<'_>,
     table: Table,
     unreadable: &'static str,
     read: impl Fn(&sqlite::Statement<'_>) -> std::result::Result<Option<T>, UnreadableRow>,
-    mut visit: impl FnMut(u32, T),
+    mut visit: impl FnMut(u32, T, &sqlite::Statement<'_>),
 ) -> u32 {
     let unit = context.db_path;
     let diagnostics = context.diagnostics.for_table(table.name());
@@ -429,14 +433,10 @@ fn scan_rows<T>(
             Ok(sqlite::State::Row) => {
                 row = row.saturating_add(1);
                 match read(&statement) {
-                    Ok(Some(value)) => visit(row, value),
+                    Ok(Some(value)) => visit(row, value, &statement),
                     Ok(None) => {}
-                    Err(UnreadableRow) => diagnostics.record(Skip::record(
-                        unit,
-                        row,
-                        SkipKind::InvalidData,
-                        unreadable,
-                    )),
+                    Err(UnreadableRow) => row_diagnostics(&statement, &diagnostics)
+                        .record(Skip::record(unit, row, SkipKind::InvalidData, unreadable)),
                 }
             }
             Ok(sqlite::State::Done) => break,
@@ -505,7 +505,8 @@ fn load_message_rows(
              id,
              session_id,
              data,
-         }| {
+         },
+         statement| {
             if !window.is_unbounded()
                 && let Some(millis) = extract_message_timestamp(&data)
                 && !window.contains(millis)
@@ -516,6 +517,7 @@ fn load_message_rows(
                 data.as_bytes(),
                 context.db_path,
                 row,
+                Some(&id),
                 &diagnostics,
                 Some(|_| true),
             ) else {
@@ -531,9 +533,11 @@ fn load_message_rows(
             ) {
                 Ok(Some(entry)) => collector.push_message((entry, None)),
                 Ok(None) => {}
-                Err(MissingTimestamp) => {
-                    record_missing_timestamp(&diagnostics, context.db_path, row)
-                }
+                Err(MissingTimestamp) => record_missing_timestamp(
+                    &row_diagnostics(statement, &diagnostics),
+                    context.db_path,
+                    row,
+                ),
             }
         },
     );
@@ -599,7 +603,7 @@ fn load_session_message_rows(
         schema.table,
         COLUMN_READ_FAILED,
         SessionMessageRecord::read,
-        |row, record| {
+        |row, record, statement| {
             // Copies neither count nor mark the fork as covered:
             // the fork's `session_v2` counters start at zero and
             // only hold fork-local usage, so they stay a valid
@@ -639,7 +643,11 @@ fn load_session_message_rows(
                 Ok(Some(linked)) => linked,
                 Ok(None) => return,
                 Err(SessionMessageError::MissingTimestamp) => {
-                    record_missing_timestamp(&diagnostics, context.db_path, row);
+                    record_missing_timestamp(
+                        &row_diagnostics(statement, &diagnostics),
+                        context.db_path,
+                        row,
+                    );
                     return;
                 }
                 Err(SessionMessageError::Decode(error)) => {
@@ -649,7 +657,7 @@ fn load_session_message_rows(
                         context.db_path,
                         row,
                         false,
-                        &diagnostics,
+                        &row_diagnostics(statement, &diagnostics),
                         Some(|_: &serde_json::Value| true),
                     );
                     return;
@@ -934,7 +942,7 @@ fn load_session_aggregate_entries(
                 cost: read_f64(statement, 2),
             }))
         },
-        |row, aggregate| match session_value_to_entry(
+        |row, aggregate, statement| match session_value_to_entry(
             aggregate,
             context.tz,
             context.mode,
@@ -942,7 +950,11 @@ fn load_session_aggregate_entries(
         ) {
             Ok(Some(entry)) => entries.push(entry),
             Ok(None) => {}
-            Err(MissingTimestamp) => record_missing_timestamp(&diagnostics, context.db_path, row),
+            Err(MissingTimestamp) => record_missing_timestamp(
+                &row_diagnostics(statement, &diagnostics),
+                context.db_path,
+                row,
+            ),
         },
     );
     entries
@@ -1529,6 +1541,16 @@ mod tests {
         assert_eq!(
             diagnostics.warnings(&shared),
             ["WARN  opencode: skipped 2 records in 1 input (invalid timestamp)"]
+        );
+        let samples = diagnostics.warnings(&SharedArgs {
+            debug: true,
+            ..shared
+        });
+        assert!(samples.iter().any(|line| line.contains(":message:legacy:")));
+        assert!(
+            samples
+                .iter()
+                .any(|line| line.contains(":session_message:current:"))
         );
     }
 

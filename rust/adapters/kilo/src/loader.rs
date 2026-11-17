@@ -56,6 +56,7 @@ fn load_entries_from_databases(
                 data.as_bytes(),
                 db_path,
                 row_number,
+                None,
                 cx.diagnostics,
                 Some(|value| {
                     value.get("role").and_then(serde_json::Value::as_str) == Some("assistant")

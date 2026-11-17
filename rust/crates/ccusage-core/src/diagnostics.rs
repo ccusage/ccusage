@@ -57,6 +57,7 @@ pub struct Skip {
     /// The 1-based line or row inside the unit; `None` when the whole unit, or
     /// the rest of it, was skipped.
     pub line: Option<u32>,
+    row_id: Option<Arc<str>>,
     table: Option<&'static str>,
     pub kind: SkipKind,
     pub detail: String,
@@ -68,6 +69,7 @@ impl Skip {
         Self {
             unit: unit.to_path_buf(),
             line: None,
+            row_id: None,
             table: None,
             kind,
             detail: detail.to_string(),
@@ -89,6 +91,21 @@ impl Skip {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum RecordIdentity {
+    Line(u32),
+    Row(Arc<str>),
+}
+
+impl Skip {
+    fn identity(&self) -> Option<RecordIdentity> {
+        self.row_id
+            .as_ref()
+            .map(|id| RecordIdentity::Row(Arc::clone(id)))
+            .or_else(|| self.line.map(RecordIdentity::Line))
+    }
+}
+
 /// The skips of one kind. A skip is identified by its unit, table and line, so
 /// recording or merging the same one twice counts it once.
 #[derive(Default)]
@@ -100,11 +117,11 @@ struct Tally {
 #[derive(Default)]
 struct UnitSkips {
     whole: bool,
-    records: BTreeSet<(Option<&'static str>, u32)>,
+    records: BTreeSet<(Option<&'static str>, RecordIdentity)>,
 }
 
 impl UnitSkips {
-    fn record(&mut self, table: Option<&'static str>, line: Option<u32>) {
+    fn record(&mut self, table: Option<&'static str>, line: Option<RecordIdentity>) {
         match line {
             Some(line) => {
                 self.records.insert((table, line));
@@ -115,7 +132,7 @@ impl UnitSkips {
 }
 
 impl Tally {
-    fn count(&mut self, unit: &Path, table: Option<&'static str>, line: Option<u32>) {
+    fn count(&mut self, unit: &Path, table: Option<&'static str>, line: Option<RecordIdentity>) {
         if let Some(skips) = self.units.get_mut(unit) {
             skips.record(table, line);
             return;
@@ -130,7 +147,9 @@ impl Tally {
     /// same ones whatever order parallel readers record them in.
     fn sample(&mut self, skip: Skip) {
         if let Some(sample) = self.samples.iter_mut().find(|sample| {
-            sample.unit == skip.unit && sample.table == skip.table && sample.line == skip.line
+            sample.unit == skip.unit
+                && sample.table == skip.table
+                && sample.identity() == skip.identity()
         }) {
             if sample_order(&skip, sample).is_lt() {
                 *sample = skip;
@@ -155,13 +174,15 @@ impl Tally {
                 self.count(unit, None, None);
             }
             for (table, line) in &skips.records {
-                self.count(unit, *table, Some(*line));
+                self.count(unit, *table, Some(line.clone()));
             }
         }
         self.samples.extend(other.samples.iter().cloned());
         self.samples.sort_by(sample_order);
         self.samples.dedup_by(|right, left| {
-            left.unit == right.unit && left.table == right.table && left.line == right.line
+            left.unit == right.unit
+                && left.table == right.table
+                && left.identity() == right.identity()
         });
         self.samples.truncate(SAMPLES_PER_KIND);
     }
@@ -192,7 +213,7 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
     left.unit
         .cmp(&right.unit)
         .then_with(|| left.table.cmp(&right.table))
-        .then_with(|| left.line.cmp(&right.line))
+        .then_with(|| left.identity().cmp(&right.identity()))
         .then_with(|| left.detail.cmp(&right.detail))
 }
 
@@ -206,6 +227,7 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
 pub struct Diagnostics {
     source: &'static str,
     table: Option<&'static str>,
+    row_id: Option<Arc<str>>,
     state: Arc<Mutex<State>>,
 }
 
@@ -215,6 +237,7 @@ impl Diagnostics {
         Self {
             source,
             table: None,
+            row_id: None,
             state: Arc::new(Mutex::new(State::default())),
         }
     }
@@ -228,6 +251,16 @@ impl Diagnostics {
         Self {
             source: self.source,
             table: Some(table),
+            row_id: self.row_id.clone(),
+            state: Arc::clone(&self.state),
+        }
+    }
+
+    pub fn for_row(&self, id: Option<&str>) -> Self {
+        Self {
+            source: self.source,
+            table: self.table,
+            row_id: id.map(Arc::from),
             state: Arc::clone(&self.state),
         }
     }
@@ -235,10 +268,11 @@ impl Diagnostics {
     pub fn record(&self, mut skip: Skip) {
         if skip.line.is_some() {
             skip.table = skip.table.or(self.table);
+            skip.row_id = skip.row_id.or_else(|| self.row_id.clone());
         }
         let mut state = self.state();
         let tally = &mut state.tallies[skip.kind as usize];
-        tally.count(&skip.unit, skip.table, skip.line);
+        tally.count(&skip.unit, skip.table, skip.identity());
         tally.sample(skip);
     }
 
@@ -348,7 +382,11 @@ impl Diagnostics {
             .table
             .map(|table| format!(":{table}"))
             .unwrap_or_default();
-        let line = skip.line.map(|line| format!(":{line}")).unwrap_or_default();
+        let line = match skip.identity() {
+            Some(RecordIdentity::Line(line)) => format!(":{line}"),
+            Some(RecordIdentity::Row(id)) => format!(":{id}"),
+            None => String::new(),
+        };
         format!(
             "{}: {}: {}{table}{line}: {}",
             self.source,
@@ -386,6 +424,35 @@ mod tests {
             SkipKind::InvalidTimestamp,
             "timestamp 'soon'",
         )
+    }
+
+    #[test]
+    fn stable_database_row_ids_survive_changed_scan_ordinals() {
+        let diagnostics = Diagnostics::new("opencode").for_table("message");
+        for (id, ordinal) in [("row-a", 1), ("row-a", 7), ("row-b", 1)] {
+            diagnostics.for_row(Some(id)).record(Skip::record(
+                Path::new("db.sqlite"),
+                ordinal,
+                SkipKind::InvalidTimestamp,
+                "missing time",
+            ));
+        }
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+        let other = Diagnostics::new("opencode").for_table("message");
+        other.for_row(Some("row-a")).record(Skip::record(
+            Path::new("db.sqlite"),
+            3,
+            SkipKind::InvalidTimestamp,
+            "missing time",
+        ));
+        diagnostics.merge(&other);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+        assert!(
+            diagnostics
+                .render(true, true)
+                .iter()
+                .any(|line| line.contains("message:row-a"))
+        );
     }
 
     #[test]
