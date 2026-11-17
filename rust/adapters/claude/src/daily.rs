@@ -278,8 +278,32 @@ pub(super) struct ClaudeEntry {
     pub(super) cost: f64,
     pub(super) model: Option<String>,
     pub(super) missing_pricing_model: Option<String>,
-    pub(super) stored_cost: Option<f64>,
-    pub(super) records_cost: bool,
+    pub(super) recorded_cost: RecordedCost,
+}
+
+/// A record's `costUSD`: absent, carried but not billed by `--mode`, or billed.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum RecordedCost {
+    Absent,
+    Unbilled,
+    Billed(f64),
+}
+
+impl RecordedCost {
+    fn new(cost_usd: Option<f64>, billed: Option<f64>) -> Self {
+        match (cost_usd, billed) {
+            (None, _) => Self::Absent,
+            (Some(_), None) => Self::Unbilled,
+            (Some(_), Some(cost)) => Self::Billed(cost),
+        }
+    }
+
+    fn billed(self) -> Option<f64> {
+        match self {
+            Self::Billed(cost) => Some(cost),
+            Self::Absent | Self::Unbilled => None,
+        }
+    }
 }
 
 impl DedupEntry for ClaudeEntry {
@@ -312,7 +336,7 @@ impl DedupEntry for ClaudeEntry {
     }
 
     fn records_cost(&self) -> bool {
-        self.records_cost
+        !matches!(self.recorded_cost, RecordedCost::Absent)
     }
 }
 
@@ -357,8 +381,7 @@ impl ParsedUsage {
             usage: self.usage,
             cost: self.cost,
             missing_pricing_model: self.missing_pricing_model,
-            stored_cost: self.stored_cost,
-            records_cost: self.cost_usd.is_some(),
+            recorded_cost: RecordedCost::new(self.cost_usd, self.stored_cost),
         }
     }
 }
@@ -893,7 +916,7 @@ impl DailyAccumulator {
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
             }
-            breakdown.add_stored_cost(entry.stored_cost);
+            breakdown.add_stored_cost(entry.recorded_cost.billed());
         }
     }
 
@@ -1819,8 +1842,7 @@ mod tests {
             cost: 0.0,
             model: Some("claude-sonnet-4-20250514".to_string()),
             missing_pricing_model: None,
-            stored_cost: None,
-            records_cost: false,
+            recorded_cost: super::RecordedCost::Absent,
         }
     }
 
