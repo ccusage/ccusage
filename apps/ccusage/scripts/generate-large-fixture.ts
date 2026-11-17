@@ -7,7 +7,7 @@
 // value synthesized. Parser cost depends on those shapes (null-valued fields,
 // nested usage, escaped strings, non-usage lines), so a fixture made of
 // uniform padded usage lines hides regressions that real logs expose.
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 
@@ -796,12 +796,11 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 	}
 }
 
-function assertSafeDeletionTarget(directory: string, flagName: string): string {
-	const resolved = resolve(directory);
-	if (resolved === resolve('/') || resolved === resolve('.') || resolved.length < 5) {
-		throw new Error(`Refusing to delete unsafe ${flagName} path: ${resolved}`);
+async function createEmptyDirectory(directory: string, flagName: string): Promise<void> {
+	await mkdir(directory, { recursive: true });
+	if ((await readdir(directory)).length > 0) {
+		throw new Error(`${flagName} must be absent or empty: ${directory}`);
 	}
-	return resolved;
 }
 
 function paddedNumber(value: number, width: number): string {
@@ -935,12 +934,11 @@ async function generateFixture(
 	format: 'claude' | 'codex',
 	codexLayout: CodexLayout = 'current',
 ): Promise<FixtureResult> {
-	const directory = assertSafeDeletionTarget(
+	await createEmptyDirectory(
 		outputDir,
 		format === 'claude' ? '--output-dir' : '--codex-output-dir',
 	);
 	const fileSizeTargets = createFileSizeTargets(sizeMib * MIB);
-	await rm(directory, { recursive: true, force: true });
 
 	let totalBytes = 0;
 	let diskBytes = 0;
@@ -953,11 +951,11 @@ async function generateFixture(
 		}
 		let file: PlannedFile;
 		if (format === 'claude') {
-			const planned = planClaudeFile(directory, fileIndex, previousSession);
+			const planned = planClaudeFile(outputDir, fileIndex, previousSession);
 			file = planned.file;
 			previousSession = planned.session;
 		} else {
-			file = planCodexFile(directory, fileIndex, codexLayout);
+			file = planCodexFile(outputDir, fileIndex, codexLayout);
 		}
 		const written = await writePlannedFile(file, targetSize);
 		totalBytes += written.bytes;
