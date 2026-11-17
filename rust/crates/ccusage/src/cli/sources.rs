@@ -557,10 +557,15 @@ mod tests {
             codex.shared.timezone.as_deref(),
             Some("America/Los_Angeles")
         );
-        assert_eq!(codex.shared.last, Some(1));
+        assert_eq!(codex.shared.last, Some(std::num::NonZeroU32::MIN));
         assert_eq!(
             codex.shared.since,
-            last_periods_since(PeriodUnit::Week, 1, &today, unified.start_of_week)
+            last_periods_since(
+                PeriodUnit::Week,
+                std::num::NonZeroU32::MIN,
+                &today,
+                unified.start_of_week
+            )
         );
     }
 
@@ -581,7 +586,12 @@ mod tests {
         assert_eq!(unified.start_of_week, WeekDay::Friday);
         assert_eq!(
             codex.shared.since,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Friday)
+            last_periods_since(
+                PeriodUnit::Week,
+                std::num::NonZeroU32::MIN,
+                &today,
+                WeekDay::Friday
+            )
         );
     }
 

@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::{ffi::OsString, num::NonZeroU32};
 
 use serde_json::{Value, json};
 
@@ -463,19 +463,19 @@ fn parses_last_periods_on_period_reports() {
     let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
     let cli = parse(&["ccusage", "claude", "weekly", "--last", "2"]);
     let Command::Weekly(args) = cli else {
         panic!("expected weekly command");
     };
-    assert_eq!(args.shared.last, Some(2));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(2));
 
     let cli = parse(&["ccusage", "codex", "monthly", "--last=3"]);
     let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.shared.last, Some(3));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(3));
 }
 
 #[test]
@@ -485,13 +485,13 @@ fn parses_last_periods_before_the_command_name() {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
     let cli = parse(&["ccusage", "--last", "1"]);
     let Command::All(args) = cli else {
         panic!("expected unified report");
     };
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 }
 
 #[test]
@@ -1111,7 +1111,7 @@ fn parses_top_level_weekly_start_of_week() {
     assert_eq!(args.start_of_week, WeekDay::Wednesday);
     assert!(args.shared.json);
     assert!(args.shared.offline);
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
     let cli = parse(&["ccusage", "weekly", "--start-of-week=friday"]);
     let Command::All(args) = cli else {

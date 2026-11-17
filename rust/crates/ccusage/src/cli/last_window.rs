@@ -42,9 +42,13 @@ mod tests {
 
     use super::*;
 
+    fn periods(count: u32) -> std::num::NonZeroU32 {
+        std::num::NonZeroU32::new(count).unwrap()
+    }
+
     fn shared_with_last(last: u32) -> SharedArgs {
         SharedArgs {
-            last: Some(last),
+            last: Some(periods(last)),
             timezone: Some("UTC".to_string()),
             ..SharedArgs::with_defaults()
         }
@@ -99,15 +103,15 @@ mod tests {
         let today = format_date(utc_now(), Some("UTC"));
         assert_eq!(
             weekly,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Monday)
         );
         assert_eq!(
             cline_weekly,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Monday)
         );
         assert_eq!(
             monthly,
-            last_periods_since(PeriodUnit::Month, 1, &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Month, periods(1), &today, WeekDay::Monday)
         );
     }
 
@@ -121,7 +125,7 @@ mod tests {
         let today = format_date(utc_now(), Some("UTC"));
         assert_eq!(
             since,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Sunday)
+            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Sunday)
         );
     }
 
@@ -135,7 +139,7 @@ mod tests {
         let today = format_date(utc_now(), Some("UTC"));
         assert_eq!(
             since,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Wednesday)
+            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Wednesday)
         );
     }
 
@@ -164,7 +168,7 @@ mod tests {
         let today = format_date(utc_now(), Some("UTC"));
         assert_eq!(
             command.shared().unwrap().since,
-            last_periods_since(PeriodUnit::Day, 2, &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Day, periods(2), &today, WeekDay::Monday)
         );
     }
 }

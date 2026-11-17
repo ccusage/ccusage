@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ffi::OsString};
+use std::{collections::BTreeMap, ffi::OsString, num::NonZeroU32};
 
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
@@ -932,13 +932,12 @@ fn parse_date_bound(flag: &str, value: &str) -> Result<String, String> {
     })
 }
 
-fn parse_last_periods(value: &str) -> Result<u32, String> {
-    match value.parse() {
-        Ok(0) | Err(_) => Err(format!(
+fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
+    value.parse().map_err(|_| {
+        format!(
             "Invalid value for --last '{value}'. Expected a whole number of periods, 1 or greater."
-        )),
-        Ok(periods) => Ok(periods),
-    }
+        )
+    })
 }
 
 fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {

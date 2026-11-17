@@ -1,6 +1,9 @@
 use crate::StandardAgent;
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    num::NonZeroU32,
+};
 
 pub enum Command {
     All(AgentCommandArgs),
@@ -62,7 +65,7 @@ pub struct SharedArgs {
     pub until: Option<String>,
     /// Number of most recent report periods to keep, resolved into `since` by
     /// the binary once the report's calendar unit is known.
-    pub last: Option<u32>,
+    pub last: Option<NonZeroU32>,
     pub json: bool,
     pub mode: CostMode,
     pub debug: bool,
