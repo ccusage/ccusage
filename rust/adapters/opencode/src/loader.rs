@@ -434,7 +434,7 @@ fn scan_rows<T>(
     table: Table,
     unreadable: &'static str,
     read: impl Fn(&sqlite::Statement<'_>) -> std::result::Result<Option<T>, UnreadableRow>,
-    mut visit: impl FnMut(&Path, u32, T),
+    mut visit: impl FnMut(u32, T),
 ) -> u32 {
     let unit = context.db_path;
     let diagnostics = context.diagnostics.for_table(table.name());
@@ -444,7 +444,7 @@ fn scan_rows<T>(
             Ok(sqlite::State::Row) => {
                 row = row.saturating_add(1);
                 match read(&statement) {
-                    Ok(Some(value)) => visit(unit, row, value),
+                    Ok(Some(value)) => visit(row, value),
                     Ok(None) => {}
                     Err(UnreadableRow) => diagnostics.record(Skip::record(
                         unit,
@@ -515,8 +515,7 @@ fn load_message_rows(
                 data: statement.read(2)?,
             }))
         },
-        |unit,
-         row,
+        |row,
          MessageRecord {
              id,
              session_id,
@@ -530,7 +529,7 @@ fn load_message_rows(
             }
             let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
                 data.as_bytes(),
-                unit,
+                context.db_path,
                 row,
                 &diagnostics,
                 Some(|_| true),
@@ -547,7 +546,9 @@ fn load_message_rows(
             ) {
                 Ok(Some(entry)) => collector.push_message((entry, None)),
                 Ok(None) => {}
-                Err(MissingTimestamp) => record_missing_timestamp(&diagnostics, unit, row),
+                Err(MissingTimestamp) => {
+                    record_missing_timestamp(&diagnostics, context.db_path, row)
+                }
             }
         },
     );
@@ -613,7 +614,7 @@ fn load_session_message_rows(
         schema.table,
         COLUMN_READ_FAILED,
         SessionMessageRecord::read,
-        |unit, row, record| {
+        |row, record| {
             // Copies neither count nor mark the fork as covered:
             // the fork's `session_v2` counters start at zero and
             // only hold fork-local usage, so they stay a valid
@@ -653,14 +654,14 @@ fn load_session_message_rows(
                 Ok(Some(linked)) => linked,
                 Ok(None) => return,
                 Err(SessionMessageError::MissingTimestamp) => {
-                    record_missing_timestamp(&diagnostics, unit, row);
+                    record_missing_timestamp(&diagnostics, context.db_path, row);
                     return;
                 }
                 Err(SessionMessageError::Decode(error)) => {
                     jsonl::record_decode_error(
                         data.as_bytes(),
                         error,
-                        unit,
+                        context.db_path,
                         row,
                         false,
                         &diagnostics,
@@ -948,7 +949,7 @@ fn load_session_aggregate_entries(
                 cost: read_f64(statement, 2),
             }))
         },
-        |unit, row, aggregate| match session_value_to_entry(
+        |row, aggregate| match session_value_to_entry(
             aggregate,
             context.tz,
             context.mode,
@@ -956,7 +957,7 @@ fn load_session_aggregate_entries(
         ) {
             Ok(Some(entry)) => entries.push(entry),
             Ok(None) => {}
-            Err(MissingTimestamp) => record_missing_timestamp(&diagnostics, unit, row),
+            Err(MissingTimestamp) => record_missing_timestamp(&diagnostics, context.db_path, row),
         },
     );
     entries
