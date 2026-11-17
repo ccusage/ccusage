@@ -49,9 +49,7 @@ static SESSION_META_MARKER: LazyLock<LinePrefilter> =
     LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_DEFAULT_MODEL: &str = "gpt-5";
-// NOTE(2026-09-17, #1753): auto-review routing changes independently of public
-// model releases, so a new entry needs evidence of the routing change, not just
-// a catalog release.
+// NOTE(2026-09-17, #1753): auto-review routing changes independently of public model releases, so a new entry needs evidence of the routing change, not just a catalog release.
 const CODEX_AUTO_REVIEW_FALLBACKS: &[CodexAutoReviewFallback] = &[
     CodexAutoReviewFallback::new("2026-07-30", "gpt-5.6-luna"),
     CodexAutoReviewFallback::new("2026-03-05", "gpt-5.4"),

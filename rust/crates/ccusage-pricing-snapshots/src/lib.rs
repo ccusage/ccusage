@@ -7,7 +7,6 @@
 //! refresh recompiles this crate and the binary rather than `ccusage-core` and
 //! every adapter built on it.
 
-/// LiteLLM pricing, filtered to the model families ccusage prices offline.
 pub const LITELLM_PRICING: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/litellm-pricing.json.deflate"));
 

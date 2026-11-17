@@ -31,7 +31,6 @@ struct PiLine {
     message: Option<PiMessage>,
 }
 
-/// The first line of a pi session file.
 #[derive(Debug, Deserialize)]
 struct PiHeaderLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]

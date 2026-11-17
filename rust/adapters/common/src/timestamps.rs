@@ -4,16 +4,12 @@ use ccusage_core::TimestampMs;
 
 const SECONDS_BELOW: i64 = 10_000_000_000;
 
-/// When `path` was last modified, or `None` when the file system cannot say.
 pub fn file_mtime(path: &Path) -> Option<TimestampMs> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
     let millis = modified.duration_since(UNIX_EPOCH).ok()?.as_millis();
     i64::try_from(millis).ok().map(TimestampMs::from_millis)
 }
 
-/// A positive epoch number whose unit the source does not fix: seconds when
-/// that is before the year 2286, milliseconds otherwise. A source that always
-/// writes one unit converts with that unit instead.
 pub fn epoch_secs_or_millis(raw: i64) -> Option<TimestampMs> {
     if raw <= 0 {
         return None;

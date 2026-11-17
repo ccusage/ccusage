@@ -82,10 +82,7 @@ static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
             SignatureScheme::RSA_PSS_SHA256,
             &[algs::RSA_PSS_2048_8192_SHA256_LEGACY_KEY],
         ),
-        // NOTE(2026-11-17, rustls 0.23.46): the ClientHello signature_algorithms
-        // list is built from these schemes and no signature_algorithms_cert is
-        // sent, so in TLS 1.3 it also governs certificate-chain signatures. Keep
-        // the PKCS#1 schemes although TLS 1.3 CertificateVerify never uses them.
+        // NOTE(2026-11-17, rustls 0.23.46): the ClientHello signature_algorithms list is built from these schemes and no signature_algorithms_cert is sent, so in TLS 1.3 it also governs certificate-chain signatures. Keep the PKCS#1 schemes although TLS 1.3 CertificateVerify never uses them.
         (
             SignatureScheme::RSA_PKCS1_SHA512,
             &[algs::RSA_PKCS1_2048_8192_SHA512],

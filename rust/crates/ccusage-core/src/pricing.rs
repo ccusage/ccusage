@@ -29,7 +29,6 @@ const ULTRAFAST_MULTIPLIER_OVERRIDES_JSON: &str =
 /// crate and every adapter built on it.
 #[derive(Clone, Copy, Debug)]
 pub struct EmbeddedSnapshots {
-    /// LiteLLM pricing, filtered to the model families priced offline.
     pub litellm_pricing: &'static [u8],
     /// The committed models.dev pricing snapshot.
     pub models_dev_pricing: &'static [u8],
@@ -2474,11 +2473,6 @@ fn fetch_models_dev_json(load: &mut dyn FnMut(&str) -> bool) -> std::io::Result<
     fetch_json_url(MODELS_DEV_API_URL, load)
 }
 
-/// Fetches a pricing document over HTTP and hands its body to `load`.
-///
-/// `load` returns whether the body priced at least one model. That is the only
-/// validation a body gets, so a fetcher that caches responses must keep only
-/// bodies `load` accepted, and drop a cached body it rejects.
 pub type JsonFetcher = fn(&str, &mut dyn FnMut(&str) -> bool) -> std::io::Result<()>;
 
 static JSON_FETCHER: OnceLock<JsonFetcher> = OnceLock::new();
@@ -4528,8 +4522,6 @@ mod tests {
             .expect(
                 "the embedded models.dev snapshot should price a model the primary table misses",
             );
-        // The offline embedded fallback resolves it; a bare map without the
-        // fallback flag must not.
         assert!(offline.find(model).is_some());
         assert!(PricingMap::default().find(model).is_none());
     }

@@ -104,10 +104,6 @@ fn load_directories(
         let mut files = Vec::new();
         collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
 
-        // Message files are stored as `storage/message/<sessionID>/<messageID>.json`,
-        // so a stem an earlier source already claimed names a file the id dedup
-        // would discard; skipping it saves the read. Files without a usable stem
-        // are parsed normally.
         files.retain(|file| {
             file.file_stem()
                 .and_then(|stem| stem.to_str())
@@ -127,8 +123,6 @@ fn load_directories(
     collector.finish()
 }
 
-/// Every entry the configured directories yield, in load order, where the
-/// first entry to carry a message id keeps it.
 #[derive(Default)]
 struct EntryCollector {
     claimed_ids: HashSet<String>,
@@ -347,12 +341,9 @@ impl Table {
     }
 }
 
-/// What one table of an OpenCode database offers, read once per database.
 struct TableSchema {
     table: Table,
     columns: HashSet<String>,
-    /// Whether `time_created` exists and a sample of it looks like Unix
-    /// milliseconds, the scale the payload's `time.created` uses.
     millis_scaled: bool,
 }
 
@@ -410,9 +401,6 @@ impl TableSchema {
         }
     }
 
-    /// The window to push into SQL. A `time_created` that is missing or not
-    /// millisecond-scaled leaves filtering to the payload check, which stays
-    /// authoritative either way.
     fn pushdown(&self, context: &DatabaseLoadContext<'_>) -> DateWindow {
         if context.window.is_unbounded() {
             return DateWindow::UNBOUNDED;
@@ -432,7 +420,6 @@ impl TableSchema {
     }
 }
 
-/// A row whose columns do not have the types the scan reads.
 struct UnreadableRow;
 
 impl From<sqlite::Error> for UnreadableRow {
@@ -441,8 +428,6 @@ impl From<sqlite::Error> for UnreadableRow {
     }
 }
 
-/// Steps `statement` to its end, handing every row `read` accepts to `visit`
-/// and recording the rows it cannot read. Returns the number of rows stepped.
 fn scan_rows<T>(
     mut statement: sqlite::Statement<'_>,
     context: &DatabaseLoadContext<'_>,
@@ -1147,15 +1132,6 @@ fn prepare_message_query(
 /// needs at least 12 digits, while second-scale values stay far below it.
 const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 
-/// Reports whether a sample of `table.time_created` looks like Unix
-/// milliseconds, the scale the payload's `time.created` uses.
-///
-/// Sampling keeps this cheap on databases tens of gigabytes in size, and proves
-/// nothing about the rows it did not read: a column with mixed scales can still
-/// slip through, and matching scales say nothing about matching values. What it
-/// does catch is a build that stored seconds, or left the column at zero, where
-/// millisecond bounds would otherwise exclude every row — those disable the
-/// push-down and leave the payload check to filter.
 fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table) -> bool {
     let Ok(mut statement) = connection.prepare(format!(
         "SELECT max(time_created) FROM (SELECT time_created FROM {} LIMIT 8)",
@@ -1620,8 +1596,6 @@ mod tests {
         statement.next().unwrap();
     }
 
-    // Pre-SQLite-era layout: no `time_created` column, so the loader cannot
-    // push the window into SQL and scans unfiltered.
     fn create_db_message_legacy_schema(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
         db.execute("CREATE TABLE IF NOT EXISTS message (id TEXT, session_id TEXT, data TEXT)")

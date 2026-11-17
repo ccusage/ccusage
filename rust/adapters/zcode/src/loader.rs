@@ -204,9 +204,7 @@ fn table_columns(
     connection: &sqlite::Connection,
     table: &str,
 ) -> std::result::Result<HashSet<String>, UnitError> {
-    // NOTE(2026-11-17, #977): the bundled SQLite is built with
-    // SQLITE_OMIT_SCHEMA_PRAGMAS (.cargo/config.toml), so `PRAGMA table_info`
-    // silently returns no rows; column names come from a statement instead.
+    // NOTE(2026-11-17, #977): the bundled SQLite is built with SQLITE_OMIT_SCHEMA_PRAGMAS (.cargo/config.toml), so `PRAGMA table_info` silently returns no rows; column names come from a statement instead.
     let statement = connection
         .prepare(format!("SELECT * FROM \"{table}\" LIMIT 0"))
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;

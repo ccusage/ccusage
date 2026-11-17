@@ -2,7 +2,6 @@ use ccusage_test_support::Fixture;
 
 mod support;
 
-/// The hermetic command with `fixture`'s root as the Claude store.
 fn claude_command(fixture: &Fixture) -> std::process::Command {
     let mut command = support::hermetic_command(fixture.root());
     command.env("CLAUDE_CONFIG_DIR", fixture.root());
@@ -754,7 +753,6 @@ fn bounded_blocks_keep_anchors_from_older_files() {
     );
 }
 
-/// The statusline tests' clock, at `FRESH_MTIME`.
 const NOW: &str = "2026-09-12T12:00:00Z";
 const NOW_MS: i64 = 1_789_214_400_000;
 const HOUR_MS: i64 = 60 * 60 * 1000;

@@ -32,7 +32,6 @@ pub fn totals_json(rows: &[UsageSummary]) -> Value {
 }
 
 impl Totals {
-    /// The `totals` object of a focused report.
     pub fn to_json(&self) -> Value {
         let mut value = json!({
             "inputTokens": self.input_tokens,
@@ -81,8 +80,6 @@ pub fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool) -> Re
     write_json_or_jq(&value, jq)
 }
 
-/// Pipes `value` through `jq` when a filter is given, and otherwise prints it
-/// pretty to stdout.
 pub fn write_json_or_jq(value: &impl Serialize, jq: Option<&str>) -> Result<()> {
     if let Some(filter) = jq {
         let mut child = std::process::Command::new("jq")

@@ -173,9 +173,6 @@ fn chunk_indexes_by_size<I>(
         .collect()
 }
 
-/// How many workers to run over `items` units of work: one for
-/// `--single-thread`, otherwise the available parallelism, never more than
-/// there are items and never zero.
 pub fn worker_count(single_thread: bool, items: usize) -> usize {
     if single_thread || items <= 1 {
         return 1;
@@ -185,18 +182,11 @@ pub fn worker_count(single_thread: bool, items: usize) -> usize {
         .min(items)
 }
 
-/// How [`map_parallel`] splits items between workers.
 pub enum Split<I> {
-    /// Balances the sizes of the files the items name, so one large file does
-    /// not leave the other workers idle.
     BySize(fn(&I) -> &Path),
-    /// Gives each worker the same number of items, for work whose cost does
-    /// not grow with file size.
     ByCount,
 }
 
-/// Applies `map` to every item, on up to [`worker_count`] threads, and
-/// returns the results in item order.
 pub fn map_parallel<I, T, F>(items: &[I], single_thread: bool, split: Split<I>, map: F) -> Vec<T>
 where
     I: Sync,
@@ -239,7 +229,6 @@ where
     results.into_iter().map(|(_, result)| result).collect()
 }
 
-/// A worker's results, or its panic carried on into the caller.
 fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
     handle
         .join()

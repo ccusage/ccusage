@@ -293,7 +293,6 @@ impl UsageSummary {
     }
 }
 
-/// What one report row adds to the report's [`Totals`].
 pub struct TotalsRow<'a> {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -305,7 +304,6 @@ pub struct TotalsRow<'a> {
     pub model_breakdowns: &'a [ModelBreakdown],
 }
 
-/// The totals of a report, computed once for its JSON and its table.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Totals {
     pub input_tokens: u64,
@@ -314,9 +312,7 @@ pub struct Totals {
     pub cache_read_tokens: u64,
     pub total_tokens: u64,
     pub total_cost: f64,
-    /// Present only when the rows' credits add up to more than zero.
     pub credits: Option<f64>,
-    /// See [`crate::unpriced_models`].
     pub unpriced_models: Vec<String>,
 }
 

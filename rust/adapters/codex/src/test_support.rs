@@ -41,8 +41,6 @@ pub(crate) fn load_groups_from_directory(
     load_groups_from_sources(&[directory_source(dir)], shared, kind)
 }
 
-/// The usage events the rollouts under `dir` record after fork replay is
-/// skipped, in file order and without dedupe across files.
 pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
     let diagnostics = Diagnostics::new("codex");
     let files = paths::collect_codex_usage_files(dir, &diagnostics);

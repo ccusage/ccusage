@@ -1,16 +1,11 @@
 use crate::AgentReportKind;
 
-/// What the CLI knows about one built-in agent subcommand.
 #[derive(Debug)]
 pub struct AgentSpec {
     pub id: AgentId,
-    /// The subcommand, as in `ccusage <name> daily`.
     pub name: &'static str,
-    /// The product name messages show.
     pub label: &'static str,
-    /// The reports `ccusage <name> <report>` accepts.
     pub reports: &'static [AgentReportKind],
-    /// Subcommands the agent accepts besides its reports.
     pub extra_commands: &'static [&'static str],
 }
 
@@ -41,7 +36,6 @@ macro_rules! agents {
             $($id,)*
         }
 
-        /// Every built-in agent, in report load order.
         pub const AGENTS: &[AgentSpec] = &[
             $(AgentSpec {
                 id: AgentId::$id,

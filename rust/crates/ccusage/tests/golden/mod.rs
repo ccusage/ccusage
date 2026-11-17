@@ -122,7 +122,6 @@ pub struct Case {
     pub args: Vec<String>,
     pub columns: u16,
     pub stdin: Option<String>,
-    /// Variables set on top of the hermetic environment.
     pub env: Vec<(&'static str, &'static str)>,
 }
 
@@ -280,8 +279,6 @@ pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     .expect("failed to write golden fixture manifest");
 }
 
-/// The hermetic command at the matrix's fixed clock, pointed at the stores
-/// `seeded` names.
 pub fn hermetic_command(root: &Path, seeded: &[(&'static str, PathBuf)], columns: u16) -> Command {
     let mut command = crate::support::hermetic_command(root);
     command

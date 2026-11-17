@@ -233,11 +233,6 @@ pub trait EntrySource: Sync {
         pipeline::run_focused(self, args)
     }
 
-    /// Loads every entry, sorted the way the adapter's reports expect. The
-    /// pipeline shows progress and applies the date window, so the loader does
-    /// neither. A loader that narrows to [`LoadContext::window`] as it reads
-    /// can return nothing while the source has data, which is what
-    /// [`Detection::NonEmptyOrHasData`] is for.
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>>;
 
     fn summarize(
