@@ -527,7 +527,7 @@ impl ccusage_cli::CliConfig for ConfigContext {
         let mut resolved = AgentOptions::default();
         for options in self.option_maps() {
             match agent {
-                "claude" => {
+                "claude" if self.command.report == "daily" => {
                     if let Some(project) = options.daily.clone().project {
                         resolved.claude_project = Some(project);
                     }

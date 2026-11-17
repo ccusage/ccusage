@@ -1370,6 +1370,52 @@ fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> s
 const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
 
 #[test]
+fn configured_project_preserves_base_report_scope() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+    for config in [
+        r#"{"defaults":{"project":"missing"}}"#,
+        r#"{"claude":{"defaults":{"project":"missing"}}}"#,
+        r#"{"commands":{"daily":{"project":"missing"},"weekly":{"project":"missing"},"monthly":{"project":"missing"},"session":{"project":"missing"}}}"#,
+    ] {
+        let path = fixture.write_file("config.json", config);
+        for prefix in [vec![], vec!["claude"]] {
+            for (report, expected) in [
+                ("daily", 0.0),
+                ("monthly", 10.75),
+                ("weekly", 10.75),
+                ("session", 10.75),
+            ] {
+                let output = claude_command(&fixture)
+                    .args(&prefix)
+                    .args([
+                        report,
+                        "--offline",
+                        "--json",
+                        "--mode",
+                        "display",
+                        "--config",
+                    ])
+                    .arg(&path)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(
+                    json["totals"]["totalCost"].as_f64().unwrap_or(0.0),
+                    expected,
+                    "{prefix:?} {report}: {json}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
     let fixture = Fixture::new();
     let _ = fixture.write_file(
