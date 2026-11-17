@@ -560,29 +560,24 @@ fn read_usage_file_with_diagnostics(
     })
 }
 
+/// The top-level `message.usage.iterations` of a line. An AgentProgress line
+/// may carry no top-level message at all.
 #[derive(Debug, Deserialize)]
 struct UsageIterationsEnvelope {
-    message: UsageIterationsMessage,
+    #[serde(default)]
+    message: Option<UsageIterationsMessage>,
 }
 
 #[derive(Debug, Deserialize)]
 struct UsageIterationsMessage {
-    usage: UsageIterations,
+    #[serde(default)]
+    usage: Option<UsageIterations>,
 }
 
 #[derive(Debug, Deserialize)]
 struct UsageIterations {
     #[serde(default)]
-    iterations: Vec<UsageIteration>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UsageIteration {
-    #[serde(rename = "type")]
-    kind: String,
-    model: Option<String>,
-    #[serde(flatten)]
-    usage: GuardedUsage,
+    iterations: Vec<serde_json::Value>,
 }
 
 pub(crate) struct AdvisorUsage {
@@ -590,6 +585,10 @@ pub(crate) struct AdvisorUsage {
     usage: TokenUsageRaw,
 }
 
+/// Reads the advisor turns listed in a line's top-level usage. Only
+/// `advisor_message` iterations with a model are read, so only their members
+/// answer to the null contract; the others are left to core's lenient
+/// iteration reader.
 pub(crate) fn advisor_usages_from_line(
     line: &[u8],
 ) -> std::result::Result<Vec<AdvisorUsage>, Rejection> {
@@ -598,26 +597,31 @@ pub(crate) fn advisor_usages_from_line(
     if !ADVISOR_MARKER.matches(line) {
         return Ok(Vec::new());
     }
-    let Ok(envelope) = deserialize_usage_line::<UsageIterationsEnvelope>(line) else {
-        return Ok(Vec::new());
-    };
-    let iterations = envelope.message.usage.iterations;
-    if iterations.iter().any(|iteration| iteration.usage.has_null) {
-        return Err(Rejection::NullContract);
+    let envelope = deserialize_usage_line::<UsageIterationsEnvelope>(line)?;
+    let iterations = envelope
+        .message
+        .and_then(|message| message.usage)
+        .map(|usage| usage.iterations)
+        .unwrap_or_default();
+    let mut advisors = Vec::new();
+    for iteration in &iterations {
+        let text = |key: &str| iteration.get(key).and_then(serde_json::Value::as_str);
+        let Some(model) = text("model").filter(|model| !model.is_empty()) else {
+            continue;
+        };
+        if text("type") != Some("advisor_message") {
+            continue;
+        }
+        let usage = GuardedUsage::deserialize(iteration).map_err(|_| Rejection::Malformed)?;
+        if usage.has_null {
+            return Err(Rejection::NullContract);
+        }
+        advisors.push(AdvisorUsage {
+            model: model.to_owned(),
+            usage: usage.usage.usage,
+        });
     }
-    Ok(iterations
-        .into_iter()
-        .filter_map(|iteration| {
-            (iteration.kind == "advisor_message")
-                .then_some(iteration.model)
-                .flatten()
-                .filter(|model| !model.is_empty())
-                .map(|model| AdvisorUsage {
-                    model,
-                    usage: iteration.usage.usage.usage,
-                })
-        })
-        .collect())
+    Ok(advisors)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

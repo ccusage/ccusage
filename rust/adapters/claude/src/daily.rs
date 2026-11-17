@@ -985,6 +985,50 @@ mod tests {
     }
 
     #[test]
+    fn guards_only_the_advisor_iterations_it_reads() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"message","input_tokens":1,"output_tokens":1,"cache_read_input_tokens":null}]}}}"#,
+                r#"{"timestamp":"2026-01-02T10:00:01Z","message":{"usage":{"input_tokens":20,"output_tokens":1,"iterations":[{"type":"message","input_tokens":1,"output_tokens":1,"cache_read_input_tokens":null},{"type":"advisor_message","model":"advisor-model","input_tokens":3,"output_tokens":1}]}}}"#,
+            ]
+            .join("\n"),
+        });
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+        let input_tokens = loaded
+            .iter()
+            .map(|entry| entry.usage.input_tokens)
+            .collect::<Vec<_>>();
+        assert_eq!(input_tokens, [10, 20, 3]);
+        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
+    }
+
+    #[test]
+    fn records_a_malformed_advisor_iteration_as_invalid_data() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":"SECRET_CANARY","output_tokens":1}]}}}"#,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &path,
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+        assert!(loaded.is_empty());
+        assert!(!super::has_usage(&path));
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
     fn null_contract_rejections_claude_code_writes_stay_quiet() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": [
