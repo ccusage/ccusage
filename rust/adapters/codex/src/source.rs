@@ -173,7 +173,7 @@ mod diagnostic_tests {
     }
 
     #[test]
-    fn bounded_load_rows_match_the_focused_codex_report() {
+    fn bounded_base_loads_match_focused_codex_daily_and_session_rows() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = |timestamp: &str| {
@@ -188,12 +188,7 @@ mod diagnostic_tests {
         ]);
         let pricing = PricingMap::load_embedded();
         let speed = crate::CodexSpeedPolicy::Forced(crate::CodexServiceTier::Standard);
-        for kind in [
-            AgentReportKind::Daily,
-            AgentReportKind::Weekly,
-            AgentReportKind::Monthly,
-            AgentReportKind::Session,
-        ] {
+        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
             let shared = SharedArgs {
                 offline: true,
                 timezone: Some("UTC".to_owned()),

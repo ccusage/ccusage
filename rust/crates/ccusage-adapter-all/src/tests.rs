@@ -26,7 +26,7 @@ use crate::{
     },
     types::{AgentLoadSpec, AgentRows, Bucket},
 };
-use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+use ccusage_adapter_codex::{self as codex, CodexGroup, CodexModelUsage};
 use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::UnifiedRow};
 use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
@@ -1779,6 +1779,78 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     assert_eq!(session_rows[0].input_tokens, 1_000);
     assert_eq!(session_rows[0].output_tokens, 500);
     assert!((session_rows[0].total_cost - 0.002).abs() < f64::EPSILON);
+}
+
+#[test]
+fn bounded_codex_reports_match_focused_rows_after_unified_bucketing() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    let usage = |timestamp: &str| {
+        json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
+    };
+    let _ = fixture.write_file(
+        "codex/sessions/original.jsonl",
+        usage("2026-01-02T00:00:00.000Z"),
+    );
+    let _ = fixture.write_file("codex/sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
+    let _ = fixture.write_file(
+        "codex/sessions/later.jsonl",
+        usage("2026-01-03T00:00:00.000Z"),
+    );
+    let _env = isolated_agent_env(
+        &fixture,
+        "CODEX_HOME",
+        fixture.path("codex").into_os_string(),
+    );
+    let shared = fixture_shared("20260102", "20260102");
+    let pricing = PricingMap::load_embedded();
+    let speed = codex::resolve_codex_speed(ccusage_cli::CodexSpeed::Auto);
+    for kind in [
+        AgentReportKind::Daily,
+        AgentReportKind::Weekly,
+        AgentReportKind::Monthly,
+        AgentReportKind::Session,
+    ] {
+        let mut focused = codex::load_groups(&shared, kind)
+            .unwrap()
+            .iter()
+            .map(|(period, group)| {
+                codex::unified_row_from_group(period, group, &pricing, speed, shared.mode)
+            })
+            .collect::<Vec<_>>();
+        let mut unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
+            .unwrap()
+            .rows;
+        focused.sort_by(|a, b| a.period.cmp(&b.period));
+        unified.sort_by(|a, b| a.period.cmp(&b.period));
+        assert_eq!(unified.len(), focused.len(), "{kind:?}");
+        for (actual, expected) in unified.iter().zip(&focused) {
+            assert_eq!(
+                (
+                    &actual.period,
+                    actual.input_tokens,
+                    actual.output_tokens,
+                    actual.cache_creation_tokens,
+                    actual.cache_read_tokens,
+                    actual.total_tokens
+                ),
+                (
+                    &expected.period,
+                    expected.input_tokens,
+                    expected.output_tokens,
+                    expected.cache_creation_tokens,
+                    expected.cache_read_tokens,
+                    expected.total_tokens
+                ),
+                "{kind:?}"
+            );
+            assert!(
+                (actual.total_cost - expected.total_cost).abs() < 1e-12,
+                "{kind:?}"
+            );
+            assert_eq!(actual.total_tokens, 110, "{kind:?}");
+        }
+    }
 }
 
 #[test]
