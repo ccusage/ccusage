@@ -58,21 +58,38 @@ function resolveCliRuntime({
 		};
 	}
 
+	const binarySubpath = getNativeBinarySubpath(platform);
 	try {
-		return {
-			args: argv,
-			command: resolvePath(`${packageName}/${getNativeBinarySubpath(platform)}`),
-		};
-	} catch (error) {
-		if (isModuleNotFound(error)) {
+		return { args: argv, command: resolvePath(`${packageName}/${binarySubpath}`) };
+	} catch (binaryError) {
+		if (!isModuleNotFound(binaryError)) {
+			return { errorMessage: cannotResolveMessage(packageName, target, binaryError) };
+		}
+	}
+
+	try {
+		resolvePath(`${packageName}/package.json`);
+	} catch (manifestError) {
+		if (isModuleNotFound(manifestError)) {
 			return {
 				errorMessage: `Missing optional native package "${packageName}@${wrapperVersion}" for ${target}. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
 			};
 		}
-		return {
-			errorMessage: `Cannot resolve native package "${packageName}" for ${target}: ${errorMessage(error)}\n`,
-		};
+		return { errorMessage: cannotResolveMessage(packageName, target, manifestError) };
 	}
+	return {
+		errorMessage: `Native package "${packageName}" for ${target} is installed, but its ${binarySubpath} is missing. Reinstall ccusage.\n`,
+	};
+}
+
+/**
+ * @param {string} packageName
+ * @param {string} target
+ * @param {unknown} error
+ * @returns {string}
+ */
+function cannotResolveMessage(packageName, target, error) {
+	return `Cannot resolve native package "${packageName}" for ${target}: ${errorMessage(error)}\n`;
 }
 
 /**

@@ -81,6 +81,26 @@ void describe(resolveCliRuntime.name, () => {
 		);
 	});
 
+	void it('reports an installed native package whose binary is missing', () => {
+		assert.deepEqual(
+			resolveCliRuntime({
+				arch: 'arm64',
+				argv: ['daily'],
+				platform: 'darwin',
+				resolvePath: (id) => {
+					if (id === '@ccusage/ccusage-darwin-arm64/package.json') {
+						return '/native/package.json';
+					}
+					return throwing('MODULE_NOT_FOUND', `Cannot find module '${id}'`)();
+				},
+			}),
+			{
+				errorMessage:
+					'Native package "@ccusage/ccusage-darwin-arm64" for darwin-arm64 is installed, but its bin/ccusage is missing. Reinstall ccusage.\n',
+			},
+		);
+	});
+
 	void it('reports why an installed native package cannot be resolved', () => {
 		assert.deepEqual(
 			resolveCliRuntime({
