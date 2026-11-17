@@ -12,8 +12,8 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, missing_pricing_model_for_candidates,
+    apply_total_token_fallback, cli::CostMode, fast::LinePrefilter, format_date_tz,
+    missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -453,24 +453,24 @@ fn calculate_kimi_cost(
     pricing: &PricingMap,
     usage: TokenUsageRaw,
 ) -> f64 {
-    match mode {
-        CostMode::Display => 0.0,
-        CostMode::Auto | CostMode::Calculate => {
-            for candidate in model_candidates(entry) {
-                if pricing.find(&candidate).is_some() {
-                    return calculate_cost_for_usage_at(
-                        Some(&candidate),
-                        usage,
-                        None,
-                        Some(entry.timestamp),
-                        CostMode::Calculate,
-                        Some(pricing),
-                    );
-                }
-            }
-            0.0
-        }
-    }
+    let names = model_candidates(entry);
+    let candidates: Vec<_> = names
+        .iter()
+        .map(|name| (name.as_str(), ccusage_core::pricing::MatchKind::Fuzzy))
+        .collect();
+    ccusage_core::cost::price_entry(
+        ccusage_core::cost::EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(entry.timestamp),
+        },
+        Some(pricing),
+    )
+    .cost
 }
 
 fn missing_kimi_pricing(
