@@ -1041,6 +1041,27 @@ exit: 0
       "totalTokens": 39900
     },
     {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "period": "p-gpt5-estimated",
+      "totalTokens": 3410
+    },
+    {
       "agent": "pi",
       "cacheCreationTokens": 50,
       "cacheReadTokens": 2000,
@@ -2849,27 +2870,6 @@ exit: 0
       "outputTokens": 100,
       "period": "tie-0009",
       "totalTokens": 700
-    },
-    {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "period": "p-gpt5-estimated",
-      "totalTokens": 3410
     },
     {
       "agent": "goose",

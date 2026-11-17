@@ -12,7 +12,7 @@ use crate::{
 pub(super) struct ZcodeUsageRow {
     pub(super) id: Option<String>,
     pub(super) session_id: Option<String>,
-    pub(super) started_at: i64,
+    pub(super) started_at: Option<i64>,
     pub(super) model_id: Option<String>,
     pub(super) provider_id: Option<String>,
     pub(super) input_tokens: u64,
@@ -64,9 +64,9 @@ pub(super) fn row_to_entry(
     ) else {
         return Err(RowRejection::InvalidIdentity);
     };
-    if row.started_at <= 0 {
+    let Some(started_at) = row.started_at.filter(|started_at| *started_at > 0) else {
         return Err(RowRejection::InvalidTimestamp);
-    }
+    };
 
     let raw_model = raw_model.trim().to_string();
     let cost_model = pricing_model(
@@ -75,7 +75,7 @@ pub(super) fn row_to_entry(
         pricing,
         pricing_overrides,
     );
-    let timestamp = TimestampMs::from_millis(row.started_at);
+    let timestamp = TimestampMs::from_millis(started_at);
     let project_path = row
         .directory
         .filter(|directory| !directory.trim().is_empty())
@@ -226,7 +226,7 @@ mod tests {
         ZcodeUsageRow {
             id: Some("usage-1".to_string()),
             session_id: Some("session-1".to_string()),
-            started_at: 1_786_909_042_666,
+            started_at: Some(1_786_909_042_666),
             model_id: Some("GLM-5.3".to_string()),
             provider_id: Some("builtin:zai-coding-plan".to_string()),
             input_tokens: 100,
@@ -446,7 +446,7 @@ mod tests {
             ..row()
         };
         let zero_timestamp = ZcodeUsageRow {
-            started_at: 0,
+            started_at: Some(0),
             ..row()
         };
 

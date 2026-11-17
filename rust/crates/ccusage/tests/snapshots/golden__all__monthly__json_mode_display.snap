@@ -140,6 +140,14 @@ exit: 0
           "outputTokens": 3095
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 20480,
+          "cost": 0.30967,
+          "inputTokens": 10382,
+          "modelName": "gpt-5",
+          "outputTokens": 2300
+        },
+        {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 1900,
           "cost": 0.21730000000000002,
@@ -186,14 +194,6 @@ exit: 0
           "inputTokens": 2500,
           "modelName": "[pi] claude-sonnet-4-20250514",
           "outputTokens": 510
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 20480,
-          "cost": 0.0629575,
-          "inputTokens": 10382,
-          "modelName": "gpt-5",
-          "outputTokens": 2300
         },
         {
           "cacheCreationTokens": 0,
@@ -522,7 +522,7 @@ exit: 0
       ],
       "outputTokens": 29966,
       "period": "2025-12",
-      "totalCost": 20.374243499999995,
+      "totalCost": 20.620955999999996,
       "totalTokens": 453350
     },
     {
@@ -1197,7 +1197,7 @@ exit: 0
     "cacheReadTokens": 1312617,
     "inputTokens": 1347380,
     "outputTokens": 58940,
-    "totalCost": 23.998788249999993,
+    "totalCost": 24.245500749999994,
     "totalTokens": 2740119,
     "unpricedModels": [
       "codebuff-mystery-1",

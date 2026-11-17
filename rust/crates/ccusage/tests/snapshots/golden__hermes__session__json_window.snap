@@ -84,10 +84,11 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2500,
-          "cost": 0.0032875,
+          "cost": 0.25,
           "inputTokens": 700,
           "modelName": "gpt-5",
-          "outputTokens": 150
+          "outputTokens": 150,
+          "storedCost": 0.25
         }
       ],
       "modelsUsed": [
@@ -95,7 +96,7 @@ exit: 0
       ],
       "outputTokens": 150,
       "sessionId": "p-gpt5-estimated",
-      "totalCost": 0.0032875,
+      "totalCost": 0.25,
       "totalTokens": 3410
     },
     {
@@ -174,7 +175,7 @@ exit: 0
     "cacheReadTokens": 13045,
     "inputTokens": 3270,
     "outputTokens": 870,
-    "totalCost": 0.032455625,
+    "totalCost": 0.27916812500000004,
     "totalTokens": 17525,
     "unpricedModels": [
       "hermes-mystery-1"

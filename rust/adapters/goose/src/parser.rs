@@ -7,7 +7,7 @@ use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage_at,
     cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
 };
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
 /// Goose stores the per-session model selection as a JSON blob in the
@@ -129,20 +129,13 @@ pub(super) fn row_to_entry(
 }
 
 fn read_token_value(statement: &sqlite::Statement<'_>, index: usize) -> Option<u64> {
-    statement
-        .read::<i64, _>(index)
-        .ok()
+    read_i64(statement, index)
+        .and_then(|value| u64::try_from(value).ok())
         .filter(|value| *value > 0)
-        .map(|value| value as u64)
 }
 
 fn read_timestamp_value(statement: &sqlite::Statement<'_>, index: usize) -> Option<String> {
-    statement.read::<String, _>(index).ok().or_else(|| {
-        statement
-            .read::<i64, _>(index)
-            .ok()
-            .map(|value| value.to_string())
-    })
+    statement.read::<Option<String>, _>(index).ok().flatten()
 }
 
 fn parse_goose_model_config(value: &str) -> Option<String> {

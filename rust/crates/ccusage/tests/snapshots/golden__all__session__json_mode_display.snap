@@ -889,6 +889,29 @@ exit: 0
       "totalTokens": 0
     },
     {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.25,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "period": "p-gpt5-estimated",
+      "totalCost": 0.25,
+      "totalTokens": 3410
+    },
+    {
       "agent": "opencode",
       "cacheCreationTokens": 200,
       "cacheReadTokens": 1000,
@@ -2021,29 +2044,6 @@ exit: 0
       "period": "tie-0009",
       "totalCost": 0.0033,
       "totalTokens": 700
-    },
-    {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0032875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "period": "p-gpt5-estimated",
-      "totalCost": 0.0032875,
-      "totalTokens": 3410
     },
     {
       "agent": "goose",
@@ -5519,7 +5519,7 @@ exit: 0
     "cacheReadTokens": 1323217,
     "inputTokens": 1349408,
     "outputTokens": 59962,
-    "totalCost": 24.782713250000015,
+    "totalCost": 25.029425750000016,
     "totalTokens": 2754489,
     "unpricedModels": [
       "codebuff-mystery-1",

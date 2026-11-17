@@ -277,6 +277,7 @@ dependencies = [
  "ccusage-test-support",
  "serde",
  "serde_json",
+ "sqlite",
 ]
 
 [[package]]

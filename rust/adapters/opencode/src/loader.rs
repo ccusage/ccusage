@@ -1,5 +1,6 @@
 use ccusage_adapter_common::{
     SqliteStage, dir_entries, jsonl, read_units_flat,
+    sqlite::{read_count, read_f64, read_i64},
     units::{UnitError, decode_json},
 };
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -578,10 +579,7 @@ impl SessionMessageRecord {
             session_id,
             kind,
             data: statement.read(3)?,
-            created: statement
-                .read::<i64, _>(4)
-                .ok()
-                .or_else(|| statement.read::<f64, _>(4).ok().map(|value| value as i64)),
+            created: read_i64(statement, 4),
             seq: statement.read::<Option<i64>, _>(5).ok().flatten(),
         }))
     }
@@ -799,7 +797,7 @@ fn fork_copy_cutoff(
     statement.bind((1, parent_id)).ok()?;
     statement.bind((2, parent_message_id)).ok()?;
     let boundary_seq = match statement.next() {
-        Ok(sqlite::State::Row) => statement.read::<i64, _>(0).ok()?,
+        Ok(sqlite::State::Row) => statement.read::<Option<i64>, _>(0).ok().flatten()?,
         _ => return None,
     };
     match boundary_type {
@@ -916,10 +914,7 @@ fn load_session_aggregate_entries(
         "invalid aggregate row",
         |statement| {
             let session_id = statement.read(0)?;
-            let created = read_f64(statement, 1)
-                .filter(|value| value.is_finite())
-                .map(|value| value.trunc() as i64)
-                .ok_or(UnreadableRow)?;
+            let created = read_i64(statement, 1);
             let model = statement.read::<String, _>(8).ok();
             let (model, provider) = parse_session_model(model.as_deref())
                 .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
@@ -928,16 +923,20 @@ fn load_session_aggregate_entries(
                 created,
                 model,
                 provider,
-                input_tokens: read_u64(statement, 3),
-                output_tokens: read_u64(statement, 4),
-                reasoning_tokens: read_u64(statement, 7),
-                cache_read_tokens: read_u64(statement, 5),
-                cache_write_tokens: read_u64(statement, 6),
+                input_tokens: read_count(statement, 3),
+                output_tokens: read_count(statement, 4),
+                reasoning_tokens: read_count(statement, 7),
+                cache_read_tokens: read_count(statement, 5),
+                cache_write_tokens: read_count(statement, 6),
                 cost: read_f64(statement, 2),
             }))
         },
         |row, aggregate| {
-            if !context.window.is_unbounded() && !context.window.contains(aggregate.created) {
+            if !context.window.is_unbounded()
+                && aggregate
+                    .created
+                    .is_none_or(|created| !context.window.contains(created))
+            {
                 return;
             }
             match session_value_to_entry(aggregate, context.tz, context.mode, context.pricing) {
@@ -981,34 +980,6 @@ fn parse_session_model(value: Option<&str>) -> Option<(String, String)> {
         }
     }
     Some((value.to_string(), "unknown".to_string()))
-}
-
-fn read_u64(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
-    statement
-        .read::<i64, _>(index)
-        .ok()
-        .and_then(|value| u64::try_from(value.max(0)).ok())
-        .or_else(|| {
-            statement
-                .read::<f64, _>(index)
-                .ok()
-                .filter(|value| value.is_finite() && *value > 0.0)
-                .map(|value| value.trunc() as u64)
-        })
-        .unwrap_or(0)
-}
-
-fn read_f64(statement: &sqlite::Statement<'_>, index: usize) -> Option<f64> {
-    statement
-        .read::<f64, _>(index)
-        .ok()
-        .filter(|value| value.is_finite())
-        .or_else(|| {
-            statement
-                .read::<i64, _>(index)
-                .ok()
-                .map(|value| value as f64)
-        })
 }
 
 fn entry_id(entry: &LoadedEntry) -> Option<&str> {
@@ -1138,9 +1109,9 @@ fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table)
         return false;
     };
     match statement.next() {
-        Ok(sqlite::State::Row) => statement
-            .read::<i64, _>(0)
-            .is_ok_and(|max| max >= MIN_MILLIS_SCALE),
+        Ok(sqlite::State::Row) => {
+            read_i64(&statement, 0).is_some_and(|max| max >= MIN_MILLIS_SCALE)
+        }
         _ => false,
     }
 }

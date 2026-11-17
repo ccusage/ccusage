@@ -102,19 +102,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 20480,
+          "cost": 0.2855425,
+          "inputTokens": 10382,
+          "modelName": "gpt-5",
+          "outputTokens": 2300
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 2000,
           "cost": 0.05785,
           "inputTokens": 3300,
           "modelName": "gpt-5.5",
           "outputTokens": 630
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 20480,
-          "cost": 0.038829999999999996,
-          "inputTokens": 10382,
-          "modelName": "gpt-5",
-          "outputTokens": 2300
         },
         {
           "cacheCreationTokens": 500,
@@ -536,7 +536,7 @@ exit: 0
       ],
       "outputTokens": 29946,
       "period": "2025-12",
-      "totalCost": 4.734139780000003,
+      "totalCost": 4.980852280000003,
       "totalTokens": 453250
     },
     {
@@ -1228,7 +1228,7 @@ exit: 0
     "cacheReadTokens": 1312587,
     "inputTokens": 1347370,
     "outputTokens": 58920,
-    "totalCost": 8.788517675000005,
+    "totalCost": 9.035230175000004,
     "totalTokens": 2740019,
     "unpricedModels": [
       "GLM-5.3",

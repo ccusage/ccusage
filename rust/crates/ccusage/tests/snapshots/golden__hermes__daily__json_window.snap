@@ -14,20 +14,21 @@ exit: 0
       "messageCount": 18,
       "modelBreakdowns": [
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.25,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150,
+          "storedCost": 0.25
+        },
+        {
           "cacheCreationTokens": 220,
           "cacheReadTokens": 7500,
           "cost": 0.004375,
           "inputTokens": 1150,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 440
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0032875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -44,7 +45,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 670,
-      "totalCost": 0.0100625,
+      "totalCost": 0.25677500000000003,
       "totalTokens": 13200
     },
     {
@@ -95,7 +96,7 @@ exit: 0
     "cacheReadTokens": 13045,
     "inputTokens": 3270,
     "outputTokens": 870,
-    "totalCost": 0.032455625,
+    "totalCost": 0.27916812500000004,
     "totalTokens": 17525,
     "unpricedModels": [
       "hermes-mystery-1"

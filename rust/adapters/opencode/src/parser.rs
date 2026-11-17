@@ -249,7 +249,7 @@ impl OpenCodeUsage {
         Self {
             id: Some(format!("session:{}", aggregate.session_id)),
             session_id: Some(aggregate.session_id),
-            created: Some(aggregate.created),
+            created: aggregate.created,
             model: Some(aggregate.model),
             provider: Some(aggregate.provider),
             tokens: OpenCodeTokens {
@@ -434,7 +434,7 @@ pub(crate) fn session_message_value_to_entry_checked(
 
 pub(crate) struct OpenCodeSessionAggregate {
     pub(crate) session_id: String,
-    pub(crate) created: i64,
+    pub(crate) created: Option<i64>,
     pub(crate) model: String,
     pub(crate) provider: String,
     pub(crate) input_tokens: u64,
@@ -957,7 +957,7 @@ mod tests {
     fn rejects_session_aggregates_without_a_positive_creation_time() {
         let aggregate = OpenCodeSessionAggregate {
             session_id: "session-a".to_string(),
-            created: 0,
+            created: Some(0),
             model: "gpt-test".to_string(),
             provider: "openai".to_string(),
             input_tokens: 10,
@@ -989,7 +989,7 @@ mod tests {
         let entry = session_value_to_entry(
             OpenCodeSessionAggregate {
                 session_id: "session-a".to_string(),
-                created,
+                created: Some(created),
                 model: "deepseek-v4-flash".to_string(),
                 provider: "deepseek".to_string(),
                 input_tokens: 1_000_000,

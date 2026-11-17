@@ -393,6 +393,30 @@ exit: 0
       "totalTokens": 2870
     },
     {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.25,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150,
+          "storedCost": 0.25
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "period": "p-gpt5-estimated",
+      "totalCost": 0.25,
+      "totalTokens": 3410
+    },
+    {
       "agent": "kilo",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
@@ -1760,29 +1784,6 @@ exit: 0
       "totalTokens": 2244
     },
     {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0032875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "period": "p-gpt5-estimated",
-      "totalCost": 0.0032875,
-      "totalTokens": 3410
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 700,
@@ -3104,7 +3105,7 @@ exit: 0
     "cacheReadTokens": 570284,
     "inputTokens": 869845,
     "outputTokens": 34340,
-    "totalCost": 14.794101300000001,
+    "totalCost": 15.0408138,
     "totalTokens": 1484965,
     "unpricedModels": [
       "GLM-5.3",

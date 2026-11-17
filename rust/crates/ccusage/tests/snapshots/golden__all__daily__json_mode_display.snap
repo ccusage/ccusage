@@ -536,6 +536,14 @@ exit: 0
           "outputTokens": 400
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 18030,
+          "cost": 0.28574187500000003,
+          "inputTokens": 7360,
+          "modelName": "gpt-5",
+          "outputTokens": 1507
+        },
+        {
           "cacheCreationTokens": 1500,
           "cacheReadTokens": 33060,
           "cost": 0.2024,
@@ -598,14 +606,6 @@ exit: 0
           "inputTokens": 300,
           "modelName": "copilot-mystery-1",
           "outputTokens": 70
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 18030,
-          "cost": 0.039029375,
-          "inputTokens": 7360,
-          "modelName": "gpt-5",
-          "outputTokens": 1507
         },
         {
           "cacheCreationTokens": 100,
@@ -841,7 +841,7 @@ exit: 0
       ],
       "outputTokens": 19832,
       "period": "2025-12-31",
-      "totalCost": 11.041537374999999,
+      "totalCost": 11.288249874999998,
       "totalTokens": 278963
     },
     {
@@ -1753,7 +1753,7 @@ exit: 0
     "cacheReadTokens": 1312617,
     "inputTokens": 1347380,
     "outputTokens": 58940,
-    "totalCost": 23.99878825,
+    "totalCost": 24.24550075,
     "totalTokens": 2740119,
     "unpricedModels": [
       "codebuff-mystery-1",

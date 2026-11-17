@@ -2,7 +2,12 @@ use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::{SqliteStage, read_units, source::LoadContext, units::UnitError};
+use ccusage_adapter_common::{
+    SqliteStage, read_units,
+    source::LoadContext,
+    sqlite::{read_count, read_i64},
+    units::UnitError,
+};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
@@ -223,13 +228,13 @@ fn read_usage_row(statement: &sqlite::Statement<'_>) -> ZcodeUsageRow {
     ZcodeUsageRow {
         id: read_text_column(statement, 0),
         session_id: read_text_column(statement, 1),
-        started_at: statement.read::<i64, _>(2).unwrap_or(0),
+        started_at: read_i64(statement, 2),
         model_id: read_text_column(statement, 3),
-        input_tokens: read_token_column(statement, 4),
-        output_tokens: read_token_column(statement, 5),
-        cache_creation_input_tokens: read_token_column(statement, 6),
-        cache_read_input_tokens: read_token_column(statement, 7),
-        computed_total_tokens: read_token_column(statement, 8),
+        input_tokens: read_count(statement, 4),
+        output_tokens: read_count(statement, 5),
+        cache_creation_input_tokens: read_count(statement, 6),
+        cache_read_input_tokens: read_count(statement, 7),
+        computed_total_tokens: read_count(statement, 8),
         provider_id: read_text_column(statement, 9),
         directory: read_text_column(statement, 10),
         version: read_text_column(statement, 11),
@@ -238,22 +243,6 @@ fn read_usage_row(statement: &sqlite::Statement<'_>) -> ZcodeUsageRow {
 
 fn read_text_column(statement: &sqlite::Statement<'_>, index: usize) -> Option<String> {
     statement.read::<Option<String>, _>(index).ok().flatten()
-}
-
-fn read_token_column(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
-    statement
-        .read::<i64, _>(index)
-        .map(|value| value.max(0) as u64)
-        .or_else(|_| {
-            statement.read::<f64, _>(index).map(|value| {
-                if value.is_finite() && value > 0.0 {
-                    value.min(u64::MAX as f64).round() as u64
-                } else {
-                    0
-                }
-            })
-        })
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

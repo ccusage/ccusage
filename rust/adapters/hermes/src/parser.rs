@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
+use ccusage_adapter_common::sqlite::{read_count, read_f64};
 use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -47,12 +48,12 @@ pub(super) fn read_session_row(
     statement: &sqlite::Statement<'_>,
 ) -> Result<Option<HermesEntry>, SessionRowError> {
     let provider_raw = statement.read::<String, _>(2).ok();
-    let message_count = read_u64(statement, 4);
-    let input_tokens = read_u64(statement, 5);
-    let output_tokens = read_u64(statement, 6);
-    let cache_read_tokens = read_u64(statement, 7);
-    let cache_creation_tokens = read_u64(statement, 8);
-    let reasoning_tokens = read_u64(statement, 9);
+    let message_count = read_count(statement, 4);
+    let input_tokens = read_count(statement, 5);
+    let output_tokens = read_count(statement, 6);
+    let cache_read_tokens = read_count(statement, 7);
+    let cache_creation_tokens = read_count(statement, 8);
+    let reasoning_tokens = read_count(statement, 9);
     let estimated_cost = read_non_negative_f64(statement, 10);
     let actual_cost = read_non_negative_f64(statement, 11);
     let cost_usd = actual_cost.or(estimated_cost);
@@ -98,34 +99,6 @@ pub(super) fn read_session_row(
         message_count,
         cost_usd,
     }))
-}
-
-fn read_u64(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
-    statement
-        .read::<i64, _>(index)
-        .ok()
-        .and_then(|value| u64::try_from(value.max(0)).ok())
-        .or_else(|| {
-            statement
-                .read::<f64, _>(index)
-                .ok()
-                .filter(|value| value.is_finite() && *value > 0.0)
-                .map(|value| value.trunc() as u64)
-        })
-        .unwrap_or(0)
-}
-
-fn read_f64(statement: &sqlite::Statement<'_>, index: usize) -> Option<f64> {
-    statement
-        .read::<f64, _>(index)
-        .ok()
-        .filter(|value| value.is_finite())
-        .or_else(|| {
-            statement
-                .read::<i64, _>(index)
-                .ok()
-                .map(|value| value as f64)
-        })
 }
 
 fn read_non_negative_f64(statement: &sqlite::Statement<'_>, index: usize) -> Option<f64> {
@@ -274,6 +247,35 @@ fn model_candidates(entry: &HermesEntry, pricing: &PricingMap) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_null_actual_cost_leaves_the_estimated_cost() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT 's1', 'gpt-5', 'openai', 1767312000, 1, 10, 2, 0, 0, 0, 0.25, NULL")
+            .unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+
+        let entry = read_session_row(&statement).unwrap().unwrap();
+
+        assert_eq!(entry.cost_usd, Some(0.25));
+    }
+
+    #[test]
+    fn an_infinite_recorded_cost_is_no_cost_instead_of_a_clamped_integer() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT 's1', 'gpt-5', 'openai', 1767312000, 1, 10, 2, 0, 0, 0, 9e999, 9e999")
+            .unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+
+        let entry = read_session_row(&statement).unwrap().unwrap();
+
+        assert_eq!(entry.cost_usd, None);
+        assert_eq!(entry.usage.input_tokens, 10);
+    }
 
     #[test]
     fn calculates_cost_for_hermes_frontier_models_from_embedded_pricing() {

@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 671244,
     "inputTokens": 1172663,
     "outputTokens": 37582,
-    "totalCost": 15.123121700000002,
+    "totalCost": 15.369834200000001,
     "totalTokens": 1892152,
     "unpricedModels": [
       "GLM-5.3",
@@ -127,21 +127,21 @@ exit: 0
           "storedCost": 0.6000000000000001
         },
         {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 33685,
+          "cost": 0.5851581250000001,
+          "inputTokens": 13620,
+          "modelName": "gpt-5",
+          "outputTokens": 3933,
+          "storedCost": 0.53
+        },
+        {
           "cacheCreationTokens": 250,
           "cacheReadTokens": 15500,
           "cost": 0.36302249999999997,
           "inputTokens": 11644,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 1939
-        },
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 33685,
-          "cost": 0.338445625,
-          "inputTokens": 13620,
-          "modelName": "gpt-5",
-          "outputTokens": 3933,
-          "storedCost": 0.28
         },
         {
           "cacheCreationTokens": 0,
@@ -702,7 +702,7 @@ exit: 0
       ],
       "outputTokens": 37582,
       "period": "2025-12-29",
-      "totalCost": 15.123121700000002,
+      "totalCost": 15.369834200000001,
       "totalTokens": 1892152
     }
   ]

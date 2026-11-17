@@ -569,6 +569,15 @@ exit: 0
           "outputTokens": 1770
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 18030,
+          "cost": 0.303556875,
+          "inputTokens": 7360,
+          "modelName": "gpt-5",
+          "outputTokens": 1507,
+          "storedCost": 0.28
+        },
+        {
           "cacheCreationTokens": 1500,
           "cacheReadTokens": 33060,
           "cost": 0.255788,
@@ -614,15 +623,6 @@ exit: 0
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 645,
           "storedCost": 0.06
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 18030,
-          "cost": 0.056844374999999996,
-          "inputTokens": 7360,
-          "modelName": "gpt-5",
-          "outputTokens": 1507,
-          "storedCost": 0.03
         },
         {
           "cacheCreationTokens": 0,
@@ -884,7 +884,7 @@ exit: 0
       ],
       "outputTokens": 19832,
       "period": "2025-12-31",
-      "totalCost": 11.416471755000002,
+      "totalCost": 11.663184255000001,
       "totalTokens": 278963
     },
     {
@@ -2163,11 +2163,11 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 36335,
-          "cost": 0.67534875,
+          "cost": 0.9220612499999999,
           "inputTokens": 19030,
           "modelName": "gpt-5",
           "outputTokens": 5343,
-          "storedCost": 0.6000000000000001
+          "storedCost": 0.8500000000000001
         },
         {
           "cacheCreationTokens": 0,
@@ -2841,7 +2841,7 @@ exit: 0
       ],
       "outputTokens": 56722,
       "period": "2025-12-29",
-      "totalCost": 24.060766725,
+      "totalCost": 24.307479225,
       "totalTokens": 2724909
     },
     {
@@ -3018,6 +3018,15 @@ exit: 0
           "storedCost": 1.1
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 20480,
+          "cost": 0.32759249999999995,
+          "inputTokens": 10382,
+          "modelName": "gpt-5",
+          "outputTokens": 2300,
+          "storedCost": 0.30000000000000004
+        },
+        {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 1900,
           "cost": 0.21730000000000002,
@@ -3072,15 +3081,6 @@ exit: 0
           "modelName": "[pi] claude-sonnet-4-20250514",
           "outputTokens": 510,
           "storedCost": 0.09000000000000001
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 20480,
-          "cost": 0.08088,
-          "inputTokens": 10382,
-          "modelName": "gpt-5",
-          "outputTokens": 2300,
-          "storedCost": 0.05
         },
         {
           "cacheCreationTokens": 0,
@@ -3422,7 +3422,7 @@ exit: 0
       ],
       "outputTokens": 30066,
       "period": "2025-12",
-      "totalCost": 20.919175779999993,
+      "totalCost": 21.165888279999994,
       "totalTokens": 454450
     },
     {
@@ -5291,6 +5291,30 @@ exit: 0
       "period": "sess-alpha-1",
       "totalCost": 0.28187,
       "totalTokens": 39900
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.25,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150,
+          "storedCost": 0.25
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "period": "p-gpt5-estimated",
+      "totalCost": 0.25,
+      "totalTokens": 3410
     },
     {
       "agent": "pi",
@@ -7293,29 +7317,6 @@ exit: 0
       "period": "tie-0009",
       "totalCost": 0.0033,
       "totalTokens": 700
-    },
-    {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0032875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "period": "p-gpt5-estimated",
-      "totalCost": 0.0032875,
-      "totalTokens": 3410
     },
     {
       "agent": "goose",
@@ -9742,7 +9743,7 @@ exit: 0
     "cacheReadTokens": 1312617,
     "inputTokens": 1348380,
     "outputTokens": 59040,
-    "totalCost": 27.895498675000006,
+    "totalCost": 28.142211175000003,
     "totalTokens": 2741219,
     "unpricedModels": [
       "GLM-5.3",

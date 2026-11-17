@@ -780,20 +780,21 @@ exit: 0
               "storedCost": 1.0
             },
             {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 2500,
+              "cost": 0.25,
+              "inputTokens": 700,
+              "modelName": "gpt-5",
+              "outputTokens": 150,
+              "storedCost": 0.25
+            },
+            {
               "cacheCreationTokens": 220,
               "cacheReadTokens": 7500,
               "cost": 0.004375,
               "inputTokens": 1150,
               "modelName": "claude-haiku-4-5-20251001",
               "outputTokens": 440
-            },
-            {
-              "cacheCreationTokens": 0,
-              "cacheReadTokens": 2500,
-              "cost": 0.0032875,
-              "inputTokens": 700,
-              "modelName": "gpt-5",
-              "outputTokens": 150
             }
           ],
           "modelsUsed": [
@@ -802,7 +803,7 @@ exit: 0
             "gpt-5"
           ],
           "outputTokens": 1120,
-          "totalCost": 1.0111125,
+          "totalCost": 1.257825,
           "totalTokens": 24350
         },
         {
@@ -1312,6 +1313,15 @@ exit: 0
           "storedCost": 1.1
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 20480,
+          "cost": 0.32759249999999995,
+          "inputTokens": 10382,
+          "modelName": "gpt-5",
+          "outputTokens": 2300,
+          "storedCost": 0.30000000000000004
+        },
+        {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 1900,
           "cost": 0.21730000000000002,
@@ -1366,15 +1376,6 @@ exit: 0
           "modelName": "[pi] claude-sonnet-4-20250514",
           "outputTokens": 510,
           "storedCost": 0.09000000000000001
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 20480,
-          "cost": 0.08088,
-          "inputTokens": 10382,
-          "modelName": "gpt-5",
-          "outputTokens": 2300,
-          "storedCost": 0.05
         },
         {
           "cacheCreationTokens": 0,
@@ -1716,7 +1717,7 @@ exit: 0
       ],
       "outputTokens": 30066,
       "period": "2025-12",
-      "totalCost": 20.919175779999993,
+      "totalCost": 21.165888279999994,
       "totalTokens": 454450
     },
     {
@@ -3687,7 +3688,7 @@ exit: 0
     "cacheReadTokens": 1312617,
     "inputTokens": 1348380,
     "outputTokens": 59040,
-    "totalCost": 27.895498674999992,
+    "totalCost": 28.142211174999993,
     "totalTokens": 2741219,
     "unpricedModels": [
       "GLM-5.3",

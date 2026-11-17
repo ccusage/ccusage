@@ -15,6 +15,8 @@ pub mod pipeline;
 pub mod report;
 pub mod rows;
 pub mod source;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 #[cfg(test)]
 mod test_source;
 #[cfg(any(test, feature = "testing"))]

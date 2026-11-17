@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1312617,
     "inputTokens": 1347380,
     "outputTokens": 58940,
-    "totalCost": 23.998788249999997,
+    "totalCost": 24.245500749999994,
     "totalTokens": 2740119,
     "unpricedModels": [
       "codebuff-mystery-1",
@@ -331,20 +331,20 @@ exit: 0
           "outputTokens": 640
         },
         {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 36335,
+          "cost": 0.8714962500000001,
+          "inputTokens": 19030,
+          "modelName": "gpt-5",
+          "outputTokens": 5343
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 452300,
           "cost": 0.640775,
           "inputTokens": 103900,
           "modelName": "gpt-5.5",
           "outputTokens": 2220
-        },
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 36335,
-          "cost": 0.6247837500000001,
-          "inputTokens": 19030,
-          "modelName": "gpt-5",
-          "outputTokens": 5343
         },
         {
           "cacheCreationTokens": 100,
@@ -987,7 +987,7 @@ exit: 0
       ],
       "outputTokens": 56722,
       "period": "2025-12-29",
-      "totalCost": 20.179625749999996,
+      "totalCost": 20.426338249999993,
       "totalTokens": 2724909
     },
     {

@@ -72,6 +72,15 @@ exit: 0
           "outputTokens": 1770
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 18330,
+          "cost": 0.305419375,
+          "inputTokens": 7860,
+          "modelName": "gpt-5",
+          "outputTokens": 1627,
+          "storedCost": 0.28
+        },
+        {
           "cacheCreationTokens": 1500,
           "cacheReadTokens": 33060,
           "cost": 0.255788,
@@ -117,15 +126,6 @@ exit: 0
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 645,
           "storedCost": 0.06
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 18330,
-          "cost": 0.058706875,
-          "inputTokens": 7860,
-          "modelName": "gpt-5",
-          "outputTokens": 1627,
-          "storedCost": 0.03
         },
         {
           "cacheCreationTokens": 0,
@@ -387,7 +387,7 @@ exit: 0
       ],
       "outputTokens": 19952,
       "period": "2025-12-31",
-      "totalCost": 11.418334255000001,
+      "totalCost": 11.665046755,
       "totalTokens": 279883
     },
     {
@@ -929,7 +929,7 @@ exit: 0
     "cacheReadTokens": 671244,
     "inputTokens": 1172663,
     "outputTokens": 37582,
-    "totalCost": 15.123121700000002,
+    "totalCost": 15.369834200000001,
     "totalTokens": 1892152,
     "unpricedModels": [
       "GLM-5.3",

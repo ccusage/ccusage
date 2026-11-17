@@ -504,6 +504,13 @@ exit: 0
           "outputTokens": 1770
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 18030,
+          "inputTokens": 7360,
+          "modelName": "gpt-5",
+          "outputTokens": 1507
+        },
+        {
           "cacheCreationTokens": 1500,
           "cacheReadTokens": 33060,
           "inputTokens": 9320,
@@ -539,13 +546,6 @@ exit: 0
           "inputTokens": 1400,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 645
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 18030,
-          "inputTokens": 7360,
-          "modelName": "gpt-5",
-          "outputTokens": 1507
         },
         {
           "cacheCreationTokens": 0,
