@@ -247,6 +247,31 @@ pub(super) fn parse_session_files_with_diagnostics(
             continue;
         };
 
+        let model_rows = model_usage_rows(usage, meta.default_model.as_deref())
+            .into_iter()
+            .filter_map(|(raw_model, model_usage)| {
+                let (uncached, cache, cache_creation) = split_input_tokens(
+                    model_usage.input_tokens,
+                    model_usage.cached_read_tokens,
+                    model_usage.cache_creation_tokens,
+                );
+                let usage_raw = TokenUsageRaw {
+                    input_tokens: uncached,
+                    output_tokens: model_usage.output_tokens,
+                    cache_creation_input_tokens: cache_creation,
+                    cache_read_input_tokens: cache,
+                    speed: None,
+                    cache_creation: None,
+                };
+                let reasoning_tokens = model_usage.reasoning_tokens;
+                (ccusage_core::utils::total_usage_tokens(usage_raw) + reasoning_tokens > 0)
+                    .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
+            })
+            .collect::<Vec<_>>();
+        if model_rows.is_empty() {
+            continue;
+        }
+
         let event_id = params.meta.as_ref().and_then(|meta| meta.event_id.clone());
         let Some(timestamp_ms) = resolve_timestamp_ms(&line, params.meta.as_ref()) else {
             diagnostics.record(ccusage_core::Skip::record(
@@ -262,32 +287,7 @@ pub(super) fn parse_session_files_with_diagnostics(
             .clone()
             .unwrap_or_else(|| meta.session_id.clone());
 
-        let model_rows = model_usage_rows(usage, meta.default_model.as_deref());
-        for (raw_model, model_usage) in model_rows {
-            let (uncached, cache, cache_creation) = split_input_tokens(
-                model_usage.input_tokens,
-                model_usage.cached_read_tokens,
-                model_usage.cache_creation_tokens,
-            );
-            let output_tokens = model_usage.output_tokens;
-            let reasoning_tokens = model_usage.reasoning_tokens;
-            if uncached == 0
-                && cache == 0
-                && cache_creation == 0
-                && output_tokens == 0
-                && reasoning_tokens == 0
-            {
-                continue;
-            }
-            let usage_raw = TokenUsageRaw {
-                input_tokens: uncached,
-                output_tokens,
-                cache_creation_input_tokens: cache_creation,
-                cache_read_input_tokens: cache,
-                speed: None,
-                cache_creation: None,
-            };
-
+        for (raw_model, model_usage, usage_raw, reasoning_tokens) in model_rows {
             let dedupe_key = GrokDedupeKey::new(
                 event_id.as_deref(),
                 &session_id,
@@ -1002,6 +1002,31 @@ mod tests {
         assert_eq!(
             diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
             1
+        );
+    }
+
+    #[test]
+    fn undated_turn_without_countable_usage_is_not_diagnosed() {
+        let fixture = fs_fixture!({
+            "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0}}}}"#,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/project/session/updates.jsonl"),
+            summary: None,
+        };
+        let diagnostics = Diagnostics::new("grok");
+        let entries = parse_session_files_with_diagnostics(
+            &files,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            &PricingMap::default(),
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(entries.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            0
         );
     }
 
