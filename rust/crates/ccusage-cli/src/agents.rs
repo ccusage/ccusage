@@ -33,13 +33,47 @@ const ALL_REPORTS: &[AgentReportKind] = &[
 macro_rules! agents {
     (@report_label $label:literal) => { $label };
     (@report_label $label:literal, $report_label:literal) => { $report_label };
-    ($($id:ident => $name:literal, $label:literal $(/ $report_label:literal)?, $reports:expr, $extra:expr;)*) => {
+    (
+        $own:ident => $own_name:literal, $own_label:literal $(/ $own_report_label:literal)?, $own_reports:expr, $own_extra:expr;
+        $($id:ident => $name:literal, $label:literal $(/ $report_label:literal)?, $reports:expr, $extra:expr;)*
+    ) => {
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum AgentId {
+            $own,
             $($id,)*
         }
 
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum StandardAgent {
+            $($id,)*
+        }
+
+        impl StandardAgent {
+            pub const fn id(self) -> AgentId {
+                match self {
+                    $(Self::$id => AgentId::$id,)*
+                }
+            }
+        }
+
+        impl AgentId {
+            pub const fn standard(self) -> Option<StandardAgent> {
+                match self {
+                    Self::$own => None,
+                    $(Self::$id => Some(StandardAgent::$id),)*
+                }
+            }
+        }
+
         pub const AGENTS: &[AgentSpec] = &[
+            AgentSpec {
+                id: AgentId::$own,
+                name: $own_name,
+                label: $own_label,
+                report_label: agents!(@report_label $own_label $(, $own_report_label)?),
+                reports: $own_reports,
+                extra_commands: $own_extra,
+            },
             $(AgentSpec {
                 id: AgentId::$id,
                 name: $name,
@@ -51,7 +85,7 @@ macro_rules! agents {
         ];
 
         /// Agent subcommands that ship in the binary, in report load order.
-        pub const BUILT_IN_AGENT_NAMES: &[&str] = &[$($name,)*];
+        pub const BUILT_IN_AGENT_NAMES: &[&str] = &[$own_name, $($name,)*];
     };
 }
 
@@ -97,6 +131,12 @@ impl AgentId {
     }
 }
 
+impl StandardAgent {
+    pub const fn spec(self) -> &'static AgentSpec {
+        self.id().spec()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +146,16 @@ mod tests {
         for spec in AGENTS {
             assert_eq!(spec.id.spec().name, spec.name);
             assert_eq!(AgentId::from_name(spec.name), Some(spec.id));
+        }
+    }
+
+    #[test]
+    fn every_agent_but_claude_takes_the_standard_commands() {
+        for spec in AGENTS {
+            match spec.id.standard() {
+                Some(agent) => assert_eq!(agent.id(), spec.id),
+                None => assert_eq!(spec.id, AgentId::Claude),
+            }
         }
     }
 

@@ -2,7 +2,7 @@ mod agents;
 pub mod home;
 mod types;
 
-pub use agents::{AGENTS, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES};
+pub use agents::{AGENTS, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES, StandardAgent};
 pub use types::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
     CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore, NoConfig, PeriodUnit, PricingOverride,

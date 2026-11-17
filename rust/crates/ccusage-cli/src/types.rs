@@ -1,4 +1,4 @@
-use crate::AgentId;
+use crate::StandardAgent;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -10,7 +10,7 @@ pub enum Command {
     Session(SessionArgs),
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
-    Agent(AgentId, AgentCommandArgs),
+    Agent(StandardAgent, AgentCommandArgs),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

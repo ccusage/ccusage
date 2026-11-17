@@ -427,7 +427,7 @@ fn parses_last_periods_on_period_reports() {
     assert_eq!(args.shared.last, Some(2));
 
     let cli = parse(&["ccusage", "codex", "monthly", "--last=3"]);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.shared.last, Some(3));
@@ -879,7 +879,7 @@ fn applies_agent_namespace_config_to_codex_speed() {
     };
 
     let cli = parse_with_config(&["ccusage", "codex", "daily"], &config);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Fast);
@@ -905,7 +905,7 @@ fn applies_config_file_passed_after_agent_command() {
         ],
         &config,
     );
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.kind, AgentReportKind::Monthly);
@@ -957,13 +957,13 @@ fn applies_schema_documented_config_file_options() {
     assert_eq!(args.refresh_interval, 3);
 
     let cli = parse_with_config(&["ccusage", "pi", "daily"], &config);
-    let Command::Agent(AgentId::Pi, args) = cli else {
+    let Command::Agent(StandardAgent::Pi, args) = cli else {
         panic!("expected pi command");
     };
     assert_eq!(args.pi_path.as_deref(), Some("/tmp/pi-sessions"));
 
     let cli = parse_with_config(&["ccusage", "openclaw", "daily"], &config);
-    let Command::Agent(AgentId::OpenClaw, args) = cli else {
+    let Command::Agent(StandardAgent::OpenClaw, args) = cli else {
         panic!("expected openclaw command");
     };
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
@@ -1431,7 +1431,7 @@ fn parses_statusline_options() {
 #[test]
 fn parses_codex_default_daily_options() {
     let cli = parse(&["ccusage", "codex", "--json", "--since", "20260102"]);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
@@ -1442,7 +1442,7 @@ fn parses_codex_default_daily_options() {
 #[test]
 fn parses_codex_speed_option() {
     let cli = parse(&["ccusage", "codex", "daily", "--speed", "fast"]);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Fast);
@@ -1451,7 +1451,7 @@ fn parses_codex_speed_option() {
 #[test]
 fn parses_codex_flex_speed_option() {
     let cli = parse(&["ccusage", "codex", "daily", "--speed", "flex"]);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Flex);
@@ -1472,7 +1472,7 @@ fn rejects_removed_codex_by_source_option() {
 #[test]
 fn parses_legacy_colon_agent_commands() {
     let cli = parse(&["ccusage", "codex:monthly", "--json"]);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.kind, AgentReportKind::Monthly);
@@ -1536,7 +1536,7 @@ fn parses_codex_session_id_filter() {
         "--id",
         "01a0bb8c-c7c0-7630-9d82-860b875930f0",
     ]);
-    let Command::Agent(AgentId::Codex, args) = cli else {
+    let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex session command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1557,7 +1557,7 @@ fn rejects_codex_id_filter_outside_session_report() {
 #[test]
 fn parses_opencode_weekly_options() {
     let cli = parse(&["ccusage", "opencode", "weekly", "--json"]);
-    let Command::Agent(AgentId::OpenCode, args) = cli else {
+    let Command::Agent(StandardAgent::OpenCode, args) = cli else {
         panic!("expected opencode command");
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
@@ -1572,7 +1572,7 @@ fn parses_opencode_include_claude_agent_on_every_report() {
         argv.extend(report);
         argv.extend(["--include-claude-agent", "--json"]);
         let cli = parse(&argv);
-        let Command::Agent(AgentId::OpenCode, args) = cli else {
+        let Command::Agent(StandardAgent::OpenCode, args) = cli else {
             panic!("expected opencode command");
         };
         assert!(args.include_claude_agent, "{report:?}");
@@ -1593,7 +1593,7 @@ fn parses_cline_standard_reports() {
         ("session", AgentReportKind::Session),
     ] {
         let cli = parse(&["ccusage", "cline", report, "--json"]);
-        let Command::Agent(AgentId::Cline, args) = cli else {
+        let Command::Agent(StandardAgent::Cline, args) = cli else {
             panic!("expected cline {report} command");
         };
 
@@ -1611,7 +1611,7 @@ fn parses_dsh_standard_reports() {
         ("session", AgentReportKind::Session),
     ] {
         let cli = parse(&["ccusage", "dsh", report, "--json"]);
-        let Command::Agent(AgentId::Dsh, args) = cli else {
+        let Command::Agent(StandardAgent::Dsh, args) = cli else {
             panic!("expected dsh {report} command");
         };
 
@@ -1623,7 +1623,7 @@ fn parses_dsh_standard_reports() {
 #[test]
 fn parses_amp_session_options() {
     let cli = parse(&["ccusage", "amp", "session", "--json"]);
-    let Command::Agent(AgentId::Amp, args) = cli else {
+    let Command::Agent(StandardAgent::Amp, args) = cli else {
         panic!("expected amp command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1633,7 +1633,7 @@ fn parses_amp_session_options() {
 #[test]
 fn parses_droid_session_options() {
     let cli = parse(&["ccusage", "droid", "session", "--json"]);
-    let Command::Agent(AgentId::Droid, args) = cli else {
+    let Command::Agent(StandardAgent::Droid, args) = cli else {
         panic!("expected droid command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1643,7 +1643,7 @@ fn parses_droid_session_options() {
 #[test]
 fn parses_codebuff_session_options() {
     let cli = parse(&["ccusage", "codebuff", "session", "--json"]);
-    let Command::Agent(AgentId::Codebuff, args) = cli else {
+    let Command::Agent(StandardAgent::Codebuff, args) = cli else {
         panic!("expected codebuff command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1653,7 +1653,7 @@ fn parses_codebuff_session_options() {
 #[test]
 fn parses_qwen_session_options() {
     let cli = parse(&["ccusage", "qwen", "session", "--json"]);
-    let Command::Agent(AgentId::Qwen, args) = cli else {
+    let Command::Agent(StandardAgent::Qwen, args) = cli else {
         panic!("expected qwen command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1670,7 +1670,7 @@ fn parses_pi_session_options() {
         "--pi-path",
         "/tmp/pi-sessions",
     ]);
-    let Command::Agent(AgentId::Pi, args) = cli else {
+    let Command::Agent(StandardAgent::Pi, args) = cli else {
         panic!("expected pi command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1681,7 +1681,7 @@ fn parses_pi_session_options() {
 #[test]
 fn parses_kilo_session_options() {
     let cli = parse(&["ccusage", "kilo", "session", "--json"]);
-    let Command::Agent(AgentId::Kilo, args) = cli else {
+    let Command::Agent(StandardAgent::Kilo, args) = cli else {
         panic!("expected kilo command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1691,7 +1691,7 @@ fn parses_kilo_session_options() {
 #[test]
 fn parses_goose_session_options() {
     let cli = parse(&["ccusage", "goose", "session", "--json"]);
-    let Command::Agent(AgentId::Goose, args) = cli else {
+    let Command::Agent(StandardAgent::Goose, args) = cli else {
         panic!("expected goose command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1701,7 +1701,7 @@ fn parses_goose_session_options() {
 #[test]
 fn parses_copilot_session_options() {
     let cli = parse(&["ccusage", "copilot", "session", "--json"]);
-    let Command::Agent(AgentId::Copilot, args) = cli else {
+    let Command::Agent(StandardAgent::Copilot, args) = cli else {
         panic!("expected copilot command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1711,7 +1711,7 @@ fn parses_copilot_session_options() {
 #[test]
 fn parses_gemini_session_options() {
     let cli = parse(&["ccusage", "gemini", "session", "--json"]);
-    let Command::Agent(AgentId::Gemini, args) = cli else {
+    let Command::Agent(StandardAgent::Gemini, args) = cli else {
         panic!("expected gemini command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1721,7 +1721,7 @@ fn parses_gemini_session_options() {
 #[test]
 fn parses_kimi_session_options() {
     let cli = parse(&["ccusage", "kimi", "session", "--json"]);
-    let Command::Agent(AgentId::Kimi, args) = cli else {
+    let Command::Agent(StandardAgent::Kimi, args) = cli else {
         panic!("expected kimi command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1738,7 +1738,7 @@ fn parses_openclaw_session_options() {
         "--open-claw-path",
         "/tmp/openclaw",
     ]);
-    let Command::Agent(AgentId::OpenClaw, args) = cli else {
+    let Command::Agent(StandardAgent::OpenClaw, args) = cli else {
         panic!("expected openclaw command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1749,7 +1749,7 @@ fn parses_openclaw_session_options() {
 #[test]
 fn parses_grok_daily_options() {
     let cli = parse(&["ccusage", "grok", "daily", "--json"]);
-    let Command::Agent(AgentId::Grok, args) = cli else {
+    let Command::Agent(StandardAgent::Grok, args) = cli else {
         panic!("expected grok command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
@@ -1759,7 +1759,7 @@ fn parses_grok_daily_options() {
 #[test]
 fn parses_zcode_daily_options() {
     let cli = parse(&["ccusage", "zcode", "daily", "--json"]);
-    let Command::Agent(AgentId::ZCode, args) = cli else {
+    let Command::Agent(StandardAgent::ZCode, args) = cli else {
         panic!("expected zcode command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);

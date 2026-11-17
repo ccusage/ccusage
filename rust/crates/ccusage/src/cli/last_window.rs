@@ -78,15 +78,15 @@ mod tests {
     #[test]
     fn resolves_agent_report_kinds_to_their_own_period() {
         let weekly = resolved_since(Command::Agent(
-            ccusage_cli::AgentId::Codex,
+            ccusage_cli::StandardAgent::Codex,
             agent_command(AgentReportKind::Weekly, 1),
         ));
         let cline_weekly = resolved_since(Command::Agent(
-            ccusage_cli::AgentId::Cline,
+            ccusage_cli::StandardAgent::Cline,
             agent_command(AgentReportKind::Weekly, 1),
         ));
         let monthly = resolved_since(Command::Agent(
-            ccusage_cli::AgentId::Codex,
+            ccusage_cli::StandardAgent::Codex,
             agent_command(AgentReportKind::Monthly, 1),
         ));
 

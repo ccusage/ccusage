@@ -5,7 +5,7 @@ use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command,
     CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SharedArgs, SortOrder,
-    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -190,18 +190,20 @@ fn parse_agent_command(
     default_session_duration_hours: f64,
     offline_override: Option<bool>,
 ) -> Result<Command, String> {
-    match agent {
-        AgentId::Claude => parse_claude_command(
+    let Some(agent) = agent.standard() else {
+        return parse_claude_command(
             parser,
             shared,
             config,
             default_session_duration_hours,
             offline_override,
-        ),
-        AgentId::Codex => parse_codex_command(parser, shared, config),
-        AgentId::OpenCode => parse_opencode_command(parser, shared),
-        AgentId::Pi => parse_pi_command(parser, shared, config),
-        AgentId::OpenClaw => parse_openclaw_command(parser, shared, config),
+        );
+    };
+    match agent {
+        StandardAgent::Codex => parse_codex_command(parser, shared, config),
+        StandardAgent::OpenCode => parse_opencode_command(parser, shared),
+        StandardAgent::Pi => parse_pi_command(parser, shared, config),
+        StandardAgent::OpenClaw => parse_openclaw_command(parser, shared, config),
         _ => parse_basic_agent_command(parser, shared, agent),
     }
 }
@@ -518,7 +520,7 @@ fn parse_claude_command(
 fn parse_basic_agent_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
-    agent: AgentId,
+    agent: StandardAgent,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, agent)?;
     while parser.peek().is_some() {
@@ -531,7 +533,7 @@ fn parse_opencode_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, AgentId::OpenCode)?;
+    let kind = parse_agent_report_kind(parser, StandardAgent::OpenCode)?;
     let mut include_claude_agent = false;
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
@@ -543,7 +545,7 @@ fn parse_opencode_command(
         }
     }
     Ok(Command::Agent(
-        AgentId::OpenCode,
+        StandardAgent::OpenCode,
         AgentCommandArgs {
             include_claude_agent,
             ..agent_command_args(shared, kind)
@@ -556,7 +558,7 @@ fn parse_codex_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, AgentId::Codex)?;
+    let kind = parse_agent_report_kind(parser, StandardAgent::Codex)?;
     let mut codex_speed = CodexSpeed::Auto;
     let mut session_id = None;
     config.apply_agent_args(&mut codex_speed, None, None);
@@ -573,7 +575,7 @@ fn parse_codex_command(
         }
     }
     Ok(Command::Agent(
-        AgentId::Codex,
+        StandardAgent::Codex,
         AgentCommandArgs {
             session_id,
             codex_speed,
@@ -587,7 +589,7 @@ fn parse_pi_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, AgentId::Pi)?;
+    let kind = parse_agent_report_kind(parser, StandardAgent::Pi)?;
     let mut pi_path = None;
     let mut codex_speed = CodexSpeed::Auto;
     config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None);
@@ -601,7 +603,7 @@ fn parse_pi_command(
         }
     }
     Ok(Command::Agent(
-        AgentId::Pi,
+        StandardAgent::Pi,
         AgentCommandArgs {
             pi_path,
             codex_speed,
@@ -615,7 +617,7 @@ fn parse_openclaw_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, AgentId::OpenClaw)?;
+    let kind = parse_agent_report_kind(parser, StandardAgent::OpenClaw)?;
     let mut open_claw_path = None;
     let mut codex_speed = CodexSpeed::Auto;
     config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path));
@@ -629,7 +631,7 @@ fn parse_openclaw_command(
         }
     }
     Ok(Command::Agent(
-        AgentId::OpenClaw,
+        StandardAgent::OpenClaw,
         AgentCommandArgs {
             open_claw_path,
             codex_speed,
@@ -640,7 +642,7 @@ fn parse_openclaw_command(
 
 fn parse_agent_report_kind(
     parser: &mut ArgParser,
-    agent: AgentId,
+    agent: StandardAgent,
 ) -> Result<AgentReportKind, String> {
     let Some(command) = parser.peek() else {
         return Ok(AgentReportKind::Daily);
