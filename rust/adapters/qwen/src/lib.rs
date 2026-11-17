@@ -7,16 +7,6 @@ mod loader;
 mod parser;
 mod paths;
 
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: crate::cli::AgentReportKind,
-) -> Result<Vec<UsageSummary>> {
-    SOURCE.summarize(
-        entries,
-        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
-    )
-}
-
 pub struct Qwen;
 
 pub static SOURCE: Qwen = Qwen;
@@ -37,7 +27,7 @@ impl EntrySource for Qwen {
     }
 
     fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
-        let mut report = ccusage_adapter_common::report::activity_report_json(rows, kind);
+        let mut report = ccusage_adapter_common::report::report_json(rows, kind, true);
         if rows.is_empty() {
             report["totals"] = serde_json::Value::Null;
         }
@@ -124,7 +114,15 @@ mod tests {
             None,
         )
         .unwrap();
-        let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
         let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
         assert_eq!(entries.len(), 2);
@@ -198,7 +196,15 @@ mod tests {
             None,
         )
         .unwrap();
-        let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
         let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
         assert_eq!(report["daily"][0]["date"], "2026-02-23");

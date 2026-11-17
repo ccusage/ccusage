@@ -41,7 +41,11 @@ mod tests {
                 .unwrap();
             insta::assert_json_snapshot!(
                 format!("focused_dsh_{kind:?}_json").to_lowercase(),
-                report_from_rows(&rows, kind)
+                ccusage_adapter_common::source::EntrySource::report_json(
+                    &crate::SOURCE,
+                    &rows,
+                    kind
+                )
             );
         }
     }

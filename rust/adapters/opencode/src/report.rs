@@ -5,7 +5,7 @@ use crate::{
     cli::{AgentReportKind, SortOrder, WeekDay},
     sort_summaries, summary_period,
 };
-use ccusage_adapter_common::report::plain_report_json;
+
 use ccusage_adapter_common::{
     rows,
     source::{SessionScope, SessionShape, SummaryKind},
@@ -19,7 +19,9 @@ pub fn report_json(
 ) -> Result<Value> {
     let mut rows = summarize_entries(entries, kind, start_of_week)?;
     sort_summaries(&mut rows, order, summary_period);
-    Ok(plain_report_json(&rows, kind))
+    Ok(ccusage_adapter_common::report::report_json(
+        &rows, kind, false,
+    ))
 }
 
 pub fn summarize_entries(
@@ -67,8 +69,8 @@ mod tests {
             "weekly": agent_summary_json(&weekly, AgentReportKind::Weekly, false),
             "monthly": agent_summary_json(&monthly, AgentReportKind::Monthly, false),
             "session": agent_summary_json(&session, AgentReportKind::Session, true),
-            "dailyReport": plain_report_json(std::slice::from_ref(&daily), AgentReportKind::Daily),
-            "sessionReport": plain_report_json(&[session], AgentReportKind::Session),
+            "dailyReport": ccusage_adapter_common::report::report_json(std::slice::from_ref(&daily), AgentReportKind::Daily, false),
+            "sessionReport": ccusage_adapter_common::report::report_json(&[session], AgentReportKind::Session, false),
         }));
     }
 

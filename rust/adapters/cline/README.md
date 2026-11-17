@@ -65,7 +65,6 @@ rather than assigning a guessed model.
 ## Adapter surface
 
 - `load_entries(&SharedArgs, &PricingMap)` loads normalized usage records.
-- `summarize_entries(&[LoadedEntry], AgentReportKind)` aggregates a report.
 - `run(AgentCommandArgs)` runs the Cline report command.
 
 The crate is built in the adapters Crane artifact layer with the other source

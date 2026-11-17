@@ -46,7 +46,8 @@ mod tests {
 
     #[test]
     fn session_json_includes_activity_bounds_and_project_metadata() {
-        let rows = summarize_entries(
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
             &[
                 entry(
                     "session-a",
@@ -61,10 +62,17 @@ mod tests {
                     "/workspace/app",
                 ),
             ],
-            AgentReportKind::Session,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
         )
         .unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Session);
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Session,
+        );
 
         assert_eq!(report["sessions"][0]["sessionId"], "session-a");
         assert_eq!(report["sessions"][0]["projectPath"], "/workspace/app");

@@ -44,8 +44,20 @@ fn builds_amp_daily_json_report() {
         stored_cost: None,
     };
 
-    let rows = ccusage_adapter_amp::summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
-    let report = ccusage_adapter_amp::report_from_rows(&rows, AgentReportKind::Daily);
+    let rows = ccusage_adapter_common::source::EntrySource::summarize(
+        &ccusage_adapter_amp::SOURCE,
+        &[entry],
+        ccusage_adapter_common::source::SummaryKind::for_report(
+            AgentReportKind::Daily,
+            ccusage_core::cli::WeekDay::Monday,
+        ),
+    )
+    .unwrap();
+    let report = ccusage_adapter_common::source::EntrySource::report_json(
+        &ccusage_adapter_amp::SOURCE,
+        &rows,
+        AgentReportKind::Daily,
+    );
 
     assert_eq!(report["daily"][0]["date"], "2026-05-01");
     assert_eq!(report["daily"][0]["inputTokens"], 100);

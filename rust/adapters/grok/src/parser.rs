@@ -15,8 +15,6 @@ use crate::{
     missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
 };
 
-#[cfg(test)]
-use crate::Result;
 use ccusage_adapter_common::{
     jsonl,
     units::{UnitError, read_json},
@@ -198,19 +196,6 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
     push(format!("xai/{normalized}"));
     push(format!("x-ai/{normalized}"));
     candidates
-}
-
-#[cfg(test)]
-pub(super) fn parse_session_files(
-    updates: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> Result<Vec<LoadedEntry>> {
-    let diagnostics = Diagnostics::new("grok");
-    parse_session_files_with_diagnostics(updates, tz, mode, pricing, &diagnostics)
-        .map(|entries| entries.into_iter().map(|(_, entry)| entry).collect())
-        .map_err(|error| crate::cli_error(error.to_string()))
 }
 
 pub(super) fn parse_session_files_with_diagnostics(
@@ -539,17 +524,6 @@ impl GrokDedupeKey {
     }
 }
 
-#[cfg(test)]
-fn calculate_grok_cost(
-    raw_model: &str,
-    usage: TokenUsageRaw,
-    cost_usd: Option<f64>,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> f64 {
-    calculate_grok_cost_at(raw_model, usage, cost_usd, None, mode, pricing)
-}
-
 fn calculate_grok_cost_at(
     raw_model: &str,
     usage: TokenUsageRaw,
@@ -724,12 +698,19 @@ mod tests {
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         // Keep the fixture alive until parse finishes by reading paths first.
         let _root = fixture.root().to_path_buf();
-        parse_session_files(
+        parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             &PricingMap::load_embedded(),
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap()
     }
 
@@ -777,7 +758,7 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost(&model, usage, None, CostMode::Calculate, &pricing),
+            calculate_grok_cost_at(&model, usage, None, None, CostMode::Calculate, &pricing),
             3.0
         );
     }
@@ -812,9 +793,10 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost(
+            calculate_grok_cost_at(
                 "grok-unreleased-9.9-build",
                 usage,
+                None,
                 None,
                 CostMode::Calculate,
                 &pricing
@@ -837,12 +819,19 @@ mod tests {
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(
+        let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             &pricing,
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap();
 
         assert_eq!(entries.len(), 1);
@@ -868,12 +857,19 @@ mod tests {
             "sessions/proj/sess-1/updates.jsonl": line,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let entries = parse_session_files(
+        let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             &PricingMap::load_embedded(),
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, u64::MAX - 40);
@@ -888,12 +884,19 @@ mod tests {
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(
+        let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             &pricing,
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap();
 
         assert_eq!(entries.len(), 1);
@@ -1108,12 +1111,19 @@ mod tests {
         });
         let files = fixture
             .path("sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl");
-        let entries = parse_session_files(
+        let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
             &PricingMap::load_embedded(),
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap();
 
         assert_eq!(entries.len(), 1);
@@ -1151,12 +1161,19 @@ mod tests {
         let files = fixture.path(
             "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl",
         );
-        let entries = parse_session_files(
+        let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
             &PricingMap::load_embedded(),
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap();
 
         assert_eq!(entries.len(), 1);
@@ -1245,12 +1262,19 @@ mod tests {
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(
+        let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
             &pricing,
+            &Diagnostics::new("grok"),
         )
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        })
         .unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].cost, 0.0);
@@ -1285,7 +1309,20 @@ mod tests {
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
         let stored_cost = |mode| {
-            parse_session_files(&files, &jiff::tz::TimeZone::system(), mode, &pricing).unwrap()[0]
+            parse_session_files_with_diagnostics(
+                &files,
+                &jiff::tz::TimeZone::system(),
+                mode,
+                &pricing,
+                &Diagnostics::new("grok"),
+            )
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|(_, entry)| entry)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap()[0]
                 .stored_cost
         };
 
@@ -1336,20 +1373,22 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost(
+            calculate_grok_cost_at(
                 "grok-4.5-build",
                 usage,
                 Some(0.25),
+                None,
                 CostMode::Auto,
                 &pricing
             ),
             0.25
         );
         assert_eq!(
-            calculate_grok_cost(
+            calculate_grok_cost_at(
                 "grok-4.5-build",
                 usage,
                 Some(0.25),
+                None,
                 CostMode::Calculate,
                 &pricing
             ),
@@ -1374,7 +1413,14 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost("grok-4.5-build", usage, None, CostMode::Auto, &pricing),
+            calculate_grok_cost_at(
+                "grok-4.5-build",
+                usage,
+                None,
+                None,
+                CostMode::Auto,
+                &pricing
+            ),
             20.0
         );
     }

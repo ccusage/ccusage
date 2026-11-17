@@ -90,8 +90,20 @@ fn builds_pi_daily_json_report() {
         stored_cost: None,
     };
 
-    let rows = ccusage_adapter_pi::summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
-    let report = ccusage_adapter_pi::report_from_rows(&rows, AgentReportKind::Daily);
+    let rows = ccusage_adapter_common::source::EntrySource::summarize(
+        &ccusage_adapter_pi::SOURCE,
+        &[entry],
+        ccusage_adapter_common::source::SummaryKind::for_report(
+            AgentReportKind::Daily,
+            ccusage_core::cli::WeekDay::Sunday,
+        ),
+    )
+    .unwrap();
+    let report = ccusage_adapter_common::source::EntrySource::report_json(
+        &ccusage_adapter_pi::SOURCE,
+        &rows,
+        AgentReportKind::Daily,
+    );
 
     assert_eq!(report["daily"][0]["date"], "2026-04-22");
     assert_eq!(report["daily"][0]["inputTokens"], 100);

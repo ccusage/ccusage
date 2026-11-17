@@ -6,16 +6,6 @@ mod parser;
 mod paths;
 mod sqlite;
 
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: crate::cli::AgentReportKind,
-) -> Result<Vec<UsageSummary>> {
-    SOURCE.summarize(
-        entries,
-        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
-    )
-}
-
 pub struct OpenClaw;
 
 pub static SOURCE: OpenClaw = OpenClaw;

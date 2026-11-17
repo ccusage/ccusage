@@ -300,14 +300,6 @@ pub fn print_table(
     )
 }
 
-pub fn plain_report_json(rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
-    report_json(rows, kind, false)
-}
-
-pub fn activity_report_json(rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
-    report_json(rows, kind, true)
-}
-
 pub fn table_options(
     descriptor: crate::source::EntryDescriptor,
     rows: &[UsageSummary],

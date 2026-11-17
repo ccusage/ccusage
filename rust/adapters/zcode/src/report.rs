@@ -50,12 +50,32 @@ mod tests {
     #[test]
     fn reports_daily_and_session_totals() {
         let entries = [entry("session-1", "2026-08-16", 1_786_909_042_666)];
-        let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&daily, AgentReportKind::Daily);
+        let daily = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &daily,
+            AgentReportKind::Daily,
+        );
         assert_eq!(report["daily"][0]["totalTokens"], 110);
         assert_eq!(report["totals"]["totalTokens"], 110);
 
-        let sessions = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let sessions = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
         assert_eq!(sessions[0].session_id.as_deref(), Some("session-1"));
         assert_eq!(sessions[0].project_path.as_deref(), Some("/project"));
     }
@@ -63,21 +83,57 @@ mod tests {
     #[test]
     fn snapshots_focused_zcode_json_reports_for_daily_monthly_and_session() {
         let entries = snapshot_entries();
-        let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
-        let session = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let daily = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let monthly = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Monthly,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let session = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
 
         insta::assert_json_snapshot!(
             "focused_zcode_daily_json",
-            report_from_rows(&daily, AgentReportKind::Daily)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &daily,
+                AgentReportKind::Daily
+            )
         );
         insta::assert_json_snapshot!(
             "focused_zcode_monthly_json",
-            report_from_rows(&monthly, AgentReportKind::Monthly)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &monthly,
+                AgentReportKind::Monthly
+            )
         );
         insta::assert_json_snapshot!(
             "focused_zcode_session_json",
-            report_from_rows(&session, AgentReportKind::Session)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &session,
+                AgentReportKind::Session
+            )
         );
     }
 
@@ -87,10 +143,34 @@ mod tests {
             extreme_entry("2099-01-02", 4_070_908_800_000, u64::MAX),
             extreme_entry("2099-01-03", 4_071_081_600_000, 1),
         ];
-        let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let daily_report = report_from_rows(&daily, AgentReportKind::Daily);
-        let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
-        let monthly_report = report_from_rows(&monthly, AgentReportKind::Monthly);
+        let daily = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let daily_report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &daily,
+            AgentReportKind::Daily,
+        );
+        let monthly = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Monthly,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let monthly_report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &monthly,
+            AgentReportKind::Monthly,
+        );
 
         for report in [daily_report, monthly_report] {
             for key in [

@@ -5,19 +5,6 @@ mod loader;
 mod parser;
 mod paths;
 
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: crate::cli::AgentReportKind,
-) -> Result<Vec<UsageSummary>> {
-    SOURCE.summarize(
-        entries,
-        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
-    )
-}
-
-#[cfg(test)]
-pub(crate) use ccusage_adapter_common::report::activity_report_json as report_from_rows;
-
 pub struct Copilot;
 pub static SOURCE: Copilot = Copilot;
 

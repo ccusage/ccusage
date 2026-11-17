@@ -67,7 +67,6 @@ per-request long-context tiering.
 
 - `SOURCE`
 - `loader::has_data`
-- `summarize_entries`
 - `run`
 
 ## Depends on

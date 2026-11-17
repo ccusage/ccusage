@@ -86,8 +86,6 @@ chunking, and ordered parallel reads.
 ## Public surface
 
 - `SOURCE`
-- `report_from_rows`
-- `summarize_entries`
 - `run`
 
 ## Depends on

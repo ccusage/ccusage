@@ -5,18 +5,6 @@ mod loader;
 mod parser;
 mod paths;
 
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: crate::cli::AgentReportKind,
-) -> Result<Vec<UsageSummary>> {
-    SOURCE.summarize(
-        entries,
-        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
-    )
-}
-
-pub use ccusage_adapter_common::report::plain_report_json as report_from_rows;
-
 /// The Amp usage source.
 pub struct Amp;
 

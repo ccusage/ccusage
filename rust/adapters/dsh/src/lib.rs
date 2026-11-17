@@ -7,9 +7,6 @@ mod paths;
 #[cfg(test)]
 mod report;
 
-#[cfg(test)]
-pub(crate) use ccusage_adapter_common::report::plain_report_json as report_from_rows;
-
 pub struct Dsh;
 
 pub static SOURCE: Dsh = Dsh;

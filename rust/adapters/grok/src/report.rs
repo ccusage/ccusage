@@ -56,7 +56,8 @@ mod tests {
 
     #[test]
     fn reports_cache_reads_separately_from_input_tokens() {
-        let rows = summarize_entries(
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
             &[entry(
                 "sess-a",
                 "2026-07-29",
@@ -65,10 +66,17 @@ mod tests {
                 40,
                 "/tmp/proj",
             )],
-            AgentReportKind::Daily,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
         )
         .unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(report["daily"][0]["inputTokens"], 60);
         assert_eq!(report["daily"][0]["outputTokens"], 20);
@@ -81,7 +89,8 @@ mod tests {
 
     #[test]
     fn groups_conversations_under_the_session_report() {
-        let rows = summarize_entries(
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
             &[
                 entry(
                     "sess-a",
@@ -100,7 +109,10 @@ mod tests {
                     "D:\\work\\proj",
                 ),
             ],
-            AgentReportKind::Session,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
         )
         .unwrap();
 
@@ -124,7 +136,8 @@ mod tests {
 
     #[test]
     fn session_json_includes_activity_and_project_path() {
-        let rows = summarize_entries(
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
             &[entry(
                 "sess-a",
                 "2026-07-29",
@@ -133,10 +146,17 @@ mod tests {
                 40,
                 "/workspace/api",
             )],
-            AgentReportKind::Session,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
         )
         .unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Session);
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Session,
+        );
 
         assert_eq!(report["sessions"][0]["sessionId"], "sess-a");
         assert_eq!(report["sessions"][0]["projectPath"], "/workspace/api");

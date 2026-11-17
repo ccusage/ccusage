@@ -8,10 +8,42 @@ mod tests {
     #[test]
     fn snapshots_daily_weekly_monthly_and_session_json_reports() {
         let entries = snapshot_entries();
-        let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let weekly = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
-        let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
-        let sessions = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let daily = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let weekly = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Weekly,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let monthly = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Monthly,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let sessions = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
         assert_eq!(
             weekly
                 .iter()
@@ -22,19 +54,35 @@ mod tests {
 
         insta::assert_json_snapshot!(
             "cline_daily_json_report",
-            report_from_rows(&daily, AgentReportKind::Daily)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &daily,
+                AgentReportKind::Daily
+            )
         );
         insta::assert_json_snapshot!(
             "cline_weekly_json_report",
-            report_from_rows(&weekly, AgentReportKind::Weekly)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &weekly,
+                AgentReportKind::Weekly
+            )
         );
         insta::assert_json_snapshot!(
             "cline_monthly_json_report",
-            report_from_rows(&monthly, AgentReportKind::Monthly)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &monthly,
+                AgentReportKind::Monthly
+            )
         );
         insta::assert_json_snapshot!(
             "cline_session_json_report",
-            report_from_rows(&sessions, AgentReportKind::Session)
+            ccusage_adapter_common::source::EntrySource::report_json(
+                &crate::SOURCE,
+                &sessions,
+                AgentReportKind::Session
+            )
         );
     }
 
@@ -66,8 +114,20 @@ mod tests {
             ),
         ];
 
-        let sessions = summarize_entries(&entries, AgentReportKind::Session).unwrap();
-        let report = report_from_rows(&sessions, AgentReportKind::Session);
+        let sessions = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &sessions,
+            AgentReportKind::Session,
+        );
         let session = &report["sessions"][0];
 
         assert_eq!(session["sessionId"], "task:task-a");

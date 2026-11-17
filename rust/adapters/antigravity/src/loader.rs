@@ -1007,11 +1007,11 @@ mod tests {
             .iter()
             .copied()
             .map(|kind| {
-                let rows = crate::summarize_entries(&entries, kind).unwrap();
+                let rows = ccusage_adapter_common::source::EntrySource::summarize(&crate::SOURCE, &entries, ccusage_adapter_common::source::SummaryKind::for_report(kind, ccusage_core::cli::WeekDay::Monday)).unwrap();
                 (
                     format!("{kind:?}").to_lowercase(),
                     json!({
-                    "json": crate::report_from_rows(&rows, kind),
+                    "json": ccusage_adapter_common::source::EntrySource::report_json(&crate::SOURCE, &rows, kind),
                     "table": rows.iter().map(|row| json!({
                         "firstColumn": ccusage_core::first_column(kind),
                         "period": ccusage_core::summary_period(row),

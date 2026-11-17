@@ -70,7 +70,6 @@ warning. No provider billing is inferred from a local provider UUID.
 ## Public surface
 
 - `SOURCE`
-- `summarize_entries`
 - `run`
 
 ## Depends on

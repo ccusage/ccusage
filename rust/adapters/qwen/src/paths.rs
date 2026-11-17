@@ -157,7 +157,15 @@ mod tests {
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let rows = crate::summarize_entries(&entries, kind).unwrap();
+            let rows = ccusage_adapter_common::source::EntrySource::summarize(
+                &crate::SOURCE,
+                &entries,
+                ccusage_adapter_common::source::SummaryKind::for_report(
+                    kind,
+                    ccusage_core::cli::WeekDay::Monday,
+                ),
+            )
+            .unwrap();
             let report = crate::SOURCE.report_json(&rows, kind);
             assert_eq!(report["totals"]["inputTokens"], 20);
             assert_eq!(report["totals"]["outputTokens"], 10);

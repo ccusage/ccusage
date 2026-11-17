@@ -26,7 +26,6 @@ owned by the standalone `ccusage-adapter-antigravity` source.
 ## Public surface
 
 - `SOURCE`
-- `summarize_entries`
 - `run`
 
 ## Depends on

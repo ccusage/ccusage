@@ -26,8 +26,6 @@ diagnostic. A modification-time fallback does not select historical pricing.
 ## Public surface
 
 - `SOURCE`
-- `report_from_rows`
-- `summarize_entries`
 - `run`
 
 ## Depends on

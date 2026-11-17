@@ -9,18 +9,6 @@ mod report;
 
 pub use paths::{named_store_paths, paths as default_paths};
 
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: crate::cli::AgentReportKind,
-) -> Result<Vec<UsageSummary>> {
-    SOURCE.summarize(
-        entries,
-        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
-    )
-}
-
-pub use ccusage_adapter_common::report::activity_report_json as report_from_rows;
-
 pub struct Pi;
 
 pub static SOURCE: Pi = Pi;
@@ -118,8 +106,15 @@ mod tests {
             None,
         )
         .unwrap();
-        let focused = summarize_entries(&entries, AgentReportKind::Session).unwrap();
-        let unified = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let focused = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Sunday,
+            ),
+        )
+        .unwrap();
 
         assert_eq!(focused.len(), 2);
         assert_eq!(focused[0].input_tokens, 10);
@@ -130,9 +125,8 @@ mod tests {
         assert_eq!(json["sessions"][1]["sessionId"], "same-session");
         assert_eq!(json["sessions"][1]["projectPath"], "project-b");
         assert_eq!(json["totals"]["inputTokens"], 30);
-        assert_eq!(unified.len(), 2);
         assert_eq!(
-            unified
+            focused
                 .iter()
                 .filter_map(|row| row.project_path.as_deref())
                 .collect::<std::collections::BTreeSet<_>>(),

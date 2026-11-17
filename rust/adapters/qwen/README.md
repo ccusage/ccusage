@@ -28,7 +28,6 @@ file's modification time.
 ## Public surface
 
 - `SOURCE`
-- `summarize_entries`
 - `run`
 - `has_data`
 

@@ -29,7 +29,6 @@ contract as the JSONL path, and win over migrated JSONL duplicates.
 ## Public surface
 
 - `SOURCE`
-- `summarize_entries`
 - `run`
 
 ## Depends on

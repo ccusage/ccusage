@@ -25,7 +25,6 @@ creation time are skipped with an invalid-timestamp diagnostic.
 ## Public surface
 
 - `SOURCE`
-- `summarize_entries`
 - `run`
 
 ## Depends on

@@ -24,7 +24,6 @@ chunking, and ordered parallel reads.
 ## Public surface
 
 - `SOURCE`
-- `summarize_entries`
 - `run`
 
 ## Depends on

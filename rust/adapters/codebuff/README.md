@@ -28,8 +28,6 @@ the whole chat, not when a message was sent.
 ## Public surface
 
 - `SOURCE`
-- `report_from_rows`
-- `summarize_entries`
 - `run`
 
 ## Depends on

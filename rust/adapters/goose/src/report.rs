@@ -43,8 +43,20 @@ mod tests {
             message_count: None,
             stored_cost: None,
         };
-        let rows = summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &[entry],
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(report["daily"][0]["inputTokens"], 100);
         assert_eq!(report["daily"][0]["outputTokens"], 50);

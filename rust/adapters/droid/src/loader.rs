@@ -67,9 +67,6 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -
 }
 
 #[cfg(test)]
-use crate::{report_from_rows, summarize_entries};
-
-#[cfg(test)]
 mod tests {
     use crate::cli::SharedArgs;
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
@@ -315,8 +312,20 @@ mod tests {
             message_count: None,
             stored_cost: None,
         };
-        let rows = summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &[entry],
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(report["daily"][0]["totalTokens"], json!(185));
         assert_eq!(report["totals"]["totalTokens"], json!(185));

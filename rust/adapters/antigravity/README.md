@@ -43,7 +43,6 @@ database's modification time does not date individual records.
 - `loader::load_entries_with_warnings`: returns entries and skipped-database
   warnings without printing them; callers print the warnings after their
   progress output stops
-- `summarize_entries`
 - `run`
 
 ## Depends on

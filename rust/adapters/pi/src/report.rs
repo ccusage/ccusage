@@ -5,7 +5,11 @@ mod tests {
 
     #[test]
     fn empty_report_has_zero_totals_object() {
-        let report = crate::report_from_rows(&[], AgentReportKind::Daily);
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &[],
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(report["daily"], json!([]));
         assert!(report["totals"].is_object());

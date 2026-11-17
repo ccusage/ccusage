@@ -18,8 +18,6 @@ use ccusage_adapter_common::{
     units::{UnitError, read_typed_units},
 };
 use ccusage_core::Diagnostics;
-#[cfg(test)]
-use ccusage_core::ReportWindow;
 
 use crate::{
     LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -531,20 +529,6 @@ fn read_source_file(
     }
 }
 
-#[cfg(test)]
-fn read_otel_file(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: &crate::PricingMap,
-) -> Result<Vec<LoadedEntry>> {
-    Ok(parse_otel_file(path, &Diagnostics::new("copilot"))
-        .map_err(|error| crate::cli_error(error.to_string()))?
-        .into_iter()
-        .map(|entry| usage_entry_to_loaded(entry, tz, mode, pricing))
-        .collect())
-}
-
 /// One AIU is one GitHub AI credit, billed at $0.01.
 fn nano_aiu_to_usd(nano_aiu: u64) -> f64 {
     nano_aiu as f64 / 1e11
@@ -619,10 +603,8 @@ fn usage_entry_to_loaded(
 }
 
 #[cfg(test)]
-use crate::{report_from_rows, summarize_entries};
-
-#[cfg(test)]
 mod tests {
+    use ccusage_core::ReportWindow;
     use std::ffi::OsString;
 
     use ccusage_core::SkipKind;
@@ -955,15 +937,35 @@ mod tests {
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
 
-        let loaded = read_otel_file(
-            &file,
-            &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            &pricing,
+        let loaded = parse_otel_file(&file, &Diagnostics::new("copilot"))
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|entry| {
+                        usage_entry_to_loaded(
+                            entry,
+                            &jiff::tz::TimeZone::system(),
+                            CostMode::Auto,
+                            &pricing,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &loaded,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
         )
         .unwrap();
-        let rows = summarize_entries(&loaded, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(report["daily"][0]["inputTokens"], 70);
         assert_eq!(report["daily"][0]["outputTokens"], 50);
@@ -1013,15 +1015,35 @@ mod tests {
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
 
-        let loaded = read_otel_file(
-            &file,
-            &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            &pricing,
+        let loaded = parse_otel_file(&file, &Diagnostics::new("copilot"))
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|entry| {
+                        usage_entry_to_loaded(
+                            entry,
+                            &jiff::tz::TimeZone::system(),
+                            CostMode::Auto,
+                            &pricing,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &loaded,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
         )
         .unwrap();
-        let rows = summarize_entries(&loaded, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(loaded[0].extra_total_tokens, 5);
         assert_eq!(report["daily"][0]["outputTokens"], 50);
