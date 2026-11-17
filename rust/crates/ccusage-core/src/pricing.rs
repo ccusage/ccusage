@@ -177,6 +177,7 @@ impl LongContextRates {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchKind {
+    StrictExact,
     Exact,
     Fuzzy,
 }
@@ -1691,7 +1692,10 @@ impl PricingMap {
     pub fn resolve<'a>(&self, candidates: &[(&'a str, MatchKind)]) -> Option<(&'a str, Pricing)> {
         candidates.iter().find_map(|&(model, kind)| {
             let pricing = match kind {
-                MatchKind::Exact => self.find_exact_with_fallback(model),
+                MatchKind::StrictExact => self.find_exact(model).and_then(|_| self.find(model)),
+                MatchKind::Exact => self
+                    .find_exact_with_fallback(model)
+                    .and_then(|_| self.find(model)),
                 MatchKind::Fuzzy => self.find(model),
             }?;
             Some((model, pricing))
@@ -2858,6 +2862,7 @@ mod tests {
 
     #[test]
     fn primary_fuzzy_pricing_beats_an_embedded_exact_reseller_listing() {
+        crate::test_support::install_pricing_snapshots();
         let mut primary = PricingMap::default();
         primary.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
         let mut embedded = PricingMap::default();
@@ -2870,6 +2875,14 @@ mod tests {
         );
         let pricing = layered(&primary, Some(&embedded));
         assert_eq!(pricing.find("vendor/sample").unwrap().input, 1.0);
+        assert_eq!(
+            pricing
+                .resolve(&[("vendor/sample", super::MatchKind::Exact)])
+                .unwrap()
+                .1
+                .input,
+            1.0
+        );
         assert_eq!(pricing.find("sample-tier").unwrap().input, 5.0);
         assert_eq!(pricing.find("unrelated-9").unwrap().input, 7.0);
     }
@@ -3469,6 +3482,37 @@ mod tests {
             .unwrap();
         assert_eq!(matched, "provider/paid");
         assert_eq!(provider.input, 9.0);
+    }
+
+    #[test]
+    fn strict_candidates_gate_literal_names_and_use_standard_price_precedence() {
+        crate::test_support::install_pricing_snapshots();
+        let mut primary = PricingMap::default();
+        primary.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2},"grok-4-1-x":{"input_cost_per_token":3,"output_cost_per_token":4}}"#);
+        let mut embedded = PricingMap::default();
+        embedded.load_models_dev_json_for_tests(
+            r#"{"vendor/sample":{"cost":{"input":3000000,"output":4000000}}}"#,
+        );
+        let pricing = layered(&primary, Some(&embedded));
+        for kind in [super::MatchKind::Exact, super::MatchKind::StrictExact] {
+            assert_eq!(
+                pricing.resolve(&[("vendor/sample", kind)]).unwrap().1.input,
+                1.0
+            );
+        }
+        assert!(
+            pricing
+                .resolve(&[("grok-4.1-x", super::MatchKind::StrictExact)])
+                .is_none()
+        );
+        assert_eq!(
+            pricing
+                .resolve(&[("grok-4.1-x", super::MatchKind::Exact)])
+                .unwrap()
+                .1
+                .input,
+            3.0
+        );
     }
 
     #[test]
@@ -5496,12 +5540,12 @@ mod tests {
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5.6")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             embedded_models_dev_pricing()
                 .find("gpt-5.6-sol")
-                .unwrap()
-                .long_context_split_threshold()
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
         );
     }
 
@@ -5690,8 +5734,8 @@ mod tests {
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("grok-4.5")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             200_000
         );
     }
@@ -5703,30 +5747,30 @@ mod tests {
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5.6-sol")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
         );
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5.5")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
         );
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5.5-pro")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
         );
         // Date-pinned keys share their base model's boundary.
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5.5-2026-04-23")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
         );
         // Models without a built-in tier fall back to the 200K default used for
@@ -5734,15 +5778,15 @@ mod tests {
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             200_000
         );
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-5.4-mini")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             200_000
         );
     }
@@ -6220,12 +6264,12 @@ mod tests {
         assert_eq!(
             embedded_models_dev_pricing()
                 .find("gpt-reserve")
-                .unwrap()
-                .long_context_split_threshold(),
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             embedded_models_dev_pricing()
                 .find("gpt-5.6-luna")
-                .unwrap()
-                .long_context_split_threshold()
+                .map(Pricing::long_context_split_threshold)
+                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
         );
     }
 
