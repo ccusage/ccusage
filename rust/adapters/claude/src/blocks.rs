@@ -8,7 +8,7 @@ use ccusage_core::{
     fast::FxHashSet,
     format_currency, format_date_tz, format_models_multiline, format_number, format_rfc3339_millis,
     json_float, model_aliases, print_box_title, resolve_tz, should_use_compact_layout,
-    terminal_style, terminal_width, utc_now,
+    terminal_style, terminal_width,
 };
 use ccusage_report::{am_pm, format_utc_second, hour_12, local_parts};
 use serde::Serialize;
@@ -53,13 +53,13 @@ pub struct Projection {
 pub fn identify_session_blocks(
     mut entries: Vec<LoadedEntry>,
     session_duration_hours: f64,
+    now: TimestampMs,
 ) -> Vec<SessionBlock> {
     if entries.is_empty() {
         return Vec::new();
     }
     let session_duration = (session_duration_hours * MILLIS_PER_HOUR as f64) as i64;
     entries.sort_by_key(|entry| entry.timestamp);
-    let now = utc_now();
     let mut blocks = Vec::new();
     let mut current_start: Option<TimestampMs> = None;
     let mut current_entries = Vec::new();
@@ -71,15 +71,15 @@ pub fn identify_session_blocks(
                 .map(|entry: &LoadedEntry| entry.timestamp)
                 .unwrap_or(start);
             let since_start = entry.timestamp.duration_since(start);
-            let since_last = entry.timestamp.duration_since(last_time);
-            if since_start > session_duration || since_last > session_duration {
+            let starts_fresh = starts_fresh_block(last_time, entry.timestamp, session_duration);
+            if since_start > session_duration || starts_fresh {
                 blocks.push(create_block(
                     start,
                     std::mem::take(&mut current_entries),
                     now,
                     session_duration,
                 ));
-                if since_last > session_duration {
+                if starts_fresh {
                     blocks.push(create_gap_block(
                         last_time,
                         entry.timestamp,
@@ -100,6 +100,10 @@ pub fn identify_session_blocks(
         blocks.push(create_block(start, current_entries, now, session_duration));
     }
     blocks
+}
+
+pub(crate) fn starts_fresh_block(prev: TimestampMs, next: TimestampMs, session_ms: i64) -> bool {
+    next.duration_since(prev) > session_ms
 }
 
 fn floor_to_hour(timestamp: TimestampMs) -> TimestampMs {
@@ -182,14 +186,19 @@ pub fn sort_blocks(blocks: &mut [SessionBlock], order: &SortOrder) {
     }
 }
 
-pub fn block_json(block: &SessionBlock, token_limit: Option<&str>, max_tokens: u64) -> Value {
+pub fn block_json(
+    block: &SessionBlock,
+    token_limit: Option<&str>,
+    max_tokens: u64,
+    now: TimestampMs,
+) -> Value {
     let burn_rate = if block.is_active {
         calculate_burn_rate(block)
     } else {
         None
     };
     let projection = if block.is_active {
-        project_block_usage(block)
+        project_block_usage(block, now)
     } else {
         None
     };
@@ -240,7 +249,7 @@ fn format_block_models(models: &[String]) -> String {
     }
 }
 
-fn format_block_time(block: &SessionBlock, compact: bool) -> String {
+fn format_block_time(block: &SessionBlock, compact: bool, now: TimestampMs) -> String {
     let start = format_local_block_start(block.start_time, compact);
     if block.is_gap {
         let end = format_local_block_end(block.end_time, compact);
@@ -253,7 +262,6 @@ fn format_block_time(block: &SessionBlock, compact: bool) -> String {
     }
 
     if block.is_active {
-        let now = utc_now();
         let elapsed = now.duration_since(block.start_time) / MILLIS_PER_MINUTE;
         let remaining = block.end_time.duration_since(now) / MILLIS_PER_MINUTE;
         let elapsed_hours = elapsed / 60;
@@ -334,6 +342,7 @@ pub fn print_blocks_table(
     token_limit: Option<&str>,
     max_tokens: u64,
     shared: &SharedArgs,
+    now: TimestampMs,
 ) -> Result<()> {
     if blocks.is_empty() {
         eprintln!("No Claude usage data found.");
@@ -366,7 +375,7 @@ pub fn print_blocks_table(
     for block in blocks {
         if block.is_gap {
             let mut row = vec![
-                color(shared, format_block_time(block, compact), Color::Grey),
+                color(shared, format_block_time(block, compact, now), Color::Grey),
                 color(shared, "(inactive)", Color::Grey),
                 color(shared, "-", Color::Grey),
                 color(shared, "-", Color::Grey),
@@ -382,7 +391,7 @@ pub fn print_blocks_table(
         }
         let total = block.token_counts.total();
         let mut row = vec![
-            format_block_time(block, compact),
+            format_block_time(block, compact, now),
             if block.is_active {
                 color(shared, "ACTIVE", Color::Green)
             } else {
@@ -435,7 +444,7 @@ pub fn print_blocks_table(
                 table.push(remaining_row);
             }
 
-            if let Some(projection) = project_block_usage(block) {
+            if let Some(projection) = project_block_usage(block, now) {
                 table.separator();
                 let mut projected_row = vec![
                     color(shared, "(assuming current burn rate)", Color::Grey),
@@ -468,9 +477,9 @@ pub fn print_active_block_detail(
     token_limit: Option<&str>,
     max_tokens: u64,
     shared: &SharedArgs,
+    now: TimestampMs,
 ) {
     print_box_title("Current Session Block Status", shared);
-    let now = utc_now();
     let elapsed = now.duration_since(block.start_time) / MILLIS_PER_MINUTE;
     let remaining = block.end_time.duration_since(now) / MILLIS_PER_MINUTE;
     println!("Block Started:   {}", format_utc_second(block.start_time));
@@ -516,7 +525,7 @@ pub fn print_active_block_detail(
         }
     }
 
-    if let Some(projection) = project_block_usage(block) {
+    if let Some(projection) = project_block_usage(block, now) {
         println!();
         println!(
             "{}",
@@ -584,13 +593,13 @@ pub fn calculate_burn_rate(block: &SessionBlock) -> Option<BurnRate> {
     })
 }
 
-fn project_block_usage(block: &SessionBlock) -> Option<Projection> {
+fn project_block_usage(block: &SessionBlock, now: TimestampMs) -> Option<Projection> {
     if !block.is_active || block.is_gap {
         return None;
     }
     let burn = calculate_burn_rate(block)?;
     let remaining_minutes =
-        (block.end_time.duration_since(utc_now()) as f64 / MILLIS_PER_MINUTE as f64).round();
+        (block.end_time.duration_since(now) as f64 / MILLIS_PER_MINUTE as f64).round();
     let total_tokens =
         block.token_counts.total() as f64 + burn.tokens_per_minute * remaining_minutes;
     let total_cost = block.cost_usd + (burn.cost_per_hour / 60.0) * remaining_minutes;
@@ -615,5 +624,50 @@ pub fn format_remaining_time(minutes: i64) -> String {
         format!("{hours}h {mins}m left")
     } else {
         format!("{mins}m left")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    #[test]
+    fn only_a_pause_longer_than_the_session_creates_a_gap() {
+        for (next, expected_blocks) in [
+            ("2026-01-02T15:00:00.000Z", 1),
+            ("2026-01-02T15:00:00.001Z", 3),
+        ] {
+            let fixture = fs_fixture!({
+                "projects/p/s.jsonl": format!(r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}
+            {{"timestamp":"{next}","message":{{"usage":{{"input_tokens":20,"output_tokens":1}}}}}}"#),
+            });
+            let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            let entries = crate::load_entries(
+                &SharedArgs {
+                    mode: ccusage_core::cli::CostMode::Display,
+                    ..SharedArgs::default()
+                },
+                None,
+            )
+            .unwrap();
+            let blocks = identify_session_blocks(
+                entries,
+                5.0,
+                crate::parse_ts_timestamp("2026-01-02T16:00:00Z").unwrap(),
+            );
+            assert_eq!(blocks.len(), expected_blocks, "{next}");
+            assert_eq!(
+                blocks.iter().filter(|block| block.is_gap).count(),
+                expected_blocks / 3
+            );
+            assert_eq!(
+                blocks
+                    .iter()
+                    .map(|block| block.token_counts.input_tokens)
+                    .sum::<u64>(),
+                30
+            );
+        }
     }
 }

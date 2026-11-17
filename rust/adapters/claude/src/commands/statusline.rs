@@ -18,7 +18,10 @@ use ccusage_report::format_date;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    blocks::{SessionBlock, calculate_burn_rate, format_remaining_time, identify_session_blocks},
+    blocks::{
+        SessionBlock, calculate_burn_rate, format_remaining_time, identify_session_blocks,
+        starts_fresh_block,
+    },
     load_entries_since_with_diagnostics,
 };
 
@@ -132,6 +135,7 @@ fn render_statusline(
     shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> Result<String> {
+    let now = utc_now();
     let needs_history = matches!(args.cost_source, CostSource::Ccusage | CostSource::Both)
         || (args.cost_source == CostSource::Auto && hook.cost.is_none());
     let history = needs_history
@@ -148,7 +152,7 @@ fn render_statusline(
         CostSource::Both => None,
     };
 
-    let today_shared = statusline_today_shared(args, shared, utc_now());
+    let today_shared = statusline_today_shared(args, shared, now);
     let today_cost = if let Some(entries) = history.as_ref() {
         let window = ReportWindow::from_shared(&today_shared);
         sum_costs(
@@ -164,12 +168,12 @@ fn render_statusline(
     };
 
     let active_block = if let Some(entries) = history {
-        find_active_block(entries)
+        find_active_block(entries, now)
     } else {
-        load_statusline_active_block(args, shared, utc_now(), diagnostics)
+        load_statusline_active_block(args, shared, now, diagnostics)
     };
     let (block_info, burn_rate_info) = if let Some(block) = active_block.as_ref() {
-        let remaining = block.end_time.duration_since(utc_now()) / MILLIS_PER_MINUTE;
+        let remaining = block.end_time.duration_since(now) / MILLIS_PER_MINUTE;
         let mut burn = String::new();
         if let Some(rate) = calculate_burn_rate(block) {
             let mut segments = vec![format!("{}/hr", format_currency(rate.cost_per_hour))];
@@ -300,17 +304,20 @@ fn load_statusline_active_block(
             BlockAnchor::NoActiveBlock => return None,
             BlockAnchor::From(start) => {
                 entries.retain(|entry| entry.timestamp >= start);
-                return find_active_block(entries);
+                return find_active_block(entries, now);
             }
             BlockAnchor::NeedsMoreHistory => {}
             BlockAnchor::NeedsFullHistory => break,
         }
     }
-    find_active_block(load_entries_since_with_diagnostics(shared, None, diagnostics).ok()?)
+    find_active_block(
+        load_entries_since_with_diagnostics(shared, None, diagnostics).ok()?,
+        now,
+    )
 }
 
-fn find_active_block(entries: Vec<LoadedEntry>) -> Option<SessionBlock> {
-    identify_session_blocks(entries, DEFAULT_SESSION_DURATION_HOURS)
+fn find_active_block(entries: Vec<LoadedEntry>, now: TimestampMs) -> Option<SessionBlock> {
+    identify_session_blocks(entries, DEFAULT_SESSION_DURATION_HOURS, now)
         .into_iter()
         .find(|block| block.is_active && !block.is_gap)
 }
@@ -350,11 +357,9 @@ fn statusline_block_anchor(
     if now.duration_since(last) >= session_ms {
         return BlockAnchor::NoActiveBlock;
     }
-    // A pause longer than a session starts a fresh block at the next entry,
-    // which is the same rule `identify_session_blocks` applies.
     timestamps
         .windows(2)
-        .rposition(|pair| pair[1].duration_since(pair[0]) > session_ms)
+        .rposition(|pair| starts_fresh_block(pair[0], pair[1], session_ms))
         .map_or(BlockAnchor::NeedsMoreHistory, |index| {
             BlockAnchor::From(timestamps[index + 1])
         })

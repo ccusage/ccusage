@@ -60,6 +60,10 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
 }
 
 pub fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
+    run_bucket_with_start(shared, kind, WeekDay::Sunday)
+}
+
+fn run_bucket_with_start(shared: SharedArgs, kind: BucketKind, start: WeekDay) -> Result<()> {
     let entries = load_entries_since(&shared, None)?;
     let mut daily = summarize_by_key(
         &entries,
@@ -70,7 +74,7 @@ pub fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
         row.date.as_deref().unwrap_or_default()
     });
 
-    let mut buckets = summarize_summaries_by_bucket(&daily, kind, WeekDay::Sunday);
+    let mut buckets = summarize_summaries_by_bucket(&daily, kind, start);
     sort_summaries(&mut buckets, &shared.order, |row| match kind {
         BucketKind::Monthly => row.month.as_deref().unwrap_or_default(),
         BucketKind::Weekly => row.week.as_deref().unwrap_or_default(),
@@ -98,39 +102,7 @@ pub fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
 }
 
 pub fn run_weekly(args: WeeklyArgs) -> Result<()> {
-    let shared = args.shared.clone();
-    let entries = load_entries_since(&shared, None)?;
-    let mut daily = summarize_by_key(
-        &entries,
-        |entry| entry.date.clone(),
-        |key| (key.to_string(), None),
-    )?;
-    sort_summaries(&mut daily, &shared.order, |row| {
-        row.date.as_deref().unwrap_or_default()
-    });
-    let mut weekly = summarize_summaries_by_bucket(&daily, BucketKind::Weekly, args.start_of_week);
-    sort_summaries(&mut weekly, &shared.order, |row| {
-        row.week.as_deref().unwrap_or_default()
-    });
-
-    if wants_json(&shared) {
-        let output = json!({
-            "weekly": weekly.iter().map(summary_json).collect::<Vec<_>>(),
-            "totals": totals_json(&weekly),
-        });
-        print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost)?;
-        return Ok(());
-    }
-
-    print_usage_table(
-        "Claude Code Token Usage Report - Weekly",
-        "Week",
-        &weekly,
-        &shared,
-        false,
-        None,
-    )?;
-    Ok(())
+    run_bucket_with_start(args.shared, BucketKind::Weekly, args.start_of_week)
 }
 
 pub fn run_session(args: SessionArgs) -> Result<()> {
@@ -256,13 +228,14 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
         return Err(cli_error("Session length must be a positive number"));
     }
     let shared = args.shared.clone();
+    let now = utc_now();
     let entries = load_entries(&shared, None)?;
-    let mut blocks = identify_session_blocks(entries, args.session_length);
+    let mut blocks = identify_session_blocks(entries, args.session_length, now);
     filter_blocks_by_date(&mut blocks, &shared);
     sort_blocks(&mut blocks, &shared.order);
 
     if args.recent {
-        let cutoff = utc_now()
+        let cutoff = now
             .checked_sub_millis(DEFAULT_RECENT_DAYS * MILLIS_PER_DAY)
             .unwrap_or(TimestampMs::UNIX_EPOCH);
         blocks.retain(|block| block.start_time >= cutoff || block.is_active);
@@ -281,7 +254,7 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
 
     if wants_json(&shared) {
         let output = json!({
-            "blocks": blocks.iter().map(|block| block_json(block, args.token_limit.as_deref(), max_tokens)).collect::<Vec<_>>(),
+            "blocks": blocks.iter().map(|block| block_json(block, args.token_limit.as_deref(), max_tokens, now)).collect::<Vec<_>>(),
         });
         print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost)?;
         return Ok(());
@@ -292,10 +265,22 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
         return Ok(());
     }
     if args.active && blocks.len() == 1 {
-        print_active_block_detail(&blocks[0], args.token_limit.as_deref(), max_tokens, &shared);
+        print_active_block_detail(
+            &blocks[0],
+            args.token_limit.as_deref(),
+            max_tokens,
+            &shared,
+            now,
+        );
         return Ok(());
     }
-    print_blocks_table(&blocks, args.token_limit.as_deref(), max_tokens, &shared)?;
+    print_blocks_table(
+        &blocks,
+        args.token_limit.as_deref(),
+        max_tokens,
+        &shared,
+        now,
+    )?;
     Ok(())
 }
 
