@@ -14,11 +14,11 @@ start *args:
 
 # Run focused tests for the Babashka performance harness.
 test-performance-harness:
-    scripts/compare-pr-performance_test.clj
+    scripts/compare_pr_performance_test.clj
 
 # Run focused tests for the diff-refs output comparison.
 test-diff-refs:
-    scripts/diff-refs_test.clj
+    scripts/diff_refs_test.clj
 
 # Pipe every sample payload in test/ through `ccusage statusline --offline`.
 test-statusline:

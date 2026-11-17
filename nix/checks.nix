@@ -89,6 +89,9 @@ in
       # optimized native package here too only duplicated a ~70s release compile
       # on cache-cold runners.
       checks = {
+        clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo ] ''
+          clj-kondo --lint apps/ccusage/scripts
+        '';
         ccusage-tests = config.packages.ccusage-tests;
         models-dev-dependencies = mkRepoCheck "models-dev-dependencies-check" [ pkgs.nushell ] ''
           nu scripts/check-models-dev-dependencies.nu \

@@ -53,6 +53,7 @@
             zizmor
             oxlint
             just
+            clj-kondo
             prek
             gitleaks
             renovate
