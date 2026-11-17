@@ -47,9 +47,9 @@ pub fn directories_with(
     paths
         .into_iter()
         .filter(|path| {
-            let identity = fs::canonicalize(path).and_then(|identity| {
-                if fs::metadata(&identity)?.is_dir() {
-                    Ok(identity)
+            let identity = fs::metadata(path).and_then(|metadata| {
+                if metadata.is_dir() {
+                    Ok(home::path_identity(path))
                 } else {
                     Err(io::Error::new(
                         io::ErrorKind::NotADirectory,

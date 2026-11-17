@@ -13,6 +13,10 @@ pub fn home_dir() -> Option<PathBuf> {
     )
 }
 
+pub fn path_identity(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 pub fn expand_home_path(raw: &str) -> PathBuf {
     expand_home(raw, home_dir().as_deref())
 }
@@ -94,7 +98,7 @@ fn claude_config_dirs_from(
         let mut seen = std::collections::HashSet::new();
         for path in paths {
             let dir = normalize_claude_config_dir(path);
-            let identity = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            let identity = path_identity(&dir);
             if seen.insert(identity) {
                 dirs.push(dir);
             }
@@ -145,6 +149,12 @@ fn non_empty_path(path: Option<OsString>) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unresolved_canonical_identity_keeps_the_given_path() {
+        let path = Path::new("/ccusage-missing-canonical-root/./store");
+        assert_eq!(path_identity(path), path);
+    }
 
     #[test]
     fn prefers_home_when_available() {
