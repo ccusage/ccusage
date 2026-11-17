@@ -7199,7 +7199,7 @@
 									"type": "boolean"
 								},
 								"startOfWeek": {
-									"default": "sunday",
+									"default": "monday",
 									"description": "First day of week for weekly grouping.",
 									"enum": [
 										"sunday",

@@ -82,7 +82,7 @@ pub struct ClaudeConfig {
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeCommandsConfig {
     pub daily: Option<DailyOptions>,
-    pub weekly: Option<WeeklyOptions>,
+    pub weekly: Option<ClaudeWeeklyOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
     pub blocks: Option<BlocksOptions>,
@@ -511,6 +511,15 @@ pub struct WeeklyOptions {
     pub weekly: WeeklySpecificOptions,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeWeeklyOptions {
+    #[serde(flatten)]
+    pub shared: SharedOptions,
+    #[serde(flatten)]
+    pub weekly: WeeklySpecificOptions,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklySpecificOptions {
@@ -851,7 +860,12 @@ fn add_schema_defaults(schema: &mut Value) {
             ("noCost", json!(false)),
         ],
     );
-    set_definition_defaults(schema, "WeeklyOptions", &[("startOfWeek", json!("sunday"))]);
+    set_definition_defaults(schema, "WeeklyOptions", &[("startOfWeek", json!("monday"))]);
+    set_definition_defaults(
+        schema,
+        "ClaudeWeeklyOptions",
+        &[("startOfWeek", json!("sunday"))],
+    );
     set_definition_defaults(schema, "BlocksOptions", &[("sessionLength", json!(5.0))]);
     set_definition_defaults(
         schema,
@@ -1439,6 +1453,10 @@ mod tests {
         );
         assert_eq!(
             property_default(&schema, &["commands", "weekly", "startOfWeek"]),
+            Some(&json!("monday"))
+        );
+        assert_eq!(
+            property_default(&schema, &["claude", "commands", "weekly", "startOfWeek"]),
             Some(&json!("sunday"))
         );
         assert_eq!(
