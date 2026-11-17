@@ -204,13 +204,6 @@ impl ProviderFamily {
             Self::Anthropic | Self::Unrecorded => input * 2.0,
         }
     }
-
-    fn absent_cache_read(self, input: f64) -> f64 {
-        match self {
-            Self::OpenAi => input,
-            Self::Anthropic | Self::Unrecorded => input * 0.1,
-        }
-    }
 }
 
 impl Pricing {
@@ -265,10 +258,9 @@ impl Pricing {
     }
 
     /// The cache-read rate for a request billed at `input_rate`: the published
-    /// read rate, or the provider family's default relative to that input rate.
+    /// read rate, or the existing fallback relative to that input rate.
     pub fn cache_read_rate_at(self, input_rate: f64) -> f64 {
-        self.cache_read
-            .unwrap_or_else(|| self.family.absent_cache_read(input_rate))
+        self.cache_read.unwrap_or(input_rate * 0.1)
     }
 
     const fn empty() -> Self {
@@ -6296,6 +6288,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(matched.input, 2.0);
+    }
+
+    #[test]
+    fn cache_read_fallback_is_independent_of_cache_write_family() {
+        crate::test_support::install_pricing_snapshots();
+        for model in ["gpt-5.3-codex-xhigh", "auto/openai/gpt-oss-120b"] {
+            let pricing = PricingMap::load_embedded().find_exact(model).unwrap();
+            assert_eq!(pricing.cache_read, None, "{model}");
+            assert_eq!(
+                pricing.cache_read_rate_at(pricing.input),
+                pricing.input * 0.1,
+                "{model}"
+            );
+            assert_eq!(pricing.cache_creation_rate(), pricing.input, "{model}");
+        }
     }
 
     #[test]
