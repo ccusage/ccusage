@@ -5,6 +5,7 @@
 //! critical path of `ccusage-core` or any adapter.
 pub mod config;
 pub mod config_schema;
+mod layers;
 
 pub use config::ConfigContext;
 pub use config_schema::generate_config_schema_json;

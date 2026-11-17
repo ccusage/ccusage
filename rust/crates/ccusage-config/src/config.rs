@@ -7,16 +7,14 @@ use std::{
 use serde_json::{Map, Value};
 
 use ccusage_cli::{
-    AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DATE_BOUND_FORMATS,
-    DailyArgs, NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs,
-    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DailyArgs,
+    NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay,
+    WeeklyArgs,
 };
 
 use crate::config_schema::{
-    BlocksSpecificOptions, CodexOptions, ConfigCodexSpeed, ConfigCostMode, ConfigCostSource,
-    ConfigPricingOverride, ConfigSortOrder, ConfigVisualBurnRate, ConfigWeekDay,
-    DailySpecificOptions, NAMED_PI_STORE_NAME_PATTERN, OpenClawOptions, PiOptions, SharedOptions,
-    StatuslineSpecificOptions, WeeklySpecificOptions,
+    ConfigCodexSpeed, ConfigCostMode, ConfigCostSource, ConfigPricingOverride, ConfigSortOrder,
+    ConfigVisualBurnRate, ConfigWeekDay, NAMED_PI_STORE_NAME_PATTERN, PiStoreConfig, SharedOptions,
 };
 
 struct ConfigCommand {
@@ -29,29 +27,44 @@ pub struct ConfigContext {
     value: Option<Value>,
     command: ConfigCommand,
     pi_stores: Vec<NamedPiStore>,
-    pi_store_error: Option<String>,
-    date_bound_error: Option<String>,
+    error: Option<String>,
+    layers: BTreeMap<String, crate::layers::Layer>,
+    warnings: Vec<String>,
 }
 
 impl ConfigContext {
     pub fn from_args(args: &[String]) -> Self {
         let command = detect_config_command(args);
-        let value = load_config_value(scan_config_path(args).as_deref());
-        let (pi_stores, pi_store_error) = value
-            .as_ref()
-            .map(parse_named_pi_stores)
-            .transpose()
-            .map(|stores| (stores.unwrap_or_default(), None))
-            .unwrap_or_else(|error| (Vec::new(), Some(error)));
-        let mut context = Self {
-            value,
-            command,
-            pi_stores,
-            pi_store_error,
-            date_bound_error: None,
-        };
-        context.date_bound_error = context.detect_date_bound_error();
+        if args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-h" | "--help" | "-v" | "-V" | "--version"))
+        {
+            return Self::empty(command);
+        }
+        let (file, error, warnings) = load_config_value(scan_config_path(args).as_deref());
+        let mut context = Self::empty(command);
+        context.error = error;
+        context.warnings = warnings;
+        if let Some(file) = file {
+            context.pi_stores = file.pi_stores;
+            context.value = Some(file.value);
+            context.layers = file.layers;
+        }
+        for warning in &context.warnings {
+            eprintln!("WARN {warning}");
+        }
         context
+    }
+
+    fn empty(command: ConfigCommand) -> Self {
+        Self {
+            value: None,
+            command,
+            pi_stores: Vec::new(),
+            error: None,
+            layers: BTreeMap::new(),
+            warnings: Vec::new(),
+        }
     }
 
     /// The config as `ccusage <agent> <report>` reads it, for a unified report
@@ -81,7 +94,7 @@ impl ConfigContext {
 
     pub fn for_dependency(&self, agent: &str) -> Self {
         let report = &self.command.report;
-        let mut context = Self {
+        Self {
             value: self.value.clone(),
             command: ConfigCommand {
                 raw: format!("{agent} {report}"),
@@ -89,89 +102,30 @@ impl ConfigContext {
                 report: report.clone(),
             },
             pi_stores: self.pi_stores.clone(),
-            pi_store_error: self.pi_store_error.clone(),
-            date_bound_error: None,
-        };
-        context.date_bound_error = context.detect_date_bound_error();
-        context
+            error: self.error.clone(),
+            layers: self.layers.clone(),
+            warnings: self.warnings.clone(),
+        }
     }
 
-    /// Named pi stores only reach commands that read them, so their parse error
-    /// stays gated on those commands.
-    fn active_pi_store_error(&self) -> Option<&str> {
-        self.command_uses_named_pi_stores()
-            .then_some(self.pi_store_error.as_deref())
-            .flatten()
-    }
-
-    /// Config bounds bypass the CLI parser, so they need the same rejection the
-    /// parser gives `--since` / `--until`. `apply_shared_options` cannot fail,
-    /// so the check runs here and surfaces through `config_error` for every
-    /// command that applies shared options, not just the pi-store readers.
-    fn detect_date_bound_error(&self) -> Option<String> {
-        self.option_maps().into_iter().find_map(|options| {
-            [
-                ("since", options.get("since")),
-                ("until", options.get("until")),
-            ]
-            .into_iter()
-            .find_map(|(key, value)| {
-                let value = value?;
-                let Some(value) = value.as_str() else {
-                    return Some(config_error(format!(
-                        "{key} must be a string. Expected {DATE_BOUND_FORMATS}"
-                    )));
-                };
-                normalize_date_bound(value).is_none().then(|| {
-                    config_error(format!(
-                        "{key} '{value}' is not a valid date. Expected {DATE_BOUND_FORMATS}"
-                    ))
-                })
-            })
-        })
-    }
-
-    fn option_maps(&self) -> Vec<&Map<String, Value>> {
-        let Some(root) = self.value.as_ref().and_then(Value::as_object) else {
-            return Vec::new();
-        };
-        let report = self.command.report.as_str();
-        let command_keys = match self.command.agent.as_deref() {
-            Some(agent) => vec![
-                report.to_string(),
-                self.command.raw.clone(),
-                format!("{agent}:{report}"),
-            ],
-            None => vec![self.command.raw.clone()],
-        };
-        let commands = object_at(root, "commands");
-        let agent = self
-            .command
-            .agent
-            .as_deref()
-            .and_then(|agent| object_at(root, agent));
-        object_at(root, "defaults")
-            .into_iter()
-            .chain(
-                command_keys
-                    .iter()
-                    .filter_map(|key| commands.and_then(|commands| object_at(commands, key))),
-            )
-            .chain(agent.and_then(|agent| object_at(agent, "defaults")))
-            .chain(
-                agent
-                    .and_then(|agent| object_at(agent, "commands"))
-                    .and_then(|commands| object_at(commands, report)),
-            )
+    fn option_maps(&self) -> Vec<&crate::layers::Layer> {
+        let report = &self.command.report;
+        let mut paths = vec!["defaults".to_string()];
+        if let Some(agent) = &self.command.agent {
+            paths.extend([
+                format!("commands.{report}"),
+                format!("commands.{}", self.command.raw),
+                format!("commands.{agent}:{report}"),
+                format!("{agent}.defaults"),
+                format!("{agent}.commands.{report}"),
+            ]);
+        } else {
+            paths.push(format!("commands.{}", self.command.raw));
+        }
+        paths
+            .iter()
+            .filter_map(|path| self.layers.get(path))
             .collect()
-    }
-
-    fn command_uses_named_pi_stores(&self) -> bool {
-        self.command.agent.is_none()
-            && matches!(
-                self.command.report.as_str(),
-                "daily" | "weekly" | "monthly" | "session"
-            )
     }
 }
 
@@ -184,28 +138,14 @@ fn parse_named_pi_stores(value: &Value) -> std::result::Result<Vec<NamedPiStore>
     else {
         return Ok(Vec::new());
     };
-    let Some(stores) = stores_value.as_array() else {
-        return Err(config_error("pi.stores must be an array"));
-    };
+    let stores = crate::layers::decode::<Vec<PiStoreConfig>>(stores_value, "pi.stores")
+        .map_err(config_error)?;
 
     let mut names = BTreeSet::new();
     let mut parsed = Vec::with_capacity(stores.len());
     for (index, store) in stores.iter().enumerate() {
-        let Some(store) = store.as_object() else {
-            return Err(config_error(format!(
-                "pi.stores[{index}] must contain string fields 'name' and 'path'"
-            )));
-        };
-        let Some(name) = store.get("name").and_then(Value::as_str) else {
-            return Err(config_error(format!(
-                "pi.stores[{index}] must contain string fields 'name' and 'path'"
-            )));
-        };
-        let Some(path) = store.get("path").and_then(Value::as_str) else {
-            return Err(config_error(format!(
-                "pi.stores[{index}] must contain string fields 'name' and 'path'"
-            )));
-        };
+        let name = &store.name;
+        let path = &store.path;
         if path.trim().is_empty() {
             return Err(config_error(format!(
                 "pi.stores[{index}] ('{name}'): path must be a non-empty string"
@@ -278,16 +218,80 @@ fn object_at<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a Map<St
     object.get(key).and_then(Value::as_object)
 }
 
-fn load_config_value(path: Option<&Path>) -> Option<Value> {
-    let paths = match path {
-        Some(path) => vec![path.to_path_buf()],
-        None => discover_config_paths(),
-    };
-    paths
-        .into_iter()
-        .filter_map(|path| fs::read_to_string(path).ok())
-        .filter_map(|content| serde_json::from_str::<Value>(&content).ok())
-        .find(|value| value.as_object().is_some())
+fn load_config_value(
+    path: Option<&Path>,
+) -> (
+    Option<crate::layers::ConfigFile>,
+    Option<String>,
+    Vec<String>,
+) {
+    load_config_paths(
+        path.is_some(),
+        match path {
+            Some(path) => vec![path.to_path_buf()],
+            None => discover_config_paths(),
+        },
+    )
+}
+
+fn load_config_paths(
+    explicit: bool,
+    paths: Vec<PathBuf>,
+) -> (
+    Option<crate::layers::ConfigFile>,
+    Option<String>,
+    Vec<String>,
+) {
+    let mut warnings = Vec::new();
+    for path in paths {
+        let content = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if !explicit && error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                let message = config_error(format!("{}: {error}", path.display()));
+                if explicit {
+                    return (None, Some(message), warnings);
+                }
+                warnings.push(message);
+                continue;
+            }
+        };
+        let file = serde_json::from_str(&content)
+            .map_err(|error| error.to_string())
+            .and_then(crate::layers::ConfigFile::parse);
+        match file {
+            Ok(mut file) => {
+                match parse_named_pi_stores(&file.value) {
+                    Ok(stores) => file.pi_stores = stores,
+                    Err(error) => {
+                        let detail = error
+                            .strip_prefix("Invalid ccusage config: ")
+                            .unwrap_or(&error);
+                        let message = config_error(format!("{}: {detail}", path.display()));
+                        if explicit {
+                            return (None, Some(message), warnings);
+                        }
+                        warnings.push(message);
+                        continue;
+                    }
+                }
+                warnings.extend(
+                    file.warnings
+                        .drain(..)
+                        .map(|warning| format!("{}: {warning}", path.display())),
+                );
+                return (Some(file), None, warnings);
+            }
+            Err(error) => {
+                let message = config_error(format!("{}: {error}", path.display()));
+                if explicit {
+                    return (None, Some(message), warnings);
+                }
+                warnings.push(message);
+            }
+        }
+    }
+    (None, None, warnings)
 }
 
 fn discover_config_paths() -> Vec<PathBuf> {
@@ -427,16 +431,14 @@ fn is_report_command(command: &str) -> bool {
 
 fn apply_config_to_shared(shared: &mut SharedArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        apply_shared_options(shared, SharedOptions::from_map(options));
+        apply_shared_options(shared, options.shared.clone());
     }
-    if config.pi_store_error.is_none() {
-        shared.pi_stores = config.pi_stores.clone();
-    }
+    shared.pi_stores = config.pi_stores.clone();
 }
 
 fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        let options = DailySpecificOptions::from_map(options);
+        let options = options.daily.clone();
         if let Some(instances) = options.instances {
             args.instances = instances;
         }
@@ -451,7 +453,7 @@ fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
 
 fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        if let Some(day) = WeeklySpecificOptions::from_map(options).start_of_week {
+        if let Some(day) = options.weekly.clone().start_of_week {
             args.start_of_week = day.into();
         }
     }
@@ -459,7 +461,7 @@ fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext) {
 
 fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        let options = BlocksSpecificOptions::from_map(options);
+        let options = options.blocks.clone();
         if let Some(active) = options.active {
             args.active = active;
         }
@@ -477,7 +479,7 @@ fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
 
 fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        let options = StatuslineSpecificOptions::from_map(options);
+        let options = options.statusline.clone();
         if let Some(offline) = options.offline {
             args.offline = offline;
         }
@@ -499,16 +501,10 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         if let Some(refresh_interval) = options.refresh_interval {
             args.refresh_interval = refresh_interval;
         }
-        if let Some(threshold) = options
-            .context_low_threshold
-            .and_then(|value| u8::try_from(value).ok())
-        {
+        if let Some(threshold) = options.context_low_threshold {
             args.context_low_threshold = threshold;
         }
-        if let Some(threshold) = options
-            .context_medium_threshold
-            .and_then(|value| u8::try_from(value).ok())
-        {
+        if let Some(threshold) = options.context_medium_threshold {
             args.context_medium_threshold = threshold;
         }
         if let Some(timezone) = options.timezone {
@@ -533,17 +529,17 @@ fn apply_config_to_agent_args(
     config: &ConfigContext,
 ) {
     for options in config.option_maps() {
-        let codex_options = CodexOptions::from_map(options);
+        let codex_options = options.codex.clone();
         if let Some(speed) = codex_options.speed {
             *codex_speed = speed.into();
         }
         if let Some(pi_path) = pi_path.as_deref_mut()
-            && let Some(path) = PiOptions::from_map(options).pi_path
+            && let Some(path) = options.pi.clone().pi_path
         {
             *pi_path = Some(path);
         }
         if let Some(open_claw_path) = open_claw_path.as_deref_mut()
-            && let Some(path) = OpenClawOptions::from_map(options).open_claw_path
+            && let Some(path) = options.openclaw.clone().open_claw_path
         {
             *open_claw_path = Some(path);
         }
@@ -556,22 +552,22 @@ impl ccusage_cli::CliConfig for ConfigContext {
         for options in self.option_maps() {
             match agent {
                 "claude" => {
-                    if let Some(project) = DailySpecificOptions::from_map(options).project {
+                    if let Some(project) = options.daily.clone().project {
                         resolved.claude_project = Some(project);
                     }
                 }
                 "codex" => {
-                    if let Some(speed) = CodexOptions::from_map(options).speed {
+                    if let Some(speed) = options.codex.clone().speed {
                         resolved.codex_speed = speed.into();
                     }
                 }
                 "pi" => {
-                    if let Some(path) = PiOptions::from_map(options).pi_path {
+                    if let Some(path) = options.pi.clone().pi_path {
                         resolved.pi_path = Some(path);
                     }
                 }
                 "openclaw" => {
-                    if let Some(path) = OpenClawOptions::from_map(options).open_claw_path {
+                    if let Some(path) = options.openclaw.clone().open_claw_path {
                         resolved.open_claw_path = Some(path);
                     }
                 }
@@ -582,8 +578,7 @@ impl ccusage_cli::CliConfig for ConfigContext {
     }
 
     fn config_error(&self) -> Option<&str> {
-        self.active_pi_store_error()
-            .or(self.date_bound_error.as_deref())
+        self.error.as_deref()
     }
 
     fn apply_shared(&self, shared: &mut SharedArgs) {
@@ -617,13 +612,11 @@ impl ccusage_cli::CliConfig for ConfigContext {
 }
 
 fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
-    // Invalid bounds are rejected in `ConfigContext::detect_date_bound_error`, so an
-    // unnormalizable value here is left for that error to report.
-    if let Some(since) = options.since.as_deref().and_then(normalize_date_bound) {
-        shared.since = Some(since);
+    if let Some(since) = options.since {
+        shared.since = Some(since.0);
     }
-    if let Some(until) = options.until.as_deref().and_then(normalize_date_bound) {
-        shared.until = Some(until);
+    if let Some(until) = options.until {
+        shared.until = Some(until.0);
     }
     if let Some(json) = options.json {
         shared.json = json;
@@ -826,6 +819,108 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn invalid_discovered_files_warn_and_are_ignored_before_the_next_file() {
+        let fixture = fs_fixture!({
+            "broken.json": "{",
+            "wrong-type.json": r#"{"defaults":{"json":"yes"}}"#,
+            "bad-stores.json": r#"{"pi":{"stores":[{"name":"pi","path":"/tmp/pi"}]}}"#,
+            "valid.json": r#"{"defaults":{"json":true}}"#,
+        });
+        let (file, error, warnings) = load_config_paths(
+            false,
+            [
+                "missing.json",
+                "broken.json",
+                "wrong-type.json",
+                "bad-stores.json",
+                "valid.json",
+            ]
+            .map(|name| fixture.path(name))
+            .to_vec(),
+        );
+        assert!(error.is_none());
+        let file = file.expect("valid later file should load");
+        assert_eq!(file.layers["defaults"].shared.json, Some(true));
+        assert_eq!(warnings.len(), 3);
+        assert!(warnings[0].contains("broken.json"));
+        assert!(warnings[1].contains("defaults.json"));
+        assert!(warnings[2].contains("bad-stores.json"));
+    }
+
+    #[test]
+    fn unknown_keys_warn_without_discarding_valid_options() {
+        let config = config_context_from_json(
+            r#"{"defaults":{"json":true,"jsoon":true,"pricingOverrides":{"model":{"inputCostPerToken":0.1,"inputPrice":9}}},"commands":{"blocks":{"live":true}},"cluade":{}}"#,
+        );
+        assert!(config.config_error().is_none());
+        let mut shared = SharedArgs::default();
+        config.apply_shared(&mut shared);
+        assert!(shared.json);
+        assert_eq!(
+            shared.pricing_overrides["model"].input_cost_per_token,
+            Some(0.1)
+        );
+        for path in [
+            "defaults.jsoon",
+            "defaults.pricingOverrides.model.inputPrice",
+            "commands.blocks.live",
+            "cluade",
+        ] {
+            assert!(
+                config
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.ends_with(path)),
+                "{path}: {:?}",
+                config.warnings
+            );
+        }
+        assert_eq!(config.warnings.len(), 4);
+    }
+
+    #[test]
+    fn explicit_config_rejects_wrong_types_and_bad_enums_with_paths() {
+        for (raw, path) in [
+            (r#"{"defaults":{"json":"yes"}}"#, "defaults.json"),
+            (
+                r#"{"commands":{"daily":{"mode":"invalid"}}}"#,
+                "commands.daily.mode",
+            ),
+            (
+                r#"{"commands":{"statusline":{"contextLowThreshold":256}}}"#,
+                "commands.statusline.contextLowThreshold",
+            ),
+            (
+                r#"{"defaults":{"pricingOverrides":{"model":{"inputCostPerToken":"cheap"}}}}"#,
+                "defaults.pricingOverrides.model.inputCostPerToken",
+            ),
+        ] {
+            let config = config_context_from_json(raw);
+            let error = config
+                .config_error()
+                .expect("invalid explicit file must fail");
+            assert!(error.contains(path), "{error}");
+        }
+    }
+
+    #[test]
+    fn explicit_config_rejects_broken_and_missing_files() {
+        let fixture = fs_fixture!({ "broken.json": "{" });
+        for name in ["broken.json", "missing.json"] {
+            let path = fixture.path(name);
+            let config = ConfigContext::from_args(&[
+                "daily".into(),
+                "--config".into(),
+                path.display().to_string(),
+            ]);
+            let error = config
+                .config_error()
+                .expect("invalid explicit path must fail");
+            assert!(error.contains(name), "{error}");
+        }
+    }
+
     #[test]
     fn colon_commands_select_only_registered_reports() {
         for (name, agent) in [
@@ -1342,25 +1437,16 @@ mod tests {
     #[test]
     fn source_view_rejects_invalid_source_date_bounds() {
         let config = context(
-            json!({
-                "codex": {
-                    "defaults": {
-                        "since": "2026-02-30"
-                    }
-                }
-            }),
+            json!({"codex":{"defaults":{"since":"2026-02-30"}}}),
             "daily",
             None,
             "daily",
         );
-
+        let source = config.for_source("codex").expect("codex sections");
         assert_eq!(
-            config
-                .for_source("codex")
-                .expect("codex sections")
-                .config_error(),
+            source.config_error(),
             Some(
-                "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
+                "Invalid ccusage config: codex.defaults.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
             )
         );
     }
@@ -1522,12 +1608,7 @@ mod tests {
     fn rejects_named_pi_store_bad_shape() {
         let config = config_context_from_json(r#"{ "pi": { "stores": [{ "name": "omp" }] } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some(
-                "Invalid ccusage config: pi.stores[0] must contain string fields 'name' and 'path'"
-            )
-        );
+        assert_config_error(&config, "pi.stores: missing field `path`");
     }
 
     #[test]
@@ -1536,9 +1617,9 @@ mod tests {
             r#"{ "pi": { "stores": [{ "name": "Omp", "path": "/tmp/omp" }] } }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: pi.stores[0].name must match ^[a-z][a-z0-9_-]{0,31}$")
+        assert_config_error(
+            &config,
+            "pi.stores[0].name must match ^[a-z][a-z0-9_-]{0,31}$",
         );
     }
 
@@ -1548,9 +1629,9 @@ mod tests {
             r#"{ "pi": { "stores": [{ "name": "pi", "path": "/tmp/omp" }] } }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: pi.stores name 'pi' collides with a built-in agent")
+        assert_config_error(
+            &config,
+            "pi.stores name 'pi' collides with a built-in agent",
         );
     }
 
@@ -1567,10 +1648,7 @@ mod tests {
             }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: duplicate pi.stores name 'omp'")
-        );
+        assert_config_error(&config, "duplicate pi.stores name 'omp'");
     }
 
     #[test]
@@ -1579,9 +1657,9 @@ mod tests {
             r#"{ "pi": { "stores": [{ "name": "omp", "path": "  " }] } }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: pi.stores[0] ('omp'): path must be a non-empty string")
+        assert_config_error(
+            &config,
+            "pi.stores[0] ('omp'): path must be a non-empty string",
         );
     }
 
@@ -1614,20 +1692,16 @@ mod tests {
     fn rejects_config_date_bounds_that_are_not_real_calendar_dates() {
         let config = config_context_from_json(r#"{ "defaults": { "since": "2026-02-30" } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some(
-                "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-            )
+        assert_config_error(
+            &config,
+            "defaults.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
         );
 
         let config = config_context_from_json(r#"{ "commands": { "daily": { "until": "abc" } } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some(
-                "Invalid ccusage config: until 'abc' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-            )
+        assert_config_error(
+            &config,
+            "commands.daily.until: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
         );
     }
 
@@ -1635,9 +1709,9 @@ mod tests {
     fn rejects_config_date_bounds_that_are_not_strings() {
         let config = config_context_from_json(r#"{ "defaults": { "since": 20260710 } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: since must be a string. Expected YYYY-MM-DD or YYYYMMDD")
+        assert_config_error(
+            &config,
+            "defaults.since: invalid type: integer `20260710`, expected a string",
         );
     }
 
@@ -1652,12 +1726,9 @@ mod tests {
                 &command,
             );
 
-            assert_eq!(
-                config.config_error(),
-                Some(
-                    "Invalid ccusage config: since 'not-a-date' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-                ),
-                "expected {command:?} to inspect the weekly command config"
+            assert_config_error(
+                &config,
+                "commands.weekly.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
             );
         }
     }
@@ -1675,30 +1746,20 @@ mod tests {
                 &command,
             );
 
-            assert_eq!(
-                config.config_error(),
-                Some(
-                    "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-                ),
-                "expected {command:?} to reject the invalid config date bound"
+            assert_config_error(
+                &config,
+                "defaults.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
             );
         }
     }
 
     #[test]
-    fn keeps_named_pi_store_errors_gated_to_commands_that_read_them() {
-        let raw = r#"{ "pi": { "stores": [{ "name": "omp" }] } }"#;
-
-        assert_eq!(
-            config_context_for_command(raw, &["daily"]).config_error(),
-            Some(
-                "Invalid ccusage config: pi.stores[0] must contain string fields 'name' and 'path'"
-            )
-        );
-        assert_eq!(
-            config_context_for_command(raw, &["blocks"]).config_error(),
-            None
-        );
+    fn rejects_invalid_explicit_named_stores_for_every_command() {
+        let raw = r#"{"pi":{"stores":[{"name":"omp"}]}}"#;
+        for command in [vec!["daily"], vec!["blocks"], vec!["codex", "daily"]] {
+            let config = config_context_for_command(raw, &command);
+            assert_config_error(&config, "pi.stores: missing field `path`");
+        }
     }
 
     #[test]
@@ -1764,17 +1825,32 @@ mod tests {
         assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
     }
 
+    fn assert_config_error(config: &ConfigContext, detail: &str) {
+        let error = config
+            .config_error()
+            .expect("invalid explicit config must fail");
+        assert!(error.starts_with("Invalid ccusage config: "), "{error}");
+        assert!(error.contains("ccusage.json:"), "{error}");
+        assert!(error.ends_with(detail), "{error}");
+    }
+
     fn context(value: Value, raw: &str, agent: Option<&str>, report: &str) -> ConfigContext {
+        let parsed = crate::layers::ConfigFile::parse(value.clone());
+        let (layers, error, warnings) = match parsed {
+            Ok(file) => (file.layers, None, file.warnings),
+            Err(error) => (BTreeMap::new(), Some(config_error(error)), Vec::new()),
+        };
         ConfigContext {
             value: Some(value),
+            layers,
             command: ConfigCommand {
                 raw: raw.to_string(),
                 agent: agent.map(ToString::to_string),
                 report: report.to_string(),
             },
             pi_stores: Vec::new(),
-            pi_store_error: None,
-            date_bound_error: None,
+            error,
+            warnings,
         }
     }
 

@@ -1815,7 +1815,7 @@ fn rejects_grok_path_option() {
 }
 
 #[test]
-fn named_pi_store_validation_does_not_break_statusline() {
+fn invalid_explicit_named_stores_fail_statusline() {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
     });
@@ -1836,11 +1836,15 @@ fn named_pi_store_validation_does_not_break_statusline() {
         env!("CARGO_PKG_VERSION"),
     );
 
-    assert!(parsed.is_ok());
+    let Err(error) = parsed else {
+        panic!("expected invalid explicit config to fail")
+    };
+    assert!(error.contains("ccusage.json:"));
+    assert!(error.ends_with("pi.stores name 'codex' collides with a built-in agent"));
 }
 
 #[test]
-fn named_pi_store_validation_does_not_break_agent_commands() {
+fn invalid_explicit_named_stores_fail_agent_commands() {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
     });
@@ -1862,7 +1866,11 @@ fn named_pi_store_validation_does_not_break_agent_commands() {
         env!("CARGO_PKG_VERSION"),
     );
 
-    assert!(parsed.is_ok());
+    let Err(error) = parsed else {
+        panic!("expected invalid explicit config to fail")
+    };
+    assert!(error.contains("ccusage.json:"));
+    assert!(error.ends_with("pi.stores name 'codex' collides with a built-in agent"));
 }
 
 #[test]
@@ -1890,10 +1898,9 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
         panic!("expected config error");
     };
 
-    assert_eq!(
-        error,
-        "Invalid ccusage config: pi.stores name 'codex' collides with a built-in agent"
-    );
+    assert!(error.starts_with("Invalid ccusage config: "));
+    assert!(error.contains("ccusage.json:"));
+    assert!(error.ends_with("pi.stores name 'codex' collides with a built-in agent"));
 }
 
 #[test]

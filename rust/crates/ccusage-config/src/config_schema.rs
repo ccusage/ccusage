@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
 use schemars::{JsonSchema, r#gen::SchemaSettings};
@@ -405,13 +404,32 @@ pub struct ZCodeCommandsConfig {
     pub session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug)]
+pub struct ConfigDateBound(pub(crate) String);
+
+impl<'de> Deserialize<'de> for ConfigDateBound {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        ccusage_cli::normalize_date_bound(&value)
+            .map(Self)
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "not a valid date. Expected {}",
+                    ccusage_cli::DATE_BOUND_FORMATS
+                ))
+            })
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedOptions {
     /// Filter from date (YYYY-MM-DD or YYYYMMDD).
-    pub since: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub since: Option<ConfigDateBound>,
     /// Filter until date (inclusive).
-    pub until: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub until: Option<ConfigDateBound>,
     /// Output in JSON format.
     pub json: Option<bool>,
     /// Cost calculation mode.
@@ -472,7 +490,7 @@ pub struct DailyOptions {
     pub daily: DailySpecificOptions,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailySpecificOptions {
     /// Show per-session project instances.
@@ -492,7 +510,7 @@ pub struct WeeklyOptions {
     pub weekly: WeeklySpecificOptions,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklySpecificOptions {
     /// First day of week for weekly grouping.
@@ -508,7 +526,7 @@ pub struct BlocksOptions {
     pub blocks: BlocksSpecificOptions,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BlocksSpecificOptions {
     /// Show the active session block.
@@ -528,7 +546,7 @@ pub struct StatuslineOptions {
     pub statusline: StatuslineSpecificOptions,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StatuslineSpecificOptions {
     /// Use cached pricing data where supported.
@@ -546,9 +564,11 @@ pub struct StatuslineSpecificOptions {
     /// Statusline refresh interval in seconds.
     pub refresh_interval: Option<u64>,
     /// Percentage threshold for low context warning.
-    pub context_low_threshold: Option<u64>,
+    #[schemars(with = "Option<u64>")]
+    pub context_low_threshold: Option<u8>,
     /// Percentage threshold for medium context warning.
-    pub context_medium_threshold: Option<u64>,
+    #[schemars(with = "Option<u64>")]
+    pub context_medium_threshold: Option<u8>,
     /// Timezone for date grouping (IANA).
     pub timezone: Option<String>,
     /// Show statusline debug information.
@@ -559,7 +579,7 @@ pub struct StatuslineSpecificOptions {
     pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexOptions {
     #[serde(flatten)]
@@ -568,7 +588,7 @@ pub struct CodexOptions {
     pub speed: Option<ConfigCodexSpeed>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PiOptions {
     #[serde(flatten)]
@@ -577,7 +597,7 @@ pub struct PiOptions {
     pub pi_path: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenClawOptions {
     #[serde(flatten)]
@@ -655,108 +675,6 @@ pub struct ConfigPricingOverride {
     pub max_input_tokens: Option<u64>,
     pub fast_multiplier: Option<f64>,
     pub flex_multiplier: Option<f64>,
-}
-
-impl SharedOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            since: string_option(map, "since"),
-            until: string_option(map, "until"),
-            json: bool_option(map, "json"),
-            mode: enum_option(map, "mode"),
-            debug: bool_option(map, "debug"),
-            debug_samples: usize_option(map, "debugSamples"),
-            order: enum_option(map, "order"),
-            breakdown: bool_option(map, "breakdown"),
-            offline: bool_option(map, "offline"),
-            no_offline: bool_option(map, "noOffline"),
-            color: bool_option(map, "color"),
-            no_color: bool_option(map, "noColor"),
-            timezone: string_option(map, "timezone"),
-            jq: string_option(map, "jq"),
-            all: bool_option(map, "all"),
-            compact: bool_option(map, "compact"),
-            single_thread: bool_option(map, "singleThread"),
-            no_cost: bool_option(map, "noCost"),
-            pricing_overrides: pricing_override_map_option(map, "pricingOverrides"),
-        }
-    }
-}
-
-impl DailySpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            instances: bool_option(map, "instances"),
-            project: string_option(map, "project"),
-            project_aliases: string_option(map, "projectAliases"),
-        }
-    }
-}
-
-impl WeeklySpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            start_of_week: enum_option(map, "startOfWeek"),
-        }
-    }
-}
-
-impl BlocksSpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            active: bool_option(map, "active"),
-            recent: bool_option(map, "recent"),
-            token_limit: string_option(map, "tokenLimit"),
-            session_length: f64_option(map, "sessionLength"),
-        }
-    }
-}
-
-impl StatuslineSpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            offline: bool_option(map, "offline"),
-            no_offline: bool_option(map, "noOffline"),
-            visual_burn_rate: enum_option(map, "visualBurnRate"),
-            cost_source: enum_option(map, "costSource"),
-            cache: bool_option(map, "cache"),
-            no_cache: bool_option(map, "noCache"),
-            refresh_interval: u64_option(map, "refreshInterval"),
-            context_low_threshold: u64_option(map, "contextLowThreshold"),
-            context_medium_threshold: u64_option(map, "contextMediumThreshold"),
-            timezone: string_option(map, "timezone"),
-            debug: bool_option(map, "debug"),
-            model_label_aliases: hashmap_option(map, "modelLabelAliases"),
-            pricing_overrides: pricing_override_map_option(map, "pricingOverrides"),
-        }
-    }
-}
-
-impl CodexOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            shared: SharedOptions::from_map(map),
-            speed: enum_option(map, "speed"),
-        }
-    }
-}
-
-impl PiOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            shared: SharedOptions::from_map(map),
-            pi_path: string_option(map, "piPath"),
-        }
-    }
-}
-
-impl OpenClawOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            shared: SharedOptions::from_map(map),
-            open_claw_path: string_option(map, "openClawPath"),
-        }
-    }
 }
 
 pub fn generate_config_schema_json() -> String {
@@ -852,57 +770,6 @@ fn tab_indent_json(json: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn string_option(map: &Map<String, Value>, key: &str) -> Option<String> {
-    map.get(key)?.as_str().map(ToString::to_string)
-}
-
-fn bool_option(map: &Map<String, Value>, key: &str) -> Option<bool> {
-    map.get(key)?.as_bool()
-}
-
-fn usize_option(map: &Map<String, Value>, key: &str) -> Option<usize> {
-    map.get(key)?
-        .as_u64()
-        .and_then(|value| usize::try_from(value).ok())
-}
-
-fn u64_option(map: &Map<String, Value>, key: &str) -> Option<u64> {
-    map.get(key)?.as_u64()
-}
-
-fn f64_option(map: &Map<String, Value>, key: &str) -> Option<f64> {
-    map.get(key)?.as_f64()
-}
-
-fn enum_option<T>(map: &Map<String, Value>, key: &str) -> Option<T>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_value(map.get(key)?.clone()).ok()
-}
-
-fn pricing_override_map_option(
-    map: &Map<String, Value>,
-    key: &str,
-) -> Option<BTreeMap<String, ConfigPricingOverride>> {
-    serde_json::from_value(map.get(key)?.clone()).ok()
-}
-
-fn hashmap_option(map: &Map<String, Value>, key: &str) -> Option<HashMap<String, String>> {
-    let obj = map.get(key)?.as_object()?;
-    let mut result = HashMap::new();
-    for (k, v) in obj {
-        if let Some(s) = v.as_str() {
-            result.insert(k.clone(), s.to_string());
-        }
-    }
-    if result.is_empty() {
-        None
-    } else {
-        Some(result)
-    }
 }
 
 fn enrich_schema(value: &mut Value) {
@@ -1583,7 +1450,7 @@ mod tests {
                 "arn:aws:bedrock:ap-northeast-1:012345678910:application-inference-profile/abcde12345": "claude-opus-4-6"
             }
         });
-        let options = StatuslineSpecificOptions::from_map(map.as_object().unwrap());
+        let options = serde_json::from_value::<StatuslineSpecificOptions>(map).unwrap();
 
         let aliases = options.model_label_aliases.unwrap();
         assert_eq!(
@@ -1595,18 +1462,14 @@ mod tests {
     }
 
     #[test]
-    fn statusline_options_ignore_non_string_alias_values() {
+    fn statusline_options_reject_non_string_alias_values() {
         let map = serde_json::json!({
             "modelLabelAliases": {
                 "valid": "short",
                 "invalid": 123
             }
         });
-        let options = StatuslineSpecificOptions::from_map(map.as_object().unwrap());
-
-        let aliases = options.model_label_aliases.unwrap();
-        assert_eq!(aliases.get("valid"), Some(&"short".to_string()));
-        assert!(!aliases.contains_key("invalid"));
+        assert!(serde_json::from_value::<StatuslineSpecificOptions>(map).is_err());
     }
 
     #[test]
