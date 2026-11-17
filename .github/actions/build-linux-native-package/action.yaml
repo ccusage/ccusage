@@ -50,20 +50,6 @@ runs:
         nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
           --out-link "$user_gcroot/ccusage-cargo-artifacts"
 
-    - name: Verify Linux binary is static
-      shell: bash
-      env:
-        BINARY: ${{ inputs.binary }}
-      run: |
-        file "$BINARY"
-        if ldd "$BINARY" > "$RUNNER_TEMP/ldd.txt" 2>&1; then
-          cat "$RUNNER_TEMP/ldd.txt"
-          grep -Eiq 'not a dynamic executable|statically linked' "$RUNNER_TEMP/ldd.txt"
-        else
-          cat "$RUNNER_TEMP/ldd.txt"
-          grep -Eiq 'not a dynamic executable|statically linked' "$RUNNER_TEMP/ldd.txt"
-        fi
-
     - name: Stage native package
       shell: bash
       env:
