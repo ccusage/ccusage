@@ -271,11 +271,11 @@ fn keeps_nested_agent_progress_in_daily_model_order() {
             "claude-opus-4-6",
         ]
     );
-    assert_eq!(daily[0].total_cost, 0.12);
+    assert_eq!(daily[0].total_cost, 0.18);
 }
 
 #[test]
-fn duplicate_daily_agent_progress_matches_the_full_loader() {
+fn uses_direct_subagent_cost_for_duplicate_daily_agent_progress() {
     let fixture = fs_fixture!({
         "projects/project-a/session-a.jsonl": r#"{"sessionId":"session-a","version":"1.2.3","type":"progress","data":{"message":{"type":"assistant","timestamp":"2026-03-10T06:00:01.000Z","message":{"model":"claude-haiku-4-5-20251001","id":"msg_haiku","type":"message","role":"assistant","content":[],"usage":{"input_tokens":20,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"requestId":"req_haiku","uuid":"nested"}},"timestamp":"2026-03-10T06:00:01.001Z"}"#,
         "projects/project-a/session-a/subagents/agent-a.jsonl": r#"{"timestamp":"2026-03-10T06:00:01.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg_haiku","model":"claude-haiku-4-5-20251001","role":"assistant","usage":{"input_tokens":20,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"requestId":"req_haiku","costUSD":0.06}"#,
@@ -286,5 +286,6 @@ fn duplicate_daily_agent_progress_matches_the_full_loader() {
     let entries = load_entries(&shared, None).unwrap();
     let daily = load_daily_summaries(&shared, None, false).unwrap();
 
+    assert_eq!(daily[0].total_cost, 0.06);
     assert_eq!(rows_json(&daily), rows_json(&daily_from_entries(&entries)));
 }

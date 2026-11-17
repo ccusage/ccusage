@@ -19,14 +19,15 @@ use crate::{
 
 use super::{
     DailySummaries, DedupeIndexVec, Rejection, SessionDays, UsageLoadContext,
-    advisor_usages_from_line, carries_more_usage_detail, deserialize_usage_line,
-    is_per_response_message_id, is_semver_prefix, main_thread_session_days,
+    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
+    main_thread_session_days,
     paths::{
         claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
         visit_usage_files,
     },
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_files,
-    sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
+    reports_more_of_the_request, sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash,
+    usage_dedupe_hash,
 };
 
 pub(super) fn load_daily_summaries_inner(
@@ -261,6 +262,8 @@ pub(super) trait DedupEntry {
     fn request_id(&self) -> Option<&str>;
     fn is_sidechain(&self) -> bool;
     fn usage(&self) -> &TokenUsageRaw;
+    /// Whether the record carried a `costUSD`, whatever `--mode` does with it.
+    fn records_cost(&self) -> bool;
 }
 
 /// An entry of the daily report path.
@@ -274,6 +277,7 @@ pub(super) struct ClaudeEntry {
     pub(super) model: Option<String>,
     pub(super) missing_pricing_model: Option<String>,
     pub(super) stored_cost: Option<f64>,
+    pub(super) records_cost: bool,
 }
 
 impl DedupEntry for ClaudeEntry {
@@ -303,6 +307,10 @@ impl DedupEntry for ClaudeEntry {
 
     fn usage(&self) -> &TokenUsageRaw {
         &self.usage
+    }
+
+    fn records_cost(&self) -> bool {
+        self.records_cost
     }
 }
 
@@ -352,6 +360,7 @@ impl ParsedUsage {
             cost: self.cost,
             missing_pricing_model: self.missing_pricing_model,
             stored_cost: self.stored_cost,
+            records_cost: self.cost_usd.is_some(),
         }
     }
 }
@@ -816,7 +825,7 @@ fn should_replace_deduped_entry<E: DedupEntry>(candidate: &E, existing: &E) -> b
     if candidate_total != existing_total {
         return candidate_total > existing_total;
     }
-    carries_more_usage_detail(candidate.usage(), existing.usage())
+    reports_more_of_the_request(candidate, existing)
 }
 
 #[derive(Default)]
@@ -1742,6 +1751,7 @@ mod tests {
             model: Some("claude-sonnet-4-20250514".to_string()),
             missing_pricing_model: None,
             stored_cost: None,
+            records_cost: false,
         }
     }
 

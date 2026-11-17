@@ -361,15 +361,21 @@ impl<'a> UsageLoadContext<'a> {
 /// Breaks a tie between duplicates with equal token totals by keeping the copy
 /// that reports more of the request: the speed tier, with `Fast` above
 /// `Standard` because only `Fast` carries the fast-mode price multiplier, then
-/// the cache-write TTL split.
-fn carries_more_usage_detail(candidate: &TokenUsageRaw, existing: &TokenUsageRaw) -> bool {
-    let detail = |usage: &TokenUsageRaw| {
+/// the cache-write TTL split, then a recorded `costUSD`. Every key is a fact of
+/// the record, so the survivor does not depend on `--mode` or on pricing.
+fn reports_more_of_the_request<E: daily::DedupEntry>(candidate: &E, existing: &E) -> bool {
+    let detail = |entry: &E| {
+        let usage = entry.usage();
         let speed_rank = match usage.speed {
             None => 0,
             Some(Speed::Standard) => 1,
             Some(Speed::Fast) => 2,
         };
-        (speed_rank, usage.cache_creation.is_some())
+        (
+            speed_rank,
+            usage.cache_creation.is_some(),
+            entry.records_cost(),
+        )
     };
     detail(candidate) > detail(existing)
 }
@@ -498,6 +504,10 @@ impl daily::DedupEntry for LoadedEntry {
 
     fn usage(&self) -> &TokenUsageRaw {
         &self.data.message.usage
+    }
+
+    fn records_cost(&self) -> bool {
+        self.data.cost_usd.is_some()
     }
 }
 
