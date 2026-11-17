@@ -21,6 +21,7 @@ struct RootOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
     first_flag: Option<&'static str>,
+    statusline_unsupported: Option<String>,
 }
 
 impl RootOptions {
@@ -91,6 +92,16 @@ where
             Some("--no-offline") => Some(false),
             _ => None,
         };
+        if !matches!(
+            parser.peek_name(),
+            Some(
+                "-O" | "--offline" | "--no-offline" | "-z" | "--timezone" | "--config" | "--debug"
+            )
+        ) {
+            root_options
+                .statusline_unsupported
+                .get_or_insert_with(|| parser.peek_name().unwrap_or_default().to_string());
+        }
         parse_shared_arg(&mut parser, &mut shared)?;
         if offline_override.is_some() {
             root_options.offline_override = offline_override;
@@ -163,6 +174,11 @@ fn parse_command(
     if root_options.is_used() && !accepts_root_options(command) {
         return Err(format!("Unknown option '{}'", root_options.first_flag()));
     }
+    if (command == "statusline" || (command == "claude" && parser.peek() == Some("statusline")))
+        && let Some(flag) = &root_options.statusline_unsupported
+    {
+        return Err(format!("Unknown statusline option '{flag}'"));
+    }
     let offline_override = root_options.offline_override;
     match command {
         "daily" => parse_all_command(parser, shared, AgentReportKind::Daily, config, root_options),
@@ -216,10 +232,10 @@ fn parse_agent_command(
     };
     match agent {
         StandardAgent::Codex => parse_codex_command(parser, shared, config),
-        StandardAgent::OpenCode => parse_opencode_command(parser, shared),
+        StandardAgent::OpenCode => parse_opencode_command(parser, shared, config),
         StandardAgent::Pi => parse_pi_command(parser, shared, config),
         StandardAgent::OpenClaw => parse_openclaw_command(parser, shared, config),
-        _ => parse_basic_agent_command(parser, shared, agent),
+        _ => parse_basic_agent_command(parser, shared, agent, config),
     }
 }
 
@@ -269,6 +285,7 @@ fn parse_statusline_command(
         args.offline = offline;
     }
     args.timezone = shared.timezone.clone();
+    args.debug = shared.debug;
     while parser.peek().is_some() {
         match parser.next_flag()?.as_str() {
             "-O" | "--offline" => args.offline = true,
@@ -532,30 +549,56 @@ fn parse_claude_command(
     }
 }
 
+fn weekly_start(config: &dyn CliConfig, kind: AgentReportKind) -> WeekDay {
+    let mut weekly = WeeklyArgs {
+        shared: SharedArgs::with_defaults(),
+        start_of_week: WeekDay::Monday,
+    };
+    if kind == AgentReportKind::Weekly {
+        config.apply_weekly_args(&mut weekly);
+    }
+    weekly.start_of_week
+}
+
 fn parse_basic_agent_command(
     parser: &mut ArgParser,
-    mut shared: SharedArgs,
+    shared: SharedArgs,
     agent: StandardAgent,
+    config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, agent)?;
+    let mut args = agent_command_args(shared, kind);
+    args.start_of_week = weekly_start(config, kind);
     while parser.peek().is_some() {
-        parse_shared_arg(parser, &mut shared)?;
+        if kind == AgentReportKind::Weekly
+            && matches!(parser.peek_name(), Some("-w" | "--start-of-week"))
+        {
+            parser.next_flag()?;
+            args.start_of_week = parse_week_day(&parser.value_for("--start-of-week")?)?;
+        } else {
+            parse_shared_arg(parser, &mut args.shared)?;
+        }
     }
-    Ok(Command::Agent(agent, agent_command_args(shared, kind)))
+    Ok(Command::Agent(agent, args))
 }
 
 fn parse_opencode_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
+    config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::OpenCode)?;
     let mut include_claude_agent = false;
+    let mut start_of_week = weekly_start(config, kind);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
             "--include-claude-agent" => include_claude_agent = true,
+            "-w" | "--start-of-week" if kind == AgentReportKind::Weekly => {
+                start_of_week = parse_week_day(&parser.value_for("--start-of-week")?)?;
+            }
             flag => return Err(format!("Unknown opencode option '{flag}'")),
         }
     }
@@ -563,6 +606,7 @@ fn parse_opencode_command(
         StandardAgent::OpenCode,
         AgentCommandArgs {
             include_claude_agent,
+            start_of_week,
             ..agent_command_args(shared, kind)
         },
     ))

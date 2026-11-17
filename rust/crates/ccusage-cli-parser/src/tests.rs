@@ -1989,3 +1989,42 @@ fn preserves_configured_order_and_cli_precedence() {
         assert_eq!(report.shared.order_explicit, explicit, "{config_json}");
     }
 }
+
+#[test]
+fn every_registered_weekly_agent_accepts_a_week_start() {
+    for agent in AGENTS
+        .iter()
+        .filter(|agent| agent.reports.contains(&AgentReportKind::Weekly))
+    {
+        let command = parse(&["ccusage", agent.name, "weekly", "-w", "friday"]);
+        assert_eq!(
+            command.period(),
+            Some((PeriodUnit::Week, WeekDay::Friday)),
+            "{}",
+            agent.name
+        );
+    }
+}
+
+#[test]
+fn statusline_preserves_root_debug_and_rejects_unused_root_options() {
+    for prefix in [
+        vec!["--debug", "statusline"],
+        vec!["--debug", "claude", "statusline"],
+    ] {
+        let mut args = vec!["ccusage"];
+        args.extend(prefix);
+        let Command::Statusline(args) = parse(&args) else {
+            panic!("expected statusline")
+        };
+        assert!(args.debug);
+    }
+    assert_eq!(
+        parse_error(&["ccusage", "--json", "statusline"]),
+        "Unknown statusline option '--json'"
+    );
+    assert_eq!(
+        parse_error(&["ccusage", "--order", "asc", "claude", "statusline"]),
+        "Unknown statusline option '--order'"
+    );
+}
