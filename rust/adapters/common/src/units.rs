@@ -173,9 +173,15 @@ pub(crate) fn being_written(unit: &Path) -> bool {
     fs::metadata(unit)
         .and_then(|metadata| metadata.modified())
         .is_ok_and(|modified| {
-            SystemTime::now()
-                .duration_since(modified)
-                .map_or(true, |age| age <= IN_PROGRESS_WINDOW)
+            let nanos = |duration: Duration| {
+                i128::from(duration.as_secs()) * 1_000_000_000 + i128::from(duration.subsec_nanos())
+            };
+            let modified = match modified.duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => nanos(duration),
+                Err(error) => -nanos(error.duration()),
+            };
+            i128::from(ccusage_core::utc_now().as_millis()) * 1_000_000 - modified
+                <= nanos(IN_PROGRESS_WINDOW)
         })
 }
 
