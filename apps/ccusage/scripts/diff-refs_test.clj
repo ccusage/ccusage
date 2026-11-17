@@ -276,7 +276,8 @@
           (is (= 2 (:exit result)))
           (is (re-find #"(?m)^ERROR\s" (:out result)))
           (is (not (re-find #"(?m)^FAIL\s" (:out result))))
-          (is (.contains (:out result) "IOException"))))
+          (is (re-find #"IOException: [^\n]+" (:out result)))
+          (is (.contains (:out result) unlaunchable))))
       (testing "invalid comparison arguments are not reported as output differences"
         (let [result (run-process [(expand (path script-dir "diff-refs.bb")) "--jobs" "0" "HEAD" "HEAD"])]
           (is (= 2 (:exit result)))

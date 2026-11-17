@@ -315,7 +315,7 @@
                                          (compare! command)
                                          (catch Exception error
                                            (assoc command :status :failed :streams []
-                                                  :error (.getSimpleName (class error))))))))
+                                                  :error (str (.getSimpleName (class error)) ": " (ex-message error))))))))
                           commands)]
         (mapv (fn [future] (doto (.get ^java.util.concurrent.Future future) report-result!)) futures))
       (finally (.shutdownNow pool)))))
