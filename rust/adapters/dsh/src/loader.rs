@@ -81,7 +81,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap()
+        ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap()
     }
 
     fn debug_warnings(diagnostics: &Diagnostics) -> String {
@@ -190,8 +196,13 @@ mod tests {
         let value = format!("{},{}", first.root().display(), second.root().display());
         let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, &value);
 
-        let (entries, _) =
-            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
     }

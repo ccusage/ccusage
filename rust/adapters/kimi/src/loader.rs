@@ -59,7 +59,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-02-13");
@@ -89,7 +95,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
         assert_eq!(entries[0].session_id.as_ref(), "session-b");
@@ -111,8 +123,13 @@ mod tests {
             .join("\n"),
         });
         let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let entries =
-            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert!(entries.is_empty());
     }

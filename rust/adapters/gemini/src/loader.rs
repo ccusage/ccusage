@@ -42,12 +42,21 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env_guard = super::super::GeminiDataDirEnvGuard::set(fixture.root());
+        let _env_guard = ccusage_test_support::EnvVarGuard::set(
+            crate::paths::GEMINI_DATA_DIR_ENV,
+            fixture.root(),
+        );
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-17");

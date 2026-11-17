@@ -1,75 +1,8 @@
-use std::collections::BTreeMap;
-
-use serde_json::{Value, json};
-
-use crate::{
-    BucketKind, LoadedEntry, Result, SessionAccumulator,
-    cli::{AgentReportKind, WeekDay},
-    summarize_by_key, summarize_summaries_by_bucket, totals_json,
-};
-
-pub fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
-    let rows_json = rows
-        .iter()
-        .map(|row| ccusage_core::agent_summary_json(row, kind, kind == AgentReportKind::Session))
-        .collect::<Vec<_>>();
-    json!({
-        rows_key(kind): rows_json,
-        "totals": totals_json(rows),
-    })
-}
-
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: AgentReportKind,
-) -> Result<Vec<crate::UsageSummary>> {
-    match kind {
-        AgentReportKind::Daily => summarize_by_key(
-            entries,
-            |entry| entry.date.clone(),
-            |date| (date.to_string(), None),
-        ),
-        AgentReportKind::Monthly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Monthly,
-                WeekDay::Sunday,
-            ))
-        }
-        AgentReportKind::Session => {
-            let mut groups = BTreeMap::<String, SessionAccumulator>::new();
-            for entry in entries {
-                groups
-                    .entry(entry.session_id.to_string())
-                    .or_default()
-                    .add_entry(entry);
-            }
-            groups
-                .into_values()
-                .map(SessionAccumulator::into_summary)
-                .collect()
-        }
-        AgentReportKind::Weekly => Err(ccusage_core::cli_error(
-            "antigravity does not support weekly reports",
-        )),
-    }
-}
-
-fn rows_key(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "daily",
-        AgentReportKind::Weekly => "weekly",
-        AgentReportKind::Monthly => "monthly",
-        AgentReportKind::Session => "sessions",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use super::*;
+    use crate::*;
     use crate::{TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage};
 
     fn entry(session_id: &str, date: &str, millis: i64, project_path: &str) -> LoadedEntry {
@@ -143,17 +76,5 @@ mod tests {
             report["sessions"][0]["lastActivity"],
             "2026-05-06T16:53:20.000Z"
         );
-    }
-
-    #[test]
-    fn rejects_unsupported_weekly_reports() {
-        let rows = summarize_entries(
-            &[
-                entry("sunday", "2026-05-03", 1_778_000_000_000, "/workspace/app"),
-                entry("monday", "2026-05-04", 1_778_086_400_000, "/workspace/app"),
-            ],
-            AgentReportKind::Weekly,
-        );
-        assert!(rows.is_err());
     }
 }

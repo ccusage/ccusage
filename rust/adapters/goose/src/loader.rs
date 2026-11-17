@@ -320,11 +320,6 @@ INSERT INTO sessions (
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(
-            &crate::SOURCE,
-            ccusage_core::cli::AgentId::Goose,
-            &shared,
-            &[],
-        );
+        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Goose, &shared);
     }
 }

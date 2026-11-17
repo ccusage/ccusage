@@ -1,21 +1,25 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
-use serde_json::Value;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
+#[cfg(test)]
 mod report;
 
-use crate::{
-    LoadedEntry, Result, UsageSummary,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
-};
-
-#[cfg(test)]
-pub(crate) use loader::load_entries;
 pub use paths::{named_store_paths, paths as default_paths};
-pub use report::{report_from_rows, summarize_entries};
+
+pub fn summarize_entries(
+    entries: &[LoadedEntry],
+    kind: crate::cli::AgentReportKind,
+) -> Result<Vec<UsageSummary>> {
+    SOURCE.summarize(
+        entries,
+        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
+    )
+}
+
+pub use ccusage_adapter_common::report::activity_report_json as report_from_rows;
 
 pub struct Pi;
 
@@ -24,50 +28,15 @@ pub static SOURCE: Pi = Pi;
 impl EntrySource for Pi {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             unified_project_path: true,
+            session_scope: ccusage_adapter_common::source::SessionScope::Project,
             ..EntryDescriptor::standard("pi", "pi-agent")
         }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_with_context(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        summarize_entries(entries, kind)
-    }
-
-    fn summarize_unified(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_unified_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        crate::print_usage_table(
-            "pi-agent Token Usage Report",
-            ccusage_core::first_column(kind),
-            rows,
-            shared,
-            false,
-            None,
-        )?;
-        Ok(())
     }
 }
 
@@ -93,42 +62,15 @@ impl NamedStore {
 impl EntrySource for NamedStore {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             unified_project_path: true,
+            session_scope: ccusage_adapter_common::source::SessionScope::Project,
             ..EntryDescriptor::standard(self.name, self.name)
         }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_named_store_entries(cx, &self.paths, self.name)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        SOURCE.summarize(entries, kind)
-    }
-
-    fn summarize_unified(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        SOURCE.summarize_unified(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        SOURCE.report_json(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        SOURCE.print_table(rows, kind, shared)
     }
 }
 
@@ -165,11 +107,19 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Pi, &shared, &[]);
-        let entries = load_entries(&shared, None, None).unwrap();
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Pi, &shared);
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions {
+                pi_path: None,
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
         let focused = summarize_entries(&entries, AgentReportKind::Session).unwrap();
-        let unified =
-            report::summarize_unified_entries(&entries, AgentReportKind::Session).unwrap();
+        let unified = summarize_entries(&entries, AgentReportKind::Session).unwrap();
 
         assert_eq!(focused.len(), 2);
         assert_eq!(focused[0].input_tokens, 10);

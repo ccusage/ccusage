@@ -1,9 +1,14 @@
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
-    BucketKind, LoadedEntry, Result, SessionAccumulator, agent_summary_json,
+    LoadedEntry, Result,
     cli::{AgentReportKind, SortOrder, WeekDay},
-    sort_summaries, summarize_by_key, summarize_summaries_by_bucket, summary_period, totals_json,
+    sort_summaries, summary_period,
+};
+use ccusage_adapter_common::report::plain_report_json;
+use ccusage_adapter_common::{
+    rows,
+    source::{SessionScope, SessionShape, SummaryKind},
 };
 
 pub fn report_json(
@@ -12,83 +17,23 @@ pub fn report_json(
     order: &SortOrder,
 ) -> Result<Value> {
     let mut rows = summarize_entries(entries, kind)?;
-    sort_summaries(&mut rows, order, |row| summary_period(row));
-    Ok(report_from_rows(&rows, kind))
-}
-
-fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
-    let rows_json = rows
-        .iter()
-        .map(|row| agent_summary_json(row, kind, false))
-        .collect::<Vec<_>>();
-    json!({
-        rows_key(kind): rows_json,
-        "totals": totals_json(rows),
-    })
+    sort_summaries(&mut rows, order, summary_period);
+    Ok(plain_report_json(&rows, kind))
 }
 
 pub fn summarize_entries(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
 ) -> Result<Vec<crate::UsageSummary>> {
-    match kind {
-        AgentReportKind::Daily => summarize_by_key(
-            entries,
-            |entry| entry.date.clone(),
-            |date| (date.to_string(), None),
-        ),
-        AgentReportKind::Weekly => {
-            let daily = summarize_by_key(
-                entries,
-                |entry| entry.date.clone(),
-                |date| (date.to_string(), None),
-            )?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Monday,
-            ))
-        }
-        AgentReportKind::Monthly => {
-            let daily = summarize_by_key(
-                entries,
-                |entry| entry.date.clone(),
-                |date| (date.to_string(), None),
-            )?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Monthly,
-                WeekDay::Sunday,
-            ))
-        }
-        AgentReportKind::Session => {
-            let mut grouped: Vec<SessionAccumulator> = Vec::new();
-            let mut group_indexes = std::collections::HashMap::new();
-            for entry in entries {
-                let key = &entry.session_id;
-                let index = *group_indexes.entry(key.clone()).or_insert_with(|| {
-                    let index = grouped.len();
-                    grouped.push(SessionAccumulator::default());
-                    index
-                });
-                grouped[index].add_entry(entry);
-            }
-            let mut rows = Vec::with_capacity(grouped.len());
-            for group in grouped {
-                rows.push(group.into_summary()?);
-            }
-            Ok(rows)
-        }
+    if kind == AgentReportKind::Session {
+        return rows::summarize_source_sessions_in_order(entries);
     }
-}
-
-fn rows_key(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "daily",
-        AgentReportKind::Weekly => "weekly",
-        AgentReportKind::Monthly => "monthly",
-        AgentReportKind::Session => "sessions",
-    }
+    rows::summarize_entries(
+        entries,
+        SummaryKind::for_report(kind, WeekDay::Monday),
+        SessionShape::WithActivity,
+        SessionScope::Source,
+    )
 }
 
 #[cfg(test)]
@@ -98,7 +43,7 @@ mod tests {
     use super::*;
     use crate::{
         LoadedEntry, ModelBreakdown, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-        UsageSummary, cli::AgentReportKind, format_rfc3339_millis,
+        UsageSummary, agent_summary_json, cli::AgentReportKind, format_rfc3339_millis,
     };
 
     #[test]
@@ -120,8 +65,8 @@ mod tests {
             "weekly": agent_summary_json(&weekly, AgentReportKind::Weekly, false),
             "monthly": agent_summary_json(&monthly, AgentReportKind::Monthly, false),
             "session": agent_summary_json(&session, AgentReportKind::Session, true),
-            "dailyReport": report_from_rows(std::slice::from_ref(&daily), AgentReportKind::Daily),
-            "sessionReport": report_from_rows(&[session], AgentReportKind::Session),
+            "dailyReport": plain_report_json(std::slice::from_ref(&daily), AgentReportKind::Daily),
+            "sessionReport": plain_report_json(&[session], AgentReportKind::Session),
         }));
     }
 

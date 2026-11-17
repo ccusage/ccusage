@@ -167,6 +167,38 @@ pub enum PricingSupply {
     Source,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum SummaryKind {
+    Daily,
+    Monthly,
+    Weekly(ccusage_core::cli::WeekDay),
+    Session,
+}
+
+impl SummaryKind {
+    pub fn for_report(kind: AgentReportKind, start: ccusage_core::cli::WeekDay) -> Self {
+        match kind {
+            AgentReportKind::Daily => Self::Daily,
+            AgentReportKind::Monthly => Self::Monthly,
+            AgentReportKind::Weekly => Self::Weekly(start),
+            AgentReportKind::Session => Self::Session,
+        }
+    }
+
+    pub fn for_load(kind: LoadKind) -> Self {
+        match kind {
+            LoadKind::Day => Self::Daily,
+            LoadKind::Session => Self::Session,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionScope {
+    Source,
+    Project,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionShape {
     Plain,
@@ -192,6 +224,7 @@ pub struct EntryDescriptor {
     pub unified_project_path: bool,
     pub session: SessionShape,
     pub table: TableStyle,
+    pub session_scope: SessionScope,
 }
 
 impl EntryDescriptor {
@@ -208,6 +241,7 @@ impl EntryDescriptor {
             unified_project_path: false,
             session: SessionShape::Plain,
             table: TableStyle::Standard,
+            session_scope: SessionScope::Source,
         }
     }
 }
@@ -258,27 +292,9 @@ pub trait EntrySource: Sync {
     /// [`Detection::NonEmptyOrHasData`] is for.
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>>;
 
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        crate::rows::summarize_entries(
-            entries,
-            kind,
-            ccusage_core::cli::WeekDay::Sunday,
-            self.descriptor().session,
-        )
-    }
-
-    /// Summarizes for the unified report, for a source that groups its unified
-    /// rows differently from its focused ones.
-    fn summarize_unified(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        self.summarize(entries, kind)
+    fn summarize(&self, entries: &[LoadedEntry], kind: SummaryKind) -> Result<Vec<UsageSummary>> {
+        let descriptor = self.descriptor();
+        crate::rows::summarize_entries(entries, kind, descriptor.session, descriptor.session_scope)
     }
 
     /// The key `--order` sorts focused rows by.

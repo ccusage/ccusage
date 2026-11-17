@@ -5,20 +5,6 @@ use ccusage_adapter_common::{read_units_flat, source::LoadContext};
 
 use super::paths::discover_files;
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
@@ -49,7 +35,6 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
@@ -143,7 +128,13 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(
             entries.len(),

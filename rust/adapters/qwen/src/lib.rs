@@ -1,23 +1,21 @@
 use ccusage_adapter_common::source::{
     Detection, EntryDescriptor, EntrySource, LoadContext, PricingSupply, WindowMode,
 };
-use ccusage_core::*;
-use serde_json::Value;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
-use crate::{
-    LoadedEntry, Result, UsageSummary,
-    cli::{AgentCommandArgs, AgentReportKind},
-};
-
-#[cfg(test)]
-pub(crate) use loader::load_entries;
-pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
+pub fn summarize_entries(
+    entries: &[LoadedEntry],
+    kind: crate::cli::AgentReportKind,
+) -> Result<Vec<UsageSummary>> {
+    SOURCE.summarize(
+        entries,
+        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
+    )
+}
 
 pub struct Qwen;
 
@@ -26,6 +24,7 @@ pub static SOURCE: Qwen = Qwen;
 impl EntrySource for Qwen {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             window: WindowMode::SessionLastActivity,
             detection: Detection::NonEmptyOrHasData(has_data),
             pricing: PricingSupply::Source,
@@ -37,33 +36,12 @@ impl EntrySource for Qwen {
         loader::load_entries_with_context(cx)
     }
 
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &crate::cli::SharedArgs,
-    ) -> Result<()> {
-        crate::print_usage_table(
-            "Qwen Token Usage Report",
-            ccusage_core::first_column(kind),
-            rows,
-            shared,
-            false,
-            None,
-        )?;
-        Ok(())
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
+        let mut report = ccusage_adapter_common::report::activity_report_json(rows, kind);
+        if rows.is_empty() {
+            report["totals"] = serde_json::Value::Null;
+        }
+        report
     }
 }
 
@@ -104,7 +82,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-02-23");
@@ -133,9 +117,15 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
         let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
         assert_eq!(entries.len(), 2);
         assert!(
@@ -169,7 +159,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             entries
@@ -195,9 +191,15 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
         let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
         assert_eq!(report["daily"][0]["date"], "2026-02-23");
         assert_eq!(report["daily"][0]["outputTokens"], 50);
@@ -239,7 +241,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared, &[]);
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared);
 
         let outside_window = SharedArgs {
             since: Some("20270101".to_string()),

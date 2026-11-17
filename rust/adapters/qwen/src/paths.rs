@@ -97,7 +97,9 @@ pub(super) fn project_from_file(file: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_adapter_common::source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource};
+    use ccusage_adapter_common::source::{
+        EntrySource, LoadRequest, ProgressOwner, SourceOptions, UsageSource,
+    };
     use ccusage_test_support::{EnvVarGuard, Fixture};
 
     use super::{discover_chat_files, project_from_file};
@@ -145,7 +147,13 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = crate::load_entries(&shared).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].session_id.as_ref(), "arch-0002");
@@ -157,15 +165,14 @@ mod tests {
             &SOURCE,
             ccusage_core::cli::AgentId::Qwen,
             &shared,
-            &[],
         );
         for kind in [
             AgentReportKind::Daily,
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let rows = crate::report::summarize_entries(&entries, kind).unwrap();
-            let report = crate::report::report_from_rows(&rows, kind);
+            let rows = crate::summarize_entries(&entries, kind).unwrap();
+            let report = crate::SOURCE.report_json(&rows, kind);
             assert_eq!(report["totals"]["inputTokens"], 20);
             assert_eq!(report["totals"]["outputTokens"], 10);
         }

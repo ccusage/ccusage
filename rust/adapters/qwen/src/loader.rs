@@ -4,19 +4,6 @@ use crate::{LoadedEntry, PricingMap, Result};
 
 use super::parser;
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        None,
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let owned_pricing = if shared.mode == crate::cli::CostMode::Display || cx.pricing.is_some() {

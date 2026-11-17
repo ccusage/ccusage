@@ -63,7 +63,10 @@ mod tests {
             "chats/b.jsonl": "{}\n",
             "chats/ignore.txt": "no",
         });
-        let _env_guard = super::super::GeminiDataDirEnvGuard::set(fixture.root());
+        let _env_guard = ccusage_test_support::EnvVarGuard::set(
+            crate::paths::GEMINI_DATA_DIR_ENV,
+            fixture.root(),
+        );
         let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
         assert_eq!(

@@ -58,7 +58,10 @@ pub fn focused_rows(
     let entries = load(source, &cx, ProgressOwner::Source)?;
     diagnostics.emit(shared);
     let mut rows = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
-        source.summarize(entries, kind)
+        source.summarize(
+            entries,
+            crate::source::SummaryKind::for_report(kind, args.start_of_week),
+        )
     })?;
     sort_summaries(&mut rows, &shared.order, |row| source.sort_key(row));
     Ok(rows)
@@ -82,8 +85,8 @@ pub fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<
     };
     let entries = load(source, &cx, request.progress)?;
     let detected = detect(descriptor.detection, &entries);
-    let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
-        source.summarize_unified(entries, kind)
+    let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, _kind| {
+        source.summarize(entries, crate::source::SummaryKind::for_load(request.kind))
     })?;
     Ok(LoadedRows {
         rows: summary_rows(descriptor.id, summaries, descriptor.unified_project_path),

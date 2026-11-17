@@ -12,24 +12,6 @@ use super::{
     paths,
 };
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    custom_path: Option<&str>,
-    pricing: Option<&crate::PricingMap>,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions {
-            pi_path: custom_path,
-            ..ccusage_adapter_common::source::SourceOptions::default()
-        },
-        pricing,
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, "pi")
 }

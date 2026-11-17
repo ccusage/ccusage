@@ -37,20 +37,6 @@ struct Schema {
     has_session_version: bool,
 }
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
@@ -355,7 +341,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        load_entries(&shared, &PricingMap::load_embedded()).unwrap()
+        ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap()
     }
 
     fn load(root: &Path) -> Vec<LoadedEntry> {
@@ -723,7 +715,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
         assert_eq!(entries[1].data.message.id.as_deref(), Some("usage-2"));

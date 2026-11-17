@@ -34,6 +34,15 @@ pub fn load_entries(
     Ok((entries, diagnostics))
 }
 
+pub fn entries(
+    source: &dyn EntrySource,
+    shared: &SharedArgs,
+    options: SourceOptions<'_>,
+    pricing: Option<&PricingMap>,
+) -> Result<Vec<LoadedEntry>> {
+    load_entries(source, shared, options, pricing).map(|(entries, _)| entries)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::Ordering;

@@ -10,20 +10,6 @@ use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
 
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
@@ -86,7 +72,7 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -
 }
 
 #[cfg(test)]
-use super::report::{report_from_rows, summarize_entries};
+use crate::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
@@ -157,7 +143,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-01");
@@ -224,12 +216,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(
-            &crate::SOURCE,
-            ccusage_core::cli::AgentId::Droid,
-            &shared,
-            &[],
-        );
+        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Droid, &shared);
     }
 
     #[test]
@@ -246,7 +233,13 @@ mod tests {
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
         let pricing = PricingMap::load_embedded();
-        let entries = load_entries(&SharedArgs::default(), &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -275,7 +268,13 @@ mod tests {
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
         let pricing = PricingMap::load_embedded();
-        let entries = load_entries(&SharedArgs::default(), &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-c");

@@ -1,19 +1,21 @@
-use serde_json::Value;
-
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
-use crate::{
-    Result,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
-};
+pub fn summarize_entries(
+    entries: &[LoadedEntry],
+    kind: crate::cli::AgentReportKind,
+) -> Result<Vec<UsageSummary>> {
+    SOURCE.summarize(
+        entries,
+        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
+    )
+}
 
-pub use report::{report_from_rows, summarize_entries};
+pub use ccusage_adapter_common::report::plain_report_json as report_from_rows;
 
 /// The Amp usage source.
 pub struct Amp;
@@ -22,32 +24,14 @@ pub static SOURCE: Amp = Amp;
 
 impl EntrySource for Amp {
     fn descriptor(&self) -> EntryDescriptor {
-        EntryDescriptor::standard("amp", "Amp")
+        EntryDescriptor {
+            table: ccusage_adapter_common::source::TableStyle::Credits,
+            ..EntryDescriptor::standard("amp", "Amp")
+        }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report::report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        report::print_table(kind, rows, shared)
     }
 }
 
@@ -105,7 +89,7 @@ mod tests {
             shared(Some("2026"), Some("202602"), "UTC"),
             shared(Some("20270101"), None, "UTC"),
         ] {
-            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared, &[]);
+            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared);
         }
     }
 

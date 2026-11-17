@@ -1,8 +1,6 @@
 //! Test support: checks that a source counts the same usage in its focused
 //! report and in its slice of the unified report.
 //!
-//! The two reports share the pipeline, but each adapter still supplies the
-//! hooks, the policies and a separate unified summarizer, so they can drift.
 //! Compiled only for tests: this crate's own, and an adapter's through the
 //! `testing` feature it enables from its `[dev-dependencies]`.
 
@@ -18,14 +16,6 @@ use crate::{
     pipeline,
     source::{EntrySource, LoadRequest, ProgressOwner, SourceOptions},
 };
-
-/// A report kind whose focused and unified totals are known to differ, so the
-/// difference is on record instead of failing the check.
-pub struct KnownDivergence {
-    pub kind: AgentReportKind,
-    /// The exact difference, and why it is not a bug to fix here.
-    pub reason: &'static str,
-}
 
 #[derive(Debug, PartialEq)]
 struct Totals {
@@ -59,18 +49,16 @@ impl Totals {
 /// variable its `paths.rs` reads. The fixture must hold usage: two empty
 /// reports agree without comparing anything, so a source that reads nothing
 /// without the window fails the check. A window that leaves nothing is still
-/// compared. A kind listed in `known` must differ: an entry that no longer
-/// does fails the check, so the list cannot go stale.
+/// compared.
 ///
 /// # Panics
 ///
 /// Panics when a load fails, when the source reads no usage, when a kind
-/// differs without being listed, or when a listed kind no longer differs.
+/// has different focused and unified totals.
 pub fn assert_focused_matches_unified<S: EntrySource>(
     source: &S,
     agent: AgentId,
     shared: &SharedArgs,
-    known: &[KnownDivergence],
 ) {
     let descriptor = source.descriptor();
     let unbounded = SharedArgs {
@@ -92,19 +80,14 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
     for kind in agent.spec().reports.iter().copied() {
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
-        let matches = focused.matches(&unified);
-        match known.iter().find(|divergence| divergence.kind == kind) {
-            Some(divergence) => assert!(
-                !matches,
-                "{} {kind:?}: focused and unified totals agree, so drop the known divergence ({})",
-                descriptor.id, divergence.reason
-            ),
-            None => assert!(
-                matches,
-                "{} {kind:?}: focused totals {focused:?} differ from the unified slice {unified:?} (since {:?}, until {:?}, timezone {:?})",
-                descriptor.id, shared.since, shared.until, shared.timezone
-            ),
-        }
+        assert!(
+            focused.matches(&unified),
+            "{} {kind:?}: focused totals {focused:?} differ from the unified slice {unified:?} (since {:?}, until {:?}, timezone {:?})",
+            descriptor.id,
+            shared.since,
+            shared.until,
+            shared.timezone
+        );
     }
 }
 
@@ -177,9 +160,9 @@ fn unified_totals<S: EntrySource>(
 
 #[cfg(test)]
 mod tests {
-    use ccusage_core::cli::{AgentId, AgentReportKind};
+    use ccusage_core::cli::AgentId;
 
-    use super::{KnownDivergence, assert_focused_matches_unified};
+    use super::assert_focused_matches_unified;
     use crate::test_source::{Fake, entries, shared};
 
     fn descriptor() -> crate::source::EntryDescriptor {
@@ -189,40 +172,19 @@ mod tests {
         }
     }
 
-    fn drifted() -> Fake {
-        Fake {
-            unified_drops_an_entry: true,
-            ..Fake::new(descriptor(), entries())
-        }
-    }
-
-    fn every_kind_diverges() -> Vec<KnownDivergence> {
-        [
-            AgentReportKind::Daily,
-            AgentReportKind::Monthly,
-            AgentReportKind::Session,
-        ]
-        .into_iter()
-        .map(|kind| KnownDivergence {
-            kind,
-            reason: "the stand-in drops an entry from its unified summary",
-        })
-        .collect()
-    }
-
     #[test]
     fn passes_a_source_whose_reports_agree() {
         let source = Fake::new(descriptor(), entries());
 
-        assert_focused_matches_unified(&source, AgentId::Amp, &shared(None, None), &[]);
-        assert_focused_matches_unified(&source, AgentId::Amp, &shared(Some("20260102"), None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(None, None));
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(Some("20260102"), None));
     }
 
     #[test]
     fn compares_a_window_that_leaves_nothing() {
         let source = Fake::new(descriptor(), entries());
 
-        assert_focused_matches_unified(&source, AgentId::Amp, &shared(Some("20300101"), None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(Some("20300101"), None));
     }
 
     #[test]
@@ -230,35 +192,34 @@ mod tests {
     fn fails_a_source_that_reads_no_usage() {
         let source = Fake::new(descriptor(), Vec::new());
 
-        assert_focused_matches_unified(&source, AgentId::Amp, &shared(None, None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(None, None));
     }
 
     #[test]
     #[should_panic(expected = "differ from the unified slice")]
-    fn fails_a_source_whose_unified_slice_drifted() {
-        assert_focused_matches_unified(&drifted(), AgentId::Amp, &shared(None, None), &[]);
-    }
-
-    #[test]
-    fn accepts_a_divergence_that_is_on_record() {
+    fn fails_when_the_loader_changes_between_reports() {
+        use crate::source::{EntryDescriptor, EntrySource, LoadContext};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct ChangingSource(AtomicUsize);
+        impl EntrySource for ChangingSource {
+            fn descriptor(&self) -> EntryDescriptor {
+                descriptor()
+            }
+            fn load_entries(
+                &self,
+                _cx: &LoadContext<'_>,
+            ) -> ccusage_core::Result<Vec<ccusage_core::LoadedEntry>> {
+                let mut loaded = entries();
+                if self.0.fetch_add(1, Ordering::Relaxed) > 1 {
+                    loaded.remove(0);
+                }
+                Ok(loaded)
+            }
+        }
         assert_focused_matches_unified(
-            &drifted(),
+            &ChangingSource(AtomicUsize::new(0)),
             AgentId::Amp,
             &shared(None, None),
-            &every_kind_diverges(),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "drop the known divergence")]
-    fn fails_a_recorded_divergence_that_no_longer_exists() {
-        let source = Fake::new(descriptor(), entries());
-
-        assert_focused_matches_unified(
-            &source,
-            AgentId::Amp,
-            &shared(None, None),
-            &every_kind_diverges(),
         );
     }
 }

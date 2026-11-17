@@ -10,20 +10,6 @@ use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
 
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
@@ -82,7 +68,7 @@ fn to_loaded_entry(entry: CodebuffEntry, tz: &JiffTimeZone, pricing: &PricingMap
 }
 
 #[cfg(test)]
-use super::report::{report_from_rows, summarize_entries};
+use crate::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
@@ -121,12 +107,14 @@ mod tests {
         let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let pricing = PricingMap::default();
         for single_thread in [true, false] {
-            let entries = load_entries(
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
                 &SharedArgs {
                     single_thread,
                     ..SharedArgs::default()
                 },
-                &pricing,
+                Default::default(),
+                Some(&pricing),
             )
             .unwrap();
             let ids = entries
@@ -212,7 +200,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         let channel = fixture.root().file_name().unwrap().to_str().unwrap();
         assert_eq!(entries.len(), 1);
@@ -280,7 +274,6 @@ mod tests {
             &crate::SOURCE,
             ccusage_core::cli::AgentId::Codebuff,
             &shared,
-            &[],
         );
     }
 
@@ -298,7 +291,13 @@ mod tests {
         let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
 
         let pricing = PricingMap::load_embedded();
-        let entries = load_entries(&SharedArgs::default(), &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(

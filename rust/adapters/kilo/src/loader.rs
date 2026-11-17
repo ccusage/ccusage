@@ -156,7 +156,13 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -223,7 +229,13 @@ mod tests {
             format!("{},{}", first.root().display(), second.root().display()),
         );
         let shared = SharedArgs::default();
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);

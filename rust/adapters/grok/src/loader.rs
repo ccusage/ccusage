@@ -9,20 +9,6 @@ use super::{
     paths::{GrokSessionFiles, discover_session_files},
 };
 
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
@@ -131,7 +117,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2025-06-15");
         assert_eq!(entries[0].data.message.usage.input_tokens, 60);
@@ -157,7 +149,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 2);
         let input: u64 = entries
@@ -180,7 +178,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         // One corrupt file must not cost the rest of the home directory.
         assert_eq!(entries.len(), 1);
@@ -203,7 +207,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 2);
         let input: u64 = entries
@@ -227,7 +237,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-early"));

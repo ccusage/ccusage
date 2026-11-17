@@ -1,81 +1,11 @@
-use serde_json::{Value, json};
-
-use crate::{
-    BucketKind, LoadedEntry, Result, cli::AgentReportKind, cli::WeekDay, summarize_by_key,
-    summarize_summaries_by_bucket, totals_json,
-};
-
-pub fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
-    let rows_json = rows
-        .iter()
-        .map(|row| ccusage_core::agent_summary_json(row, kind, kind == AgentReportKind::Session))
-        .collect::<Vec<_>>();
-    json!({
-        rows_key(kind): rows_json,
-        "totals": totals_json(rows),
-    })
-}
-
-pub fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: AgentReportKind,
-) -> Result<Vec<crate::UsageSummary>> {
-    match kind {
-        AgentReportKind::Daily => summarize_by_key(
-            entries,
-            |entry| entry.date.clone(),
-            |date| (date.to_string(), None),
-        ),
-        AgentReportKind::Monthly => {
-            let daily = summarize_by_key(
-                entries,
-                |entry| entry.date.clone(),
-                |date| (date.to_string(), None),
-            )?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Monthly,
-                WeekDay::Sunday,
-            ))
-        }
-        AgentReportKind::Session => ccusage_adapter_common::rows::summarize_entry_sessions(entries),
-        AgentReportKind::Weekly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Sunday,
-            ))
-        }
-    }
-}
-
-pub(crate) fn summarize_unified_entries(
-    entries: &[LoadedEntry],
-    kind: AgentReportKind,
-) -> Result<Vec<crate::UsageSummary>> {
-    if kind != AgentReportKind::Session {
-        return summarize_entries(entries, kind);
-    }
-    ccusage_adapter_common::rows::summarize_entry_sessions(entries)
-}
-
-fn rows_key(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "daily",
-        AgentReportKind::Weekly => "weekly",
-        AgentReportKind::Monthly => "monthly",
-        AgentReportKind::Session => "sessions",
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::*;
+    use serde_json::json;
 
     #[test]
     fn empty_report_has_zero_totals_object() {
-        let report = report_from_rows(&[], AgentReportKind::Daily);
+        let report = crate::report_from_rows(&[], AgentReportKind::Daily);
 
         assert_eq!(report["daily"], json!([]));
         assert!(report["totals"].is_object());

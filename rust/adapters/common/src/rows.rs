@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use serde_json::{Value, json};
 
@@ -69,22 +69,46 @@ pub fn summary_rows(
 
 /// Summarizes entries into one row per session of a project, ordered by
 /// project path and then session id.
-///
-/// The unified session report groups this way for the sources whose focused
-/// session report keys by session id alone, so two projects that reuse a
-/// session id stay two rows.
 pub fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
-    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
-    for entry in entries {
-        groups
-            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
-            .or_default()
-            .add_entry(entry);
+    session_groups(entries, crate::source::SessionScope::Project)
+        .into_values()
+        .map(|(_, group)| group.into_summary())
+        .collect()
+}
+
+pub fn summarize_source_sessions_in_order(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
+    let mut groups = session_groups(entries, crate::source::SessionScope::Source)
+        .into_values()
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|(index, _)| *index);
+    groups
+        .into_iter()
+        .map(|(_, group)| group.into_summary())
+        .collect()
+}
+
+type SessionKey = (Option<Arc<str>>, Arc<str>);
+
+fn session_key(entry: &LoadedEntry, scope: crate::source::SessionScope) -> SessionKey {
+    let project = match scope {
+        crate::source::SessionScope::Source => None,
+        crate::source::SessionScope::Project => Some(Arc::clone(&entry.project_path)),
+    };
+    (project, Arc::clone(&entry.session_id))
+}
+
+fn session_groups(
+    entries: &[LoadedEntry],
+    scope: crate::source::SessionScope,
+) -> BTreeMap<SessionKey, (usize, SessionAccumulator)> {
+    let mut groups = BTreeMap::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let (_, group) = groups
+            .entry(session_key(entry, scope))
+            .or_insert_with(|| (index, SessionAccumulator::default()));
+        group.add_entry(entry);
     }
     groups
-        .into_values()
-        .map(|group| group.into_summary())
-        .collect()
 }
 
 fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Option<Value> {
@@ -109,27 +133,27 @@ fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Optio
 
 pub fn summarize_entries(
     entries: &[LoadedEntry],
-    kind: ccusage_core::cli::AgentReportKind,
-    start: ccusage_core::cli::WeekDay,
+    kind: crate::source::SummaryKind,
     session: crate::source::SessionShape,
+    scope: crate::source::SessionScope,
 ) -> Result<Vec<UsageSummary>> {
-    use crate::source::SessionShape;
-    use ccusage_core::{
-        cli::AgentReportKind,
-        summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target},
-    };
+    use crate::source::{SessionShape, SummaryKind};
+    use ccusage_core::summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target};
 
     match kind {
-        AgentReportKind::Session => match session {
+        SummaryKind::Session => match session {
             SessionShape::Plain => summarize_by_key_target(
                 entries,
-                |entry| (entry.project_path.clone(), entry.session_id.clone()),
+                |entry| session_key(entry, scope),
                 |(_, session)| (session.to_string(), None),
                 KeyTarget::Session,
             ),
-            SessionShape::WithActivity => summarize_entry_sessions(entries),
+            SessionShape::WithActivity => session_groups(entries, scope)
+                .into_values()
+                .map(|(_, group)| group.into_summary())
+                .collect(),
         },
-        AgentReportKind::Daily | AgentReportKind::Monthly | AgentReportKind::Weekly => {
+        SummaryKind::Daily | SummaryKind::Monthly | SummaryKind::Weekly(_) => {
             let daily = summarize_by_key_target(
                 entries,
                 |entry| entry.date.clone(),
@@ -137,8 +161,8 @@ pub fn summarize_entries(
                 KeyTarget::Date,
             )?;
             Ok(match kind {
-                AgentReportKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
-                AgentReportKind::Weekly => summarize_bucket(&daily, Bucket::Weekly(start)),
+                SummaryKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
+                SummaryKind::Weekly(start) => summarize_bucket(&daily, Bucket::Weekly(start)),
                 _ => daily,
             })
         }
@@ -148,8 +172,54 @@ pub fn summarize_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{source::SessionShape, test_source::entry};
-    use ccusage_core::cli::{AgentReportKind, WeekDay};
+    use crate::{
+        source::{SessionScope, SessionShape, SummaryKind},
+        test_source::entry,
+    };
+    use ccusage_core::cli::WeekDay;
+
+    #[test]
+    fn source_session_scope_treats_project_path_as_latest_metadata() {
+        let mut entries = vec![
+            entry("shared", "2026-01-01T00:00:00Z", 10),
+            entry("shared", "2026-01-02T00:00:00Z", 20),
+        ];
+        entries[0].project_path = Arc::from("/old");
+        entries[1].project_path = Arc::from("/new");
+        let rows = summarize_entries(
+            &entries,
+            SummaryKind::Session,
+            SessionShape::WithActivity,
+            SessionScope::Source,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].input_tokens, 30);
+        assert_eq!(rows[0].project_path.as_deref(), Some("/new"));
+        let rows = summarize_entries(
+            &entries,
+            SummaryKind::Session,
+            SessionShape::WithActivity,
+            SessionScope::Project,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].project_path.as_deref(), Some("/new"));
+        assert_eq!(rows[1].project_path.as_deref(), Some("/old"));
+    }
+
+    #[test]
+    fn source_sessions_can_preserve_first_seen_order() {
+        let entries = [
+            entry("z", "2026-01-01T00:00:00Z", 10),
+            entry("a", "2026-01-02T00:00:00Z", 20),
+            entry("z", "2026-01-03T00:00:00Z", 30),
+        ];
+        let rows = summarize_source_sessions_in_order(&entries).unwrap();
+        assert_eq!(rows[0].session_id.as_deref(), Some("z"));
+        assert_eq!(rows[0].input_tokens, 40);
+        assert_eq!(rows[1].session_id.as_deref(), Some("a"));
+    }
 
     #[test]
     fn buckets_daily_rows_before_summing_costs() {
@@ -163,9 +233,9 @@ mod tests {
         entries[2].cost = -1e16;
         let rows = summarize_entries(
             &entries,
-            AgentReportKind::Monthly,
-            WeekDay::Monday,
+            SummaryKind::Monthly,
             SessionShape::Plain,
+            SessionScope::Source,
         )
         .unwrap();
         assert_eq!(rows[0].total_cost, 1.0);
@@ -181,9 +251,9 @@ mod tests {
         ] {
             let rows = summarize_entries(
                 &entries,
-                AgentReportKind::Weekly,
-                start,
+                SummaryKind::Weekly(start),
                 SessionShape::Plain,
+                SessionScope::Source,
             )
             .unwrap();
             assert_eq!(rows[0].week.as_deref(), Some(expected));

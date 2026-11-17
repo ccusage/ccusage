@@ -1,7 +1,6 @@
 //! A stand-in source for the tests of the pipeline and of the parity check.
 
 use std::{
-    collections::BTreeMap,
     path::Path,
     sync::{
         Arc,
@@ -9,13 +8,9 @@ use std::{
     },
 };
 
-use serde_json::{Value, json};
-
 use ccusage_core::{
-    LoadedEntry, Result, SessionAccumulator, Skip, SkipKind, TokenUsageRaw, UsageEntry,
-    UsageMessage, UsageSummary,
-    cli::{AgentReportKind, SharedArgs},
-    format_date_tz, parse_ts_timestamp, resolve_tz, summarize_by_key, totals_json,
+    LoadedEntry, Result, Skip, SkipKind, TokenUsageRaw, UsageEntry, UsageMessage, cli::SharedArgs,
+    format_date_tz, parse_ts_timestamp, resolve_tz,
 };
 
 use crate::source::{EntryDescriptor, EntrySource, LoadContext, PricingSupply};
@@ -24,8 +19,6 @@ pub(crate) struct Fake {
     pub(crate) descriptor: EntryDescriptor,
     pub(crate) entries: Vec<LoadedEntry>,
     pub(crate) skips_a_unit: bool,
-    /// Makes the unified summary lose the first entry, as a drifted adapter would.
-    pub(crate) unified_drops_an_entry: bool,
     pub(crate) saw_pricing: AtomicBool,
 }
 
@@ -35,7 +28,6 @@ impl Fake {
             descriptor,
             entries,
             skips_a_unit: false,
-            unified_drops_an_entry: false,
             saw_pricing: AtomicBool::new(false),
         }
     }
@@ -58,58 +50,12 @@ impl EntrySource for Fake {
         }
         Ok(self.entries.clone())
     }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        if kind == AgentReportKind::Session {
-            let mut groups = BTreeMap::<String, SessionAccumulator>::new();
-            for entry in entries {
-                groups
-                    .entry(entry.session_id.to_string())
-                    .or_default()
-                    .add_entry(entry);
-            }
-            return groups
-                .into_values()
-                .map(SessionAccumulator::into_summary)
-                .collect();
-        }
-        summarize_by_key(
-            entries,
-            |entry| entry.date.clone(),
-            |date| (date.to_string(), None),
-        )
-    }
-
-    fn summarize_unified(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        let skipped = usize::from(self.unified_drops_an_entry).min(entries.len());
-        self.summarize(&entries[skipped..], kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], _kind: AgentReportKind) -> Value {
-        json!({ "rows": rows.len(), "totals": totals_json(rows) })
-    }
-
-    fn print_table(
-        &self,
-        _rows: &[UsageSummary],
-        _kind: AgentReportKind,
-        _shared: &SharedArgs,
-    ) -> Result<()> {
-        Ok(())
-    }
 }
 
 pub(crate) fn descriptor() -> EntryDescriptor {
     EntryDescriptor {
         pricing: PricingSupply::Source,
+        session: crate::source::SessionShape::WithActivity,
         ..EntryDescriptor::standard("fake", "Fake")
     }
 }

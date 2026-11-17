@@ -16,7 +16,7 @@ use super::{
 use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
 use ccusage_core::Diagnostics;
 #[cfg(test)]
-use ccusage_core::{ReportWindow, cli::AgentReportKind};
+use ccusage_core::ReportWindow;
 
 use crate::{
     LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -548,24 +548,6 @@ fn read_otel_file(
         .collect())
 }
 
-#[cfg(test)]
-fn load_entries_inner(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> Result<Vec<LoadedEntry>> {
-    let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new("copilot");
-    let cx = LoadContext {
-        shared,
-        kind: AgentReportKind::Daily,
-        window: &window,
-        pricing: Some(pricing),
-        options: Default::default(),
-        diagnostics: &diagnostics,
-    };
-    load_entries_for_context(&cx)
-}
-
 /// One AIU is one GitHub AI credit, billed at $0.01.
 fn nano_aiu_to_usd(nano_aiu: u64) -> f64 {
     nano_aiu as f64 / 1e11
@@ -640,7 +622,7 @@ fn usage_entry_to_loaded(
 }
 
 #[cfg(test)]
-use super::report::{report_from_rows, summarize_entries};
+use crate::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
@@ -791,7 +773,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::default()),
+        )
+        .unwrap();
 
         let mut inputs = entries
             .iter()
@@ -1184,7 +1172,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 70);
@@ -1263,7 +1257,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::default()),
+        )
+        .unwrap();
         let mut entries = entries;
         ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
 
@@ -1344,7 +1344,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::default()),
+        )
+        .unwrap();
         let mut entries = entries;
         ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
 
@@ -1422,7 +1428,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.6"));
@@ -1553,7 +1565,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::default()),
+        )
+        .unwrap();
         let rows = entries
             .iter()
             .map(|entry| {
@@ -1627,7 +1645,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::default()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -1679,7 +1703,13 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&crate::PricingMap::default()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -1740,7 +1770,13 @@ mod tests {
                 None,
             ),
         ]);
-        let mut entries = load_entries_inner(shared, pricing).unwrap();
+        let mut entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            shared,
+            Default::default(),
+            Some(pricing),
+        )
+        .unwrap();
         ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, shared);
         entries
     }

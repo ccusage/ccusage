@@ -1,17 +1,24 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
+#[cfg(test)]
 mod report;
 
-use crate::{
-    LoadedEntry, Result,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
-};
+pub fn summarize_entries(
+    entries: &[LoadedEntry],
+    kind: crate::cli::AgentReportKind,
+) -> Result<Vec<UsageSummary>> {
+    SOURCE.summarize(
+        entries,
+        ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
+    )
+}
 
-pub use report::summarize_entries;
+#[cfg(test)]
+pub(crate) use ccusage_adapter_common::report::activity_report_json as report_from_rows;
 
 pub struct Antigravity;
 pub static SOURCE: Antigravity = Antigravity;
@@ -19,40 +26,13 @@ pub static SOURCE: Antigravity = Antigravity;
 impl EntrySource for Antigravity {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             ..EntryDescriptor::standard("antigravity", "Antigravity")
         }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_for_context(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
-        report::report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        crate::print_usage_table(
-            "Antigravity Token Usage Report",
-            ccusage_core::first_column(kind),
-            rows,
-            shared,
-            false,
-            None,
-        )
     }
 }
 

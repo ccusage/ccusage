@@ -1007,11 +1007,11 @@ mod tests {
             .iter()
             .copied()
             .map(|kind| {
-                let rows = crate::report::summarize_entries(&entries, kind).unwrap();
+                let rows = crate::summarize_entries(&entries, kind).unwrap();
                 (
                     format!("{kind:?}").to_lowercase(),
                     json!({
-                    "json": crate::report::report_from_rows(&rows, kind),
+                    "json": crate::report_from_rows(&rows, kind),
                     "table": rows.iter().map(|row| json!({
                         "firstColumn": ccusage_core::first_column(kind),
                         "period": ccusage_core::summary_period(row),
