@@ -1,11 +1,7 @@
-use std::{fmt, fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, path::Path};
 
 use ccusage_adapter_common::UnitError;
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LineReader};
-use serde::{
-    Deserialize, Deserializer,
-    de::{MapAccess, SeqAccess, Visitor},
-};
 
 const READ_BUFFER_SIZE: usize = 256 * 1024;
 
@@ -72,96 +68,6 @@ fn for_each_line_from(
     }
 }
 
-struct DirectEnvelope {
-    message: Option<CheckedValue>,
-}
-
-impl<'de> Deserialize<'de> for DirectEnvelope {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct EnvelopeVisitor;
-        impl<'de> Visitor<'de> for EnvelopeVisitor {
-            type Value = DirectEnvelope;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a JSON object")
-            }
-
-            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
-                #[derive(Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "message")]
-                    Message,
-                    #[serde(other)]
-                    Other,
-                }
-
-                let mut message = None;
-                while let Some(field) = map.next_key::<Field>()? {
-                    let value = map.next_value::<Option<CheckedValue>>()?;
-                    if matches!(field, Field::Message) {
-                        message = value;
-                    }
-                }
-                Ok(DirectEnvelope { message })
-            }
-        }
-        deserializer.deserialize_map(EnvelopeVisitor)
-    }
-}
-
-// IgnoredAny skips string and number validation that Value decoding performs.
-// Discard through deserialize_any so diagnostics retain those decoding failures.
-struct CheckedValue;
-
-impl<'de> Deserialize<'de> for CheckedValue {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(Self)
-    }
-}
-
-impl<'de> Visitor<'de> for CheckedValue {
-    type Value = Self;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a JSON value")
-    }
-
-    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_unit<E: serde::de::Error>(self) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Self, S::Error> {
-        while seq.next_element::<Self>()?.is_some() {}
-        Ok(Self)
-    }
-
-    fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self, M::Error> {
-        while map.next_entry::<Self, Self>()?.is_some() {}
-        Ok(Self)
-    }
-}
-
 /// Records that line `index` of `path` carried a timestamp no day holds.
 pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
     diagnostics.record(Skip::record(
@@ -174,13 +80,7 @@ pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnos
 
 /// Records why `line` of `path` was not counted.
 #[cold]
-pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics, progress: bool) {
-    if !progress
-        && serde_json::from_slice::<DirectEnvelope>(line.bytes)
-            .is_ok_and(|envelope| envelope.message.is_none())
-    {
-        return;
-    }
+pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
     let number = Skip::line_number(line.index);
     let Some(value) = ccusage_adapter_common::jsonl::decode_streamed_line::<serde_json::Value>(
         line.bytes,
@@ -196,10 +96,9 @@ pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics, p
         .get("message")
         .and_then(|message| message.get("usage"))
         .is_some_and(serde_json::Value::is_object);
-    let wrapped = progress
-        && value
-            .pointer("/data/message/message/usage")
-            .is_some_and(serde_json::Value::is_object);
+    let wrapped = value
+        .pointer("/data/message/message/usage")
+        .is_some_and(serde_json::Value::is_object);
     if !direct && !wrapped {
         return;
     }
@@ -244,7 +143,6 @@ mod tests {
             Path::new("session.jsonl"),
             terminated(0, line),
             &diagnostics,
-            false,
         );
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
@@ -319,7 +217,7 @@ mod tests {
         for_each_line(path, diagnostics, |line| {
             if line.unterminated {
                 rejected_lines += 1;
-                rejected(path, line, diagnostics, false);
+                rejected(path, line, diagnostics);
             }
         });
         assert_eq!(rejected_lines, 1);
@@ -358,7 +256,6 @@ mod tests {
         let diagnostics = Diagnostics::new("claude");
         for line in [
             br#"{"metadata":{"usage":{}}}"#.as_slice(),
-            br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
             br#"{"data":{"usage":{},"content":[{"text":"\uD83D\uDE00"},true,false,null,-1,2,3.5]}}"#,
             br#"{"m\u0065ssage":null,"data":{"usage":{}}}"#,
         ] {
@@ -366,8 +263,7 @@ mod tests {
                 Path::new("session.jsonl"),
                 terminated(0, line),
                 &diagnostics,
-                false,
-            );
+                );
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
@@ -386,7 +282,6 @@ mod tests {
                 Path::new("session.jsonl"),
                 terminated(0, line),
                 &diagnostics,
-                false,
             );
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         }

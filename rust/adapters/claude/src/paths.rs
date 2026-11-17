@@ -59,14 +59,23 @@ pub(crate) fn visit_usage_files(
     visit: &mut dyn FnMut(PathBuf),
     diagnostics: &Diagnostics,
 ) {
+    let mut filtered_visit = |path: PathBuf| {
+        if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
+            visit(path);
+        }
+    };
     for path in paths {
         let projects_dir = path.join("projects");
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
-            visit_usage_files_in(&projects_dir.join(project_filter), visit, diagnostics);
+            visit_usage_files_in(
+                &projects_dir.join(project_filter),
+                &mut filtered_visit,
+                diagnostics,
+            );
         } else {
-            visit_usage_files_in(&projects_dir, visit, diagnostics);
+            visit_usage_files_in(&projects_dir, &mut filtered_visit, diagnostics);
         }
     }
 }

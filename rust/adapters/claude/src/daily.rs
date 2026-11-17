@@ -20,7 +20,7 @@ use crate::{
 use super::{
     DailySummaries, DedupeIndexVec, Rejection, SessionDays, UsageLoadContext,
     advisor_usages_from_line, carries_more_usage_detail, deserialize_usage_line,
-    is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
+    is_per_response_message_id, is_semver_prefix, main_thread_session_days,
     paths::{
         claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
         visit_usage_files,
@@ -33,7 +33,7 @@ pub(super) fn load_daily_summaries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
-    session_days: impl FnOnce(&DedupedDailyEntries) -> SessionDays,
+    collect_session_days: bool,
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
@@ -50,14 +50,12 @@ pub(super) fn load_daily_summaries_inner(
         load_deduped_daily_entries(
             |visit| kept.into_iter().for_each(visit),
             &context,
-            project_filter,
             diagnostics,
         )
     } else {
         load_deduped_daily_entries(
             |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
             &context,
-            project_filter,
             diagnostics,
         )
     };
@@ -75,25 +73,13 @@ pub(super) fn load_daily_summaries_inner(
             copies: Vec::new(),
         },
     };
-    let session_days = session_days(&deduped);
+    let session_days = if collect_session_days {
+        session_days(&deduped)
+    } else {
+        SessionDays::default()
+    };
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
-    // Skipped sessions still hold Claude usage, so they keep Claude detected
-    // exactly as an unbounded load would. The first file with an entry settles it.
-    // Those files are not part of the report, so what this probe skips is not
-    // reported either.
-    let detected = !summaries.is_empty()
-        || pruned.iter().any(|file| {
-            read_daily_usage_file_with_diagnostics(
-                file,
-                context.timezone(),
-                shared.mode,
-                context.pricing(),
-                &Diagnostics::new("claude"),
-            )
-            .entries
-            .iter()
-            .any(|entry| project_filter.is_none_or(|filter| entry.project.as_ref() == filter))
-        });
+    let detected = !summaries.is_empty() || pruned.iter().any(|file| has_usage(file));
     Ok(DailySummaries {
         summaries,
         detected,
@@ -101,11 +87,39 @@ pub(super) fn load_daily_summaries_inner(
     })
 }
 
+fn has_usage(path: &Path) -> bool {
+    use std::{
+        fs::File,
+        io::{BufRead, BufReader},
+    };
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    let marker = LinePrefilter::all(&[br#""usage":{"#]);
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) | Err(_) => return false,
+            Ok(_) => {
+                if marker.matches(&line)
+                    && let Ok((data, _)) = parse_usage_line(&line)
+                    && is_valid_usage_record(&data)
+                    && parse_ts_timestamp(&data.timestamp).is_some()
+                {
+                    return true;
+                }
+            }
+        }
+    }
+}
+
 /// Deduplicated daily entries plus the sessions of main-thread copies dedup
 /// merged into them from other sessions, such as a resumed or forked
 /// transcript repeating a turn, as `(survivor index, copy session)` pairs.
 pub(super) struct DedupedDailyEntries {
-    entries: Vec<DailyLoadedEntry>,
+    entries: Vec<ClaudeEntry>,
     copies: Vec<(usize, Arc<str>)>,
 }
 
@@ -117,7 +131,7 @@ pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
         deduped
             .entries
             .iter()
-            .map(|entry| (&entry.session_id, entry))
+            .map(|entry| (&entry.key.session_id, entry))
             .chain(
                 deduped
                     .copies
@@ -125,7 +139,11 @@ pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
                     .map(|(index, session_id)| (session_id, &deduped.entries[*index])),
             )
             .map(|(session_id, survivor)| {
-                (session_id, survivor.date.as_str(), survivor.is_sidechain)
+                (
+                    session_id.as_ref(),
+                    survivor.date.as_str(),
+                    survivor.key.is_sidechain,
+                )
             }),
     )
 }
@@ -135,7 +153,6 @@ pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
 fn load_deduped_daily_entries(
     discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
     context: &UsageLoadContext<'_>,
-    project_filter: Option<&str>,
     diagnostics: &Diagnostics,
 ) -> Option<DedupedDailyEntries> {
     let mode = context.shared.mode;
@@ -164,17 +181,12 @@ fn load_deduped_daily_entries(
     let mut copies = Vec::new();
     for (_, loaded_file) in loaded_files {
         for entry in loaded_file.entries {
-            if let Some(filter) = project_filter
-                && entry.project.as_ref() != filter
-            {
-                continue;
-            }
             if let Some((index, discarded)) =
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
-                && discarded.session_id != deduped[index].session_id
-                && !is_sidechain_daily_entry(&discarded)
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+                && discarded.key.session_id != deduped[index].key.session_id
+                && !is_sidechain_entry(&discarded)
             {
-                copies.push((index, discarded.session_id));
+                copies.push((index, discarded.key.session_id));
             }
         }
     }
@@ -184,10 +196,7 @@ fn load_deduped_daily_entries(
     })
 }
 
-fn summarize_daily_entries(
-    deduped: &[DailyLoadedEntry],
-    group_by_project: bool,
-) -> Vec<UsageSummary> {
+fn summarize_daily_entries(deduped: &[ClaudeEntry], group_by_project: bool) -> Vec<UsageSummary> {
     if group_by_project {
         let mut groups = BTreeMap::<(String, Arc<str>), DailyAccumulator>::new();
         for entry in deduped {
@@ -229,38 +238,44 @@ fn summarize_daily_entries(
 }
 
 #[derive(Debug)]
-struct DailyLoadedFile {
-    timestamp: Option<TimestampMs>,
-    entries: Vec<DailyLoadedEntry>,
+pub(super) struct UsageFile<M = ()> {
+    pub(super) entries: Vec<ClaudeEntry<M>>,
 }
 
 #[derive(Debug)]
-pub(super) struct DailyLoadedEntry {
-    timestamp: TimestampMs,
-    date: String,
-    project: Arc<str>,
-    session_id: Arc<str>,
-    usage: TokenUsageRaw,
-    cost: f64,
-    model: Option<String>,
-    missing_pricing_model: Option<String>,
-    stored_cost: Option<f64>,
-    message_id: Option<String>,
-    request_id: Option<String>,
-    is_sidechain: Option<bool>,
+pub(super) struct DedupKey {
+    pub(super) timestamp: TimestampMs,
+    pub(super) session_id: Arc<str>,
+    pub(super) message_id: Option<String>,
+    pub(super) request_id: Option<String>,
+    pub(super) is_sidechain: Option<bool>,
+}
+
+#[derive(Debug)]
+pub(super) struct ClaudeEntry<M = ()> {
+    pub(super) key: DedupKey,
+    pub(super) date: String,
+    pub(super) project: Arc<str>,
+    pub(super) usage: TokenUsageRaw,
+    pub(super) cost: f64,
+    pub(super) model: Option<String>,
+    pub(super) missing_pricing_model: Option<String>,
+    pub(super) stored_cost: Option<f64>,
+    pub(super) metadata: M,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DailyUsageEntry {
-    timestamp: String,
-    message: DailyUsageMessage,
-    version: Option<String>,
-    session_id: Option<String>,
+pub(super) struct ClaudeUsageRecord {
+    pub(super) timestamp: String,
+    pub(super) message: ClaudeUsageMessage,
+    pub(super) version: Option<String>,
+    pub(super) session_id: Option<String>,
     #[serde(rename = "costUSD")]
-    cost_usd: Option<f64>,
-    request_id: Option<String>,
-    is_sidechain: Option<bool>,
+    pub(super) cost_usd: Option<f64>,
+    pub(super) request_id: Option<String>,
+    pub(super) is_sidechain: Option<bool>,
+    pub(super) is_api_error_message: Option<bool>,
 }
 
 /// Parses a direct assistant line, falling back to the AgentProgress wrapper.
@@ -268,10 +283,10 @@ struct DailyUsageEntry {
 /// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
 /// use; the derive would first buffer every line, message content included, into an
 /// intermediate tree.
-fn deserialize_daily_usage_line(
+fn parse_usage_line(
     line: &[u8],
-) -> std::result::Result<(DailyUsageEntry, AdvisorLookup), Rejection> {
-    match deserialize_usage_line::<DailyUsageEntry>(line) {
+) -> std::result::Result<(ClaudeUsageRecord, AdvisorLookup), Rejection> {
+    match deserialize_usage_line::<ClaudeUsageRecord>(line) {
         Ok(entry) => {
             let lookup = if entry.message.usage.has_advisor_iteration {
                 AdvisorLookup::AskLine
@@ -280,7 +295,7 @@ fn deserialize_daily_usage_line(
             };
             Ok((entry, lookup))
         }
-        Err(Rejection::Malformed) => deserialize_usage_line::<DailyAgentProgressEntry>(line)
+        Err(Rejection::Malformed) => deserialize_usage_line::<AgentProgressEntry>(line)
             .map(|entry| (entry.into_entry(), AdvisorLookup::AskLine)),
         Err(rejection) => Err(rejection),
     }
@@ -293,18 +308,19 @@ enum AdvisorLookup {
 }
 
 #[derive(Debug, Deserialize)]
-struct DailyAgentProgressEntry {
+struct AgentProgressEntry {
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
-    data: DailyAgentProgressData,
+    data: AgentProgressData,
 }
 
-impl DailyAgentProgressEntry {
-    fn into_entry(self) -> DailyUsageEntry {
-        DailyUsageEntry {
+impl AgentProgressEntry {
+    fn into_entry(self) -> ClaudeUsageRecord {
+        ClaudeUsageRecord {
             timestamp: self.data.message.timestamp,
             message: self.data.message.message,
             version: None,
+            is_api_error_message: self.data.message.is_api_error_message,
             session_id: self.session_id,
             cost_usd: self.data.message.cost_usd,
             request_id: self.data.message.request_id,
@@ -314,15 +330,16 @@ impl DailyAgentProgressEntry {
 }
 
 #[derive(Debug, Deserialize)]
-struct DailyAgentProgressData {
-    message: DailyAgentProgressMessage,
+struct AgentProgressData {
+    message: AgentProgressMessage,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DailyAgentProgressMessage {
+struct AgentProgressMessage {
+    is_api_error_message: Option<bool>,
     timestamp: String,
-    message: DailyUsageMessage,
+    message: ClaudeUsageMessage,
     #[serde(rename = "costUSD")]
     cost_usd: Option<f64>,
     request_id: Option<String>,
@@ -330,10 +347,10 @@ struct DailyAgentProgressMessage {
 }
 
 #[derive(Debug, Deserialize)]
-struct DailyUsageMessage {
-    usage: IteratedTokenUsage,
-    model: Option<String>,
-    id: Option<String>,
+pub(super) struct ClaudeUsageMessage {
+    pub(super) usage: IteratedTokenUsage,
+    pub(super) model: Option<String>,
+    pub(super) id: Option<String>,
 }
 
 fn read_daily_usage_file_with_diagnostics(
@@ -342,13 +359,23 @@ fn read_daily_usage_file_with_diagnostics(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
-) -> DailyLoadedFile {
+) -> UsageFile {
+    read_usage_file_with_metadata(path, tz, mode, pricing, diagnostics, |_, _, _| ())
+}
+
+pub(super) fn read_usage_file_with_metadata<M>(
+    path: &Path,
+    tz: &JiffTimeZone,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+    metadata: impl Fn(&ClaudeUsageRecord, &[u8], Option<&super::AdvisorUsage>) -> M,
+) -> UsageFile<M> {
     let project: Arc<str> = Arc::from(extract_project(path));
     let (path_session_id, _) = super::paths::extract_session_parts(path);
     let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut recorded_session_id = Arc::clone(&path_session_id);
-    let mut loaded_file = DailyLoadedFile {
-        timestamp: None,
+    let mut loaded_file = UsageFile {
         entries: Vec::new(),
     };
     let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
@@ -357,11 +384,11 @@ fn read_daily_usage_file_with_diagnostics(
         if !usage_marker.matches(line) {
             return;
         }
-        let (data, advisor_lookup) = match deserialize_daily_usage_line(line) {
+        let (mut data, advisor_lookup) = match parse_usage_line(line) {
             Ok(parsed) => parsed,
             Err(Rejection::NullContract) => return,
             Err(Rejection::Malformed) => {
-                super::diagnostics::rejected(path, current, diagnostics, true);
+                super::diagnostics::rejected(path, current, diagnostics);
                 return;
             }
         };
@@ -369,15 +396,11 @@ fn read_daily_usage_file_with_diagnostics(
             super::diagnostics::invalid_timestamp(path, index, diagnostics);
             return;
         };
-        loaded_file.timestamp = Some(
-            loaded_file
-                .timestamp
-                .map_or(timestamp, |current| current.min(timestamp)),
-        );
-        if !is_valid_daily_usage_entry(&data) {
-            super::diagnostics::rejected(path, current, diagnostics, true);
+        if !is_valid_usage_record(&data) {
+            super::diagnostics::rejected(path, current, diagnostics);
             return;
         }
+        let parent_metadata = metadata(&data, line, None);
         let IteratedTokenUsage { usage, .. } = data.message.usage;
         let cost = calculate_cost_for_usage_at(
             data.message.model.as_deref(),
@@ -394,7 +417,7 @@ fn read_daily_usage_file_with_diagnostics(
             mode,
             pricing,
         );
-        let model = data.message.model.and_then(|model| {
+        let model = data.message.model.take().and_then(|model| {
             if model == "<synthetic>" {
                 None
             } else if matches!(usage.speed, Some(Speed::Fast)) {
@@ -412,24 +435,28 @@ fn read_daily_usage_file_with_diagnostics(
             Arc::clone(&path_session_id)
         };
         let parent_index = loaded_file.entries.len();
-        loaded_file.entries.push(DailyLoadedEntry {
-            timestamp,
+        loaded_file.entries.push(ClaudeEntry {
+            key: DedupKey {
+                timestamp,
+                session_id,
+                message_id: data.message.id.take(),
+                request_id: data.request_id.take(),
+                is_sidechain: data.is_sidechain,
+            },
             date: format_date_tz(timestamp, tz),
             project: Arc::clone(&project),
-            session_id,
             usage,
             cost,
             model,
             missing_pricing_model,
             stored_cost: stored_cost_for_mode(data.cost_usd, mode),
-            message_id: data.message.id,
-            request_id: data.request_id,
-            is_sidechain: data.is_sidechain,
+            metadata: parent_metadata,
         });
         if matches!(advisor_lookup, AdvisorLookup::RuledOut) {
             return;
         }
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
+            let metadata = metadata(&data, line, Some(&advisor));
             let parent = &loaded_file.entries[parent_index];
             let missing_pricing_model = missing_pricing_model_for_usage(
                 Some(&advisor.model),
@@ -438,11 +465,20 @@ fn read_daily_usage_file_with_diagnostics(
                 mode,
                 pricing,
             );
-            loaded_file.entries.push(DailyLoadedEntry {
-                timestamp,
+            loaded_file.entries.push(ClaudeEntry {
+                key: DedupKey {
+                    timestamp,
+                    session_id: Arc::clone(&parent.key.session_id),
+                    message_id: parent
+                        .key
+                        .message_id
+                        .as_ref()
+                        .map(|id| format!("{id}:advisor:{index}")),
+                    request_id: parent.key.request_id.clone(),
+                    is_sidechain: data.is_sidechain,
+                },
                 date: parent.date.clone(),
                 project: Arc::clone(&project),
-                session_id: Arc::clone(&parent.session_id),
                 usage: advisor.usage,
                 cost: calculate_cost_for_usage_at(
                     Some(&advisor.model),
@@ -455,19 +491,14 @@ fn read_daily_usage_file_with_diagnostics(
                 model: Some(advisor.model),
                 missing_pricing_model,
                 stored_cost: None,
-                message_id: parent
-                    .message_id
-                    .as_ref()
-                    .map(|message_id| format!("{message_id}:advisor:{index}")),
-                request_id: parent.request_id.clone(),
-                is_sidechain: data.is_sidechain,
+                metadata,
             });
         }
     });
     loaded_file
 }
 
-fn is_valid_daily_usage_entry(data: &DailyUsageEntry) -> bool {
+fn is_valid_usage_record(data: &ClaudeUsageRecord) -> bool {
     if data
         .version
         .as_deref()
@@ -507,48 +538,48 @@ fn is_valid_daily_usage_entry(data: &DailyUsageEntry) -> bool {
     }
     true
 }
-fn daily_usage_token_total(entry: &DailyLoadedEntry) -> u64 {
+fn usage_token_total<M>(entry: &ClaudeEntry<M>) -> u64 {
     entry.usage.input_tokens
         + entry.usage.output_tokens
         + entry.usage.cache_creation_token_count()
         + entry.usage.cache_read_input_tokens
 }
 
-fn push_deduped_daily_entry(
-    entry: DailyLoadedEntry,
+pub(super) fn push_deduped_entry<M>(
+    entry: ClaudeEntry<M>,
     deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
-    deduped: &mut Vec<DailyLoadedEntry>,
-) -> Option<(usize, DailyLoadedEntry)> {
-    let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
-        let request_id = entry.request_id.as_deref();
+    deduped: &mut Vec<ClaudeEntry<M>>,
+) -> Option<(usize, ClaudeEntry<M>)> {
+    let dedupe_lookup = entry.key.message_id.as_deref().map(|message_id| {
+        let request_id = entry.key.request_id.as_deref();
         let exact_hash = usage_dedupe_hash(
             message_id,
             request_id,
-            entry.session_id.as_ref(),
-            entry.timestamp,
+            entry.key.session_id.as_ref(),
+            entry.key.timestamp,
         );
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
                 indexes.iter().find_map(|dedupe_index| {
                     let existing = &deduped[dedupe_index.index];
-                    (existing.message_id.as_deref() == Some(message_id)
-                        && existing.request_id.as_deref() == request_id
+                    (existing.key.message_id.as_deref() == Some(message_id)
+                        && existing.key.request_id.as_deref() == request_id
                         && (request_id.is_some()
-                            || (existing.session_id == entry.session_id
-                                && (is_anthropic_message_id(message_id)
-                                    || existing.timestamp == entry.timestamp))))
+                            || (existing.key.session_id == entry.key.session_id
+                                && (is_per_response_message_id(message_id)
+                                    || existing.key.timestamp == entry.key.timestamp))))
                         .then_some(dedupe_index.index)
                 })
             })
             .or_else(|| {
                 // /btw sidechain logs can replay parent messages with new request IDs. A parent
                 // candidate only has to look through sidechain entries.
-                let candidate_is_sidechain = is_sidechain_daily_entry(&entry);
+                let candidate_is_sidechain = is_sidechain_entry(&entry);
                 let route_hash = if candidate_is_sidechain {
-                    sidechain_replay_dedupe_hash(message_id, entry.session_id.as_ref())
+                    sidechain_replay_dedupe_hash(message_id, entry.key.session_id.as_ref())
                 } else {
-                    sidechain_entry_replay_dedupe_hash(message_id, entry.session_id.as_ref())
+                    sidechain_entry_replay_dedupe_hash(message_id, entry.key.session_id.as_ref())
                 };
                 deduped_indexes.get(&route_hash).and_then(|indexes| {
                     indexes.iter().find_map(|dedupe_index| {
@@ -556,10 +587,10 @@ fn push_deduped_daily_entry(
                         let indexed_session_id = dedupe_index
                             .session_alias
                             .as_deref()
-                            .unwrap_or(existing.session_id.as_ref());
-                        (existing.message_id.as_deref() == Some(message_id)
-                            && indexed_session_id == entry.session_id.as_ref()
-                            && (candidate_is_sidechain || is_sidechain_daily_entry(existing)))
+                            .unwrap_or(existing.key.session_id.as_ref());
+                        (existing.key.message_id.as_deref() == Some(message_id)
+                            && indexed_session_id == entry.key.session_id.as_ref()
+                            && (candidate_is_sidechain || is_sidechain_entry(existing)))
                         .then_some(dedupe_index.index)
                     })
                 })
@@ -568,13 +599,13 @@ fn push_deduped_daily_entry(
     });
 
     if let Some((hash, Some(index))) = dedupe_lookup {
-        if deduped[index].session_id != entry.session_id
-            && let Some(message_id) = entry.message_id.as_deref()
+        if deduped[index].key.session_id != entry.key.session_id
+            && let Some(message_id) = entry.key.message_id.as_deref()
         {
             // Cross-session copies can become the survivor, so keep every session route used by
             // later sidechain replays.
-            let existing_session_id = Arc::clone(&deduped[index].session_id);
-            for session_id in [entry.session_id.as_ref(), existing_session_id.as_ref()] {
+            let existing_session_id = deduped[index].key.session_id.as_ref();
+            for session_id in [entry.key.session_id.as_ref(), existing_session_id] {
                 for route_hash in [
                     sidechain_replay_dedupe_hash(message_id, session_id),
                     sidechain_entry_replay_dedupe_hash(message_id, session_id),
@@ -583,24 +614,26 @@ fn push_deduped_daily_entry(
                 }
             }
         }
-        let discarded = if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
+        let discarded = if should_replace_deduped_entry(&entry, &deduped[index]) {
             let previous = std::mem::replace(&mut deduped[index], entry);
             // The survivor is already indexed under its previous keys. Only register the keys
             // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
-            if daily_entry_exact_hash(&previous) != Some(hash) {
+            if entry_exact_hash(&previous) != Some(hash) {
                 push_deduped_index(deduped_indexes, hash, index);
             }
-            let replay_route_changed = previous.session_id != deduped[index].session_id
-                || is_sidechain_daily_entry(&previous) != is_sidechain_daily_entry(&deduped[index])
-                || previous.message_id != deduped[index].message_id;
-            if replay_route_changed && let Some(message_id) = deduped[index].message_id.as_deref() {
-                let session_id = deduped[index].session_id.as_ref();
+            let replay_route_changed = previous.key.session_id != deduped[index].key.session_id
+                || is_sidechain_entry(&previous) != is_sidechain_entry(&deduped[index])
+                || previous.key.message_id != deduped[index].key.message_id;
+            if replay_route_changed
+                && let Some(message_id) = deduped[index].key.message_id.as_deref()
+            {
+                let session_id = deduped[index].key.session_id.as_ref();
                 push_deduped_index(
                     deduped_indexes,
                     sidechain_replay_dedupe_hash(message_id, session_id),
                     index,
                 );
-                if is_sidechain_daily_entry(&deduped[index]) {
+                if is_sidechain_entry(&deduped[index]) {
                     push_deduped_index(
                         deduped_indexes,
                         sidechain_entry_replay_dedupe_hash(message_id, session_id),
@@ -620,14 +653,14 @@ fn push_deduped_daily_entry(
     if let Some((hash, None)) = dedupe_lookup {
         // `index` is new, so none of these buckets can already hold it.
         push_new_deduped_index(deduped_indexes, hash, index);
-        if let Some(message_id) = deduped[index].message_id.as_deref() {
-            let session_id = deduped[index].session_id.as_ref();
+        if let Some(message_id) = deduped[index].key.message_id.as_deref() {
+            let session_id = deduped[index].key.session_id.as_ref();
             push_new_deduped_index(
                 deduped_indexes,
                 sidechain_replay_dedupe_hash(message_id, session_id),
                 index,
             );
-            if is_sidechain_daily_entry(&deduped[index]) {
+            if is_sidechain_entry(&deduped[index]) {
                 push_new_deduped_index(
                     deduped_indexes,
                     sidechain_entry_replay_dedupe_hash(message_id, session_id),
@@ -639,40 +672,34 @@ fn push_deduped_daily_entry(
     None
 }
 
-fn daily_entry_exact_hash(entry: &DailyLoadedEntry) -> Option<u64> {
-    entry.message_id.as_deref().map(|message_id| {
+fn entry_exact_hash<M>(entry: &ClaudeEntry<M>) -> Option<u64> {
+    entry.key.message_id.as_deref().map(|message_id| {
         usage_dedupe_hash(
             message_id,
-            entry.request_id.as_deref(),
-            entry.session_id.as_ref(),
-            entry.timestamp,
+            entry.key.request_id.as_deref(),
+            entry.key.session_id.as_ref(),
+            entry.key.timestamp,
         )
     })
 }
 
-fn should_replace_deduped_daily_entry(
-    candidate: &DailyLoadedEntry,
-    existing: &DailyLoadedEntry,
-) -> bool {
-    let candidate_is_sidechain = is_sidechain_daily_entry(candidate);
-    let existing_is_sidechain = is_sidechain_daily_entry(existing);
+fn should_replace_deduped_entry<M>(candidate: &ClaudeEntry<M>, existing: &ClaudeEntry<M>) -> bool {
+    let candidate_is_sidechain = is_sidechain_entry(candidate);
+    let existing_is_sidechain = is_sidechain_entry(existing);
     if candidate_is_sidechain != existing_is_sidechain {
         return existing_is_sidechain;
     }
 
-    let candidate_total = daily_usage_token_total(candidate);
-    let existing_total = daily_usage_token_total(existing);
+    let candidate_total = usage_token_total(candidate);
+    let existing_total = usage_token_total(existing);
     if candidate_total != existing_total {
         return candidate_total > existing_total;
-    }
-    if candidate.cost != existing.cost {
-        return candidate.cost > existing.cost;
     }
     carries_more_usage_detail(&candidate.usage, &existing.usage)
 }
 
-fn is_sidechain_daily_entry(entry: &DailyLoadedEntry) -> bool {
-    entry.is_sidechain == Some(true)
+fn is_sidechain_entry<M>(entry: &ClaudeEntry<M>) -> bool {
+    entry.key.is_sidechain == Some(true)
 }
 
 #[derive(Default)]
@@ -685,7 +712,7 @@ struct DailyAccumulator {
 }
 
 impl DailyAccumulator {
-    fn add_entry(&mut self, entry: &DailyLoadedEntry) {
+    fn add_entry(&mut self, entry: &ClaudeEntry) {
         self.counts.add_usage(entry.usage);
         self.cost += entry.cost;
         if let Some(model) = &entry.model {
@@ -744,8 +771,8 @@ mod tests {
     use std::{path::Path, sync::Arc};
 
     use super::{
-        DailyLoadedEntry, DailyLoadedFile, load_daily_summaries_inner, push_deduped_daily_entry,
-        read_daily_usage_file_with_diagnostics, session_days,
+        ClaudeEntry, UsageFile, load_daily_summaries_inner, push_deduped_entry,
+        read_daily_usage_file_with_diagnostics,
     };
     use crate::{
         Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
@@ -759,7 +786,7 @@ mod tests {
         tz: &JiffTimeZone,
         mode: CostMode,
         pricing: Option<&PricingMap>,
-    ) -> DailyLoadedFile {
+    ) -> UsageFile {
         read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
     }
 
@@ -785,8 +812,7 @@ mod tests {
         };
         let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily =
-            load_daily_summaries_inner(&shared, None, false, session_days, &diagnostics).unwrap();
+        let daily = load_daily_summaries_inner(&shared, None, false, true, &diagnostics).unwrap();
 
         assert_eq!(daily.summaries[0].input_tokens, 10);
         assert!(diagnostics.warnings(&shared).is_empty());
@@ -814,7 +840,7 @@ mod tests {
             &shared,
             None,
             false,
-            session_days,
+            true,
             &ccusage_core::Diagnostics::new("claude"),
         )
         .unwrap();
@@ -854,8 +880,7 @@ mod tests {
         };
         let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily =
-            load_daily_summaries_inner(&shared, None, false, session_days, &diagnostics).unwrap();
+        let daily = load_daily_summaries_inner(&shared, None, false, true, &diagnostics).unwrap();
 
         assert!(daily.summaries.is_empty());
         assert!(daily.detected);
@@ -867,7 +892,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-parent",
@@ -878,7 +903,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-sidechain-replay",
@@ -889,7 +914,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-sidechain-answer",
                 request_id: "req-sidechain-answer",
@@ -902,11 +927,11 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 2);
-        assert_eq!(deduped[0].message_id.as_deref(), Some("msg-parent"));
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.message_id.as_deref(), Some("msg-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
         assert_eq!(
-            deduped[1].message_id.as_deref(),
+            deduped[1].key.message_id.as_deref(),
             Some("msg-sidechain-answer")
         );
         assert_eq!(deduped[1].usage.cache_read_input_tokens, 700);
@@ -917,7 +942,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -932,7 +957,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -949,7 +974,7 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
@@ -958,7 +983,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-sidechain-replay",
@@ -969,7 +994,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-parent",
@@ -980,7 +1005,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-parent",
@@ -993,13 +1018,13 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
     #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
-        let (data, _) = super::deserialize_daily_usage_line(
+        let (data, _) = super::parse_usage_line(
             br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
         .unwrap();
@@ -1010,7 +1035,7 @@ mod tests {
 
     #[test]
     fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-        let (data, _) = super::deserialize_daily_usage_line(
+        let (data, _) = super::parse_usage_line(
             br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
         )
         .unwrap();
@@ -1039,7 +1064,7 @@ mod tests {
                 None,
             );
             for entry in loaded.entries {
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
         }
 
@@ -1069,8 +1094,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
         );
-        first.request_id = None;
-        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+        first.key.request_id = None;
+        push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
         let mut second = daily_loaded_entry_at(
             DailyEntryFixture {
@@ -1083,8 +1108,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_001_000),
         );
-        second.request_id = None;
-        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+        second.key.request_id = None;
+        push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 2);
         assert_eq!(
@@ -1126,7 +1151,7 @@ mod tests {
                 &shared,
                 None,
                 false,
-                session_days,
+                true,
                 &ccusage_core::Diagnostics::new("claude"),
             )
             .unwrap();
@@ -1153,8 +1178,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
         );
-        first.request_id = None;
-        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+        first.key.request_id = None;
+        push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
         let mut second = daily_loaded_entry_at(
             DailyEntryFixture {
@@ -1167,8 +1192,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_500),
         );
-        second.request_id = None;
-        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+        second.key.request_id = None;
+        push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.output_tokens, 25);
@@ -1190,8 +1215,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
         );
-        first.request_id = None;
-        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+        first.key.request_id = None;
+        push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
         let mut second = daily_loaded_entry_at(
             DailyEntryFixture {
@@ -1204,8 +1229,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_500),
         );
-        second.request_id = None;
-        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+        second.key.request_id = None;
+        push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.output_tokens, 25);
@@ -1216,7 +1241,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1231,7 +1256,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1277,7 +1302,7 @@ mod tests {
                 None,
             );
             for entry in loaded.entries {
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
         }
 
@@ -1341,7 +1366,7 @@ mod tests {
                     r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
                 ),
             ] {
-                let (_, lookup) = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
+                let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
                 let previous = super::advisor_usages_from_line(line.as_bytes());
                 if matches!(lookup, super::AdvisorLookup::AskLine) {
                     retained += 1;
@@ -1393,7 +1418,7 @@ mod tests {
                 None,
             );
             for entry in loaded.entries {
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
         }
 
@@ -1423,8 +1448,8 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-            push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
-                .map(|(index, discarded)| (index, discarded.session_id.to_string()))
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+                .map(|(index, discarded)| (index, discarded.key.session_id.to_string()))
         });
 
         assert_eq!(
@@ -1435,7 +1460,7 @@ mod tests {
                 Some((0, "session-c".to_string())),
             ]
         );
-        assert_eq!(deduped[0].session_id.as_ref(), "session-b");
+        assert_eq!(deduped[0].key.session_id.as_ref(), "session-b");
     }
 
     #[test]
@@ -1443,7 +1468,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1458,7 +1483,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1473,7 +1498,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1490,7 +1515,7 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
@@ -1499,7 +1524,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1514,7 +1539,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1529,7 +1554,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1546,8 +1571,8 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
-        assert_eq!(deduped[0].session_id.as_ref(), "session-a");
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.session_id.as_ref(), "session-a");
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
     }
 
@@ -1559,12 +1584,18 @@ mod tests {
         output_tokens: u64,
     }
 
-    fn daily_loaded_entry(fixture: DailyEntryFixture) -> DailyLoadedEntry {
-        DailyLoadedEntry {
-            timestamp: TimestampMs::from_millis(1_774_000_000_000),
+    fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
+        ClaudeEntry {
+            key: super::DedupKey {
+                timestamp: TimestampMs::from_millis(1_774_000_000_000),
+                session_id: Arc::from("session-a"),
+                message_id: Some(fixture.message_id.to_string()),
+                request_id: Some(fixture.request_id.to_string()),
+                is_sidechain: Some(fixture.is_sidechain),
+            },
+            metadata: (),
             date: "2026-03-29".to_string(),
             project: Arc::from("project-a"),
-            session_id: Arc::from("session-a"),
             usage: TokenUsageRaw {
                 input_tokens: 0,
                 output_tokens: fixture.output_tokens,
@@ -1576,9 +1607,6 @@ mod tests {
             cost: 0.0,
             model: Some("claude-sonnet-4-20250514".to_string()),
             missing_pricing_model: None,
-            message_id: Some(fixture.message_id.to_string()),
-            request_id: Some(fixture.request_id.to_string()),
-            is_sidechain: Some(fixture.is_sidechain),
             stored_cost: None,
         }
     }
@@ -1587,10 +1615,10 @@ mod tests {
         fixture: DailyEntryFixture,
         session_id: &str,
         timestamp: TimestampMs,
-    ) -> DailyLoadedEntry {
+    ) -> ClaudeEntry {
         let mut entry = daily_loaded_entry(fixture);
-        entry.session_id = Arc::from(session_id);
-        entry.timestamp = timestamp;
+        entry.key.session_id = Arc::from(session_id);
+        entry.key.timestamp = timestamp;
         entry
     }
 }

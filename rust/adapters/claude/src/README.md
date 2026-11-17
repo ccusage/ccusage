@@ -27,19 +27,17 @@ Sidechain entries:
 - ccusage keeps the parent entry and drops the replayed sidechain copy when at
   least one duplicate carries `isSidechain: true`. Distinct sidechain responses
   with their own message IDs are still counted.
-- Daily summary sidechain replay matching is scoped to the effective session ID
-  and does not require matching timestamps. The regular usage loader requires
-  matching timestamps for sidechain replays with different request IDs; replays
-  where neither entry has a `requestId` match across timestamps in both loaders.
+- Sidechain replay matching is scoped to the effective session ID and does not
+  require matching timestamps for any report.
 - This behavior fixes the overcounting reported in
   [#913](https://github.com/ccusage/ccusage/issues/913).
-- When `requestId` is missing, both loaders deduplicate by message ID, effective
+- When `requestId` is missing, all reports deduplicate by message ID, effective
   session ID, and timestamp. Repeated writes at the same timestamp still
   collapse; distinct timestamps stay separate, except that real Anthropic
   message IDs (`msg_` prefix) and OpenAI `resp_` IDs collapse across timestamps because Claude Code
-  writes one line per content block for a single response. Both keep gateway
+  writes one line per content block for a single response. All reports keep gateway
   responses that reuse a message ID in different sessions separate.
-- When `requestId` is present, both loaders deduplicate matching message and
+- When `requestId` is present, all reports deduplicate matching message and
   request IDs across sessions because Claude Code can copy one response into
   multiple session transcripts.
 
@@ -61,3 +59,8 @@ Advisor entries:
 - Advisor iterations do not include a precomputed `costUSD`, so `auto` and
   `calculate` modes price their tokens separately while `display` mode reports
   zero cost for them.
+
+All reports parse direct assistant records first, then AgentProgress records under
+`data.message.message`. Duplicate selection prefers main-thread usage, then the
+larger token total, then the speed tier and cache-write TTL detail. Stored cost
+does not determine which copy survives.

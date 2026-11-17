@@ -8,7 +8,7 @@ into the usage entries the reports render.
 - `commands/report.rs` — `ccusage daily`, `monthly`, `weekly`, `session` and `blocks`.
 - `commands/statusline.rs` — `ccusage statusline` and its output cache.
 - `blocks.rs` — billing-block grouping, burn rate and the blocks table.
-- `daily.rs` — the daily report path, which reads the same files with a narrower parser.
+- `daily.rs` — the shared record parser and deduplication, plus daily aggregation.
 - `paths.rs` — environment variables, default directories, and file discovery.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
