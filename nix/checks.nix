@@ -24,7 +24,6 @@ in
         ;
       testArtifacts = import ./test-artifacts.nix {
         inherit craneLib depsOnlyArgs;
-        cargoHawk = config.packages.cargo-hawk;
       };
       inherit (testArtifacts) cargoArtifacts;
       rustSrc = import ./rust-src.nix { inherit lib root; };
@@ -155,8 +154,6 @@ in
       # optimized native package here too only duplicated a ~70s release compile
       # on cache-cold runners.
       checks = {
-        # ccusage-hawk is off the gate until a cargo-hawk release supports the
-        # pinned compiler (astral-sh/hawk#180); revert the commit that removed it.
         inherit
           bun-nix
           ccusage-clippy

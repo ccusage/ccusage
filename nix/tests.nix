@@ -25,7 +25,6 @@ in
       inherit (config.packages.ccusage.passthru) commonArgs depsOnlyArgs;
       testArtifacts = import ./test-artifacts.nix {
         inherit craneLib depsOnlyArgs;
-        cargoHawk = config.packages.cargo-hawk;
       };
       testSrc = import ./rust-src.nix { inherit lib root; };
     in
@@ -42,7 +41,7 @@ in
           inherit (testArtifacts) cargoArtifacts;
           # Exposed so CI can root the layer on the sticky disk, like the
           # release layers, instead of letting GC drop it between runs.
-          passthru = { inherit (testArtifacts) cargoArtifacts hawkArtifacts; };
+          passthru = { inherit (testArtifacts) cargoArtifacts; };
           # commonArgs disables checks for the release build; re-enable here so
           # cargoTest actually runs the test suite rather than skipping it.
           doCheck = true;

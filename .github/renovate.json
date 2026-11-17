@@ -35,7 +35,7 @@
 			"allowedVersions": "<0.9.0"
 		},
 		{
-			"description": "The Rust compiler must stay paired with the pinned cargo-hawk binary and rust-overlay.",
+			"description": "A Rust toolchain bump needs a rust-overlay revision that already knows the new channel.",
 			"matchManagers": ["rust-toolchain"],
 			"matchDepTypes": ["toolchain"],
 			"enabled": false
