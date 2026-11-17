@@ -86,7 +86,7 @@ fn seed_legacy_sessions(state: &Path) {
     let sessions = state.join("agents/main/sessions");
 
     // The replayed line is deduped. Its near miss differs only in the stored
-    // cost, which is part of the dedupe key in auto and display mode.
+    // cost; the agent database's migrated copy of the event replaces both.
     let replayed = r#"{"type":"message","id":"a-4","message":{"role":"assistant","usage":{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{"total":0.5}},"timestamp":1767088800000}}"#;
     write_session(
         &sessions.join("alpha.jsonl"),
@@ -211,7 +211,8 @@ fn seed_agent_databases(state: &Path) {
         &database("main"),
         &[
             // Migrated copies of legacy alpha events with corrected costs. The
-            // second one matches two legacy lines and replaces only the first.
+            // second one matches two legacy lines that differ only in cost and
+            // replaces both.
             (
                 "alpha",
                 0,

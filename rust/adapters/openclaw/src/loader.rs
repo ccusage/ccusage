@@ -247,6 +247,28 @@ mod tests {
     }
 
     #[test]
+    fn keeps_jsonl_lines_that_differ_only_in_cost_without_a_sqlite_copy() {
+        let fixture = fs_fixture!({
+            "agents/main/sessions/session.jsonl": format!(
+                "{}\n{}\n",
+                assistant_event(None, 0.50),
+                assistant_event(None, 0.49),
+            ),
+        });
+
+        let entries =
+            crate::load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.cost_usd)
+                .collect::<Vec<_>>(),
+            [Some(0.50), Some(0.49)]
+        );
+    }
+
+    #[test]
     fn prefers_sqlite_over_every_migrated_jsonl_copy() {
         let fixture = fs_fixture!({
             "agents/main/sessions/session.jsonl": format!(
