@@ -200,10 +200,8 @@ function createNativeSpawner({
 
 			for (const signal of forwardedSignals) {
 				const handler = () => handleSignal(signal);
-				try {
-					signalSource.on(signal, handler);
-					signalHandlers.set(signal, handler);
-				} catch {}
+				signalSource.on(signal, handler);
+				signalHandlers.set(signal, handler);
 			}
 		});
 }
