@@ -135,6 +135,12 @@ mod tests {
             SessionLength::from_hours(5.0).unwrap(),
             SessionLength::DEFAULT
         );
+        for (hours, millis) in [(4.35, 15_660_000), (0.7, 2_520_000)] {
+            assert_eq!(
+                SessionLength::from_hours(hours).unwrap().as_millis(),
+                millis
+            );
+        }
         for hours in [f64::NAN, f64::INFINITY, -1.0, 0.0, 1e300, 1e-10] {
             assert!(SessionLength::from_hours(hours).is_err());
         }
