@@ -1,6 +1,6 @@
 use std::process;
 
-use crate::parser::command_tokens;
+use ccusage_cli::command_tokens;
 
 struct HelpPage {
     path: &'static [&'static str],

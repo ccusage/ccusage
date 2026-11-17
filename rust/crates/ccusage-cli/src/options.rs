@@ -1,11 +1,19 @@
 struct OptionSpec {
-    takes_value: bool,
+    arity: OptionArity,
     shared: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OptionArity {
+    Switch,
+    Value,
+    CommandDependent,
 }
 
 fn option(arg: &str) -> Option<OptionSpec> {
     let name = arg.split_once('=').map_or(arg, |(name, _)| name);
     let (takes_value, shared) = match name {
+        "-h" | "--help" | "-v" | "-V" | "--version" => (false, false),
         "-s" | "--since" => (true, true),
         "-u" | "--until" => (true, true),
         "--last" => (true, true),
@@ -51,13 +59,26 @@ fn option(arg: &str) -> Option<OptionSpec> {
         _ => return None,
     };
     Some(OptionSpec {
-        takes_value,
+        arity: if name == "-i" {
+            OptionArity::CommandDependent
+        } else if takes_value {
+            OptionArity::Value
+        } else {
+            OptionArity::Switch
+        },
         shared,
     })
 }
 
+pub fn option_arity(arg: &str) -> Option<OptionArity> {
+    option(arg).map(|option| option.arity)
+}
+
 pub fn option_takes_value(arg: &str) -> bool {
-    option(arg).is_some_and(|option| option.takes_value)
+    matches!(
+        option_arity(arg),
+        Some(OptionArity::Value | OptionArity::CommandDependent)
+    )
 }
 
 pub fn is_shared_flag(arg: &str) -> bool {
@@ -85,4 +106,22 @@ mod tests {
         assert!(!option_takes_value("--unknown"));
         assert!(!is_shared_flag("--unknown"));
     }
+}
+
+pub fn command_tokens(args: &[String]) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg.starts_with('-') {
+            if option_takes_value(arg) && !arg.contains('=') {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        tokens.push(arg.clone());
+        index += 1;
+    }
+    tokens
 }

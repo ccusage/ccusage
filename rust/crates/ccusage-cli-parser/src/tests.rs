@@ -2226,3 +2226,32 @@ fn statusline_accepts_valid_root_flags() {
         }
     }
 }
+
+#[test]
+fn option_metadata_matches_every_documented_flag_and_arity() {
+    use ccusage_cli::OptionArity;
+    use std::collections::{BTreeMap, BTreeSet};
+    let help: Value = serde_json::from_str(include_str!("cli-help.json")).unwrap();
+    let mut arities = BTreeMap::<&str, BTreeSet<bool>>::new();
+    for group in help.as_object().unwrap().values() {
+        for spec in group.as_array().unwrap() {
+            let flags = spec["flags"].as_str().unwrap();
+            let takes_value = flags.contains(['<', '[']);
+            for alias in flags.split(',') {
+                arities
+                    .entry(alias.split_whitespace().next().unwrap())
+                    .or_default()
+                    .insert(takes_value);
+            }
+        }
+    }
+    for (flag, arities) in arities {
+        let expected = match arities.into_iter().collect::<Vec<_>>().as_slice() {
+            [false] => OptionArity::Switch,
+            [true] => OptionArity::Value,
+            [false, true] => OptionArity::CommandDependent,
+            _ => panic!("missing arity"),
+        };
+        assert_eq!(ccusage_cli::option_arity(flag), Some(expected), "{flag}");
+    }
+}

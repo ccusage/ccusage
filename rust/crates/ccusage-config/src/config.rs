@@ -7,7 +7,7 @@ use std::{
 
 use serde_json::Value;
 
-use ccusage_cli::option_takes_value;
+use ccusage_cli::command_tokens;
 use ccusage_cli::{
     AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, ContextThresholds, CostMode, CostSource,
     DailyArgs, NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs,
@@ -425,27 +425,6 @@ fn detect_config_command(args: &[String]) -> ConfigCommand {
         agent: None,
         report: first.clone(),
     }
-}
-
-fn command_tokens(args: &[String]) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while index < args.len() {
-        let arg = &args[index];
-        if let Some((flag, _)) = arg.split_once('=')
-            && flag.starts_with('-')
-        {
-            index += 1;
-            continue;
-        }
-        if arg.starts_with('-') {
-            index += if option_takes_value(arg) { 2 } else { 1 };
-            continue;
-        }
-        tokens.push(arg.clone());
-        index += 1;
-    }
-    tokens
 }
 
 fn is_agent_command(command: &str) -> bool {

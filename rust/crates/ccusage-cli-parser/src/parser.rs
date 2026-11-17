@@ -8,7 +8,7 @@ use ccusage_cli::{
     SharedArgs, SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
     normalize_date_bound,
 };
-use ccusage_cli::{is_shared_flag, option_takes_value};
+use ccusage_cli::{command_tokens, is_shared_flag};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlArg {
@@ -834,24 +834,6 @@ fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
         )
     };
     Some(message)
-}
-
-pub(crate) fn command_tokens(args: &[String]) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while let Some(arg) = args.get(index) {
-        if arg.starts_with('-') {
-            if option_takes_value(arg) && !arg.contains('=') {
-                index += 2;
-            } else {
-                index += 1;
-            }
-            continue;
-        }
-        tokens.push(arg.clone());
-        index += 1;
-    }
-    tokens
 }
 
 fn parse_date_bound(flag: &str, value: &str) -> Result<String, String> {
