@@ -10,17 +10,16 @@ pub fn paths(custom_path: Option<&str>) -> Result<Vec<PathBuf>> {
     if let Some(paths) = custom_path.and_then(roots::from_list) {
         return Ok(roots::directories(paths.into_iter().map(store_root)));
     }
-    Ok(roots::directories(
-        RootsEnv::List(PI_AGENT_DIR_ENV)
-            .candidates(|| {
-                crate::home::home_dir()
-                    .map(|home| home.join(".pi/agent/sessions"))
-                    .into_iter()
-                    .collect()
-            })
-            .into_iter()
-            .map(store_root),
-    ))
+    let candidates: Vec<PathBuf> = RootsEnv::List(PI_AGENT_DIR_ENV)
+        .configured()
+        .map(|paths| paths.into_iter().map(store_root).collect())
+        .unwrap_or_else(|| {
+            crate::home::home_dir()
+                .map(|home| home.join(".pi/agent/sessions"))
+                .into_iter()
+                .collect()
+        });
+    Ok(roots::directories(candidates))
 }
 
 pub fn named_store_paths(raw: &str) -> Result<Vec<PathBuf>> {
@@ -41,6 +40,19 @@ fn store_root(path: PathBuf) -> PathBuf {
 mod tests {
     use super::*;
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    #[test]
+    fn default_store_keeps_a_project_named_sessions() {
+        let fixture = fs_fixture!({});
+        let store = fixture.create_dir_all(".pi/agent/sessions");
+        fixture.create_dir_all(".pi/agent/sessions/sessions");
+        fixture.create_dir_all(".pi/agent/sessions/another-project");
+        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().into())),
+            (PI_AGENT_DIR_ENV, None),
+        ]);
+        assert_eq!(paths(None).unwrap(), vec![store]);
+    }
 
     #[test]
     fn named_store_path_expands_home_directory() {
