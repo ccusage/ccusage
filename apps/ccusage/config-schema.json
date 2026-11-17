@@ -1958,9 +1958,18 @@
 											"type": "string"
 										},
 										"tokenLimit": {
+											"anyOf": [
+												{
+													"type": "string"
+												},
+												{
+													"format": "uint64",
+													"minimum": 0.0,
+													"type": "integer"
+												}
+											],
 											"description": "Token limit for session block calculations.",
-											"markdownDescription": "Token limit for session block calculations.",
-											"type": "string"
+											"markdownDescription": "Token limit for session block calculations."
 										},
 										"until": {
 											"description": "Filter until date (inclusive).",
@@ -3061,9 +3070,18 @@
 									"type": "string"
 								},
 								"tokenLimit": {
+									"anyOf": [
+										{
+											"type": "string"
+										},
+										{
+											"format": "uint64",
+											"minimum": 0.0,
+											"type": "integer"
+										}
+									],
 									"description": "Token limit for session block calculations.",
-									"markdownDescription": "Token limit for session block calculations.",
-									"type": "string"
+									"markdownDescription": "Token limit for session block calculations."
 								},
 								"until": {
 									"description": "Filter until date (inclusive).",
@@ -5922,9 +5940,18 @@
 									"type": "string"
 								},
 								"tokenLimit": {
+									"anyOf": [
+										{
+											"type": "string"
+										},
+										{
+											"format": "uint64",
+											"minimum": 0.0,
+											"type": "integer"
+										}
+									],
 									"description": "Token limit for session block calculations.",
-									"markdownDescription": "Token limit for session block calculations.",
-									"type": "string"
+									"markdownDescription": "Token limit for session block calculations."
 								},
 								"until": {
 									"description": "Filter until date (inclusive).",
