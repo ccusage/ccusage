@@ -30,30 +30,29 @@ pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<WireF
         let sessions_path = kimi_path.join(KIMI_SESSIONS_DIR_NAME);
         let mut candidates = Vec::new();
         collect_files_with_extension(&sessions_path, "jsonl", &mut candidates, diagnostics);
-        files.extend(candidates);
+        files.extend(
+            candidates
+                .into_iter()
+                .filter(|file| is_kimi_wire_file(&sessions_path, file)),
+        );
     }
     files.sort();
     files.dedup();
     Ok(WireFile::from_paths(files))
 }
 
-fn is_kimi_wire_file(file_path: &Path) -> bool {
+fn is_kimi_wire_file(sessions_path: &Path, file_path: &Path) -> bool {
     file_path
         .file_name()
         .is_some_and(|name| name == KIMI_WIRE_FILE_NAME)
-        && file_path.ancestors().skip(1).any(|ancestor| {
-            ancestor
-                .file_name()
-                .is_some_and(|name| name == KIMI_SESSIONS_DIR_NAME)
-                && file_path.strip_prefix(ancestor).is_ok_and(|relative| {
-                    matches!(
-                        relative
-                            .components()
-                            .filter(|component| matches!(component, Component::Normal(_)))
-                            .count(),
-                        3 | 5
-                    )
-                })
+        && file_path.strip_prefix(sessions_path).is_ok_and(|relative| {
+            matches!(
+                relative
+                    .components()
+                    .filter(|component| matches!(component, Component::Normal(_)))
+                    .count(),
+                3 | 5
+            )
         })
 }
 
@@ -82,7 +81,10 @@ impl WireFile {
         paths
             .into_iter()
             .filter_map(|path| {
-                if !is_kimi_wire_file(&path) {
+                if path
+                    .file_name()
+                    .is_none_or(|name| name != KIMI_WIRE_FILE_NAME)
+                {
                     return None;
                 }
                 let parent = path.parent();
@@ -126,6 +128,23 @@ impl WireFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configured_roots_ignore_unrelated_sessions_ancestors() {
+        let fixture = fs_fixture!({
+            "backup/sessions/kimi/sessions/wire.jsonl": "{}\n",
+            "backup/sessions/kimi/sessions/group/session/wire.jsonl": "{}\n",
+        });
+        let _guard = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.path("backup/sessions/kimi"));
+        let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
+        assert_eq!(
+            files
+                .iter()
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>(),
+            vec![fixture.path("backup/sessions/kimi/sessions/group/session/wire.jsonl")]
+        );
+    }
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     #[test]
