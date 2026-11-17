@@ -209,5 +209,5 @@ exit: 0
 }
 
 --- stderr ---
-WARN  antigravity: skipped 2 inputs (unexpected shape)
+WARN  antigravity: skipped 1 input (unexpected shape)
 WARN  antigravity: skipped 2 inputs (invalid data)

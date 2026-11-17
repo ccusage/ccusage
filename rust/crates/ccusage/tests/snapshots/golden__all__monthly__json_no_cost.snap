@@ -43,9 +43,9 @@ exit: 0
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 13525,
-      "cacheReadTokens": 299309,
-      "inputTokens": 115780,
+      "cacheCreationTokens": 13225,
+      "cacheReadTokens": 295309,
+      "inputTokens": 114780,
       "metadata": {
         "agents": [
           "amp",
@@ -109,19 +109,19 @@ exit: 0
           "outputTokens": 400
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "inputTokens": 3000,
-          "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 600
-        },
-        {
           "cacheCreation1hTokens": 400,
           "cacheCreationTokens": 1400,
           "cacheReadTokens": 26200,
           "inputTokens": 13250,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 3095
+        },
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 8000,
+          "inputTokens": 2000,
+          "modelName": "[openclaw] claude-sonnet-4-20250514",
+          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -481,9 +481,9 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 30266,
+      "outputTokens": 30066,
       "period": "2025-12",
-      "totalTokens": 459950
+      "totalTokens": 454450
     },
     {
       "agent": "all",
@@ -1100,11 +1100,11 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316617,
-    "inputTokens": 1349380,
-    "outputTokens": 59240,
-    "totalTokens": 2746719,
+    "cacheCreationTokens": 17765,
+    "cacheReadTokens": 1312617,
+    "inputTokens": 1348380,
+    "outputTokens": 59040,
+    "totalTokens": 2741219,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

@@ -46,9 +46,9 @@ exit: 0
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 13525,
-      "cacheReadTokens": 299309,
-      "inputTokens": 114780,
+      "cacheCreationTokens": 13225,
+      "cacheReadTokens": 295309,
+      "inputTokens": 113780,
       "metadata": {
         "agents": [
           "amp",
@@ -115,12 +115,12 @@ exit: 0
           "outputTokens": 400
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 1.85,
-          "inputTokens": 3000,
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 8000,
+          "cost": 1.1,
+          "inputTokens": 2000,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 600
+          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -520,10 +520,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 30166,
+      "outputTokens": 29966,
       "period": "2025-12",
-      "totalCost": 21.124243499999995,
-      "totalTokens": 458850
+      "totalCost": 20.374243499999995,
+      "totalTokens": 453350
     },
     {
       "agent": "all",
@@ -1193,12 +1193,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316617,
-    "inputTokens": 1348380,
-    "outputTokens": 59140,
-    "totalCost": 24.748788249999993,
-    "totalTokens": 2745619,
+    "cacheCreationTokens": 17765,
+    "cacheReadTokens": 1312617,
+    "inputTokens": 1347380,
+    "outputTokens": 58940,
+    "totalCost": 23.998788249999993,
+    "totalTokens": 2740119,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
