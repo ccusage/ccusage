@@ -70,12 +70,12 @@ fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
     assert!(loaded.detected);
     assert_eq!(loaded.summaries.len(), 1);
     assert_eq!(loaded.summaries[0].input_tokens, 30);
-    assert_eq!(loaded.session_days.len(), 2);
+    assert_eq!(loaded.sessions.len(), 2);
     assert!(
         loaded
-            .session_days
+            .sessions
             .iter()
-            .all(|(_, date)| date == "2026-01-02")
+            .all(|session| ["s1", "s2"].contains(&session.as_ref()))
     );
 }
 
@@ -99,7 +99,7 @@ fn bounded_daily_detection_survives_an_empty_report_window() {
     .unwrap();
     assert!(loaded.detected);
     assert!(loaded.summaries.is_empty());
-    assert!(loaded.session_days.is_empty());
+    assert!(loaded.sessions.is_empty());
 }
 
 #[test]

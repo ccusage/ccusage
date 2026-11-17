@@ -103,10 +103,8 @@ pub(crate) struct DedupedEntries {
 }
 
 impl DedupedEntries {
-    /// Main-thread days of the entries, by recorded session ID. A
-    /// merged copy's session counts on the day its survivor does.
-    pub(crate) fn main_thread_session_days(&self) -> SessionDays {
-        main_thread_session_days(
+    pub(crate) fn main_thread_sessions(&self) -> MainThreadSessions {
+        main_thread_sessions(
             self.entries
                 .iter()
                 .map(|entry| (loaded_entry_session_id(entry), entry))
@@ -115,7 +113,7 @@ impl DedupedEntries {
                         .iter()
                         .map(|(index, session)| (session.as_ref(), &self.entries[*index])),
                 )
-                .map(|(session, entry)| (session, entry.date.as_str(), entry.is_sidechain())),
+                .map(|(session, entry)| (session, entry.is_sidechain())),
         )
     }
 }
@@ -159,23 +157,15 @@ pub(crate) fn load_daily_summaries(
     Ok(daily.summaries(group_by_project))
 }
 
-/// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
-/// runs Claude Code, such as OpenCode's `claude-agent` provider, can skip its
-/// copy of the turns this source counts.
-pub type SessionDays = HashSet<(Arc<str>, String)>;
+pub type MainThreadSessions = HashSet<Arc<str>>;
 
-/// Takes `(session ID, date, is_sidechain)` per entry and leaves out sidechain
-/// (subagent) usage, which a wrapping tool does not record. Dedups the borrowed
-/// pairs before owning them, so the date is cloned once per session day.
-fn main_thread_session_days<'a>(
-    entries: impl Iterator<Item = (&'a str, &'a str, bool)>,
-) -> SessionDays {
+fn main_thread_sessions<'a>(entries: impl Iterator<Item = (&'a str, bool)>) -> MainThreadSessions {
     entries
-        .filter(|(_, _, is_sidechain)| !is_sidechain)
-        .map(|(session_id, date, _)| (session_id, date))
+        .filter(|(_, is_sidechain)| !is_sidechain)
+        .map(|(session_id, _)| session_id)
         .collect::<HashSet<_>>()
         .into_iter()
-        .map(|(session_id, date)| (Arc::from(session_id), date.to_owned()))
+        .map(Arc::from)
         .collect()
 }
 
@@ -186,8 +176,7 @@ pub struct DailySummaries {
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
     pub detected: bool,
-    /// Session days of the summarized main-thread entries.
-    pub session_days: SessionDays,
+    pub sessions: MainThreadSessions,
 }
 
 /// Loads daily summaries with progress owned by the caller or source.
@@ -203,7 +192,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     Ok(DailySummaries {
         summaries: daily.summaries(group_by_project),
         detected: daily.detected,
-        session_days: daily.session_days(),
+        sessions: daily.sessions(),
     })
 }
 
@@ -1696,24 +1685,16 @@ mod tests {
         let deduped = load_deduped_entries(&shared, None).unwrap();
         let sorted_days = |deduped: &crate::DedupedEntries| {
             let mut days: Vec<_> = deduped
-                .main_thread_session_days()
+                .main_thread_sessions()
                 .into_iter()
-                .map(|(session, date)| (session.to_string(), date))
+                .map(|session| session.to_string())
                 .collect();
             days.sort();
             days
         };
-        let day = |session: &str, date: &str| (session.to_string(), date.to_string());
 
         assert_eq!(deduped.entries.len(), 2);
-        assert_eq!(
-            sorted_days(&deduped),
-            [
-                day("session-a", "2026-01-02"),
-                day("session-b", "2026-01-02"),
-                day("session-b", "2026-01-03"),
-            ]
-        );
+        assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
         let filtered = crate::DedupedEntries {
             entries: deduped
                 .entries
@@ -1722,7 +1703,7 @@ mod tests {
                 .collect(),
             ..Default::default()
         };
-        assert_eq!(sorted_days(&filtered), [day("session-b", "2026-01-03")]);
+        assert_eq!(sorted_days(&filtered), ["session-b"]);
     }
 
     #[test]

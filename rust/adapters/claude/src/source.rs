@@ -28,11 +28,7 @@ impl Claude {
             ccusage_core::cli::CostMode::Display,
         )?;
         Ok(ClaudeCounted::sessions(
-            deduped
-                .main_thread_session_days()
-                .into_iter()
-                .map(|(session, _)| session)
-                .collect(),
+            deduped.main_thread_sessions(),
             shared,
         ))
     }
@@ -76,11 +72,7 @@ impl Claude {
                 },
             )?;
             let detected = deduped.detected;
-            let sessions = deduped
-                .main_thread_session_days()
-                .into_iter()
-                .map(|(session, _)| session)
-                .collect();
+            let sessions = deduped.main_thread_sessions();
             if let Some(window) = report_window.as_ref() {
                 crate::retain_copied_entries(
                     &mut deduped.entries,
@@ -115,20 +107,14 @@ impl Claude {
                     .is_some_and(|date| window.contains_date(date))
             });
         }
-        let session_days = loaded.session_days;
+        let sessions = loaded.sessions;
         Ok((
             LoadedRows {
                 rows: summary_rows("claude", summaries, false),
                 detected: loaded.detected,
                 diagnostics,
             },
-            ClaudeCounted::sessions(
-                session_days
-                    .into_iter()
-                    .map(|(session, _)| session)
-                    .collect(),
-                shared,
-            ),
+            ClaudeCounted::sessions(sessions, shared),
         ))
     }
 }

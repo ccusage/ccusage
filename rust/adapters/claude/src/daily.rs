@@ -19,9 +19,9 @@ use crate::{
 };
 
 use super::{
-    DedupeIndexVec, GuardedUsage, Nullable, Rejection, SessionDays, UsageLoadContext,
+    DedupeIndexVec, GuardedUsage, MainThreadSessions, Nullable, Rejection, UsageLoadContext,
     advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
-    main_thread_session_days, non_null,
+    main_thread_sessions, non_null,
     paths::{
         claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
         visit_usage_files,
@@ -41,8 +41,8 @@ impl DailyEntries {
         summarize_daily_entries(&self.deduped.entries, group_by_project)
     }
 
-    pub(super) fn session_days(&self) -> SessionDays {
-        session_days(&self.deduped)
+    pub(super) fn sessions(&self) -> MainThreadSessions {
+        sessions(&self.deduped)
     }
 }
 
@@ -151,11 +151,8 @@ impl DedupedDailyEntries {
     }
 }
 
-/// Counts a copy's session on the day its survivor is counted: a tool wrapping
-/// Claude Code can link its row to the session it ran in even when dedup kept
-/// another session's copy.
-fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
-    main_thread_session_days(
+fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
+    main_thread_sessions(
         deduped
             .entries
             .iter()
@@ -166,13 +163,7 @@ fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
                     .iter()
                     .map(|(index, session_id)| (session_id, &deduped.entries[*index])),
             )
-            .map(|(session_id, survivor)| {
-                (
-                    session_id.as_ref(),
-                    survivor.date.as_str(),
-                    survivor.is_sidechain(),
-                )
-            }),
+            .map(|(session_id, survivor)| (session_id.as_ref(), survivor.is_sidechain())),
     )
 }
 
@@ -1155,7 +1146,7 @@ mod tests {
     }
 
     #[test]
-    fn collects_session_days_of_counted_main_thread_usage_only() {
+    fn collects_sessions_of_counted_main_thread_usage_only() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
             "projects/project-a/session-empty.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-empty","type":"user","message":{"role":"user","content":"hi"}}"#,
@@ -1175,8 +1166,8 @@ mod tests {
         let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
         assert_eq!(
-            daily.session_days.into_iter().collect::<Vec<_>>(),
-            [(Arc::from("session-a"), "2026-01-02".to_string())]
+            daily.sessions.into_iter().collect::<Vec<_>>(),
+            [Arc::from("session-a")]
         );
         assert_eq!(daily.summaries[0].input_tokens, 130);
     }
