@@ -129,10 +129,16 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         } else {
             (usage.cache_creation_input_tokens, 0)
         };
-    let cache_create_1h_cost = pricing.input * CACHE_CREATE_1H_INPUT_MULTIPLIER;
-    let cache_create_1h_cost_above_200k = pricing
-        .input_above_200k
-        .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER);
+    let cache_create_1h_cost = pricing
+        .cache_create_1h
+        .unwrap_or(pricing.input * CACHE_CREATE_1H_INPUT_MULTIPLIER);
+    let cache_create = pricing.cache_creation_rate();
+    let cache_read = pricing.cache_read.unwrap_or(pricing.input * 0.1);
+    let cache_create_1h_cost_above_200k = pricing.cache_create_1h.or_else(|| {
+        pricing
+            .input_above_200k
+            .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER)
+    });
 
     // Two-stage pricing: a per-model `long_context_threshold` means the
     // request's input size selects the tier and every bucket is billed entirely
@@ -163,12 +169,11 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         };
         return usage.input_tokens as f64 * rate(pricing.input, pricing.input_above_200k)
             + usage.output_tokens as f64 * rate(pricing.output, pricing.output_above_200k)
-            + cache_create_5m_tokens as f64
-                * rate(pricing.cache_create, pricing.cache_create_above_200k)
+            + cache_create_5m_tokens as f64 * rate(cache_create, pricing.cache_create_above_200k)
             + cache_create_1h_tokens as f64
                 * rate(cache_create_1h_cost, cache_create_1h_cost_above_200k)
             + usage.cache_read_input_tokens as f64
-                * rate(pricing.cache_read, pricing.cache_read_above_200k);
+                * rate(cache_read, pricing.cache_read_above_200k);
     }
 
     // LiteLLM `*_above_200k_tokens` data keeps its marginal above-threshold
@@ -186,7 +191,7 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         threshold,
     ) + tiered_cost(
         cache_create_5m_tokens,
-        pricing.cache_create,
+        cache_create,
         pricing.cache_create_above_200k,
         threshold,
     ) + tiered_cost(
@@ -196,7 +201,7 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         threshold,
     ) + tiered_cost(
         usage.cache_read_input_tokens,
-        pricing.cache_read,
+        cache_read,
         pricing.cache_read_above_200k,
         threshold,
     )
@@ -223,6 +228,58 @@ pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn published_cache_rates_survive_an_input_override_without_a_cache_read_rate() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"claude-test": {
+            "input_cost_per_token": 4,
+            "output_cost_per_token": 8,
+            "cache_creation_input_token_cost": 7,
+            "cache_creation_input_token_cost_above_200k_tokens": 9,
+            "cache_read_input_token_cost_above_200k_tokens": 3
+        }}"#,
+        );
+        let overrides = std::collections::BTreeMap::from([(
+            "claude-test".to_string(),
+            ccusage_cli::PricingOverride {
+                input_cost_per_token: Some(2.0),
+                ..Default::default()
+            },
+        )]);
+        let pricing = pricing.with_user_overrides(&overrides);
+        let entry = pricing.find("claude-test").unwrap();
+        let usage = crate::TokenUsageRaw {
+            cache_creation_input_tokens: 200_001,
+            cache_read_input_tokens: 200_001,
+            ..Default::default()
+        };
+        assert_eq!(calculate_cost_from_pricing(usage, entry), 1_440_012.0);
+    }
+
+    #[test]
+    fn published_one_hour_cache_rate_prices_the_duration_bucket() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"claude-test": {
+            "input_cost_per_token": 4,
+            "output_cost_per_token": 8,
+            "cache_creation_input_token_cost_above_1hr": 11
+        }}"#,
+        );
+        let usage = crate::TokenUsageRaw {
+            cache_creation: Some(crate::CacheCreationRaw {
+                ephemeral_5m_input_tokens: 0,
+                ephemeral_1h_input_tokens: 10,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            calculate_cost_from_pricing(usage, pricing.find("claude-test").unwrap()),
+            110.0
+        );
+    }
 
     #[test]
     fn an_empty_cost_sum_is_positive_zero() {

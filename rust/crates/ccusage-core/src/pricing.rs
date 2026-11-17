@@ -99,12 +99,9 @@ const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 pub struct Pricing {
     pub input: f64,
     pub output: f64,
-    pub cache_create: f64,
-    pub cache_read: f64,
-    pub cache_read_explicit: bool,
-    /// Whether `cache_create` came from published data rather than the derived
-    /// `input * 1.25` default, so provider-fact patches know what they may fix.
-    cache_create_explicit: bool,
+    pub cache_create: Option<f64>,
+    pub cache_read: Option<f64>,
+    pub cache_create_1h: Option<f64>,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub cache_create_above_200k: Option<f64>,
@@ -123,14 +120,17 @@ pub struct Pricing {
 pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 impl Pricing {
+    pub fn cache_creation_rate(self) -> f64 {
+        self.cache_create.unwrap_or(self.input * 1.25)
+    }
+
     const fn empty() -> Self {
         Self {
             input: 0.0,
             output: 0.0,
-            cache_create: 0.0,
-            cache_read: 0.0,
-            cache_read_explicit: false,
-            cache_create_explicit: false,
+            cache_create: None,
+            cache_read: None,
+            cache_create_1h: None,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -250,14 +250,13 @@ fn apply_deepseek_v4_schedule(
     };
     pricing.input = rates.input;
     pricing.output = rates.output;
-    pricing.cache_create = rates.cache_create;
-    pricing.cache_read = rates.cache_read;
+    pricing.cache_create = Some(rates.cache_create);
+    pricing.cache_read = Some(rates.cache_read);
     pricing.input_above_200k = Some(rates.input);
     pricing.output_above_200k = Some(rates.output);
     pricing.cache_create_above_200k = Some(rates.cache_create);
     pricing.cache_read_above_200k = Some(rates.cache_read);
-    pricing.cache_create_explicit = true;
-    pricing.cache_read_explicit = true;
+
     pricing
 }
 
@@ -269,12 +268,10 @@ fn apply_explicit_pricing_override(pricing: &mut Pricing, override_value: &Prici
         pricing.output = value;
     }
     if let Some(value) = override_value.cache_creation_input_token_cost {
-        pricing.cache_create = value;
-        pricing.cache_create_explicit = true;
+        pricing.cache_create = Some(value);
     }
     if let Some(value) = override_value.cache_read_input_token_cost {
-        pricing.cache_read = value;
-        pricing.cache_read_explicit = true;
+        pricing.cache_read = Some(value);
     }
     if let Some(value) = override_value.input_cost_per_token_above_200k_tokens {
         pricing.input_above_200k = Some(value);
@@ -440,6 +437,7 @@ struct LiteLlmPricing {
     input_cost_per_token: Option<f64>,
     output_cost_per_token: Option<f64>,
     cache_creation_input_token_cost: Option<f64>,
+    cache_creation_input_token_cost_above_1hr: Option<f64>,
     cache_read_input_token_cost: Option<f64>,
     input_cost_per_token_above_200k_tokens: Option<f64>,
     output_cost_per_token_above_200k_tokens: Option<f64>,
@@ -1018,8 +1016,7 @@ impl PricingMap {
                 continue;
             };
             let context_limit = pricing.max_input_tokens;
-            let cache_read_explicit = pricing.cache_read_input_token_cost.is_some();
-            let cache_create_explicit = pricing.cache_creation_input_token_cost.is_some();
+
             let provider_specific = pricing
                 .provider_specific_entry
                 .as_ref()
@@ -1036,12 +1033,9 @@ impl PricingMap {
                     .applied_to(Pricing {
                         input,
                         output,
-                        cache_create: pricing
-                            .cache_creation_input_token_cost
-                            .unwrap_or(input * 1.25),
-                        cache_read: pricing.cache_read_input_token_cost.unwrap_or(input * 0.1),
-                        cache_read_explicit,
-                        cache_create_explicit,
+                        cache_create: pricing.cache_creation_input_token_cost,
+                        cache_read: pricing.cache_read_input_token_cost,
+                        cache_create_1h: pricing.cache_creation_input_token_cost_above_1hr,
                         input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
                         output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
                         cache_create_above_200k: pricing
@@ -1224,23 +1218,14 @@ impl PricingMap {
             }
             let input = input / 1_000_000.0;
             let output = output / 1_000_000.0;
-            let cache_read_explicit = cost.cache_read.is_some();
-            let cache_create_explicit = cost.cache_write.is_some();
+
             self.entries.insert(
                 model_id.clone(),
                 speed.for_model(&model_id).applied_to(Pricing {
                     input,
                     output,
-                    cache_create: cost
-                        .cache_write
-                        .map(|value| value / 1_000_000.0)
-                        .unwrap_or(input * 1.25),
-                    cache_read: cost
-                        .cache_read
-                        .map(|value| value / 1_000_000.0)
-                        .unwrap_or(input * 0.1),
-                    cache_read_explicit,
-                    cache_create_explicit,
+                    cache_create: cost.cache_write.map(|value| value / 1_000_000.0),
+                    cache_read: cost.cache_read.map(|value| value / 1_000_000.0),
                     input_above_200k: long_context.and_then(|rates| rates.input),
                     output_above_200k: long_context.and_then(|rates| rates.output),
                     cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
@@ -1819,7 +1804,7 @@ impl PricingMap {
             speed
                 .for_model(model)
                 .or(speed.for_model(resolved_model.as_ref()))
-                .applied_to(Pricing::empty()),
+                .applied_to(Pricing { ..Pricing::empty() }),
         )
     }
 
@@ -1925,14 +1910,8 @@ impl PricingMap {
         match self.entries.entry(model.to_string()) {
             std::collections::hash_map::Entry::Occupied(mut existing) => {
                 let existing = existing.get_mut();
-                if !existing.cache_read_explicit {
-                    existing.cache_read = pricing.cache_read;
-                    existing.cache_read_explicit = true;
-                }
-                if !existing.cache_create_explicit {
-                    existing.cache_create = pricing.cache_create;
-                    existing.cache_create_explicit = true;
-                }
+                existing.cache_read = existing.cache_read.or(pricing.cache_read);
+                existing.cache_create = existing.cache_create.or(pricing.cache_create);
             }
             std::collections::hash_map::Entry::Vacant(slot) => {
                 slot.insert(pricing);
@@ -1951,10 +1930,8 @@ impl PricingMap {
             Pricing {
                 input,
                 output,
-                cache_create,
-                cache_read,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_create: Some(cache_create),
+                cache_read: Some(cache_read),
                 ..Pricing::empty()
             }
         }
@@ -1990,8 +1967,7 @@ impl PricingMap {
         self.put_builtin_entry(
             "grok-4.3",
             Pricing {
-                cache_read_explicit: false,
-                cache_create_explicit: false,
+                cache_read: None,
                 ..rates(1.25e-6, 2.5e-6, 1.25e-6, 0.125e-6)
             },
         );
@@ -2038,7 +2014,7 @@ impl PricingMap {
             Pricing {
                 input: 1.0e-6,
                 output: 3.2e-6,
-                cache_read: 0.2e-6,
+                cache_read: Some(0.2e-6),
                 ..glm_base
             },
         );
@@ -2047,7 +2023,7 @@ impl PricingMap {
             Pricing {
                 input: 1.2e-6,
                 output: 4.0e-6,
-                cache_read: 0.24e-6,
+                cache_read: Some(0.24e-6),
                 ..glm_base
             },
         );
@@ -2056,7 +2032,7 @@ impl PricingMap {
             Pricing {
                 input: 1.4e-6,
                 output: 4.4e-6,
-                cache_read: 0.26e-6,
+                cache_read: Some(0.26e-6),
                 ..glm_base
             },
         );
@@ -2104,88 +2080,9 @@ enum OverrideBase<'a> {
     Pricing(Pricing),
 }
 
-fn overridden_pricing(base: Pricing, override_value: &PricingOverride) -> Pricing {
-    let new_input = override_value.input_cost_per_token.unwrap_or(base.input);
-
-    // When input cost is overridden but cache fields are not explicitly provided,
-    // and the base cache values were derived from input (indicated by
-    // !cache_read_explicit), scale cache costs proportionally by
-    // new_input / old_input. When cache_read_explicit is true, the base cache
-    // values were independently set (from LiteLLM data or a prior override),
-    // so preserve them unchanged.
-    let should_scale = override_value.input_cost_per_token.is_some()
-        && base.input > 0.0
-        && !base.cache_read_explicit;
-    let scale = if should_scale {
-        new_input / base.input
-    } else {
-        1.0
-    };
-
-    let cache_create = if let Some(value) = override_value.cache_creation_input_token_cost {
-        value
-    } else if should_scale && base.cache_create > 0.0 {
-        base.cache_create * scale
-    } else {
-        base.cache_create
-    };
-
-    let cache_read = if let Some(value) = override_value.cache_read_input_token_cost {
-        value
-    } else if should_scale && base.cache_read > 0.0 {
-        base.cache_read * scale
-    } else {
-        base.cache_read
-    };
-
-    let cache_create_above_200k = if override_value
-        .cache_creation_input_token_cost_above_200k_tokens
-        .is_some()
-    {
-        override_value.cache_creation_input_token_cost_above_200k_tokens
-    } else if should_scale {
-        base.cache_create_above_200k.map(|v| v * scale)
-    } else {
-        base.cache_create_above_200k
-    };
-
-    let cache_read_above_200k = if override_value
-        .cache_read_input_token_cost_above_200k_tokens
-        .is_some()
-    {
-        override_value.cache_read_input_token_cost_above_200k_tokens
-    } else if should_scale {
-        base.cache_read_above_200k.map(|v| v * scale)
-    } else {
-        base.cache_read_above_200k
-    };
-
-    Pricing {
-        input: new_input,
-        output: override_value.output_cost_per_token.unwrap_or(base.output),
-        cache_create,
-        cache_read,
-        cache_read_explicit: override_value.cache_read_input_token_cost.is_some()
-            || base.cache_read_explicit,
-        cache_create_explicit: override_value.cache_creation_input_token_cost.is_some()
-            || base.cache_create_explicit,
-        input_above_200k: override_value
-            .input_cost_per_token_above_200k_tokens
-            .or(base.input_above_200k),
-        output_above_200k: override_value
-            .output_cost_per_token_above_200k_tokens
-            .or(base.output_above_200k),
-        cache_create_above_200k,
-        cache_read_above_200k,
-        long_context_threshold: base.long_context_threshold,
-        fast_multiplier: override_value
-            .fast_multiplier
-            .unwrap_or(base.fast_multiplier),
-        ultrafast_multiplier: base.ultrafast_multiplier,
-        flex_multiplier: override_value
-            .flex_multiplier
-            .unwrap_or(base.flex_multiplier),
-    }
+fn overridden_pricing(mut base: Pricing, override_value: &PricingOverride) -> Pricing {
+    apply_explicit_pricing_override(&mut base, override_value);
+    base
 }
 
 fn parse_litellm_pricing(value: Value) -> Option<LiteLlmPricing> {
@@ -2609,7 +2506,7 @@ mod tests {
             let flash = pricing
                 .find_at("deepseek-v4-flash", timestamp(timestamp_text))
                 .unwrap();
-            for (actual, expected) in [flash.input, flash.output, flash.cache_read]
+            for (actual, expected) in [flash.input, flash.output, flash.cache_read.unwrap()]
                 .map(|rate| rate * 1e6)
                 .into_iter()
                 .zip(flash_expected)
@@ -2620,7 +2517,7 @@ mod tests {
             let pro = pricing
                 .find_at("deepseek-v4-pro", timestamp(timestamp_text))
                 .unwrap();
-            for (actual, expected) in [pro.input, pro.output, pro.cache_read]
+            for (actual, expected) in [pro.input, pro.output, pro.cache_read.unwrap()]
                 .map(|rate| rate * 1e6)
                 .into_iter()
                 .zip(pro_expected)
@@ -2660,7 +2557,7 @@ mod tests {
         let direct = pricing
             .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
             .unwrap();
-        assert_eq!(direct.cache_create * 1e6, 0.44);
+        assert_eq!(direct.cache_create.unwrap() * 1e6, 0.44);
 
         let reseller = pricing
             .find_at(
@@ -2676,8 +2573,8 @@ mod tests {
             .unwrap();
         assert_eq!(reseller.input * 1e6, 9.0);
         assert_eq!(reseller.output * 1e6, 10.0);
-        assert_eq!(reseller.cache_read * 1e6, 8.0);
-        assert_eq!(reseller.cache_create * 1e6, 7.0);
+        assert_eq!(reseller.cache_read.unwrap() * 1e6, 8.0);
+        assert_eq!(reseller.cache_create.unwrap() * 1e6, 7.0);
         assert_eq!(dotted_reseller.input * 1e6, 9.0);
         assert_eq!(dotted_reseller.output * 1e6, 10.0);
     }
@@ -2775,7 +2672,7 @@ mod tests {
 
         assert!((flash.input * 1e6 - 0.44).abs() < 1e-12);
         assert!((flash.output * 1e6 - 1.32).abs() < 1e-12);
-        assert!((flash.cache_read * 1e6 - 0.014).abs() < 1e-12);
+        assert!((flash.cache_read.unwrap() * 1e6 - 0.014).abs() < 1e-12);
     }
 
     #[test]
@@ -2809,8 +2706,8 @@ mod tests {
 
         assert_eq!(flash.input * 1e6, 9.0);
         assert_eq!(flash.output * 1e6, 10.0);
-        assert_eq!(flash.cache_read * 1e6, 8.0);
-        assert_eq!(flash.cache_create * 1e6, 7.0);
+        assert_eq!(flash.cache_read.unwrap() * 1e6, 8.0);
+        assert_eq!(flash.cache_create.unwrap() * 1e6, 7.0);
     }
 
     #[test]
@@ -2828,16 +2725,16 @@ mod tests {
             .unwrap();
         assert_eq!(peak.input * 1e6, 9.0);
         assert_eq!(peak.output * 1e6, 1.32);
-        assert_eq!(peak.cache_read * 1e6, 0.014);
-        assert_eq!(peak.cache_create * 1e6, 0.44);
+        assert_eq!(peak.cache_read.unwrap() * 1e6, 0.014);
+        assert_eq!(peak.cache_create.unwrap() * 1e6, 0.44);
 
         let off_peak = pricing
             .find_at("deepseek-v4-flash", timestamp("2026-08-17T04:00:00Z"))
             .unwrap();
         assert_eq!(off_peak.input * 1e6, 9.0);
         assert_eq!(off_peak.output * 1e6, 0.66);
-        assert_eq!(off_peak.cache_read * 1e6, 0.007);
-        assert_eq!(off_peak.cache_create * 1e6, 0.22);
+        assert_eq!(off_peak.cache_read.unwrap() * 1e6, 0.007);
+        assert_eq!(off_peak.cache_create.unwrap() * 1e6, 0.22);
     }
 
     #[test]
@@ -2937,12 +2834,12 @@ mod tests {
 
         assert_eq!(kimi_k25.input, 0.6e-6);
         assert_eq!(kimi_k25.output, 3e-6);
-        assert_eq!(kimi_k25.cache_read, 0.1e-6);
-        assert!(kimi_k25.cache_read_explicit);
+        assert_eq!(kimi_k25.cache_read, Some(0.1e-6));
+        assert!(kimi_k25.cache_read.is_some());
         assert_eq!(kimi_k26.input, 0.95e-6);
         assert_eq!(kimi_k26.output, 4e-6);
-        assert_eq!(kimi_k26.cache_read, 0.16e-6);
-        assert!(kimi_k26.cache_read_explicit);
+        assert_eq!(kimi_k26.cache_read, Some(0.16e-6));
+        assert!(kimi_k26.cache_read.is_some());
         assert_eq!(pricing.context_limit("moonshot/kimi-k2.5"), Some(262_144));
         assert_eq!(pricing.context_limit("moonshot/kimi-k2.6"), Some(262_144));
     }
@@ -3300,20 +3197,19 @@ mod tests {
         let before = pricing
             .find_exact_with_fallback("zai/glm-test-5")
             .expect("the normalized entry should resolve");
-        assert!(!before.cache_read_explicit);
+        assert!(before.cache_read.is_none());
 
         pricing.put_builtin_glm(
             "zai/glm-test.5",
             Pricing {
-                cache_read: 0.03,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_read: Some(0.03),
+
                 ..Pricing::empty()
             },
         );
 
         let after = pricing.find_exact_with_fallback("zai/glm-test-5").unwrap();
-        assert_eq!(after.cache_read, 0.03);
+        assert_eq!(after.cache_read, Some(0.03));
     }
 
     #[test]
@@ -3388,8 +3284,8 @@ mod tests {
 
         assert_eq!(kimi_k3.input, 3e-6);
         assert_eq!(kimi_k3.output, 15e-6);
-        assert_eq!(kimi_k3.cache_read, 0.3e-6);
-        assert!(kimi_k3.cache_read_explicit);
+        assert_eq!(kimi_k3.cache_read, Some(0.3e-6));
+        assert!(kimi_k3.cache_read.is_some());
         assert!(
             pricing
                 .context_limit("moonshot/kimi-k3")
@@ -3406,46 +3302,46 @@ mod tests {
         let glm_51 = pricing.find("glm-5.1").unwrap();
         assert_eq!(glm_51.input, 1.4e-6);
         assert_eq!(glm_51.output, 4.4e-6);
-        assert_eq!(glm_51.cache_create, 0.0);
-        assert_eq!(glm_51.cache_read, 0.26e-6);
-        assert!(glm_51.cache_read_explicit);
+        assert_eq!(glm_51.cache_create, Some(0.0));
+        assert_eq!(glm_51.cache_read, Some(0.26e-6));
+        assert!(glm_51.cache_read.is_some());
 
         let glm_5 = pricing.find("glm-5").unwrap();
         assert_eq!(glm_5.input, 1.0e-6);
         assert_eq!(glm_5.output, 3.2e-6);
-        assert_eq!(glm_5.cache_create, 0.0);
-        assert_eq!(glm_5.cache_read, 0.2e-6);
+        assert_eq!(glm_5.cache_create, Some(0.0));
+        assert_eq!(glm_5.cache_read, Some(0.2e-6));
         assert_eq!(pricing.context_limit("zai/glm-5"), Some(200_000));
 
         let glm_5_turbo = pricing.find("glm-5-turbo").unwrap();
         assert_eq!(glm_5_turbo.input, 1.2e-6);
         assert_eq!(glm_5_turbo.output, 4.0e-6);
-        assert_eq!(glm_5_turbo.cache_create, 0.0);
-        assert_eq!(glm_5_turbo.cache_read, 0.24e-6);
+        assert_eq!(glm_5_turbo.cache_create, Some(0.0));
+        assert_eq!(glm_5_turbo.cache_read, Some(0.24e-6));
 
         let glm_47 = pricing.find("glm-4.7").unwrap();
         assert_eq!(glm_47.input, 0.6e-6);
         assert_eq!(glm_47.output, 2.2e-6);
-        assert_eq!(glm_47.cache_create, 0.0);
-        assert_eq!(glm_47.cache_read, 0.11e-6);
+        assert_eq!(glm_47.cache_create, Some(0.0));
+        assert_eq!(glm_47.cache_read, Some(0.11e-6));
 
         let glm_46 = pricing.find("glm-4.6").unwrap();
         assert_eq!(glm_46.input, 0.6e-6);
         assert_eq!(glm_46.output, 2.2e-6);
-        assert_eq!(glm_46.cache_create, 0.0);
-        assert_eq!(glm_46.cache_read, 0.11e-6);
+        assert_eq!(glm_46.cache_create, Some(0.0));
+        assert_eq!(glm_46.cache_read, Some(0.11e-6));
 
         let glm_45 = pricing.find("glm-4.5").unwrap();
         assert_eq!(glm_45.input, 0.6e-6);
         assert_eq!(glm_45.output, 2.2e-6);
-        assert_eq!(glm_45.cache_create, 0.0);
-        assert_eq!(glm_45.cache_read, 0.11e-6);
+        assert_eq!(glm_45.cache_create, Some(0.0));
+        assert_eq!(glm_45.cache_read, Some(0.11e-6));
 
         let zai_glm_45 = pricing.find("zai/glm-4.5").unwrap();
         assert_eq!(zai_glm_45.input, 0.6e-6);
         assert_eq!(zai_glm_45.output, 2.2e-6);
-        assert_eq!(zai_glm_45.cache_create, 0.0);
-        assert_eq!(zai_glm_45.cache_read, 0.11e-6);
+        assert_eq!(zai_glm_45.cache_create, Some(0.0));
+        assert_eq!(zai_glm_45.cache_read, Some(0.11e-6));
         assert_eq!(pricing.context_limit("zai/glm-4.5"), Some(128_000));
     }
 
@@ -3466,18 +3362,17 @@ mod tests {
             }"#,
         );
         let zeroed = Pricing {
-            cache_create: 0.0,
-            cache_read: 0.03,
-            cache_read_explicit: true,
-            cache_create_explicit: true,
+            cache_create: Some(0.0),
+            cache_read: Some(0.03),
+
             ..Pricing::empty()
         };
 
         pricing.put_builtin_glm("zai/glm-test-model", zeroed);
 
         let entry = pricing.find_exact("zai/glm-test-model").unwrap();
-        assert_eq!(entry.cache_create, 0.25);
-        assert_eq!(entry.cache_read, 0.03);
+        assert_eq!(entry.cache_create, Some(0.25));
+        assert_eq!(entry.cache_read, Some(0.03));
     }
 
     #[test]
@@ -3488,24 +3383,24 @@ mod tests {
         let glm_45_air = pricing.find("zai/glm-4.5-air").unwrap();
         assert_eq!(glm_45_air.input, 0.2e-6);
         assert_eq!(glm_45_air.output, 1.1e-6);
-        assert_eq!(glm_45_air.cache_create, 0.0);
-        assert_eq!(glm_45_air.cache_read, 0.03e-6);
+        assert_eq!(glm_45_air.cache_create, Some(0.0));
+        assert_eq!(glm_45_air.cache_read, Some(0.03e-6));
 
         let glm_45_x = pricing.find("zai/glm-4.5-x").unwrap();
         assert_eq!(glm_45_x.input, 2.2e-6);
         assert_eq!(glm_45_x.output, 8.9e-6);
-        assert_eq!(glm_45_x.cache_create, 0.0);
-        assert_eq!(glm_45_x.cache_read, 0.45e-6);
+        assert_eq!(glm_45_x.cache_create, Some(0.0));
+        assert_eq!(glm_45_x.cache_read, Some(0.45e-6));
 
         let glm_45v = pricing.find("zai/glm-4.5v").unwrap();
         assert_eq!(glm_45v.input, 0.6e-6);
         assert_eq!(glm_45v.output, 1.8e-6);
-        assert_eq!(glm_45v.cache_create, 0.0);
-        assert_eq!(glm_45v.cache_read, 0.11e-6);
+        assert_eq!(glm_45v.cache_create, Some(0.0));
+        assert_eq!(glm_45v.cache_read, Some(0.11e-6));
     }
 
     #[test]
-    fn records_whether_cache_read_rate_came_from_litellm_pricing() {
+    fn keeps_absent_litellm_cache_rates_absent() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -3521,12 +3416,13 @@ mod tests {
             }"#,
         );
 
-        assert!(pricing.find("gpt-with-cache").unwrap().cache_read_explicit);
+        assert!(pricing.find("gpt-with-cache").unwrap().cache_read.is_some());
         assert!(
             !pricing
                 .find("gpt-without-cache")
                 .unwrap()
-                .cache_read_explicit
+                .cache_read
+                .is_some()
         );
     }
 
@@ -3575,9 +3471,9 @@ mod tests {
         let entry = pricing.find("gpt-every-rate").unwrap();
         assert_eq!(entry.input, 1e-6);
         assert_eq!(entry.output, 10e-6);
-        assert_eq!(entry.cache_create, 1.25e-6);
-        assert_eq!(entry.cache_read, 0.1e-6);
-        assert!(entry.cache_read_explicit);
+        assert_eq!(entry.cache_create, Some(1.25e-6));
+        assert_eq!(entry.cache_read, Some(0.1e-6));
+        assert!(entry.cache_read.is_some());
         assert_eq!(entry.input_above_200k, Some(2e-6));
         assert_eq!(entry.output_above_200k, Some(20e-6));
         assert_eq!(entry.cache_create_above_200k, Some(2.5e-6));
@@ -3748,13 +3644,13 @@ mod tests {
 
         assert_eq!(primary.input, 1e-6);
         assert_eq!(primary.output, 10e-6);
-        assert_eq!(primary.cache_read, 0.1e-6);
+        assert_eq!(primary.cache_read, Some(0.1e-6));
         assert_eq!(pricing.context_limit("gpt-primary"), Some(123));
         assert!((fallback.input - 2e-6).abs() < f64::EPSILON);
         assert!((fallback.output - 8e-6).abs() < f64::EPSILON);
-        assert!((fallback.cache_create - 2.5e-6).abs() < f64::EPSILON);
-        assert!((fallback.cache_read - 0.2e-6).abs() < f64::EPSILON);
-        assert!(fallback.cache_read_explicit);
+        assert!((fallback.cache_create.unwrap() - 2.5e-6).abs() < f64::EPSILON);
+        assert!((fallback.cache_read.unwrap() - 0.2e-6).abs() < f64::EPSILON);
+        assert!(fallback.cache_read.is_some());
         assert_eq!(fallback.input_above_200k, None);
         assert_eq!(fallback.output_above_200k, None);
         assert_eq!(fallback.fast_multiplier, 1.0);
@@ -4014,8 +3910,8 @@ mod tests {
         // One model, counted once even though the second entry replaced the first.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
-        assert!(entry.cache_read_explicit);
-        assert!((entry.cache_read * 1e6 - 0.1).abs() < 1e-9);
+        assert!(entry.cache_read.is_some());
+        assert!((entry.cache_read.unwrap() * 1e6 - 0.1).abs() < 1e-9);
         assert_eq!(
             pricing.context_limits.get("kimi-k2.6-nitro"),
             Some(&128_000)
@@ -4102,8 +3998,8 @@ mod tests {
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
-        assert!(entry.cache_read_explicit);
-        assert!((entry.cache_read * 1e6 - 0.1).abs() < 1e-9);
+        assert!(entry.cache_read.is_some());
+        assert!((entry.cache_read.unwrap() * 1e6 - 0.1).abs() < 1e-9);
     }
 
     #[test]
@@ -4481,8 +4377,8 @@ mod tests {
         let fallback = pricing.find("claude-fallback").unwrap();
         assert!((fallback.input - 3e-6).abs() < f64::EPSILON);
         assert!((fallback.output - 15e-6).abs() < f64::EPSILON);
-        assert!((fallback.cache_create - 3.75e-6).abs() < f64::EPSILON);
-        assert!((fallback.cache_read - 0.3e-6).abs() < f64::EPSILON);
+        assert!((fallback.cache_create.unwrap() - 3.75e-6).abs() < f64::EPSILON);
+        assert!((fallback.cache_read.unwrap() - 0.3e-6).abs() < f64::EPSILON);
         assert_eq!(pricing.context_limit("claude-fallback"), Some(200000));
     }
 
@@ -4627,8 +4523,8 @@ mod tests {
 
         assert_eq!(gpt_55.input, 5e-6);
         assert_eq!(gpt_55.output, 30e-6);
-        assert_eq!(gpt_55.cache_read, 0.5e-6);
-        assert!(gpt_55.cache_read_explicit);
+        assert_eq!(gpt_55.cache_read, Some(0.5e-6));
+        assert!(gpt_55.cache_read.is_some());
         assert_eq!(gpt_55.fast_multiplier, 2.5);
         assert_eq!(pricing.context_limit("gpt-5.5"), Some(1_050_000));
     }
@@ -5292,7 +5188,7 @@ mod tests {
         let into_cycle = pricing.find_exact("into-cycle").unwrap();
         assert_eq!(
             (into_cycle.input, into_cycle.output, into_cycle.cache_read),
-            (0.0, 9e-6, 1e-7)
+            (0.0, 9e-6, Some(1e-7))
         );
     }
 
@@ -5540,10 +5436,9 @@ mod tests {
             Pricing {
                 input: 5e-6,
                 output: 25e-6,
-                cache_create: 6.25e-6,
-                cache_read: 0.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_create: Some(6.25e-6),
+                cache_read: Some(0.5e-6),
+
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -5552,6 +5447,7 @@ mod tests {
                 fast_multiplier: 1.0,
                 ultrafast_multiplier: 1.0,
                 flex_multiplier: 1.0,
+                ..Pricing::empty()
             },
         );
         pricing.entries.insert(
@@ -5559,10 +5455,9 @@ mod tests {
             Pricing {
                 input: 15e-6,
                 output: 75e-6,
-                cache_create: 18.75e-6,
-                cache_read: 1.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_create: Some(18.75e-6),
+                cache_read: Some(1.5e-6),
+
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -5571,6 +5466,7 @@ mod tests {
                 fast_multiplier: 1.0,
                 ultrafast_multiplier: 1.0,
                 flex_multiplier: 1.0,
+                ..Pricing::empty()
             },
         );
 
@@ -5585,10 +5481,9 @@ mod tests {
             Pricing {
                 input: 15e-6,
                 output: 75e-6,
-                cache_create: 18.75e-6,
-                cache_read: 1.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_create: Some(18.75e-6),
+                cache_read: Some(1.5e-6),
+
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -5597,6 +5492,7 @@ mod tests {
                 fast_multiplier: 1.0,
                 ultrafast_multiplier: 1.0,
                 flex_multiplier: 1.0,
+                ..Pricing::empty()
             },
         );
 
@@ -5736,10 +5632,9 @@ mod tests {
             Pricing {
                 input: 1.0,
                 output: 0.0,
-                cache_create: 0.0,
-                cache_read: 0.0,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_create: Some(0.0),
+                cache_read: Some(0.0),
+
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -5748,6 +5643,7 @@ mod tests {
                 fast_multiplier: 1.0,
                 ultrafast_multiplier: 1.0,
                 flex_multiplier: 1.0,
+                ..Pricing::empty()
             },
         );
         pricing.entries.insert(
@@ -5755,10 +5651,9 @@ mod tests {
             Pricing {
                 input: 2.0,
                 output: 0.0,
-                cache_create: 0.0,
-                cache_read: 0.0,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
+                cache_create: Some(0.0),
+                cache_read: Some(0.0),
+
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -5767,6 +5662,7 @@ mod tests {
                 fast_multiplier: 1.0,
                 ultrafast_multiplier: 1.0,
                 flex_multiplier: 1.0,
+                ..Pricing::empty()
             },
         );
 
@@ -5827,9 +5723,9 @@ mod tests {
             let entry = pricing.find("custom-model").unwrap();
             assert_eq!(entry.input, 1e-6);
             assert_eq!(entry.output, 2e-6);
-            assert_eq!(entry.cache_create, 3e-6);
-            assert_eq!(entry.cache_read, 4e-7);
-            assert!(entry.cache_read_explicit);
+            assert_eq!(entry.cache_create, Some(3e-6));
+            assert_eq!(entry.cache_read, Some(4e-7));
+            assert!(entry.cache_read.is_some());
             assert_eq!(entry.fast_multiplier, 2.0);
             assert_eq!(pricing.context_limit("custom-model"), Some(123_456));
         }
@@ -5868,10 +5764,9 @@ mod tests {
                 Pricing {
                     input: 10e-6,
                     output: 20e-6,
-                    cache_create: 30e-6,
-                    cache_read: 40e-6,
-                    cache_read_explicit: true,
-                    cache_create_explicit: true,
+                    cache_create: Some(30e-6),
+                    cache_read: Some(40e-6),
+
                     input_above_200k: Some(15e-6),
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -5880,6 +5775,7 @@ mod tests {
                     fast_multiplier: 1.5,
                     ultrafast_multiplier: 1.0,
                     flex_multiplier: 1.0,
+                    ..Pricing::empty()
                 },
             );
 
@@ -5892,16 +5788,16 @@ mod tests {
             let entry = pricing.find("existing").unwrap();
             assert_eq!(entry.input, 99e-6);
             assert_eq!(entry.output, 20e-6);
-            assert_eq!(entry.cache_create, 30e-6);
-            assert_eq!(entry.cache_read, 40e-6);
-            assert!(entry.cache_read_explicit);
+            assert_eq!(entry.cache_create, Some(30e-6));
+            assert_eq!(entry.cache_read, Some(40e-6));
+            assert!(entry.cache_read.is_some());
             assert_eq!(entry.input_above_200k, Some(15e-6));
             assert_eq!(entry.fast_multiplier, 1.5);
             assert_eq!(entry.flex_multiplier, 0.5);
         }
 
         #[test]
-        fn override_without_cache_read_does_not_set_explicit() {
+        fn override_without_cache_read_keeps_it_absent() {
             let mut pricing = PricingMap::default();
             let overrides = build_overrides("new-model", |o| {
                 o.input_cost_per_token = Some(1e-6);
@@ -5910,12 +5806,11 @@ mod tests {
             pricing.apply_overrides(overrides.iter());
 
             let entry = pricing.find("new-model").unwrap();
-            assert!(!entry.cache_read_explicit);
-            assert_eq!(entry.cache_read, 0.0);
+            assert_eq!(entry.cache_read, None);
         }
 
         #[test]
-        fn override_with_cache_read_sets_explicit() {
+        fn override_with_zero_cache_read_preserves_zero() {
             let mut pricing = PricingMap::default();
             let overrides = build_overrides("new-model", |o| {
                 o.cache_read_input_token_cost = Some(0.0);
@@ -5924,7 +5819,7 @@ mod tests {
             pricing.apply_overrides(overrides.iter());
 
             let entry = pricing.find("new-model").unwrap();
-            assert!(entry.cache_read_explicit);
+            assert!(entry.cache_read.is_some());
         }
 
         #[test]
@@ -5949,19 +5844,16 @@ mod tests {
         }
 
         #[test]
-        fn input_override_scales_cache_proportionally() {
+        fn input_override_recomputes_absent_cache_rates_and_preserves_published_tiers() {
             let mut pricing = PricingMap::default();
-            // Base: input=3e-6, cache_read=3e-7 (0.1x), cache_create=3.75e-6 (1.25x)
-            // cache_read_explicit=false means these were derived from input by LiteLLM
             pricing.entries.insert(
                 "claude-model".to_string(),
                 Pricing {
                     input: 3e-6,
                     output: 15e-6,
-                    cache_create: 3.75e-6,
-                    cache_read: 3e-7,
-                    cache_read_explicit: false,
-                    cache_create_explicit: false,
+                    cache_create: None,
+                    cache_read: None,
+
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: Some(4.6875e-6),
@@ -5970,6 +5862,7 @@ mod tests {
                     fast_multiplier: 1.0,
                     ultrafast_multiplier: 1.0,
                     flex_multiplier: 1.0,
+                    ..Pricing::empty()
                 },
             );
 
@@ -5982,13 +5875,12 @@ mod tests {
             let entry = pricing.find("claude-model").unwrap();
             assert_eq!(entry.input, 2e-6);
             assert_eq!(entry.output, 15e-6); // unchanged
-            // cache_create: 3.75e-6 * (2/3) = 2.5e-6
-            assert!((entry.cache_create - 2.5e-6).abs() < 1e-15);
-            // cache_read: 3e-7 * (2/3) = 2e-7
-            assert!((entry.cache_read - 2e-7).abs() < 1e-15);
-            // above_200k variants also scaled
-            assert!((entry.cache_create_above_200k.unwrap() - 3.125e-6).abs() < 1e-15);
-            assert!((entry.cache_read_above_200k.unwrap() - 2.5e-7).abs() < 1e-15);
+            assert_eq!(entry.cache_create, None);
+            assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
+            assert_eq!(entry.cache_read, None);
+            assert!((entry.input * 0.1 - 2e-7).abs() < 1e-15);
+            assert_eq!(entry.cache_create_above_200k, Some(4.6875e-6));
+            assert_eq!(entry.cache_read_above_200k, Some(3.75e-7));
         }
 
         #[test]
@@ -6000,10 +5892,8 @@ mod tests {
                 Pricing {
                     input: 5e-6,
                     output: 10e-6,
-                    cache_create: 0.0,
-                    cache_read: 0.0,
-                    cache_read_explicit: false,
-                    cache_create_explicit: false,
+                    cache_create: Some(0.0),
+                    cache_read: Some(0.0),
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -6012,6 +5902,7 @@ mod tests {
                     fast_multiplier: 1.0,
                     ultrafast_multiplier: 1.0,
                     flex_multiplier: 1.0,
+                    ..Pricing::empty()
                 },
             );
 
@@ -6021,23 +5912,21 @@ mod tests {
             pricing.apply_overrides(overrides.iter());
 
             let entry = pricing.find("no-cache-model").unwrap();
-            assert_eq!(entry.cache_create, 0.0);
-            assert_eq!(entry.cache_read, 0.0);
+            assert_eq!(entry.cache_create, Some(0.0));
+            assert_eq!(entry.cache_read, Some(0.0));
         }
 
         #[test]
-        fn explicit_cache_override_takes_precedence_over_scaling() {
+        fn explicit_cache_override_replaces_the_default() {
             let mut pricing = PricingMap::default();
-            // cache_read_explicit=false so scaling would normally apply
             pricing.entries.insert(
                 "model".to_string(),
                 Pricing {
                     input: 3e-6,
                     output: 15e-6,
-                    cache_create: 3.75e-6,
-                    cache_read: 3e-7,
-                    cache_read_explicit: false,
-                    cache_create_explicit: false,
+                    cache_create: None,
+                    cache_read: None,
+
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -6046,6 +5935,7 @@ mod tests {
                     fast_multiplier: 1.0,
                     ultrafast_multiplier: 1.0,
                     flex_multiplier: 1.0,
+                    ..Pricing::empty()
                 },
             );
 
@@ -6058,9 +5948,9 @@ mod tests {
 
             let entry = pricing.find("model").unwrap();
             assert_eq!(entry.input, 2e-6);
-            assert_eq!(entry.cache_read, 5e-7); // explicit value, not 2e-7
-            // cache_create still scaled since not explicitly provided
-            assert!((entry.cache_create - 2.5e-6).abs() < 1e-15);
+            assert_eq!(entry.cache_read, Some(5e-7)); // explicit value, not 2e-7
+            assert_eq!(entry.cache_create, None);
+            assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
         }
     }
 }
