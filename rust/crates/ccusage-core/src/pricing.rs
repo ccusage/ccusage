@@ -151,6 +151,12 @@ pub struct LongContext {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchKind {
+    Exact,
+    Fuzzy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProviderFamily {
     Anthropic,
     OpenAi,
@@ -294,16 +300,34 @@ enum ScheduleId {
 }
 
 impl ScheduleId {
-    fn for_model(model: &str) -> Option<Self> {
-        Self::for_key(normalized_pricing_key(model).as_ref())
+    #[inline]
+    fn for_request(model: &str) -> Option<(Self, Cow<'_, str>)> {
+        let resolved = crate::model_aliases::resolve_model_name(model);
+        let schedule = Self::for_model(model).or_else(|| {
+            (resolved.as_ref() != model)
+                .then(|| Self::for_model(resolved.as_ref()))
+                .flatten()
+        })?;
+        Some((schedule, resolved))
     }
 
-    fn for_key(model: &str) -> Option<Self> {
-        match model {
-            "deepseek-v4-flash" => Some(Self::DeepSeekV4Flash),
-            "deepseek-v4-pro" => Some(Self::DeepSeekV4Pro),
-            _ => None,
-        }
+    fn for_model(model: &str) -> Option<Self> {
+        [Self::DeepSeekV4Flash, Self::DeepSeekV4Pro]
+            .into_iter()
+            .find(|schedule| {
+                let key = schedule.model();
+                model.len() == key.len()
+                    && model
+                        .bytes()
+                        .map(|byte| {
+                            if is_pricing_key_separator(byte) {
+                                b'-'
+                            } else {
+                                byte
+                            }
+                        })
+                        .eq(key.bytes())
+            })
     }
 
     fn model(self) -> &'static str {
@@ -406,10 +430,7 @@ impl PricingSchedule {
 }
 
 pub fn has_time_dependent_pricing(model: &str) -> bool {
-    let resolved_model = crate::model_aliases::resolve_model_name(model);
-    ScheduleId::for_model(model)
-        .or_else(|| ScheduleId::for_model(resolved_model.as_ref()))
-        .is_some()
+    ScheduleId::for_request(model).is_some()
 }
 
 impl Pricing {
@@ -1631,6 +1652,33 @@ impl PricingMap {
         })
     }
 
+    pub fn resolve<'a>(&self, candidates: &[(&'a str, MatchKind)]) -> Option<(&'a str, Pricing)> {
+        candidates.iter().find_map(|&(model, kind)| {
+            let pricing = match kind {
+                MatchKind::Exact => self.find_exact_with_fallback(model),
+                MatchKind::Fuzzy => self.find(model),
+            }?;
+            Some((model, pricing))
+        })
+    }
+
+    pub fn resolve_at<'a>(
+        &self,
+        candidates: &[(&'a str, MatchKind)],
+        timestamp: Option<TimestampMs>,
+    ) -> Option<(&'a str, Pricing)> {
+        let (model, pricing) = self.resolve(candidates)?;
+        Some((
+            model,
+            timestamp.map_or(pricing, |timestamp| match ScheduleId::for_request(model) {
+                Some((schedule, resolved)) => {
+                    self.scheduled_at(model, resolved.as_ref(), schedule, timestamp, pricing)
+                }
+                None => pricing,
+            }),
+        ))
+    }
+
     fn prices(&self) -> Table<'_, Pricing> {
         Table {
             primary: TablePart {
@@ -1852,19 +1900,32 @@ impl PricingMap {
     /// ids and aliases that resolve to them. Provider and reseller names
     /// continue through static lookup.
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
-        let resolved_model = crate::model_aliases::resolve_model_name(model);
-        let Some(schedule) =
-            ScheduleId::for_model(model).or_else(|| ScheduleId::for_model(resolved_model.as_ref()))
-        else {
+        let Some((schedule, resolved)) = ScheduleId::for_request(model) else {
             return self.find(model);
         };
-        let mut pricing = self.find(model)?;
+        Some(self.scheduled_at(
+            model,
+            resolved.as_ref(),
+            schedule,
+            timestamp,
+            self.find(model)?,
+        ))
+    }
+
+    fn scheduled_at(
+        &self,
+        model: &str,
+        resolved: &str,
+        schedule: ScheduleId,
+        timestamp: TimestampMs,
+        mut pricing: Pricing,
+    ) -> Pricing {
         pricing.schedule = Some(schedule);
-        let explicit = [model, resolved_model.as_ref(), schedule.model()]
+        let explicit = [model, resolved, schedule.model()]
             .into_iter()
             .find_map(|key| self.rows.entries.get(key).filter(|entry| entry.overridden))
             .copied();
-        Some(pricing.at(timestamp, explicit))
+        pricing.at(timestamp, explicit)
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
@@ -3301,29 +3362,6 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_alias_override_preserves_duration_and_speed_fields_from_the_selected_patch() {
-        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
-            "deepseek-v4-flash",
-            "custom-base",
-        )]);
-        let base = direct_deepseek_pricing();
-        let model = "custom-base".to_string();
-        let value = ccusage_cli::PricingOverride {
-            cache_creation_input_token_cost_above_1hr: Some(13.0),
-            fast_multiplier: Some(3.0),
-            flex_multiplier: Some(0.4),
-            ..Default::default()
-        };
-        let pricing = base.with_user_overrides([(&model, &value)]);
-        let scheduled = pricing
-            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
-            .unwrap();
-        assert_eq!(scheduled.cache_create_1h, Some(13.0));
-        assert_eq!(scheduled.fast_multiplier, 3.0);
-        assert_eq!(scheduled.flex_multiplier, 0.4);
-    }
-
-    #[test]
     fn long_context_view_names_the_existing_source_billing_modes() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
@@ -3350,6 +3388,93 @@ mod tests {
         assert_eq!(whole.mode, super::LongContextMode::WholeRequest);
         assert_eq!(whole.threshold, 272_000);
         assert_eq!(whole.rates.input, Some(3e-6));
+    }
+
+    #[test]
+    fn ordered_candidates_keep_free_prices_and_per_candidate_match_kinds() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "free": {"input_cost_per_token": 0, "output_cost_per_token": 0},
+            "paid": {"input_cost_per_token": 1, "output_cost_per_token": 2},
+            "provider/paid-version": {"input_cost_per_token": 9, "output_cost_per_token": 10}
+        }"#,
+        );
+        let (matched, free) = pricing
+            .resolve(&[
+                ("free", super::MatchKind::Fuzzy),
+                ("paid", super::MatchKind::Fuzzy),
+            ])
+            .unwrap();
+        assert_eq!(matched, "free");
+        assert_eq!(free.input, 0.0);
+        let (matched, paid) = pricing
+            .resolve(&[
+                ("provider/paid", super::MatchKind::Exact),
+                ("paid", super::MatchKind::Fuzzy),
+            ])
+            .unwrap();
+        assert_eq!(matched, "paid");
+        assert_eq!(paid.input, 1.0);
+        let (matched, provider) = pricing
+            .resolve(&[
+                ("provider/paid", super::MatchKind::Fuzzy),
+                ("paid", super::MatchKind::Fuzzy),
+            ])
+            .unwrap();
+        assert_eq!(matched, "provider/paid");
+        assert_eq!(provider.input, 9.0);
+    }
+
+    #[test]
+    fn timestamped_candidates_keep_exact_provider_rates_and_schedule_direct_names() {
+        let pricing = direct_deepseek_pricing();
+        let instant = timestamp("2026-08-17T01:00:00Z");
+        let (matched, provider) = pricing
+            .resolve_at(
+                &[
+                    ("openrouter/deepseek.v4.flash", super::MatchKind::Exact),
+                    ("deepseek-v4-flash", super::MatchKind::Fuzzy),
+                ],
+                Some(instant),
+            )
+            .unwrap();
+        assert_eq!(matched, "openrouter/deepseek.v4.flash");
+        assert_eq!(provider.input, 9e-6);
+        let (matched, direct) = pricing
+            .resolve_at(
+                &[
+                    ("unknown/deepseek-v4-flash", super::MatchKind::Exact),
+                    ("deepseek-v4-flash", super::MatchKind::Fuzzy),
+                ],
+                Some(instant),
+            )
+            .unwrap();
+        assert_eq!(matched, "deepseek-v4-flash");
+        assert_eq!(direct.input, 0.44e-6);
+    }
+
+    #[test]
+    fn scheduled_alias_override_preserves_duration_and_speed_fields_from_the_selected_patch() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "deepseek-v4-flash",
+            "custom-base",
+        )]);
+        let base = direct_deepseek_pricing();
+        let model = "custom-base".to_string();
+        let value = ccusage_cli::PricingOverride {
+            cache_creation_input_token_cost_above_1hr: Some(13.0),
+            fast_multiplier: Some(3.0),
+            flex_multiplier: Some(0.4),
+            ..Default::default()
+        };
+        let pricing = base.with_user_overrides([(&model, &value)]);
+        let scheduled = pricing
+            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+        assert_eq!(scheduled.cache_create_1h, Some(13.0));
+        assert_eq!(scheduled.fast_multiplier, 3.0);
+        assert_eq!(scheduled.flex_multiplier, 0.4);
     }
 
     #[test]

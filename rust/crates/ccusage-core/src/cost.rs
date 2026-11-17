@@ -4,6 +4,72 @@ use crate::{
     types::{Speed, UsageEntry},
 };
 
+pub struct EntryPricing<'a> {
+    pub usage: crate::TokenUsageRaw,
+    pub reasoning_tokens: u64,
+    pub residual_tokens: u64,
+    pub candidates: &'a [(&'a str, crate::pricing::MatchKind)],
+    pub stored_cost: Option<f64>,
+    pub mode: CostMode,
+    pub timestamp: Option<crate::TimestampMs>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EntryPrice<'a> {
+    pub cost: f64,
+    pub matched: Option<&'a str>,
+    pub missing_pricing: bool,
+}
+
+pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: Option<&PricingMap>) -> EntryPrice<'a> {
+    if entry.mode == CostMode::Display {
+        return EntryPrice {
+            cost: entry.stored_cost.unwrap_or(0.0),
+            matched: None,
+            missing_pricing: false,
+        };
+    }
+    if entry.mode == CostMode::Auto
+        && let Some(cost) = entry.stored_cost
+    {
+        return EntryPrice {
+            cost,
+            matched: None,
+            missing_pricing: false,
+        };
+    }
+    let usage = crate::TokenUsageRaw {
+        output_tokens: entry
+            .usage
+            .output_tokens
+            .saturating_add(entry.reasoning_tokens)
+            .saturating_add(entry.residual_tokens),
+        ..entry.usage
+    };
+    let resolved = pricing.and_then(|map| map.resolve_at(entry.candidates, entry.timestamp));
+    match resolved {
+        Some((model, rates)) => {
+            let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
+                rates.fast_multiplier
+            } else {
+                1.0
+            };
+            EntryPrice {
+                cost: calculate_cost_from_pricing(usage, rates) * multiplier,
+                matched: Some(model),
+                missing_pricing: false,
+            }
+        }
+        None => EntryPrice {
+            cost: 0.0,
+            matched: None,
+            missing_pricing: pricing.is_some()
+                && !entry.candidates.is_empty()
+                && crate::total_usage_tokens(usage) != 0,
+        },
+    }
+}
+
 pub fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
     calculate_cost_for_usage_at(
         data.message.model.as_deref(),
@@ -220,6 +286,134 @@ pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_entry_pricing_adds_only_the_supplied_extra_tokens() {
+        let mut map = PricingMap::default();
+        map.load_json(
+            r#"{"priced": {
+            "input_cost_per_token": 2, "output_cost_per_token": 3
+        }}"#,
+        );
+        let candidates = [("priced", crate::pricing::MatchKind::Exact)];
+        let priced = price_entry(
+            EntryPricing {
+                usage: crate::TokenUsageRaw {
+                    input_tokens: 2,
+                    output_tokens: 3,
+                    ..Default::default()
+                },
+                reasoning_tokens: 4,
+                residual_tokens: 5,
+                candidates: &candidates,
+                stored_cost: Some(99.0),
+                mode: CostMode::Calculate,
+                timestamp: None,
+            },
+            Some(&map),
+        );
+        assert_eq!(priced.cost, 40.0);
+        assert_eq!(priced.matched, Some("priced"));
+        assert!(!priced.missing_pricing);
+    }
+
+    #[test]
+    fn candidate_entry_modes_keep_stored_costs_separate_from_lookup_results() {
+        let mut map = PricingMap::default();
+        map.load_json(r#"{"free": {"input_cost_per_token": 0, "output_cost_per_token": 0}}"#);
+        let candidates = [("free", crate::pricing::MatchKind::Exact)];
+        for (mode, stored_cost, expected, matched) in [
+            (CostMode::Display, Some(7.0), 7.0, None),
+            (CostMode::Display, None, 0.0, None),
+            (CostMode::Auto, Some(0.0), 0.0, None),
+            (CostMode::Auto, Some(7.0), 7.0, None),
+            (CostMode::Auto, None, 0.0, Some("free")),
+            (CostMode::Calculate, Some(7.0), 0.0, Some("free")),
+        ] {
+            let result = price_entry(
+                EntryPricing {
+                    usage: crate::TokenUsageRaw {
+                        input_tokens: 100,
+                        ..Default::default()
+                    },
+                    reasoning_tokens: 0,
+                    residual_tokens: 0,
+                    candidates: &candidates,
+                    stored_cost,
+                    mode,
+                    timestamp: None,
+                },
+                Some(&map),
+            );
+            assert_eq!(result.cost, expected);
+            assert_eq!(result.matched, matched);
+            assert!(!result.missing_pricing);
+        }
+    }
+
+    #[test]
+    fn candidate_entry_missing_pricing_requires_billable_usage_and_a_lookup() {
+        let map = PricingMap::default();
+        let candidates = [("missing", crate::pricing::MatchKind::Fuzzy)];
+        for (input_tokens, reasoning_tokens, residual_tokens, mode, stored_cost, missing) in [
+            (0, 0, 0, CostMode::Calculate, None, false),
+            (1, 0, 0, CostMode::Calculate, None, true),
+            (0, 1, 0, CostMode::Calculate, None, true),
+            (0, 0, 1, CostMode::Calculate, None, true),
+            (1, 0, 0, CostMode::Display, None, false),
+            (1, 0, 0, CostMode::Auto, Some(0.0), false),
+        ] {
+            let result = price_entry(
+                EntryPricing {
+                    usage: crate::TokenUsageRaw {
+                        input_tokens,
+                        ..Default::default()
+                    },
+                    reasoning_tokens,
+                    residual_tokens,
+                    candidates: &candidates,
+                    stored_cost,
+                    mode,
+                    timestamp: None,
+                },
+                Some(&map),
+            );
+            assert_eq!(result.cost, 0.0);
+            assert_eq!(result.matched, None);
+            assert_eq!(result.missing_pricing, missing);
+        }
+    }
+
+    #[test]
+    fn candidate_entry_pricing_uses_the_selected_schedule_and_fast_multiplier() {
+        let mut map = deepseek_pricing();
+        let model = "deepseek-v4-flash".to_string();
+        let value = ccusage_cli::PricingOverride {
+            fast_multiplier: Some(3.0),
+            ..Default::default()
+        };
+        map = map.with_user_overrides([(&model, &value)]);
+        let candidates = [("deepseek.v4.flash", crate::pricing::MatchKind::Exact)];
+        let result = price_entry(
+            EntryPricing {
+                usage: crate::TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    speed: Some(Speed::Fast),
+                    ..Default::default()
+                },
+                reasoning_tokens: 0,
+                residual_tokens: 0,
+                candidates: &candidates,
+                stored_cost: None,
+                mode: CostMode::Calculate,
+                timestamp: Some(timestamp("2026-08-17T01:00:00Z")),
+            },
+            Some(&map),
+        );
+        assert!((result.cost - 1.32).abs() < 1e-12);
+        assert_eq!(result.matched, Some("deepseek.v4.flash"));
+        assert!(!result.missing_pricing);
+    }
 
     #[test]
     fn published_cache_rates_survive_an_input_override_without_a_cache_read_rate() {
