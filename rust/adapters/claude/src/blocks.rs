@@ -1,16 +1,16 @@
 use std::io::IsTerminal;
 
 use ccusage_core::{
-    Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, SimpleTable,
-    TimestampMs, TokenCounts,
+    Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow, Result,
+    SimpleTable, TimestampMs, TokenCounts, UtcParts,
     cli::{SharedArgs, SortOrder},
-    color,
+    cli_error, color,
     fast::FxHashSet,
-    format_currency, format_date_tz, format_models_multiline, format_number, format_rfc3339_millis,
-    json_float, model_aliases, print_box_title, resolve_tz, should_use_compact_layout,
-    terminal_style, terminal_width,
+    format_currency, format_models_multiline, format_number, format_rfc3339_millis, json_float,
+    model_aliases, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
 };
-use ccusage_report::{am_pm, format_utc_second, hour_12, local_parts};
+use ccusage_report::{am_pm, hour_12};
+use jiff::{Timestamp, tz::TimeZone};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -167,16 +167,10 @@ fn create_gap_block(last: TimestampMs, next: TimestampMs, duration: i64) -> Sess
     }
 }
 
-pub fn filter_blocks_by_date(blocks: &mut Vec<SessionBlock>, shared: &SharedArgs) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
+pub fn filter_blocks_by_date(blocks: &mut Vec<SessionBlock>, window: &ReportWindow) {
+    if !window.is_unbounded() {
+        blocks.retain(|block| window.contains_timestamp(block.start_time));
     }
-    let timezone = resolve_tz(shared.timezone.as_deref());
-    blocks.retain(|block| {
-        let date = format_date_tz(block.start_time, &timezone).replace('-', "");
-        shared.since.as_ref().is_none_or(|since| &date >= since)
-            && shared.until.as_ref().is_none_or(|until| &date <= until)
-    });
 }
 
 pub fn sort_blocks(blocks: &mut [SessionBlock], order: &SortOrder) {
@@ -249,16 +243,21 @@ fn format_block_models(models: &[String]) -> String {
     }
 }
 
-fn format_block_time(block: &SessionBlock, compact: bool, now: TimestampMs) -> String {
-    let start = format_local_block_start(block.start_time, compact);
+fn format_block_time(
+    block: &SessionBlock,
+    compact: bool,
+    now: TimestampMs,
+    zone: &TimeZone,
+) -> Result<String> {
+    let start = format_block_start(block.start_time, compact, zone)?;
     if block.is_gap {
-        let end = format_local_block_end(block.end_time, compact);
+        let end = format_block_end(block.end_time, compact, zone)?;
         let duration = block.end_time.duration_since(block.start_time) / MILLIS_PER_HOUR;
-        return if compact {
+        return Ok(if compact {
             format!("{start}-{end}\n({duration}h gap)")
         } else {
             format!("{start} - {end} ({duration}h gap)")
-        };
+        });
     }
 
     if block.is_active {
@@ -268,7 +267,7 @@ fn format_block_time(block: &SessionBlock, compact: bool, now: TimestampMs) -> S
         let elapsed_minutes = elapsed.rem_euclid(60);
         let remaining_hours = remaining / 60;
         let remaining_minutes = remaining.rem_euclid(60);
-        return if compact {
+        return Ok(if compact {
             format!(
                 "{start}\n({elapsed_hours}h{elapsed_minutes}m/{remaining_hours}h{remaining_minutes}m)"
             )
@@ -276,7 +275,7 @@ fn format_block_time(block: &SessionBlock, compact: bool, now: TimestampMs) -> S
             format!(
                 "{start} ({elapsed_hours}h {elapsed_minutes}m elapsed, {remaining_hours}h {remaining_minutes}m remaining)"
             )
-        };
+        });
     }
 
     let duration = block
@@ -285,7 +284,7 @@ fn format_block_time(block: &SessionBlock, compact: bool, now: TimestampMs) -> S
         .unwrap_or(0);
     let hours = duration / 60;
     let minutes = duration.rem_euclid(60);
-    if compact {
+    Ok(if compact {
         if hours > 0 {
             format!("{start}\n({hours}h{minutes}m)")
         } else {
@@ -295,12 +294,27 @@ fn format_block_time(block: &SessionBlock, compact: bool, now: TimestampMs) -> S
         format!("{start} ({hours}h {minutes}m)")
     } else {
         format!("{start} ({minutes}m)")
-    }
+    })
 }
 
-fn format_local_block_start(timestamp: TimestampMs, compact: bool) -> String {
-    let parts = local_parts(timestamp);
-    if compact {
+fn block_parts(timestamp: TimestampMs, zone: &TimeZone) -> Result<UtcParts> {
+    let timestamp = Timestamp::from_millisecond(timestamp.as_millis())
+        .map_err(|error| cli_error(format!("Invalid block timestamp: {error}")))?;
+    let parts = zone.to_datetime(timestamp);
+    Ok(UtcParts {
+        year: i32::from(parts.year()),
+        month: u32::from(parts.month().unsigned_abs()),
+        day: u32::from(parts.day().unsigned_abs()),
+        hour: u32::from(parts.hour().unsigned_abs()),
+        minute: u32::from(parts.minute().unsigned_abs()),
+        second: u32::from(parts.second().unsigned_abs()),
+        millisecond: 0,
+    })
+}
+
+fn format_block_start(timestamp: TimestampMs, compact: bool, zone: &TimeZone) -> Result<String> {
+    let parts = block_parts(timestamp, zone)?;
+    Ok(if compact {
         format!(
             "{:02}/{:02}, {:02}:{:02} {}",
             parts.month,
@@ -320,21 +334,29 @@ fn format_local_block_start(timestamp: TimestampMs, compact: bool) -> String {
             parts.second,
             am_pm(parts.hour)
         )
-    }
+    })
 }
 
-fn format_local_block_end(timestamp: TimestampMs, compact: bool) -> String {
-    let parts = local_parts(timestamp);
+fn format_block_end(timestamp: TimestampMs, compact: bool, zone: &TimeZone) -> Result<String> {
     if compact {
-        format!(
+        let parts = block_parts(timestamp, zone)?;
+        Ok(format!(
             "{:02}:{:02} {}",
             hour_12(parts.hour),
             parts.minute,
             am_pm(parts.hour)
-        )
+        ))
     } else {
-        format_local_block_start(timestamp, false)
+        format_block_start(timestamp, false, zone)
     }
+}
+
+fn format_block_started(timestamp: TimestampMs, zone: &TimeZone) -> Result<String> {
+    let parts = block_parts(timestamp, zone)?;
+    Ok(format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second
+    ))
 }
 
 pub fn print_blocks_table(
@@ -343,6 +365,7 @@ pub fn print_blocks_table(
     max_tokens: u64,
     shared: &SharedArgs,
     now: TimestampMs,
+    zone: &TimeZone,
 ) -> Result<()> {
     if blocks.is_empty() {
         eprintln!("No Claude usage data found.");
@@ -375,7 +398,11 @@ pub fn print_blocks_table(
     for block in blocks {
         if block.is_gap {
             let mut row = vec![
-                color(shared, format_block_time(block, compact, now), Color::Grey),
+                color(
+                    shared,
+                    format_block_time(block, compact, now, zone)?,
+                    Color::Grey,
+                ),
                 color(shared, "(inactive)", Color::Grey),
                 color(shared, "-", Color::Grey),
                 color(shared, "-", Color::Grey),
@@ -391,7 +418,7 @@ pub fn print_blocks_table(
         }
         let total = block.token_counts.total();
         let mut row = vec![
-            format_block_time(block, compact, now),
+            format_block_time(block, compact, now, zone)?,
             if block.is_active {
                 color(shared, "ACTIVE", Color::Green)
             } else {
@@ -478,11 +505,15 @@ pub fn print_active_block_detail(
     max_tokens: u64,
     shared: &SharedArgs,
     now: TimestampMs,
-) {
+    zone: &TimeZone,
+) -> Result<()> {
     print_box_title("Current Session Block Status", shared);
     let elapsed = now.duration_since(block.start_time) / MILLIS_PER_MINUTE;
     let remaining = block.end_time.duration_since(now) / MILLIS_PER_MINUTE;
-    println!("Block Started:   {}", format_utc_second(block.start_time));
+    println!(
+        "Block Started:   {}",
+        format_block_started(block.start_time, zone)?
+    );
     println!(
         "Time Elapsed:    {}h {}m",
         elapsed / 60,
@@ -572,6 +603,7 @@ pub fn print_active_block_detail(
             println!("  Projected Usage:  {percent:.1}% {status}");
         }
     }
+    Ok(())
 }
 
 pub fn calculate_burn_rate(block: &SessionBlock) -> Option<BurnRate> {
@@ -631,6 +663,47 @@ pub fn format_remaining_time(minutes: i64) -> String {
 mod tests {
     use super::*;
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    #[test]
+    fn block_times_follow_the_report_timezone_across_midnight() {
+        let timestamp = crate::parse_ts_timestamp("2026-01-02T23:30:45Z").unwrap();
+        let zone = jiff::tz::TimeZone::get("Asia/Tokyo").unwrap();
+        assert_eq!(
+            format_block_start(timestamp, false, &zone).unwrap(),
+            "1/3/2026, 8:30:45 AM"
+        );
+        assert_eq!(
+            format_block_start(timestamp, true, &zone).unwrap(),
+            "01/03, 08:30 AM"
+        );
+        assert_eq!(
+            format_block_end(timestamp, false, &zone).unwrap(),
+            "1/3/2026, 8:30:45 AM"
+        );
+        assert_eq!(
+            format_block_end(timestamp, true, &zone).unwrap(),
+            "08:30 AM"
+        );
+        assert_eq!(
+            format_block_started(timestamp, &zone).unwrap(),
+            "2026-01-03 08:30:45"
+        );
+    }
+
+    #[test]
+    fn block_times_follow_the_report_timezone_dst_transition() {
+        let zone = jiff::tz::TimeZone::get("Europe/London").unwrap();
+        let before = crate::parse_ts_timestamp("2026-03-29T00:30:00Z").unwrap();
+        let after = crate::parse_ts_timestamp("2026-03-29T01:30:00Z").unwrap();
+        assert_eq!(
+            format_block_started(before, &zone).unwrap(),
+            "2026-03-29 00:30:00"
+        );
+        assert_eq!(
+            format_block_started(after, &zone).unwrap(),
+            "2026-03-29 02:30:00"
+        );
+    }
 
     #[test]
     fn only_a_pause_longer_than_the_session_creates_a_gap() {

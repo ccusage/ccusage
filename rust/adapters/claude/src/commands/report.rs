@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use ccusage_core::{
-    BucketKind, DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, Result, SessionAccumulator, TimestampMs,
-    UsageSummary,
+    BucketKind, DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, ReportWindow, Result, SessionAccumulator,
+    TimestampMs, UsageSummary,
     cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder, WeekDay, WeeklyArgs},
     cli_error,
     fast::FxHashMap,
@@ -231,7 +231,8 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
     let now = utc_now();
     let entries = load_entries(&shared, None)?;
     let mut blocks = identify_session_blocks(entries, args.session_length, now);
-    filter_blocks_by_date(&mut blocks, &shared);
+    let window = ReportWindow::from_shared(&shared);
+    filter_blocks_by_date(&mut blocks, &window);
     sort_blocks(&mut blocks, &shared.order);
 
     if args.recent {
@@ -271,7 +272,8 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
             max_tokens,
             &shared,
             now,
-        );
+            window.timezone(),
+        )?;
         return Ok(());
     }
     print_blocks_table(
@@ -280,6 +282,7 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
         max_tokens,
         &shared,
         now,
+        window.timezone(),
     )?;
     Ok(())
 }
