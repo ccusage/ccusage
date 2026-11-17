@@ -32,7 +32,7 @@ jobs:
           git clean -fd -- . ':(exclude,glob)nix/tools/*/bun.nix'
       - name: Apply formatting and lint fixes
         run: |
-          nix fmt -- --no-cache
+          nix fmt
           # autofix.ci rejects the entire fix if it contains a .github path.
           git restore --worktree -- .github
       - name: Push fixes with autofix.ci

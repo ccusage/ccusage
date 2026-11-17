@@ -17,7 +17,6 @@ in
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru)
-        workspaceArtifacts
         commonArgs
         depsOnlyArgs
         version
@@ -61,54 +60,6 @@ in
         sourceRoot = "source/rust";
         cargoExtraArgs = "--all";
       };
-      # Build the schema generator straight from the current Rust source so the
-      # drift check below can never go stale: it always reflects whatever
-      # `rust/crates/ccusage/src/config_schema.rs` looks like right now.
-      generateConfigSchema = craneLib.buildPackage (
-        commonArgs
-        // {
-          pname = "generate-config-schema";
-          # Only the config layer is needed, so skip the adapter artifacts.
-          cargoArtifacts = workspaceArtifacts.foundation;
-          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema";
-          doCheck = false;
-          meta = {
-            mainProgram = "generate-config-schema";
-          };
-        }
-      );
-      # Fail `nix flake check` when the committed config schema drifts from what
-      # the Rust source generates. This catches PRs that add or change a config
-      # field without regenerating the schema (run
-      # `just ccusage::generate-schema` to fix). Only the tracked
-      # apps/ccusage/config-schema.json is checked; docs/public/config-schema.json
-      # is a gitignored build copy.
-      config-schema =
-        pkgs.runCommand "config-schema-check"
-          {
-            src = repoSrc;
-            nativeBuildInputs = [
-              generateConfigSchema
-              pkgs.oxfmt
-              pkgs.diffutils
-            ];
-          }
-          ''
-            cp -R "$src" source
-            chmod -R u+w source
-            cd source
-
-            generate-config-schema generated.json
-            oxfmt --write generated.json
-
-            if ! diff -u apps/ccusage/config-schema.json generated.json; then
-              echo "ERROR: apps/ccusage/config-schema.json is out of sync with the Rust schema source." >&2
-              echo "Run 'nix run .#generate-schema' (or 'just ccusage::generate-schema') and commit the result." >&2
-              exit 1
-            fi
-
-            touch "$out"
-          '';
       # Fail `nix flake check` when a tool's committed `bun.nix` no longer matches
       # what `bun2nix` derives from its `bun.lock`. Renovate bumps `bun.lock`
       # without knowing about `bun.nix`, and a stale pair would otherwise only
@@ -158,7 +109,6 @@ in
           bun-nix
           ccusage-clippy
           ccusage-fmt
-          config-schema
           ;
         oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''
           oxlint --config nix/oxlint-check.json .

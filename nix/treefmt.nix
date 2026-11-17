@@ -45,35 +45,14 @@ in
           pkgs.oxfmt
           generateConfigSchema
         ];
-        # Generate the schema into a temp file and only overwrite the tracked
-        # files when the content actually differs. This keeps the formatter
-        # idempotent: rewriting an unchanged file bumps its mtime, which
-        # `treefmt --fail-on-change` (pre-push) reports as a spurious change.
-        # treefmt may run this formatter as several concurrent batches, so a
-        # plain `cp` into a missing destination can lose the create race with
-        # "File exists". Each copy is staged beside its destination and renamed
-        # into place, which is atomic and never conflicts.
+        # Rewriting an unchanged file bumps its mtime, which
+        # `treefmt --fail-on-change` reports as a change.
         text = ''
           tmp="$(mktemp --suffix=.json)"
-          staged=""
-          trap 'rm -f "$tmp" "$staged"' EXIT
-          install_if_changed() {
-            if cmp -s "$1" "$2"; then
-              return
-            fi
-            staged="$(mktemp "$2.XXXXXX")"
-            cp "$1" "$staged"
-            # mktemp creates the file 0600; match the tracked file's mode.
-            chmod 0644 "$staged"
-            mv -f "$staged" "$2"
-            staged=""
-          }
+          trap 'rm -f "$tmp"' EXIT
           generate-config-schema "$tmp"
           oxfmt --write "$tmp"
-          install_if_changed "$tmp" apps/ccusage/config-schema.json
-          if [ -d docs/public ]; then
-            install_if_changed apps/ccusage/config-schema.json docs/public/config-schema.json
-          fi
+          cmp -s "$tmp" apps/ccusage/config-schema.json || cp "$tmp" apps/ccusage/config-schema.json
         '';
       };
       generateBunNix = pkgs.writeShellApplication {
@@ -216,9 +195,9 @@ in
       };
 
       # `nix run .#generate-schema` regenerates apps/ccusage/config-schema.json
-      # (and the docs copy) from the current Rust source. It reuses the exact
-      # script the treefmt formatter and the config-schema flake check rely on,
-      # so the three can never drift apart. Run it from the repo root.
+      # from the current Rust source with the script the treefmt formatter
+      # runs, so `checks.treefmt` fails when the committed file drifts. Run it
+      # from the repo root.
       apps.generate-schema = {
         type = "app";
         program = lib.getExe schemaGen;
