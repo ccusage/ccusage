@@ -179,6 +179,68 @@ fn pi_tied_fork_keeps_the_first_path_in_both_read_modes() {
 }
 
 #[test]
+fn nested_claude_advisor_is_counted_once_with_a_top_level_copy() {
+    let fixture = Fixture::new();
+    let nested = serde_json::json!({
+        "type": "assistant", "timestamp": "2026-01-02T10:00:00Z", "requestId": "req-advisor",
+        "message": {"id": "msg-advisor", "model": "claude-sonnet-4-20250514", "usage": {
+            "input_tokens": 100, "output_tokens": 1, "iterations": [{
+                "type": "advisor_message", "model": "claude-opus-4-20250514", "input_tokens": 10, "output_tokens": 2
+            }]
+        }}
+    });
+    let wrapped = serde_json::json!({"type":"progress", "sessionId":"session-advisor", "data": {
+        "type":"agent_progress", "message": nested
+    }})
+    .to_string();
+    let transcript = fixture.write_file("claude/projects/p/session-advisor.jsonl", &wrapped);
+    let seeded = vec![(
+        "CLAUDE_CONFIG_DIR",
+        vec![fixture.path("claude").into_os_string()],
+    )];
+    let daily = Case::new(
+        "daily",
+        "json_nested_advisor",
+        &[
+            "claude",
+            "daily",
+            "--offline",
+            "--json",
+            "--mode",
+            "calculate",
+        ],
+    );
+    let first = run_case(fixture.root(), &seeded, &daily);
+    assert_eq!(first.exit, "0", "{}", first.stderr);
+    let report: serde_json::Value = serde_json::from_str(&first.stdout).unwrap();
+    assert_eq!(report["totals"]["inputTokens"], 110);
+    assert_eq!(report["totals"]["outputTokens"], 3);
+    golden::assert_case("claude", fixture.root(), &seeded, &daily);
+    let cases: Vec<_> = ["daily", "session", "blocks"]
+        .into_iter()
+        .map(|kind| {
+            Case::new(
+                kind,
+                "",
+                &["claude", kind, "--offline", "--json", "--mode", "calculate"],
+            )
+        })
+        .collect();
+    let before: Vec<_> = cases
+        .iter()
+        .map(|case| run_case(fixture.root(), &seeded, case).stdout)
+        .collect();
+    let mut direct = nested;
+    direct["sessionId"] = "session-advisor".into();
+    std::fs::write(&transcript, format!("{wrapped}\n{direct}")).unwrap();
+    for (case, expected) in cases.iter().zip(before) {
+        let actual = run_case(fixture.root(), &seeded, case);
+        assert_eq!(actual.exit, "0", "{}", actual.stderr);
+        assert_eq!(actual.stdout, expected, "{}", case.kind);
+    }
+}
+
+#[test]
 fn all_agents_unified() {
     golden::all::run(AGENTS);
 }
