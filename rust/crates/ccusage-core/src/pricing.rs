@@ -126,7 +126,7 @@ pub struct Pricing {
 }
 
 /// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
-pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
+pub const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LongContextMode {
@@ -207,6 +207,11 @@ impl ProviderFamily {
 }
 
 impl Pricing {
+    pub fn long_context_split_threshold(self) -> u64 {
+        self.long_context_threshold
+            .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
+    }
+
     pub fn long_context(self) -> Option<LongContext> {
         let rates = LongContextRates {
             input: self.input_above_200k,
@@ -6304,6 +6309,46 @@ mod tests {
             .unwrap();
 
         assert_eq!(matched.input, 2.0);
+    }
+
+    #[test]
+    fn split_threshold_comes_from_the_resolved_pricing_entry() {
+        crate::test_support::install_pricing_snapshots();
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "private-boundary",
+            "custom-boundary",
+        )]);
+        let mut map = PricingMap::default();
+        map.rows_mut().entries.insert(
+            "custom-boundary".into(),
+            Pricing {
+                input: 1e-6,
+                output: 2e-6,
+                long_context_threshold: Some(123_456),
+                ..Pricing::empty()
+            },
+        );
+        assert_eq!(
+            map.find("private-boundary")
+                .unwrap()
+                .long_context_split_threshold(),
+            123_456
+        );
+        assert_eq!(
+            map.find("custom-boundary-extra")
+                .unwrap()
+                .long_context_split_threshold(),
+            123_456
+        );
+        let embedded = PricingMap::load_embedded();
+        assert_eq!(
+            embedded
+                .find("gpt-5-4")
+                .unwrap()
+                .long_context_split_threshold(),
+            200_000
+        );
+        assert_eq!(Pricing::empty().long_context_split_threshold(), 200_000);
     }
 
     #[test]

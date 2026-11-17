@@ -54,7 +54,7 @@ fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let speed = resolve_codex_speed(request.options.codex_speed);
 
     let (groups, detected) =
-        load_groups_with_diagnostics(shared, request.kind.report_kind(), &diagnostics)?;
+        load_groups_with_diagnostics(shared, request.kind.report_kind(), pricing, &diagnostics)?;
     let rows = groups
         .iter()
         .map(|(period, group)| unified_row_from_group(period, group, pricing, speed, shared.mode))
@@ -513,9 +513,13 @@ mod diagnostic_tests {
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);
             let diagnostics = Diagnostics::new("codex");
-            let (groups, _) =
-                load_groups_with_diagnostics(&shared, AgentReportKind::Daily, &diagnostics)
-                    .unwrap();
+            let (groups, _) = load_groups_with_diagnostics(
+                &shared,
+                AgentReportKind::Daily,
+                &crate::PricingMap::load_embedded(),
+                &diagnostics,
+            )
+            .unwrap();
             assert_eq!(
                 groups.values().map(|group| group.input_tokens).sum::<u64>(),
                 30

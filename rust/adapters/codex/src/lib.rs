@@ -42,15 +42,15 @@ use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
-    // The embedded table builds while the rollouts load; asking for pricing
-    // before load_groups would wait for it instead.
-    pricing::prewarm_embedded(shared.offline);
-    let mut groups = load_groups(&shared, args.kind)?;
     let pricing = PricingMap::load_with_overrides(
         shared.offline,
         log_level() != Some(0),
         shared.pricing_overrides.iter(),
     );
+    let diagnostics = ccusage_core::Diagnostics::new("codex");
+    let (mut groups, _) =
+        aggregate::load_groups_with_diagnostics(&shared, args.kind, &pricing, &diagnostics)?;
+    diagnostics.emit(shared.debug);
     let speed = resolve_codex_speed(args.options.codex_speed);
     if let Some(requested_id) = args.session_id {
         let session_id = resolve_session_id(&groups, &requested_id)?.to_string();

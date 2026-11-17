@@ -30,6 +30,7 @@ pub(crate) fn load_groups_from_sources(
         sources,
         shared,
         kind,
+        &crate::PricingMap::load_embedded(),
         &Diagnostics::new("codex"),
     )
     .map(|(groups, _)| groups)

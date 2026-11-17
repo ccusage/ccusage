@@ -130,6 +130,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
         let (_, detected) = crate::aggregate::load_groups_with_diagnostics(
             &shared,
             AgentReportKind::Daily,
+            &crate::PricingMap::load_embedded(),
             &ccusage_core::Diagnostics::new("codex"),
         )
         .unwrap();

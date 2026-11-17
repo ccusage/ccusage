@@ -55,6 +55,7 @@ fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTr
             ..SharedArgs::default()
         },
         AgentReportKind::Session,
+        &crate::PricingMap::load_embedded(),
         &Diagnostics::new("codex"),
     )
     .unwrap();
