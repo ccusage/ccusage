@@ -122,7 +122,7 @@ pub struct Pricing {
     pub(crate) family: ProviderFamily,
     schedule: Option<ScheduleId>,
     overridden: bool,
-    explicit_schedule_rates: u8,
+    explicit_schedule_rates: u16,
 }
 
 /// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
@@ -434,6 +434,9 @@ impl Pricing {
         scheduled!(output_above_200k, Some(rates.output), 32);
         scheduled!(cache_create_above_200k, Some(rates.cache_create), 64);
         scheduled!(cache_read_above_200k, Some(rates.cache_read), 128);
+        scheduled!(cache_create_1h, self.cache_create_1h, 256);
+        scheduled!(fast_multiplier, self.fast_multiplier, 512);
+        scheduled!(flex_multiplier, self.flex_multiplier, 1024);
         self
     }
 
@@ -476,15 +479,24 @@ impl Pricing {
             Some,
             128
         );
-        if let Some(value) = value.cache_creation_input_token_cost_above_1hr {
-            self.cache_create_1h = Some(value);
-        }
-        if let Some(value) = value.fast_multiplier {
-            self.fast_multiplier = value;
-        }
-        if let Some(value) = value.flex_multiplier {
-            self.flex_multiplier = value;
-        }
+        rate!(
+            cache_creation_input_token_cost_above_1hr,
+            cache_create_1h,
+            Some,
+            256
+        );
+        rate!(
+            fast_multiplier,
+            fast_multiplier,
+            std::convert::identity,
+            512
+        );
+        rate!(
+            flex_multiplier,
+            flex_multiplier,
+            std::convert::identity,
+            1024
+        );
     }
 }
 /// Whether a lookup may fall back to the fuzzy scan, or has to answer from
@@ -3286,6 +3298,29 @@ mod tests {
         assert_eq!(direct.output, 19.0);
         assert!(pricing.has_user_override("scheduled-alias"));
         assert!(!base.has_user_override("deepseek-v4-flash"));
+    }
+
+    #[test]
+    fn scheduled_alias_override_preserves_duration_and_speed_fields_from_the_selected_patch() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "deepseek-v4-flash",
+            "custom-base",
+        )]);
+        let base = direct_deepseek_pricing();
+        let model = "custom-base".to_string();
+        let value = ccusage_cli::PricingOverride {
+            cache_creation_input_token_cost_above_1hr: Some(13.0),
+            fast_multiplier: Some(3.0),
+            flex_multiplier: Some(0.4),
+            ..Default::default()
+        };
+        let pricing = base.with_user_overrides([(&model, &value)]);
+        let scheduled = pricing
+            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+        assert_eq!(scheduled.cache_create_1h, Some(13.0));
+        assert_eq!(scheduled.fast_multiplier, 3.0);
+        assert_eq!(scheduled.flex_multiplier, 0.4);
     }
 
     #[test]
