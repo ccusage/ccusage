@@ -19,8 +19,6 @@ in
         overlays = [ inputs.rust-overlay.overlays.default ];
       };
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      # Hooks run from any worktree, with or without the dev shell loaded, so
-      # each one brings its own tools instead of relying on the caller's PATH.
       hookCommand =
         name: runtimeInputs: text:
         lib.getExe (

@@ -3,7 +3,6 @@ description: Install the Nushell release the flake's dev shell uses, without set
 runs:
   using: composite
   steps:
-    # checks.nushell-version fails when this drifts from the flake's nushell.
     - uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
       with:
         version: 0.116.1

@@ -398,8 +398,9 @@ jobs:
           - pnpm
           - bun
         exclude:
-          # pnpm dlx on Windows doesn't install optional native binaries into
-          # its temporary store, so the CLI launcher fails with spawn ENOENT.
+          # NOTE(2026-11-17): pnpm dlx on Windows doesn't install optional native
+          # binaries into its temporary store, so the CLI launcher fails with
+          # spawn ENOENT.
           - os: blacksmith-32vcpu-windows-2025
             runner: pnpm
 

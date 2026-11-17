@@ -5,7 +5,6 @@
 # holding it: `fix(kimi)`, `feat(codex)`. Nothing about a subject line reveals an
 # invented scope on its own — `feat(coding)` reads fine until you know the change
 # was codex — so this reads the ownership off the staged paths instead.
-#
 
 # Scopes accepted whatever the changed paths map to, because they describe a
 # reason for the change rather than a part of the tree.
