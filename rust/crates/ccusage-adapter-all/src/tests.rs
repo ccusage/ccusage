@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::{
     Align, ModelBreakdown, PricingMap,
-    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, SourceArgs, WeekDay},
+    cli::{AgentReportKind, CostMode, SharedArgs, SourceArgs, WeekDay},
     loader::{aggregate_rows, load_agent_rows_parallel, load_rows, load_sections},
     model_aliases::set_model_aliases_for_tests,
     report::{
