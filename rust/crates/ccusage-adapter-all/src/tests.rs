@@ -1,13 +1,12 @@
 use std::{
     ffi::OsString,
-    fs::{File, FileTimes},
     path::Path,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -29,7 +28,7 @@ use crate::{
 };
 use ccusage_adapter_codex::{self as codex, CodexGroup, CodexModelUsage};
 use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::UnifiedRow};
-use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+use ccusage_test_support::{EnvVarsGuard, fs_fixture, instant, set_modified};
 
 /// No per-source options, which is how the tests that do not exercise them
 /// call the loader.
@@ -2306,13 +2305,13 @@ fn unified_report_filters_codex_paths_before_loading_historical_rows() {
         "codex/sessions/2025/01/01/resumed.jsonl": &resumed_usage,
         "codex/sessions/2025/01/02/historical.jsonl": &historical_usage,
     });
-    set_file_modified(
+    set_modified(
         &fixture.path("codex/sessions/2025/01/01/resumed.jsonl"),
-        "2026-03-15T08:01:00.000Z",
+        instant("2026-03-15T08:01:00.000Z"),
     );
-    set_file_modified(
+    set_modified(
         &fixture.path("codex/sessions/2025/01/02/historical.jsonl"),
-        "2025-01-02T08:01:00.000Z",
+        instant("2025-01-02T08:01:00.000Z"),
     );
     let _env = isolated_agent_env(
         &fixture,
@@ -2333,16 +2332,6 @@ fn unified_report_filters_codex_paths_before_loading_historical_rows() {
     assert_eq!(result.rows[0].period, "2026-03-15");
     assert_eq!(result.rows[0].total_tokens, 1_300);
     assert_eq!(result.detected_agents, vec!["codex"]);
-}
-
-fn set_file_modified(path: &Path, timestamp: &str) {
-    let milliseconds = u64::try_from(parse_ts_timestamp(timestamp).unwrap().as_millis()).unwrap();
-    File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
-        .unwrap();
 }
 
 fn fixture_shared(since: &str, until: &str) -> SharedArgs {
@@ -3006,9 +2995,9 @@ fn sections_report_one_skip_count_when_their_loads_read_different_files() {
     });
     // The daily load skips a transcript last written before `--since` without
     // reading it; the session load reads every transcript.
-    set_file_modified(
+    set_modified(
         &fixture.path("claude/projects/p/old.jsonl"),
-        "2001-01-01T00:00:00Z",
+        instant("2001-01-01T00:00:00Z"),
     );
     let _env = isolated_agent_env(
         &fixture,

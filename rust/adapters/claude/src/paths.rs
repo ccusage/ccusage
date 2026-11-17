@@ -325,32 +325,10 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{File, FileTimes},
-        path::{Path, PathBuf},
-        time::{Duration, UNIX_EPOCH},
-    };
-
-    use ccusage_test_support::fs_fixture;
-
     use super::split_files_before_since;
-    use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
-
-    fn set_file_modified(path: &Path, timestamp: TimestampMs) {
-        let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
-        File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_times(
-                FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)),
-            )
-            .unwrap();
-    }
-
-    fn ts(value: &str) -> TimestampMs {
-        parse_ts_timestamp(value).unwrap()
-    }
+    use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs};
+    use ccusage_test_support::{fs_fixture, instant, set_modified};
+    use std::path::{Path, PathBuf};
 
     fn shared_since(since: Option<&str>) -> SharedArgs {
         SharedArgs {
@@ -371,9 +349,9 @@ mod tests {
         let old = root.join("projects/p/old.jsonl");
         let margin = root.join("projects/p/margin.jsonl");
         let fresh = root.join("projects/p/fresh.jsonl");
-        set_file_modified(&old, ts("2026-09-18T12:00:00Z"));
-        set_file_modified(&margin, ts("2026-09-19T12:00:00Z"));
-        set_file_modified(&fresh, ts("2026-09-20T12:00:00Z"));
+        set_modified(&old, instant("2026-09-18T12:00:00Z"));
+        set_modified(&margin, instant("2026-09-19T12:00:00Z"));
+        set_modified(&fresh, instant("2026-09-20T12:00:00Z"));
         vec![fresh, margin, old]
     }
 
@@ -467,7 +445,7 @@ mod tests {
         let kept = split_files_before_since(
             files,
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         )
         .kept;
 
@@ -483,8 +461,12 @@ mod tests {
         });
         let files = fixture_files(fixture.root());
 
-        let kept =
-            split_files_before_since(files, &shared_since(None), ts("2026-09-24T00:00:00Z")).kept;
+        let kept = split_files_before_since(
+            files,
+            &shared_since(None),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+        )
+        .kept;
 
         assert_eq!(kept.len(), 3);
     }
@@ -497,7 +479,8 @@ mod tests {
             "projects/p/fresh.jsonl": "{}",
         });
         let files = fixture_files(fixture.root());
-        let now = TimestampMs::from_millis(ts("2026-09-30T00:00:00Z").as_millis() - MILLIS_PER_DAY);
+        let now =
+            TimestampMs::from_millis(instant("2026-09-30T00:00:00Z").millis() - MILLIS_PER_DAY);
 
         let kept = split_files_before_since(files, &shared_since(Some("20260930")), now).kept;
 
@@ -511,7 +494,7 @@ mod tests {
         let kept = split_files_before_since(
             vec![missing.clone()],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         )
         .kept;
 
@@ -532,10 +515,10 @@ mod tests {
         let stale_parent = root.join("projects/p/stale.jsonl");
         let stale_agent = root.join("projects/p/stale/subagents/agent-b.jsonl");
         // Only the live session's subagent was written inside the window.
-        set_file_modified(&live_parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&live_agent, ts("2026-09-21T12:00:00Z"));
-        set_file_modified(&stale_parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&stale_agent, ts("2026-09-02T12:00:00Z"));
+        set_modified(&live_parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&live_agent, instant("2026-09-21T12:00:00Z"));
+        set_modified(&stale_parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&stale_agent, instant("2026-09-02T12:00:00Z"));
 
         let split = split_files_before_since(
             vec![
@@ -545,7 +528,7 @@ mod tests {
                 stale_agent.clone(),
             ],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         );
 
         assert_eq!(split.kept, [live_parent, live_agent]);
@@ -565,9 +548,9 @@ mod tests {
         let live_agent = root.join("a/projects/p/agent-1234.jsonl");
         let stale_agent = root.join("a/projects/p/agent-5678.jsonl");
         let other_root_copy = root.join("b/projects/p/live.jsonl");
-        set_file_modified(&live, ts("2026-09-21T12:00:00Z"));
+        set_modified(&live, instant("2026-09-21T12:00:00Z"));
         for stale in [&live_agent, &stale_agent, &other_root_copy] {
-            set_file_modified(stale, ts("2026-09-01T12:00:00Z"));
+            set_modified(stale, instant("2026-09-01T12:00:00Z"));
         }
 
         let split = split_files_before_since(
@@ -578,7 +561,7 @@ mod tests {
                 other_root_copy.clone(),
             ],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         );
 
         assert_eq!(split.kept, [live_agent, live, other_root_copy]);
@@ -595,13 +578,13 @@ mod tests {
         let parent = root.join("projects/p/session-y.jsonl");
         let workflow_agent =
             root.join("projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl");
-        set_file_modified(&parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&workflow_agent, ts("2026-09-21T12:00:00Z"));
+        set_modified(&parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&workflow_agent, instant("2026-09-21T12:00:00Z"));
 
         let split = split_files_before_since(
             vec![parent.clone(), workflow_agent.clone()],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         );
 
         assert_eq!(split.kept, [parent, workflow_agent]);
