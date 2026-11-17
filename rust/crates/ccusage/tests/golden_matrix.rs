@@ -157,6 +157,37 @@ fn codebuff_fixture_keeps_distinct_messages_at_the_same_instant() {
 }
 
 #[test]
+fn codebuff_timestamp_ties_pin_order_and_replay_winner() {
+    let fixture = Fixture::new();
+    let seeded = golden::codebuff::seed_timestamp_ties(fixture.root());
+    let case = Case::new(
+        "daily",
+        "json_tie_order",
+        &["codebuff", "daily", "--offline", "--json"],
+    );
+    let output = run_case(fixture.root(), &seeded, &case);
+    assert_eq!(output.exit, "0", "{}", output.stderr);
+    let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+    assert_eq!(
+        report["daily"][0]["modelsUsed"],
+        serde_json::json!(["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"])
+    );
+    assert_eq!(report["totals"]["inputTokens"], 30);
+    assert_eq!(report["daily"][0]["credits"], 2.75);
+    for flags in [vec![], vec!["--single-thread".to_string()]] {
+        let mut case = Case::new(
+            "daily",
+            "json_tie_order",
+            &["codebuff", "daily", "--offline", "--json"],
+        );
+        case.args.extend(flags);
+        let actual = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(actual.stdout, output.stdout);
+    }
+    golden::assert_case("codebuff", fixture.root(), &seeded, &case);
+}
+
+#[test]
 fn focused_week_start_controls_buckets_and_last_together() {
     for (agent, seed) in [
         ("cline", golden::cline::seed as golden::Seed),

@@ -159,3 +159,21 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     ];
     vec![("CODEBUFF_DATA_DIR", data_dirs)]
 }
+
+pub fn seed_timestamp_ties(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let store = root.join("codebuff");
+    write_chat(
+        &store.join("manicode"),
+        "ties",
+        "same-time",
+        r#"[
+      {"id":"tie-b","role":"assistant","timestamp":"2026-01-01T00:00:00Z","metadata":{"model":"claude-haiku-4-5-20251001","usage":{"inputTokens":20}}},
+      {"id":"tie-a","role":"assistant","timestamp":"2026-01-01T00:00:00Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100}},"credits":1.0},
+      {"id":"tie-a","role":"assistant","timestamp":"2026-01-01T00:00:00Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":10}},"credits":2.75}
+    ]"#,
+    );
+    vec![(
+        "CODEBUFF_DATA_DIR",
+        vec![store.join("manicode").into_os_string()],
+    )]
+}
