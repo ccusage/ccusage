@@ -6,7 +6,6 @@ use ccusage_adapter_common::{
     source::{LoadKind, LoadRequest, LoadedRows, PricingSupply, UsageSource},
 };
 use ccusage_core::{Diagnostics, ReportWindow, Result, cli::SharedArgs};
-use jiff::{ToSpan, civil::Date};
 
 use crate::load_daily_summaries_with_detection_progress;
 
@@ -135,32 +134,13 @@ impl Claude {
 }
 
 fn claim_load_options(shared: &SharedArgs) -> Result<Cow<'_, SharedArgs>> {
-    if shared.since.is_none() && shared.until.is_none() {
+    if shared.until.is_none() {
         return Ok(Cow::Borrowed(shared));
     }
     Ok(Cow::Owned(SharedArgs {
-        since: claim_bound(shared.since.as_deref(), -1)?,
-        until: claim_bound(shared.until.as_deref(), 1)?,
+        until: ReportWindow::from_shared(shared).next_day_until()?,
         ..shared.clone()
     }))
-}
-
-fn claim_bound(bound: Option<&str>, days: i64) -> Result<Option<String>> {
-    bound
-        .map(|bound| {
-            if bound.len() != 8 || !bound.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Ok(Some(bound.to_owned()));
-            }
-            let date = Date::strptime("%Y%m%d", bound).map_err(|error| {
-                ccusage_core::cli_error(format!("Invalid Claude claims date: {error}"))
-            })?;
-            Ok(date
-                .checked_add(days.days())
-                .ok()
-                .map(|date| date.strftime("%Y%m%d").to_string()))
-        })
-        .transpose()
-        .map(Option::flatten)
 }
 
 impl UsageSource for Claude {

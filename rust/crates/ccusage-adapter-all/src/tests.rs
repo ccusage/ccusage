@@ -1288,7 +1288,7 @@ fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
 }
 
 #[test]
-fn unified_daily_claims_sessions_with_usage_on_the_day_before_since() {
+fn unified_daily_keeps_turns_when_native_usage_is_before_since() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
@@ -1320,7 +1320,7 @@ fn unified_daily_claims_sessions_with_usage_on_the_day_before_since() {
             &claude_agent_shared("20990103", "20990103"),
             &NO_SOURCES
         )["inputTokens"],
-        0
+        7
     );
 }
 
@@ -1541,9 +1541,9 @@ fn native_claims_widen_by_calendar_days_across_months_and_clock_changes() {
         ),
         (
             "America/New_York",
-            "20261102",
+            "20261101",
+            "2026-11-02T05:00:05Z",
             "2026-11-01T04:30:00Z",
-            "2026-11-02T06:00:00Z",
         ),
     ] {
         let fixture = fs_fixture!({});

@@ -1,4 +1,5 @@
 use jiff::tz::TimeZone as JiffTimeZone;
+use jiff::{ToSpan, civil::Date};
 
 use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, resolve_tz};
 
@@ -11,15 +12,30 @@ use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, 
 #[derive(Clone, Debug)]
 pub struct ReportWindow {
     since: Option<Box<str>>,
-    until: Option<Box<str>>,
+    until: Option<ReportBound>,
     timezone: JiffTimeZone,
+}
+
+#[derive(Clone, Debug)]
+struct ReportBound {
+    text: Box<str>,
+    day: Option<Date>,
+}
+
+impl ReportBound {
+    fn new(text: &str) -> Self {
+        Self {
+            text: text.into(),
+            day: Date::strptime("%Y%m%d", text).ok(),
+        }
+    }
 }
 
 impl ReportWindow {
     pub fn from_shared(shared: &SharedArgs) -> Self {
         Self {
             since: shared.since.as_deref().map(Box::from),
-            until: shared.until.as_deref().map(Box::from),
+            until: shared.until.as_deref().map(ReportBound::new),
             timezone: resolve_tz(shared.timezone.as_deref()),
         }
     }
@@ -42,6 +58,22 @@ impl ReportWindow {
         &self.timezone
     }
 
+    pub fn next_day_until(&self) -> crate::Result<Option<String>> {
+        let Some(bound) = &self.until else {
+            return Ok(None);
+        };
+        let day = bound
+            .day
+            .ok_or_else(|| crate::cli_error("Claim windows require a complete calendar date"))?;
+        if day == Date::MAX {
+            return Ok(None);
+        }
+        let next = day
+            .checked_add(1.days())
+            .map_err(|error| crate::cli_error(error.to_string()))?;
+        Ok(Some(next.strftime("%Y%m%d").to_string()))
+    }
+
     /// Reports whether a `YYYY-MM-DD` day is inside the window.
     ///
     /// The bounds stay compact text and are compared byte by byte against the
@@ -54,8 +86,8 @@ impl ReportWindow {
             .is_none_or(|since| compact().ge(since.bytes()))
             && self
                 .until
-                .as_deref()
-                .is_none_or(|until| compact().le(until.bytes()))
+                .as_ref()
+                .is_none_or(|until| compact().le(until.text.bytes()))
     }
 
     /// Reports whether the day `timestamp` falls on in the report timezone is
@@ -69,7 +101,11 @@ impl ReportWindow {
     /// [`contains_date`](Self::contains_date) still makes the per-day decision;
     /// see [`date_range_bounds_ms`].
     pub fn bounds_ms(&self) -> (Option<i64>, Option<i64>) {
-        date_range_bounds_ms(self.since.as_deref(), self.until.as_deref(), &self.timezone)
+        date_range_bounds_ms(
+            self.since.as_deref(),
+            self.until.as_ref().map(|bound| bound.text.as_ref()),
+            &self.timezone,
+        )
     }
 }
 
