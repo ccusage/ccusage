@@ -795,6 +795,10 @@ fn seed_message_files(directory: &Path) {
             r#"{{"id":"msg-json-truncated","sessionID":"{beta}","modelID":"{SONNET}","providerID":"anthropic","tokens":{{"input":9999,"outp"#
         ),
     );
+    set_modified(
+        &directory.join(format!("storage/message/{beta}/truncated.json")),
+        instant("2025-12-27T22:00:00Z"),
+    );
     write(&format!("{beta}/array.json"), r#"["msg-json-1"]"#);
     write(
         &format!("{beta}/part.json"),
