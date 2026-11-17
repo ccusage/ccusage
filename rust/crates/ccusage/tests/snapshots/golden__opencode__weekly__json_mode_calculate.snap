@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 7250,
     "outputTokens": 1837,
-    "totalCost": 2.8082312500000004,
+    "totalCost": 0.09065625,
     "totalTokens": 27337,
     "unpricedModels": [
       "opencode-mystery-1"
@@ -46,27 +46,27 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
-          "cacheReadTokens": 7000,
-          "cost": 2.0,
-          "inputTokens": 900,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 400
+          "cacheReadTokens": 1000,
+          "cost": 0.061335,
+          "inputTokens": 1894,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 369
         },
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 7000,
-          "cost": 0.509495,
+          "cost": 0.017820000000000003,
           "inputTokens": 2510,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 471
         },
         {
           "cacheCreationTokens": 200,
-          "cacheReadTokens": 1000,
-          "cost": 0.291085,
-          "inputTokens": 1894,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 369
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -130,7 +130,7 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "outputTokens": 1787,
-      "totalCost": 2.80718125,
+      "totalCost": 0.08960625,
       "totalTokens": 27187,
       "week": "2025-12-29"
     }

@@ -5,8 +5,11 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_candidates, stored_cost_for_mode,
+    cli::CostMode,
+    cost::{EntryPricing, price_entry},
+    format_date_tz,
+    pricing::MatchKind,
+    stored_cost_for_mode,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -284,8 +287,9 @@ impl OpenCodeUsage {
         };
         let (usage, extra_total_tokens) =
             apply_total_token_fallback(usage, self.tokens.reasoning, self.tokens.total);
-        let cost_only =
-            self.kind == UsageKind::Aggregate && self.stored_cost.is_some_and(|cost| cost > 0.0);
+        // NOTE(2026-11-17): OpenCode records zero when its model price is unknown.
+        let recorded_cost = self.stored_cost.filter(|cost| *cost > 0.0);
+        let cost_only = self.kind == UsageKind::Aggregate && recorded_cost.is_some();
         if usage.input_tokens == 0
             && usage.output_tokens == 0
             && usage.cache_creation_input_tokens == 0
@@ -321,29 +325,25 @@ impl OpenCodeUsage {
             is_api_error_message: None,
             is_sidechain: None,
         };
-        let cost_usage = TokenUsageRaw {
-            output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),
-            cache_creation: None,
-            ..usage
-        };
-        let cost = calculate_open_code_cost(
-            &model,
-            &provider,
-            cost_usage,
-            data.cost_usd,
-            pricing_timestamp,
-            mode,
+        let candidates = open_code_model_candidates(&model, &provider);
+        let candidates: Vec<_> = candidates
+            .iter()
+            .map(|candidate| (candidate.as_str(), MatchKind::Fuzzy))
+            .collect();
+        let priced = price_entry(
+            EntryPricing {
+                usage,
+                reasoning_tokens: 0,
+                residual_tokens: extra_total_tokens,
+                candidates: &candidates,
+                stored_cost: recorded_cost,
+                mode,
+                timestamp: pricing_timestamp,
+            },
             pricing,
         );
-        // If we already have a usable positive cost (calculated or stored), skip
-        // the redundant missing-pricing check — it would iterate through the same
-        // model candidates and find nothing missing.
-        let missing_pricing_model = if cost > 0.0 {
-            None
-        } else {
-            missing_open_code_pricing(&model, &provider, cost_usage, data.cost_usd, mode, pricing)
-        };
-        let stored_cost = stored_cost_for_mode(data.cost_usd.filter(|cost| *cost > 0.0), mode);
+        let missing_pricing_model = priced.missing_pricing.then(|| model.clone());
+        let stored_cost = stored_cost_for_mode(recorded_cost, mode);
         let loaded_session_id = data
             .session_id
             .clone()
@@ -354,7 +354,7 @@ impl OpenCodeUsage {
             project: Arc::from("opencode"),
             session_id: Arc::from(loaded_session_id),
             project_path: Arc::from("OpenCode"),
-            cost,
+            cost: priced.cost,
             extra_total_tokens,
             credits: None,
             message_count: None,
@@ -452,53 +452,6 @@ pub(crate) fn session_value_to_entry(
     pricing: Option<&PricingMap>,
 ) -> Result<Option<LoadedEntry>, MissingTimestamp> {
     OpenCodeUsage::from_aggregate(aggregate).into_entry(tz, mode, pricing)
-}
-
-fn calculate_open_code_cost(
-    model: &str,
-    provider: &str,
-    usage: TokenUsageRaw,
-    cost_usd: Option<f64>,
-    timestamp: Option<crate::TimestampMs>,
-    _mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    if let Some(cost) = cost_usd.filter(|cost| *cost > 0.0) {
-        return cost;
-    }
-    for candidate in open_code_model_candidates(model, provider) {
-        let cost = calculate_cost_for_usage_at(
-            Some(&candidate),
-            usage,
-            None,
-            timestamp,
-            CostMode::Calculate,
-            pricing,
-        );
-        if cost > 0.0 {
-            return cost;
-        }
-    }
-    0.0
-}
-
-fn missing_open_code_pricing(
-    model: &str,
-    provider: &str,
-    usage: TokenUsageRaw,
-    cost_usd: Option<f64>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if mode == CostMode::Display || cost_usd.is_some_and(|cost| cost > 0.0) {
-        return None;
-    }
-    missing_pricing_model_for_candidates(
-        model,
-        open_code_model_candidates(model, provider),
-        crate::total_usage_tokens(usage),
-        pricing,
-    )
 }
 
 fn open_code_model_candidates(model: &str, provider: &str) -> Vec<String> {
@@ -741,6 +694,151 @@ mod tests {
     }
 
     #[test]
+    fn honors_cost_modes_for_recorded_and_unrecorded_costs() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-test":{"input_cost_per_token":0.001,"output_cost_per_token":0.01}}"#,
+        );
+        for (mode, recorded, expected, stored) in [
+            (CostMode::Calculate, Some(9.0), 0.2, None),
+            (CostMode::Display, None, 0.0, None),
+            (CostMode::Display, Some(0.0), 0.0, None),
+            (CostMode::Display, Some(9.0), 9.0, None),
+            (CostMode::Auto, Some(9.0), 9.0, Some(9.0)),
+            (CostMode::Auto, Some(0.0), 0.2, None),
+            (CostMode::Auto, Some(-1.0), 0.2, None),
+            (CostMode::Auto, None, 0.2, None),
+            (CostMode::Calculate, None, 0.2, None),
+        ] {
+            let entry = message_value_to_entry(
+                message(json!({
+                    "providerID": "openai", "modelID": "gpt-test",
+                    "time": { "created": 1767312000000i64 },
+                    "tokens": { "input": 100, "output": 10 }, "cost": recorded
+                })),
+                None,
+                None,
+                &jiff::tz::TimeZone::UTC,
+                mode,
+                Some(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(entry.cost, expected, "{mode:?}, {recorded:?}");
+            assert_eq!(entry.stored_cost, stored, "{mode:?}, {recorded:?}");
+            assert_eq!(entry.missing_pricing_model, None);
+        }
+    }
+
+    #[test]
+    fn keeps_a_free_first_candidate_instead_of_a_paid_provider_candidate() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-test":{"input_cost_per_token":0,"output_cost_per_token":0},
+                "openai/gpt-test":{"input_cost_per_token":1,"output_cost_per_token":2}
+            }"#,
+        );
+        let entry = message_value_to_entry(
+            message(json!({
+                "providerID": "openai", "modelID": "gpt-test",
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 100, "output": 10 }, "cost": 0
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.cost, 0.0);
+        assert_eq!(entry.missing_pricing_model, None);
+    }
+
+    #[test]
+    fn reports_missing_calculated_prices_even_with_a_recorded_cost() {
+        let pricing = PricingMap::default();
+        for (mode, expected_cost, missing) in [
+            (CostMode::Calculate, 0.0, Some("opencode-unpriced-model")),
+            (CostMode::Auto, 9.0, None),
+            (CostMode::Display, 9.0, None),
+        ] {
+            let entry = message_value_to_entry(
+                message(json!({
+                    "providerID": "openai", "modelID": "opencode-unpriced-model",
+                    "time": { "created": 1767312000000i64 },
+                    "tokens": { "input": 100 }, "cost": 9
+                })),
+                None,
+                None,
+                &jiff::tz::TimeZone::UTC,
+                mode,
+                Some(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(entry.cost, expected_cost, "{mode:?}");
+            assert_eq!(entry.missing_pricing_model.as_deref(), missing, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn primary_rates_outrank_models_dev_for_qualified_candidates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(
+            r#"{"claude-sonnet-4":{"input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
+        );
+        for model in [
+            "anthropic/claude-sonnet-4",
+            "openrouter/anthropic/claude-sonnet-4",
+        ] {
+            let entry = message_value_to_entry(
+                message(json!({
+                    "providerID": "openrouter", "modelID": model,
+                    "time": { "created": 1767312000000i64 },
+                    "tokens": { "input": 100, "output": 10 }, "cost": 0
+                })),
+                None,
+                None,
+                &jiff::tz::TimeZone::UTC,
+                CostMode::Calculate,
+                Some(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(entry.cost, 15.0, "{model}");
+        }
+    }
+
+    #[test]
+    fn preserves_existing_reasoning_and_residual_billing() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-test":{"input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
+        );
+        let entry = message_value_to_entry(
+            message(json!({
+                "providerID": "openai", "modelID": "gpt-test",
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 8, "output": 4, "reasoning": 2, "total": 20 }
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            Some(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.data.message.usage.output_tokens, 4);
+        assert_eq!(entry.extra_total_tokens, 8);
+        assert_eq!(entry.cost, 4.0);
+    }
+
+    #[test]
     fn keeps_opencode_record_when_cache_field_is_not_an_object() {
         let entry = message_value_to_entry(
             message(json!({
@@ -809,6 +907,98 @@ mod tests {
                 "github_copilot/claude-sonnet-4-5",
             ]
         );
+    }
+
+    #[test]
+    fn preserves_legacy_prices_for_provider_qualified_models() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let models = [
+            ("anthropic", "claude-sonnet-4-20250514"),
+            ("anthropic", "claude-sonnet-4.5"),
+            ("anthropic", "claude-sonnet-45"),
+            ("anthropic", "claude-opus-4-20250514"),
+            ("anthropic", "claude-haiku-4-5-20251001"),
+            ("openai", "gpt-4o"),
+            ("openai", "gpt-4.1"),
+            ("openai", "gpt-5"),
+            ("openai", "gpt-5-mini"),
+            ("openai", "o3"),
+            ("openai", "o4-mini"),
+            ("google", "gemini-2.5-pro"),
+            ("google", "gemini-2.5-flash"),
+            ("google", "gemini-3-pro-high"),
+            ("google", "gemini-3-pro-preview"),
+            ("deepseek", "deepseek-chat"),
+            ("deepseek", "deepseek-v4-flash"),
+            ("xai", "grok-3"),
+            ("xai", "grok-4"),
+            ("moonshotai", "kimi-k2.6"),
+            ("kimi-for-coding", "k2p6"),
+            ("github-copilot", "claude-sonnet-4.5"),
+            ("qwen", "qwen3-coder"),
+            ("unknown", "opencode-unpriced-model"),
+        ];
+        let usage = crate::TokenUsageRaw {
+            input_tokens: 1234,
+            output_tokens: 567,
+            cache_read_input_tokens: 89,
+            cache_creation_input_tokens: 23,
+            ..Default::default()
+        };
+        let mut comparisons = 0;
+        let mut priced = 0;
+        for (provider, model) in models {
+            for (provider, model) in [
+                (provider, model.to_string()),
+                (provider, format!("{provider}/{model}")),
+                ("openrouter", format!("{provider}/{model}")),
+                ("openrouter", format!("openrouter/{provider}/{model}")),
+            ] {
+                for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
+                    let timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
+                    let old_cost = open_code_model_candidates(&model, provider)
+                        .into_iter()
+                        .map(|candidate| {
+                            crate::calculate_cost_for_usage_at(
+                                Some(&candidate),
+                                usage,
+                                None,
+                                Some(timestamp),
+                                CostMode::Calculate,
+                                Some(&pricing),
+                            )
+                        })
+                        .find(|cost| *cost > 0.0)
+                        .unwrap_or(0.0);
+                    let entry = message_value_to_entry(
+                        message(json!({
+                            "providerID": provider, "modelID": model,
+                            "time": { "created": timestamp.as_millis() },
+                            "tokens": { "input": 1234, "output": 567,
+                                "cache": { "read": 89, "write": 23 } },
+                            "cost": 0
+                        })),
+                        None,
+                        None,
+                        &jiff::tz::TimeZone::UTC,
+                        CostMode::Auto,
+                        Some(&pricing),
+                    )
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(entry.cost, old_cost, "{provider}/{model} at {timestamp:?}");
+                    comparisons += 1;
+                    priced += usize::from(old_cost > 0.0);
+                }
+            }
+        }
+        assert_eq!(comparisons, 192);
+        assert!(
+            priced >= 144,
+            "only {priced}/{comparisons} cases were priced"
+        );
+        eprintln!("Legacy pricing parity: {comparisons} cases, {priced} priced");
     }
 
     #[test]

@@ -13,27 +13,27 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
-          "cacheReadTokens": 7000,
-          "cost": 2.0,
-          "inputTokens": 900,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 400
+          "cacheReadTokens": 1000,
+          "cost": 0.05925,
+          "inputTokens": 1800,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 360
         },
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 4000,
-          "cost": 0.501185,
+          "cost": 0.009510000000000001,
           "inputTokens": 1130,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 253
         },
         {
           "cacheCreationTokens": 200,
-          "cacheReadTokens": 1000,
-          "cost": 0.289,
-          "inputTokens": 1800,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 360
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -52,7 +52,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 1179,
-      "totalCost": 2.7936662500000002,
+      "totalCost": 0.07609125,
       "totalTokens": 21066
     },
     {
@@ -147,7 +147,7 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 7250,
     "outputTokens": 1837,
-    "totalCost": 2.8082312500000004,
+    "totalCost": 0.09065625,
     "totalTokens": 27337,
     "unpricedModels": [
       "opencode-mystery-1"
