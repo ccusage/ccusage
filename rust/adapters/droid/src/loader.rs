@@ -3,7 +3,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{DroidEntry, calculate_droid_cost, load_settings_file, missing_droid_pricing},
+    parser::{DroidEntry, load_settings_file, price_droid},
     paths::discover_settings_files,
 };
 use ccusage_adapter_common::{
@@ -27,13 +27,17 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     Ok(dedupe_last_wins(parsed, |entry| entry.session_id.clone())
         .into_iter()
         .rev()
-        .map(|entry| to_loaded_entry(entry, tz, pricing))
+        .map(|entry| to_loaded_entry(entry, tz, cx.shared.mode, pricing))
         .collect())
 }
 
-fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -> LoadedEntry {
-    let cost = calculate_droid_cost(&entry, pricing);
-    let missing_pricing_model = missing_droid_pricing(&entry, pricing);
+fn to_loaded_entry(
+    entry: DroidEntry,
+    tz: &JiffTimeZone,
+    mode: ccusage_core::cli::CostMode,
+    pricing: &PricingMap,
+) -> LoadedEntry {
+    let (cost, missing_pricing_model) = price_droid(&entry, mode, pricing);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text.clone(),
@@ -68,6 +72,40 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_cost_modes_do_not_calculate_in_display() {
+        let fixture = fs_fixture!({"session.settings.json": r#"{"model":"sample","providerLockTimestamp":"2026-05-01T01:02:03Z","tokenUsage":{"inputTokens":100,"outputTokens":50}}"#});
+        let _guard = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+        );
+        for (mode, expected) in [
+            (crate::cli::CostMode::Auto, 0.2),
+            (crate::cli::CostMode::Calculate, 0.2),
+            (crate::cli::CostMode::Display, 0.0),
+        ] {
+            let shared = SharedArgs {
+                mode,
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                (entries[0].cost - expected).abs() < 1e-12,
+                "{mode:?}: {} vs {expected}",
+                entries[0].cost
+            );
+            assert_eq!(entries[0].missing_pricing_model, None);
+        }
+    }
+
     use crate::cli::SharedArgs;
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};

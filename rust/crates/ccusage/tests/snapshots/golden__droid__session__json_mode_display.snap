@@ -16,7 +16,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 40,
-          "missingPricing": true,
           "modelName": "grok-unknown",
           "outputTokens": 10
         }
@@ -39,7 +38,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
         }
@@ -60,7 +58,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2500,
-          "cost": 0.0026875,
+          "cost": 0.0,
           "inputTokens": 700,
           "modelName": "gpt-5",
           "outputTokens": 150
@@ -71,7 +69,7 @@ exit: 0
       ],
       "outputTokens": 150,
       "sessionId": "gpt-0003",
-      "totalCost": 0.0026875,
+      "totalCost": 0.0,
       "totalTokens": 3350
     },
     {
@@ -82,7 +80,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00023750000000000003,
+          "cost": 0.0,
           "inputTokens": 70,
           "modelName": "gpt-5",
           "outputTokens": 15
@@ -93,7 +91,7 @@ exit: 0
       ],
       "outputTokens": 15,
       "sessionId": "gpt-0003-fork",
-      "totalCost": 0.00023750000000000003,
+      "totalCost": 0.0,
       "totalTokens": 85
     },
     {
@@ -104,7 +102,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6000,
-          "cost": 0.008700000000000001,
+          "cost": 0.0,
           "inputTokens": 800,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 300
@@ -115,7 +113,7 @@ exit: 0
       ],
       "outputTokens": 300,
       "sessionId": "late-0010",
-      "totalCost": 0.008700000000000001,
+      "totalCost": 0.0,
       "totalTokens": 7100
     },
     {
@@ -126,7 +124,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0033,
+          "cost": 0.0,
           "inputTokens": 500,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 120
@@ -137,7 +135,7 @@ exit: 0
       ],
       "outputTokens": 120,
       "sessionId": "mtime-0011",
-      "totalCost": 0.0033,
+      "totalCost": 0.0,
       "totalTokens": 620
     },
     {
@@ -150,7 +148,6 @@ exit: 0
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 300,
-          "missingPricing": true,
           "modelName": "droid-mystery-1",
           "outputTokens": 70
         }
@@ -171,7 +168,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0014000000000000002,
+          "cost": 0.0,
           "inputTokens": 400,
           "modelName": "gemini-2-5-pro",
           "outputTokens": 90
@@ -182,7 +179,7 @@ exit: 0
       ],
       "outputTokens": 90,
       "sessionId": "offset-0005",
-      "totalCost": 0.0014000000000000002,
+      "totalCost": 0.0,
       "totalTokens": 490
     },
     {
@@ -193,7 +190,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 4000,
-          "cost": 0.046125,
+          "cost": 0.0,
           "inputTokens": 1000,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 200
@@ -204,7 +201,7 @@ exit: 0
       ],
       "outputTokens": 200,
       "sessionId": "opus-0002",
-      "totalCost": 0.046125,
+      "totalCost": 0.0,
       "totalTokens": 5560
     },
     {
@@ -215,7 +212,7 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
-          "cost": 0.00385,
+          "cost": 0.0,
           "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 400
@@ -226,7 +223,7 @@ exit: 0
       ],
       "outputTokens": 400,
       "sessionId": "sidecar-0006",
-      "totalCost": 0.00385,
+      "totalCost": 0.0,
       "totalTokens": 8500
     },
     {
@@ -237,7 +234,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0010500000000000002,
+          "cost": 0.0,
           "inputTokens": 100,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 50
@@ -248,7 +245,7 @@ exit: 0
       ],
       "outputTokens": 50,
       "sessionId": "stale-0001",
-      "totalCost": 0.0010500000000000002,
+      "totalCost": 0.0,
       "totalTokens": 150
     },
     {
@@ -259,7 +256,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0033,
+          "cost": 0.0,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 100
@@ -270,7 +267,7 @@ exit: 0
       ],
       "outputTokens": 100,
       "sessionId": "tie-0009",
-      "totalCost": 0.0033,
+      "totalCost": 0.0,
       "totalTokens": 700
     }
   ],
@@ -279,13 +276,8 @@ exit: 0
     "cacheReadTokens": 20000,
     "inputTokens": 5410,
     "outputTokens": 1850,
-    "totalCost": 0.07064999999999999,
-    "totalTokens": 27880,
-    "unpricedModels": [
-      "droid-mystery-1",
-      "gpt-unknown",
-      "grok-unknown"
-    ]
+    "totalCost": 0.0,
+    "totalTokens": 27880
   }
 }
 

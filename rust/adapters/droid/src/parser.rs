@@ -1,12 +1,15 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{collections::HashSet, fs, path::Path};
 
 use ccusage_adapter_common::units::{UnitError, read_json};
 use serde_json::Value;
 
 use crate::{
-    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
-    cli::CostMode, format_rfc3339_millis, json_value_u64, missing_pricing_model_for_candidates,
-    parse_ts_timestamp,
+    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
+    format_rfc3339_millis, json_value_u64, parse_ts_timestamp,
 };
 
 #[derive(Clone)]
@@ -132,39 +135,33 @@ fn settings_timestamp(
     Some((timestamp, format_rfc3339_millis(timestamp), None))
 }
 
-pub(super) fn calculate_droid_cost(entry: &DroidEntry, pricing: &PricingMap) -> f64 {
-    let usage = TokenUsageRaw {
-        output_tokens: entry.usage.output_tokens + entry.reasoning_tokens,
-        cache_creation: None,
-        ..entry.usage
-    };
-    for candidate in droid_model_candidates(entry) {
-        let cost = calculate_cost_for_usage_at(
-            Some(&candidate),
-            usage,
-            None,
-            entry.pricing_timestamp,
-            CostMode::Calculate,
-            Some(pricing),
-        );
-        if cost > 0.0 {
-            return cost;
-        }
-    }
-    0.0
-}
-
-pub(super) fn missing_droid_pricing(entry: &DroidEntry, pricing: &PricingMap) -> Option<String> {
-    let usage = TokenUsageRaw {
-        output_tokens: entry.usage.output_tokens + entry.reasoning_tokens,
-        cache_creation: None,
-        ..entry.usage
-    };
-    missing_pricing_model_for_candidates(
-        &entry.model,
-        droid_model_candidates(entry),
-        crate::total_usage_tokens(usage),
+pub(super) fn price_droid(
+    entry: &DroidEntry,
+    mode: CostMode,
+    pricing: &PricingMap,
+) -> (f64, Option<String>) {
+    let candidates = droid_model_candidates(entry);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage: entry.usage,
+            reasoning_tokens: 0,
+            residual_tokens: entry.reasoning_tokens,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: entry.pricing_timestamp,
+        },
         Some(pricing),
+    );
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
     )
 }
 
@@ -323,6 +320,29 @@ fn extract_droid_model_from_line(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn zero_rates_stop_candidate_fallback() {
+        let entry = DroidEntry {
+            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+            timestamp_text: String::new(),
+            pricing_timestamp: None,
+            session_id: "s".into(),
+            model: "sample".into(),
+            provider: "vendor".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                ..TokenUsageRaw::default()
+            },
+            reasoning_tokens: 0,
+        };
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        assert_eq!(
+            price_droid(&entry, CostMode::Calculate, &pricing),
+            (0.0, None)
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -379,7 +399,10 @@ mod tests {
             reasoning_tokens: 0,
         };
 
-        assert_eq!(calculate_droid_cost(&entry, &deepseek_pricing()), 0.14);
+        assert_eq!(
+            price_droid(&entry, CostMode::Auto, &deepseek_pricing()).0,
+            0.14
+        );
     }
 
     #[test]
@@ -414,5 +437,89 @@ mod tests {
             .unwrap();
 
         assert_eq!(entry.pricing_timestamp, None);
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let candidates = std::iter::once(model.to_string())
+                    .chain(
+                        provider_prefixes(provider)
+                            .into_iter()
+                            .map(|prefix| format!("{prefix}{model}")),
+                    )
+                    .collect::<Vec<_>>();
+                let old = candidates
+                    .iter()
+                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                let typed: Vec<_> = candidates
+                    .iter()
+                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                    .collect();
+                let new = pricing.resolve(&typed);
+                assert!(
+                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
+                        TokenUsageRaw {
+                            input_tokens: 1,
+                            output_tokens: 1,
+                            cache_creation_input_tokens: 1,
+                            cache_read_input_tokens: 1,
+                            ..TokenUsageRaw::default()
+                        },
+                        rates
+                    ) > 0.0),
+                    "{model} / {provider} must exercise the legacy positive-cost path"
+                );
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
     }
 }
