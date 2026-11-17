@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
-    UsageSummary, calculate_cost_for_usage_at,
+    IteratedTokenUsage, ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts,
+    TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, LinePrefilter, suffix_string},
     format_date_tz, missing_pricing_model_for_usage, parse_ts_timestamp, stored_cost_for_mode,
@@ -268,12 +268,28 @@ struct DailyUsageEntry {
 /// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
 /// use; the derive would first buffer every line, message content included, into an
 /// intermediate tree.
-fn deserialize_daily_usage_line(line: &[u8]) -> std::result::Result<DailyUsageEntry, Rejection> {
+fn deserialize_daily_usage_line(
+    line: &[u8],
+) -> std::result::Result<(DailyUsageEntry, AdvisorLookup), Rejection> {
     match deserialize_usage_line::<DailyUsageEntry>(line) {
+        Ok(entry) => {
+            let lookup = if entry.message.usage.has_advisor_iteration {
+                AdvisorLookup::AskLine
+            } else {
+                AdvisorLookup::RuledOut
+            };
+            Ok((entry, lookup))
+        }
         Err(Rejection::Malformed) => deserialize_usage_line::<DailyAgentProgressEntry>(line)
-            .map(DailyAgentProgressEntry::into_entry),
-        result => result,
+            .map(|entry| (entry.into_entry(), AdvisorLookup::AskLine)),
+        Err(rejection) => Err(rejection),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AdvisorLookup {
+    RuledOut,
+    AskLine,
 }
 
 #[derive(Debug, Deserialize)]
@@ -315,7 +331,7 @@ struct DailyAgentProgressMessage {
 
 #[derive(Debug, Deserialize)]
 struct DailyUsageMessage {
-    usage: TokenUsageRaw,
+    usage: IteratedTokenUsage,
     model: Option<String>,
     id: Option<String>,
 }
@@ -341,8 +357,8 @@ fn read_daily_usage_file_with_diagnostics(
         if !usage_marker.matches(line) {
             return;
         }
-        let data = match deserialize_daily_usage_line(line) {
-            Ok(data) => data,
+        let (data, advisor_lookup) = match deserialize_daily_usage_line(line) {
+            Ok(parsed) => parsed,
             Err(Rejection::NullContract) => return,
             Err(Rejection::Malformed) => {
                 super::diagnostics::rejected(path, current, diagnostics, true);
@@ -362,7 +378,7 @@ fn read_daily_usage_file_with_diagnostics(
             super::diagnostics::rejected(path, current, diagnostics, true);
             return;
         }
-        let usage = data.message.usage;
+        let IteratedTokenUsage { usage, .. } = data.message.usage;
         let cost = calculate_cost_for_usage_at(
             data.message.model.as_deref(),
             usage,
@@ -410,6 +426,9 @@ fn read_daily_usage_file_with_diagnostics(
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
         });
+        if matches!(advisor_lookup, AdvisorLookup::RuledOut) {
+            return;
+        }
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
             let parent = &loaded_file.entries[parent_index];
             let missing_pricing_model = missing_pricing_model_for_usage(
@@ -980,7 +999,7 @@ mod tests {
 
     #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
-        let data = super::deserialize_daily_usage_line(
+        let (data, _) = super::deserialize_daily_usage_line(
             br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
         .unwrap();
@@ -991,7 +1010,7 @@ mod tests {
 
     #[test]
     fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-        let data = super::deserialize_daily_usage_line(
+        let (data, _) = super::deserialize_daily_usage_line(
             br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
         )
         .unwrap();
@@ -1270,6 +1289,76 @@ mod tests {
     fn reads_daily_usage_and_advisor_iterations_under_escaped_keys() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"main-model","us\u0061ge":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor\u005fmessage","model":"advisor-model","input_tokens":10,"output_tokens":2}]}}}"#,
+        });
+
+        let loaded = read_daily_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].usage.input_tokens, 100);
+        assert_eq!(loaded.entries[1].usage.input_tokens, 10);
+    }
+
+    #[test]
+    fn daily_advisor_gate_preserves_the_previous_extraction() {
+        let iterations = [
+            r#"{"type":"advisor_message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"advisor\u005fmessage","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"advisor\\u005fmessage","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"message","cache_creation":{"ephemeral_5m_input_tokens":7}}"#,
+            r#"{"type":"advisor_message","type":"message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"message","type":"advisor_message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":null}"#,
+            r#"{"type":["advisor_message"]}"#,
+            r#"{"kind":"advisor_message"}"#,
+            r#"null"#,
+            r#"[]"#,
+        ];
+        let mut state = 0x3c6e_f372_fe94_f82b_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        let mut skipped = 0;
+        let mut retained = 0;
+        for _ in 0..5_000 {
+            let entries = (0..next(6))
+                .map(|_| iterations[next(iterations.len())])
+                .collect::<Vec<_>>()
+                .join(",");
+            let usage =
+                format!(r#"{{"input_tokens":1,"output_tokens":2,"iterations":[{entries}]}}"#);
+            let message = format!(r#"{{"model":"parent","usage":{usage}}}"#);
+            for line in [
+                format!(r#"{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}"#),
+                format!(
+                    r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
+                ),
+            ] {
+                let (_, lookup) = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
+                let previous = super::advisor_usages_from_line(line.as_bytes());
+                if matches!(lookup, super::AdvisorLookup::AskLine) {
+                    retained += 1;
+                } else {
+                    skipped += 1;
+                    assert!(previous.is_empty(), "{line}");
+                }
+            }
+        }
+        assert!(skipped > 0);
+        assert!(retained > 0);
+    }
+
+    #[test]
+    fn reads_top_level_advisor_iterations_beside_an_agent_progress_record() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"sessionId":"session-a","message":{"usage":{"input_tokens":5,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"data":{"message":{"timestamp":"2026-05-22T02:34:40.000Z","requestId":"req-a","message":{"id":"msg-a","model":"main-model","usage":{"input_tokens":100,"output_tokens":1}}}}}"#,
         });
 
         let loaded = read_daily_usage_file(
