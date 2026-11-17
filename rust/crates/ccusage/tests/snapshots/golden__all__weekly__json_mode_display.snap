@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1312617,
-    "inputTokens": 1346459,
-    "outputTokens": 58729,
+    "cacheReadTokens": 1309617,
+    "inputTokens": 1345288,
+    "outputTokens": 58461,
     "totalCost": 24.243100749999996,
-    "totalTokens": 2738987,
+    "totalTokens": 2734548,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
@@ -22,34 +22,6 @@ exit: 0
     ]
   },
   "weekly": [
-    {
-      "agent": "all",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 11,
-      "metadata": {
-        "agents": [
-          "grok"
-        ]
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 11,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1"
-      ],
-      "outputTokens": 1,
-      "period": "1969-12-29",
-      "totalCost": 0,
-      "totalTokens": 12
-    },
     {
       "agent": "all",
       "cacheCreationTokens": 0,
@@ -237,8 +209,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1307024,
-      "inputTokens": 1337254,
+      "cacheReadTokens": 1304024,
+      "inputTokens": 1336094,
       "metadata": {
         "agents": [
           "amp",
@@ -285,9 +257,9 @@ exit: 0
           "cacheCreationTokens": 6440,
           "cacheReadTokens": 108220,
           "cost": 3.4963629999999997,
-          "inputTokens": 31078,
+          "inputTokens": 31008,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 9671
+          "outputTokens": 9664
         },
         {
           "cacheCreationTokens": 200,
@@ -310,9 +282,9 @@ exit: 0
           "cacheCreationTokens": 600,
           "cacheReadTokens": 11000,
           "cost": 1.1,
-          "inputTokens": 2650,
+          "inputTokens": 2600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 525
+          "outputTokens": 500
         },
         {
           "cacheCreationTokens": 0,
@@ -324,11 +296,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 33835,
+          "cacheReadTokens": 30835,
           "cost": 0.8714962500000001,
-          "inputTokens": 18330,
+          "inputTokens": 17730,
           "modelName": "gpt-5",
-          "outputTokens": 5193
+          "outputTokens": 5093
         },
         {
           "cacheCreationTokens": 0,
@@ -398,9 +370,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6500,
           "cost": 0.06,
-          "inputTokens": 2033,
+          "inputTokens": 1913,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 929
+          "outputTokens": 899
         },
         {
           "cacheCreationTokens": 0,
@@ -666,9 +638,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 633,
           "cost": 0.0,
-          "inputTokens": 2303,
+          "inputTokens": 2243,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 354
+          "outputTokens": 339
         },
         {
           "cacheCreationTokens": 0,
@@ -732,9 +704,9 @@ exit: 0
           "cacheCreationTokens": 900,
           "cacheReadTokens": 17000,
           "cost": 0.0,
-          "inputTokens": 4651,
+          "inputTokens": 4511,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 1491
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 70,
@@ -743,14 +715,6 @@ exit: 0
           "inputTokens": 5650,
           "modelName": "kimi-for-coding",
           "outputTokens": 1075
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
         },
         {
           "cacheCreationTokens": 0,
@@ -962,7 +926,6 @@ exit: 0
         "kilo-mystery-1",
         "kimi-for-coding",
         "kimi-k2-thinking",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "model_placeholder_m499",
         "mystery-model-9000",
@@ -977,10 +940,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56411,
+      "outputTokens": 56144,
       "period": "2025-12-29",
       "totalCost": 20.423938249999996,
-      "totalTokens": 2720577
+      "totalTokens": 2716150
     },
     {
       "agent": "all",

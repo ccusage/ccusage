@@ -393,8 +393,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 2890,
-      "cacheReadTokens": 485328,
-      "inputTokens": 1105369,
+      "cacheReadTokens": 482328,
+      "inputTokens": 1104579,
       "metadata": {
         "agents": [
           "amp",
@@ -432,10 +432,10 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1250,
           "cacheReadTokens": 22000,
-          "cost": 0.5438434999999999,
-          "inputTokens": 6357,
+          "cost": 0.5435285,
+          "inputTokens": 6287,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 1249,
+          "outputTokens": 1242,
           "storedCost": 0.5
         },
         {
@@ -457,11 +457,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 15355,
-          "cost": 0.27973875,
-          "inputTokens": 5760,
+          "cacheReadTokens": 12355,
+          "cost": 0.27761375,
+          "inputTokens": 5160,
           "modelName": "gpt-5",
-          "outputTokens": 2306,
+          "outputTokens": 2206,
           "storedCost": 0.25
         },
         {
@@ -690,14 +690,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000162,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00009075,
           "inputTokens": 11,
           "modelName": "gemini-3.6-flash-high",
@@ -908,7 +900,6 @@ exit: 0
         "kilo-mystery-1",
         "kimi-for-coding",
         "kimi-k2-thinking",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "mystery-model-9000",
         "opencode-mystery-1",
@@ -918,19 +909,19 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 17630,
+      "outputTokens": 17493,
       "period": "2026-01",
-      "totalCost": 3.7047874450000005,
-      "totalTokens": 1612269
+      "totalCost": 3.7021854450000005,
+      "totalTokens": 1608342
     }
   ],
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 668744,
-    "inputTokens": 1171263,
-    "outputTokens": 37302,
-    "totalCost": 15.3641967,
-    "totalTokens": 1887972,
+    "cacheReadTokens": 665744,
+    "inputTokens": 1170473,
+    "outputTokens": 37165,
+    "totalCost": 15.361594700000001,
+    "totalTokens": 1884045,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

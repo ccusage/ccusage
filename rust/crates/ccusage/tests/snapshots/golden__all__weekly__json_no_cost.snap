@@ -7,10 +7,10 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1312617,
-    "inputTokens": 1347459,
-    "outputTokens": 58829,
-    "totalTokens": 2740087,
+    "cacheReadTokens": 1309617,
+    "inputTokens": 1346288,
+    "outputTokens": 58561,
+    "totalTokens": 2735648,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -44,32 +44,6 @@ exit: 0
     ]
   },
   "weekly": [
-    {
-      "agent": "all",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 11,
-      "metadata": {
-        "agents": [
-          "grok"
-        ]
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 11,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1"
-      ],
-      "outputTokens": 1,
-      "period": "1969-12-29",
-      "totalTokens": 12
-    },
     {
       "agent": "all",
       "cacheCreationTokens": 0,
@@ -246,8 +220,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1307024,
-      "inputTokens": 1337254,
+      "cacheReadTokens": 1304024,
+      "inputTokens": 1336094,
       "metadata": {
         "agents": [
           "amp",
@@ -291,10 +265,10 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
           "cacheReadTokens": 108220,
-          "inputTokens": 31078,
+          "inputTokens": 31008,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 9671
+          "outputTokens": 9664
         },
         {
           "cacheCreation1hTokens": 400,
@@ -328,16 +302,16 @@ exit: 0
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 11000,
-          "inputTokens": 2650,
+          "inputTokens": 2600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 525
+          "outputTokens": 500
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 33835,
-          "inputTokens": 18330,
+          "cacheReadTokens": 30835,
+          "inputTokens": 17730,
           "modelName": "gpt-5",
-          "outputTokens": 5193
+          "outputTokens": 5093
         },
         {
           "cacheCreationTokens": 0,
@@ -416,9 +390,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6500,
-          "inputTokens": 2033,
+          "inputTokens": 1913,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 929
+          "outputTokens": 899
         },
         {
           "cacheCreationTokens": 0,
@@ -445,9 +419,9 @@ exit: 0
         {
           "cacheCreationTokens": 900,
           "cacheReadTokens": 17000,
-          "inputTokens": 4651,
+          "inputTokens": 4511,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 1491
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 0,
@@ -572,9 +546,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 633,
-          "inputTokens": 2303,
+          "inputTokens": 2243,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 354
+          "outputTokens": 339
         },
         {
           "cacheCreationTokens": 0,
@@ -638,13 +612,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "qwen/qwen3-coder",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
         },
         {
           "cacheCreationTokens": 0,
@@ -914,7 +881,6 @@ exit: 0
         "kilo-mystery-1",
         "kimi-for-coding",
         "kimi-k2-thinking",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "model_placeholder_m499",
         "mystery-model-9000",
@@ -929,9 +895,9 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56411,
+      "outputTokens": 56144,
       "period": "2025-12-29",
-      "totalTokens": 2720577
+      "totalTokens": 2716150
     },
     {
       "agent": "all",

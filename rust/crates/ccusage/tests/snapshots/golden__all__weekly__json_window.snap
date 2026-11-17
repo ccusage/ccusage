@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 668744,
-    "inputTokens": 1171263,
-    "outputTokens": 37302,
-    "totalCost": 15.3641967,
-    "totalTokens": 1887972,
+    "cacheReadTokens": 665744,
+    "inputTokens": 1170473,
+    "outputTokens": 37165,
+    "totalCost": 15.361594700000003,
+    "totalTokens": 1884045,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -44,8 +44,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 9001,
-      "cacheReadTokens": 668744,
-      "inputTokens": 1171263,
+      "cacheReadTokens": 665744,
+      "inputTokens": 1170473,
       "metadata": {
         "agents": [
           "amp",
@@ -110,11 +110,11 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2750,
           "cacheReadTokens": 55060,
-          "cost": 0.7972315,
-          "inputTokens": 15277,
+          "cost": 0.7969164999999999,
+          "inputTokens": 15207,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 4599,
+          "outputTokens": 4592,
           "storedCost": 0.7
         },
         {
@@ -128,11 +128,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 31185,
-          "cost": 0.5824706250000001,
-          "inputTokens": 12920,
+          "cacheReadTokens": 28185,
+          "cost": 0.5803456250000001,
+          "inputTokens": 12320,
           "modelName": "gpt-5",
-          "outputTokens": 3783,
+          "outputTokens": 3683,
           "storedCost": 0.53
         },
         {
@@ -425,14 +425,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000162,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.000132,
           "inputTokens": 300,
           "modelName": "qwen-2.5-72b-instruct",
@@ -687,7 +679,6 @@ exit: 0
         "kilo-mystery-1",
         "kimi-for-coding",
         "kimi-k2-thinking",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "mystery-model-9000",
         "opencode-mystery-1",
@@ -700,10 +691,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 37302,
+      "outputTokens": 37165,
       "period": "2025-12-29",
-      "totalCost": 15.3641967,
-      "totalTokens": 1887972
+      "totalCost": 15.361594700000003,
+      "totalTokens": 1884045
     }
   ]
 }
