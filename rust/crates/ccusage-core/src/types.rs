@@ -252,12 +252,6 @@ pub struct LoadedEntry {
     pub stored_cost: Option<f64>,
 }
 
-#[derive(Debug)]
-pub struct LoadedFile {
-    pub timestamp: Option<TimestampMs>,
-    pub entries: Vec<LoadedEntry>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSummary {
