@@ -54,10 +54,10 @@ Claude Code exposes additional local data that enables features beyond the share
 
 ## Environment Variables
 
-| Variable            | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `CLAUDE_CONFIG_DIR` | Override the root Claude Code data directory |
-| `LOG_LEVEL`         | Adjust verbosity (0 silent ... 5 trace)      |
+| Variable            | Description                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE_CONFIG_DIR` | Override the root Claude Code data directory                                                                  |
+| `LOG_LEVEL`         | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
 
 ### Custom Claude Code Paths
 

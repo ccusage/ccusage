@@ -175,7 +175,7 @@ For automated environments:
 ```bash
 # Environment variables
 export CODEX_HOME="/ci/codex-data"
-export LOG_LEVEL=1  # Warnings only
+export LOG_LEVEL=0  # Hide warnings, progress, and table titles
 
 # Run with specific options
 ccusage daily --offline --json > report.json
@@ -252,8 +252,8 @@ ccusage daily --debug
 # Check environment variables
 env | grep -E "CLAUDE|CODEX|LOG_LEVEL"
 
-# Verbose logging
-LOG_LEVEL=5 ccusage daily
+# Also log pricing refresh details
+LOG_LEVEL=4 ccusage daily
 ```
 
 `--debug` does not trace configuration loading. ccusage reads one configuration file and silently skips a file it cannot read or parse, so if your settings seem ignored, check that the file holds valid JSON with `jq . < .ccusage/ccusage.json` and that no earlier file in the [search order](/guide/config-files#configuration-file-locations) shadows it.
@@ -355,7 +355,7 @@ ccusage claude daily
 If configuration issues persist:
 
 1. Run with debug mode: `ccusage daily --debug`
-2. Check verbose logs: `LOG_LEVEL=5 ccusage daily`
+2. Log pricing refresh details: `LOG_LEVEL=4 ccusage daily`
 3. Validate JSON config: `jq . < ccusage.json`
 4. Report issues on [GitHub](https://github.com/ccusage/ccusage/issues)
 

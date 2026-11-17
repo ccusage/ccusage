@@ -70,10 +70,10 @@ These views support `--json` for structured output, `--compact` for narrow termi
 
 ## Environment Variables
 
-| Variable            | Description                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------- |
-| `CODEBUFF_DATA_DIR` | Override the channel root, or comma-separated channel roots, containing Codebuff projects |
-| `LOG_LEVEL`         | Adjust verbosity (0 silent ... 5 trace)                                                   |
+| Variable            | Description                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `CODEBUFF_DATA_DIR` | Override the channel root, or comma-separated channel roots, containing Codebuff projects                     |
+| `LOG_LEVEL`         | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
 
 ## Troubleshooting
 

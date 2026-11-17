@@ -79,11 +79,11 @@ Those rows are priced from the `opus` alias, so their cost can differ from the C
 
 ## Environment Variables
 
-| Variable            | Description                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------ |
-| `OPENCODE_DATA_DIR` | Override the root directory, or comma-separated root directories, containing OpenCode data |
-| `XDG_DATA_HOME`     | Base directory for OpenCode data when `OPENCODE_DATA_DIR` is not set                       |
-| `LOG_LEVEL`         | `0` hides aggregated warnings, progress, and table titles                                  |
+| Variable            | Description                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `OPENCODE_DATA_DIR` | Override the root directory, or comma-separated root directories, containing OpenCode data                    |
+| `XDG_DATA_HOME`     | Base directory for OpenCode data when `OPENCODE_DATA_DIR` is not set                                          |
+| `LOG_LEVEL`         | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
 
 ## Cost Calculation
 

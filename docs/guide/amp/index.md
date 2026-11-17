@@ -55,10 +55,10 @@ These views support `--json` for structured output, `--compact` for narrow termi
 
 ## Environment Variables
 
-| Variable       | Description                                                                           |
-| -------------- | ------------------------------------------------------------------------------------- |
-| `AMP_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Amp data |
-| `LOG_LEVEL`    | Adjust verbosity (0 silent ... 5 trace)                                               |
+| Variable       | Description                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `AMP_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Amp data                         |
+| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
 
 ## Troubleshooting
 

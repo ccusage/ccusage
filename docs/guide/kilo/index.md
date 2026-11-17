@@ -39,10 +39,10 @@ These views support `--json` for structured output and `--compact` for narrow te
 
 ## Environment Variables
 
-| Variable        | Description                                                                            |
-| --------------- | -------------------------------------------------------------------------------------- |
-| `KILO_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Kilo data |
-| `LOG_LEVEL`     | `0` hides aggregated warnings, progress, and table titles                              |
+| Variable        | Description                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `KILO_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Kilo data                        |
+| `LOG_LEVEL`     | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
 
 ## Cost Calculation
 
