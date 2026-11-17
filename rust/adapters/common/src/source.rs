@@ -104,12 +104,16 @@ impl LoadRequest<'_> {
 }
 
 pub enum ReportPricing<'a> {
+    Display,
     Supplied(&'a PricingMap),
     Pending(PendingPricing),
 }
 
 impl<'a> ReportPricing<'a> {
     pub fn for_load(shared: &SharedArgs, supplied: Option<&'a PricingMap>) -> Result<Self> {
+        if shared.mode == ccusage_core::cli::CostMode::Display {
+            return Ok(Self::Display);
+        }
         match supplied {
             Some(pricing) => Ok(Self::Supplied(pricing)),
             None => PricingMap::spawn_load(
@@ -122,7 +126,9 @@ impl<'a> ReportPricing<'a> {
     }
 
     pub fn get(&self) -> Result<&PricingMap> {
+        static DISPLAY: OnceLock<PricingMap> = OnceLock::new();
         match self {
+            Self::Display => Ok(DISPLAY.get_or_init(PricingMap::default)),
             Self::Supplied(pricing) => Ok(pricing),
             Self::Pending(pricing) => pricing.join(),
         }
@@ -453,6 +459,34 @@ mod pricing_tests {
         let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
 
         assert!(std::ptr::eq(pricing.get().unwrap(), &supplied));
+    }
+
+    #[test]
+    fn display_does_not_consult_even_supplied_pricing() {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+        let mut supplied = PricingMap::default();
+        supplied.load_json(r#"{"gpt-5":{"input_cost_per_token":1.0,"output_cost_per_token":1.0}}"#);
+        assert!(supplied.find("gpt-5").is_some());
+        let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
+
+        assert!(matches!(pricing, ReportPricing::Display));
+        assert!(pricing.get().unwrap().find("gpt-5").is_none());
+    }
+
+    #[test]
+    fn display_does_not_start_a_pending_load() {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            ReportPricing::for_load(&shared, None).unwrap(),
+            ReportPricing::Display
+        ));
     }
 
     #[test]

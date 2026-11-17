@@ -139,6 +139,31 @@ mod diagnostic_tests {
     }
 
     #[test]
+    fn display_reports_tokens_without_calculating_cost_from_supplied_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("sessions/tiny.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}"#);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_owned()),
+            ..Default::default()
+        };
+
+        let rows = unified_codex_rows(&shared, AgentReportKind::Daily);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].total_tokens, 110);
+        assert_eq!(rows[0].total_cost, 0.0);
+        assert_eq!(rows[0].model_breakdowns[0].cost, 0.0);
+        assert!(!rows[0].model_breakdowns[0].missing_pricing);
+    }
+
+    #[test]
     fn loads_pricing_when_the_caller_does_not_supply_it() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();

@@ -20,7 +20,8 @@ mod loader_tests;
 #[cfg(test)]
 mod test_support;
 
-use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
+use crate::{Result, cli::AgentCommandArgs, print_json_or_jq, wants_json};
+use ccusage_adapter_common::source::ReportPricing;
 
 pub use aggregate::load_groups;
 
@@ -42,13 +43,9 @@ use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
-    let pending = PricingMap::spawn_load(
-        shared.offline,
-        log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    )?;
+    let pending = ReportPricing::for_load(&shared, None)?;
     let sources = paths::codex_usage_sources()?;
-    let pricing = pending.join()?;
+    let pricing = pending.get()?;
     let diagnostics = ccusage_core::Diagnostics::new("codex");
     let (mut groups, _) = aggregate::load_groups_from_sources_with_diagnostics(
         &sources,
