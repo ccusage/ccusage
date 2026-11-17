@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use ccusage_cli::{
     AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DailyArgs,
@@ -24,7 +24,6 @@ struct ConfigCommand {
 }
 
 pub struct ConfigContext {
-    value: Option<Value>,
     command: ConfigCommand,
     pi_stores: Vec<NamedPiStore>,
     error: Option<String>,
@@ -47,7 +46,6 @@ impl ConfigContext {
         context.warnings = warnings;
         if let Some(file) = file {
             context.pi_stores = file.pi_stores;
-            context.value = Some(file.value);
             context.layers = file.layers;
         }
         context
@@ -59,7 +57,6 @@ impl ConfigContext {
 
     fn empty(command: ConfigCommand) -> Self {
         Self {
-            value: None,
             command,
             pi_stores: Vec::new(),
             error: None,
@@ -68,35 +65,9 @@ impl ConfigContext {
         }
     }
 
-    /// The config as `ccusage <agent> <report>` reads it, for a unified report
-    /// that loads `agent` as one of its sources: `<agent>.defaults`,
-    /// `<agent>.commands.<report>`, `commands."<agent> <report>"` and
-    /// `commands.<agent>:<report>` join the layers the unified command already
-    /// applies. `None` when the file says nothing about that agent, so the
-    /// source keeps the unified options, and for commands that already name an
-    /// agent.
-    pub fn for_source(&self, agent: &str) -> Option<Self> {
-        if self.command.agent.is_some() {
-            return None;
-        }
-        let root = self.value.as_ref().and_then(Value::as_object)?;
-        let report = &self.command.report;
-        let raw = format!("{agent} {report}");
-        let colon_name = format!("{agent}:{report}");
-        let addressed = object_at(root, agent).is_some()
-            || object_at(root, "commands").is_some_and(|commands| {
-                object_at(commands, &raw).is_some() || object_at(commands, &colon_name).is_some()
-            });
-        if !addressed {
-            return None;
-        }
-        Some(self.for_dependency(agent))
-    }
-
     pub fn for_dependency(&self, agent: &str) -> Self {
         let report = &self.command.report;
         Self {
-            value: self.value.clone(),
             command: ConfigCommand {
                 raw: format!("{agent} {report}"),
                 agent: Some(agent.to_string()),
@@ -213,10 +184,6 @@ fn matches_named_pi_store_name_pattern(name: &str) -> bool {
         })
         .unwrap_or(usize::MAX);
     rest_len <= 31
-}
-
-fn object_at<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a Map<String, Value>> {
-    object.get(key).and_then(Value::as_object)
 }
 
 fn load_config_value(
@@ -1216,9 +1183,7 @@ mod tests {
         for (name, commands, mode) in cases {
             let value = json!({ "commands": commands });
             let focused = context(value.clone(), "codex daily", Some("codex"), "daily");
-            let source = context(value, "daily", None, "daily")
-                .for_source("codex")
-                .expect("codex sections");
+            let source = context(value, "daily", None, "daily").for_dependency("codex");
 
             for config in [focused, source] {
                 let mut shared = SharedArgs::default();
@@ -1279,7 +1244,7 @@ mod tests {
             "daily",
         );
 
-        let codex = config.for_source("codex").expect("codex sections");
+        let codex = config.for_dependency("codex");
         let mut shared = SharedArgs::with_defaults();
         codex.apply_shared(&mut shared);
         let speed = codex.agent_options("codex").codex_speed;
@@ -1342,7 +1307,7 @@ mod tests {
         });
         let unified = context(value.clone(), "weekly", None, "weekly");
         let focused = context(value, "cline weekly", Some("cline"), "weekly");
-        let unified_source = unified.for_source("cline").expect("cline config");
+        let unified_source = unified.for_dependency("cline");
 
         for config in [&focused, &unified_source] {
             let mut shared = SharedArgs::default();
@@ -1365,7 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn source_view_exists_only_for_agents_the_config_addresses() {
+    fn dependency_views_resolve_effective_options_without_raw_json() {
         let config = context(
             json!({
                 "defaults": {
@@ -1394,10 +1359,17 @@ mod tests {
             "daily",
         );
 
-        assert!(config.for_source("pi").is_some());
-        assert!(config.for_source("openclaw").is_some());
-        assert!(config.for_source("cline").is_some());
-        assert!(config.for_source("codex").is_none());
+        let mut pi = SharedArgs::default();
+        config.for_dependency("pi").apply_shared(&mut pi);
+        assert!(pi.json);
+        let mut openclaw = SharedArgs::default();
+        config
+            .for_dependency("openclaw")
+            .apply_shared(&mut openclaw);
+        assert!(openclaw.offline);
+        let mut codex = SharedArgs::default();
+        config.for_dependency("codex").apply_shared(&mut codex);
+        assert_eq!(codex.mode, CostMode::Display);
 
         let focused = context(
             json!({
@@ -1412,7 +1384,13 @@ mod tests {
             "daily",
         );
 
-        assert!(focused.for_source("codex").is_none());
+        assert_eq!(
+            focused
+                .for_dependency("codex")
+                .agent_options("codex")
+                .codex_speed,
+            CodexSpeed::Fast
+        );
     }
 
     #[test]
@@ -1423,7 +1401,7 @@ mod tests {
             None,
             "daily",
         );
-        let source = config.for_source("codex").expect("codex sections");
+        let source = config.for_dependency("codex");
         assert_eq!(
             source.config_error(),
             Some(
@@ -1822,7 +1800,6 @@ mod tests {
             Err(error) => (BTreeMap::new(), Some(config_error(error)), Vec::new()),
         };
         ConfigContext {
-            value: Some(value),
             layers,
             command: ConfigCommand {
                 raw: raw.to_string(),
