@@ -1,0 +1,53 @@
+--- a/process.go
++++ b/process.go
+@@ -3,8 +3,8 @@
+ import (
+ 	"context"
+ 	"fmt"
+-	"io"
+ 	"os/exec"
++	"strings"
+ 	"sync"
+ 
+ 	"github.com/mattn/go-shellwords"
+@@ -25,17 +25,10 @@
+ 	cmd := exec.Command(e.cmd, e.args...)
+ 	cmd.Stderr = nil
+ 
+-	p, err := cmd.StdinPipe()
+-	if err != nil {
+-		return nil, fmt.Errorf("could not make stdin pipe for %s process: %w", e.cmd, err)
+-	}
+-	if _, err := io.WriteString(p, e.stdin); err != nil {
+-		p.Close()
+-		return nil, fmt.Errorf("could not write to stdin of %s process: %w", e.cmd, err)
+-	}
+-	p.Close()
++	cmd.Stdin = strings.NewReader(e.stdin)
+ 
+ 	var stdout []byte
++	var err error
+ 	if e.combineOutput {
+ 		stdout, err = cmd.CombinedOutput()
+ 	} else {
+--- /dev/null
++++ b/process_stdin_test.go
+@@ -0,0 +1,18 @@
++package actionlint
++
++import (
++	"strings"
++	"testing"
++)
++
++func TestCmdExecutionLargeStdin(t *testing.T) {
++	input := strings.Repeat("x", 1<<20)
++	command := cmdExecution{cmd: "cat", stdin: input}
++	output, err := command.run()
++	if err != nil {
++		t.Fatal(err)
++	}
++	if string(output) != input {
++		t.Fatalf("received %d bytes, want %d", len(output), len(input))
++	}
++}

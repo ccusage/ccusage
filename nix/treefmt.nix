@@ -150,7 +150,7 @@ in
             priority = 4;
           };
           actionlint = {
-            command = lib.getExe pkgs.actionlint;
+            command = lib.getExe config.packages.actionlint;
             options = [
               "-ignore"
               ''unknown permission scope "code-quality"''

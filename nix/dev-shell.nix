@@ -53,7 +53,7 @@ in
             typos
             typos-lsp
             oxfmt
-            actionlint
+            config.packages.actionlint
             zizmor
             oxlint
             just

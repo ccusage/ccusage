@@ -44,6 +44,7 @@ in
         inherit bunNodeModules;
         modelsDevSrc = inputs.models-dev;
       };
+      actionlint = pkgs.callPackage ./actionlint.nix { };
       publint = pkgs.callPackage ../nix/tools/publint { inherit bunCli; };
     in
     {
@@ -61,6 +62,7 @@ in
       packages = {
         default = ccusage;
         inherit
+          actionlint
           cargo-hawk
           ccusage
           changelogithub
