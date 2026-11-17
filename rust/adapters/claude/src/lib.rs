@@ -162,16 +162,10 @@ pub(crate) fn load_daily_summaries(
     let diagnostics = Diagnostics::new("claude");
     let daily =
         progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-            daily::load_daily_summaries_inner(
-                shared,
-                project_filter,
-                group_by_project,
-                false,
-                &diagnostics,
-            )
+            daily::load_daily_entries(shared, project_filter, &diagnostics)
         })?;
     diagnostics.emit(shared);
-    Ok(daily.summaries)
+    Ok(daily.summaries(group_by_project))
 }
 
 /// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
@@ -214,16 +208,13 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     owner: ProgressOwner,
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
-    let load = || {
-        daily::load_daily_summaries_inner(
-            shared,
-            project_filter,
-            group_by_project,
-            true,
-            diagnostics,
-        )
-    };
-    owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)
+    let load = || daily::load_daily_entries(shared, project_filter, diagnostics);
+    let daily = owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)?;
+    Ok(DailySummaries {
+        summaries: daily.summaries(group_by_project),
+        detected: daily.detected,
+        session_days: daily.session_days(),
+    })
 }
 
 fn load_entries_inner(

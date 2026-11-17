@@ -19,9 +19,9 @@ use crate::{
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, GuardedUsage, Nullable, Rejection, SessionDays,
-    UsageLoadContext, advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id,
-    is_semver_prefix, main_thread_session_days, non_null,
+    DedupeIndexVec, GuardedUsage, Nullable, Rejection, SessionDays, UsageLoadContext,
+    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
+    main_thread_session_days, non_null,
     paths::{
         claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
         visit_usage_files,
@@ -31,13 +31,26 @@ use super::{
     usage_dedupe_hash,
 };
 
-pub(super) fn load_daily_summaries_inner(
+pub(super) struct DailyEntries {
+    deduped: DedupedDailyEntries,
+    pub(super) detected: bool,
+}
+
+impl DailyEntries {
+    pub(super) fn summaries(&self, group_by_project: bool) -> Vec<UsageSummary> {
+        summarize_daily_entries(&self.deduped.entries, group_by_project)
+    }
+
+    pub(super) fn session_days(&self) -> SessionDays {
+        session_days(&self.deduped)
+    }
+}
+
+pub(super) fn load_daily_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    group_by_project: bool,
-    collect_session_days: bool,
     diagnostics: &Diagnostics,
-) -> Result<DailySummaries> {
+) -> Result<DailyEntries> {
     let paths = claude_paths()?;
     let context = UsageLoadContext::new(shared);
     let mut pruned = Vec::new();
@@ -61,32 +74,12 @@ pub(super) fn load_daily_summaries_inner(
             diagnostics,
         )
     };
-    let deduped = match deduped {
-        Some(deduped) => deduped,
-        None if pruned.is_empty() => {
-            return Ok(DailySummaries {
-                summaries: Vec::new(),
-                detected: false,
-                session_days: SessionDays::default(),
-            });
-        }
-        None => DedupedDailyEntries {
-            entries: Vec::new(),
-            copies: Vec::new(),
-        },
-    };
-    let session_days = if collect_session_days {
-        session_days(&deduped)
-    } else {
-        SessionDays::default()
-    };
-    let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
-    let detected = !summaries.is_empty() || pruned.iter().any(|file| has_usage(file));
-    Ok(DailySummaries {
-        summaries,
-        detected,
-        session_days,
-    })
+    let deduped = deduped.unwrap_or(DedupedDailyEntries {
+        entries: Vec::new(),
+        copies: Vec::new(),
+    });
+    let detected = !deduped.entries.is_empty() || pruned.iter().any(|file| has_usage(file));
+    Ok(DailyEntries { deduped, detected })
 }
 
 fn has_usage(path: &Path) -> bool {
@@ -145,7 +138,7 @@ pub(super) struct DedupedDailyEntries {
 /// Counts a copy's session on the day its survivor is counted: a tool wrapping
 /// Claude Code can link its row to the session it ran in even when dedup kept
 /// another session's copy.
-pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
+fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
     main_thread_session_days(
         deduped
             .entries
@@ -950,16 +943,24 @@ impl DailyAccumulator {
 mod tests {
     use std::{path::Path, sync::Arc};
 
-    use super::{
-        ClaudeEntry, load_daily_summaries_inner, push_deduped_entry,
-        read_daily_usage_file_with_diagnostics,
-    };
+    use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
     use crate::{
         Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
+
+    fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
+        crate::load_daily_summaries_with_detection_progress(
+            shared,
+            None,
+            false,
+            ccusage_adapter_common::source::ProgressOwner::Caller,
+            diagnostics,
+        )
+        .unwrap()
+    }
 
     fn read_daily_usage_file(
         path: &Path,
@@ -1055,7 +1056,7 @@ mod tests {
         };
         let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily = load_daily_summaries_inner(&shared, None, false, true, &diagnostics).unwrap();
+        let daily = load_daily(&shared, &diagnostics);
 
         assert_eq!(daily.summaries[0].input_tokens, 10);
         assert!(diagnostics.warnings(&shared).is_empty());
@@ -1079,14 +1080,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let daily = load_daily_summaries_inner(
-            &shared,
-            None,
-            false,
-            true,
-            &ccusage_core::Diagnostics::new("claude"),
-        )
-        .unwrap();
+        let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
         assert_eq!(
             daily.session_days.into_iter().collect::<Vec<_>>(),
@@ -1123,7 +1117,7 @@ mod tests {
         };
         let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily = load_daily_summaries_inner(&shared, None, false, true, &diagnostics).unwrap();
+        let daily = load_daily(&shared, &diagnostics);
 
         assert!(daily.summaries.is_empty());
         assert!(daily.detected);
@@ -1390,14 +1384,7 @@ mod tests {
                 ..SharedArgs::default()
             };
 
-            let daily = load_daily_summaries_inner(
-                &shared,
-                None,
-                false,
-                true,
-                &ccusage_core::Diagnostics::new("claude"),
-            )
-            .unwrap();
+            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
             let breakdown = &daily.summaries[0].model_breakdowns[0];
             assert_eq!(breakdown.cache_creation_tokens, 100);
