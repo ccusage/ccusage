@@ -39,7 +39,6 @@ mod tests {
             std::iter::once(OsString::from("ccusage"))
                 .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
             &config,
-            5.0,
             "test",
         )
         .unwrap();
