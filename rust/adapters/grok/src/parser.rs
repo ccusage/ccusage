@@ -264,8 +264,10 @@ pub(super) fn parse_session_files_with_diagnostics(
                     cache_creation: None,
                 };
                 let reasoning_tokens = model_usage.reasoning_tokens;
-                (ccusage_core::utils::total_usage_tokens(usage_raw) + reasoning_tokens > 0)
-                    .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
+                (ccusage_core::utils::total_usage_tokens(usage_raw)
+                    .saturating_add(reasoning_tokens)
+                    > 0)
+                .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
             })
             .collect::<Vec<_>>();
         if model_rows.is_empty() {
@@ -859,6 +861,33 @@ mod tests {
             entries[0].missing_pricing_model.as_deref(),
             Some("grok-never-priced-build")
         );
+    }
+
+    #[test]
+    fn saturated_usage_with_reasoning_keeps_the_turn() {
+        ccusage_test_support::install_pricing_snapshots();
+        let line = sample_turn_completed_line()
+            .replace(
+                "\"inputTokens\":100",
+                "\"inputTokens\":18446744073709551615",
+            )
+            .replace("\"reasoningTokens\":10", "\"reasoningTokens\":1");
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-1/updates.jsonl": line,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            summary: None,
+        };
+        let entries = parse_session_files(
+            &files,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            &PricingMap::load_embedded(),
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, u64::MAX - 40);
     }
 
     #[test]
