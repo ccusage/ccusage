@@ -865,7 +865,7 @@ mod tests {
             ..CodexGroup::default()
         };
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let (headers, aligns) = codex_table_columns("Date", false);
@@ -940,7 +940,7 @@ mod tests {
             ..CodexGroup::default()
         };
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let (headers, aligns) = codex_table_columns("Date", true);
@@ -1022,7 +1022,7 @@ mod tests {
         let group = breakdown_group();
         let shared = SharedArgs {
             breakdown: true,
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let rows = enabled_codex_breakdown_rows(
@@ -1071,7 +1071,7 @@ mod tests {
     fn table_pushes_no_extra_rows_without_breakdown_flag() {
         let group = breakdown_group();
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let (headers, aligns) = codex_table_columns("Date", false);

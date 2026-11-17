@@ -80,8 +80,7 @@ pub struct SharedArgs {
     pub order_explicit: bool,
     pub breakdown: bool,
     pub offline: bool,
-    pub color: bool,
-    pub no_color: bool,
+    pub color: ColorChoice,
     pub timezone: Option<String>,
     pub jq: Option<String>,
     pub compact: bool,
@@ -285,6 +284,14 @@ impl Default for StatuslineArgs {
             pricing_overrides: BTreeMap::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ColorChoice {
+    #[default]
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

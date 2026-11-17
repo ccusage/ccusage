@@ -91,9 +91,9 @@ pub fn cli_error(message: impl Into<String>) -> CliError {
 
 pub fn terminal_style(shared: &cli::SharedArgs) -> TerminalStyle {
     TerminalStyle {
-        color: shared.color,
+        color: shared.color == cli::ColorChoice::Always,
         log_level: log_level(),
-        no_color: shared.no_color,
+        no_color: shared.color == cli::ColorChoice::Never,
     }
 }
 

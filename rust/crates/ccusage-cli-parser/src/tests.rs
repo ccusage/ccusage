@@ -133,8 +133,7 @@ fn shared_snapshot(shared: &SharedArgs) -> Value {
         "order": format!("{:?}", shared.order),
         "breakdown": shared.breakdown,
         "offline": shared.offline,
-        "color": shared.color,
-        "noColor": shared.no_color,
+        "color": format!("{:?}", shared.color),
         "timezone": shared.timezone.as_deref(),
         "jq": shared.jq.as_deref(),
         "compact": shared.compact,
@@ -311,9 +310,13 @@ fn color_flags_override_the_opposite_config_value() {
         (
             r#"{"defaults":{"color":true}}"#,
             "--no-color",
-            (false, true),
+            ColorChoice::Never,
         ),
-        (r#"{"defaults":{"noColor":true}}"#, "--color", (true, false)),
+        (
+            r#"{"defaults":{"noColor":true}}"#,
+            "--color",
+            ColorChoice::Always,
+        ),
     ] {
         let fixture = fs_fixture!({ "ccusage.json": config_json });
         let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
@@ -325,7 +328,7 @@ fn color_flags_override_the_opposite_config_value() {
         let config = ccusage_config::ConfigContext::from_args(&config_args);
         let command = parse_with_config(&argv, &config);
         let shared = command.shared().unwrap();
-        assert_eq!((shared.color, shared.no_color), expected, "{config_json}");
+        assert_eq!(shared.color, expected, "{config_json}");
     }
 }
 
@@ -356,7 +359,7 @@ fn false_negation_and_color_keys_leave_lower_config_layers_in_force() {
             command => {
                 let shared = command.shared().unwrap();
                 assert!(shared.offline);
-                assert_eq!((shared.color, shared.no_color), (false, true));
+                assert_eq!(shared.color, ColorChoice::Never);
             }
         }
     }
@@ -406,8 +409,7 @@ fn higher_config_layers_override_negated_defaults() {
             command => {
                 let shared = command.shared().unwrap();
                 assert!(shared.offline);
-                assert!(shared.color);
-                assert!(!shared.no_color);
+                assert_eq!(shared.color, ColorChoice::Always);
             }
         }
     }

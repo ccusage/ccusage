@@ -3,9 +3,10 @@ use std::{collections::BTreeMap, ffi::OsString};
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
-    AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command,
-    CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SharedArgs, SortOrder,
-    StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, ColorChoice,
+    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SharedArgs,
+    SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
+    normalize_date_bound,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -715,14 +716,8 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         "-b" | "--breakdown" => shared.breakdown = true,
         "-O" | "--offline" => shared.offline = true,
         "--no-offline" => shared.offline = false,
-        "--color" => {
-            shared.color = true;
-            shared.no_color = false;
-        }
-        "--no-color" => {
-            shared.color = false;
-            shared.no_color = true;
-        }
+        "--color" => shared.color = ColorChoice::Always,
+        "--no-color" => shared.color = ColorChoice::Never,
         "-z" | "--timezone" => shared.timezone = Some(parser.value_for("--timezone")?),
         "-q" | "--jq" => shared.jq = Some(parser.value_for("--jq")?),
         "--config" => {

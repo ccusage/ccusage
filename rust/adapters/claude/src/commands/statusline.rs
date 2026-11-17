@@ -835,7 +835,7 @@ mod tests {
     #[test]
     fn colors_statusline_context_percentage_by_threshold() {
         let shared = SharedArgs {
-            color: true,
+            color: ccusage_core::cli::ColorChoice::Always,
             ..SharedArgs::default()
         };
         let args = StatuslineArgs::default();

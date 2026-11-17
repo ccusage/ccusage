@@ -306,7 +306,7 @@ mod tests {
     fn breakdown_rows_include_extra_tokens_and_match_parent_total() {
         let row = breakdown_summary();
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let shared = SharedArgs {
@@ -334,7 +334,7 @@ mod tests {
     fn no_breakdown_flag_keeps_existing_row_count() {
         let row = breakdown_summary();
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
 

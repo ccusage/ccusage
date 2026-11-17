@@ -7,9 +7,9 @@ use std::{
 use serde_json::{Map, Value};
 
 use ccusage_cli::{
-    BlocksArgs, CodexSpeed, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore,
-    PricingOverride, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs,
+    NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay,
+    WeeklyArgs, normalize_date_bound,
 };
 
 use crate::config_schema::{
@@ -621,12 +621,10 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
         shared.offline = false;
     }
     if options.color == Some(true) {
-        shared.color = true;
-        shared.no_color = false;
+        shared.color = ColorChoice::Always;
     }
     if options.no_color == Some(true) {
-        shared.color = false;
-        shared.no_color = true;
+        shared.color = ColorChoice::Never;
     }
     if let Some(timezone) = options.timezone {
         shared.timezone = Some(timezone);
@@ -862,8 +860,7 @@ mod tests {
         assert_eq!(shared.order, SortOrder::Desc);
         assert!(shared.breakdown);
         assert!(!shared.offline);
-        assert!(!shared.color);
-        assert!(shared.no_color);
+        assert_eq!(shared.color, ColorChoice::Never);
         assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
         assert_eq!(shared.jq.as_deref(), Some(".totals"));
         assert!(shared.compact);
