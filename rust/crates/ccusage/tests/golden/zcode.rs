@@ -573,22 +573,23 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "dir-db",
         "not-a-dir",
         "missing",
-    ]
-    .into_iter()
-    .enumerate()
-    .map(|(index, name)| {
-        let mut entry = OsString::new();
-        if index > 0 {
-            entry.push(" ");
-        }
-        entry.push(store.join(name));
-        if index < 11 {
-            entry.push(" ");
-        }
-        entry
-    })
-    .collect::<Vec<_>>();
-    vec![("ZCODE_HOME", homes)]
+    ];
+    let entries = homes
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let mut entry = OsString::new();
+            if index > 0 {
+                entry.push(" ");
+            }
+            entry.push(store.join(name));
+            if index + 1 < homes.len() {
+                entry.push(" ");
+            }
+            entry
+        })
+        .collect::<Vec<_>>();
+    vec![("ZCODE_HOME", entries)]
 }
 
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
