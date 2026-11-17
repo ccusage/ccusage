@@ -1819,7 +1819,7 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     assert_eq!(session_rows[0].agent, "pi");
     assert_eq!(
         session_rows[0].metadata.as_ref().unwrap()["projectPath"],
-        "sessions"
+        "project-a"
     );
     assert_eq!(session_rows[0].input_tokens, 1_000);
     assert_eq!(session_rows[0].output_tokens, 500);

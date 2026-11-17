@@ -41,8 +41,18 @@ fn existing_paths(raw: &str, to_path: impl Fn(&str) -> PathBuf) -> Vec<PathBuf> 
         .map(str::trim)
         .filter(|path| !path.is_empty())
         .map(to_path)
-        .filter(|path| path.is_dir() && seen.insert(path.clone()))
+        .filter(|path| path.is_dir())
+        .map(store_root)
+        .filter(|path| seen.insert(path.clone()))
         .collect()
+}
+
+// NOTE(2026-11-17): Pi writes sessions to <agent dir>/sessions/<encoded cwd>/<timestamp>_<uuid>.jsonl,
+// so a configured directory with a `sessions` child is the agent directory and the project is the
+// directory below that child.
+fn store_root(path: PathBuf) -> PathBuf {
+    let sessions = path.join("sessions");
+    if sessions.is_dir() { sessions } else { path }
 }
 
 #[cfg(test)]
@@ -59,6 +69,19 @@ mod tests {
         let paths = named_store_paths("~/.omp/agent/sessions").unwrap();
 
         assert_eq!(paths, vec![store]);
+    }
+
+    #[test]
+    fn agent_directory_resolves_to_its_sessions_store() {
+        let fixture = fs_fixture!({});
+        let agent = fixture.create_dir_all(".pi/agent");
+        let sessions = fixture.create_dir_all(".pi/agent/sessions/project-a");
+        let sessions = sessions.parent().unwrap().to_path_buf();
+
+        let raw = format!("{},{}", agent.display(), sessions.display());
+
+        assert_eq!(named_store_paths(&raw).unwrap(), vec![sessions.clone()]);
+        assert_eq!(paths(Some(&raw)).unwrap(), vec![sessions]);
     }
 
     #[test]
