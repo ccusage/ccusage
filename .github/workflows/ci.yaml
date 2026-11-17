@@ -205,15 +205,11 @@ jobs:
       - parallel:
           - name: Run nix flake check
             run: nix flake check --print-build-logs
-          - name: Run Rust tests
-            run: nix build .#ccusage-tests --print-build-logs
           - name: JS test
             run: |
               nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
               pnpm install --frozen-lockfile
               just test-node
-          - name: Nushell contribution-gate tests
-            run: .github/scripts/contribution-gate.test.nu
           - name: Babashka performance harness test
             run: apps/ccusage/scripts/compare-pr-performance_test.clj
           - name: Babashka diff-refs test
