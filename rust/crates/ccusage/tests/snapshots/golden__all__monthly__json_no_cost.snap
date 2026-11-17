@@ -471,7 +471,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 4540,
       "cacheReadTokens": 1012308,
-      "inputTokens": 1231417,
+      "inputTokens": 1231353,
       "metadata": {
         "agents": [
           "amp",
@@ -735,13 +735,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "inputTokens": 40,
           "modelName": "grok-4",
           "outputTokens": 20
@@ -815,6 +808,13 @@ exit: 0
           "inputTokens": 51,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 30
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -1042,9 +1042,9 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 28198,
+      "outputTokens": 28192,
       "period": "2026-01",
-      "totalTokens": 2278810
+      "totalTokens": 2278740
     },
     {
       "agent": "all",
@@ -1076,9 +1076,9 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1309617,
-    "inputTokens": 1346608,
-    "outputTokens": 58601,
-    "totalTokens": 2736008,
+    "inputTokens": 1346544,
+    "outputTokens": 58595,
+    "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

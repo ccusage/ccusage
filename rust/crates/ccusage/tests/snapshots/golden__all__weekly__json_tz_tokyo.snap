@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1309617,
-    "inputTokens": 1346608,
-    "outputTokens": 58601,
-    "totalCost": 28.137213300000006,
-    "totalTokens": 2736008,
+    "inputTokens": 1346544,
+    "outputTokens": 58595,
+    "totalCost": 28.136743300000006,
+    "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -243,7 +243,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 16501,
       "cacheReadTokens": 1306524,
-      "inputTokens": 1337114,
+      "inputTokens": 1337050,
       "metadata": {
         "agents": [
           "amp",
@@ -652,14 +652,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
           "modelName": "grok-4",
@@ -728,6 +720,14 @@ exit: 0
           "inputTokens": 310,
           "modelName": "qwen-3-235b",
           "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -1013,10 +1013,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56334,
+      "outputTokens": 56328,
       "period": "2025-12-29",
-      "totalCost": 24.302485050000005,
-      "totalTokens": 2719860
+      "totalCost": 24.302015050000005,
+      "totalTokens": 2719790
     },
     {
       "agent": "all",

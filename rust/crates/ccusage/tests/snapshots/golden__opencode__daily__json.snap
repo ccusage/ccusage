@@ -115,7 +115,7 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 3000,
       "date": "2026-01-01",
-      "inputTokens": 2205,
+      "inputTokens": 2141,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -144,18 +144,18 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00013500000000000003,
           "inputTokens": 60,
           "modelName": "gpt-5",
           "outputTokens": 6
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -175,9 +175,9 @@ exit: 0
         "opus",
         "gemini-3-pro-high"
       ],
-      "outputTokens": 380,
-      "totalCost": 0.01275,
-      "totalTokens": 5585
+      "outputTokens": 374,
+      "totalCost": 0.01228,
+      "totalTokens": 5515
     },
     {
       "cacheCreationTokens": 0,
@@ -223,10 +223,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7250,
-    "outputTokens": 1837,
-    "totalCost": 2.8082312500000004,
-    "totalTokens": 27337,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
+    "totalCost": 2.8077612500000004,
+    "totalTokens": 27267,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

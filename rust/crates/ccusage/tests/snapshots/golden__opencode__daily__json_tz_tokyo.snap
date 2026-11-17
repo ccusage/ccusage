@@ -96,7 +96,7 @@ exit: 0
       "cacheCreationTokens": 200,
       "cacheReadTokens": 12500,
       "date": "2026-01-01",
-      "inputTokens": 4595,
+      "inputTokens": 4531,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -142,10 +142,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -166,9 +166,9 @@ exit: 0
         "opus",
         "gemini-3-pro-high"
       ],
-      "outputTokens": 1079,
-      "totalCost": 2.0371400000000004,
-      "totalTokens": 18424
+      "outputTokens": 1073,
+      "totalCost": 2.0366700000000004,
+      "totalTokens": 18354
     },
     {
       "cacheCreationTokens": 0,
@@ -214,10 +214,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7250,
-    "outputTokens": 1837,
-    "totalCost": 2.8082312500000004,
-    "totalTokens": 27337,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
+    "totalCost": 2.8077612500000004,
+    "totalTokens": 27267,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

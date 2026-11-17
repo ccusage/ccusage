@@ -117,24 +117,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 71,
+      "inputTokens": 7,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         }
       ],
       "modelsUsed": [
         "opus"
       ],
-      "outputTokens": 7,
+      "outputTokens": 1,
       "sessionId": "ses-v2-agent",
-      "totalCost": 0.0005300000000000001,
-      "totalTokens": 78
+      "totalCost": 0.00006000000000000001,
+      "totalTokens": 8
     },
     {
       "cacheCreationTokens": 0,
@@ -268,10 +268,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 200,
     "cacheReadTokens": 12500,
-    "inputTokens": 5195,
-    "outputTokens": 1199,
-    "totalCost": 2.05514,
-    "totalTokens": 19144,
+    "inputTokens": 5131,
+    "outputTokens": 1193,
+    "totalCost": 2.05467,
+    "totalTokens": 19074,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

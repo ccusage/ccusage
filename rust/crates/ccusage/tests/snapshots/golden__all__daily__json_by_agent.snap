@@ -3600,7 +3600,7 @@ exit: 0
           "agent": "opencode",
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "inputTokens": 2205,
+          "inputTokens": 2141,
           "modelBreakdowns": [
             {
               "cacheCreationTokens": 0,
@@ -3629,18 +3629,18 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
-              "cost": 0.0005300000000000001,
-              "inputTokens": 71,
-              "modelName": "opus",
-              "outputTokens": 7
-            },
-            {
-              "cacheCreationTokens": 0,
-              "cacheReadTokens": 0,
               "cost": 0.00013500000000000003,
               "inputTokens": 60,
               "modelName": "gpt-5",
               "outputTokens": 6
+            },
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.00006000000000000001,
+              "inputTokens": 7,
+              "modelName": "opus",
+              "outputTokens": 1
             },
             {
               "cacheCreationTokens": 0,
@@ -3660,9 +3660,9 @@ exit: 0
             "opus",
             "gemini-3-pro-high"
           ],
-          "outputTokens": 380,
-          "totalCost": 0.01275,
-          "totalTokens": 5585
+          "outputTokens": 374,
+          "totalCost": 0.01228,
+          "totalTokens": 5515
         },
         {
           "agent": "pi",
@@ -3826,7 +3826,7 @@ exit: 0
       ],
       "cacheCreationTokens": 2890,
       "cacheReadTokens": 482328,
-      "inputTokens": 1104579,
+      "inputTokens": 1104515,
       "metadata": {
         "agents": [
           "amp",
@@ -4073,14 +4073,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "cost": 0.000325,
           "inputTokens": 0,
@@ -4126,6 +4118,14 @@ exit: 0
           "inputTokens": 11,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 22
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -4341,10 +4341,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 17493,
+      "outputTokens": 17487,
       "period": "2026-01-01",
-      "totalCost": 3.7021385700000002,
-      "totalTokens": 1608342
+      "totalCost": 3.7016685700000003,
+      "totalTokens": 1608272
     },
     {
       "agent": "all",
@@ -5518,10 +5518,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1309617,
-    "inputTokens": 1346608,
-    "outputTokens": 58601,
-    "totalCost": 28.137213300000003,
-    "totalTokens": 2736008,
+    "inputTokens": 1346544,
+    "outputTokens": 58595,
+    "totalCost": 28.136743300000003,
+    "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

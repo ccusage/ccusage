@@ -261,24 +261,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 71,
+      "inputTokens": 7,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 71,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         }
       ],
       "modelsUsed": [
         "opus"
       ],
-      "outputTokens": 7,
+      "outputTokens": 1,
       "sessionId": "ses-v2-agent",
       "totalCost": 0.0,
-      "totalTokens": 78
+      "totalTokens": 8
     },
     {
       "cacheCreationTokens": 0,
@@ -478,10 +478,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 800,
     "cacheReadTokens": 18400,
-    "inputTokens": 7875,
-    "outputTokens": 1939,
+    "inputTokens": 7811,
+    "outputTokens": 1933,
     "totalCost": 3.53,
-    "totalTokens": 29084
+    "totalTokens": 29014
   }
 }
 

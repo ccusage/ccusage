@@ -51,7 +51,7 @@ exit: 0
     {
       "cacheCreationTokens": 200,
       "cacheReadTokens": 12500,
-      "inputTokens": 5003,
+      "inputTokens": 4939,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -105,18 +105,18 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00033749999999999996,
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -140,18 +140,18 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "month": "2026-01",
-      "outputTokens": 1357,
-      "totalCost": 2.0389550000000005,
-      "totalTokens": 19110
+      "outputTokens": 1351,
+      "totalCost": 2.0384850000000005,
+      "totalTokens": 19040
     }
   ],
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7250,
-    "outputTokens": 1837,
-    "totalCost": 2.8082312500000004,
-    "totalTokens": 27337,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
+    "totalCost": 2.8077612500000004,
+    "totalTokens": 27267,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

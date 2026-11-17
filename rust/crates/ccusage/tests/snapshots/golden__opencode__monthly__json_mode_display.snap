@@ -58,7 +58,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 3000,
-      "inputTokens": 2613,
+      "inputTokens": 2549,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -96,9 +96,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 71,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -136,18 +136,18 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "month": "2026-01",
-      "outputTokens": 658,
+      "outputTokens": 652,
       "totalCost": 0.0,
-      "totalTokens": 6271
+      "totalTokens": 6201
     }
   ],
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7250,
-    "outputTokens": 1837,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
     "totalCost": 2.75,
-    "totalTokens": 27337
+    "totalTokens": 27267
   }
 }
 

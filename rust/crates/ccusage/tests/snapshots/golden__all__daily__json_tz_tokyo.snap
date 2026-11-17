@@ -642,7 +642,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 8841,
       "cacheReadTokens": 655414,
-      "inputTokens": 1151882,
+      "inputTokens": 1151818,
       "metadata": {
         "agents": [
           "amp",
@@ -988,14 +988,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "cost": 0.000325,
           "inputTokens": 0,
@@ -1033,6 +1025,14 @@ exit: 0
           "inputTokens": 11,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 22
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -1258,10 +1258,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 33446,
+      "outputTokens": 33440,
       "period": "2026-01-01",
-      "totalCost": 15.12783312,
-      "totalTokens": 1851030
+      "totalCost": 15.12736312,
+      "totalTokens": 1850960
     },
     {
       "agent": "all",
@@ -1699,10 +1699,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1309617,
-    "inputTokens": 1346608,
-    "outputTokens": 58601,
-    "totalCost": 28.1372133,
-    "totalTokens": 2736008,
+    "inputTokens": 1346544,
+    "outputTokens": 58595,
+    "totalCost": 28.1367433,
+    "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
