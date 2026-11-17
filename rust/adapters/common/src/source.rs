@@ -101,10 +101,6 @@ pub struct UnifiedRequest<'a> {
     /// pricing options. `None` for a source that loads its own.
     pub pricing: Option<&'a PricingMap>,
     pub progress: ProgressOwner,
-    /// Codex only: take the driver that merges every source directory even
-    /// when there is a single one, as its JSON output does. The unified report
-    /// always sets it.
-    pub multi_source_driver: bool,
     /// OpenCode only: blocks until the Claude source of the same report has
     /// loaded and yields what it counted.
     pub claude_counted: Option<&'a (dyn Fn() -> ClaudeCounted + Send)>,

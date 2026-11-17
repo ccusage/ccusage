@@ -144,7 +144,6 @@ mod diagnostic_tests {
                 options: SourceOptions::default(),
                 pricing: Some(&PricingMap::load_embedded()),
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
                 claude_counted: None,
             })
             .unwrap()
@@ -274,7 +273,6 @@ mod diagnostic_tests {
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
                     claude_counted: None,
                 })
                 .unwrap();
@@ -336,7 +334,6 @@ mod diagnostic_tests {
                         options: SourceOptions::default(),
                         pricing: Some(&pricing),
                         progress: ProgressOwner::Caller,
-                        multi_source_driver: true,
                         claude_counted: None,
                     })
                     .unwrap();
@@ -386,7 +383,6 @@ mod diagnostic_tests {
                         options: SourceOptions::default(),
                         pricing: Some(&pricing),
                         progress: ProgressOwner::Caller,
-                        multi_source_driver: true,
                         claude_counted: None,
                     })
                     .unwrap();
@@ -427,7 +423,6 @@ mod diagnostic_tests {
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
                     claude_counted: None,
                 })
                 .unwrap();
@@ -490,7 +485,6 @@ mod diagnostic_tests {
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
                     claude_counted: None,
                 })
                 .unwrap();
@@ -601,7 +595,6 @@ mod diagnostic_tests {
                 options: SourceOptions::default(),
                 pricing: Some(&pricing),
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
                 claude_counted: None,
             })
             .unwrap();

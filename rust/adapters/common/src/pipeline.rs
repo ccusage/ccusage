@@ -202,7 +202,6 @@ mod tests {
             options: SourceOptions::default(),
             pricing: None,
             progress: ProgressOwner::Caller,
-            multi_source_driver: true,
             claude_counted: None,
         }
     }

@@ -524,7 +524,6 @@ fn load_source_result(
         options: SourceOptions::from_source(source_args),
         pricing,
         progress: ProgressOwner::Caller,
-        multi_source_driver: true,
         claude_counted,
     })
 }
@@ -565,7 +564,6 @@ pub(super) fn load_opencode_entries(
         options: SourceOptions::default(),
         pricing: None,
         progress: ProgressOwner::Source,
-        multi_source_driver: true,
         claude_counted: None,
     })?;
     let claude_counted = claude_rows
@@ -639,7 +637,6 @@ mod tests {
                 },
                 pricing: Some(pricing),
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
                 claude_counted: None,
             })
             .map(agent_rows)

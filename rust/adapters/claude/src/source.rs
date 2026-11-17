@@ -136,7 +136,6 @@ mod diagnostic_tests {
                     options: SourceOptions::default(),
                     pricing: None,
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
                     claude_counted: None,
                 })
                 .unwrap();
