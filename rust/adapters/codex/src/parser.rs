@@ -2004,6 +2004,53 @@ mod tests {
     }
 
     #[test]
+    fn headless_usage_field_search_matches_the_previous_implementation() {
+        let markers: [&[u8]; 3] = [
+            br#""usage":"#,
+            br#""input_tokens":"#,
+            br#""prompt_tokens":"#,
+        ];
+        let fragments: &[&[u8]] = &[
+            br#""usage":"#,
+            br#""input_tokens":"#,
+            br#""prompt_tokens":"#,
+            br#""usage" :"#,
+            br#""cached_input_tokens":"#,
+            br#""my_usage":"#,
+            br#""usage_details":"#,
+            br#"\"usage\":"#,
+            br#"\\u0061"#,
+            br#"\u0061"#,
+            br#""#,
+            b":",
+            b"{",
+            b"}",
+            b"\\",
+            b"\\\\",
+            b" ",
+        ];
+        let finders = markers.map(Finder::new);
+        let mut state = 0xbb67_ae85_84ca_a73b_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        for _ in 0..50_000 {
+            let line = (0..next(32))
+                .flat_map(|_| fragments[next(fragments.len())].iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                has_headless_usage_field(&line),
+                finders.iter().any(|finder| finder.find(&line).is_some()),
+                "{}",
+                String::from_utf8_lossy(&line)
+            );
+        }
+    }
+
+    #[test]
     fn recognizes_headless_usage_fields_only_as_whole_keys() {
         for line in [
             br#"{"type":"turn.completed","usage":{"input_tokens":1}}"#.as_slice(),
