@@ -4,7 +4,7 @@ use serde_json::json;
 
 use ccusage_adapter_common::{
     rows::UnifiedRow,
-    source::{ProgressOwner, STANDARD_REPORTS, SourceRows, UnifiedRequest, UsageSource},
+    source::{ProgressOwner, SourceRows, UnifiedRequest, UsageSource},
 };
 use ccusage_core::{
     ModelBreakdown, PricingMap, Result,
@@ -29,10 +29,6 @@ impl UsageSource for Codex {
 
     fn label(&self) -> &'static str {
         "Codex"
-    }
-
-    fn reports(&self) -> &'static [AgentReportKind] {
-        STANDARD_REPORTS
     }
 
     fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {

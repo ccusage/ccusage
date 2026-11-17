@@ -50,14 +50,9 @@ pub fn summarize_entries(
                 .map(SessionAccumulator::into_summary)
                 .collect()
         }
-        AgentReportKind::Weekly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Sunday,
-            ))
-        }
+        AgentReportKind::Weekly => Err(ccusage_core::cli_error(
+            "copilot does not support weekly reports",
+        )),
     }
 }
 fn rows_key(kind: AgentReportKind) -> &'static str {

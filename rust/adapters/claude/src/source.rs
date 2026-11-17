@@ -1,7 +1,7 @@
 use ccusage_adapter_common::{
     claims::ClaudeCounted,
     rows::{summarize_entry_sessions, summary_rows},
-    source::{ALL_REPORTS, PricingSupply, SourceRows, UnifiedRequest, UsageSource},
+    source::{PricingSupply, SourceRows, UnifiedRequest, UsageSource},
 };
 use ccusage_core::{Diagnostics, ReportWindow, Result, cli::AgentReportKind};
 
@@ -18,10 +18,6 @@ impl UsageSource for Claude {
 
     fn label(&self) -> &'static str {
         "Claude"
-    }
-
-    fn reports(&self) -> &'static [AgentReportKind] {
-        ALL_REPORTS
     }
 
     fn pricing_supply(&self) -> PricingSupply {

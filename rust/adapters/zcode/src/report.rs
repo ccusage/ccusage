@@ -50,14 +50,9 @@ pub fn summarize_entries(
                 .map(SessionAccumulator::into_summary)
                 .collect()
         }
-        AgentReportKind::Weekly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Sunday,
-            ))
-        }
+        AgentReportKind::Weekly => Err(ccusage_core::cli_error(
+            "zcode does not support weekly reports",
+        )),
     }
 }
 
@@ -133,11 +128,10 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_focused_zcode_json_reports_for_daily_monthly_weekly_and_session() {
+    fn snapshots_focused_zcode_json_reports_for_daily_monthly_and_session() {
         let entries = snapshot_entries();
         let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
         let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
-        let weekly = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
         let session = summarize_entries(&entries, AgentReportKind::Session).unwrap();
 
         insta::assert_json_snapshot!(
@@ -149,27 +143,23 @@ mod tests {
             report_from_rows(&monthly, AgentReportKind::Monthly)
         );
         insta::assert_json_snapshot!(
-            "focused_zcode_weekly_json",
-            report_from_rows(&weekly, AgentReportKind::Weekly)
-        );
-        insta::assert_json_snapshot!(
             "focused_zcode_session_json",
             report_from_rows(&session, AgentReportKind::Session)
         );
     }
 
     #[test]
-    fn saturates_focused_daily_and_weekly_reports_for_extreme_counters() {
+    fn saturates_focused_daily_and_monthly_reports_for_extreme_counters() {
         let entries = [
             extreme_entry("2099-01-02", 4_070_908_800_000, u64::MAX),
             extreme_entry("2099-01-03", 4_071_081_600_000, 1),
         ];
         let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
         let daily_report = report_from_rows(&daily, AgentReportKind::Daily);
-        let weekly = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
-        let weekly_report = report_from_rows(&weekly, AgentReportKind::Weekly);
+        let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
+        let monthly_report = report_from_rows(&monthly, AgentReportKind::Monthly);
 
-        for report in [daily_report, weekly_report] {
+        for report in [daily_report, monthly_report] {
             for key in [
                 "inputTokens",
                 "outputTokens",
@@ -180,8 +170,8 @@ mod tests {
                 assert_eq!(report["totals"][key], u64::MAX, "{key}");
             }
         }
-        assert_eq!(weekly[0].model_breakdowns[0].input_tokens, u64::MAX);
-        assert_eq!(weekly[0].model_breakdowns[0].output_tokens, u64::MAX);
+        assert_eq!(monthly[0].model_breakdowns[0].input_tokens, u64::MAX);
+        assert_eq!(monthly[0].model_breakdowns[0].output_tokens, u64::MAX);
     }
 
     fn extreme_entry(date: &str, millis: i64, tokens: u64) -> LoadedEntry {

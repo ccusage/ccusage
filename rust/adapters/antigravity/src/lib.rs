@@ -1,4 +1,4 @@
-use ccusage_adapter_common::source::{ALL_REPORTS, EntryDescriptor, EntrySource, LoadContext};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::*;
 
 mod loader;
@@ -19,7 +19,6 @@ pub static SOURCE: Antigravity = Antigravity;
 impl EntrySource for Antigravity {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
-            reports: ALL_REPORTS,
             ..EntryDescriptor::standard("antigravity", "Antigravity")
         }
     }

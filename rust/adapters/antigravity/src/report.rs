@@ -50,14 +50,9 @@ pub fn summarize_entries(
                 .map(SessionAccumulator::into_summary)
                 .collect()
         }
-        AgentReportKind::Weekly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Monday,
-            ))
-        }
+        AgentReportKind::Weekly => Err(ccusage_core::cli_error(
+            "antigravity does not support weekly reports",
+        )),
     }
 }
 
@@ -151,18 +146,14 @@ mod tests {
     }
 
     #[test]
-    fn weekly_report_buckets_from_monday() {
+    fn rejects_unsupported_weekly_reports() {
         let rows = summarize_entries(
             &[
                 entry("sunday", "2026-05-03", 1_778_000_000_000, "/workspace/app"),
                 entry("monday", "2026-05-04", 1_778_086_400_000, "/workspace/app"),
             ],
             AgentReportKind::Weekly,
-        )
-        .unwrap();
-
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].week.as_deref(), Some("2026-04-27"));
-        assert_eq!(rows[1].week.as_deref(), Some("2026-05-04"));
+        );
+        assert!(rows.is_err());
     }
 }

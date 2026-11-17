@@ -10,26 +10,11 @@ use serde_json::Value;
 
 use ccusage_core::{
     Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
-    cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
+    cli::{AgentCommandArgs, AgentId, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
     cli_error, summary_period,
 };
 
 use crate::{claims::ClaudeCounted, pipeline, rows::UnifiedRow};
-
-/// The reports of a source that has no weekly one.
-pub const STANDARD_REPORTS: &[AgentReportKind] = &[
-    AgentReportKind::Daily,
-    AgentReportKind::Monthly,
-    AgentReportKind::Session,
-];
-
-/// The reports of a source that also has a weekly one.
-pub const ALL_REPORTS: &[AgentReportKind] = &[
-    AgentReportKind::Daily,
-    AgentReportKind::Weekly,
-    AgentReportKind::Monthly,
-    AgentReportKind::Session,
-];
 
 /// One usage source registered for the unified report.
 pub trait UsageSource: Sync {
@@ -40,7 +25,9 @@ pub trait UsageSource: Sync {
     fn label(&self) -> &'static str;
 
     /// The report kinds `ccusage <id> <kind>` accepts.
-    fn reports(&self) -> &'static [AgentReportKind];
+    fn reports(&self) -> &'static [AgentReportKind] {
+        AgentId::from_name(self.id()).map_or(&[], |agent| agent.spec().reports)
+    }
 
     fn pricing_supply(&self) -> PricingSupply {
         PricingSupply::Pipeline
@@ -179,7 +166,6 @@ pub enum PricingSupply {
 pub struct EntryDescriptor {
     pub id: &'static str,
     pub label: &'static str,
-    pub reports: &'static [AgentReportKind],
     pub window: WindowMode,
     pub detection: Detection,
     pub pricing: PricingSupply,
@@ -195,7 +181,6 @@ impl EntryDescriptor {
         Self {
             id,
             label,
-            reports: STANDARD_REPORTS,
             window: WindowMode::Entries,
             detection: Detection::NonEmpty,
             pricing: PricingSupply::Pipeline,
@@ -293,10 +278,6 @@ impl<S: EntrySource> UsageSource for S {
 
     fn label(&self) -> &'static str {
         self.descriptor().label
-    }
-
-    fn reports(&self) -> &'static [AgentReportKind] {
-        self.descriptor().reports
     }
 
     fn pricing_supply(&self) -> PricingSupply {

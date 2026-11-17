@@ -9,14 +9,9 @@ Every agent is an adapter crate in `rust/adapters/<agent>` that turns one
 source's raw logs into the shared report shapes. `ccusage <report>` aggregates
 all of them; `ccusage <agent> <report>` scopes to one.
 
-Which reports an agent accepts is not uniform, and it is encoded twice:
-`STANDARD_AGENT_REPORTS` / `OPENCODE_AGENT_REPORTS` in
-`rust/crates/ccusage-cli/src/types.rs` drive parsing, while
-`agent_report_supported` in `rust/crates/ccusage-cli-parser/src/parser.rs`
-decides what is accepted per agent name. Changing an agent's report set means
-updating both. Keep command names and flag semantics aligned across agents
-unless the source data forces the difference, and say so in a comment when it
-does.
+Keep command names and flag semantics aligned across agents unless the source
+data forces a difference. Declare supported reports in the agent table in
+`rust/crates/ccusage-cli/src/agents.rs`.
 
 Cost handling is shared, not per-agent: `auto`, `calculate`, and `display`
 differ only in how a record's precomputed `costUSD` competes with token-derived

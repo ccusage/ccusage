@@ -46,14 +46,9 @@ pub fn summarize_entries(
             }
             rows
         }),
-        AgentReportKind::Weekly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Sunday,
-            ))
-        }
+        AgentReportKind::Weekly => Err(ccusage_core::cli_error(
+            "kimi does not support weekly reports",
+        )),
     }
 }
 

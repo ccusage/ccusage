@@ -1,7 +1,7 @@
 use ccusage_adapter_common::{
     claims::ClaudeCounted,
     rows::summary_rows,
-    source::{ALL_REPORTS, PricingSupply, ProgressOwner, SourceRows, UnifiedRequest, UsageSource},
+    source::{PricingSupply, ProgressOwner, SourceRows, UnifiedRequest, UsageSource},
 };
 use ccusage_core::Diagnostics;
 use ccusage_core::{
@@ -25,10 +25,6 @@ impl UsageSource for OpenCode {
 
     fn label(&self) -> &'static str {
         "OpenCode"
-    }
-
-    fn reports(&self) -> &'static [AgentReportKind] {
-        ALL_REPORTS
     }
 
     fn pricing_supply(&self) -> PricingSupply {
