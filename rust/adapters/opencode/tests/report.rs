@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ccusage_core::{
     LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage,
-    cli::{AgentReportKind, SortOrder},
+    cli::{AgentReportKind, SortOrder, WeekDay},
     parse_ts_timestamp,
 };
 use serde_json::json;
@@ -46,9 +46,13 @@ fn builds_opencode_daily_json_report() {
         stored_cost: None,
     };
 
-    let report =
-        ccusage_adapter_opencode::report_json(&[entry], AgentReportKind::Daily, &SortOrder::Asc)
-            .unwrap();
+    let report = ccusage_adapter_opencode::report_json(
+        &[entry],
+        AgentReportKind::Daily,
+        &SortOrder::Asc,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert_eq!(report["daily"][0]["date"], "2026-01-02");
     assert_eq!(report["daily"][0]["inputTokens"], 100);

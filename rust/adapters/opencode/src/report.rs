@@ -15,8 +15,9 @@ pub fn report_json(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
     order: &SortOrder,
+    start_of_week: WeekDay,
 ) -> Result<Value> {
-    let mut rows = summarize_entries(entries, kind)?;
+    let mut rows = summarize_entries(entries, kind, start_of_week)?;
     sort_summaries(&mut rows, order, summary_period);
     Ok(plain_report_json(&rows, kind))
 }
@@ -24,13 +25,14 @@ pub fn report_json(
 pub fn summarize_entries(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
+    start_of_week: WeekDay,
 ) -> Result<Vec<crate::UsageSummary>> {
     if kind == AgentReportKind::Session {
         return rows::summarize_source_sessions_in_order(entries);
     }
     rows::summarize_entries(
         entries,
-        SummaryKind::for_report(kind, WeekDay::Monday),
+        SummaryKind::for_report(kind, start_of_week),
         SessionShape::WithActivity,
         SessionScope::Source,
     )
@@ -77,7 +79,7 @@ mod tests {
             loaded_entry("session-a", 1_767_402_000_000, 20),
         ];
 
-        let rows = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let rows = summarize_entries(&entries, AgentReportKind::Session, WeekDay::Monday).unwrap();
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].session_id.as_deref(), Some("session-a"));
@@ -89,6 +91,19 @@ mod tests {
             rows[0].last_activity.as_deref(),
             Some("2026-01-03T01:00:00.000Z")
         );
+    }
+
+    #[test]
+    fn weekly_report_uses_the_requested_week_start() {
+        let entries = vec![loaded_entry("session-a", 1_767_316_800_000, 100)];
+        for (start, expected) in [
+            (WeekDay::Monday, "2025-12-29"),
+            (WeekDay::Sunday, "2025-12-28"),
+        ] {
+            let rows = summarize_entries(&entries, AgentReportKind::Weekly, start).unwrap();
+            assert_eq!(rows[0].week.as_deref(), Some(expected));
+            assert_eq!(rows[0].input_tokens, 100);
+        }
     }
 
     fn snapshot_row() -> UsageSummary {

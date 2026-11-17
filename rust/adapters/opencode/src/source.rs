@@ -69,7 +69,11 @@ fn load_rows(
     };
     let window = ReportWindow::from_shared(request.shared);
     entries.retain(|entry| window.contains_date(&entry.date));
-    let summaries = summarize_entries(&entries, request.kind.report_kind())?;
+    let summaries = summarize_entries(
+        &entries,
+        request.kind.report_kind(),
+        crate::cli::WeekDay::Monday,
+    )?;
 
     Ok(LoadedRows {
         rows: summary_rows("opencode", summaries, false),

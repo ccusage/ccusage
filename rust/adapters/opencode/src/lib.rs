@@ -30,12 +30,17 @@ pub fn print_report(args: &AgentCommandArgs, mut entries: Vec<LoadedEntry>) -> R
     filter_loaded_entries_by_date(&mut entries, shared);
     if wants_json(shared) {
         return print_json_or_jq(
-            report_json(&entries, kind, &shared.order.unwrap_or_default())?,
+            report_json(
+                &entries,
+                kind,
+                &shared.order.unwrap_or_default(),
+                args.start_of_week,
+            )?,
             shared.jq.as_deref(),
             shared.no_cost,
         );
     }
-    let mut rows = summarize_entries(&entries, kind)?;
+    let mut rows = summarize_entries(&entries, kind, args.start_of_week)?;
     sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
         summary_period(row)
     });
