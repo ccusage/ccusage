@@ -468,7 +468,7 @@ fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
             args.recent = recent;
         }
         if let Some(token_limit) = options.token_limit {
-            args.token_limit = Some(token_limit);
+            args.token_limit = Some(token_limit.into());
         }
         if let Some(session_length) = options.session_length {
             args.session_length = session_length;
@@ -784,6 +784,34 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn token_limits_accept_numbers_and_strings() {
+        for raw in [
+            r#"{"commands":{"blocks":{"tokenLimit":500000}}}"#,
+            r#"{"commands":{"blocks":{"tokenLimit":"500000"}}}"#,
+        ] {
+            let fixture = fs_fixture!({"config.json": raw});
+            let config = ConfigContext::from_args(&[
+                "blocks".into(),
+                "--config".into(),
+                fixture.path("config.json").display().to_string(),
+            ]);
+            assert!(
+                config.config_error().is_none(),
+                "{:?}",
+                config.config_error()
+            );
+            let mut args = BlocksArgs {
+                shared: SharedArgs::default(),
+                active: false,
+                recent: false,
+                token_limit: None,
+                session_length: 5.0,
+            };
+            config.apply_blocks_args(&mut args);
+            assert_eq!(args.token_limit.as_deref(), Some("500000"));
+        }
+    }
     #[test]
     fn discovered_config_retains_valid_fields_without_falling_through() {
         let fixture = fs_fixture!({

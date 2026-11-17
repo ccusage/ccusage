@@ -534,9 +534,25 @@ pub struct BlocksSpecificOptions {
     /// Show recent session blocks.
     pub recent: Option<bool>,
     /// Token limit for session block calculations.
-    pub token_limit: Option<String>,
+    pub token_limit: Option<ConfigTokenLimit>,
     /// Session block duration in hours.
     pub session_length: Option<f64>,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ConfigTokenLimit {
+    Text(String),
+    Number(u64),
+}
+
+impl From<ConfigTokenLimit> for String {
+    fn from(value: ConfigTokenLimit) -> Self {
+        match value {
+            ConfigTokenLimit::Text(value) => value,
+            ConfigTokenLimit::Number(value) => value.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
