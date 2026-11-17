@@ -26,6 +26,10 @@ env:
     autorelease: pending
     dependencies
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   main:
     name: Validate PR title

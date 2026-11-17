@@ -15,6 +15,10 @@ concurrency:
   group: update-pricing
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   update-pricing:
     name: ${{ matrix.name }}

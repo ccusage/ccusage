@@ -27,6 +27,10 @@ env:
   # scope of the run's own branch, which main never reads.
   PERSIST_CACHES: ${{ github.ref == 'refs/heads/main' }}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   changes:
     name: Detect code changes

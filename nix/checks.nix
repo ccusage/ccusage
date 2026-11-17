@@ -103,13 +103,14 @@ in
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
-        infra-scripts = mkRepoCheck "infra-script-tests" [ pkgs.nushell pkgs.just ] ''
+        infra-scripts = mkRepoCheck "infra-script-tests" [ pkgs.nushell pkgs.just pkgs.jq ] ''
           nu scripts/validate-commit-scope.test.nu
           nu scripts/check-models-dev-dependencies.test.nu
           nu .github/scripts/contribution-gate.test.nu
           nu .github/scripts/pricing-lock.test.nu
           nu .github/scripts/upsert-pr-comment.test.nu
           nu .github/scripts/check-links.test.nu
+          nu .github/scripts/workflow-shell.test.nu
           nu .github/scripts/install.test.nu
         '';
         inherit

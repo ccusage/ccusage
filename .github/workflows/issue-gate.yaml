@@ -25,6 +25,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   triage:
     runs-on: ubuntu-latest

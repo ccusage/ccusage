@@ -13,6 +13,10 @@ permissions:
   issues: read
   pull-requests: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check-contributor:
     runs-on: ubuntu-slim

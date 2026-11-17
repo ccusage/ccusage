@@ -11,6 +11,10 @@ concurrency:
   group: check-links-${{ github.ref }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check-links:
     runs-on: ubuntu-latest

@@ -10,6 +10,10 @@ on:
         required: true
         type: number
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   close:
     runs-on: ubuntu-slim

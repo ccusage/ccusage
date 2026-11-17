@@ -5,6 +5,10 @@ on:
     types:
       - created
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   approve:
     if: ${{ !github.event.issue.pull_request }}
