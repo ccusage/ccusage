@@ -6862,6 +6862,27 @@ mod tests {
     }
 
     #[test]
+    fn recorded_threshold_migration_groups_use_the_resolved_model_boundary() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, expected) in [
+            ("GLM-5-1", 32_000),
+            ("anthropic-claude-5-5-haiku", 100_000),
+            ("spacexai/grok-4-5", 200_001),
+            ("qwen-3-6-plus-extra", 256_000),
+            ("alibaba/qwen3-5-plus", 256_001),
+            ("aihubmix/gpt-5-4-high", 272_000),
+            ("minimax-m-3-0-extra", 512_000),
+        ] {
+            assert_eq!(
+                pricing.find(model).unwrap().long_context_split_threshold(),
+                expected,
+                "{model}"
+            );
+        }
+    }
+
+    #[test]
     fn context_limits_keep_their_pre_wave_exact_only_boundaries() {
         crate::test_support::install_pricing_snapshots();
         let map = PricingMap::load_embedded();
