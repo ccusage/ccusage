@@ -285,15 +285,31 @@ fn load_config_paths(
                 return (None, Some(message), warnings);
             }
         };
-        let file = serde_json::from_str(&content)
+        let value = serde_json::from_str::<Value>(&content)
             .map_err(|error| error.to_string())
             .and_then(|value| {
-                if explicit {
-                    crate::layers::ConfigFile::parse(value)
+                if value.is_object() {
+                    Ok(value)
                 } else {
-                    crate::layers::ConfigFile::parse_discovered(value)
+                    Err("$: expected an object".to_string())
                 }
             });
+        let value = match value {
+            Ok(value) => value,
+            Err(error) => {
+                let message = config_error(format!("{}: {error}", path.display()));
+                if explicit {
+                    return (None, Some(message), warnings);
+                }
+                warnings.push(message);
+                continue;
+            }
+        };
+        let file = if explicit {
+            crate::layers::ConfigFile::parse(value)
+        } else {
+            crate::layers::ConfigFile::parse_discovered(value)
+        };
         match file {
             Ok(mut file) => {
                 for layer in file.layers.values_mut() {
@@ -800,6 +816,29 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn malformed_discovered_files_warn_and_continue_discovery() {
+        for raw in ["", "[]", "null", "{", "{\"defaults\":{},}", "// comment"] {
+            let fixture = fs_fixture!({
+                "first.json": raw,
+                "second.json": r#"{"defaults":{"offline":true,"json":true}}"#,
+            });
+            let (file, error, warnings) = load_config_paths(
+                false,
+                vec![fixture.path("first.json"), fixture.path("second.json")],
+            );
+            assert!(error.is_none(), "{raw}: {error:?}");
+            let file = file.unwrap();
+            assert_eq!(file.path, fixture.path("second.json"));
+            assert_eq!(file.layers["defaults"].shared.offline, Some(true));
+            assert_eq!(warnings.len(), 1);
+            assert!(warnings[0].contains("first.json"));
+            let (file, error, _) = load_config_paths(true, vec![fixture.path("first.json")]);
+            assert!(file.is_none());
+            assert!(error.is_some());
+        }
+    }
+
     #[test]
     fn keeps_named_pi_store_errors_gated_to_commands_that_read_them() {
         for raw in [
