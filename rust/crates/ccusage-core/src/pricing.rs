@@ -165,9 +165,11 @@ pub(crate) enum ProviderFamily {
 
 impl ProviderFamily {
     fn from_model(model: &str, provider: Option<&str>) -> Self {
-        if model.split(['/', '.']).any(|id| {
+        let mut anthropic = false;
+        for id in model.split(['/', '.']) {
+            anthropic |= id.starts_with("claude-");
             let id = id.strip_prefix("openai-").unwrap_or(id);
-            id.starts_with("codex-")
+            if id.starts_with("codex-")
                 || id.starts_with("gpt-")
                 || id.starts_with("chatgpt-")
                 || ["o1", "o3", "o4"].into_iter().any(|prefix| {
@@ -176,10 +178,11 @@ impl ProviderFamily {
                             .strip_prefix(prefix)
                             .is_some_and(|tail| tail.starts_with('-'))
                 })
-        }) {
-            return Self::OpenAi;
+            {
+                return Self::OpenAi;
+            }
         }
-        if model.split(['/', '.']).any(|id| id.starts_with("claude-")) {
+        if anthropic {
             return Self::Anthropic;
         }
         match provider {
@@ -6375,6 +6378,25 @@ mod tests {
             );
             assert_eq!(pricing.cache_creation_rate(), pricing.input, "{model}");
         }
+    }
+
+    #[test]
+    fn model_vendor_precedence_is_independent_of_segment_order() {
+        use super::ProviderFamily;
+        for model in ["claude-proxy/openai.gpt-5", "openai.gpt-5/claude-proxy"] {
+            assert_eq!(
+                ProviderFamily::from_model(model, Some("anthropic")),
+                ProviderFamily::OpenAi
+            );
+        }
+        assert_eq!(
+            ProviderFamily::from_model("proxy/anthropic.claude-sonnet-4", Some("openai")),
+            ProviderFamily::Anthropic
+        );
+        assert_eq!(
+            ProviderFamily::from_model("proxy/openai-claude-sonnet", None),
+            ProviderFamily::Unrecorded
+        );
     }
 
     #[test]
