@@ -36,6 +36,10 @@ pub trait UsageSource: Sync {
     /// must not bucket by week or month here.
     fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows>;
 
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+        self.unified_rows(&request.legacy()).map(LoadedRows::from)
+    }
+
     /// Whether the source has usage data at all, whatever the date window.
     /// Only sources that cannot tell from their loaded rows answer.
     fn has_data(&self) -> bool {
@@ -51,6 +55,81 @@ pub enum ProgressOwner {
     /// The caller already tracks every source it loads, as the unified report
     /// does, so the source stays quiet.
     Caller,
+}
+
+impl ProgressOwner {
+    pub fn run<T, E>(
+        self,
+        agent: ccusage_core::progress::UsageLoadAgent,
+        json: bool,
+        load: impl FnOnce() -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
+        match self {
+            Self::Source => ccusage_core::progress::track_usage_load(agent, json, load),
+            Self::Caller => load(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LoadKind {
+    Day,
+    Session,
+}
+
+impl LoadKind {
+    pub fn for_report(kind: AgentReportKind) -> Self {
+        match kind {
+            AgentReportKind::Session => Self::Session,
+            AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
+                Self::Day
+            }
+        }
+    }
+
+    pub fn report_kind(self) -> AgentReportKind {
+        match self {
+            Self::Day => AgentReportKind::Daily,
+            Self::Session => AgentReportKind::Session,
+        }
+    }
+}
+
+pub struct LoadRequest<'a> {
+    pub kind: LoadKind,
+    pub shared: &'a SharedArgs,
+    pub options: SourceOptions<'a>,
+    pub pricing: Option<&'a PricingMap>,
+    pub progress: ProgressOwner,
+}
+
+impl LoadRequest<'_> {
+    pub(crate) fn legacy(&self) -> UnifiedRequest<'_> {
+        UnifiedRequest {
+            kind: self.kind.report_kind(),
+            shared: self.shared,
+            options: self.options,
+            pricing: self.pricing,
+            progress: self.progress,
+            claude_counted: None,
+        }
+    }
+}
+
+pub struct LoadedRows {
+    pub rows: Vec<UnifiedRow>,
+    pub detected: bool,
+    pub diagnostics: Diagnostics,
+}
+
+impl From<SourceRows> for LoadedRows {
+    fn from(rows: SourceRows) -> Self {
+        Self {
+            rows: rows.rows,
+            detected: rows.detected,
+            diagnostics: rows.diagnostics,
+        }
+    }
 }
 
 /// The per-source options beside [`SharedArgs`]. Each is read by one source.

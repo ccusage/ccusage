@@ -1,6 +1,31 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{Arc, mpsc},
+};
 
 use ccusage_core::{LoadedEntry, ReportWindow, TimestampMs, cli::SharedArgs, format_date_tz};
+
+pub struct ClaudeClaimsTx(mpsc::SyncSender<ClaudeCounted>);
+pub struct ClaudeClaimsRx(mpsc::Receiver<ClaudeCounted>);
+
+pub fn channel() -> (ClaudeClaimsTx, ClaudeClaimsRx) {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    (ClaudeClaimsTx(sender), ClaudeClaimsRx(receiver))
+}
+
+impl ClaudeClaimsTx {
+    pub fn publish(self, counted: ClaudeCounted) {
+        let _ = self.0.send(counted);
+    }
+}
+
+impl ClaudeClaimsRx {
+    pub fn receive(self) -> ccusage_core::Result<ClaudeCounted> {
+        self.0
+            .recv()
+            .map_err(|_| ccusage_core::cli_error("Claude claims producer did not finish"))
+    }
+}
 
 /// The Claude Code usage the Claude source counts in one report, so a source
 /// that runs Claude Code, such as OpenCode's `claude-agent` provider, can skip
@@ -78,5 +103,22 @@ impl ClaudeCounted {
             })
             .map(|(entry, _)| entry)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod channel_tests {
+    #[test]
+    fn publication_reaches_the_receiver() {
+        let (sender, receiver) = super::channel();
+        sender.publish(super::ClaudeCounted::nothing());
+        assert!(receiver.receive().is_ok());
+    }
+
+    #[test]
+    fn a_failed_producer_unblocks_the_consumer_with_an_error() {
+        let (sender, receiver) = super::channel();
+        drop(sender);
+        assert!(receiver.receive().is_err());
     }
 }

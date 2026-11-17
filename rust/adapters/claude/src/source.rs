@@ -1,9 +1,11 @@
 use ccusage_adapter_common::{
-    claims::ClaudeCounted,
+    claims::{ClaudeClaimsTx, ClaudeCounted},
     rows::{summarize_entry_sessions, summary_rows},
-    source::{PricingSupply, SourceRows, UnifiedRequest, UsageSource},
+    source::{
+        LoadKind, LoadRequest, LoadedRows, PricingSupply, SourceRows, UnifiedRequest, UsageSource,
+    },
 };
-use ccusage_core::{Diagnostics, ReportWindow, Result, cli::AgentReportKind};
+use ccusage_core::{Diagnostics, ReportWindow, Result};
 
 use crate::{load_daily_summaries_with_detection_progress, load_deduped_entries_with_progress};
 
@@ -11,26 +13,63 @@ pub struct Claude;
 
 pub static SOURCE: Claude = Claude;
 
-impl UsageSource for Claude {
-    fn id(&self) -> &'static str {
-        "claude"
+impl Claude {
+    pub fn counted(
+        &self,
+        shared: &ccusage_core::cli::SharedArgs,
+        diagnostics: &Diagnostics,
+    ) -> Result<ClaudeCounted> {
+        let window = ReportWindow::from_shared(shared);
+        let paths = crate::paths::claude_paths()?;
+        let mut files = crate::paths::usage_files(&paths, None, diagnostics);
+        files.sort_by_cached_key(|path| crate::paths::usage_file_order(path));
+        let loaded =
+            ccusage_adapter_common::read_files_parallel(&files, shared.single_thread, |file| {
+                crate::read_usage_file_with_diagnostics(
+                    file,
+                    window.timezone(),
+                    ccusage_core::cli::CostMode::Display,
+                    None,
+                    diagnostics,
+                )
+            });
+        let mut deduped = crate::DedupedEntries::default();
+        let mut indexes = ccusage_core::fast::FxHashMap::default();
+        for entry in loaded.into_iter().flat_map(|file| file.entries) {
+            if let Some((index, discarded)) =
+                crate::push_deduped_entry(entry, &mut indexes, &mut deduped.entries)
+                && crate::loaded_entry_session_id(&discarded)
+                    != crate::loaded_entry_session_id(&deduped.entries[index])
+                && discarded.data.is_sidechain != Some(true)
+            {
+                deduped.copies.push((
+                    index,
+                    std::sync::Arc::from(crate::loaded_entry_session_id(&discarded)),
+                ));
+            }
+        }
+        Ok(ClaudeCounted::session_days(
+            deduped.main_thread_session_days(|entry| window.contains_date(&entry.date)),
+            shared,
+        ))
     }
 
-    fn label(&self) -> &'static str {
-        "Claude"
+    pub fn load_with_claims(
+        &self,
+        request: &LoadRequest<'_>,
+        claims: ClaudeClaimsTx,
+    ) -> Result<LoadedRows> {
+        let (rows, counted) = self.load(request)?;
+        claims.publish(counted);
+        Ok(rows)
     }
 
-    fn pricing_supply(&self) -> PricingSupply {
-        PricingSupply::Source
-    }
-
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
+    fn load(&self, request: &LoadRequest<'_>) -> Result<(LoadedRows, ClaudeCounted)> {
         let shared = request.shared;
         let window = ReportWindow::from_shared(shared);
         let project_filter = request.options.claude_project;
         let diagnostics = Diagnostics::new("claude");
-
-        if request.kind == AgentReportKind::Session {
+        if request.kind == LoadKind::Session {
             let deduped = load_deduped_entries_with_progress(
                 shared,
                 project_filter,
@@ -49,15 +88,15 @@ impl UsageSource for Claude {
                 .filter(|entry| window.contains_date(&entry.date))
                 .collect::<Vec<_>>();
             let summaries = summarize_entry_sessions(&entries)?;
-
-            return Ok(SourceRows {
-                rows: summary_rows("claude", summaries, false),
-                detected,
-                diagnostics,
-                claude_counted: Some(ClaudeCounted::sessions(sessions, shared)),
-            });
+            return Ok((
+                LoadedRows {
+                    rows: summary_rows("claude", summaries, false),
+                    detected,
+                    diagnostics,
+                },
+                ClaudeCounted::sessions(sessions, shared),
+            ));
         }
-
         let loaded = load_daily_summaries_with_detection_progress(
             shared,
             project_filter,
@@ -78,13 +117,48 @@ impl UsageSource for Claude {
             .into_iter()
             .filter(|(_, date)| window.contains_date(date))
             .collect();
+        Ok((
+            LoadedRows {
+                rows: summary_rows("claude", summaries, false),
+                detected: loaded.detected,
+                diagnostics,
+            },
+            ClaudeCounted::session_days(session_days, shared),
+        ))
+    }
+}
 
+impl UsageSource for Claude {
+    fn id(&self) -> &'static str {
+        "claude"
+    }
+
+    fn label(&self) -> &'static str {
+        "Claude"
+    }
+
+    fn pricing_supply(&self) -> PricingSupply {
+        PricingSupply::Source
+    }
+
+    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
+        let (rows, counted) = self.load(&LoadRequest {
+            kind: LoadKind::for_report(request.kind),
+            shared: request.shared,
+            options: request.options,
+            pricing: request.pricing,
+            progress: request.progress,
+        })?;
         Ok(SourceRows {
-            rows: summary_rows("claude", summaries, false),
-            detected: loaded.detected,
-            diagnostics,
-            claude_counted: Some(ClaudeCounted::session_days(session_days, shared)),
+            rows: rows.rows,
+            detected: rows.detected,
+            diagnostics: rows.diagnostics,
+            claude_counted: Some(counted),
         })
+    }
+
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+        self.load(request).map(|(rows, _)| rows)
     }
 }
 
@@ -92,8 +166,39 @@ impl UsageSource for Claude {
 mod diagnostic_tests {
     use super::*;
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
-    use ccusage_core::cli::{CostMode, SharedArgs};
+    use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
+
+    #[test]
+    fn counted_reads_no_pricing_and_retains_only_in_window_main_thread_days() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("projects/p/session-main.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","sessionId":"session-main","message":{"id":"msg-main","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_owned()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Calculate,
+            timezone: Some("UTC".to_owned()),
+            ..Default::default()
+        };
+        let diagnostics = Diagnostics::new("claude");
+        let counted = SOURCE.counted(&shared, &diagnostics).unwrap();
+        let entry = crate::read_usage_file_with_diagnostics(
+            &path,
+            ReportWindow::from_shared(&shared).timezone(),
+            CostMode::Display,
+            None,
+            &diagnostics,
+        )
+        .entries
+        .remove(0);
+        assert!(
+            counted
+                .retain_uncounted(vec![(entry, Some(std::sync::Arc::from("session-main")))])
+                .is_empty()
+        );
+    }
 
     #[test]
     fn specialized_diagnostics_keep_healthy_claude_usage() {

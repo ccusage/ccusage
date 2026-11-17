@@ -6,17 +6,15 @@ use std::{
 };
 
 use ccusage_adapter_common::{
-    claims::ClaudeCounted,
+    claims,
     rows::UnifiedRow,
-    source::{
-        PricingSupply, ProgressOwner, SourceOptions, SourceRows, UnifiedRequest, UsageSource,
-    },
+    source::{LoadKind, LoadRequest, PricingSupply, ProgressOwner, SourceOptions, UsageSource},
 };
 
 use crate::{
-    BUILT_IN_AGENT_NAMES, Diagnostics, LoadedEntry, PricingMap, Result,
+    Diagnostics, LoadedEntry, PricingMap, Result,
     adapter::{claude, opencode, pi},
-    cli::{AgentReportKind, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
+    cli::{AgentReportKind, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
 };
 
 use super::{
@@ -34,18 +32,9 @@ pub(super) fn load_rows(
     sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
-    let source_shared = shared_by_source(sources, shared);
-    let (pricing, unified_pricing) =
-        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
-    let load_kind = load_kind_for_report(kind);
-    let loaded = load_base_rows(
-        load_kind,
-        shared,
-        sources,
-        &source_shared,
-        &pricing,
-        unified_pricing.as_deref(),
-    )?;
+    let run_sources = run_sources(shared, sources)?;
+    let pricing = load_pricing(&run_sources);
+    let loaded = load_base_rows(LoadKind::for_report(kind), shared, &run_sources, &pricing)?;
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
@@ -59,32 +48,13 @@ pub(super) fn load_sections(
     sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
-    let source_shared = shared_by_source(sources, shared);
-    let (pricing, unified_pricing) =
-        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
+    let run_sources = run_sources(shared, sources)?;
+    let pricing = load_pricing(&run_sources);
     let mut daily_base = needs_daily_family(kinds)
-        .then(|| {
-            load_base_rows(
-                AgentReportKind::Daily,
-                shared,
-                sources,
-                &source_shared,
-                &pricing,
-                unified_pricing.as_deref(),
-            )
-        })
+        .then(|| load_base_rows(LoadKind::Day, shared, &run_sources, &pricing))
         .transpose()?;
     let mut session_base = needs_session(kinds)
-        .then(|| {
-            load_base_rows(
-                AgentReportKind::Session,
-                shared,
-                sources,
-                &source_shared,
-                &pricing,
-                unified_pricing.as_deref(),
-            )
-        })
+        .then(|| load_base_rows(LoadKind::Session, shared, &run_sources, &pricing))
         .transpose()?;
 
     let daily_detected_agents = daily_base
@@ -171,62 +141,85 @@ fn cached_pricing_map(
     pricing
 }
 
-fn load_pricing(
-    shared: &SharedArgs,
-    source_shared: &BTreeMap<&'static str, SharedArgs>,
-    load_unified: bool,
-) -> (
-    BTreeMap<&'static str, Arc<PricingMap>>,
-    Option<Arc<PricingMap>>,
-) {
-    let mut bases = BTreeMap::new();
-    let mut cached = Vec::new();
-    let pricing_by_source = SOURCES
-        .iter()
-        .filter(|source| source.pricing_supply() == PricingSupply::Pipeline)
-        .map(|source| {
-            let agent = source.id();
-            (
-                agent,
-                cached_pricing_map(&source_shared[agent], &mut bases, &mut cached),
-            )
-        })
-        .collect();
-    let unified_pricing = load_unified.then(|| cached_pricing_map(shared, &mut bases, &mut cached));
-    (pricing_by_source, unified_pricing)
+enum RunSourceKind {
+    BuiltIn(&'static dyn UsageSource),
+    Named(pi::NamedStore),
 }
 
-fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
-    match kind {
-        AgentReportKind::Session => AgentReportKind::Session,
-        AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
-            AgentReportKind::Daily
+struct RunSource<'a> {
+    source: RunSourceKind,
+    shared: &'a SharedArgs,
+    options: SourceOptions<'a>,
+}
+
+impl RunSource<'_> {
+    fn source(&self) -> &dyn UsageSource {
+        match &self.source {
+            RunSourceKind::BuiltIn(source) => *source,
+            RunSourceKind::Named(source) => source,
+        }
+    }
+
+    fn request<'a>(&'a self, kind: LoadKind, pricing: Option<&'a PricingMap>) -> LoadRequest<'a> {
+        LoadRequest {
+            kind,
+            shared: self.shared,
+            options: self.options,
+            pricing,
+            progress: ProgressOwner::Caller,
         }
     }
 }
 
-/// The shared options each source loads with: the ones the config resolved for
-/// it, or the unified ones for a source the config does not address.
-fn shared_by_source(
-    sources: &BTreeMap<String, SourceArgs>,
-    shared: &SharedArgs,
-) -> BTreeMap<&'static str, SharedArgs> {
-    BUILT_IN_AGENT_NAMES
+fn run_sources<'a>(
+    shared: &'a SharedArgs,
+    sources: &'a BTreeMap<String, SourceArgs>,
+) -> Result<Vec<RunSource<'a>>> {
+    let mut run_sources = SOURCES
         .iter()
-        .map(|agent| {
-            let options = sources.get(*agent).map_or(shared, |source| &source.shared);
-            (*agent, options.clone())
+        .map(|source| {
+            let args = sources.get(source.id());
+            RunSource {
+                source: RunSourceKind::BuiltIn(*source),
+                shared: args.map_or(shared, |args| &args.shared),
+                options: SourceOptions::from_source(args),
+            }
+        })
+        .collect::<Vec<_>>();
+    let pi_path = sources
+        .get("pi")
+        .and_then(|source| source.pi_path.as_deref());
+    for store in resolve_named_pi_store_paths(&shared.pi_stores, pi_path)? {
+        let name = Box::leak(store.name.into_boxed_str());
+        run_sources.push(RunSource {
+            source: RunSourceKind::Named(pi::NamedStore::new(name, store.paths)),
+            shared,
+            options: SourceOptions::default(),
+        });
+    }
+    Ok(run_sources)
+}
+
+fn load_pricing(sources: &[RunSource<'_>]) -> BTreeMap<&'static str, Arc<PricingMap>> {
+    let mut bases = BTreeMap::new();
+    let mut cached = Vec::new();
+    sources
+        .iter()
+        .filter(|source| source.source().pricing_supply() == PricingSupply::Pipeline)
+        .map(|source| {
+            (
+                source.source().id(),
+                cached_pricing_map(source.shared, &mut bases, &mut cached),
+            )
         })
         .collect()
 }
 
 fn load_base_rows(
-    load_kind: AgentReportKind,
+    load_kind: LoadKind,
     shared: &SharedArgs,
-    sources: &BTreeMap<String, SourceArgs>,
-    source_shared: &BTreeMap<&'static str, SharedArgs>,
+    sources: &[RunSource<'_>],
     pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
-    unified_pricing: Option<&PricingMap>,
 ) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
@@ -235,102 +228,50 @@ fn load_base_rows(
                 crate::progress::usage_load_output_is_tty(),
             ),
     );
-    let pi_path = sources
-        .get("pi")
-        .and_then(|source| source.pi_path.as_deref());
-    let (claude_counted_sender, claude_counted_receiver) = mpsc::sync_channel(1);
-    let mut claude_sender = Some(claude_counted_sender);
-    let mut claude_receiver = Some(claude_counted_receiver);
-    let mut specs = Vec::with_capacity(SOURCES.len() + shared.pi_stores.len());
-    for (index, source) in SOURCES.iter().copied().enumerate() {
-        let id = source.id();
-        let source_shared = &source_shared[id];
-        let source_args = sources.get(id);
-        let source_pricing = pricing.get(id).map(|pricing| pricing.as_ref());
-        let progress_agent = crate::progress::UsageLoadAgent(source.label());
-        let load: Box<dyn FnOnce() -> Result<AgentRows> + Send + '_> = match id {
-            "claude" => {
-                let sender = claude_sender.take().expect("Claude source is registered");
-                Box::new(move || {
-                    let source_rows = load_source_result(
-                        source,
-                        load_kind,
-                        source_shared,
-                        source_args,
-                        source_pricing,
-                        None,
-                    )?;
-                    let ccusage_adapter_common::source::SourceRows {
-                        rows,
-                        detected,
-                        diagnostics,
-                        claude_counted,
-                    } = source_rows;
-                    let counted = claude_counted.ok_or_else(|| {
-                        crate::cli_error("Claude source did not return counted usage")
-                    })?;
-                    let _ = sender.send(counted);
-                    Ok(AgentRows {
-                        rows,
-                        detected,
-                        diagnostics,
-                    })
-                })
-            }
-            "opencode" => {
-                let receiver = claude_receiver
-                    .take()
-                    .expect("OpenCode source is registered");
-                Box::new(move || {
-                    let claude_counted =
-                        move || receiver.recv().unwrap_or_else(|_| ClaudeCounted::nothing());
-                    let source_rows = load_source_result(
-                        source,
-                        load_kind,
-                        source_shared,
-                        source_args,
-                        source_pricing,
-                        Some(&claude_counted),
-                    )?;
-                    Ok(agent_rows(source_rows))
-                })
-            }
-            _ => Box::new(move || {
-                let source_rows = load_source_result(
-                    source,
-                    load_kind,
-                    source_shared,
-                    source_args,
-                    source_pricing,
-                    None,
-                )?;
-                Ok(agent_rows(source_rows))
-            }),
-        };
+    let is_claude = |source: &RunSource<'_>| source.source().id() == claude::SOURCE.id();
+    let is_opencode = |source: &RunSource<'_>| source.source().id() == opencode::SOURCE.id();
+    let (claude_index, claude_source) = sources
+        .iter()
+        .enumerate()
+        .find(|(_, source)| is_claude(source))
+        .ok_or_else(|| crate::cli_error("Claude source is not registered"))?;
+    let (opencode_index, opencode_source) = sources
+        .iter()
+        .enumerate()
+        .find(|(_, source)| is_opencode(source))
+        .ok_or_else(|| crate::cli_error("OpenCode source is not registered"))?;
+    let (sender, receiver) = claims::channel();
+    let mut specs = Vec::with_capacity(sources.len());
+    {
+        let request = claude_source.request(load_kind, None);
+        specs.push(AgentLoadSpec {
+            index: claude_index,
+            agent: "claude",
+            progress_agent: crate::progress::UsageLoadAgent(claude::SOURCE.label()),
+            load: Box::new(move || claude::SOURCE.load_with_claims(&request, sender)),
+        });
+    }
+    {
+        let request = opencode_source.request(load_kind, None);
+        specs.push(AgentLoadSpec {
+            index: opencode_index,
+            agent: "opencode",
+            progress_agent: crate::progress::UsageLoadAgent(opencode::SOURCE.label()),
+            load: Box::new(move || opencode::SOURCE.load_with_claims(&request, receiver)),
+        });
+    }
+    for (index, source) in sources
+        .iter()
+        .enumerate()
+        .filter(|(_, source)| !is_claude(source) && !is_opencode(source))
+    {
+        let id = source.source().id();
+        let request = source.request(load_kind, pricing.get(id).map(Arc::as_ref));
         specs.push(AgentLoadSpec {
             index,
             agent: id,
-            progress_agent,
-            load,
-        });
-    }
-    drop(claude_sender);
-    drop(claude_receiver);
-    let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores, pi_path)?;
-    for store in named_pi_stores {
-        let agent = leak_agent_name(&store.name);
-        let store = pi::NamedStore::new(agent, store.paths);
-        let index = specs.len();
-        let pricing_ref =
-            unified_pricing.expect("unified pricing is loaded when named pi stores are configured");
-        specs.push(AgentLoadSpec {
-            index,
-            agent,
-            progress_agent: crate::progress::UsageLoadAgent(agent),
-            load: Box::new(move || {
-                load_source_result(&store, load_kind, shared, None, Some(pricing_ref), None)
-                    .map(agent_rows)
-            }),
+            progress_agent: crate::progress::UsageLoadAgent(source.source().label()),
+            load: Box::new(move || source.source().load_rows(&request)),
         });
     }
     let loaded = load_agent_rows_parallel(specs, &mut progress)?;
@@ -445,10 +386,6 @@ pub(super) fn load_agent_rows_parallel(
     })
 }
 
-fn leak_agent_name(name: &str) -> &'static str {
-    Box::leak(name.to_string().into_boxed_str())
-}
-
 struct ResolvedNamedPiStore {
     name: String,
     paths: Vec<PathBuf>,
@@ -509,33 +446,6 @@ fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
 }
 
-/// Asks a source that implements the contract for its unified rows.
-fn load_source_result(
-    source: &dyn UsageSource,
-    load_kind: AgentReportKind,
-    shared: &SharedArgs,
-    source_args: Option<&SourceArgs>,
-    pricing: Option<&PricingMap>,
-    claude_counted: Option<&(dyn Fn() -> ClaudeCounted + Send)>,
-) -> Result<SourceRows> {
-    source.unified_rows(&UnifiedRequest {
-        kind: load_kind,
-        shared,
-        options: SourceOptions::from_source(source_args),
-        pricing,
-        progress: ProgressOwner::Caller,
-        claude_counted,
-    })
-}
-
-fn agent_rows(rows: SourceRows) -> AgentRows {
-    AgentRows {
-        rows: rows.rows,
-        detected: rows.detected,
-        diagnostics: rows.diagnostics,
-    }
-}
-
 /// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
 /// source counts are left to it unless `include_claude_agent` is set, so the
 /// focused reports add up to the unified one.
@@ -551,28 +461,9 @@ pub(super) fn load_opencode_entries(
     if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
         return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
-    let claude_shared = SharedArgs {
-        json: true,
-        mode: CostMode::Display,
-        ..shared.clone()
-    };
-    // Focused Claude reports, sessions included, count only in-window days, so match by
-    // session day. Missing Claude directories load as no session days, so those turns stay.
-    let claude_rows = claude::SOURCE.unified_rows(&UnifiedRequest {
-        kind: AgentReportKind::Daily,
-        shared: &claude_shared,
-        options: SourceOptions::default(),
-        pricing: None,
-        progress: ProgressOwner::Source,
-        claude_counted: None,
-    })?;
-    let claude_counted = claude_rows
-        .claude_counted
-        .ok_or_else(|| crate::cli_error("Claude source did not return counted usage"))?;
-    Ok((
-        claude_counted.retain_uncounted(entries),
-        Some(claude_rows.diagnostics),
-    ))
+    let diagnostics = Diagnostics::new("claude");
+    let counted = claude::SOURCE.counted(shared, &diagnostics)?;
+    Ok((counted.retain_uncounted(entries), Some(diagnostics)))
 }
 
 fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
@@ -615,8 +506,14 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{UsageSummary, adapter::codex, cli::CodexSpeed, tests::NO_SOURCES};
+    use crate::{
+        BUILT_IN_AGENT_NAMES, UsageSummary,
+        adapter::codex,
+        cli::{CodexSpeed, CostMode},
+        tests::NO_SOURCES,
+    };
     use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+    use ccusage_adapter_common::source::UnifiedRequest;
     use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -639,7 +536,7 @@ mod tests {
                 progress: ProgressOwner::Caller,
                 claude_counted: None,
             })
-            .map(agent_rows)
+            .map(Into::into)
     }
 
     fn load_named_pi_store_rows(
@@ -650,7 +547,16 @@ mod tests {
         pricing: &PricingMap,
     ) -> Result<AgentRows> {
         let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
-        load_source_result(&store, kind, shared, None, Some(pricing), None).map(agent_rows)
+        store
+            .unified_rows(&UnifiedRequest {
+                kind,
+                shared,
+                options: SourceOptions::default(),
+                pricing: Some(pricing),
+                progress: ProgressOwner::Caller,
+                claude_counted: None,
+            })
+            .map(Into::into)
     }
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
@@ -690,9 +596,9 @@ mod tests {
             offline: true,
             ..SharedArgs::default()
         };
-        let source_shared = shared_by_source(&BTreeMap::new(), &shared);
-
-        let (pricing_by_source, unified_pricing) = load_pricing(&shared, &source_shared, false);
+        let sources = BTreeMap::new();
+        let run_sources = run_sources(&shared, &sources).unwrap();
+        let pricing_by_source = load_pricing(&run_sources);
 
         for agent in ["claude", "opencode", "qwen"] {
             assert!(
@@ -708,7 +614,26 @@ mod tests {
                 );
             }
         }
-        assert!(unified_pricing.is_none());
+    }
+
+    #[test]
+    fn named_stores_share_the_builtin_pricing_cache() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            offline: true,
+            pi_stores: vec![NamedPiStore {
+                name: "work".to_owned(),
+                path: fixture.path("work-store").to_string_lossy().into_owned(),
+            }],
+            ..Default::default()
+        };
+        let source_args = BTreeMap::new();
+        let sources = run_sources(&shared, &source_args).unwrap();
+        let pricing = load_pricing(&sources);
+        assert_eq!(sources.len(), SOURCES.len() + 1);
+        assert!(Arc::ptr_eq(&pricing["work"], &pricing["amp"]));
     }
 
     #[test]

@@ -33,6 +33,10 @@ layers.
   applies to the unified entry point.
 - `rows` and `claims` — the row a source hands the unified report, and the
   record of what the Claude source counted that OpenCode must not count again.
+  `claims::channel` connects those two adapters directly; a producer that exits
+  without publishing returns an error to its consumer.
+- `source::LoadRequest` and `LoadedRows` carry source-neutral loads at day or
+  session granularity. `ProgressOwner::run` controls their progress output.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
 - `jsonl` — the streaming JSONL parsing helpers, including diagnostics for
   selected records that fail to decode without discarding later records.

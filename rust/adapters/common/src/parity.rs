@@ -149,14 +149,7 @@ fn unified_totals<S: EntrySource>(
     kind: AgentReportKind,
     shared: &SharedArgs,
 ) -> Totals {
-    // The unified report loads daily rows for its weekly and monthly reports
-    // and buckets them afterwards, which keeps the totals.
-    let load_kind = match kind {
-        AgentReportKind::Session => AgentReportKind::Session,
-        AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
-            AgentReportKind::Daily
-        }
-    };
+    let load_kind = crate::source::LoadKind::for_report(kind).report_kind();
     let rows = pipeline::unified_rows(
         source,
         &UnifiedRequest {

@@ -30,11 +30,7 @@ impl AllSectionsLoadResult {
     }
 }
 
-pub(super) struct AgentRows {
-    pub(super) rows: Vec<UnifiedRow>,
-    pub(super) detected: bool,
-    pub(super) diagnostics: Diagnostics,
-}
+pub(super) type AgentRows = ccusage_adapter_common::source::LoadedRows;
 
 pub(super) struct AgentLoadSpec<'scope> {
     pub(super) index: usize,

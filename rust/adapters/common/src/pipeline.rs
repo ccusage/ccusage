@@ -10,7 +10,7 @@ use ccusage_core::{
     Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
     log_level, parse_ts_timestamp, print_json_or_jq,
-    progress::{UsageLoadAgent, track_usage_load},
+    progress::UsageLoadAgent,
     sort_summaries, wants_json,
 };
 
@@ -106,14 +106,11 @@ fn load(
     cx: &LoadContext<'_>,
     progress: ProgressOwner,
 ) -> Result<Vec<LoadedEntry>> {
-    match progress {
-        ProgressOwner::Source => track_usage_load(
-            UsageLoadAgent(source.descriptor().label),
-            cx.shared.json,
-            || source.load_entries(cx),
-        ),
-        ProgressOwner::Caller => source.load_entries(cx),
-    }
+    progress.run(
+        UsageLoadAgent(source.descriptor().label),
+        cx.shared.json,
+        || source.load_entries(cx),
+    )
 }
 
 /// Decided on the entries as loaded, before the window drops any, so asking
