@@ -916,14 +916,11 @@ mod tests {
             assert!(entry.cost > 0.0);
             assert!(entry.missing_pricing_model.is_none());
         }
-        let periods = [
-            crate::cli::AgentReportKind::Daily,
-            crate::cli::AgentReportKind::Weekly,
-            crate::cli::AgentReportKind::Monthly,
-            crate::cli::AgentReportKind::Session,
-        ];
-        let reports = periods
-            .into_iter()
+        let reports = crate::cli::AgentId::Antigravity
+            .spec()
+            .reports
+            .iter()
+            .copied()
             .map(|kind| {
                 let rows = crate::report::summarize_entries(&entries, kind).unwrap();
                 (

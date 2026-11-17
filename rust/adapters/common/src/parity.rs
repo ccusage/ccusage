@@ -81,6 +81,10 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
         "{}: the focused report read no usage, so there is nothing to compare; point the source at its fixture first",
         descriptor.id
     );
+    assert!(
+        !source.reports().is_empty(),
+        "source has no registered reports"
+    );
     for kind in source.reports().iter().copied() {
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
@@ -181,7 +185,14 @@ mod tests {
     use ccusage_core::cli::AgentReportKind;
 
     use super::{KnownDivergence, assert_focused_matches_unified};
-    use crate::test_source::{Fake, descriptor, entries, shared};
+    use crate::test_source::{Fake, entries, shared};
+
+    fn descriptor() -> crate::source::EntryDescriptor {
+        crate::source::EntryDescriptor {
+            id: "amp",
+            ..crate::test_source::descriptor()
+        }
+    }
 
     fn drifted() -> Fake {
         Fake {
