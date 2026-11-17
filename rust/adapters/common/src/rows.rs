@@ -106,3 +106,87 @@ fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Optio
         Some(Value::Object(metadata))
     }
 }
+
+pub fn summarize_entries(
+    entries: &[LoadedEntry],
+    kind: ccusage_core::cli::AgentReportKind,
+    start: ccusage_core::cli::WeekDay,
+    session: crate::source::SessionShape,
+) -> Result<Vec<UsageSummary>> {
+    use crate::source::SessionShape;
+    use ccusage_core::{
+        cli::AgentReportKind,
+        summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target},
+    };
+
+    match kind {
+        AgentReportKind::Session => match session {
+            SessionShape::Plain => summarize_by_key_target(
+                entries,
+                |entry| (entry.project_path.clone(), entry.session_id.clone()),
+                |(_, session)| (session.to_string(), None),
+                KeyTarget::Session,
+            ),
+            SessionShape::WithActivity => summarize_entry_sessions(entries),
+        },
+        AgentReportKind::Daily | AgentReportKind::Monthly | AgentReportKind::Weekly => {
+            let daily = summarize_by_key_target(
+                entries,
+                |entry| entry.date.clone(),
+                |date| (date.clone(), None),
+                KeyTarget::Date,
+            )?;
+            Ok(match kind {
+                AgentReportKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
+                AgentReportKind::Weekly => summarize_bucket(&daily, Bucket::Weekly(start)),
+                _ => daily,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{source::SessionShape, test_source::entry};
+    use ccusage_core::cli::{AgentReportKind, WeekDay};
+
+    #[test]
+    fn buckets_daily_rows_before_summing_costs() {
+        let mut entries = vec![
+            entry("a", "2026-01-02T00:00:00Z", 1),
+            entry("a", "2026-01-01T00:00:00Z", 2),
+            entry("a", "2026-01-02T01:00:00Z", 3),
+        ];
+        entries[0].cost = 1e16;
+        entries[1].cost = 1.0;
+        entries[2].cost = -1e16;
+        let rows = summarize_entries(
+            &entries,
+            AgentReportKind::Monthly,
+            WeekDay::Monday,
+            SessionShape::Plain,
+        )
+        .unwrap();
+        assert_eq!(rows[0].total_cost, 1.0);
+        assert_eq!(rows[0].month.as_deref(), Some("2026-01"));
+    }
+
+    #[test]
+    fn weekly_bucket_uses_the_requested_start() {
+        let entries = [entry("a", "2026-01-04T12:00:00Z", 1)];
+        for (start, expected) in [
+            (WeekDay::Monday, "2025-12-29"),
+            (WeekDay::Sunday, "2026-01-04"),
+        ] {
+            let rows = summarize_entries(
+                &entries,
+                AgentReportKind::Weekly,
+                start,
+                SessionShape::Plain,
+            )
+            .unwrap();
+            assert_eq!(rows[0].week.as_deref(), Some(expected));
+        }
+    }
+}

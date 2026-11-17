@@ -167,6 +167,19 @@ pub enum PricingSupply {
     Source,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionShape {
+    Plain,
+    WithActivity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TableStyle {
+    Standard,
+    Credits,
+    AutoCacheCreation,
+}
+
 /// The identity and the declared policies of an [`EntrySource`].
 #[derive(Clone, Copy, Debug)]
 pub struct EntryDescriptor {
@@ -177,6 +190,8 @@ pub struct EntryDescriptor {
     pub pricing: PricingSupply,
     /// Whether unified session rows carry the session's project path.
     pub unified_project_path: bool,
+    pub session: SessionShape,
+    pub table: TableStyle,
 }
 
 impl EntryDescriptor {
@@ -191,6 +206,8 @@ impl EntryDescriptor {
             detection: Detection::NonEmpty,
             pricing: PricingSupply::Pipeline,
             unified_project_path: false,
+            session: SessionShape::Plain,
+            table: TableStyle::Standard,
         }
     }
 }
@@ -223,11 +240,6 @@ impl<'a> LoadContext<'a> {
 }
 
 /// A source whose loader yields `Vec<LoadedEntry>`.
-///
-/// The hooks are the adapter's own functions: how it summarizes and renders
-/// decides float summation order, JSON shape and table layout, so none of that
-/// is shared. What is shared is the order they run in, which
-/// [`crate::pipeline`] owns.
 pub trait EntrySource: Sync {
     fn descriptor(&self) -> EntryDescriptor;
 
@@ -250,7 +262,14 @@ pub trait EntrySource: Sync {
         &self,
         entries: &[LoadedEntry],
         kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>>;
+    ) -> Result<Vec<UsageSummary>> {
+        crate::rows::summarize_entries(
+            entries,
+            kind,
+            ccusage_core::cli::WeekDay::Sunday,
+            self.descriptor().session,
+        )
+    }
 
     /// Summarizes for the unified report, for a source that groups its unified
     /// rows differently from its focused ones.
@@ -267,14 +286,22 @@ pub trait EntrySource: Sync {
         summary_period(row)
     }
 
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value;
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
+        crate::report::report_json(
+            rows,
+            kind,
+            self.descriptor().session == SessionShape::WithActivity,
+        )
+    }
 
     fn print_table(
         &self,
         rows: &[UsageSummary],
         kind: AgentReportKind,
         shared: &SharedArgs,
-    ) -> Result<()>;
+    ) -> Result<()> {
+        crate::report::print_table(self.descriptor(), rows, kind, shared)
+    }
 }
 
 impl<S: EntrySource> UsageSource for S {

@@ -20,7 +20,27 @@ where
     F: Fn(&LoadedEntry) -> String,
     M: Fn(&str) -> (String, Option<String>),
 {
-    let mut groups: BTreeMap<String, UsageAccumulator> = BTreeMap::new();
+    summarize_by_key_target(entries, key_fn, |key| meta_fn(key), KeyTarget::Date)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyTarget {
+    Date,
+    Session,
+}
+
+pub fn summarize_by_key_target<K, F, M>(
+    entries: &[LoadedEntry],
+    key_fn: F,
+    meta_fn: M,
+    target: KeyTarget,
+) -> Result<Vec<UsageSummary>>
+where
+    K: Ord,
+    F: Fn(&LoadedEntry) -> K,
+    M: Fn(&K) -> (String, Option<String>),
+{
+    let mut groups: BTreeMap<K, UsageAccumulator> = BTreeMap::new();
     for entry in entries {
         groups.entry(key_fn(entry)).or_default().add_entry(entry);
     }
@@ -29,7 +49,10 @@ where
     for (key, group) in groups {
         let (date, project) = meta_fn(&key);
         let mut summary = group.into_summary();
-        summary.date = Some(date);
+        match target {
+            KeyTarget::Date => summary.date = Some(date),
+            KeyTarget::Session => summary.session_id = Some(date),
+        }
         summary.project = project;
         rows.push(summary);
     }
@@ -174,25 +197,41 @@ pub fn summarize_summaries_by_bucket(
     kind: BucketKind,
     start: WeekDay,
 ) -> Vec<UsageSummary> {
+    summarize_bucket(
+        rows,
+        match kind {
+            BucketKind::Monthly => Bucket::Monthly,
+            BucketKind::Weekly => Bucket::Weekly(start),
+        },
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Bucket {
+    Monthly,
+    Weekly(WeekDay),
+}
+
+pub fn summarize_bucket(rows: &[UsageSummary], bucket: Bucket) -> Vec<UsageSummary> {
     let mut groups: BTreeMap<String, Vec<&UsageSummary>> = BTreeMap::new();
     for row in rows {
         let Some(date) = row.date.as_deref() else {
             continue;
         };
-        let bucket = match kind {
-            BucketKind::Monthly => date.get(..7).unwrap_or(date).to_string(),
-            BucketKind::Weekly => week_start(date, start).unwrap_or_else(|| date.to_string()),
+        let key = match bucket {
+            Bucket::Monthly => date.get(..7).unwrap_or(date).to_string(),
+            Bucket::Weekly(start) => week_start(date, start).unwrap_or_else(|| date.to_string()),
         };
-        groups.entry(bucket).or_default().push(row);
+        groups.entry(key).or_default().push(row);
     }
 
     groups
         .into_iter()
-        .map(|(bucket, rows)| {
+        .map(|(key, rows)| {
             let mut summary = aggregate_summaries(&rows);
-            match kind {
-                BucketKind::Monthly => summary.month = Some(bucket),
-                BucketKind::Weekly => summary.week = Some(bucket),
+            match bucket {
+                Bucket::Monthly => summary.month = Some(key),
+                Bucket::Weekly(_) => summary.week = Some(key),
             }
             summary
         })
@@ -290,6 +329,59 @@ mod tests {
 
     use super::*;
     use crate::{ModelBreakdown, TokenUsageRaw, UsageEntry, UsageMessage, format_rfc3339_millis};
+
+    #[test]
+    fn key_target_keeps_project_sessions_separate_without_activity_metadata() {
+        let entries = vec![
+            loaded_entry(LoadedEntryFixture {
+                date: "2026-01-02",
+                timestamp: 1_767_316_800_000,
+                session_id: "shared",
+                project_path: "/a",
+                model: None,
+                input_tokens: 10,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.1,
+                credits: None,
+                message_count: None,
+                version: None,
+                missing_pricing_model: None,
+            }),
+            loaded_entry(LoadedEntryFixture {
+                date: "2026-01-02",
+                timestamp: 1_767_316_800_000,
+                session_id: "shared",
+                project_path: "/b",
+                model: None,
+                input_tokens: 20,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.2,
+                credits: None,
+                message_count: None,
+                version: None,
+                missing_pricing_model: None,
+            }),
+        ];
+        let rows = summarize_by_key_target(
+            &entries,
+            |entry| (entry.project_path.clone(), entry.session_id.clone()),
+            |(_, session)| (session.to_string(), None),
+            KeyTarget::Session,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].input_tokens, 10);
+        assert_eq!(rows[1].input_tokens, 20);
+        assert!(rows.iter().all(|row| row.date.is_none()
+            && row.session_id.as_deref() == Some("shared")
+            && row.last_activity.is_none()));
+    }
 
     #[test]
     fn snapshots_summarize_by_key_aggregates_counts_costs_and_breakdowns() {

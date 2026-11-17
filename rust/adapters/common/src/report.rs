@@ -343,3 +343,58 @@ mod tests {
         assert_eq!(row.model_breakdowns.len(), 2);
     }
 }
+
+pub fn report_json(
+    rows: &[UsageSummary],
+    kind: AgentReportKind,
+    session_metadata: bool,
+) -> serde_json::Value {
+    let rows_json = rows
+        .iter()
+        .map(|row| {
+            ccusage_core::agent_summary_json(
+                row,
+                kind,
+                session_metadata && kind == AgentReportKind::Session,
+            )
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        rows_key(kind): rows_json,
+        "totals": ccusage_core::totals_json(rows),
+    })
+}
+
+pub fn rows_key(kind: AgentReportKind) -> &'static str {
+    match kind {
+        AgentReportKind::Daily => "daily",
+        AgentReportKind::Monthly => "monthly",
+        AgentReportKind::Weekly => "weekly",
+        AgentReportKind::Session => "sessions",
+    }
+}
+
+pub fn print_table(
+    descriptor: crate::source::EntryDescriptor,
+    rows: &[UsageSummary],
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+) -> Result<()> {
+    use crate::source::TableStyle;
+    if descriptor.table == TableStyle::Credits {
+        return print_table_for_agent(descriptor.label, kind, rows, shared);
+    }
+    let options = ccusage_core::UsageTableOptions {
+        show_cache_creation: descriptor.table != TableStyle::AutoCacheCreation
+            || rows.iter().any(|row| row.cache_creation_tokens > 0),
+    };
+    ccusage_core::print_usage_table_with_options(
+        &format!("{} Token Usage Report", descriptor.label),
+        first_column(kind),
+        rows,
+        shared,
+        false,
+        None,
+        options,
+    )
+}
