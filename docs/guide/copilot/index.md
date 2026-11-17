@@ -83,7 +83,7 @@ These views support `--json` for structured output, `--compact` for narrow termi
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `COPILOT_HOME`                    | Copilot data root; defaults to `~/.copilot`                                                                   |
 | `COPILOT_OTEL_FILE_EXPORTER_PATH` | Explicit Copilot OpenTelemetry JSONL file to include                                                          |
-| `LOG_LEVEL`                       | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`                       | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

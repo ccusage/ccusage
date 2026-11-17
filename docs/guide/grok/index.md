@@ -69,7 +69,7 @@ contain a non-zero value; [JSON output](/guide/json-output) keeps
 | Variable    | Description                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------- |
 | `GROK_HOME` | Official Grok config/data home (single root)                                                                  |
-| `LOG_LEVEL` | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL` | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Configuration
 

@@ -57,7 +57,7 @@ Claude Code exposes additional local data that enables features beyond the share
 | Variable            | Description                                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `CLAUDE_CONFIG_DIR` | Override the root Claude Code data directory                                                                  |
-| `LOG_LEVEL`         | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`         | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ### Custom Claude Code Paths
 

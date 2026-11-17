@@ -81,7 +81,7 @@ ccusage pi daily --breakdown
 | Variable       | Description                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------- |
 | `PI_AGENT_DIR` | Custom path, or comma-separated paths, to pi-agent sessions directories                                       |
-| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Daily View
 

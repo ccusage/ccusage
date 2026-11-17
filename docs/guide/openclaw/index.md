@@ -70,7 +70,7 @@ OpenClaw sessions emit `model_change` and `custom`/`model-snapshot` events that 
 | Variable       | Description                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------- |
 | `OPENCLAW_DIR` | Custom path, or comma-separated paths, to OpenClaw root directories                                           |
-| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Daily View
 

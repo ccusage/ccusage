@@ -57,7 +57,7 @@ These views support `--json`, `--compact`, `--offline`, `--since`, `--until`, an
 | Variable      | Description                                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------------------------- |
 | `HERMES_HOME` | Override the directory containing `state.db`; comma-separated roots are supported                             |
-| `LOG_LEVEL`   | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`   | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

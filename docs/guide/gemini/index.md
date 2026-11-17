@@ -57,7 +57,7 @@ These views support `--json`, `--compact`, and `--offline`.
 | Variable          | Description                                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------------------- |
 | `GEMINI_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Gemini data                      |
-| `LOG_LEVEL`       | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`       | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

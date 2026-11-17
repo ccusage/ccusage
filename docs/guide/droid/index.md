@@ -56,7 +56,7 @@ These views support `--json` for structured output, `--compact` for narrow termi
 | Variable             | Description                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `DROID_SESSIONS_DIR` | Override the sessions directory, or comma-separated sessions directories, containing Droid data               |
-| `LOG_LEVEL`          | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log_level)) |
+| `LOG_LEVEL`          | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 
