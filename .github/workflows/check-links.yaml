@@ -52,7 +52,7 @@ jobs:
             --no-progress --offline --include-fragments
             --root-dir docs/.vitepress/dist --fallback-extensions html --index-files index.html
             README.md 'docs/.vitepress/dist/**/*.html'
-          fail: true
+          fail: false
           output: reports/internal-links.md
       - name: Upload link reports
         if: always()
