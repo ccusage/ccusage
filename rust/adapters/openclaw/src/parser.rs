@@ -359,9 +359,9 @@ fn parse_transcript_message(
         return None;
     }
     let total_tokens = total_tokens.max(crate::total_usage_tokens(raw_usage) + extra_total_tokens);
-    let Some(timestamp) =
-        timestamp_from_value(message.timestamp.as_ref().or(record.timestamp.as_ref()))
-            .or(fallback_timestamp)
+    let Some(timestamp) = timestamp_from_value(message.timestamp.as_ref())
+        .or_else(|| timestamp_from_value(record.timestamp.as_ref()))
+        .or(fallback_timestamp)
     else {
         return Some(Err(MissingTimestamp));
     };
@@ -567,6 +567,25 @@ mod tests {
         .unwrap();
         assert!(events.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+    }
+
+    #[test]
+    fn uses_a_valid_envelope_timestamp_when_the_message_timestamp_is_invalid() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00Z","message":{"role":"assistant","timestamp":"invalid","usage":{"input":10,"output":2}}}"#,
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_767_312_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
     }
     #[test]
     fn diagnoses_nested_usage_failure_and_skips_lines_without_markers() {
