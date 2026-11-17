@@ -85,6 +85,24 @@ pub fn is_shared_flag(arg: &str) -> bool {
     option(arg).is_some_and(|option| option.shared)
 }
 
+pub fn command_tokens(args: &[String]) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg.starts_with('-') {
+            if option_takes_value(arg) && !arg.contains('=') {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        tokens.push(arg.clone());
+        index += 1;
+    }
+    tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,22 +124,4 @@ mod tests {
         assert!(!option_takes_value("--unknown"));
         assert!(!is_shared_flag("--unknown"));
     }
-}
-
-pub fn command_tokens(args: &[String]) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while let Some(arg) = args.get(index) {
-        if arg.starts_with('-') {
-            if option_takes_value(arg) && !arg.contains('=') {
-                index += 2;
-            } else {
-                index += 1;
-            }
-            continue;
-        }
-        tokens.push(arg.clone());
-        index += 1;
-    }
-    tokens
 }
