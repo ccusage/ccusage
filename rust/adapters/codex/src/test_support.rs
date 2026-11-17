@@ -85,9 +85,9 @@ pub(crate) fn load_rollouts(
 pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
     let diagnostics = Diagnostics::new("codex");
     let files = paths::collect_codex_usage_files(dir, &diagnostics);
-    let plan = CodexReplayPlan::for_bounded_files(
-        [(dir, files.as_slice())],
-        [(dir, files.as_slice())],
+    let plan = CodexReplayPlan::new(
+        crate::replay::read_session_metadata([(dir, files.as_slice())], true),
+        None,
         true,
         &diagnostics,
     );
@@ -101,11 +101,9 @@ pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
                 if !plan.is_replayed_compaction(file, event.response_id.as_deref()) {
                     events.push(event);
                 }
-                Ok(())
             },
             &diagnostics,
-        )
-        .unwrap();
+        );
     }
     events
 }

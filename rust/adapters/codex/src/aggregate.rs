@@ -1,6 +1,6 @@
 use ccusage_core::Diagnostics;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     sync::Mutex,
@@ -15,12 +15,12 @@ use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
     fast::FxHashMap,
-    format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, resolve_tz, week_start,
+    format_date_tz, merge_codex_service_tiers, resolve_tz, week_start,
 };
 
 use super::{
     parser, paths,
-    replay::{CodexReplayPlan, CodexSessionMetadata},
+    replay::{CodexReplayFile, CodexReplayPlan, CodexSessionMetadata, read_session_metadata},
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -162,21 +162,25 @@ impl CodexAggregateRun<'_> {
 /// Session metadata a discovering run read, by index into its files.
 type CodexFileMetadata = Vec<(usize, CodexSessionMetadata)>;
 
-/// Orders a discovering run's metadata by file index and lists the forks.
-fn fork_indexes(
-    file_count: usize,
-    metadata: CodexFileMetadata,
-) -> (Vec<usize>, Vec<CodexSessionMetadata>) {
-    let mut ordered = vec![CodexSessionMetadata::default(); file_count];
-    for (index, file_metadata) in metadata {
-        ordered[index] = file_metadata;
-    }
-    let forks = ordered
+fn fork_indexes<'a>(
+    files: &[PathBuf],
+    sessions_dir: &'a Path,
+    mut metadata: CodexFileMetadata,
+) -> (Vec<usize>, Vec<CodexReplayFile<'a>>) {
+    metadata.sort_unstable_by_key(|(index, _)| *index);
+    let forks = metadata
         .iter()
-        .enumerate()
-        .filter_map(|(index, file_metadata)| file_metadata.is_fork().then_some(index))
+        .filter_map(|(index, metadata)| metadata.is_fork().then_some(*index))
         .collect();
-    (forks, ordered)
+    let files = metadata
+        .into_iter()
+        .map(|(index, metadata)| CodexReplayFile {
+            path: files[index].clone(),
+            sessions_dir,
+            metadata,
+        })
+        .collect();
+    (forks, files)
 }
 
 pub fn load_groups(
@@ -237,9 +241,13 @@ fn aggregate_file_groups(
     diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let bounded_plan = has_date_bounds(shared).then(|| {
-        CodexReplayPlan::for_bounded_files(
-            selected.iter().copied(),
-            available.iter().copied(),
+        let children = selected
+            .iter()
+            .flat_map(|(_, files)| files.iter().cloned())
+            .collect::<HashSet<_>>();
+        CodexReplayPlan::new(
+            read_session_metadata(available.iter().copied(), shared.single_thread),
+            Some(&children),
             shared.single_thread,
             diagnostics,
         )
@@ -264,16 +272,14 @@ fn aggregate_file_groups(
         };
         let (group_rows, metadata) = aggregate_files_with_dedupe(&run, &seen)?;
         merge_groups(&mut groups, group_rows);
-        metadata_by_group.push(fork_indexes(files.len(), metadata));
+        metadata_by_group.push(fork_indexes(files, sessions_dir, metadata));
         file_offset += files.len();
     }
     if matches!(replay, CodexReplay::Discover) {
-        // Unbounded runs select every available file, so the metadata covers
-        // the whole plan in its order.
         let (forks, metadata): (Vec<_>, Vec<_>) = metadata_by_group.into_iter().unzip();
-        let plan = CodexReplayPlan::with_metadata(
-            available.iter().copied(),
+        let plan = CodexReplayPlan::new(
             metadata.into_iter().flatten().collect(),
+            None,
             shared.single_thread,
             diagnostics,
         );
@@ -304,7 +310,7 @@ fn aggregate_files_with_dedupe(
     seen: &CodexDedupeShards,
 ) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
     if run.shared.single_thread {
-        return aggregate_files(run, seen);
+        return Ok(aggregate_files(run, seen));
     }
     aggregate_files_parallel(run, seen)
 }
@@ -312,14 +318,14 @@ fn aggregate_files_with_dedupe(
 fn aggregate_files(
     run: &CodexAggregateRun<'_>,
     seen: &CodexDedupeShards,
-) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
+) -> (BTreeMap<String, CodexGroup>, CodexFileMetadata) {
     let mut groups = BTreeMap::new();
     let mut metadata = Vec::new();
     let timezone = resolve_tz(run.shared.timezone.as_deref());
     for index in run.file_indexes() {
-        aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata)?;
+        aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata);
     }
-    Ok((groups, metadata))
+    (groups, metadata)
 }
 
 fn aggregate_files_parallel(
@@ -332,7 +338,7 @@ fn aggregate_files_parallel(
         .unwrap_or(1)
         .min(file_count);
     if worker_count <= 1 {
-        return aggregate_files(run, seen);
+        return Ok(aggregate_files(run, seen));
     }
 
     let chunks = run.chunk_file_indexes(worker_count);
@@ -344,9 +350,9 @@ fn aggregate_files_parallel(
                 let mut metadata = Vec::new();
                 let timezone = resolve_tz(run.shared.timezone.as_deref());
                 for index in chunk {
-                    aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata)?;
+                    aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata);
                 }
-                Result::<_>::Ok((groups, metadata))
+                (groups, metadata)
             }));
         }
 
@@ -355,7 +361,7 @@ fn aggregate_files_parallel(
         for handle in handles {
             let (worker_groups, worker_metadata) = handle
                 .join()
-                .map_err(|_| crate::cli_error("codex worker panicked"))??;
+                .map_err(|_| crate::cli_error("codex worker panicked"))?;
             merge_groups(&mut groups, worker_groups);
             metadata.extend(worker_metadata);
         }
@@ -370,7 +376,7 @@ fn aggregate_file(
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
     metadata: &mut CodexFileMetadata,
-) -> Result<()> {
+) {
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
     let add = |event: &CodexTokenUsageEvent| {
         add_event_to_groups(
@@ -392,8 +398,8 @@ fn visit_run_file(
     run: &CodexAggregateRun<'_>,
     file_index: usize,
     metadata: &mut CodexFileMetadata,
-    mut add: impl FnMut(&CodexTokenUsageEvent) -> Result<()>,
-) -> Result<()> {
+    mut add: impl FnMut(&CodexTokenUsageEvent),
+) {
     let file = &run.files[file_index];
     match run.replay {
         CodexReplay::Planned(plan) => parser::visit_codex_session_file_with_diagnostics(
@@ -402,7 +408,7 @@ fn visit_run_file(
             plan.fork_replay(file),
             |event| {
                 if plan.is_replayed_compaction(file, event.response_id.as_deref()) {
-                    return Ok(());
+                    return;
                 }
                 add(&event)
             },
@@ -414,9 +420,8 @@ fn visit_run_file(
                 file,
                 |event| add(&event),
                 run.diagnostics,
-            )?;
+            );
             metadata.push((file_index, file_metadata));
-            Ok(())
         }
     }
 }
@@ -429,12 +434,11 @@ fn add_event_to_groups(
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
     provenance: &mut CodexEventProvenance,
-) -> Result<()> {
+) {
     let model = crate::model_aliases::resolve_model_name(&event.model);
-    let timestamp = parse_ts_timestamp(&event.timestamp)
-        .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
+    let timestamp = event.timestamp;
     if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, provenance) {
-        return Ok(());
+        return;
     }
     add_deduped_event_to_groups(
         event,
@@ -455,7 +459,7 @@ fn add_deduped_event_to_groups(
     timezone: &JiffTimeZone,
     shared: &SharedArgs,
     groups: &mut BTreeMap<String, CodexGroup>,
-) -> Result<()> {
+) {
     let Some(period) = codex_period_for(
         timestamp,
         Some(event.session_id.as_str()),
@@ -463,11 +467,10 @@ fn add_deduped_event_to_groups(
         timezone,
         shared,
     ) else {
-        return Ok(());
+        return;
     };
     let group = groups.entry(period).or_default();
     accumulate_codex_event_into_group(group, event, model, timestamp, false);
-    Ok(())
 }
 
 fn codex_period_for(
@@ -510,9 +513,9 @@ fn accumulate_codex_event_into_group(
     if group
         .last_activity
         .as_deref()
-        .is_none_or(|current| event.timestamp.as_str() > current)
+        .is_none_or(|current| event.last_activity.as_str() > current)
     {
-        group.last_activity = Some(event.timestamp.clone());
+        group.last_activity = Some(event.last_activity.clone());
     }
 
     let model_usage = group.models.entry(model.to_string()).or_default();
@@ -932,6 +935,7 @@ fn has_date_bounds(shared: &SharedArgs) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse_ts_timestamp;
 
     use ccusage_test_support::fs_fixture;
     use serde_json::json;
@@ -952,7 +956,8 @@ mod tests {
         let first = CodexTokenUsageEvent {
             session_id: "first-session".into(),
             response_id: Some("response-1".into()),
-            timestamp: "2026-09-01T00:00:01Z".into(),
+            timestamp: crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
+            last_activity: "2026-09-01T00:00:01Z".into(),
             model: "gpt-5".into(),
             input_tokens: 300,
             cached_input_tokens: 0,
@@ -965,7 +970,8 @@ mod tests {
         };
         let mut copied = first.clone();
         copied.session_id = "copied-session".into();
-        copied.timestamp = "2026-09-02T00:00:01Z".into();
+        copied.timestamp = crate::parse_ts_timestamp("2026-09-02T00:00:01Z").unwrap();
+        copied.last_activity = "2026-09-02T00:00:01Z".into();
         copied.model = "gpt-5-mini".into();
         copied.input_tokens = 500;
         copied.total_tokens = 520;
@@ -985,8 +991,7 @@ mod tests {
                 &seen,
                 &mut groups,
                 &mut CodexEventProvenance::new(file_index),
-            )
-            .unwrap();
+            );
         }
         apply_recorded_usage_from_shards(&mut groups, &seen, &shared, AgentReportKind::Session);
 

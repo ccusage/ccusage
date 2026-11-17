@@ -69,8 +69,12 @@ impl<'de> Deserialize<'de> for CodexUsageCandidate {
             where
                 A: serde::de::MapAccess<'de>,
             {
-                CodexRawUsage::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                let value = serde_json::Value::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                Ok(serde_json::from_value(value)
                     .map(CodexUsageCandidate::Decoded)
+                    .unwrap_or(CodexUsageCandidate::Malformed))
             }
 
             fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
@@ -172,7 +176,8 @@ pub const fn merge_codex_service_tiers(
 pub struct CodexTokenUsageEvent {
     pub session_id: String,
     pub response_id: Option<String>,
-    pub timestamp: String,
+    pub timestamp: crate::TimestampMs,
+    pub last_activity: String,
     pub model: String,
     pub input_tokens: u64,
     pub cached_input_tokens: u64,
@@ -256,185 +261,429 @@ pub struct CodexGroup {
     pub last_activity: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub(super) struct CodexSessionLogEntry<'a> {
-    #[serde(rename = "type", borrow, default)]
-    pub(super) entry_type: Option<Cow<'a, str>>,
-    #[serde(borrow, default)]
-    pub(super) timestamp: Option<CodexTimestamp<'a>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) payload: Option<CodexPayload<'a>>,
+macro_rules! codex_record {
+    ($name:ident { $($field:ident: $ty:ty = $key:literal => $variant:ident, $read:ident, $strict:literal),* $(,)? }) => {
+        #[derive(Default)]
+        pub(super) struct $name<'a> {
+            $(pub(super) $field: $ty,)*
+            pub(super) invalid_fields: bool,
+        }
+
+        impl CodexRecordState for $name<'_> {
+            fn invalid_fields(&self) -> bool { self.invalid_fields }
+        }
+
+        impl<'de: 'a, 'a> Deserialize<'de> for $name<'a> {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct RecordVisitor;
+                impl<'de> serde::de::Visitor<'de> for RecordVisitor {
+                    type Value = $name<'de>;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        formatter.write_str("a Codex record")
+                    }
+
+                    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                    where
+                        A: serde::de::MapAccess<'de>,
+                    {
+                        #[derive(Deserialize)]
+                        #[serde(field_identifier)]
+                        enum Field {
+                            $(#[serde(rename = $key)] $variant,)*
+                            #[serde(other)]
+                            Unknown,
+                        }
+                        let mut record = $name::default();
+                        $(let mut $field = false;)*
+                        while let Some(field) = map.next_key()? {
+                            match field {
+                                $(Field::$variant => {
+                                    let value = map.next_value::<$read<_>>()?;
+                                    record.invalid_fields |= $strict && ($field || value.invalid_fields());
+                                    $field = true;
+                                    record.$field = value.0;
+                                },)*
+                                Field::Unknown => { map.next_value::<serde::de::IgnoredAny>()?; }
+                            }
+                        }
+                        Ok(record)
+                    }
+                }
+                deserializer.deserialize_map(RecordVisitor)
+            }
+        }
+    };
 }
 
-#[derive(Deserialize)]
-pub(super) struct CodexLogEntry<'a> {
-    #[serde(borrow, default)]
-    pub(super) timestamp: Option<CodexTimestamp<'a>>,
-    #[serde(rename = "created_at", borrow, default)]
-    pub(super) created_at: Option<CodexTimestamp<'a>>,
-    #[serde(rename = "createdAt", borrow, default)]
-    pub(super) created_at_camel: Option<CodexTimestamp<'a>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) data: Option<CodexResultFields<'a>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) result: Option<CodexResultFields<'a>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) response: Option<CodexResultFields<'a>>,
-    #[serde(default)]
-    pub(super) usage: CodexUsageCandidate,
-    #[serde(borrow, default)]
-    pub(super) model: Option<Cow<'a, str>>,
-    #[serde(rename = "model_name", borrow, default)]
-    pub(super) model_name: Option<Cow<'a, str>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) metadata: Option<CodexModelMetadata<'a>>,
-}
+codex_record! { CodexLogEntry {
+    entry_type: Option<Cow<'a, str>> = "type" => EntryType, LossyString, true,
+    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp, true,
+    created_at: Option<CodexTimestamp<'a>> = "created_at" => CreatedAt, LossyTimestamp, false,
+    created_at_camel: Option<CodexTimestamp<'a>> = "createdAt" => CreatedAtCamel, LossyTimestamp, false,
+    payload: Option<CodexPayload<'a>> = "payload" => Payload, LossyObject, true,
+    data: Option<CodexResultFields<'a>> = "data" => Data, LossyObject, false,
+    result: Option<CodexResultFields<'a>> = "result" => Result, LossyObject, false,
+    response: Option<CodexResultFields<'a>> = "response" => Response, LossyObject, false,
+    usage: CodexUsageCandidate = "usage" => Usage, DecodedField, false,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString, false,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, false,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, false,
+} }
 
-#[derive(Clone, Deserialize)]
-#[serde(untagged)]
+codex_record! { CodexPayload {
+    payload_type: Option<Cow<'a, str>> = "type" => PayloadType, LossyString, true,
+    info: Option<CodexInfo<'a>> = "info" => Info, LossyObject, true,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, true,
+    response_id: Option<Cow<'a, str>> = "response_id" => ResponseId, LossyString, true,
+    compaction_response_id: Option<Cow<'a, str>> = "compaction_response_id" => CompactionResponseId, LossyString, true,
+    usage: CodexUsageCandidate = "usage" => Usage, DecodedField, true,
+    thread_token_usage: Option<CodexRawUsage> = "thread_token_usage" => ThreadTokenUsage, LossyRawUsage, true,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, true,
+    thread_settings: Option<CodexThreadSettings<'a>> = "thread_settings" => ThreadSettings, LossyObject, true,
+} }
+
+codex_record! { CodexThreadSettings {
+    service_tier: Option<Cow<'a, str>> = "service_tier" => ServiceTier, LossyString, true,
+} }
+
+codex_record! { CodexInfo {
+    last_token_usage: Option<CodexRawUsage> = "last_token_usage" => LastTokenUsage, LossyRawUsage, true,
+    total_token_usage: Option<CodexRawUsage> = "total_token_usage" => TotalTokenUsage, LossyRawUsage, true,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, true,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, true,
+} }
+
+codex_record! { CodexResultFields {
+    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp, true,
+    created_at: Option<CodexTimestamp<'a>> = "created_at" => CreatedAt, LossyTimestamp, true,
+    created_at_camel: Option<CodexTimestamp<'a>> = "createdAt" => CreatedAtCamel, LossyTimestamp, true,
+    usage: CodexUsageCandidate = "usage" => Usage, DecodedField, true,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, true,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, true,
+} }
+
+codex_record! { CodexModelMetadata {
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
+} }
+
+codex_record! { CodexSessionMeta {
+    entry_type: Option<Cow<'a, str>> = "type" => EntryType, LossyString, true,
+    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp, true,
+    payload: Option<CodexSessionMetaPayload<'a>> = "payload" => Payload, LossyObject, true,
+} }
+
+codex_record! { CodexSessionMetaPayload {
+    id: Option<Cow<'a, str>> = "id" => Id, LossyString, true,
+    forked_from_id: Option<Cow<'a, str>> = "forked_from_id" => ForkedFromId, LossyString, true,
+    source: Option<CodexSessionSource<'a>> = "source" => Source, LossyObject, true,
+} }
+
+codex_record! { CodexSessionSource {
+    subagent: Option<CodexSubagent<'a>> = "subagent" => Subagent, LossyObject, true,
+} }
+
+codex_record! { CodexSubagent {
+    thread_spawn: Option<CodexThreadSpawn<'a>> = "thread_spawn" => ThreadSpawn, LossyObject, true,
+} }
+
+codex_record! { CodexThreadSpawn {
+    parent_thread_id: Option<Cow<'a, str>> = "parent_thread_id" => ParentThreadId, LossyString, true,
+} }
+
+#[derive(Clone)]
 pub(super) enum CodexTimestamp<'a> {
     String(Cow<'a, str>),
     Number(u64),
+    Invalid,
 }
 
-#[derive(Default, Deserialize)]
-pub(super) struct CodexPayload<'a> {
-    #[serde(rename = "type", borrow, default)]
-    pub(super) payload_type: Option<Cow<'a, str>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) info: Option<CodexInfo<'a>>,
-    #[serde(borrow, default)]
-    pub(super) model: Option<Cow<'a, str>>,
-    #[serde(rename = "model_name", borrow, default)]
-    pub(super) model_name: Option<Cow<'a, str>>,
-    #[serde(borrow, default)]
-    pub(super) response_id: Option<Cow<'a, str>>,
-    #[serde(borrow, default)]
-    pub(super) compaction_response_id: Option<Cow<'a, str>>,
-    #[serde(default)]
-    pub(super) usage: CodexUsageCandidate,
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) thread_token_usage: Option<CodexRawUsage>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) metadata: Option<CodexModelMetadata<'a>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) thread_settings: Option<CodexThreadSettings<'a>>,
+trait CodexRecordState {
+    fn invalid_fields(&self) -> bool;
 }
 
-#[derive(Deserialize)]
-pub(super) struct CodexThreadSettings<'a> {
-    #[serde(borrow, default)]
-    pub(super) service_tier: Option<Cow<'a, str>>,
+struct DecodedField<T>(T);
+impl<T> CodexRecordState for DecodedField<T> {
+    fn invalid_fields(&self) -> bool {
+        false
+    }
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for DecodedField<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        T::deserialize(deserializer).map(Self)
+    }
 }
 
-#[derive(Default, Deserialize)]
-pub(super) struct CodexInfo<'a> {
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) last_token_usage: Option<CodexRawUsage>,
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) total_token_usage: Option<CodexRawUsage>,
-    #[serde(borrow, default)]
-    pub(super) model: Option<Cow<'a, str>>,
-    #[serde(rename = "model_name", borrow, default)]
-    pub(super) model_name: Option<Cow<'a, str>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) metadata: Option<CodexModelMetadata<'a>>,
+struct LossyObject<T>(Option<T>);
+impl<T: CodexRecordState> CodexRecordState for LossyObject<T> {
+    fn invalid_fields(&self) -> bool {
+        self.0
+            .as_ref()
+            .is_some_and(CodexRecordState::invalid_fields)
+    }
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for LossyObject<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_optional_object_lossy(deserializer).map(Self)
+    }
 }
 
-#[derive(Default, Deserialize)]
-pub(super) struct CodexResultFields<'a> {
-    #[serde(borrow, default)]
-    pub(super) timestamp: Option<CodexTimestamp<'a>>,
-    #[serde(rename = "created_at", borrow, default)]
-    pub(super) created_at: Option<CodexTimestamp<'a>>,
-    #[serde(rename = "createdAt", borrow, default)]
-    pub(super) created_at_camel: Option<CodexTimestamp<'a>>,
-    #[serde(default)]
-    pub(super) usage: CodexUsageCandidate,
-    #[serde(borrow, default)]
-    pub(super) model: Option<Cow<'a, str>>,
-    #[serde(rename = "model_name", borrow, default)]
-    pub(super) model_name: Option<Cow<'a, str>>,
-    #[serde(
-        borrow,
-        default,
-        deserialize_with = "deserialize_optional_object_lossy"
-    )]
-    pub(super) metadata: Option<CodexModelMetadata<'a>>,
+struct LossyRawUsage<T>(T, bool);
+impl<T> CodexRecordState for LossyRawUsage<T> {
+    fn invalid_fields(&self) -> bool {
+        self.1
+    }
+}
+impl<'de> Deserialize<'de> for LossyRawUsage<Option<CodexRawUsage>> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let fields = deserialize_optional_object_lossy::<D, CodexRawUsageFields>(deserializer)?;
+        Ok(match fields {
+            Some(fields) if fields.invalid_fields => Self(None, true),
+            Some(fields) => Self(Some(CodexRawUsage::from_fields(fields)), false),
+            None => Self(None, false),
+        })
+    }
 }
 
-#[derive(Deserialize)]
-pub(super) struct CodexModelMetadata<'a> {
-    #[serde(borrow, default)]
-    pub(super) model: Option<Cow<'a, str>>,
+struct LossyString<T>(T, bool);
+impl<T> CodexRecordState for LossyString<T> {
+    fn invalid_fields(&self) -> bool {
+        self.1
+    }
+}
+impl<'de: 'a, 'a> Deserialize<'de> for LossyString<Option<Cow<'a, str>>> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct StringVisitor;
+        impl<'de> serde::de::Visitor<'de> for StringVisitor {
+            type Value = (Option<Cow<'de, str>>, bool);
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an optional string")
+            }
+            fn visit_borrowed_str<E: serde::de::Error>(
+                self,
+                value: &'de str,
+            ) -> Result<Self::Value, E> {
+                Ok((Some(Cow::Borrowed(value)), false))
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok((Some(Cow::Owned(value.to_string())), false))
+            }
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok((Some(Cow::Owned(value)), false))
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok((None, false))
+            }
+            fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+                Ok((None, true))
+            }
+            fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+                Ok((None, true))
+            }
+            fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+                Ok((None, true))
+            }
+            fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+                Ok((None, true))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                serde::de::IgnoredAny::deserialize(serde::de::value::MapAccessDeserializer::new(
+                    map,
+                ))?;
+                Ok((None, true))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                serde::de::IgnoredAny::deserialize(serde::de::value::SeqAccessDeserializer::new(
+                    seq,
+                ))?;
+                Ok((None, true))
+            }
+        }
+        deserializer
+            .deserialize_any(StringVisitor)
+            .map(|(value, invalid)| Self(value, invalid))
+    }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+struct LossyTimestamp<T>(T);
+impl CodexRecordState for LossyTimestamp<Option<CodexTimestamp<'_>>> {
+    fn invalid_fields(&self) -> bool {
+        matches!(self.0, Some(CodexTimestamp::Invalid))
+    }
+}
+impl<'de: 'a, 'a> Deserialize<'de> for LossyTimestamp<Option<CodexTimestamp<'a>>> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct TimestampVisitor;
+        impl<'de> serde::de::Visitor<'de> for TimestampVisitor {
+            type Value = Option<CodexTimestamp<'de>>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an optional timestamp")
+            }
+            fn visit_borrowed_str<E: serde::de::Error>(
+                self,
+                value: &'de str,
+            ) -> Result<Self::Value, E> {
+                Ok(Some(CodexTimestamp::String(Cow::Borrowed(value))))
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(Some(CodexTimestamp::String(Cow::Owned(value.to_string()))))
+            }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(Some(CodexTimestamp::Number(value)))
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+            fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+                Ok(Some(CodexTimestamp::Invalid))
+            }
+            fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+                Ok(Some(CodexTimestamp::Invalid))
+            }
+            fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+                Ok(Some(CodexTimestamp::Invalid))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                serde::de::IgnoredAny::deserialize(serde::de::value::MapAccessDeserializer::new(
+                    map,
+                ))?;
+                Ok(Some(CodexTimestamp::Invalid))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                serde::de::IgnoredAny::deserialize(serde::de::value::SeqAccessDeserializer::new(
+                    seq,
+                ))?;
+                Ok(Some(CodexTimestamp::Invalid))
+            }
+        }
+        deserializer.deserialize_any(TimestampVisitor).map(Self)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct CodexRawUsageFields {
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     input_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     prompt_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     input: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     cached_input_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     cache_read_input_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     cache_creation_input_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     cache_write_input_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     cached_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     output_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     completion_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     output: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     reasoning_output_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     reasoning_tokens: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_lossy")]
     total_tokens: Option<u64>,
+    invalid_fields: bool,
+}
+
+impl<'de> Deserialize<'de> for CodexRawUsageFields {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct UsageFieldsVisitor;
+        impl<'de> serde::de::Visitor<'de> for UsageFieldsVisitor {
+            type Value = CodexRawUsageFields;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("Codex token counts")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                #[derive(Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "input_tokens")]
+                    InputTokens,
+                    #[serde(rename = "prompt_tokens")]
+                    PromptTokens,
+                    #[serde(rename = "input")]
+                    Input,
+                    #[serde(rename = "cached_input_tokens")]
+                    CachedInputTokens,
+                    #[serde(rename = "cache_read_input_tokens")]
+                    CacheReadInputTokens,
+                    #[serde(rename = "cache_creation_input_tokens")]
+                    CacheCreationInputTokens,
+                    #[serde(rename = "cache_write_input_tokens")]
+                    CacheWriteInputTokens,
+                    #[serde(rename = "cached_tokens")]
+                    CachedTokens,
+                    #[serde(rename = "output_tokens")]
+                    OutputTokens,
+                    #[serde(rename = "completion_tokens")]
+                    CompletionTokens,
+                    #[serde(rename = "output")]
+                    Output,
+                    #[serde(rename = "reasoning_output_tokens")]
+                    ReasoningOutputTokens,
+                    #[serde(rename = "reasoning_tokens")]
+                    ReasoningTokens,
+                    #[serde(rename = "total_tokens")]
+                    TotalTokens,
+                    #[serde(other)]
+                    Unknown,
+                }
+                let mut fields = CodexRawUsageFields::default();
+                let mut seen = 0_u16;
+                while let Some(field) = map.next_key()? {
+                    let (target, bit) = match field {
+                        Field::InputTokens => (&mut fields.input_tokens, 1_u16 << 0),
+                        Field::PromptTokens => (&mut fields.prompt_tokens, 1_u16 << 1),
+                        Field::Input => (&mut fields.input, 1_u16 << 2),
+                        Field::CachedInputTokens => (&mut fields.cached_input_tokens, 1_u16 << 3),
+                        Field::CacheReadInputTokens => {
+                            (&mut fields.cache_read_input_tokens, 1_u16 << 4)
+                        }
+                        Field::CacheCreationInputTokens => {
+                            (&mut fields.cache_creation_input_tokens, 1_u16 << 5)
+                        }
+                        Field::CacheWriteInputTokens => {
+                            (&mut fields.cache_write_input_tokens, 1_u16 << 6)
+                        }
+                        Field::CachedTokens => (&mut fields.cached_tokens, 1_u16 << 7),
+                        Field::OutputTokens => (&mut fields.output_tokens, 1_u16 << 8),
+                        Field::CompletionTokens => (&mut fields.completion_tokens, 1_u16 << 9),
+                        Field::Output => (&mut fields.output, 1_u16 << 10),
+                        Field::ReasoningOutputTokens => {
+                            (&mut fields.reasoning_output_tokens, 1_u16 << 11)
+                        }
+                        Field::ReasoningTokens => (&mut fields.reasoning_tokens, 1_u16 << 12),
+                        Field::TotalTokens => (&mut fields.total_tokens, 1_u16 << 13),
+                        Field::Unknown => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                            continue;
+                        }
+                    };
+                    let OptionalU64(value, invalid) = map.next_value()?;
+                    fields.invalid_fields |= invalid || seen & bit != 0;
+                    seen |= bit;
+                    *target = value;
+                }
+                Ok(fields)
+            }
+        }
+        deserializer.deserialize_map(UsageFieldsVisitor)
+    }
 }
 
 impl<'de> Deserialize<'de> for CodexRawUsage {
@@ -443,6 +692,15 @@ impl<'de> Deserialize<'de> for CodexRawUsage {
         D: serde::Deserializer<'de>,
     {
         let fields = CodexRawUsageFields::deserialize(deserializer)?;
+        if fields.invalid_fields {
+            return Err(serde::de::Error::custom("invalid usage fields"));
+        }
+        Ok(Self::from_fields(fields))
+    }
+}
+
+impl CodexRawUsage {
+    fn from_fields(fields: CodexRawUsageFields) -> Self {
         let input = fields
             .input_tokens
             .or(fields.prompt_tokens)
@@ -468,7 +726,7 @@ impl<'de> Deserialize<'de> for CodexRawUsage {
             .or(fields.cache_creation_input_tokens)
             .unwrap_or(0)
             .min(input.saturating_sub(cached_input));
-        Ok(Self {
+        Self {
             input_tokens: input,
             cached_input_tokens: cached_input,
             cache_creation_tokens: cache_creation,
@@ -481,7 +739,7 @@ impl<'de> Deserialize<'de> for CodexRawUsage {
                 .total_tokens
                 .filter(|total| *total > 0)
                 .unwrap_or_else(|| input.saturating_add(output)),
-        })
+        }
     }
 }
 
@@ -579,93 +837,110 @@ where
     deserializer.deserialize_any(OptionalObjectVisitor(PhantomData))
 }
 
-fn deserialize_optional_u64_lossy<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<u64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct OptionalU64Visitor;
+struct OptionalU64(Option<u64>, bool);
+impl<'de> Deserialize<'de> for OptionalU64 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct OptionalU64Visitor;
 
-    impl<'de> serde::de::Visitor<'de> for OptionalU64Visitor {
-        type Value = Option<u64>;
+        impl<'de> serde::de::Visitor<'de> for OptionalU64Visitor {
+            type Value = OptionalU64;
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("an optional unsigned integer")
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an optional unsigned integer")
+            }
+
+            fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(None, false))
+            }
+
+            fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(None, false))
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                OptionalU64::deserialize(deserializer)
+            }
+
+            fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(Some(value), false))
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(value.trim().parse::<u64>().ok(), false))
+            }
+
+            fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_str(value)
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_str(&value)
+            }
+
+            fn visit_i64<E>(self, _value: i64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(None, false))
+            }
+
+            fn visit_f64<E>(self, _value: f64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(None, false))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                serde::de::IgnoredAny::deserialize(serde::de::value::MapAccessDeserializer::new(
+                    map,
+                ))?;
+                Ok(OptionalU64(None, true))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                serde::de::IgnoredAny::deserialize(serde::de::value::SeqAccessDeserializer::new(
+                    seq,
+                ))?;
+                Ok(OptionalU64(None, true))
+            }
+
+            fn visit_bool<E>(self, _value: bool) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(OptionalU64(None, false))
+            }
         }
 
-        fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            deserialize_optional_u64_lossy(deserializer)
-        }
-
-        fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(Some(value))
-        }
-
-        fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(value.trim().parse::<u64>().ok())
-        }
-
-        fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            self.visit_str(value)
-        }
-
-        fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            self.visit_str(&value)
-        }
-
-        fn visit_i64<E>(self, _value: i64) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_f64<E>(self, _value: f64) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_bool<E>(self, _value: bool) -> std::result::Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
+        deserializer.deserialize_any(OptionalU64Visitor)
     }
-
-    deserializer.deserialize_any(OptionalU64Visitor)
 }
 
 #[cfg(test)]

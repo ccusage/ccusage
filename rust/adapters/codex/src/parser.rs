@@ -3,7 +3,6 @@ use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    fs,
     path::Path,
     sync::LazyLock,
 };
@@ -12,7 +11,7 @@ use memchr::memmem::Finder;
 use serde_json::Value;
 
 use crate::{
-    CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs, parse_ts_timestamp,
+    CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, TimestampMs, parse_ts_timestamp,
 };
 
 use super::{
@@ -20,7 +19,7 @@ use super::{
     replay::{CodexSessionMetadata, session_metadata_from_line},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
-        CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
+        CodexTimestamp, CodexUsageCandidate,
     },
 };
 
@@ -70,10 +69,11 @@ impl CodexAutoReviewFallback {
 enum CodexLineKind {
     Session,
     Headless,
+    Escaped,
 }
 
 struct CodexExecTimestamps {
-    event: String,
+    event: TimestampMs,
     model: String,
 }
 
@@ -146,136 +146,136 @@ enum CodexReplayState<'a> {
 /// a second tick, leaving the remainder counted as the child's own usage.
 const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 
-/// Start of the burst of replayed usage at the head of `path`, if it has one.
-///
-/// A session that opens with two usage events written back to back replayed a
-/// history it did not spend; one that pauses between them was recording its own
-/// turns from the start.
-fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
-    let Ok((mut lines, _)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
-        return None;
-    };
-    let mut first: Option<TimestampMs> = None;
-    let mut session_start = None;
+#[derive(Default)]
+struct CodexBurst {
+    session_start: Option<TimestampMs>,
+    first: Option<TimestampMs>,
+    decision: Option<Option<TimestampMs>>,
+}
 
-    loop {
-        let Ok(Some(line)) = lines.next_line() else {
-            return None;
-        };
-        if SESSION_META_MARKER.matches(line)
-            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line)
-            && value.entry_type.as_deref() == Some("session_meta")
-        {
-            if session_start.is_none() {
-                session_start = codex_session_timestamp(value.timestamp.as_ref())
-                    .and_then(|timestamp| parse_ts_timestamp(&timestamp));
-            }
-            continue;
+impl CodexBurst {
+    fn observe(&mut self, timestamp: TimestampMs) {
+        if self.decision.is_some() {
+            return;
         }
-        let Some(CodexLineKind::Session) = codex_line_usage_kind(line) else {
-            continue;
+        let Some(first) = self.first else {
+            self.first = Some(timestamp);
+            return;
         };
-        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) else {
-            continue;
-        };
-        let info = value.payload.as_ref().and_then(|payload| {
-            (value.entry_type.as_deref() == Some("event_msg")
-                && payload.payload_type.as_deref() == Some("token_count"))
-            .then_some(payload.info.as_ref())
-            .flatten()
-        });
-        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
-            continue;
-        };
-        if !info.is_some_and(|info| {
-            info.last_token_usage
-                .as_ref()
-                .or(info.total_token_usage.as_ref())
-                .copied()
-                .map(normalize_codex_raw_usage)
-                .as_ref()
-                .is_some_and(|usage| !usage.is_empty())
-        }) {
-            continue;
-        }
-        let Some(timestamp) = parse_ts_timestamp(&timestamp) else {
-            continue;
-        };
-        match first {
-            None => first = Some(timestamp),
-            Some(first) => {
-                let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                    .contains(&(timestamp.as_millis() - first.as_millis()));
-                // A late first request can also produce a dense pair.
-                let starts_at_fork = session_start.is_none_or(|start| {
-                    first.as_millis().abs_diff(start.as_millis())
-                        <= CODEX_REWRITTEN_BURST_PAUSE_MS as u64
-                });
-                return (is_dense && starts_at_fork).then_some(first);
-            }
-        }
+        let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+            .contains(&(timestamp.as_millis() - first.as_millis()));
+        let starts_at_fork = self
+            .session_start
+            .is_none_or(|start| first.as_millis().abs_diff(start.as_millis()) <= 1_000);
+        self.decision = Some((is_dense && starts_at_fork).then_some(first));
     }
 }
 
+enum CodexPendingReplay {
+    Event(CodexTokenUsageEvent),
+    UsageRecord,
+}
+
 struct CodexReplayFilter<'a> {
-    path: &'a Path,
     state: CodexReplayState<'a>,
     ends_at_usage_record: bool,
+    burst: CodexBurst,
+    pending: Vec<CodexPendingReplay>,
 }
 
 impl CodexReplayFilter<'_> {
     fn observe_usage_record(&mut self) {
         if self.ends_at_usage_record {
-            self.state = CodexReplayState::Done;
+            if self.burst.decision.is_none() && !self.pending.is_empty() {
+                self.pending.push(CodexPendingReplay::UsageRecord);
+            } else {
+                self.state = CodexReplayState::Done;
+            }
         }
     }
 
-    fn visit(
+    fn observe_token_count(
         &mut self,
-        event: CodexTokenUsageEvent,
-        visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    ) -> Result<()> {
+        timestamp: Option<TimestampMs>,
+        usage: Option<CodexRawUsage>,
+        visit: &mut impl FnMut(CodexTokenUsageEvent),
+    ) {
+        if matches!(self.state, CodexReplayState::Done) && self.pending.is_empty() {
+            return;
+        }
+        if usage.is_some_and(|usage| !normalize_codex_raw_usage(usage).is_empty())
+            && let Some(timestamp) = timestamp
+        {
+            self.burst.observe(timestamp);
+            if self.burst.decision.is_some() {
+                self.flush(visit);
+            }
+        }
+    }
+
+    fn flush(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        for pending in std::mem::take(&mut self.pending) {
+            match pending {
+                CodexPendingReplay::Event(event) => self.visit(event, visit),
+                CodexPendingReplay::UsageRecord => self.observe_usage_record(),
+            }
+        }
+    }
+
+    fn finish(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        self.burst.decision.get_or_insert(None);
+        self.flush(visit);
+    }
+
+    fn visit(&mut self, event: CodexTokenUsageEvent, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        if self.burst.decision.is_none() && !self.pending.is_empty() {
+            self.pending.push(CodexPendingReplay::Event(event));
+            return;
+        }
         // Compaction requests have their own response identity. Comparing them
         // with normal request totals could consume an unrelated replay entry;
         // copied compactions are deduplicated by ID after parsing instead.
         if event.response_id.is_some() {
-            return visit(event);
+            visit(event);
+            return;
         }
-        // Each arm either returns or advances the state toward `Done`, so this
-        // loop only re-runs to apply the event to the state it switched to.
         loop {
             match self.state {
                 CodexReplayState::MatchingParent { prefix, index } => {
-                    let usage = event.raw_usage();
-                    if prefix.get(index) == Some(&usage) {
+                    if prefix.get(index) == Some(&event.raw_usage()) {
                         self.state = CodexReplayState::MatchingParent {
                             prefix,
                             index: index + 1,
                         };
-                        return Ok(());
+                        return;
                     }
-                    // Nothing matched, so the parent stream cannot anchor this
-                    // replay: the log is unavailable, or Codex rewrote the copied
-                    // history. Fall back to the rewritten burst instead.
-                    self.state = (index == 0)
-                        .then(|| detect_rewritten_burst(self.path))
-                        .flatten()
-                        .map_or(
+                    if index == 0 {
+                        let Some(burst) = self.burst.decision else {
+                            self.pending.push(CodexPendingReplay::Event(event));
+                            return;
+                        };
+                        self.state = burst.map_or(
                             CodexReplayState::Done,
                             CodexReplayState::SkippingRewrittenBurst,
                         );
+                    } else {
+                        self.state = CodexReplayState::Done;
+                    }
                 }
                 CodexReplayState::SkippingRewrittenBurst(previous) => {
-                    if let Some(timestamp) = parse_ts_timestamp(&event.timestamp)
-                        && (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                            .contains(&(timestamp.as_millis() - previous.as_millis()))
+                    let timestamp = event.timestamp;
+                    if (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+                        .contains(&(timestamp.as_millis() - previous.as_millis()))
                     {
                         self.state = CodexReplayState::SkippingRewrittenBurst(timestamp);
-                        return Ok(());
+                        return;
                     }
                     self.state = CodexReplayState::Done;
                 }
-                CodexReplayState::Done => return visit(event),
+                CodexReplayState::Done => {
+                    visit(event);
+                    return;
+                }
             }
         }
     }
@@ -288,9 +288,9 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> Result<()> {
+) {
     visit_codex_session_file_inner(
         sessions_dir,
         path,
@@ -306,9 +306,9 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
     sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> Result<()> {
+) {
     visit_codex_session_file_inner(
         sessions_dir,
         path,
@@ -326,9 +326,9 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
 pub(super) fn visit_codex_session_file_unless_fork(
     sessions_dir: &Path,
     path: &Path,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> Result<CodexSessionMetadata> {
+) -> CodexSessionMetadata {
     let mut metadata = CodexSessionMetadata::default();
     visit_codex_session_file_inner(
         sessions_dir,
@@ -338,8 +338,8 @@ pub(super) fn visit_codex_session_file_unless_fork(
         visit,
         diagnostics,
         Some(&mut metadata),
-    )?;
-    Ok(metadata)
+    );
+    metadata
 }
 
 fn visit_codex_session_file_inner(
@@ -347,16 +347,16 @@ fn visit_codex_session_file_inner(
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
-    mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    mut visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
     mut stop_at_fork: Option<&mut CodexSessionMetadata>,
-) -> Result<()> {
+) {
     let (mut lines, opened_path) = match open_rollout_lines(path, READ_BUFFER_SIZE) {
         Ok(opened) => opened,
         Err(failed_path) => {
             UnitError::new(SkipKind::Unreadable, "rollout open failed")
                 .record(&failed_path, diagnostics);
-            return Ok(());
+            return;
         }
     };
     let session_id = codex_session_id(sessions_dir, path);
@@ -366,13 +366,14 @@ fn visit_codex_session_file_inner(
     }
     let fallback_timestamp = file_modified_timestamp(&opened_path);
     let mut replay = CodexReplayFilter {
-        path,
         state: fork_replay.map_or(CodexReplayState::Done, |fork_replay| {
             CodexReplayState::MatchingParent {
                 prefix: fork_replay.prefix,
                 index: 0,
             }
         }),
+        burst: CodexBurst::default(),
+        pending: Vec::new(),
         ends_at_usage_record: fork_replay
             .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
     };
@@ -392,91 +393,89 @@ fn visit_codex_session_file_inner(
             }
         };
         line_number = line_number.saturating_add(1);
-        if let Some(metadata) = stop_at_fork.take() {
+        let first_metadata = stop_at_fork.take().map(|metadata| {
             *metadata = session_metadata_from_line(line);
-            if metadata.is_fork() {
-                return Ok(());
+            metadata.clone()
+        });
+        if first_metadata
+            .as_ref()
+            .is_some_and(CodexSessionMetadata::is_fork)
+        {
+            return;
+        }
+        let has_metadata = first_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_session_meta);
+        if has_metadata
+            || (replay.burst.session_start.is_none()
+                && !matches!(replay.state, CodexReplayState::Done)
+                && SESSION_META_MARKER.matches(line))
+        {
+            let metadata = first_metadata.unwrap_or_else(|| session_metadata_from_line(line));
+            if metadata.is_session_meta {
+                if replay.burst.session_start.is_none() {
+                    replay.burst.session_start = metadata.timestamp;
+                }
+                continue;
             }
         }
         let Some(line_kind) = codex_line_usage_kind(line) else {
             continue;
         };
-        // Type names inside headless data can pass the substring scan; only
-        // the decoded envelope selects session accounting. Every other line
-        // takes the one headless path below, however the session decode went.
-        if matches!(line_kind, CodexLineKind::Session) {
-            match serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) {
-                Ok(value)
-                    if is_session_usage_type(
-                        value.entry_type.as_deref(),
-                        value
-                            .payload
-                            .as_ref()
-                            .and_then(|payload| payload.payload_type.as_deref()),
-                    ) =>
-                {
-                    if value.entry_type.as_deref() == Some("token_usage_record") {
-                        replay.observe_usage_record();
-                    }
-                    visit_codex_session_entry(
-                        &session_id,
-                        value,
-                        &mut state,
-                        &mut |event| replay.visit(event, &mut visit),
-                        &RecordLocation {
-                            path,
-                            line: line_number,
-                            diagnostics,
-                        },
-                    )?;
+        let value = match serde_json::from_slice::<CodexLogEntry<'_>>(line) {
+            Ok(value) => value,
+            Err(error) => {
+                if line_kind == CodexLineKind::Escaped && verbatim_line_usage_kind(line).is_none() {
                     continue;
                 }
-                Ok(_) => {}
-                Err(error) => {
-                    if !has_headless_envelope(line) {
-                        record_decode_failure(
-                            path,
-                            line_number,
-                            line,
-                            error,
-                            diagnostics,
-                            Some(&mut state.previous_totals),
-                        );
-                        continue;
-                    }
-                }
+                record_decode_failure(
+                    path,
+                    line_number,
+                    line,
+                    error,
+                    diagnostics,
+                    Some(&mut state.previous_totals),
+                );
+                continue;
             }
-        }
-        if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(line) {
+        };
+        let location = RecordLocation {
+            path,
+            line: line_number,
+            diagnostics,
+        };
+        if is_session_usage_type(
+            value.entry_type.as_deref(),
+            value
+                .payload
+                .as_ref()
+                .and_then(|payload| payload.payload_type.as_deref()),
+        ) {
+            if value.entry_type.as_deref() == Some("token_usage_record") {
+                replay.observe_usage_record();
+            }
+            visit_codex_session_entry(
+                &session_id,
+                value,
+                &mut state,
+                &mut replay,
+                &mut visit,
+                &location,
+            );
+        } else {
             add_codex_exec_event(
                 &session_id,
                 &value,
-                &fallback_timestamp,
+                fallback_timestamp,
                 &mut state.current_model,
                 &mut state.current_model_is_fallback,
                 &mut |event| replay.visit(event, &mut visit),
-                &RecordLocation {
-                    path,
-                    line: line_number,
-                    diagnostics,
-                },
-            )?;
-        } else {
-            add_codex_exec_event_from_value(
-                &session_id,
-                line,
-                &fallback_timestamp,
-                &mut state.current_model,
-                &mut state.current_model_is_fallback,
-                &mut |event| replay.visit(event, &mut visit),
-                &RecordLocation {
-                    path,
-                    line: line_number,
-                    diagnostics,
-                },
-            )?;
-        };
+                &location,
+            );
+        }
     }
+
+    replay.finish(&mut visit);
 
     if let Some(history) = compaction_history
         && let Some(mut timestamps) = state.compaction_usage.recorded_usage_timestamps
@@ -491,17 +490,6 @@ fn visit_codex_session_file_inner(
         });
         history.extend(timestamps);
     }
-
-    Ok(())
-}
-
-fn has_headless_envelope(line: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(line).is_ok_and(|value| {
-        !is_session_usage_type(
-            value.get("type").and_then(Value::as_str),
-            value.pointer("/payload/type").and_then(Value::as_str),
-        )
-    })
 }
 
 fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
@@ -517,11 +505,12 @@ fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -
 
 fn visit_codex_session_entry(
     session_id: &str,
-    value: CodexSessionLogEntry<'_>,
+    value: CodexLogEntry<'_>,
     state: &mut CodexSessionUsageState,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    replay: &mut CodexReplayFilter<'_>,
+    visit: &mut impl FnMut(CodexTokenUsageEvent),
     location: &RecordLocation<'_>,
-) -> Result<()> {
+) {
     let CodexSessionUsageState {
         previous_totals,
         current_model,
@@ -530,6 +519,28 @@ fn visit_codex_session_entry(
         compaction_usage,
     } = state;
     let entry_type = value.entry_type.as_deref();
+    if value.invalid_fields {
+        let info = value.payload.as_ref().and_then(|payload| {
+            (entry_type == Some("event_msg")
+                && payload.payload_type.as_deref() == Some("token_count"))
+            .then_some(payload.info.as_ref())
+            .flatten()
+        });
+        if entry_type == Some("token_usage_record") || info.is_some() {
+            if info.is_some() {
+                codex_token_count_usage(info, previous_totals);
+            }
+            location.invalid_usage("record did not decode");
+        } else {
+            location.diagnostics.record(Skip::record(
+                location.path,
+                location.line,
+                SkipKind::UndecodedUsage,
+                "record did not decode",
+            ));
+        }
+        return;
+    }
     if entry_type == Some("compacted") {
         let Some(response_id) = value
             .payload
@@ -538,7 +549,7 @@ fn visit_codex_session_entry(
             .map(str::trim)
             .filter(|response_id| !response_id.is_empty())
         else {
-            return Ok(());
+            return;
         };
         let response_id = response_id.to_string();
         compaction_usage
@@ -547,13 +558,13 @@ fn visit_codex_session_entry(
         if let Some(pending) = compaction_usage.pending_usage.remove(&response_id)
             && compaction_usage.emitted_response_ids.insert(response_id)
         {
-            visit(pending.event)?;
+            replay.visit(pending.event, visit);
         }
-        return Ok(());
+        return;
     }
     if entry_type == Some("token_usage_record") {
         let Some(payload) = value.payload.as_ref() else {
-            return Ok(());
+            return;
         };
         let Some(response_id) = payload
             .response_id
@@ -561,32 +572,33 @@ fn visit_codex_session_entry(
             .map(str::trim)
             .filter(|response_id| !response_id.is_empty())
         else {
-            return Ok(());
+            return;
         };
         let response_id = response_id.to_string();
         if compaction_usage.emitted_response_ids.contains(&response_id) {
-            return Ok(());
+            return;
         }
         let raw_usage = match payload.usage {
-            CodexUsageCandidate::Missing => return Ok(()),
+            CodexUsageCandidate::Missing => return,
             CodexUsageCandidate::Malformed => {
                 location.invalid_usage("compaction usage did not decode");
-                return Ok(());
+                return;
             }
             CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
         };
-        let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
-            location.invalid_timestamp();
-            return Ok(());
+        let Some((timestamp, last_activity)) = codex_usage_timestamp(value.timestamp.as_ref())
+        else {
+            location.rejected_timestamp(value.timestamp.as_ref());
+            return;
         };
         if raw_usage.is_empty() {
-            return Ok(());
+            return;
         }
 
         if let Some(timestamps) = compaction_usage.recorded_usage_timestamps.as_mut() {
             timestamps
                 .entry(response_id.clone())
-                .or_insert_with(|| parse_ts_timestamp(&timestamp));
+                .or_insert(Some(timestamp));
         }
 
         let parsed_model = codex_model_from_payload(payload);
@@ -597,7 +609,7 @@ fn visit_codex_session_entry(
         let mut request_model_is_fallback = *current_model_is_fallback;
         let (model, is_fallback_model) = resolve_codex_usage_model(
             parsed_model,
-            &timestamp,
+            &last_activity,
             &mut request_model,
             &mut request_model_is_fallback,
         );
@@ -605,6 +617,7 @@ fn visit_codex_session_entry(
             session_id: session_id.to_string(),
             response_id: Some(response_id.clone()),
             timestamp,
+            last_activity,
             model,
             input_tokens: raw_usage.input_tokens,
             cached_input_tokens: raw_usage.cached_input_tokens,
@@ -623,7 +636,7 @@ fn visit_codex_session_entry(
             .contains(&response_id)
         {
             if compaction_usage.emitted_response_ids.insert(response_id) {
-                visit(event)?;
+                replay.visit(event, visit);
             }
         } else {
             compaction_usage
@@ -634,24 +647,24 @@ fn visit_codex_session_entry(
                     thread_token_usage: payload.thread_token_usage.map(normalize_codex_raw_usage),
                 });
         }
-        return Ok(());
+        return;
     }
     if entry_type == Some("turn_context") {
         if let Some(model) = value.payload.as_ref().and_then(codex_model_from_payload) {
             *current_model = Some(model);
             *current_model_is_fallback = false;
         }
-        return Ok(());
+        return;
     }
     if entry_type != Some("event_msg") {
-        return Ok(());
+        return;
     }
     let Some(payload) = value.payload.as_ref() else {
-        return Ok(());
+        return;
     };
     if payload.payload_type.as_deref() == Some("thread_settings_applied") {
         if codex_session_timestamp(value.timestamp.as_ref()).is_none() {
-            return Ok(());
+            return;
         }
         // A settings event that carries no `service_tier` at all says nothing
         // about the tier, so the previous one stands. Codex emits such events
@@ -665,31 +678,36 @@ fn visit_codex_session_entry(
         {
             *current_service_tier = CodexServiceTier::from_codex_name(recorded);
         }
-        return Ok(());
+        return;
     }
     if payload.payload_type.as_deref() != Some("token_count") {
-        return Ok(());
+        return;
     }
-    // Rejected timestamps must not move this usage into the next cumulative delta.
     let info = payload.info.as_ref();
+    let parsed_timestamp = codex_usage_timestamp(value.timestamp.as_ref());
+    replay.observe_token_count(
+        parsed_timestamp.as_ref().map(|(timestamp, _)| *timestamp),
+        info.and_then(|info| info.last_token_usage.or(info.total_token_usage)),
+        visit,
+    );
     let CodexTokenCountUsage {
         total_usage,
         cumulative_advanced,
         delta,
     } = codex_token_count_usage(info, previous_totals);
-    let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
+    let Some((timestamp, last_activity)) = parsed_timestamp else {
         if info
             .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
         {
-            location.invalid_timestamp();
+            location.rejected_timestamp(value.timestamp.as_ref());
         }
-        return Ok(());
+        return;
     };
     let Some(raw_usage) = delta else {
-        return Ok(());
+        return;
     };
     if raw_usage.is_empty() {
-        return Ok(());
+        return;
     }
 
     // Local compaction emits an advancing token_count between the response
@@ -718,98 +736,53 @@ fn visit_codex_session_entry(
         codex_model_from_payload(payload).or_else(|| info.and_then(codex_model_from_info));
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
-        &timestamp,
+        &last_activity,
         current_model,
         current_model_is_fallback,
     );
 
-    visit(CodexTokenUsageEvent {
-        session_id: session_id.to_string(),
-        response_id: None,
-        timestamp,
-        model,
-        input_tokens: raw_usage.input_tokens,
-        cached_input_tokens: raw_usage.cached_input_tokens,
-        cache_creation_tokens: raw_usage.cache_creation_tokens,
-        output_tokens: raw_usage.output_tokens,
-        reasoning_output_tokens: raw_usage.reasoning_output_tokens,
-        total_tokens: raw_usage.total_tokens,
-        is_fallback_model,
-        service_tier: *current_service_tier,
-    })
+    replay.visit(
+        CodexTokenUsageEvent {
+            session_id: session_id.to_string(),
+            response_id: None,
+            timestamp,
+            last_activity,
+            model,
+            input_tokens: raw_usage.input_tokens,
+            cached_input_tokens: raw_usage.cached_input_tokens,
+            cache_creation_tokens: raw_usage.cache_creation_tokens,
+            output_tokens: raw_usage.output_tokens,
+            reasoning_output_tokens: raw_usage.reasoning_output_tokens,
+            total_tokens: raw_usage.total_tokens,
+            is_fallback_model,
+            service_tier: *current_service_tier,
+        },
+        visit,
+    )
 }
 
 fn add_codex_exec_event(
     session_id: &str,
     value: &CodexLogEntry<'_>,
-    fallback_timestamp: &str,
+    fallback_timestamp: TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: &mut impl FnMut(CodexTokenUsageEvent),
     location: &RecordLocation<'_>,
-) -> Result<()> {
+) {
     let raw_usage = match normalize_headless_codex_usage(value) {
         Ok(Some(raw_usage)) => raw_usage,
-        Ok(None) => return Ok(()),
+        Ok(None) => return,
         Err(()) => {
             location.invalid_usage("headless usage did not decode");
-            return Ok(());
+            return;
         }
     };
     let parsed_model = codex_model_from_result(value);
     let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result(value).unwrap_or_else(|| fallback_timestamp.to_string()),
+        event: codex_timestamp_from_result(value).unwrap_or(fallback_timestamp),
         model: codex_model_timestamp_from_result(value)
-            .unwrap_or_else(|| fallback_timestamp.to_string()),
-    };
-    visit_codex_exec_usage_event(
-        session_id,
-        raw_usage,
-        parsed_model,
-        timestamps,
-        current_model,
-        current_model_is_fallback,
-        visit,
-    )
-}
-
-fn add_codex_exec_event_from_value(
-    session_id: &str,
-    line: &[u8],
-    fallback_timestamp: &str,
-    current_model: &mut Option<String>,
-    current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    location: &RecordLocation<'_>,
-) -> Result<()> {
-    let value = match serde_json::from_slice::<Value>(line) {
-        Ok(value) => value,
-        Err(error) => {
-            record_decode_failure(
-                location.path,
-                location.line,
-                line,
-                error,
-                location.diagnostics,
-                None,
-            );
-            return Ok(());
-        }
-    };
-    let raw_usage = match normalize_headless_codex_usage_value(&value) {
-        Ok(Some(raw_usage)) => raw_usage,
-        Ok(None) => return Ok(()),
-        Err(()) => {
-            location.invalid_usage("headless usage did not decode");
-            return Ok(());
-        }
-    };
-    let parsed_model = codex_model_from_result_value(&value);
-    let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result_value(&value)
-            .unwrap_or_else(|| fallback_timestamp.to_string()),
-        model: codex_model_timestamp_from_result_value(&value)
-            .unwrap_or_else(|| fallback_timestamp.to_string()),
+            .unwrap_or_else(|| crate::format_rfc3339_millis(fallback_timestamp)),
     };
     visit_codex_exec_usage_event(
         session_id,
@@ -829,8 +802,8 @@ fn visit_codex_exec_usage_event(
     timestamps: CodexExecTimestamps,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-) -> Result<()> {
+    visit: &mut impl FnMut(CodexTokenUsageEvent),
+) {
     let raw_usage = normalize_codex_raw_usage(raw_usage);
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
@@ -842,6 +815,7 @@ fn visit_codex_exec_usage_event(
         session_id: session_id.to_string(),
         response_id: None,
         timestamp: timestamps.event,
+        last_activity: crate::format_rfc3339_millis(timestamps.event),
         model,
         input_tokens: raw_usage.input_tokens,
         cached_input_tokens: raw_usage.cached_input_tokens,
@@ -855,15 +829,10 @@ fn visit_codex_exec_usage_event(
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
-    if !ESCAPED_USAGE_MARKERS.matches_escaped(line) {
-        return verbatim_line_usage_kind(line);
-    }
-    match serde_json::from_slice::<serde_json::Value>(line)
-        .ok()
-        .and_then(|value| serde_json::to_vec(&value).ok())
-    {
-        Some(canonical) => verbatim_line_usage_kind(&canonical),
-        None => verbatim_line_usage_kind(line),
+    if ESCAPED_USAGE_MARKERS.matches_escaped(line) {
+        Some(CodexLineKind::Escaped)
+    } else {
+        verbatim_line_usage_kind(line)
     }
 }
 
@@ -971,13 +940,18 @@ fn codex_session_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String>
             (!text.is_empty()).then(|| text.to_string())
         }
         CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
+        CodexTimestamp::Invalid => None,
     }
 }
 
-fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
-    let timestamp = codex_session_timestamp(value)?;
-    parse_ts_timestamp(&timestamp)?;
-    Some(timestamp)
+fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<(TimestampMs, String)> {
+    let instant = codex_timestamp_instant(value)?;
+    let raw = match value? {
+        CodexTimestamp::String(text) => text.trim().to_string(),
+        CodexTimestamp::Number(_) => crate::format_rfc3339_millis(instant),
+        CodexTimestamp::Invalid => return None,
+    };
+    Some((instant, raw))
 }
 
 fn resolve_codex_usage_model(
@@ -1126,36 +1100,8 @@ fn codex_model_from_parts(
         .or_else(|| metadata.and_then(|metadata| non_empty_cow_string(metadata.model.as_ref())))
 }
 
-fn codex_model_from_result_value(value: &Value) -> Option<String> {
-    codex_model_from_value_fields(value)
-        .or_else(|| value.get("data").and_then(codex_model_from_value_fields))
-        .or_else(|| value.get("result").and_then(codex_model_from_value_fields))
-        .or_else(|| {
-            value
-                .get("response")
-                .and_then(codex_model_from_value_fields)
-        })
-}
-
-fn codex_model_from_value_fields(value: &Value) -> Option<String> {
-    non_empty_value_string(value.get("model"))
-        .or_else(|| non_empty_value_string(value.get("model_name")))
-        .or_else(|| {
-            value
-                .get("metadata")
-                .and_then(|metadata| non_empty_value_string(metadata.get("model")))
-        })
-}
-
 fn non_empty_cow_string(value: Option<&Cow<'_, str>>) -> Option<String> {
     value.and_then(|text| {
-        let text = text.trim();
-        (!text.is_empty()).then(|| text.to_string())
-    })
-}
-
-fn non_empty_value_string(value: Option<&Value>) -> Option<String> {
-    value.and_then(Value::as_str).and_then(|text| {
         let text = text.trim();
         (!text.is_empty()).then(|| text.to_string())
     })
@@ -1179,21 +1125,6 @@ fn usage_from_result(value: &CodexLogEntry<'_>) -> CodexUsageCandidate {
     ])
 }
 
-fn usage_from_result_value(value: &Value) -> CodexUsageCandidate {
-    first_decoded_usage(
-        [
-            value.get("usage"),
-            value.get("data").and_then(|data| data.get("usage")),
-            value.get("result").and_then(|result| result.get("usage")),
-            value
-                .get("response")
-                .and_then(|response| response.get("usage")),
-        ]
-        .into_iter()
-        .map(usage_from_value),
-    )
-}
-
 fn first_decoded_usage(
     candidates: impl IntoIterator<Item = CodexUsageCandidate>,
 ) -> CodexUsageCandidate {
@@ -1212,20 +1143,10 @@ fn first_decoded_usage(
     }
 }
 
-fn usage_from_value(value: Option<&Value>) -> CodexUsageCandidate {
-    match value {
-        None | Some(Value::Null) => CodexUsageCandidate::Missing,
-        Some(value @ Value::Object(_)) => serde_json::from_value(value.clone())
-            .map(CodexUsageCandidate::Decoded)
-            .unwrap_or(CodexUsageCandidate::Malformed),
-        Some(_) => CodexUsageCandidate::Malformed,
-    }
-}
-
-fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
-    normalize_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| normalize_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| normalize_codex_timestamp(value.created_at_camel.as_ref()))
+fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<TimestampMs> {
+    codex_timestamp_instant(value.timestamp.as_ref())
+        .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
+        .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
         .or_else(|| {
             value
                 .data
@@ -1270,62 +1191,16 @@ fn codex_model_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String
         })
 }
 
-fn codex_timestamp_from_result_value(value: &Value) -> Option<String> {
-    normalize_value_fields_timestamp(value)
-        .or_else(|| value.get("data").and_then(normalize_value_fields_timestamp))
-        .or_else(|| {
-            value
-                .get("result")
-                .and_then(normalize_value_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .get("response")
-                .and_then(normalize_value_fields_timestamp)
-        })
-}
-
-fn codex_model_timestamp_from_result_value(value: &Value) -> Option<String> {
-    raw_or_normalized_value_fields_timestamp(value)
-        .or_else(|| {
-            value
-                .get("data")
-                .and_then(raw_or_normalized_value_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .get("result")
-                .and_then(raw_or_normalized_value_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .get("response")
-                .and_then(raw_or_normalized_value_fields_timestamp)
-        })
-}
-
-fn normalize_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<String> {
-    normalize_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| normalize_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| normalize_codex_timestamp(value.created_at_camel.as_ref()))
+fn normalize_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<TimestampMs> {
+    codex_timestamp_instant(value.timestamp.as_ref())
+        .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
+        .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
 }
 
 fn raw_or_normalized_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<String> {
     raw_or_normalized_codex_timestamp(value.timestamp.as_ref())
         .or_else(|| raw_or_normalized_codex_timestamp(value.created_at.as_ref()))
         .or_else(|| raw_or_normalized_codex_timestamp(value.created_at_camel.as_ref()))
-}
-
-fn normalize_value_fields_timestamp(value: &Value) -> Option<String> {
-    normalize_value_timestamp(value.get("timestamp"))
-        .or_else(|| normalize_value_timestamp(value.get("created_at")))
-        .or_else(|| normalize_value_timestamp(value.get("createdAt")))
-}
-
-fn raw_or_normalized_value_fields_timestamp(value: &Value) -> Option<String> {
-    raw_or_normalized_value_timestamp(value.get("timestamp"))
-        .or_else(|| raw_or_normalized_value_timestamp(value.get("created_at")))
-        .or_else(|| raw_or_normalized_value_timestamp(value.get("createdAt")))
 }
 
 fn raw_or_normalized_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
@@ -1338,95 +1213,38 @@ fn raw_or_normalized_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Opti
             if codex_timestamp_date(text).is_some() {
                 return Some(text.to_string());
             }
-            // Malformed string: try parsing-based normalization. If that also
-            // fails, return None so the caller's `or_else` chain can try the
-            // next available timestamp field instead of locking in a string
-            // that downstream date resolution will reject.
             normalize_codex_timestamp(value)
         }
         CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
+        CodexTimestamp::Invalid => None,
     }
 }
 
 fn normalize_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
+    codex_timestamp_instant(value).map(crate::format_rfc3339_millis)
+}
+
+pub(super) fn codex_timestamp_instant(value: Option<&CodexTimestamp<'_>>) -> Option<TimestampMs> {
     match value? {
-        CodexTimestamp::String(text) => {
-            let text = text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            crate::parse_ts_timestamp(text).map(crate::format_rfc3339_millis)
-        }
+        CodexTimestamp::String(text) => parse_ts_timestamp(text.trim()),
+        CodexTimestamp::Invalid => None,
         CodexTimestamp::Number(raw) => {
             let millis = if *raw > 10_000_000_000 {
                 *raw
             } else {
                 raw.checked_mul(1_000)?
             };
-            Some(crate::format_rfc3339_millis(TimestampMs::from_millis(
-                millis.min(i64::MAX as u64) as i64,
-            )))
+            Some(TimestampMs::from_millis(
+                i64::try_from(millis).unwrap_or(i64::MAX),
+            ))
         }
     }
-}
-
-fn raw_or_normalized_value_timestamp(value: Option<&Value>) -> Option<String> {
-    let value = value?;
-    if let Some(text) = value.as_str() {
-        let text = text.trim();
-        if text.is_empty() {
-            return None;
-        }
-        if codex_timestamp_date(text).is_some() {
-            return Some(text.to_string());
-        }
-        // Malformed string: try parsing-based normalization. If that also
-        // fails, return None so the caller's `or_else` chain can try the
-        // next available timestamp field instead of locking in a string
-        // that downstream date resolution will reject.
-        return normalize_value_timestamp(Some(value));
-    }
-    normalize_value_timestamp(Some(value))
-}
-
-/// Reads a Codex timestamp field that can hold an RFC3339 string or an epoch
-/// number, using the same normalization as session events.
-pub(super) fn codex_value_timestamp(value: Option<&Value>) -> Option<TimestampMs> {
-    normalize_value_timestamp(value)
-        .as_deref()
-        .and_then(crate::parse_ts_timestamp)
-}
-
-fn normalize_value_timestamp(value: Option<&Value>) -> Option<String> {
-    let value = value?;
-    if let Some(text) = value.as_str() {
-        let text = text.trim();
-        if text.is_empty() {
-            return None;
-        }
-        return crate::parse_ts_timestamp(text).map(crate::format_rfc3339_millis);
-    }
-    let raw = value.as_u64()?;
-    let millis = if raw > 10_000_000_000 {
-        raw
-    } else {
-        raw.checked_mul(1_000)?
-    };
-    Some(crate::format_rfc3339_millis(TimestampMs::from_millis(
-        millis.min(i64::MAX as u64) as i64,
-    )))
 }
 
 fn normalize_headless_codex_usage(
     value: &CodexLogEntry<'_>,
 ) -> std::result::Result<Option<CodexRawUsage>, ()> {
     normalize_headless_usage_candidate(usage_from_result(value))
-}
-
-fn normalize_headless_codex_usage_value(
-    value: &Value,
-) -> std::result::Result<Option<CodexRawUsage>, ()> {
-    normalize_headless_usage_candidate(usage_from_result_value(value))
 }
 
 fn normalize_headless_usage_candidate(
@@ -1443,17 +1261,8 @@ fn normalize_headless_usage_candidate(
     Ok(Some(usage))
 }
 
-fn file_modified_timestamp(path: &Path) -> String {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| {
-            crate::format_rfc3339_millis(TimestampMs::from_millis(
-                duration.as_millis().min(i64::MAX as u128) as i64,
-            ))
-        })
-        .unwrap_or_else(|| crate::format_rfc3339_millis(TimestampMs::UNIX_EPOCH))
+fn file_modified_timestamp(path: &Path) -> TimestampMs {
+    ccusage_adapter_common::timestamps::file_mtime(path).unwrap_or(TimestampMs::UNIX_EPOCH)
 }
 
 fn subtract_codex_raw_usage(
@@ -1568,7 +1377,11 @@ impl RecordLocation<'_> {
         ));
     }
 
-    fn invalid_timestamp(&self) {
+    fn rejected_timestamp(&self, timestamp: Option<&CodexTimestamp<'_>>) {
+        if matches!(timestamp, Some(CodexTimestamp::Invalid)) {
+            self.invalid_usage("usage timestamp did not decode");
+            return;
+        }
         self.diagnostics.record(Skip::record(
             self.path,
             self.line,
@@ -1728,7 +1541,7 @@ mod tests {
             let events = crate::test_support::rollout_events(fixture.root());
 
             assert_eq!(events.len(), 1);
-            assert_eq!(events[0].timestamp, "2026-09-01T00:00:01.000Z");
+            assert_eq!(events[0].last_activity, "2026-09-01T00:00:01.000Z");
             assert_eq!(events[0].input_tokens, 100);
             assert_eq!(events[0].output_tokens, 20);
             assert_eq!(events[0].total_tokens, 120);
@@ -1736,44 +1549,63 @@ mod tests {
     }
 
     #[test]
-    fn typed_and_value_headless_decoders_agree() {
-        let cases = [
-            json!({ "timestamp": "2026-09-01T00:00:01Z", "model": "gpt-5", "usage": { "input_tokens": 10, "output_tokens": 2 } }),
-            json!({ "created_at": 1_788_220_801_u64, "data": { "model_name": " gpt-5-mini ", "usage": { "prompt_tokens": 7, "completion_tokens": 3, "cached_tokens": 4 } } }),
-            json!({ "createdAt": 1_788_220_801_000_u64, "result": { "metadata": { "model": "gpt-5" }, "usage": { "input": 5, "output": 1, "total_tokens": 0 } } }),
-            json!({ "response": { "timestamp": "2026-09-01 00:00:01", "createdAt": "2026-09-01T00:00:02Z", "usage": { "input_tokens": "12", "reasoning_tokens": 3 } } }),
-            json!({ "timestamp": "not a date", "created_at": "2026-09-01T00:00:03Z", "model": "  ", "model_name": "gpt-5" }),
-            json!({ "usage": "broken", "data": { "usage": { "input_tokens": 1 } } }),
-            json!({ "usage": [1, 2], "result": { "usage": null } }),
-            json!({ "usage": { "input_tokens": 0, "output_tokens": 0 } }),
-            json!({ "data": null, "result": 3, "response": "x", "metadata": [] }),
-        ];
-        for case in cases {
-            let line = case.to_string();
-            let typed = serde_json::from_str::<CodexLogEntry<'_>>(&line).unwrap();
-            let value = serde_json::from_str::<Value>(&line).unwrap();
-
-            assert_eq!(
-                normalize_headless_codex_usage(&typed),
-                normalize_headless_codex_usage_value(&value),
-                "{line}"
-            );
-            assert_eq!(
-                codex_model_from_result(&typed),
-                codex_model_from_result_value(&value),
-                "{line}"
-            );
-            assert_eq!(
-                codex_timestamp_from_result(&typed),
-                codex_timestamp_from_result_value(&value),
-                "{line}"
-            );
-            assert_eq!(
-                codex_model_timestamp_from_result(&typed),
-                codex_model_timestamp_from_result_value(&value),
-                "{line}"
-            );
+    fn headless_decoder_recovers_malformed_optional_fields_and_usage() {
+        for line in [
+            r#"{"timestamp":false,"created_at":"2026-09-01T00:00:01Z","model":{},"model_name":"gpt-5-mini","usage":{"input_tokens":10,"output_tokens":2}}"#,
+            r#"{"timestamp":[],"metadata":{"model":false},"data":{"model_name":"gpt-5-mini","createdAt":1788220801000,"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"usage":{"input_tokens":[]},"response":{"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"usage":{"input_tokens":{}},"result":{"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"payload":{"info":{"last_token_usage":{"input_tokens":{}}}},"usage":{"input_tokens":10,"output_tokens":2}}"#,
+            r#"{"metadata":{"model":[]},"response":{"metadata":{"model":{}},"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        ] {
+            let typed: CodexLogEntry<'_> = serde_json::from_str(line).unwrap();
+            let usage = normalize_headless_codex_usage(&typed).unwrap().unwrap();
+            assert_eq!(usage.input_tokens, 10, "{line}");
+            assert_eq!(usage.output_tokens, 2, "{line}");
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+            let events = crate::test_support::rollout_events(fixture.root());
+            assert_eq!(events.len(), 1, "{line}");
+            assert_eq!(events[0].input_tokens, 10, "{line}");
+            assert_eq!(events[0].output_tokens, 2, "{line}");
         }
+    }
+
+    #[test]
+    fn headless_decoder_keeps_the_last_duplicate_field() {
+        for line in [
+            r#"{"model":"old","model":"gpt-5-mini","usage":{"input_tokens":999},"usage":{"input_tokens":10,"output_tokens":2}}"#,
+            r#"{"data":{"model":"old","model":"gpt-5-mini","usage":{"input_tokens":999,"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"data":{"usage":{"input_tokens":999}},"data":{"model":"gpt-5-mini","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        ] {
+            let typed: CodexLogEntry<'_> = serde_json::from_str(line).unwrap();
+            assert_eq!(
+                codex_model_from_result(&typed).as_deref(),
+                Some("gpt-5-mini")
+            );
+            assert_eq!(
+                normalize_headless_codex_usage(&typed)
+                    .unwrap()
+                    .unwrap()
+                    .input_tokens,
+                10
+            );
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+            let events = crate::test_support::rollout_events(fixture.root());
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].model, "gpt-5-mini");
+            assert_eq!(events[0].input_tokens, 10);
+        }
+    }
+
+    #[test]
+    fn session_usage_ignores_unrelated_headless_fields() {
+        let fixture = fs_fixture!({
+            "session.jsonl": r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","model":{},"created_at":false,"data":{"model":[]},"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
+        });
+        let events = crate::test_support::rollout_events(fixture.root());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 10);
+        assert_eq!(events[0].model, "gpt-5");
     }
 
     #[test]
@@ -2048,19 +1880,19 @@ mod tests {
         for (line, kind) in [
             (
                 br#"{"type":"turn\u005fcontext","payload":{}}"#.as_slice(),
-                CodexLineKind::Session,
+                CodexLineKind::Escaped,
             ),
             (
                 br#"{"type":"event_msg","payload":{"type":"token\u005fcount"}}"#.as_slice(),
-                CodexLineKind::Session,
+                CodexLineKind::Escaped,
             ),
             (
                 br#"{"type":"compact\u0065d","payload":{}}"#.as_slice(),
-                CodexLineKind::Session,
+                CodexLineKind::Escaped,
             ),
             (
                 br#"{"type":"turn.completed","us\u0061ge":{"input_tokens":1}}"#.as_slice(),
-                CodexLineKind::Headless,
+                CodexLineKind::Escaped,
             ),
         ] {
             assert_eq!(
@@ -2147,10 +1979,9 @@ mod diagnostic_tests {
             fixture.root(),
             &path,
             None,
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         let debug = crate::cli::SharedArgs {
@@ -2181,10 +2012,9 @@ mod diagnostic_tests {
             fixture.root(),
             &path,
             None,
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
         fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
@@ -2212,10 +2042,9 @@ mod diagnostic_tests {
             fixture.root(),
             &path,
             None,
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
     }
@@ -2240,10 +2069,9 @@ mod diagnostic_tests {
                 fixture.root(),
                 &path,
                 None,
-                |_| Ok(()),
+                |_| {},
                 &diagnostics,
-            )
-            .unwrap();
+            );
 
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{malformed}");
         }
@@ -2265,11 +2093,9 @@ mod diagnostic_tests {
             None,
             |event| {
                 events.push(event);
-                Ok(())
             },
             &diagnostics,
-        )
-        .unwrap();
+        );
         assert!(events.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         // Like every JSONL source, a selected record that does not decode and

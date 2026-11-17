@@ -387,19 +387,19 @@ fn loads_saved_codex_exec_json_usage() {
 
     assert_eq!(events.len(), 3);
     assert_eq!(events[0].session_id, "run");
-    assert_eq!(events[0].timestamp, "2026-01-02T03:04:05.000Z");
+    assert_eq!(events[0].last_activity, "2026-01-02T03:04:05.000Z");
     assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[0].input_tokens, 120);
     assert_eq!(events[0].cached_input_tokens, 20);
     assert_eq!(events[0].output_tokens, 30);
     assert_eq!(events[0].total_tokens, 150);
-    assert_eq!(events[1].timestamp, "2026-01-02T03:05:05.000Z");
+    assert_eq!(events[1].last_activity, "2026-01-02T03:05:05.000Z");
     assert_eq!(events[1].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[1].input_tokens, 50);
     assert_eq!(events[1].cached_input_tokens, 5);
     assert_eq!(events[1].output_tokens, 12);
     assert_eq!(events[1].total_tokens, 62);
-    assert_eq!(events[2].timestamp, "2026-01-02T03:06:05.000Z");
+    assert_eq!(events[2].last_activity, "2026-01-02T03:06:05.000Z");
     assert_eq!(events[2].input_tokens, 9);
     assert_eq!(events[2].output_tokens, 4);
     assert_eq!(events[2].reasoning_output_tokens, 1);
@@ -444,7 +444,7 @@ fn loads_session_usage_with_numeric_timestamp() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "session");
-    assert_eq!(events[0].timestamp, "2026-01-02T00:00:01.000Z");
+    assert_eq!(events[0].last_activity, "2026-01-02T00:00:01.000Z");
     assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 100);
     assert_eq!(events[0].cached_input_tokens, 10);
@@ -466,13 +466,13 @@ fn loads_session_usage_with_spaced_type_fields() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 2);
-    assert_eq!(events[0].timestamp, "2026-01-02T00:00:01.000Z");
+    assert_eq!(events[0].last_activity, "2026-01-02T00:00:01.000Z");
     assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 100);
     assert_eq!(events[0].cached_input_tokens, 10);
     assert_eq!(events[0].output_tokens, 50);
     assert_eq!(events[0].total_tokens, 150);
-    assert_eq!(events[1].timestamp, "2026-01-02T00:00:02.000Z");
+    assert_eq!(events[1].last_activity, "2026-01-02T00:00:02.000Z");
     assert_eq!(events[1].input_tokens, 100);
     assert_eq!(events[1].cached_input_tokens, 10);
     assert_eq!(events[1].output_tokens, 25);
@@ -827,7 +827,7 @@ fn loads_headless_usage_with_token_count_text_content() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "run");
-    assert_eq!(events[0].timestamp, "2026-01-02T03:04:05.000Z");
+    assert_eq!(events[0].last_activity, "2026-01-02T03:04:05.000Z");
     assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[0].input_tokens, 120);
     assert_eq!(events[0].cached_input_tokens, 20);
@@ -2746,7 +2746,12 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
     let diagnostics = Diagnostics::new("codex");
 
     let plan_files = || [(sessions.as_path(), files.as_slice())];
-    let plan = CodexReplayPlan::for_bounded_files(plan_files(), plan_files(), true, &diagnostics);
+    let plan = CodexReplayPlan::new(
+        crate::replay::read_session_metadata(plan_files(), true),
+        None,
+        true,
+        &diagnostics,
+    );
 
     assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
     for file in &files {
@@ -2754,12 +2759,16 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
             &sessions,
             file,
             plan.fork_replay(file),
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
     }
-    let _ = CodexReplayPlan::for_bounded_files(plan_files(), plan_files(), true, &diagnostics);
+    let _ = CodexReplayPlan::new(
+        crate::replay::read_session_metadata(plan_files(), true),
+        None,
+        true,
+        &diagnostics,
+    );
     assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
 }
 
@@ -2933,4 +2942,60 @@ fn replay_input_tokens_by_session(dir: &Path) -> Vec<(String, u64)> {
         .iter()
         .map(|event| (event.session_id.clone(), event.input_tokens))
         .collect()
+}
+
+#[test]
+fn auto_review_keeps_the_recorded_calendar_date_across_utc_boundaries() {
+    let fixture = fs_fixture!({
+        "headless.jsonl": json!({
+            "type": "turn.completed",
+            "timestamp": "2026-07-30T00:30:00+01:00",
+            "model": "codex-auto-review",
+            "usage": { "input_tokens": 10, "output_tokens": 2 },
+        }).to_string(),
+    });
+    let events = crate::test_support::rollout_events(fixture.root());
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].timestamp,
+        crate::parse_ts_timestamp("2026-07-29T23:30:00Z").unwrap()
+    );
+    assert_eq!(events[0].last_activity, "2026-07-29T23:30:00.000Z");
+    assert_eq!(events[0].model, "gpt-5.6-luna");
+    assert!(events[0].is_fallback_model);
+}
+
+#[test]
+fn auto_review_keeps_a_valid_date_prefix_when_another_field_dates_usage() {
+    let fixture = fs_fixture!({
+        "headless.jsonl": json!({
+            "type": "turn.completed",
+            "timestamp": "2026-07-30Tnot-a-time",
+            "created_at": "2026-03-05T00:00:00Z",
+            "model": "codex-auto-review",
+            "usage": { "input_tokens": 10, "output_tokens": 2 },
+        }).to_string(),
+    });
+    let events = crate::test_support::rollout_events(fixture.root());
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].timestamp,
+        crate::parse_ts_timestamp("2026-03-05T00:00:00Z").unwrap()
+    );
+    assert_eq!(events[0].last_activity, "2026-03-05T00:00:00.000Z");
+    assert_eq!(events[0].model, "gpt-5.6-luna");
+    assert!(events[0].is_fallback_model);
+}
+
+#[test]
+fn releases_a_forks_single_usage_observation_at_end_of_file() {
+    let fixture = fs_fixture!({
+        "sessions/child.jsonl": [
+            replay_metadata("2026-01-02T00:00:00Z", "child", Some("missing")),
+            replay_token_count("2026-01-02T00:00:00Z", 100),
+        ].join("\n"),
+    });
+    let events = crate::test_support::rollout_events(&fixture.path("sessions"));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].input_tokens, 100);
 }

@@ -245,11 +245,9 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
         None,
         |event| {
             visited.push(event);
-            Ok(())
         },
         &Diagnostics::new("codex"),
-    )
-    .unwrap();
+    );
     assert_eq!(visited.len(), 1);
     assert_eq!(visited[0].session_id, "session");
     assert_eq!(visited[0].total_tokens, 120);
@@ -278,14 +276,12 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
         None,
         |event| {
             visited.push(event);
-            Ok(())
         },
         &Diagnostics::new("codex"),
-    )
-    .unwrap();
+    );
 
     assert_eq!(visited.len(), 1);
-    assert_eq!(visited[0].timestamp, "2026-10-14T12:00:00.000Z");
+    assert_eq!(visited[0].last_activity, "2026-10-14T12:00:00.000Z");
 }
 
 #[test]

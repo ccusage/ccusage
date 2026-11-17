@@ -57,11 +57,9 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
         }),
         |event| {
             events.push(event);
-            Ok(())
         },
         &ccusage_core::Diagnostics::new("codex"),
-    )
-    .unwrap();
+    );
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].response_id.as_deref(), Some("response-1"));
