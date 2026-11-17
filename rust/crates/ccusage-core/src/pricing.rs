@@ -99,9 +99,9 @@ const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 pub struct Pricing {
     pub input: f64,
     pub output: f64,
-    pub cache_create: Option<f64>,
+    pub(crate) cache_create: Option<f64>,
     pub cache_read: Option<f64>,
-    pub cache_create_1h: Option<f64>,
+    pub(crate) cache_create_1h: Option<f64>,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub cache_create_above_200k: Option<f64>,
@@ -301,6 +301,13 @@ enum Fuzzy {
     Denied,
 }
 
+#[derive(Clone, Copy)]
+enum Lookup {
+    Pricing,
+    Context,
+    Exact,
+}
+
 /// One slot per looked-up model, so concurrent first lookups of a model share
 /// a single fuzzy search instead of each running it.
 type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<Pricing>>>>>;
@@ -319,10 +326,10 @@ pub struct PricingMap {
     /// `kimi-k2-7-code` would be billed at the premium tier.
     exact_only: ExactOnlyKeys,
     context_limits: FxHashMap<String, u64>,
-    /// Final context-window defaults that must not mask refreshed metadata.
-    builtin_context_limits: FxHashMap<String, u64>,
+    context_defaults: FxHashSet<String>,
+    fallback_keys: FxHashSet<String>,
+    live_merged: OnceLock<Box<PricingMap>>,
     enable_models_dev_fallback: bool,
-    enable_embedded_models_dev_fallback: bool,
     find_cache: OnceLock<FindCache>,
     /// Every entry key under its normalized spelling, mapped to the one key
     /// carrying that spelling, or `None` when several keys share it.
@@ -423,9 +430,10 @@ impl Default for PricingMap {
             user_overrides: FxHashMap::default(),
             exact_only: ExactOnlyKeys::default(),
             context_limits: FxHashMap::default(),
-            builtin_context_limits: FxHashMap::default(),
+            context_defaults: FxHashSet::default(),
+            fallback_keys: FxHashSet::default(),
+            live_merged: OnceLock::new(),
             enable_models_dev_fallback: false,
-            enable_embedded_models_dev_fallback: false,
             find_cache: OnceLock::new(),
             normalized_keys: OnceLock::new(),
         }
@@ -912,15 +920,20 @@ impl PricingMap {
     }
 
     fn build_embedded() -> Self {
+        Self::from_litellm(build_time_pricing_json())
+    }
+
+    fn from_litellm(json: &str) -> Self {
         let mut map = Self::default();
-        map.load_json(build_time_pricing_json());
-        map.put_builtin_pricing();
-        map.fill_long_context_rates_from_models_dev();
-        // Resolve models that LiteLLM and the built-in table miss from the
-        // embedded models.dev snapshot. This works offline, unlike the network
-        // source gated by `enable_models_dev_fallback`.
-        map.enable_embedded_models_dev_fallback = true;
+        map.load_json(json);
+        map.complete_layers();
         map
+    }
+
+    fn complete_layers(&mut self) {
+        self.put_builtin_pricing();
+        self.fill_long_context_rates_from_models_dev();
+        self.merge_missing(embedded_models_dev_pricing());
     }
 
     pub fn load_with_overrides<'a, I>(offline: bool, log: bool, overrides: I) -> Self
@@ -942,10 +955,6 @@ impl PricingMap {
             );
         }
 
-        // A live LiteLLM refresh replaces whole entries, so re-apply the
-        // built-in long-context rates it does not publish before user
-        // overrides get the final word.
-        map.fill_long_context_rates_from_models_dev();
         map.enable_models_dev_fallback = !offline;
         map
     }
@@ -959,14 +968,16 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
+        let base = self.live_merged.get().map_or(self, |map| map.as_ref());
         let mut map = Self {
-            entries: self.entries.clone(),
-            user_overrides: self.user_overrides.clone(),
-            exact_only: self.exact_only.clone(),
-            context_limits: self.context_limits.clone(),
-            builtin_context_limits: self.builtin_context_limits.clone(),
+            entries: base.entries.clone(),
+            user_overrides: base.user_overrides.clone(),
+            exact_only: base.exact_only.clone(),
+            context_limits: base.context_limits.clone(),
+            context_defaults: base.context_defaults.clone(),
+            fallback_keys: base.fallback_keys.clone(),
+            live_merged: OnceLock::new(),
             enable_models_dev_fallback: self.enable_models_dev_fallback,
-            enable_embedded_models_dev_fallback: self.enable_embedded_models_dev_fallback,
             find_cache: OnceLock::new(),
             normalized_keys: OnceLock::new(),
         };
@@ -980,7 +991,12 @@ impl PricingMap {
     {
         let mut loaded_count = 0;
         let fetched = fetch_json(&mut |json| {
-            loaded_count = self.load_json(json);
+            let mut refreshed = Self::default();
+            loaded_count = refreshed.load_json(json);
+            if loaded_count > 0 {
+                refreshed.complete_layers();
+                *self = refreshed;
+            }
             loaded_count > 0
         });
         if !should_log_pricing_refresh_details() {
@@ -1026,6 +1042,18 @@ impl PricingMap {
                     flex: entry.flex,
                 })
                 .unwrap_or_default();
+            let normalized = normalized_pricing_key(&model);
+            let replaced: Vec<_> = self
+                .fallback_keys
+                .iter()
+                .filter(|key| normalized_pricing_key(key) == normalized)
+                .cloned()
+                .collect();
+            for key in replaced {
+                self.entries.remove(&key);
+                self.exact_only.remove(&key);
+                self.fallback_keys.remove(&key);
+            }
             self.entries.insert(
                 model.clone(),
                 provider_specific
@@ -1046,6 +1074,7 @@ impl PricingMap {
                     }),
             );
             if let Some(context_limit) = context_limit {
+                self.context_defaults.remove(&model);
                 self.context_limits.insert(model, context_limit);
             }
             loaded_count += 1;
@@ -1241,6 +1270,7 @@ impl PricingMap {
             }
             match context_limit {
                 Some(context_limit) => {
+                    self.context_defaults.remove(&model_id);
                     self.context_limits.insert(model_id.clone(), context_limit);
                 }
                 // A replacement that publishes no limit must not keep the limit of
@@ -1272,10 +1302,6 @@ impl PricingMap {
     }
 
     pub fn find(&self, model: &str) -> Option<Pricing> {
-        // Fast path: check the model-level cache first. When the same model
-        // name is looked up repeatedly (e.g. across thousands of entries with
-        // only a few dozen unique models), the cache avoids re-running the
-        // expensive fuzzy fallback on every call.
         let cache = self
             .find_cache
             .get_or_init(|| RwLock::new(FxHashMap::default()));
@@ -1294,84 +1320,166 @@ impl PricingMap {
                 .entry(model.to_string())
                 .or_default(),
         );
-        // The lock is released before the search, so lookups of other models
-        // are not serialized behind it. Misses are cached as `None` as well.
         *slot.get_or_init(|| {
-            self.find_with_fallbacks(
-                model,
-                || {
-                    self.enable_models_dev_fallback
-                        .then(models_dev_pricing)
-                        .flatten()
-                },
-                || {
-                    self.enable_embedded_models_dev_fallback
-                        .then(embedded_models_dev_pricing)
-                },
-            )
+            let map = self.for_lookup(model, Lookup::Pricing);
+            map.lookup(&map.entries, model, Fuzzy::Allowed)
         })
     }
 
-    fn find_with_fallbacks<'a>(
+    fn merge_missing(&mut self, source: &Self) {
+        let occupied: FxHashSet<_> = self
+            .entries
+            .keys()
+            .map(|key| normalized_pricing_key(key).into_owned())
+            .collect();
+        for (model, pricing) in &source.entries {
+            if occupied.contains(normalized_pricing_key(model).as_ref()) {
+                continue;
+            }
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                self.entries.entry(model.clone())
+            {
+                entry.insert(*pricing);
+                self.fallback_keys.insert(model.clone());
+                if source.exact_only.contains(model) {
+                    self.exact_only.insert(model.clone());
+                }
+            }
+        }
+        for (model, limit) in &source.context_limits {
+            if !self.context_limits.contains_key(model) || self.context_defaults.remove(model) {
+                self.context_limits.insert(model.clone(), *limit);
+            }
+        }
+        self.clear_find_cache();
+    }
+
+    fn for_lookup(&self, model: &str, lookup: Lookup) -> &Self {
+        self.with_live_layer(model, lookup, models_dev_pricing)
+    }
+
+    fn with_live_layer<'a>(
         &self,
         model: &str,
-        models_dev: impl FnOnce() -> Option<&'a PricingMap>,
-        embedded_models_dev: impl FnOnce() -> Option<&'a PricingMap>,
-    ) -> Option<Pricing> {
-        let alias = crate::model_aliases::resolve_model_name(model);
-        let resolved_alias = alias.as_ref();
-
-        // Keep exact primary hits on the local fast path. A fuzzy primary hit,
-        // however, cannot be accepted until the live catalog has had a chance
-        // to identify the request as one of its exact-only entries.
-        if let Some(pricing) = self
-            .find_entry_or_alias_with_fallback(model, Fuzzy::Denied, None)
-            .or_else(|| {
-                (resolved_alias != model)
-                    .then(|| {
-                        self.find_entry_or_alias_with_fallback(resolved_alias, Fuzzy::Denied, None)
-                    })
-                    .flatten()
-            })
-        {
-            return Some(pricing);
+        lookup: Lookup,
+        live: impl FnOnce() -> Option<&'a Self>,
+    ) -> &Self {
+        if let Some(merged) = self.live_merged.get() {
+            return merged;
         }
+        if !self.enable_models_dev_fallback {
+            return self;
+        }
+        let exact = match lookup {
+            Lookup::Context => self
+                .resolve_key(&self.context_limits, model, Fuzzy::Denied)
+                .filter(|key| !self.context_defaults.contains(*key))
+                .is_some(),
+            Lookup::Pricing => self.lookup(&self.entries, model, Fuzzy::Denied).is_some(),
+            Lookup::Exact => self.find_exact_normalized(model).is_some(),
+        };
+        if exact {
+            return self;
+        }
+        self.live_merged.get_or_init(|| {
+            let mut merged = self.with_user_overrides(std::iter::empty());
+            merged.enable_models_dev_fallback = false;
+            if let Some(live) = live() {
+                merged.merge_missing(live);
+            }
+            if let Some(cache) = self.find_cache.get() {
+                cache
+                    .write()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .clear();
+            }
+            Box::new(merged)
+        })
+    }
 
-        let embedded_models_dev = embedded_models_dev();
-        let models_dev = models_dev();
-        let fuzzy = self.allows_fuzzy_lookup_with_fallbacks(
-            model,
-            resolved_alias,
-            models_dev,
-            embedded_models_dev,
-        );
-        self.find_entry_or_alias_with_fallback(model, fuzzy, embedded_models_dev)
+    fn lookup<T: Copy>(
+        &self,
+        entries: &FxHashMap<String, T>,
+        model: &str,
+        fuzzy: Fuzzy,
+    ) -> Option<T> {
+        self.resolve_key(entries, model, fuzzy)
+            .and_then(|key| entries.get(key).copied())
+    }
+
+    fn resolve_key<'a, T>(
+        &self,
+        entries: &'a FxHashMap<String, T>,
+        model: &str,
+        fuzzy: Fuzzy,
+    ) -> Option<&'a str> {
+        let alias = crate::model_aliases::resolve_model_name(model);
+        let resolved = alias.as_ref();
+        self.entry_or_alias_key(entries, model, Fuzzy::Denied)
             .or_else(|| {
-                (resolved_alias != model)
-                    .then(|| {
-                        self.find_entry_or_alias_with_fallback(
-                            resolved_alias,
-                            fuzzy,
-                            embedded_models_dev,
-                        )
-                    })
+                (resolved != model)
+                    .then(|| self.entry_or_alias_key(entries, resolved, Fuzzy::Denied))
                     .flatten()
             })
             .or_else(|| {
-                models_dev.and_then(|pricing| {
-                    pricing.find_entry_or_alias_with_fallback(
-                        resolved_alias,
-                        fuzzy,
-                        embedded_models_dev,
-                    )
-                })
+                if fuzzy == Fuzzy::Denied
+                    || [model, resolved].into_iter().any(|candidate| {
+                        self.exact_only.contains_any_spelling(candidate)
+                            || pricing_alias(candidate)
+                                .is_some_and(|alias| self.exact_only.contains_any_spelling(alias))
+                    })
+                {
+                    return None;
+                }
+                self.entry_or_alias_key(entries, model, Fuzzy::Allowed)
+                    .or_else(|| {
+                        (resolved != model)
+                            .then(|| self.entry_or_alias_key(entries, resolved, Fuzzy::Allowed))
+                            .flatten()
+                    })
             })
-            // The embedded models.dev snapshot is a separate map. Its exact-only
-            // ids gate fuzzy matches in earlier sources; otherwise it only
-            // resolves their misses. It works offline, unlike the network source.
+    }
+
+    fn entry_or_alias_key<'a, T>(
+        &self,
+        entries: &'a FxHashMap<String, T>,
+        model: &str,
+        fuzzy: Fuzzy,
+    ) -> Option<&'a str> {
+        entries
+            .get_key_value(model)
+            .map(|(key, _)| key.as_str())
             .or_else(|| {
-                embedded_models_dev
-                    .and_then(|pricing| pricing.find_entry_or_alias(resolved_alias, fuzzy))
+                pricing_alias(model).and_then(|alias| self.entry_key(entries, alias, fuzzy))
+            })
+            .or_else(|| self.entry_key(entries, model, fuzzy))
+    }
+
+    fn entry_key<'a, T>(
+        &self,
+        entries: &'a FxHashMap<String, T>,
+        model: &str,
+        fuzzy: Fuzzy,
+    ) -> Option<&'a str> {
+        entries
+            .get_key_value(model)
+            .map(|(key, _)| key.as_str())
+            .or_else(|| {
+                if let Some(id) = self.exact_only.id_spelled_by(model) {
+                    return entries.get_key_value(id).map(|(key, _)| key.as_str());
+                }
+                if fuzzy == Fuzzy::Denied || self.exact_only.contains_any_spelling(model) {
+                    return None;
+                }
+                let normalized = normalized_pricing_key(model);
+                entries
+                    .keys()
+                    .filter(|key| !self.exact_only.contains(key.as_str()))
+                    .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
+                    .max_by(|left, right| {
+                        left.len().cmp(&right.len()).then_with(|| right.cmp(left))
+                    })
+                    .map(String::as_str)
             })
     }
 
@@ -1415,26 +1523,14 @@ impl PricingMap {
                 .contains_key(crate::model_aliases::resolve_model_name(model).as_ref())
     }
 
-    /// Finds pricing by exact model id in the primary map or an enabled
-    /// models.dev fallback.
-    ///
-    /// Unlike [`Self::find`], this lookup does not resolve aliases or use
-    /// separator and fuzzy matching.
     pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-        self.find_exact_normalized(model)
-            .or_else(|| {
-                self.enable_models_dev_fallback
-                    .then(|| {
-                        models_dev_pricing()
-                            .and_then(|pricing| pricing.find_exact_normalized(model))
-                    })
-                    .flatten()
-            })
-            .or_else(|| {
-                self.enable_embedded_models_dev_fallback
-                    .then(|| embedded_models_dev_pricing().find_exact_normalized(model))
-                    .flatten()
-            })
+        if let Some(merged) = self.live_merged.get() {
+            return merged.find_exact_normalized(model);
+        }
+        self.find_exact_normalized(model).or_else(|| {
+            self.for_lookup(model, Lookup::Exact)
+                .find_exact_normalized(model)
+        })
     }
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
@@ -1469,264 +1565,9 @@ impl PricingMap {
         })
     }
 
-    fn find_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
-        self.find_entry_or_alias_with_fallback(
-            model,
-            fuzzy,
-            self.enable_embedded_models_dev_fallback
-                .then(embedded_models_dev_pricing),
-        )
-    }
-
-    fn find_entry_or_alias_with_fallback(
-        &self,
-        model: &str,
-        fuzzy: Fuzzy,
-        embedded_models_dev: Option<&PricingMap>,
-    ) -> Option<Pricing> {
-        self.entries
-            .get(model)
-            .copied()
-            .or_else(|| {
-                pricing_alias(model).and_then(|alias| {
-                    self.find_entry_with_fallback(alias, fuzzy, embedded_models_dev)
-                })
-            })
-            .or_else(|| self.find_entry_with_fallback(model, fuzzy, embedded_models_dev))
-    }
-
-    #[cfg(test)]
-    fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
-        self.find_entry_with_fallback(
-            model,
-            fuzzy,
-            self.enable_embedded_models_dev_fallback
-                .then(embedded_models_dev_pricing),
-        )
-    }
-
-    fn find_entry_with_fallback(
-        &self,
-        model: &str,
-        fuzzy: Fuzzy,
-        embedded_models_dev: Option<&PricingMap>,
-    ) -> Option<Pricing> {
-        self.entries.get(model).copied().or_else(|| {
-            // A separator spelling of an exact-only id names that entry, so it
-            // is answered from it rather than gated into a miss below.
-            if let Some(id) = self.exact_only.id_spelled_by(model) {
-                return self.entries.get(id).copied();
-            }
-            if fuzzy == Fuzzy::Denied
-                || self.is_exact_only_lookup_with_fallback(model, embedded_models_dev)
-            {
-                return None;
-            }
-            let normalized_model = normalized_pricing_key(model);
-            self.entries
-                .iter()
-                .filter(|(candidate, _)| !self.exact_only.contains(candidate.as_str()))
-                .filter(|(candidate, _)| {
-                    pricing_key_matches(candidate, model, normalized_model.as_ref())
-                })
-                .max_by(|(left, _), (right, _)| {
-                    left.len().cmp(&right.len()).then_with(|| right.cmp(left))
-                })
-                .map(|(_, pricing)| *pricing)
-        })
-    }
-
-    /// Whether `model` names an entry that only an exact request may use, which
-    /// is the other half of the `exact_only` rule: such a key must not be
-    /// answered by a fuzzy match on a different model either, or the tier it
-    /// names is unreachable and the base model's rate is billed for it.
-    ///
-    /// The check has to reach past this map because the embedded models.dev
-    /// snapshot is a separate map consulted only after the primary one misses:
-    /// `claude-opus-5-fast` would otherwise fuzzy-match LiteLLM's
-    /// `claude-opus-5` here and never reach the snapshot's tier entry. Only a
-    /// carried entry gates the scan, so a key nothing prices exactly still falls
-    /// back to fuzzy matching rather than losing its rate.
-    ///
-    /// The lower-level check does not fetch the network catalog. Top-level
-    /// fallback lookup first tries exact primary entries, then loads the live
-    /// catalog and combines its exact-only set with this one before any fuzzy
-    /// primary scan. This preserves the local fast path without letting a live
-    /// tier be hidden by a primary base-model match.
-    /// Membership is asked of every spelling of the id, not just the one the
-    /// catalog wrote: the fuzzy scan the gate protects matches `.`, `@` and `-`
-    /// interchangeably, so `claude-opus-5-eu` reaches the base model's entry
-    /// just as `claude-opus-5@eu` would and has to be gated with it.
-    fn is_exact_only_lookup(&self, model: &str) -> bool {
-        self.is_exact_only_lookup_with_fallback(
-            model,
-            self.enable_embedded_models_dev_fallback
-                .then(embedded_models_dev_pricing),
-        )
-    }
-
-    fn is_exact_only_lookup_with_fallback(
-        &self,
-        model: &str,
-        embedded_models_dev: Option<&PricingMap>,
-    ) -> bool {
-        self.exact_only.contains_any_spelling(model)
-            || embedded_models_dev
-                .is_some_and(|pricing| pricing.exact_only.contains_any_spelling(model))
-    }
-
-    /// Whether the spelling a lookup recorded may be fuzzy-matched at all.
-    ///
-    /// A configured or built-in alias pointing at an exact-only id is tried only
-    /// after this map has answered for the recorded spelling, so a spelling that
-    /// fuzzy-matches some other model - `claude-opus-5-turbo` aliased to
-    /// `claude-opus-5-fast` matches LiteLLM's `claude-opus-5` - would be billed
-    /// at that model's rate and never reach the tier the alias names. Exact
-    /// entries for the recorded spelling still win, as they do without an alias.
-    fn allows_fuzzy_lookup_with_fallbacks(
-        &self,
-        model: &str,
-        resolved_alias: &str,
-        models_dev: Option<&PricingMap>,
-        embedded_models_dev: Option<&PricingMap>,
-    ) -> Fuzzy {
-        let is_exact_only = |candidate| {
-            self.is_exact_only_lookup_with_fallback(candidate, embedded_models_dev)
-                || models_dev
-                    .is_some_and(|pricing| pricing.exact_only.contains_any_spelling(candidate))
-        };
-        let requires_exact = |candidate| {
-            is_exact_only(candidate) || pricing_alias(candidate).is_some_and(&is_exact_only)
-        };
-        if requires_exact(model) || (resolved_alias != model && requires_exact(resolved_alias)) {
-            return Fuzzy::Denied;
-        }
-        Fuzzy::Allowed
-    }
-
     pub fn context_limit(&self, model: &str) -> Option<u64> {
-        self.context_limit_with_fallbacks(
-            model,
-            || {
-                self.enable_models_dev_fallback
-                    .then(models_dev_pricing)
-                    .flatten()
-            },
-            || {
-                self.enable_embedded_models_dev_fallback
-                    .then(embedded_models_dev_pricing)
-            },
-        )
-    }
-
-    fn context_limit_with_fallbacks<'a>(
-        &self,
-        model: &str,
-        models_dev: impl FnOnce() -> Option<&'a PricingMap>,
-        embedded_models_dev: impl FnOnce() -> Option<&'a PricingMap>,
-    ) -> Option<u64> {
-        let alias = crate::model_aliases::resolve_model_name(model);
-        let resolved_alias = alias.as_ref();
-
-        if let Some(context_limit) = self
-            .context_limit_entry_or_alias(model, Fuzzy::Denied)
-            .or_else(|| {
-                (resolved_alias != model)
-                    .then(|| self.context_limit_entry_or_alias(resolved_alias, Fuzzy::Denied))
-                    .flatten()
-            })
-        {
-            return Some(context_limit);
-        }
-
-        let embedded_models_dev = embedded_models_dev();
-        let models_dev = models_dev();
-        let fuzzy = self.allows_fuzzy_lookup_with_fallbacks(
-            model,
-            resolved_alias,
-            models_dev,
-            embedded_models_dev,
-        );
-        self.context_limit_entry_or_alias(model, fuzzy)
-            .or_else(|| {
-                (resolved_alias != model)
-                    .then(|| self.context_limit_entry_or_alias(resolved_alias, fuzzy))
-                    .flatten()
-            })
-            .or_else(|| {
-                models_dev
-                    .and_then(|pricing| pricing.context_limit_entry_or_alias(resolved_alias, fuzzy))
-            })
-            .or_else(|| {
-                embedded_models_dev
-                    .and_then(|pricing| pricing.context_limit_entry_or_alias(resolved_alias, fuzzy))
-            })
-            .or_else(|| {
-                self.context_limit_entry_or_alias_in(&self.builtin_context_limits, model, fuzzy)
-            })
-            .or_else(|| {
-                (resolved_alias != model)
-                    .then(|| {
-                        self.context_limit_entry_or_alias_in(
-                            &self.builtin_context_limits,
-                            resolved_alias,
-                            fuzzy,
-                        )
-                    })
-                    .flatten()
-            })
-    }
-
-    fn context_limit_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
-        self.context_limit_entry_or_alias_in(&self.context_limits, model, fuzzy)
-    }
-
-    fn context_limit_entry_or_alias_in(
-        &self,
-        context_limits: &FxHashMap<String, u64>,
-        model: &str,
-        fuzzy: Fuzzy,
-    ) -> Option<u64> {
-        context_limits
-            .get(model)
-            .copied()
-            .or_else(|| {
-                pricing_alias(model)
-                    .and_then(|alias| self.context_limit_entry_in(context_limits, alias, fuzzy))
-            })
-            .or_else(|| self.context_limit_entry_in(context_limits, model, fuzzy))
-    }
-
-    #[cfg(test)]
-    fn context_limit_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
-        self.context_limit_entry_in(&self.context_limits, model, fuzzy)
-    }
-
-    fn context_limit_entry_in(
-        &self,
-        context_limits: &FxHashMap<String, u64>,
-        model: &str,
-        fuzzy: Fuzzy,
-    ) -> Option<u64> {
-        context_limits.get(model).copied().or_else(|| {
-            if let Some(id) = self.exact_only.id_spelled_by(model) {
-                return context_limits.get(id).copied();
-            }
-            if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
-                return None;
-            }
-            let normalized_model = normalized_pricing_key(model);
-            context_limits
-                .iter()
-                .filter(|(candidate, _)| !self.exact_only.contains(candidate.as_str()))
-                .filter(|(candidate, _)| {
-                    pricing_key_matches(candidate, model, normalized_model.as_ref())
-                })
-                .max_by(|(left, _), (right, _)| {
-                    left.len().cmp(&right.len()).then_with(|| right.cmp(left))
-                })
-                .map(|(_, context_limit)| *context_limit)
-        })
+        let map = self.for_lookup(model, Lookup::Context);
+        map.lookup(&map.context_limits, model, Fuzzy::Allowed)
     }
 
     fn apply_overrides<'a, I>(&mut self, overrides: I)
@@ -1748,6 +1589,7 @@ impl PricingMap {
             self.user_overrides
                 .insert(model.to_string(), override_value.clone());
             if let Some(limit) = override_value.max_input_tokens {
+                self.context_defaults.remove(model);
                 self.context_limits.insert(model.to_string(), limit);
             }
         }
@@ -1825,6 +1667,7 @@ impl PricingMap {
     }
 
     fn clear_find_cache(&mut self) {
+        self.live_merged.take();
         if let Some(cache) = self.find_cache.get_mut() {
             cache
                 .get_mut()
@@ -1848,8 +1691,7 @@ impl PricingMap {
     /// entries only carry the flat rates, from the embedded models.dev
     /// snapshot's `cost.tiers`. LiteLLM publishes no long-context rates for
     /// OpenAI or xAI at all, so without this every request above the boundary
-    /// is billed at the base rate. Runs after every pricing load (embedded and
-    /// live) because LiteLLM refreshes replace whole entries.
+    /// is billed at the base rate.
     ///
     /// Entries that already carry any tier rate are left untouched so upstream
     /// data wins once it exists. The check is deliberately all-or-nothing
@@ -1889,26 +1731,10 @@ impl PricingMap {
         self.clear_find_cache();
     }
 
-    fn put_builtin_entry(&mut self, model: &str, pricing: Pricing) {
+    fn supplement_pricing(&mut self, model: &str, pricing: Pricing, cache_fields: bool) {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        self.entries.entry(model.to_string()).or_insert(pricing);
-        self.clear_find_cache();
-    }
-
-    fn replace_with_builtin_entry(&mut self, model: &str, pricing: Pricing) {
-        let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        self.entries.insert(model.to_string(), pricing);
-        self.clear_find_cache();
-    }
-
-    /// z.ai's catalog needs one provider fact LiteLLM does not publish: GLM
-    /// bills no cache writes, and its cache reads have their own rate. Base
-    /// rates stay whatever the loaded snapshot says - overwriting them froze
-    /// stale prices before - and only the cache fields are patched, and only
-    /// when the snapshot did not publish them itself.
-    fn put_builtin_glm(&mut self, model: &str, pricing: Pricing) {
         match self.entries.entry(model.to_string()) {
-            std::collections::hash_map::Entry::Occupied(mut existing) => {
+            std::collections::hash_map::Entry::Occupied(mut existing) if cache_fields => {
                 let existing = existing.get_mut();
                 existing.cache_read = existing.cache_read.or(pricing.cache_read);
                 existing.cache_create = existing.cache_create.or(pricing.cache_create);
@@ -1916,164 +1742,53 @@ impl PricingMap {
             std::collections::hash_map::Entry::Vacant(slot) => {
                 slot.insert(pricing);
             }
+            std::collections::hash_map::Entry::Occupied(_) => {}
         }
         self.clear_find_cache();
     }
 
-    /// Last-resort rates for models ccusage must always price, used only when
-    /// the loaded snapshots miss the key: upstream data is refreshed on every
-    /// push to main and daily, so overwriting it with these frozen numbers
-    /// would reintroduce stale prices whenever a vendor changes theirs (OpenAI
-    /// cut the gpt-5.6 rates after these were written).
     fn put_builtin_pricing(&mut self) {
-        const fn rates(input: f64, output: f64, cache_create: f64, cache_read: f64) -> Pricing {
-            Pricing {
-                input,
-                output,
-                cache_create: Some(cache_create),
-                cache_read: Some(cache_read),
-                ..Pricing::empty()
+        for supplement in BUILTIN_PRICING {
+            self.supplement_pricing(
+                supplement.model,
+                supplement.pricing,
+                supplement.cache_fields,
+            );
+            if let Some(limit) = supplement.context_limit
+                && let std::collections::hash_map::Entry::Vacant(entry) =
+                    self.context_limits.entry(supplement.model.to_string())
+            {
+                entry.insert(limit);
+                if supplement.context_fallback {
+                    self.context_defaults.insert(supplement.model.to_string());
+                }
             }
-        }
-        for model in [
-            "claude-opus-4-5",
-            "claude-opus-4-6",
-            "claude-opus-4-7",
-            "claude-opus-4-8",
-        ] {
-            self.put_builtin_entry(model, rates(5e-6, 25e-6, 6.25e-6, 0.5e-6));
-        }
-        self.put_builtin_entry("claude-haiku-4-5", rates(1e-6, 5e-6, 1.25e-6, 0.1e-6));
-        self.put_builtin_entry("claude-opus-4", rates(15e-6, 75e-6, 18.75e-6, 1.5e-6));
-        self.put_builtin_entry("claude-sonnet-4-6", rates(3e-6, 15e-6, 3.75e-6, 0.3e-6));
-        self.put_builtin_entry(
-            "claude-sonnet-4",
-            Pricing {
-                input_above_200k: Some(6e-6),
-                output_above_200k: Some(22.5e-6),
-                cache_create_above_200k: Some(7.5e-6),
-                cache_read_above_200k: Some(0.6e-6),
-                ..rates(3e-6, 15e-6, 3.75e-6, 0.3e-6)
-            },
-        );
-        let claude_3_5_haiku = rates(0.8e-6, 4e-6, 1.0e-6, 0.08e-6);
-        self.put_builtin_entry("claude-3-5-haiku", claude_3_5_haiku);
-        self.put_builtin_entry("claude-3-5-haiku-20241022", claude_3_5_haiku);
-        self.put_builtin_entry("claude-3-opus", rates(15e-6, 75e-6, 18.75e-6, 1.5e-6));
-        self.put_builtin_entry("claude-3-sonnet", rates(3e-6, 15e-6, 3.75e-6, 0.3e-6));
-        self.put_builtin_entry("claude-3-haiku", rates(0.25e-6, 1.25e-6, 0.3e-6, 0.03e-6));
-        self.put_builtin_entry("gpt-5", rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6));
-        self.put_builtin_entry("gpt-5.5", rates(5e-6, 30e-6, 5e-6, 0.5e-6));
-        self.put_builtin_entry(
-            "grok-4.3",
-            Pricing {
-                cache_read: None,
-                ..rates(1.25e-6, 2.5e-6, 1.25e-6, 0.125e-6)
-            },
-        );
-        // Source: https://platform.kimi.ai/docs/pricing/chat-k25
-        self.put_builtin_entry("moonshot/kimi-k2.5", rates(0.6e-6, 3e-6, 0.75e-6, 0.1e-6));
-        // Source: https://platform.kimi.ai/docs/pricing/chat-k26
-        self.put_builtin_entry(
-            "moonshot/kimi-k2.6",
-            rates(0.95e-6, 4e-6, 1.1875e-6, 0.16e-6),
-        );
-        let gpt_5_1_pricing = rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6);
-        self.put_builtin_entry("gpt-5.1", gpt_5_1_pricing);
-        self.replace_with_builtin_entry("gpt-5.1-codex", gpt_5_1_pricing);
-        let gpt_5_codex_pricing = rates(1.75e-6, 14e-6, 1.75e-6, 0.175e-6);
-        self.replace_with_builtin_entry("gpt-5.2-codex", gpt_5_codex_pricing);
-        self.put_builtin_entry("gpt-5.3-codex", gpt_5_codex_pricing);
-        self.replace_with_builtin_entry("gpt-5.2", gpt_5_codex_pricing);
-        self.put_builtin_entry("gpt-5.4", rates(2.5e-6, 15e-6, 2.5e-6, 0.25e-6));
-        self.put_builtin_entry("gpt-5.4-mini", rates(0.75e-6, 4.5e-6, 0.75e-6, 0.075e-6));
-        self.put_builtin_entry("gpt-5.4-nano", rates(0.2e-6, 1.25e-6, 0.2e-6, 0.02e-6));
-        // Source: https://platform.openai.com/docs/pricing (Standard tier,
-        // short context). The long-context tier rates come from the embedded
-        // models.dev snapshot via `fill_long_context_rates_from_models_dev`,
-        // which runs after every pricing load.
-        self.put_builtin_entry("gpt-5.6-sol", rates(5e-6, 30e-6, 6.25e-6, 0.5e-6));
-        self.put_builtin_entry("gpt-5.6-terra", rates(2.5e-6, 15e-6, 3.125e-6, 0.25e-6));
-        self.put_builtin_entry("gpt-5.6-luna", rates(1e-6, 6e-6, 1.25e-6, 0.1e-6));
-        // Source: https://docs.z.ai/guides/overview/pricing
-        let glm_pricing =
-            |input: f64, output: f64, cache_read: f64| rates(input, output, 0.0, cache_read);
-        let glm_base = glm_pricing(0.6e-6, 2.2e-6, 0.11e-6);
-        self.put_builtin_glm("glm-4.5", glm_base);
-        self.put_builtin_glm("zai/glm-4.5", glm_base);
-        self.put_builtin_glm("zai/glm-4.5-x", glm_pricing(2.2e-6, 8.9e-6, 0.45e-6));
-        self.put_builtin_glm("zai/glm-4.5-air", glm_pricing(0.2e-6, 1.1e-6, 0.03e-6));
-        self.put_builtin_glm("zai/glm-4.5-airx", glm_pricing(1.1e-6, 4.5e-6, 0.22e-6));
-        self.put_builtin_glm("zai/glm-4.5v", glm_pricing(0.6e-6, 1.8e-6, 0.11e-6));
-        self.put_builtin_glm("zai/glm-4-32b-0414-128k", glm_pricing(0.1e-6, 0.1e-6, 0.0));
-        self.put_builtin_glm("zai/glm-4.5-flash", glm_pricing(0.0, 0.0, 0.0));
-        self.put_builtin_glm("glm-4.6", glm_base);
-        self.put_builtin_glm("glm-4.7", glm_base);
-        self.put_builtin_entry(
-            "glm-5",
-            Pricing {
-                input: 1.0e-6,
-                output: 3.2e-6,
-                cache_read: Some(0.2e-6),
-                ..glm_base
-            },
-        );
-        self.put_builtin_entry(
-            "glm-5-turbo",
-            Pricing {
-                input: 1.2e-6,
-                output: 4.0e-6,
-                cache_read: Some(0.24e-6),
-                ..glm_base
-            },
-        );
-        self.put_builtin_entry(
-            "glm-5.1",
-            Pricing {
-                input: 1.4e-6,
-                output: 4.4e-6,
-                cache_read: Some(0.26e-6),
-                ..glm_base
-            },
-        );
-        self.context_limits.insert("gpt-5.5".to_string(), 1_050_000);
-        self.context_limits
-            .insert("grok-4.3".to_string(), 1_000_000);
-        self.context_limits.insert("gpt-5.4".to_string(), 1_050_000);
-        // Keep these separate from loaded metadata so context lookup can try
-        // models.dev before reaching the final built-in fallback.
-        for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
-            self.builtin_context_limits
-                .insert(model.to_string(), 1_050_000);
-        }
-        for model in [
-            "claude-opus-4-8",
-            "claude-opus-4-7",
-            "claude-opus-4-6",
-            "claude-sonnet-4-6",
-        ] {
-            self.context_limits.insert(model.to_string(), 1_000_000);
-        }
-        self.context_limits
-            .insert("moonshot/kimi-k2.5".to_string(), 262_144);
-        self.context_limits
-            .insert("moonshot/kimi-k2.6".to_string(), 262_144);
-
-        for model in [
-            "claude-opus-4-5",
-            "claude-haiku-4-5",
-            "claude-opus-4",
-            "claude-sonnet-4",
-            "claude-3-5-haiku",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus",
-            "claude-3-sonnet",
-            "claude-3-haiku",
-        ] {
-            self.context_limits.insert(model.to_string(), 200_000);
         }
     }
 }
+
+struct Supplement {
+    model: &'static str,
+    pricing: Pricing,
+    context_limit: Option<u64>,
+    cache_fields: bool,
+    context_fallback: bool,
+}
+
+const fn rates(input: f64, output: f64, cache_create: f64, cache_read: f64) -> Pricing {
+    Pricing {
+        input,
+        output,
+        cache_create: Some(cache_create),
+        cache_read: Some(cache_read),
+        ..Pricing::empty()
+    }
+}
+
+#[path = "builtin-pricing.rs"]
+mod builtin_pricing;
+
+use builtin_pricing::BUILTIN_PRICING;
 
 enum OverrideBase<'a> {
     Override(&'a str),
@@ -2397,6 +2112,198 @@ mod tests {
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    impl PricingMap {
+        fn put_builtin_entry(&mut self, model: &str, pricing: Pricing) {
+            self.supplement_pricing(model, pricing, false);
+        }
+
+        fn supplement_cache_rates(&mut self, model: &str, pricing: Pricing) {
+            self.supplement_pricing(model, pricing, true);
+        }
+
+        fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
+            self.lookup(&self.entries, model, fuzzy)
+        }
+
+        fn context_limit_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
+            self.lookup(&self.context_limits, model, fuzzy)
+        }
+
+        fn find_with_fallbacks<'a>(
+            &self,
+            model: &str,
+            live: impl FnOnce() -> Option<&'a Self>,
+            embedded: impl FnOnce() -> Option<&'a Self>,
+        ) -> Option<Pricing> {
+            if let Some(pricing) = self.lookup(&self.entries, model, Fuzzy::Denied) {
+                return Some(pricing);
+            }
+            let mut merged = self.with_user_overrides(std::iter::empty());
+            if let Some(live) = live() {
+                merged.merge_missing(live);
+            }
+            if let Some(embedded) = embedded() {
+                merged.merge_missing(embedded);
+            }
+            merged.find(model)
+        }
+
+        fn context_limit_with_fallbacks<'a>(
+            &self,
+            model: &str,
+            live: impl FnOnce() -> Option<&'a Self>,
+            embedded: impl FnOnce() -> Option<&'a Self>,
+        ) -> Option<u64> {
+            if let Some(key) = self.resolve_key(&self.context_limits, model, Fuzzy::Denied)
+                && !self.context_defaults.contains(key)
+            {
+                return self.context_limits.get(key).copied();
+            }
+            let mut merged = self.with_user_overrides(std::iter::empty());
+            if let Some(live) = live() {
+                merged.merge_missing(live);
+            }
+            if let Some(embedded) = embedded() {
+                merged.merge_missing(embedded);
+            }
+            merged.context_limit(model)
+        }
+    }
+
+    #[test]
+    fn live_merge_is_lazy_once_only_and_invalidates_cached_fuzzy_hits_and_misses() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
+        assert_eq!(pricing.find("sample-special").unwrap().input, 1.0);
+        assert!(pricing.find("other-model").is_none());
+        let mut live = PricingMap::default();
+        live.load_json(
+            r#"{
+            "sample-special": {"input_cost_per_token": 3, "output_cost_per_token": 4},
+            "other-model": {"input_cost_per_token": 5, "output_cost_per_token": 6}
+        }"#,
+        );
+        pricing.enable_models_dev_fallback = true;
+        let attempts = AtomicUsize::new(0);
+        let fetch = || {
+            attempts.fetch_add(1, Ordering::Relaxed);
+            Some(&live)
+        };
+        assert_eq!(
+            pricing
+                .with_live_layer("sample", super::Lookup::Pricing, fetch)
+                .find_exact("sample")
+                .unwrap()
+                .input,
+            1.0
+        );
+        assert_eq!(attempts.load(Ordering::Relaxed), 0);
+        let merged = pricing.with_live_layer("trigger", super::Lookup::Pricing, fetch);
+        assert_eq!(merged.find_exact("sample-special").unwrap().input, 3.0);
+        assert_eq!(pricing.find("sample-special").unwrap().input, 3.0);
+        assert_eq!(pricing.find("other-model").unwrap().input, 5.0);
+        pricing.with_live_layer("trigger-again", super::Lookup::Pricing, fetch);
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn live_context_metadata_replaces_a_curated_default() {
+        let mut pricing = PricingMap::default();
+        pricing.put_builtin_pricing();
+        pricing.enable_models_dev_fallback = true;
+        let mut live = PricingMap::default();
+        live.context_limits
+            .insert("gpt-5.6-sol".to_string(), 654_321);
+        let merged = pricing.with_live_layer("gpt-5.6-sol", super::Lookup::Context, || Some(&live));
+        assert_eq!(merged.context_limit("gpt-5.6-sol"), Some(654_321));
+        assert_eq!(pricing.context_limit("gpt-5.6-sol"), Some(654_321));
+    }
+
+    #[test]
+    fn cache_supplement_uses_the_shared_speed_policy_when_the_primary_entry_is_missing() {
+        let mut pricing = PricingMap::default();
+        pricing.put_builtin_pricing();
+        assert_eq!(pricing.find_exact("gpt-5.2").unwrap().flex_multiplier, 0.5);
+    }
+
+    #[test]
+    fn supplements_preserve_all_published_prices_and_context_metadata() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-5.2-codex": {
+            "input_cost_per_token": 10,
+            "output_cost_per_token": 20,
+            "cache_creation_input_token_cost": 30,
+            "cache_read_input_token_cost": 40,
+            "max_input_tokens": 123,
+            "provider_specific_entry": {"fast": 3, "flex": 0.25}
+        }}"#,
+        );
+        pricing.put_builtin_pricing();
+        let entry = pricing.find("gpt-5.2-codex").unwrap();
+        assert_eq!(entry.input, 10.0);
+        assert_eq!(entry.output, 20.0);
+        assert_eq!(entry.cache_create, Some(30.0));
+        assert_eq!(entry.cache_read, Some(40.0));
+        assert_eq!(entry.fast_multiplier, 3.0);
+        assert_eq!(entry.flex_multiplier, 0.25);
+        assert_eq!(pricing.context_limit("gpt-5.2-codex"), Some(123));
+    }
+
+    #[test]
+    fn embedded_provider_exact_rates_price_the_actual_golden_usage() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let entry = pricing.find("anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(entry.input, 2.6e-6);
+        assert_eq!(entry.output, 13e-6);
+        let usage = crate::TokenUsageRaw {
+            input_tokens: 500,
+            output_tokens: 100,
+            ..Default::default()
+        };
+        assert!((crate::cost::calculate_cost_from_pricing(usage, entry) - 0.0026).abs() < 1e-15);
+    }
+
+    #[test]
+    fn online_and_offline_apply_the_same_cache_supplements() {
+        crate::test_support::install_pricing_snapshots();
+        let offline = PricingMap::load_embedded();
+        let mut online = PricingMap::load_embedded();
+        online.refresh_litellm(|load| {
+            assert!(load(build_time_pricing_json()));
+            Ok(())
+        });
+        for (model, expected_write) in [("zai/glm-4.5", 0.0), ("gpt-5.2-codex", 1.75e-6)] {
+            let live = online.find(model).unwrap();
+            let embedded = offline.find(model).unwrap();
+            assert_eq!(live.cache_creation_rate(), expected_write, "{model}");
+            assert_eq!(
+                live.cache_creation_rate(),
+                embedded.cache_creation_rate(),
+                "{model}"
+            );
+            assert_eq!(live.cache_read, embedded.cache_read, "{model}");
+        }
+    }
+
+    #[test]
+    fn embedded_exact_pricing_beats_primary_fuzzy_pricing() {
+        let mut primary = PricingMap::default();
+        primary.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{"sample-special": {"input_cost_per_token": 3, "output_cost_per_token": 4}}"#,
+        );
+        assert_eq!(
+            primary
+                .find_with_fallbacks("sample-special", || None, || Some(&embedded))
+                .unwrap()
+                .input,
+            3.0
+        );
+    }
 
     #[test]
     fn loads_embedded_claude_pricing() {
@@ -2786,6 +2693,7 @@ mod tests {
 
     #[test]
     fn accepts_a_fetched_litellm_body_only_when_it_prices_a_model() {
+        crate::test_support::install_pricing_snapshots();
         let litellm =
             r#"{"gpt-fetched":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
         let models_dev =
@@ -3199,7 +3107,7 @@ mod tests {
             .expect("the normalized entry should resolve");
         assert!(before.cache_read.is_none());
 
-        pricing.put_builtin_glm(
+        pricing.supplement_cache_rates(
             "zai/glm-test.5",
             Pricing {
                 cache_read: Some(0.03),
@@ -3245,7 +3153,7 @@ mod tests {
 
         let mut builtin = PricingMap::default();
         builtin
-            .builtin_context_limits
+            .context_limits
             .insert("claude-opus-5".to_string(), 123_456);
         let mut exact_only_without_context = PricingMap::default();
         assert_eq!(
@@ -3368,7 +3276,7 @@ mod tests {
             ..Pricing::empty()
         };
 
-        pricing.put_builtin_glm("zai/glm-test-model", zeroed);
+        pricing.supplement_cache_rates("zai/glm-test-model", zeroed);
 
         let entry = pricing.find_exact("zai/glm-test-model").unwrap();
         assert_eq!(entry.cache_create, Some(0.25));
@@ -4456,12 +4364,13 @@ mod tests {
             false,
             std::iter::empty::<(&String, &PricingOverride)>(),
         );
-        // Pick an embedded model the primary table (LiteLLM + built-ins) cannot
-        // resolve on its own. `find_entry` never consults the fallback.
+        let mut primary = PricingMap::default();
+        primary.load_json(build_time_pricing_json());
+        primary.put_builtin_pricing();
         let model = embedded_models_dev_pricing()
             .entries
             .keys()
-            .find(|model| offline.find_entry(model, Fuzzy::Allowed).is_none())
+            .find(|model| primary.find(model).is_none())
             .expect(
                 "the embedded models.dev snapshot should price a model the primary table misses",
             );
@@ -4586,7 +4495,10 @@ mod tests {
                     .get(model)
                     .copied()
                     .or_else(|| models_dev_snapshot.context_limits.get(model).copied())
-                    .or_else(|| pricing.builtin_context_limits.get(model).copied()),
+                    .or_else(|| super::BUILTIN_PRICING
+                        .iter()
+                        .find(|entry| entry.model == model)
+                        .and_then(|entry| entry.context_limit)),
                 "{model}"
             );
         }
