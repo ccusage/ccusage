@@ -1142,7 +1142,7 @@ fn timestamp_from_parts(value: Option<&Value>) -> Option<TimestampMs> {
     let seconds = number_value(values.first())?;
     let nanos = number_value(values.get(1))?;
     let millis = seconds.checked_mul(1_000)?.checked_add(nanos / 1_000_000)?;
-    Some(TimestampMs::from_millis(millis.min(i64::MAX as u64) as i64))
+    TimestampMs::from_instant_millis(i64::try_from(millis).ok()?)
 }
 
 fn timestamp_from_scalar(value: Option<&Value>) -> Option<TimestampMs> {
@@ -1151,17 +1151,15 @@ fn timestamp_from_scalar(value: Option<&Value>) -> Option<TimestampMs> {
         raw / 1_000_000
     } else if raw >= 100_000_000_000_000 {
         raw / 1_000
-    } else if raw >= 100_000_000_000 {
-        raw
     } else {
-        raw * 1_000
+        return ccusage_adapter_common::timestamps::epoch_secs_or_millis(i64::try_from(raw).ok()?);
     };
-    Some(TimestampMs::from_millis(millis.min(i64::MAX as u64) as i64))
+    TimestampMs::from_instant_millis(i64::try_from(millis).ok()?)
 }
 
 fn timestamp_from_unix_nanos(value: Option<&Value>) -> Option<TimestampMs> {
-    let raw = number_value(value)?;
-    (raw > 0).then(|| TimestampMs::from_millis((raw / 1_000_000).min(i64::MAX as u64) as i64))
+    let raw = number_value(value).filter(|raw| *raw > 0)?;
+    TimestampMs::from_instant_millis(i64::try_from(raw / 1_000_000).ok()?)
 }
 
 #[cfg(test)]
@@ -1170,6 +1168,36 @@ mod session_state_tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn scalar_timestamps_follow_the_shared_epoch_unit_boundary() {
+        let fixture = ccusage_test_support::Fixture::new();
+        for (raw, expected) in [
+            (1_767_312_000_u64, 1_767_312_000_000_i64),
+            (10_000_000_000, 10_000_000_000),
+            (1_767_312_000_000, 1_767_312_000_000),
+            (1_767_312_000_000_000, 1_767_312_000_000),
+            (1_767_312_000_000_000_000, 1_767_312_000_000),
+        ] {
+            let path = fixture.write_file("otel.jsonl", json!({
+                "body": "GenAI inference:",
+                "timestamp": raw,
+                "attributes": {"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2},
+            }).to_string());
+            let diagnostics = Diagnostics::new("copilot");
+            let entries = parse_otel_file(&path, &diagnostics).unwrap();
+            assert_eq!(entries.len(), 1, "{raw}");
+            assert_eq!(entries[0].timestamp.as_millis(), expected, "{raw}");
+        }
+    }
+
+    #[test]
+    fn fixed_unit_timestamps_reject_unsupported_instants() {
+        assert_eq!(
+            timestamp_from_parts(Some(&json!([10_000_000_000_000_u64, 0]))),
+            None
+        );
+    }
 
     #[test]
     fn diagnoses_otel_usage_without_a_timestamp() {
