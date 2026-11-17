@@ -7,7 +7,7 @@ use crate::Result;
 const HERMES_HOME_ENV: &str = "HERMES_HOME";
 
 pub(super) fn hermes_state_db_paths() -> Result<Vec<PathBuf>> {
-    Ok(roots::resolve(RootsEnv::Single(HERMES_HOME_ENV), || {
+    Ok(roots::resolve(RootsEnv::List(HERMES_HOME_ENV), || {
         crate::home::home_dir()
             .map(|home| home.join(".hermes"))
             .into_iter()
@@ -24,18 +24,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn configured_home_is_one_root_even_with_commas() {
+    fn configured_homes_preserve_list_order_and_deduplicate() {
         let fixture = ccusage_test_support::fs_fixture!({
-            "first,second/state.db": "",
+            "first/state.db": "",
+            "second/state.db": "",
         });
         let _guard = ccusage_test_support::EnvVarGuard::set(
             HERMES_HOME_ENV,
-            format!(" {} ", fixture.path("first,second").display()),
+            format!(
+                " {}, {}, {} ",
+                fixture.path("first").display(),
+                fixture.path("second").display(),
+                fixture.path("first/.").display()
+            ),
         );
-
         assert_eq!(
             hermes_state_db_paths().unwrap(),
-            vec![fixture.path("first,second/state.db")]
+            vec![
+                fixture.path("first/state.db"),
+                fixture.path("second/state.db")
+            ]
         );
     }
 }

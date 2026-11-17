@@ -8,7 +8,7 @@ pub(crate) const ZCODE_HOME_ENV: &str = "ZCODE_HOME";
 pub(crate) const ZCODE_DB_RELATIVE_PATH: &str = "cli/db/db.sqlite";
 
 fn paths(shared: &SharedArgs) -> Result<Vec<PathBuf>> {
-    let configured_roots = RootsEnv::Single(ZCODE_HOME_ENV).configured();
+    let configured_roots = RootsEnv::List(ZCODE_HOME_ENV).configured();
     let configured = configured_roots.is_some();
     let candidates = configured_roots.unwrap_or_else(|| {
         crate::home::home_dir()
@@ -77,18 +77,29 @@ mod tests {
     }
 
     #[test]
-    fn configured_home_is_one_root_even_with_commas() {
+    fn configured_homes_preserve_list_order_and_deduplicate() {
         let fixture = fs_fixture!({});
-        let root = fixture.create_dir_all("first,second");
+        let first = fixture.create_dir_all("first");
+        let second = fixture.create_dir_all("second");
         let _guard = EnvVarsGuard::set_many([
-            (ZCODE_HOME_ENV, Some(format!(" {} ", root.display()).into())),
+            (
+                ZCODE_HOME_ENV,
+                Some(
+                    format!(
+                        " {}, {}, {} ",
+                        first.display(),
+                        second.display(),
+                        first.join(".").display()
+                    )
+                    .into(),
+                ),
+            ),
             ("HOME", None),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
             ("HOMEPATH", None),
         ]);
-
-        assert_eq!(paths(&shared()).unwrap(), vec![root]);
+        assert_eq!(paths(&shared()).unwrap(), vec![first, second]);
     }
 
     #[test]
