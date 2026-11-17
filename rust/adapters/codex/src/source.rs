@@ -1,4 +1,3 @@
-use crate::aggregate::load_groups_with_diagnostics;
 use ccusage_core::Diagnostics;
 use serde_json::json;
 
@@ -6,9 +5,7 @@ use ccusage_adapter_common::{
     rows::UnifiedRow,
     source::{LoadRequest, LoadedRows, UsageSource},
 };
-use ccusage_core::{
-    ModelBreakdown, PricingMap, Result, cli::CostMode, log_level, progress::UsageLoadAgent,
-};
+use ccusage_core::{ModelBreakdown, PricingMap, Result, cli::CostMode, progress::UsageLoadAgent};
 
 use crate::{
     CodexGroup, calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
@@ -39,22 +36,18 @@ impl UsageSource for Codex {
 fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let diagnostics = Diagnostics::new("codex");
     let shared = request.shared;
-    let owned_pricing;
-    let pricing = match request.pricing {
-        Some(pricing) => pricing,
-        None => {
-            owned_pricing = PricingMap::load_with_overrides(
-                shared.offline,
-                log_level() != Some(0),
-                shared.pricing_overrides.iter(),
-            );
-            &owned_pricing
-        }
-    };
+    let pending = request.pricing_or_load()?;
+    let sources = crate::paths::codex_usage_sources()?;
+    let pricing = pending.get()?;
     let speed = resolve_codex_speed(request.options.codex_speed);
 
-    let (groups, detected) =
-        load_groups_with_diagnostics(shared, request.kind.report_kind(), pricing, &diagnostics)?;
+    let (groups, detected) = crate::aggregate::load_groups_from_sources_with_diagnostics(
+        &sources,
+        shared,
+        request.kind.report_kind(),
+        pricing,
+        &diagnostics,
+    )?;
     let rows = groups
         .iter()
         .map(|(period, group)| unified_row_from_group(period, group, pricing, speed, shared.mode))
@@ -127,6 +120,7 @@ pub fn unified_row_from_group(
 #[cfg(test)]
 mod diagnostic_tests {
     use super::*;
+    use crate::aggregate::load_groups_with_diagnostics;
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::cli::{AgentReportKind, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};

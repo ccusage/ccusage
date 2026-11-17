@@ -1273,27 +1273,35 @@ impl SpeedMultiplierOverrides {
     }
 }
 
-static EMBEDDED_PREWARM: Mutex<Option<JoinHandle<PricingMap>>> = Mutex::new(None);
+pub struct PendingPricing {
+    worker: Mutex<Option<JoinHandle<PricingMap>>>,
+    joined: OnceLock<std::result::Result<Box<PricingMap>, &'static str>>,
+}
 
-/// Starts building the embedded pricing table on a background thread.
-///
-/// The next [`PricingMap::load_embedded`] call takes that table instead of
-/// building its own, so a report can discover its log files while the
-/// snapshots inflate and parse. Nothing starts when the
-/// [`PricingMap::load_with_overrides`] base for `offline` is already loaded
-/// or a prewarmed table is still waiting to be taken. The embedded snapshots
-/// must already be installed.
-pub fn prewarm_embedded(offline: bool) {
-    if base_pricing(offline).get().is_some() {
-        return;
+impl PendingPricing {
+    pub fn join(&self) -> crate::Result<&PricingMap> {
+        self.joined
+            .get_or_init(|| {
+                let worker = self
+                    .worker
+                    .lock()
+                    .map_err(|_| "pricing load lock was poisoned")?
+                    .take()
+                    .ok_or("pricing load has no worker")?;
+                worker
+                    .join()
+                    .map(Box::new)
+                    .map_err(|_| "pricing load worker failed")
+            })
+            .as_ref()
+            .map(|pricing| pricing.as_ref())
+            .map_err(|error| crate::cli_error(*error))
     }
-    let Ok(mut prewarm) = EMBEDDED_PREWARM.lock() else {
-        return;
-    };
-    if prewarm.is_none() {
-        *prewarm = thread::Builder::new()
-            .spawn(PricingMap::build_embedded)
-            .ok();
+}
+
+impl Drop for PendingPricing {
+    fn drop(&mut self) {
+        let _ = self.join();
     }
 }
 
@@ -1307,13 +1315,41 @@ fn base_pricing(offline: bool) -> &'static OnceLock<PricingMap> {
 
 impl PricingMap {
     pub fn load_embedded() -> Self {
-        let prewarm = EMBEDDED_PREWARM
-            .lock()
-            .ok()
-            .and_then(|mut prewarm| prewarm.take());
-        prewarm
-            .and_then(|handle| handle.join().ok())
-            .unwrap_or_else(Self::build_embedded)
+        Self::build_embedded()
+    }
+
+    pub fn spawn_load<'a, I>(
+        offline: bool,
+        log: bool,
+        overrides: I,
+    ) -> crate::Result<PendingPricing>
+    where
+        I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
+    {
+        let overrides = overrides.into_iter();
+        if let Some(base) = base_pricing(offline).get() {
+            return Ok(PendingPricing {
+                worker: Mutex::new(None),
+                joined: OnceLock::from(Ok(Box::new(base.with_user_overrides(overrides)))),
+            });
+        }
+        let overrides = overrides
+            .map(|(model, value)| (model.clone(), value.clone()))
+            .collect::<Vec<_>>();
+        let worker = thread::Builder::new()
+            .name("pricing".to_string())
+            .spawn(move || {
+                Self::load_with_overrides(
+                    offline,
+                    log,
+                    overrides.iter().map(|(model, value)| (model, value)),
+                )
+            })
+            .map_err(|error| crate::cli_error(format!("could not start pricing load: {error}")))?;
+        Ok(PendingPricing {
+            worker: Mutex::new(Some(worker)),
+            joined: OnceLock::new(),
+        })
     }
 
     fn rows_mut(&mut self) -> &mut PricingRows {
@@ -2611,9 +2647,8 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 #[cfg(test)]
 mod tests {
     use super::{
-        EMBEDDED_PREWARM, Fuzzy, Lookup, Pricing, PricingMap, build_time_models_dev_json,
-        build_time_pricing_json, embedded_models_dev_pricing, model_without_date_suffix,
-        prewarm_embedded,
+        Fuzzy, Lookup, Pricing, PricingMap, build_time_models_dev_json, build_time_pricing_json,
+        embedded_models_dev_pricing, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3340,16 +3375,56 @@ mod tests {
     }
 
     #[test]
-    fn prewarm_skips_a_build_once_the_base_pricing_is_loaded() {
+    fn pending_pricing_keeps_overrides_local_and_can_be_joined_repeatedly() {
+        crate::test_support::install_pricing_snapshots();
+        let model = "gpt-5".to_string();
+        let override_value = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(0.25),
+            ..Default::default()
+        };
+        let pending = PricingMap::spawn_load(true, false, [(&model, &override_value)]).unwrap();
+        let pricing = pending.join().unwrap();
+
+        assert_eq!(pricing.find(&model).unwrap().input, 0.25);
+        assert!(std::ptr::eq(pricing, pending.join().unwrap()));
+        assert_ne!(
+            PricingMap::load_embedded().find(&model).unwrap().input,
+            0.25
+        );
+    }
+
+    #[test]
+    fn pending_pricing_reports_worker_failure_without_rebuilding() {
+        let pending = super::PendingPricing {
+            worker: std::sync::Mutex::new(Some(std::thread::spawn(|| panic!("failed load")))),
+            joined: std::sync::OnceLock::new(),
+        };
+
+        for _ in 0..2 {
+            assert_eq!(
+                pending.join().err().unwrap().to_string(),
+                "pricing load worker failed"
+            );
+        }
+    }
+
+    #[test]
+    fn pending_pricing_reuses_the_loaded_base_without_starting_a_worker() {
         crate::test_support::install_pricing_snapshots();
         PricingMap::load_with_overrides(
             true,
             false,
             std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
         );
-        prewarm_embedded(true);
+        let pending = PricingMap::spawn_load(
+            true,
+            false,
+            std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
+        )
+        .unwrap();
 
-        assert!(EMBEDDED_PREWARM.lock().unwrap().is_none());
+        assert!(pending.worker.lock().unwrap().is_none());
+        assert!(pending.join().unwrap().find("gpt-5").is_some());
     }
 
     #[test]

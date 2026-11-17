@@ -6,12 +6,16 @@
 //! [`crate::pipeline`]. Format-specific sources implement [`UsageSource`]
 //! directly and keep their focused report paths in their own adapter.
 
+use std::sync::OnceLock;
+
 use serde_json::Value;
 
 use ccusage_core::{
     Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
-    cli_error, summary_period,
+    cli_error,
+    pricing::PendingPricing,
+    summary_period,
 };
 
 use crate::{pipeline, rows::UnifiedRow};
@@ -91,6 +95,78 @@ pub struct LoadRequest<'a> {
     pub options: SourceOptions<'a>,
     pub pricing: Option<&'a PricingMap>,
     pub progress: ProgressOwner,
+}
+
+impl LoadRequest<'_> {
+    pub fn pricing_or_load(&self) -> Result<ReportPricing<'_>> {
+        ReportPricing::for_load(self.shared, self.pricing)
+    }
+}
+
+pub enum ReportPricing<'a> {
+    Supplied(&'a PricingMap),
+    Pending(PendingPricing),
+}
+
+impl<'a> ReportPricing<'a> {
+    pub fn for_load(shared: &SharedArgs, supplied: Option<&'a PricingMap>) -> Result<Self> {
+        match supplied {
+            Some(pricing) => Ok(Self::Supplied(pricing)),
+            None => PricingMap::spawn_load(
+                shared.offline,
+                ccusage_core::log_level() != Some(0),
+                shared.pricing_overrides.iter(),
+            )
+            .map(Self::Pending),
+        }
+    }
+
+    pub fn get(&self) -> Result<&PricingMap> {
+        match self {
+            Self::Supplied(pricing) => Ok(pricing),
+            Self::Pending(pricing) => pricing.join(),
+        }
+    }
+}
+
+pub enum LoaderPricing<'a> {
+    Pipeline(ReportPricing<'a>),
+    Source,
+}
+
+pub struct UsageLoadContext<'a> {
+    pub shared: &'a SharedArgs,
+    window: OnceLock<ReportWindow>,
+    pricing: OnceLock<Option<PricingMap>>,
+}
+
+impl<'a> UsageLoadContext<'a> {
+    pub fn new(shared: &'a SharedArgs) -> Self {
+        Self {
+            shared,
+            window: OnceLock::new(),
+            pricing: OnceLock::new(),
+        }
+    }
+
+    pub fn window(&self) -> &ReportWindow {
+        self.window
+            .get_or_init(|| ReportWindow::from_shared(self.shared))
+    }
+
+    pub fn pricing(&self) -> Option<&PricingMap> {
+        self.pricing
+            .get_or_init(|| {
+                (self.shared.mode != ccusage_core::cli::CostMode::Display).then(|| {
+                    PricingMap::load_with_overrides(
+                        self.shared.offline,
+                        ccusage_core::log_level() != Some(0),
+                        self.shared.pricing_overrides.iter(),
+                    )
+                })
+            })
+            .as_ref()
+    }
 }
 
 pub struct LoadedRows {
@@ -247,14 +323,14 @@ impl EntryDescriptor {
 }
 
 /// What a loader is given for one load, focused or unified.
-pub struct LoadContext<'a> {
+pub struct LoadContext<'a, P = Option<&'a PricingMap>> {
     pub shared: &'a SharedArgs,
     /// The kind being loaded, for a loader whose input depends on it.
     pub kind: AgentReportKind,
     /// The report window, as a hint for a loader that can skip input early.
     pub window: &'a ReportWindow,
     /// Present for [`PricingSupply::Pipeline`] sources.
-    pub pricing: Option<&'a PricingMap>,
+    pub pricing: P,
     pub options: SourceOptions<'a>,
     /// Where the loader records what it skipped.
     pub diagnostics: &'a Diagnostics,
@@ -276,6 +352,23 @@ impl<'a> LoadContext<'a> {
 /// A source whose loader yields `Vec<LoadedEntry>`.
 pub trait EntrySource: Sync {
     fn descriptor(&self) -> EntryDescriptor;
+
+    fn load_priced_entries(
+        &self,
+        cx: &LoadContext<'_, LoaderPricing<'_>>,
+    ) -> Result<Vec<LoadedEntry>> {
+        self.load_entries(&LoadContext {
+            shared: cx.shared,
+            kind: cx.kind,
+            window: cx.window,
+            pricing: match &cx.pricing {
+                LoaderPricing::Pipeline(pricing) => Some(pricing.get()?),
+                LoaderPricing::Source => None,
+            },
+            options: cx.options,
+            diagnostics: cx.diagnostics,
+        })
+    }
 
     /// Runs `ccusage <id> <kind>` through the shared entry pipeline.
     fn run_focused(&self, args: AgentCommandArgs) -> Result<()>
@@ -342,5 +435,50 @@ impl<S: EntrySource> UsageSource for S {
             Detection::NonEmpty => false,
             Detection::NonEmptyOrHasData(has_data) => has_data(),
         }
+    }
+}
+
+#[cfg(test)]
+mod pricing_tests {
+    use super::{ReportPricing, UsageLoadContext};
+    use ccusage_core::{
+        PricingMap,
+        cli::{CostMode, SharedArgs},
+    };
+
+    #[test]
+    fn supplied_pricing_is_borrowed_without_loading_a_base() {
+        let shared = SharedArgs::default();
+        let supplied = PricingMap::default();
+        let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
+
+        assert!(std::ptr::eq(pricing.get().unwrap(), &supplied));
+    }
+
+    #[test]
+    fn usage_context_resolves_nothing_until_a_file_needs_it() {
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..Default::default()
+        };
+        let cx = UsageLoadContext::new(&shared);
+
+        assert!(cx.window.get().is_none());
+        assert!(cx.pricing.get().is_none());
+        assert!(std::ptr::eq(cx.window(), cx.window()));
+        assert!(cx.pricing.get().is_none());
+    }
+
+    #[test]
+    fn display_usage_context_never_loads_pricing() {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+        let cx = UsageLoadContext::new(&shared);
+
+        assert!(cx.pricing().is_none());
+        assert!(cx.pricing.get().is_some_and(Option::is_none));
+        assert!(cx.window.get().is_none());
     }
 }

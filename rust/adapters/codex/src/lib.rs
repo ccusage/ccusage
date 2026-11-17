@@ -42,14 +42,21 @@ use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
-    let pricing = PricingMap::load_with_overrides(
+    let pending = PricingMap::spawn_load(
         shared.offline,
         log_level() != Some(0),
         shared.pricing_overrides.iter(),
-    );
+    )?;
+    let sources = paths::codex_usage_sources()?;
+    let pricing = pending.join()?;
     let diagnostics = ccusage_core::Diagnostics::new("codex");
-    let (mut groups, _) =
-        aggregate::load_groups_with_diagnostics(&shared, args.kind, &pricing, &diagnostics)?;
+    let (mut groups, _) = aggregate::load_groups_from_sources_with_diagnostics(
+        &sources,
+        &shared,
+        args.kind,
+        pricing,
+        &diagnostics,
+    )?;
     diagnostics.emit(shared.debug);
     let speed = resolve_codex_speed(args.options.codex_speed);
     if let Some(requested_id) = args.session_id {
@@ -58,7 +65,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
             let output = session_detail_json(
                 &session_id,
                 &groups[&session_id],
-                &pricing,
+                pricing,
                 speed,
                 shared.mode,
             );
@@ -67,10 +74,10 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         groups.retain(|id, _| id == &session_id);
     }
     if wants_json(&shared) {
-        let output = report_from_groups(&groups, args.kind, &pricing, speed, shared.mode);
+        let output = report_from_groups(&groups, args.kind, pricing, speed, shared.mode);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
+    print_table_from_groups(&groups, args.kind, pricing, speed, &shared)
 }
 
 fn resolve_session_id<'a>(
