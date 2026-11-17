@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_cache_rates_default_by_provider_family() {
+    fn absent_cache_writes_follow_family_and_reads_preserve_their_fallback() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -523,7 +523,7 @@ mod tests {
             ..Default::default()
         };
         let cost = |model| calculate_cost_from_pricing(usage, pricing.find(model).unwrap());
-        assert_eq!(cost("gpt-test"), 10.0 * 2.0 + 2.0 + 100.0 * 2.0);
+        assert_eq!(cost("gpt-test"), 10.0 * 2.0 + 2.0 + 100.0 * 0.2);
         assert_eq!(cost("claude-test"), 10.0 * 2.5 + 4.0 + 100.0 * 0.2);
         assert_eq!(cost("other-test"), cost("claude-test"));
     }
