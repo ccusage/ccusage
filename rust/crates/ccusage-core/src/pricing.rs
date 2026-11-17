@@ -133,7 +133,22 @@ pub(crate) enum ProviderFamily {
 }
 
 impl ProviderFamily {
-    fn from_litellm_provider(provider: Option<&str>) -> Self {
+    fn from_model(model: &str, provider: Option<&str>) -> Self {
+        if model.split('/').any(|id| {
+            id.starts_with("gpt-")
+                || id.starts_with("chatgpt-")
+                || ["o1", "o3", "o4"].into_iter().any(|prefix| {
+                    id == prefix
+                        || id
+                            .strip_prefix(prefix)
+                            .is_some_and(|tail| tail.starts_with('-'))
+                })
+        }) {
+            return Self::OpenAi;
+        }
+        if model.split('/').any(|id| id.starts_with("claude-")) {
+            return Self::Anthropic;
+        }
         match provider {
             Some("openai" | "text-completion-openai" | "azure" | "azure_text") => Self::OpenAi,
             Some("anthropic" | "bedrock" | "bedrock_converse" | "vertex_ai-anthropic_models") => {
@@ -1184,7 +1199,8 @@ impl PricingMap {
                             .cache_creation_input_token_cost_above_200k_tokens,
                         cache_read_above_200k: pricing
                             .cache_read_input_token_cost_above_200k_tokens,
-                        family: ProviderFamily::from_litellm_provider(
+                        family: ProviderFamily::from_model(
+                            &model,
                             pricing.litellm_provider.as_deref(),
                         ),
                         ..Pricing::empty()
@@ -1377,6 +1393,7 @@ impl PricingMap {
                     cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
                     cache_read_above_200k: long_context.and_then(|rates| rates.cache_read),
                     long_context_threshold: long_context.map(|rates| rates.threshold),
+                    family: ProviderFamily::from_model(&model_id, None),
                     ..Pricing::empty()
                 }),
             );
@@ -2382,6 +2399,19 @@ mod tests {
             3.0
         );
         assert_eq!(lookups.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn gpt_vendor_defaults_do_not_depend_on_the_serving_host() {
+        let mut pricing = PricingMap::default();
+        for host in ["azure_ai", "github_copilot", "bedrock_mantle", "databricks"] {
+            let model = format!("{host}/gpt-5.4");
+            pricing.load_json(&format!(
+                r#"{{"{model}": {{"input_cost_per_token": 0.0000025, "output_cost_per_token": 0.000015, "litellm_provider": "{host}"}}}}"#
+            ));
+            let price = pricing.find_exact(&model).unwrap();
+            assert_eq!(price.cache_creation_rate(), 2.5e-6, "{host}");
+        }
     }
 
     #[test]
