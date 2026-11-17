@@ -74,11 +74,12 @@ pub(super) fn load_daily_entries(
             diagnostics,
         )
     };
-    let deduped = deduped.unwrap_or(DedupedDailyEntries {
+    let mut deduped = deduped.unwrap_or(DedupedDailyEntries {
         entries: Vec::new(),
         copies: Vec::new(),
     });
     let detected = !deduped.entries.is_empty() || pruned.iter().any(|file| has_usage(file));
+    deduped.retain_entries_in(&ccusage_core::ReportWindow::from_shared(shared));
     Ok(DailyEntries { deduped, detected })
 }
 
@@ -140,6 +141,37 @@ fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
 pub(super) struct DedupedDailyEntries {
     entries: Vec<ClaudeEntry>,
     copies: Vec<(usize, Arc<str>)>,
+}
+
+impl DedupedDailyEntries {
+    fn retain_entries_in(&mut self, window: &ccusage_core::ReportWindow) {
+        if window.is_unbounded() {
+            return;
+        }
+        if self.copies.is_empty() {
+            self.entries
+                .retain(|entry| window.contains_date(&entry.date));
+            return;
+        }
+        let mut kept_indexes = Vec::with_capacity(self.entries.len());
+        let mut next_index = 0;
+        self.entries.retain(|entry| {
+            let keep = window.contains_date(&entry.date);
+            kept_indexes.push(keep.then_some(next_index));
+            if keep {
+                next_index += 1;
+            }
+            keep
+        });
+        self.copies.retain_mut(|(index, _)| {
+            if let Some(kept_index) = kept_indexes[*index] {
+                *index = kept_index;
+                true
+            } else {
+                false
+            }
+        });
+    }
 }
 
 /// Counts a copy's session on the day its survivor is counted: a tool wrapping

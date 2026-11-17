@@ -120,16 +120,8 @@ impl DedupedEntries {
     }
 }
 
-/// Loads Claude usage entries for a report that keeps only entries dated
-/// inside the `--since` window.
-///
-/// Sessions last written before the window are skipped without being read, so
-/// entries dated before `since` may be missing. Callers must discard those
-/// entries, which leaves the in-window result identical to [`load_entries`].
-///
-/// @param shared Report arguments; `since` and `timezone` bound the files read.
-/// @param project_filter Optional project directory to restrict the scan to.
-/// @returns Deduplicated entries, complete for every date on or after `since`.
+/// Loads deduplicated entries inside the requested report window, skipping
+/// files last written before its lower bound.
 pub(crate) fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -149,11 +141,13 @@ pub(crate) fn load_entries_since_with_diagnostics(
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         load_entries_inner(shared, project_filter, true, diagnostics)
     })
-    .map(|deduped| deduped.entries)
+    .map(|mut deduped| {
+        ccusage_adapter_common::filter_loaded_entries_by_date(&mut deduped.entries, shared);
+        deduped.entries
+    })
 }
 
-/// Loads daily Claude summaries. Summaries dated before `since` may be
-/// missing, so callers must filter them by date.
+/// Loads daily Claude summaries inside the requested report window.
 pub(crate) fn load_daily_summaries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -190,13 +184,12 @@ fn main_thread_session_days<'a>(
 
 /// Daily Claude summaries plus whether any Claude usage exists at all.
 pub struct DailySummaries {
-    /// Summaries, possibly missing dates before `since`.
+    /// Summaries inside the requested report window.
     pub summaries: Vec<UsageSummary>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
     pub detected: bool,
-    /// Session days of the summarized main-thread entries, possibly missing
-    /// dates before `since`.
+    /// Session days of the summarized main-thread entries.
     pub session_days: SessionDays,
 }
 

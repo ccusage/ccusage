@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use ccusage_adapter_common::filter_loaded_entries_by_date;
 use ccusage_core::{
     BucketKind, DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, Result, SessionAccumulator, TimestampMs,
     UsageSummary,
@@ -10,9 +9,7 @@ use ccusage_core::{
     print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key,
     summarize_summaries_by_bucket, totals_json, utc_now, wants_json,
 };
-use ccusage_report::{
-    filter_and_sort_summaries, group_project_output, session_summary_json, summary_json,
-};
+use ccusage_report::{group_project_output, session_summary_json, summary_json};
 use serde_json::json;
 
 use crate::{
@@ -30,7 +27,7 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
         args.project.as_deref(),
         args.instances || args.project.is_some(),
     )?;
-    filter_and_sort_summaries(&mut rows, &shared, |row| {
+    sort_summaries(&mut rows, &shared.order, |row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -69,7 +66,7 @@ pub fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
         |entry| entry.date.clone(),
         |key| (key.to_string(), None),
     )?;
-    filter_and_sort_summaries(&mut daily, &shared, |row| {
+    sort_summaries(&mut daily, &shared.order, |row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -108,7 +105,7 @@ pub fn run_weekly(args: WeeklyArgs) -> Result<()> {
         |entry| entry.date.clone(),
         |key| (key.to_string(), None),
     )?;
-    filter_and_sort_summaries(&mut daily, &shared, |row| {
+    sort_summaries(&mut daily, &shared.order, |row| {
         row.date.as_deref().unwrap_or_default()
     });
     let mut weekly = summarize_summaries_by_bucket(&daily, BucketKind::Weekly, args.start_of_week);
@@ -174,8 +171,7 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
 }
 
 fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
-    let mut entries = load_entries_since(shared, None)?;
-    filter_loaded_entries_by_date(&mut entries, shared);
+    let entries = load_entries_since(shared, None)?;
     let mut grouped = Vec::<SessionAccumulator>::new();
     let mut group_indexes = FxHashMap::<(Arc<str>, Arc<str>), usize>::default();
     for entry in &entries {
@@ -199,8 +195,7 @@ fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
 }
 
 fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
-    let mut entries = load_entries_since(shared, None)?;
-    filter_loaded_entries_by_date(&mut entries, shared);
+    let entries = load_entries_since(shared, None)?;
     let mut session_entries = entries
         .into_iter()
         .filter(|entry| {

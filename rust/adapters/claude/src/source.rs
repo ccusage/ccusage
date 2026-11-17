@@ -85,19 +85,8 @@ impl Claude {
             request.progress,
             &diagnostics,
         )?;
-        let summaries = loaded
-            .summaries
-            .into_iter()
-            .filter(|summary| {
-                window.is_unbounded()
-                    || window.contains_date(summary.date.as_deref().unwrap_or_default())
-            })
-            .collect();
-        let session_days = loaded
-            .session_days
-            .into_iter()
-            .filter(|(_, date)| window.contains_date(date))
-            .collect();
+        let summaries = loaded.summaries;
+        let session_days = loaded.session_days;
         Ok((
             LoadedRows {
                 rows: summary_rows("claude", summaries, false),

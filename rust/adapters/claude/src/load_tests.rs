@@ -37,6 +37,70 @@ fn daily_from_entries(entries: &[LoadedEntry]) -> Vec<UsageSummary> {
 }
 
 #[test]
+fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
+    let fixture = fs_fixture!({
+        "projects/project1/session1/chat.jsonl": [
+            r#"{"timestamp":"2026-01-01T23:00:00Z","sessionId":"s1","requestId":"r1","costUSD":1,"message":{"id":"msg_1","usage":{"input_tokens":20,"output_tokens":1}}}"#,
+            r#"{"timestamp":"2026-01-02T01:00:00Z","sessionId":"s1","requestId":"r1","costUSD":1,"message":{"id":"msg_1","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+            r#"{"timestamp":"2026-01-02T23:00:00Z","sessionId":"s1","requestId":"r2","costUSD":2,"message":{"id":"msg_2","usage":{"input_tokens":30,"output_tokens":1}}}"#,
+            r#"{"timestamp":"2026-01-03T01:00:00Z","sessionId":"s1","requestId":"r3","costUSD":3,"message":{"id":"msg_3","usage":{"input_tokens":40,"output_tokens":1}}}"#,
+        ].join("\n"),
+        "projects/project1/session2/chat.jsonl": r#"{"timestamp":"2026-01-02T23:00:00Z","sessionId":"s2","requestId":"r2","costUSD":2,"message":{"id":"msg_2","usage":{"input_tokens":30,"output_tokens":1}}}"#,
+    });
+    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let shared = SharedArgs {
+        since: Some("20260102".into()),
+        until: Some("20260102".into()),
+        ..display_shared_in_utc()
+    };
+    let entries = crate::load_entries_since(&shared, None).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].cost, 2.0);
+    assert_eq!(load_entries(&shared, None).unwrap().len(), 3);
+    let loaded = crate::load_daily_summaries_with_detection_progress(
+        &shared,
+        None,
+        false,
+        ccusage_adapter_common::source::ProgressOwner::Caller,
+        &crate::Diagnostics::new("claude"),
+    )
+    .unwrap();
+    assert!(loaded.detected);
+    assert_eq!(loaded.summaries.len(), 1);
+    assert_eq!(loaded.summaries[0].input_tokens, 30);
+    assert_eq!(loaded.session_days.len(), 2);
+    assert!(
+        loaded
+            .session_days
+            .iter()
+            .all(|(_, date)| date == "2026-01-02")
+    );
+}
+
+#[test]
+fn bounded_daily_detection_survives_an_empty_report_window() {
+    let fixture = fs_fixture!({
+        "projects/p/s.jsonl": r#"{"timestamp":"2026-01-03T00:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1}}}"#,
+    });
+    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let shared = SharedArgs {
+        until: Some("20260102".into()),
+        ..display_shared_in_utc()
+    };
+    let loaded = crate::load_daily_summaries_with_detection_progress(
+        &shared,
+        None,
+        false,
+        ccusage_adapter_common::source::ProgressOwner::Caller,
+        &crate::Diagnostics::new("claude"),
+    )
+    .unwrap();
+    assert!(loaded.detected);
+    assert!(loaded.summaries.is_empty());
+    assert!(loaded.session_days.is_empty());
+}
+
+#[test]
 fn keeps_most_complete_duplicate_usage_entry() {
     let fixture = fs_fixture!({
         "projects/project1/session1/chat.jsonl": [

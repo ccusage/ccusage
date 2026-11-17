@@ -162,17 +162,7 @@ fn render_statusline(
 
     let today_shared = statusline_today_shared(args, shared, utc_now());
     let today_cost = load_entries_since_with_diagnostics(&today_shared, None, diagnostics)
-        .map(|entries| {
-            sum_costs(
-                entries
-                    .iter()
-                    .filter(|entry| {
-                        entry.date.replace('-', "")
-                            == today_shared.since.as_deref().unwrap_or_default()
-                    })
-                    .map(|entry| entry.cost),
-            )
-        })
+        .map(|entries| sum_costs(entries.iter().map(|entry| entry.cost)))
         .unwrap_or(0.0);
 
     let active_block = load_statusline_active_block(args, shared, utc_now(), diagnostics);
@@ -297,12 +287,8 @@ fn load_statusline_active_block(
     let session_ms = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64;
     for lookback_days in STATUSLINE_BLOCK_LOOKBACK_DAYS {
         let window_shared = statusline_block_shared(args, shared, now, lookback_days);
-        let since = window_shared.since.clone().unwrap_or_default();
         let mut entries =
             load_entries_since_with_diagnostics(&window_shared, None, diagnostics).ok()?;
-        // Entries dated before the window may come from partially skipped
-        // sessions; only the ones inside it are complete.
-        entries.retain(|entry| entry.date.replace('-', "") >= since);
         entries.sort_by_key(|entry| entry.timestamp);
         let timestamps = entries
             .iter()
