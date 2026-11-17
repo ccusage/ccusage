@@ -15,7 +15,7 @@ use super::{
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pipeline_pricing()?;
     let mut events = Vec::new();
-    for database_path in conversation_db_paths(cx.diagnostics)? {
+    for database_path in conversation_db_paths(cx.diagnostics, cx.shared.debug)? {
         match parse_sqlite_file(&database_path, cx.diagnostics) {
             Ok(ParsedDatabase::Events(parsed)) => events.extend(parsed),
             Ok(ParsedDatabase::EmptySnapshot) => cx.diagnostics.debug_note(
@@ -1229,7 +1229,7 @@ mod tests {
         ]);
 
         assert!(
-            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"))
+            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
                 .unwrap()
                 .is_empty()
         );

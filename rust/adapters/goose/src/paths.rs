@@ -7,7 +7,7 @@ use crate::Result;
 const GOOSE_PATH_ROOT_ENV: &str = "GOOSE_PATH_ROOT";
 pub(super) const GOOSE_DB_FILE_NAME: &str = "sessions.db";
 
-pub(super) fn goose_db_paths() -> Result<Vec<PathBuf>> {
+pub(super) fn goose_db_paths(debug: bool) -> Result<Vec<PathBuf>> {
     let roots = RootsEnv::Single(GOOSE_PATH_ROOT_ENV)
         .configured()
         .map(|paths| {
@@ -16,7 +16,7 @@ pub(super) fn goose_db_paths() -> Result<Vec<PathBuf>> {
                 .map(|root| root.join("data/sessions"))
                 .collect()
         })
-        .unwrap_or_else(default_goose_db_candidates);
+        .unwrap_or_else(|| roots::default_candidates(debug, default_goose_db_candidates));
     let mut seen = HashSet::new();
     Ok(roots::directories(roots)
         .into_iter()
@@ -60,7 +60,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            goose_db_paths().unwrap(),
+            goose_db_paths(false).unwrap(),
             vec![database.canonicalize().unwrap()]
         );
     }
@@ -73,7 +73,7 @@ mod tests {
         });
         let _cleanup = EnvVarGuard::set(GOOSE_PATH_ROOT_ENV, fixture.root());
 
-        let paths = goose_db_paths().unwrap();
+        let paths = goose_db_paths(false).unwrap();
 
         assert_eq!(paths.len(), 1);
         assert!(paths[0].ends_with(Path::new("data/sessions/sessions.db")));
@@ -90,7 +90,7 @@ mod tests {
         );
 
         assert_eq!(
-            goose_db_paths().unwrap(),
+            goose_db_paths(false).unwrap(),
             vec![
                 fixture
                     .path("first,second/data/sessions/sessions.db")

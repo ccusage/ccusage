@@ -14,7 +14,7 @@ pub fn paths(custom_path: Option<&str>) -> Result<Vec<PathBuf>> {
         .configured()
         .map(|paths| paths.into_iter().map(store_root).collect())
         .unwrap_or_else(|| {
-            roots::default_candidates(|| {
+            roots::default_candidates(false, || {
                 crate::home::home_dir()
                     .map(|home| home.join(".pi/agent/sessions"))
                     .into_iter()

@@ -11,7 +11,7 @@ fn paths(shared: &SharedArgs) -> Result<Vec<PathBuf>> {
     let configured_roots = RootsEnv::List(ZCODE_HOME_ENV).configured();
     let configured = configured_roots.is_some();
     let candidates = configured_roots.unwrap_or_else(|| {
-        roots::default_candidates(|| {
+        roots::default_candidates(shared.debug, || {
             crate::home::home_dir()
                 .map(|home| home.join(".zcode"))
                 .into_iter()

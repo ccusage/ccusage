@@ -18,7 +18,7 @@ const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 6] = [
     ".config/antigravity",
 ];
 
-fn conversation_dirs() -> Vec<PathBuf> {
+fn conversation_dirs(debug: bool) -> Vec<PathBuf> {
     roots::directories(
         RootsEnv::List(ANTIGRAVITY_DATA_DIR_ENV)
             .configured()
@@ -29,12 +29,15 @@ fn conversation_dirs() -> Vec<PathBuf> {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| {
-                crate::home::home_dir()
-                    .into_iter()
-                    .flat_map(|home| {
-                        DEFAULT_ANTIGRAVITY_ROOTS.map(|root| home.join(root).join("conversations"))
-                    })
-                    .collect()
+                roots::default_candidates(debug, || {
+                    crate::home::home_dir()
+                        .into_iter()
+                        .flat_map(|home| {
+                            DEFAULT_ANTIGRAVITY_ROOTS
+                                .map(|root| home.join(root).join("conversations"))
+                        })
+                        .collect()
+                })
             }),
     )
 }
@@ -44,10 +47,13 @@ fn custom_conversation_dir(root: PathBuf) -> PathBuf {
     if nested.is_dir() { nested } else { root }
 }
 
-pub(super) fn conversation_db_paths(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
+pub(super) fn conversation_db_paths(
+    diagnostics: &Diagnostics,
+    debug: bool,
+) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    for dir in conversation_dirs() {
+    for dir in conversation_dirs(debug) {
         let mut files = Vec::new();
         collect_files_with_extension(&dir, "db", &mut files, diagnostics);
         for path in files {
@@ -85,7 +91,7 @@ mod tests {
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
         ]);
 
-        let paths = conversation_db_paths(&Diagnostics::new("antigravity")).unwrap();
+        let paths = conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap();
 
         assert_eq!(paths.len(), 6);
         assert!(paths.iter().all(|path| path.extension().unwrap() == "db"));
@@ -107,7 +113,7 @@ mod tests {
             Some(OsString::from(override_value)),
         )]);
 
-        let paths = conversation_db_paths(&Diagnostics::new("antigravity")).unwrap();
+        let paths = conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap();
 
         assert_eq!(
             paths,
@@ -134,7 +140,7 @@ mod tests {
         )]);
 
         assert_eq!(
-            conversation_db_paths(&Diagnostics::new("antigravity")).unwrap(),
+            conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap(),
             vec![fixture.path("conversations/session.db")]
         );
     }
@@ -153,7 +159,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            conversation_db_paths(&Diagnostics::new("antigravity")).unwrap(),
+            conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap(),
             vec![fixture.path(".gemini/antigravity-cli/conversations/session.db")]
         );
     }

@@ -24,15 +24,15 @@ impl RootsEnv<'_> {
 
     pub fn candidates(self, defaults: impl FnOnce() -> Vec<PathBuf>) -> Vec<PathBuf> {
         self.configured()
-            .unwrap_or_else(|| default_candidates(defaults))
+            .unwrap_or_else(|| default_candidates(false, defaults))
     }
 }
 
-pub fn default_candidates(defaults: impl FnOnce() -> Vec<PathBuf>) -> Vec<PathBuf> {
+pub fn default_candidates(debug: bool, defaults: impl FnOnce() -> Vec<PathBuf>) -> Vec<PathBuf> {
     let paths = defaults();
     if paths.is_empty()
         && home::home_dir().is_none()
-        && ccusage_core::log_level().is_some_and(|level| level >= 4)
+        && (debug || ccusage_core::log_level().is_some_and(|level| level >= 4))
     {
         static NO_HOME: std::sync::Once = std::sync::Once::new();
         NO_HOME.call_once(|| {
