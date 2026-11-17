@@ -187,7 +187,7 @@ fn load_deduped_daily_entries(
     let loaded_files = read_discovered_files(context.shared.single_thread, discover, |file| {
         read_daily_usage_file_with_diagnostics(
             file,
-            context.timezone(),
+            context.window().timezone(),
             mode,
             context.pricing(),
             diagnostics,

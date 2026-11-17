@@ -1,4 +1,7 @@
-use ccusage_adapter_common::{read_discovered_files, source::ProgressOwner};
+use ccusage_adapter_common::{
+    read_discovered_files,
+    source::{ProgressOwner, UsageLoadContext},
+};
 use ccusage_core::*;
 
 mod blocks;
@@ -17,7 +20,7 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     path::Path,
-    sync::{Arc, LazyLock, OnceLock},
+    sync::{Arc, LazyLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -38,7 +41,7 @@ use crate::{
     daily::DedupEntry as _,
     debug_log,
     fast::{FxHashMap, LinePrefilter},
-    log_level, progress, resolve_tz,
+    log_level, progress,
 };
 
 pub(crate) use paths::{
@@ -291,7 +294,7 @@ fn load_entries_with_mode(
     let read = |file: &Path| {
         read_usage_file_with_diagnostics(
             file,
-            context.timezone(),
+            context.window().timezone(),
             mode,
             if mode == CostMode::Display {
                 None
@@ -360,43 +363,6 @@ fn load_entries_with_mode(
         copies,
         detected,
     })
-}
-
-/// The timezone and pricing a load prices entries with, resolved by the
-/// first file that needs them, so a load that finds no files skips both.
-pub(crate) struct UsageLoadContext<'a> {
-    pub(crate) shared: &'a SharedArgs,
-    timezone: OnceLock<JiffTimeZone>,
-    pricing: OnceLock<Option<PricingMap>>,
-}
-
-impl<'a> UsageLoadContext<'a> {
-    pub(crate) fn new(shared: &'a SharedArgs) -> Self {
-        Self {
-            shared,
-            timezone: OnceLock::new(),
-            pricing: OnceLock::new(),
-        }
-    }
-
-    pub(crate) fn timezone(&self) -> &JiffTimeZone {
-        self.timezone
-            .get_or_init(|| resolve_tz(self.shared.timezone.as_deref()))
-    }
-
-    pub(crate) fn pricing(&self) -> Option<&PricingMap> {
-        self.pricing
-            .get_or_init(|| {
-                (self.shared.mode != CostMode::Display).then(|| {
-                    PricingMap::load_with_overrides(
-                        self.shared.offline,
-                        log_level() != Some(0),
-                        self.shared.pricing_overrides.iter(),
-                    )
-                })
-            })
-            .as_ref()
-    }
 }
 
 /// Breaks a tie between duplicates with equal token totals by keeping the copy
