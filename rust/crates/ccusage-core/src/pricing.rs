@@ -595,6 +595,7 @@ impl Pricing {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fuzzy {
     Allowed,
+    ShorterKeys,
     Denied,
 }
 
@@ -731,6 +732,7 @@ pub struct PricingMap {
 #[derive(Clone, Debug, Default)]
 struct PricingRows {
     entries: FxHashMap<String, Pricing>,
+    override_keys: FxHashMap<String, String>,
     /// Entries that only a request recording that exact id may use.
     ///
     /// A separately priced tier such as `kimi-k2.7-code-highspeed` is the right
@@ -1766,17 +1768,24 @@ impl PricingMap {
         );
         *slot.get_or_init(|| {
             let map = self.for_lookup(model, Lookup::Pricing);
-            map.lookup(map.prices(), model, Fuzzy::Allowed)
+            map.overridden(model)
+                .or_else(|| map.lookup(map.prices(), model, Fuzzy::Allowed))
         })
     }
 
     pub fn resolve<'a>(&self, candidates: &[(&'a str, MatchKind)]) -> Option<(&'a str, Pricing)> {
         candidates.iter().find_map(|&(model, kind)| {
             let pricing = match kind {
-                MatchKind::StrictExact => self.find_exact(model).and_then(|_| self.find(model)),
-                MatchKind::Exact => self
-                    .find_exact_with_fallback(model)
-                    .and_then(|_| self.find(model)),
+                MatchKind::StrictExact => self.find_exact(model).and_then(|_| {
+                    let map = self.for_lookup(model, Lookup::Pricing);
+                    map.overridden(model)
+                        .or_else(|| map.lookup(map.prices(), model, Fuzzy::ShorterKeys))
+                }),
+                MatchKind::Exact => self.find_exact_with_fallback(model).and_then(|_| {
+                    let map = self.for_lookup(model, Lookup::Pricing);
+                    map.overridden(model)
+                        .or_else(|| map.lookup(map.prices(), model, Fuzzy::ShorterKeys))
+                }),
                 MatchKind::Fuzzy => self.find(model),
             }?;
             Some((model, pricing))
@@ -1947,12 +1956,12 @@ impl PricingMap {
     ) -> Option<&'a str> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved = alias.as_ref();
-        let fuzzy = if fuzzy == Fuzzy::Allowed
+        let fuzzy = if fuzzy != Fuzzy::Denied
             && ![model, resolved].into_iter().any(|candidate| {
                 table.is_exact_only(candidate)
                     || pricing_alias(candidate).is_some_and(|alias| table.is_exact_only(alias))
             }) {
-            Fuzzy::Allowed
+            fuzzy
         } else {
             Fuzzy::Denied
         };
@@ -1961,7 +1970,7 @@ impl PricingMap {
             .find_map(|layer| {
                 self.layer_key(table, model, resolved, layer, Fuzzy::Denied)
                     .or_else(|| {
-                        (fuzzy == Fuzzy::Allowed)
+                        (fuzzy != Fuzzy::Denied)
                             .then(|| self.layer_key(table, model, resolved, layer, fuzzy))
                             .flatten()
                     })
@@ -2019,6 +2028,13 @@ impl PricingMap {
                 .filter(|(_, exact_only)| !exact_only)
                 .map(|(key, _)| key)
                 .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
+                .filter(|key| {
+                    fuzzy != Fuzzy::ShorterKeys
+                        || contains_pricing_key(
+                            normalized.as_ref(),
+                            normalized_pricing_key(key).as_ref(),
+                        )
+                })
                 .max_by(|left, right| {
                     let same_id = |key: &str| normalized_pricing_key(key) == normalized;
                     same_id(left)
@@ -2057,13 +2073,27 @@ impl PricingMap {
     ) -> Pricing {
         let explicit = [model, resolved, schedule.model()]
             .into_iter()
-            .find_map(|key| self.rows.entries.get(key).filter(|entry| entry.overridden))
-            .copied();
+            .find_map(|key| self.overridden(key));
         pricing.at(schedule, timestamp, explicit)
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
-        self.prices().get(model).copied()
+        self.overridden(model)
+            .or_else(|| self.prices().get(model).copied())
+    }
+
+    fn overridden(&self, model: &str) -> Option<Pricing> {
+        self.rows
+            .override_keys
+            .get(normalized_pricing_key(model).as_ref())
+            .and_then(|key| self.rows.entries.get(key))
+            .or_else(|| {
+                self.rows
+                    .entries
+                    .get(model)
+                    .filter(|entry| entry.overridden)
+            })
+            .copied()
     }
 
     /// Whether a user supplied pricing for this model id or its configured alias.
@@ -2073,12 +2103,7 @@ impl PricingMap {
             crate::model_aliases::resolve_model_name(model).as_ref(),
         ]
         .into_iter()
-        .any(|key| {
-            self.rows
-                .entries
-                .get(key)
-                .is_some_and(|entry| entry.overridden)
-        })
+        .any(|key| self.overridden(key).is_some())
     }
 
     pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
@@ -2095,8 +2120,10 @@ impl PricingMap {
     }
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
-        self.exact_normalized_key(model)
-            .and_then(|key| self.prices().get(key).copied())
+        self.overridden(model).or_else(|| {
+            self.exact_normalized_key(model)
+                .and_then(|key| self.prices().get(key).copied())
+        })
     }
 
     fn exact_normalized_key(&self, model: &str) -> Option<&str> {
@@ -2152,7 +2179,18 @@ impl PricingMap {
         for model in overrides.keys() {
             self.resolve_override(model, &overrides, &mut resolved);
         }
-        for (model, pricing) in resolved {
+        let mut resolved: Vec<_> = resolved.into_iter().collect();
+        resolved.sort_by(|(left, _), (right, _)| left.cmp(right));
+        let mut grouped = FxHashMap::default();
+        for (model, pricing) in &resolved {
+            let combined = grouped
+                .entry(normalized_pricing_key(model).into_owned())
+                .or_insert((*model, *pricing));
+            let fields = combined.1.explicit_fields;
+            combined.1.apply_override(overrides[model]);
+            combined.1.explicit_fields |= fields;
+        }
+        for (normalized, (model, pricing)) in grouped {
             if self
                 .prices()
                 .all_parts()
@@ -2161,6 +2199,9 @@ impl PricingMap {
                 self.rows_mut().exact_only.insert(model.to_string());
             }
             self.rows_mut().entries.insert(model.to_string(), pricing);
+            self.rows_mut()
+                .override_keys
+                .insert(normalized, model.to_string());
         }
         for (model, override_value) in overrides {
             if let Some(limit) = override_value.max_input_tokens {
@@ -2213,8 +2254,8 @@ impl PricingMap {
             {
                 return OverrideBase::Override(dependency);
             }
-            if let Some(pricing) = self.prices().get(candidate) {
-                return OverrideBase::Pricing(*pricing);
+            if let Some(pricing) = self.find_exact_normalized(candidate) {
+                return OverrideBase::Pricing(pricing);
             }
         }
         let speed = SpeedMultipliers::get();
@@ -3538,6 +3579,8 @@ mod tests {
         assert_eq!(resolved.cache_read, Some(0.0));
         let direct = pricing.find_at("deepseek-v4-flash", instant).unwrap();
         assert_eq!(direct.output, 19.0);
+        assert_eq!(resolved.output, 19.0);
+        assert_eq!(direct.cache_read, Some(0.0));
         assert!(pricing.has_user_override("scheduled-alias"));
         assert!(!base.has_user_override("deepseek-v4-flash"));
     }
@@ -3615,6 +3658,50 @@ mod tests {
         assert_eq!(price.input, 5e-6);
         assert_eq!(price.output, 30e-6);
         assert_eq!(pricing.find("gpt-5.5-pro").unwrap().input, 30e-6);
+    }
+
+    #[test]
+    fn exact_candidate_kinds_keep_the_same_model_and_respelled_overrides() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(
+            r#"{"gpt-5-5":{"input_cost_per_token":0.000005,"output_cost_per_token":0.00003}}"#,
+        );
+        for kind in [super::MatchKind::Exact, super::MatchKind::StrictExact] {
+            let (_, price) = pricing.resolve(&[("gpt-5-5", kind)]).unwrap();
+            assert_eq!(price.input, 5e-6);
+            assert_eq!(price.output, 30e-6);
+        }
+        let key = "claude-sonnet-4-5".to_string();
+        let value = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(7e-6),
+            ..Default::default()
+        };
+        let pricing = pricing.with_user_overrides([(&key, &value)]);
+        for model in [
+            "claude-sonnet-4-5",
+            "claude-sonnet-4.5",
+            "claude.sonnet.4.5",
+        ] {
+            assert!(pricing.has_user_override(model), "{model}");
+            for kind in [super::MatchKind::Exact, super::MatchKind::Fuzzy] {
+                assert_eq!(pricing.resolve(&[(model, kind)]).unwrap().1.input, 7e-6);
+            }
+            assert_eq!(pricing.find(model).unwrap().input, 7e-6);
+        }
+        let mut primary = PricingMap::default();
+        primary
+            .load_json(r#"{"sample-pro":{"input_cost_per_token":9,"output_cost_per_token":18}}"#);
+        let mut embedded = PricingMap::default();
+        embedded.load_models_dev_json_for_tests(
+            r#"{"sample":{"cost":{"input":1000000,"output":2000000}}}"#,
+        );
+        let pricing = layered(&primary, Some(&embedded));
+        for kind in [super::MatchKind::Exact, super::MatchKind::StrictExact] {
+            let (_, price) = pricing.resolve(&[("sample", kind)]).unwrap();
+            assert_eq!(price.input, 1.0);
+            assert_eq!(price.output, 2.0);
+        }
     }
 
     #[test]
@@ -6843,7 +6930,7 @@ mod tests {
     }
 
     #[test]
-    fn respelled_override_preserves_the_models_dev_exact_only_row() {
+    fn respelled_override_applies_to_the_models_dev_exact_only_row() {
         crate::test_support::install_pricing_snapshots();
         use crate::cli::PricingOverride;
         let original = "kimi-k2.7-code-highspeed";
@@ -6860,7 +6947,7 @@ mod tests {
             pricing.find_exact_with_fallback(original),
         ] {
             let resolved = resolved.unwrap();
-            assert_eq!(resolved.input, baseline.input);
+            assert_eq!(resolved.input, 7e-6);
             assert_eq!(resolved.output, baseline.output);
             assert_eq!(resolved.cache_read, baseline.cache_read);
         }

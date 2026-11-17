@@ -693,6 +693,20 @@ mod tests {
                         .chain(names.iter().map(|name| (name.as_str(), MatchKind::Fuzzy)))
                         .collect();
                     let resolved = pricing.resolve_at(&candidates, None);
+                    let corrected_rate = match (model, override_key.as_deref()) {
+                        ("grok-4.5", Some("grok-4.5-build")) => Some((2e-6, 6e-6)),
+                        ("gemini-2.5-pro", Some("google/gemini-2.5-pro")) => Some((1.25e-6, 10e-6)),
+                        _ => None,
+                    };
+                    if let Some((input, output)) = corrected_rate {
+                        let (old_name, old_price) = legacy.unwrap();
+                        let (name, price) = resolved.unwrap();
+                        assert_eq!(name, old_name);
+                        assert_eq!(old_price.input, 0.123);
+                        assert_eq!(price.input, input);
+                        assert_eq!(price.output, output);
+                        continue;
+                    }
                     assert_eq!(
                         format!("{legacy:?}"),
                         format!("{resolved:?}"),
