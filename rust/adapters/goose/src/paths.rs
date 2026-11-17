@@ -21,7 +21,7 @@ pub(super) fn goose_db_paths(debug: bool) -> Result<Vec<PathBuf>> {
     Ok(roots::directories(roots)
         .into_iter()
         .map(|root| root.join(GOOSE_DB_FILE_NAME))
-        .filter_map(|path| path.canonicalize().ok())
+        .map(|path| crate::home::path_identity(&path))
         .filter(|path| path.is_file())
         .filter(|path| seen.insert(path.clone()))
         .collect())
@@ -46,6 +46,14 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn database_identity_keeps_the_given_path_when_it_cannot_be_resolved() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("unresolved/sessions.db");
+        assert!(path.canonicalize().is_err());
+        assert_eq!(crate::home::path_identity(&path), path);
+    }
 
     #[cfg(unix)]
     #[test]
