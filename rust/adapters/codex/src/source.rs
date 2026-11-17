@@ -39,17 +39,18 @@ impl UsageSource for Codex {
 fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let diagnostics = Diagnostics::new("codex");
     let shared = request.shared;
-    let owned_pricing = request.pricing.is_none().then(|| {
-        PricingMap::load_with_overrides(
-            shared.offline,
-            log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        )
-    });
-    let pricing = request
-        .pricing
-        .or(owned_pricing.as_ref())
-        .expect("Codex pricing is available");
+    let owned_pricing;
+    let pricing = match request.pricing {
+        Some(pricing) => pricing,
+        None => {
+            owned_pricing = PricingMap::load_with_overrides(
+                shared.offline,
+                log_level() != Some(0),
+                shared.pricing_overrides.iter(),
+            );
+            &owned_pricing
+        }
+    };
     let speed = resolve_codex_speed(request.options.codex_speed);
 
     let (groups, detected) =
@@ -141,6 +142,35 @@ mod diagnostic_tests {
             })
             .unwrap()
             .rows
+    }
+
+    #[test]
+    fn loads_pricing_when_the_caller_does_not_supply_it() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let usage = json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
+        let _ = fixture.write_file("sessions/session.jsonl", usage);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some("UTC".into()),
+            ..SharedArgs::default()
+        };
+        let loaded = SOURCE
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
+                shared: &shared,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+            })
+            .unwrap();
+        assert_eq!(loaded.rows.len(), 1);
+        assert_eq!(loaded.rows[0].total_tokens, 110);
+        assert!(loaded.rows[0].total_cost > 0.0);
     }
 
     #[test]
