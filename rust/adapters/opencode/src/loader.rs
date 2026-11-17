@@ -439,17 +439,18 @@ fn scan_rows<T>(
     read: impl Fn(&sqlite::Statement<'_>) -> std::result::Result<Option<T>, UnreadableRow>,
     mut visit: impl FnMut(&Path, u32, T),
 ) -> u32 {
-    let unit = table_rows_unit(context.db_path, table);
+    let unit = context.db_path;
+    let diagnostics = context.diagnostics.for_table(table.name());
     let mut row = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
                 row = row.saturating_add(1);
                 match read(&statement) {
-                    Ok(Some(value)) => visit(&unit, row, value),
+                    Ok(Some(value)) => visit(unit, row, value),
                     Ok(None) => {}
-                    Err(UnreadableRow) => context.diagnostics.record(Skip::record(
-                        &unit,
+                    Err(UnreadableRow) => diagnostics.record(Skip::record(
+                        unit,
                         row,
                         SkipKind::InvalidData,
                         unreadable,
@@ -473,13 +474,6 @@ fn scan_rows<T>(
         }
     }
     row
-}
-
-fn table_rows_unit(db_path: &Path, table: Table) -> PathBuf {
-    let mut unit = db_path.as_os_str().to_os_string();
-    unit.push("#");
-    unit.push(table.name());
-    PathBuf::from(unit)
 }
 
 const COLUMN_READ_FAILED: &str = "database column read failed";
@@ -511,6 +505,7 @@ fn load_message_rows(
         }
     };
     let window = context.window;
+    let diagnostics = context.diagnostics.for_table(schema.table.name());
     scan_rows(
         statement,
         context,
@@ -540,7 +535,7 @@ fn load_message_rows(
                 data.as_bytes(),
                 unit,
                 row,
-                context.diagnostics,
+                &diagnostics,
                 Some(|_| true),
             ) else {
                 return;
@@ -555,14 +550,14 @@ fn load_message_rows(
             ) {
                 Ok(Some(entry)) => collector.push_message((entry, None)),
                 Ok(None) => {}
-                Err(MissingTimestamp) => record_missing_timestamp(context, unit, row),
+                Err(MissingTimestamp) => record_missing_timestamp(&diagnostics, unit, row),
             }
         },
     );
 }
 
-fn record_missing_timestamp(context: &DatabaseLoadContext<'_>, unit: &Path, row: u32) {
-    context.diagnostics.record(Skip::record(
+fn record_missing_timestamp(diagnostics: &Diagnostics, unit: &Path, row: u32) {
+    diagnostics.record(Skip::record(
         unit,
         row,
         SkipKind::InvalidTimestamp,
@@ -614,6 +609,7 @@ fn load_session_message_rows(
     };
     let window = context.window;
     let mut entries = 0;
+    let diagnostics = context.diagnostics.for_table(schema.table.name());
     let rows = scan_rows(
         statement,
         context,
@@ -660,7 +656,7 @@ fn load_session_message_rows(
                 Ok(Some(linked)) => linked,
                 Ok(None) => return,
                 Err(SessionMessageError::MissingTimestamp) => {
-                    record_missing_timestamp(context, unit, row);
+                    record_missing_timestamp(&diagnostics, unit, row);
                     return;
                 }
                 Err(SessionMessageError::Decode(error)) => {
@@ -670,7 +666,7 @@ fn load_session_message_rows(
                         unit,
                         row,
                         false,
-                        context.diagnostics,
+                        &diagnostics,
                         Some(|_: &serde_json::Value| true),
                     );
                     return;
@@ -930,6 +926,7 @@ fn load_session_aggregate_entries(
         }
     };
     let mut entries = Vec::new();
+    let diagnostics = context.diagnostics.for_table(schema.table.name());
     scan_rows(
         statement,
         context,
@@ -962,7 +959,7 @@ fn load_session_aggregate_entries(
         ) {
             Ok(Some(entry)) => entries.push(entry),
             Ok(None) => {}
-            Err(MissingTimestamp) => record_missing_timestamp(context, unit, row),
+            Err(MissingTimestamp) => record_missing_timestamp(&diagnostics, unit, row),
         },
     );
     entries
@@ -1514,7 +1511,42 @@ mod tests {
                 undatable,
                 "{since:?}"
             );
+            assert_eq!(
+                diagnostics.warnings(&shared),
+                [format!(
+                    "WARN  opencode: skipped 1 input and {} records in 2 inputs (invalid timestamp)",
+                    undatable - 1
+                )]
+            );
         }
+    }
+
+    #[test]
+    fn untimed_rows_in_two_tables_count_as_one_database_input() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let db = fixture.path("opencode.db");
+        const UNTIMED: &str = r#"{"modelID":"gpt-test","providerID":"openai","model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":10,"output":1},"cost":0.01}"#;
+        create_db_message_with_time(&db, "legacy", "session", 0, UNTIMED);
+        create_db_session_message_table(&db, true);
+        insert_db_session_message(&db, "current", "session", "assistant", 0, UNTIMED, false);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        assert!(
+            load_directories(
+                &[fixture.root().to_path_buf()],
+                &shared,
+                AgentReportKind::Daily,
+                &diagnostics
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            diagnostics.warnings(&shared),
+            ["WARN  opencode: skipped 2 records in 1 input (invalid timestamp)"]
+        );
     }
 
     #[test]

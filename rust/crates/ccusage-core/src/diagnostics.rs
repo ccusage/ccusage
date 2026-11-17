@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use crate::{cli::SharedArgs, log_level, output::sanitize_terminal_text};
@@ -57,6 +57,7 @@ pub struct Skip {
     /// The 1-based line or row inside the unit; `None` when the whole unit, or
     /// the rest of it, was skipped.
     pub line: Option<u32>,
+    table: Option<&'static str>,
     pub kind: SkipKind,
     pub detail: String,
 }
@@ -67,6 +68,7 @@ impl Skip {
         Self {
             unit: unit.to_path_buf(),
             line: None,
+            table: None,
             kind,
             detail: detail.to_string(),
         }
@@ -98,18 +100,18 @@ struct Tally {
 #[derive(Default)]
 struct UnitSkips {
     whole: bool,
-    records: BTreeSet<u32>,
+    records: BTreeSet<(Option<&'static str>, u32)>,
 }
 
 impl Tally {
-    fn count(&mut self, unit: &Path, line: Option<u32>) {
+    fn count(&mut self, unit: &Path, table: Option<&'static str>, line: Option<u32>) {
         if !self.units.contains_key(unit) {
             self.units.insert(unit.to_path_buf(), UnitSkips::default());
         }
         let skips = self.units.get_mut(unit).expect("unit was just inserted");
         match line {
             Some(line) => {
-                skips.records.insert(line);
+                skips.records.insert((table, line));
             }
             None => skips.whole = true,
         }
@@ -118,11 +120,9 @@ impl Tally {
     /// Keeps the first skips by unit, line and detail, so `--debug` lists the
     /// same ones whatever order parallel readers record them in.
     fn sample(&mut self, skip: Skip) {
-        if let Some(sample) = self
-            .samples
-            .iter_mut()
-            .find(|sample| sample.unit == skip.unit && sample.line == skip.line)
-        {
+        if let Some(sample) = self.samples.iter_mut().find(|sample| {
+            sample.unit == skip.unit && sample.table == skip.table && sample.line == skip.line
+        }) {
             if sample_order(&skip, sample).is_lt() {
                 *sample = skip;
             }
@@ -143,16 +143,17 @@ impl Tally {
     fn merge(&mut self, other: &Self) {
         for (unit, skips) in &other.units {
             if skips.whole {
-                self.count(unit, None);
+                self.count(unit, None, None);
             }
-            for line in &skips.records {
-                self.count(unit, Some(*line));
+            for (table, line) in &skips.records {
+                self.count(unit, *table, Some(*line));
             }
         }
         self.samples.extend(other.samples.iter().cloned());
         self.samples.sort_by(sample_order);
-        self.samples
-            .dedup_by(|right, left| left.unit == right.unit && left.line == right.line);
+        self.samples.dedup_by(|right, left| {
+            left.unit == right.unit && left.table == right.table && left.line == right.line
+        });
         self.samples.truncate(SAMPLES_PER_KIND);
     }
 
@@ -181,6 +182,7 @@ struct State {
 fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
     left.unit
         .cmp(&right.unit)
+        .then_with(|| left.table.cmp(&right.table))
         .then_with(|| left.line.cmp(&right.line))
         .then_with(|| left.detail.cmp(&right.detail))
 }
@@ -194,7 +196,8 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
 /// touches it.
 pub struct Diagnostics {
     source: &'static str,
-    state: Mutex<State>,
+    table: Option<&'static str>,
+    state: Arc<Mutex<State>>,
 }
 
 impl Diagnostics {
@@ -202,7 +205,8 @@ impl Diagnostics {
     pub fn new(source: &'static str) -> Self {
         Self {
             source,
-            state: Mutex::new(State::default()),
+            table: None,
+            state: Arc::new(Mutex::new(State::default())),
         }
     }
 
@@ -211,10 +215,22 @@ impl Diagnostics {
         self.source
     }
 
-    pub fn record(&self, skip: Skip) {
+    /// Shares the source's input tally while identifying rows by table and line.
+    pub fn for_table(&self, table: &'static str) -> Self {
+        Self {
+            source: self.source,
+            table: Some(table),
+            state: Arc::clone(&self.state),
+        }
+    }
+
+    pub fn record(&self, mut skip: Skip) {
+        if skip.line.is_some() {
+            skip.table = skip.table.or(self.table);
+        }
         let mut state = self.state();
         let tally = &mut state.tallies[skip.kind as usize];
-        tally.count(&skip.unit, skip.line);
+        tally.count(&skip.unit, skip.table, skip.line);
         tally.sample(skip);
     }
 
@@ -231,7 +247,7 @@ impl Diagnostics {
     /// loads a source more than once: a skip both recorded counts once.
     pub fn merge(&self, other: &Self) {
         debug_assert_eq!(self.source, other.source);
-        if std::ptr::eq(self, other) {
+        if Arc::ptr_eq(&self.state, &other.state) {
             return;
         }
         let other = other.state();
@@ -321,9 +337,13 @@ impl Diagnostics {
     }
 
     fn sample_line(&self, skip: &Skip) -> String {
+        let table = skip
+            .table
+            .map(|table| format!(":{table}"))
+            .unwrap_or_default();
         let line = skip.line.map(|line| format!(":{line}")).unwrap_or_default();
         format!(
-            "{}: {}: {}{line}: {}",
+            "{}: {}: {}{table}{line}: {}",
             self.source,
             skip.kind.label(),
             skip.unit.display(),
@@ -393,6 +413,42 @@ mod tests {
             ["WARN  codex: skipped 3 records in 2 inputs (invalid timestamp)"]
         );
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 3);
+    }
+
+    #[test]
+    fn table_rows_share_the_database_input_and_keep_distinct_identities() {
+        let diagnostics = Diagnostics::new("opencode");
+        let message = diagnostics.for_table("message");
+        let session_message = diagnostics.for_table("session_message");
+        message.record(invalid_timestamp("/logs/opencode.db", 1));
+        session_message.record(invalid_timestamp("/logs/opencode.db", 1));
+        message.record(invalid_timestamp("/logs/opencode.db", 1));
+        diagnostics.merge(&message);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+        assert_eq!(
+            diagnostics.render(true, true),
+            [
+                "WARN  opencode: skipped 2 records in 1 input (invalid timestamp)",
+                "opencode: invalid timestamp: /logs/opencode.db:message:1: timestamp 'soon'",
+                "opencode: invalid timestamp: /logs/opencode.db:session_message:1: timestamp 'soon'",
+            ]
+        );
+
+        let repeated = Diagnostics::new("opencode");
+        repeated
+            .for_table("message")
+            .record(invalid_timestamp("/logs/opencode.db", 1));
+        repeated.record(Skip::unit(
+            Path::new("/logs/opencode.db"),
+            SkipKind::InvalidTimestamp,
+            "database rejected",
+        ));
+        diagnostics.merge(&repeated);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 3);
+        assert_eq!(
+            diagnostics.render(true, false),
+            ["WARN  opencode: skipped 1 input and 2 records in 1 input (invalid timestamp)"]
+        );
     }
 
     #[test]
