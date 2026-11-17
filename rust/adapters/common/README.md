@@ -64,7 +64,7 @@ layers.
   types they exchange
 - `pipeline::run_focused`
 - `pipeline::focused_rows`
-- `pipeline::unified_rows`
+- `pipeline::load_rows`
 - `rows::UnifiedRow`
 - `rows::summary_rows`
 - `claims::ClaudeCounted`
