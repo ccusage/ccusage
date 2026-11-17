@@ -1,4 +1,4 @@
-use ccusage_test_support::Fixture;
+use ccusage_test_support::{Fixture, Instant, instant, set_modified};
 
 mod support;
 
@@ -126,16 +126,6 @@ fn session_id_table_honors_breakdown() {
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap());
 }
 
-fn set_file_modified(path: &std::path::Path, unix_seconds: u64) {
-    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
-    std::fs::File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_times(std::fs::FileTimes::new().set_modified(modified))
-        .unwrap();
-}
-
 fn run_bounded_daily(fixture: &Fixture, extra_args: &[&str]) -> std::process::Output {
     let output = claude_command(fixture)
         .args([
@@ -188,10 +178,10 @@ fn daily_since_totals_match_after_pruning_stale_files() {
         ]
         .join("\n"),
     );
-    // 2026-09-01T12:00:00Z, 2026-09-09T06:00:00Z, 2026-09-11T12:00:00Z
-    set_file_modified(&stale, 1_788_264_000);
-    set_file_modified(&margin, 1_788_933_600);
-    set_file_modified(&fresh, 1_789_128_000);
+
+    set_modified(&stale, instant("2026-09-01T12:00:00Z"));
+    set_modified(&margin, instant("2026-09-09T06:00:00Z"));
+    set_modified(&fresh, instant("2026-09-11T12:00:00Z"));
 
     let json_output = run_bounded_daily(&fixture, &["--json"]);
     let json: serde_json::Value = serde_json::from_slice(&json_output.stdout).unwrap();
@@ -261,9 +251,6 @@ fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress
     assert_eq!(json["totals"]["totalTokens"], 10);
     assert_eq!(json["totals"]["totalCost"], 3.0);
 }
-
-// 2026-09-12T12:00:00Z, later than every fixture entry below.
-const FRESH_MTIME: u64 = 1_789_214_400;
 
 fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String {
     run_command(claude_command(fixture), args, stdin)
@@ -452,13 +439,13 @@ fn statusline_debug_includes_sanitized_skip_samples() {
 fn assert_output_ignores_mtimes(
     command: impl Fn() -> std::process::Command,
     files: &[std::path::PathBuf],
-    fresh_mtime: u64,
+    fresh_mtime: Instant,
     args: &[&str],
     stdin: Option<&str>,
 ) -> String {
     let stale = run_command(command(), args, stdin);
     for file in files {
-        set_file_modified(file, fresh_mtime);
+        set_modified(file, fresh_mtime);
     }
     let fresh = run_command(command(), args, stdin);
     assert_eq!(stale, fresh, "ccusage {args:?} depends on file mtimes");
@@ -521,13 +508,12 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
     let files = [parent.clone(), sidechain.clone()];
 
     for command in ["daily", "weekly", "monthly", "session"] {
-        // 2026-09-01T12:00:00Z and 2026-09-11T12:05:00Z
-        set_file_modified(&parent, 1_788_264_000);
-        set_file_modified(&sidechain, 1_789_128_300);
+        set_modified(&parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&sidechain, instant("2026-09-11T12:05:00Z"));
         let output = assert_output_ignores_mtimes(
             || claude_command(&fixture),
             &files,
-            FRESH_MTIME,
+            instant(NOW),
             &[
                 "claude",
                 command,
@@ -572,14 +558,14 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
             2.0,
         ),
     );
-    // 2026-09-11T12:00:00Z and 2026-09-01T12:00:00Z
-    set_file_modified(&parent, 1_789_128_000);
-    set_file_modified(&subagent, 1_788_264_000);
+
+    set_modified(&parent, instant("2026-09-11T12:00:00Z"));
+    set_modified(&subagent, instant("2026-09-01T12:00:00Z"));
 
     let output = assert_output_ignores_mtimes(
         || claude_command(&fixture),
         &[parent, subagent],
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "session",
             "--since",
@@ -721,7 +707,12 @@ fn write_block_chain(
             .collect::<Vec<_>>()
             .join("\n");
         let file = fixture.write_file(format!("projects/chain/part-{index:03}.jsonl"), lines);
-        set_file_modified(&file, u64::try_from(chunk.last().unwrap() / 1000).unwrap());
+        set_modified(
+            &file,
+            instant(&ccusage_core::format_rfc3339_millis(
+                ccusage_core::TimestampMs::from_millis(*chunk.last().unwrap()),
+            )),
+        );
         files.push(file);
     }
     files
@@ -730,13 +721,12 @@ fn write_block_chain(
 #[test]
 fn bounded_blocks_keep_anchors_from_older_files() {
     let fixture = Fixture::new();
-    // Ends 2026-09-11T21:00:00Z; 71 entries reach back roughly 12 days.
-    let files = write_block_chain(&fixture, 1_789_160_400_000, 71);
+    let files = write_block_chain(&fixture, instant("2026-09-11T21:00:00Z").millis(), 71);
 
     assert_output_ignores_mtimes(
         || claude_command(&fixture),
         &files,
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "claude",
             "blocks",
@@ -754,7 +744,6 @@ fn bounded_blocks_keep_anchors_from_older_files() {
 }
 
 const NOW: &str = "2026-09-12T12:00:00Z";
-const NOW_MS: i64 = 1_789_214_400_000;
 const HOUR_MS: i64 = 60 * 60 * 1000;
 
 fn claude_command_at_now(fixture: &Fixture) -> std::process::Command {
@@ -787,13 +776,13 @@ fn statusline_hook(session: &str, transcript: &std::path::Path) -> String {
 #[test]
 fn statusline_active_block_keeps_anchors_from_older_files() {
     let fixture = Fixture::new();
-    let files = write_block_chain(&fixture, NOW_MS - HOUR_MS, 71);
+    let files = write_block_chain(&fixture, instant(NOW).millis() - HOUR_MS, 71);
     let hook = statusline_hook("session-chain", files.last().unwrap());
 
     let output = assert_output_ignores_mtimes(
         || claude_command_at_now(&fixture),
         &files,
-        FRESH_MTIME,
+        instant(NOW),
         &STATUSLINE_ARGS,
         Some(&hook),
     );
@@ -816,13 +805,13 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
             1.0,
         ),
     );
-    // 2026-09-01T12:00:00Z
-    set_file_modified(&old, 1_788_264_000);
+
+    set_modified(&old, instant("2026-09-01T12:00:00Z"));
 
     let output = assert_output_ignores_mtimes(
         || claude_command(&fixture),
         &[old],
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "daily",
             "--since",
@@ -843,7 +832,7 @@ fn statusline_keeps_the_current_block_before_future_dated_entries() {
     let fixture = Fixture::new();
     let at = |offset_hours: i64| {
         ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(
-            NOW_MS + offset_hours * HOUR_MS,
+            instant(NOW).millis() + offset_hours * HOUR_MS,
         ))
     };
     // A skewed clock wrote an entry eight hours ahead, after a long pause.
@@ -902,14 +891,14 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
         ]
         .join("\n"),
     );
-    // 2026-09-01T12:00:00Z and 2026-09-11T12:05:00Z
-    set_file_modified(&parent, 1_788_264_000);
-    set_file_modified(&workflow, 1_789_128_300);
+
+    set_modified(&parent, instant("2026-09-01T12:00:00Z"));
+    set_modified(&workflow, instant("2026-09-11T12:05:00Z"));
 
     let output = assert_output_ignores_mtimes(
         || claude_command(&fixture),
         &[parent, workflow],
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "claude",
             "daily",

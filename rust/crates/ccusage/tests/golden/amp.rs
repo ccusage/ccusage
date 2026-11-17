@@ -1,10 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "amp-mystery-1";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let threads = root.join("amp/threads");
     std::fs::create_dir_all(&threads).expect("failed to create Amp threads directory");
     let write = |name: &str, contents: &str| {
@@ -87,5 +88,5 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     );
     write("notes.txt", "not a thread\n");
 
-    vec![("AMP_DATA_DIR", root.join("amp"))]
+    vec![("AMP_DATA_DIR", vec![root.join("amp").into_os_string()])]
 }

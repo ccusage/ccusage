@@ -28,20 +28,16 @@ pub mod zcode;
 
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     fs,
     io::Write as _,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Stdio},
-    time::{Duration, UNIX_EPOCH},
 };
 
 use ccusage_test_support::Fixture;
 
-/// Writes one agent's fixture store under `root` and returns the environment
-/// variables (name -> path) that point the CLI at it. Several adapters take a
-/// comma-separated list, which a seed returns as one `PathBuf` holding the
-/// joined text.
-pub type Seed = fn(root: &Path) -> Vec<(&'static str, PathBuf)>;
+pub type Seed = fn(root: &Path) -> Vec<(&'static str, Vec<OsString>)>;
 
 /// Builds the cases only one agent has (its own options, or reports that need
 /// stdin) from the fixture root.
@@ -224,23 +220,14 @@ pub fn run_matrix(agent: &'static str, seed: Seed, extras: Extras) {
 
 /// Writes every agent's seed into one `root` and returns the variables that
 /// point the CLI at all of them.
-pub fn seed_all(agents: &[AgentMatrix], root: &Path) -> Vec<(&'static str, PathBuf)> {
-    // Seeds write to disjoint directories but may name the same variable (the
-    // OpenCode seed adds a Claude store of its own); every such variable is a
-    // comma-separated list, so the values are joined.
-    let mut joined: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
+pub fn seed_all(agents: &[AgentMatrix], root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let mut lists: BTreeMap<&'static str, Vec<OsString>> = BTreeMap::new();
     for matrix in agents {
-        for (name, path) in (matrix.seed)(root) {
-            joined
-                .entry(name)
-                .or_default()
-                .push(path.to_string_lossy().into_owned());
+        for (name, paths) in (matrix.seed)(root) {
+            lists.entry(name).or_default().extend(paths);
         }
     }
-    joined
-        .into_iter()
-        .map(|(name, paths)| (name, PathBuf::from(paths.join(","))))
-        .collect()
+    lists.into_iter().collect()
 }
 
 /// Name of the file `export_fixture` writes beside the seeds.
@@ -279,25 +266,27 @@ pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     .expect("failed to write golden fixture manifest");
 }
 
-pub fn hermetic_command(root: &Path, seeded: &[(&'static str, PathBuf)], columns: u16) -> Command {
+pub fn hermetic_command(
+    root: &Path,
+    seeded: &[(&'static str, Vec<OsString>)],
+    columns: u16,
+) -> Command {
     let mut command = crate::support::hermetic_command(root);
     command
         .env("CCUSAGE_TEST_NOW", FIXED_NOW)
         .env("COLUMNS", columns.to_string())
         .env("LOG_LEVEL", "0")
-        .envs(seeded.iter().map(|(name, path)| (name, path)));
+        .envs(seeded.iter().map(|(name, paths)| {
+            let mut joined = OsString::new();
+            for (index, path) in paths.iter().enumerate() {
+                if index > 0 {
+                    joined.push(",");
+                }
+                joined.push(path);
+            }
+            (name, joined)
+        }));
     command
-}
-
-/// Sets a fixture file's mtime, for adapters that prune or order by it.
-pub fn set_modified(path: &Path, unix_seconds: u64) {
-    let modified = UNIX_EPOCH + Duration::from_secs(unix_seconds);
-    fs::File::options()
-        .write(true)
-        .open(path)
-        .expect("failed to open fixture file")
-        .set_modified(modified)
-        .expect("failed to set fixture file mtime");
 }
 
 /// What one invocation printed, with the fixture root redacted.
@@ -307,7 +296,7 @@ pub struct Outcome {
     pub stderr: String,
 }
 
-pub fn run_case(root: &Path, seeded: &[(&'static str, PathBuf)], case: &Case) -> Outcome {
+pub fn run_case(root: &Path, seeded: &[(&'static str, Vec<OsString>)], case: &Case) -> Outcome {
     let mut child = hermetic_command(root, seeded, case.columns)
         .envs(case.env.iter().copied())
         .args(&case.args)
@@ -337,7 +326,12 @@ pub fn run_case(root: &Path, seeded: &[(&'static str, PathBuf)], case: &Case) ->
 
 /// Snapshots one case as `golden__<scope>__<kind>__<variant>`, where `scope`
 /// is an agent name or `all` for the unified reports.
-pub fn assert_case(scope: &str, root: &Path, seeded: &[(&'static str, PathBuf)], case: &Case) {
+pub fn assert_case(
+    scope: &str,
+    root: &Path,
+    seeded: &[(&'static str, Vec<OsString>)],
+    case: &Case,
+) {
     assert_outcome(scope, root, case, run_case(root, seeded, case));
 }
 
@@ -433,4 +427,11 @@ fn redacts_windows_fixture_paths_without_rewriting_other_escapes() {
         ),
         r#"{"path":"[ROOT]/antigravity/ide/empty.db","model":"keep\\slashes","text":"line\nquote\""}"#
     );
+}
+
+pub fn seed_grok(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    grok::seed(root)
+        .into_iter()
+        .map(|(name, path)| (name, vec![path.into_os_string()]))
+        .collect()
 }

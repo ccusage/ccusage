@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
+
+use ccusage_test_support::instant;
 
 use crate::golden::{Case, json_path};
 
@@ -49,7 +52,7 @@ fn linked(id: &str, parent: &str, timestamp: &str, model: &str, usage: &str) -> 
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let write = |relative: &str, lines: &[String]| {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
@@ -61,7 +64,10 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     seed_fork_lab(root, &write);
     seed_named_store(root, &write);
 
-    vec![("PI_AGENT_DIR", root.join("pi/sessions"))]
+    vec![(
+        "PI_AGENT_DIR",
+        vec![root.join("pi/sessions").into_os_string()],
+    )]
 }
 
 fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
@@ -207,8 +213,9 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
             ),
             message("2025-12-31 12:00:00", SONNET, &tokens(6666, 6666, 0, 0)),
             format!(
-                r#"{{"type":"message","timestamp":1767225600000,"message":{{"role":"assistant","model":"{SONNET}","usage":{{{}}}}}}}"#,
-                tokens(5555, 5555, 0, 0)
+                r#"{{"type":"message","timestamp":{fixture_time_0},"message":{{"role":"assistant","model":"{SONNET}","usage":{{{}}}}}}}"#,
+                tokens(5555, 5555, 0, 0),
+                fixture_time_0 = instant("2026-01-01T00:00:00Z").millis()
             ),
             String::new(),
             "not json".to_string(),

@@ -1,4 +1,4 @@
-use ccusage_test_support::Fixture;
+use ccusage_test_support::{Fixture, instant};
 use serde_json::Value;
 
 mod support;
@@ -21,9 +21,10 @@ fn opencode_fixture() -> Fixture {
     )
     .unwrap();
     let assistant = format!(
-        r#"{{"model":{MODEL},"time":{{"created":1767312000000}},"content":[],"tokens":{{"input":10,"output":2,"reasoning":0,"cache":{{"read":0,"write":0}}}},"cost":0.01}}"#
+        r#"{{"model":{MODEL},"time":{{"created":{fixture_time_0}}},"content":[],"tokens":{{"input":10,"output":2,"reasoning":0,"cache":{{"read":0,"write":0}}}},"cost":0.01}}"#,
+        fixture_time_0 = instant("2026-01-02T00:00:00Z").millis()
     );
-    let compaction = |created: u64| {
+    let compaction = |created: i64| {
         format!(
             r#"{{"status":"completed","reason":"auto","summary":"s","model":{MODEL},"time":{{"created":{created}}},"tokens":{{"input":100,"output":20,"reasoning":7,"cache":{{"read":30,"write":5}}}},"cost":0.02}}"#
         )
@@ -34,7 +35,7 @@ fn opencode_fixture() -> Fixture {
             "mixed-session",
             "assistant",
             0,
-            1_767_312_000_000_u64,
+            instant("2026-01-02T00:00:00Z").millis(),
             assistant,
         ),
         (
@@ -42,16 +43,16 @@ fn opencode_fixture() -> Fixture {
             "mixed-session",
             "compaction",
             1,
-            1_767_312_000_001,
-            compaction(1_767_312_000_001),
+            instant("2026-01-02T00:00:00.001Z").millis(),
+            compaction(instant("2026-01-02T00:00:00.001Z").millis()),
         ),
         (
             "lone-compaction",
             "lone-session",
             "compaction",
             5,
-            1_769_990_400_000,
-            compaction(1_769_990_400_000),
+            instant("2026-02-02T00:00:00Z").millis(),
+            compaction(instant("2026-02-02T00:00:00Z").millis()),
         ),
     ] {
         let mut statement = db
@@ -66,16 +67,16 @@ fn opencode_fixture() -> Fixture {
                 (2, session.into()),
                 (3, kind.into()),
                 (4, i64::from(seq).into()),
-                (5, i64::try_from(created).unwrap().into()),
+                (5, created.into()),
                 (6, data.into()),
             ])
             .unwrap();
         while statement.next().unwrap() != sqlite::State::Done {}
     }
     db.execute(format!(
-        "INSERT INTO session VALUES ('mixed-session', 1767312000000, 9.99, 9999, 9999, 0, 0, 0, '{MODEL}');
-         INSERT INTO session VALUES ('lone-session', 1769990400000, 0.05, 300, 40, 30, 5, 7, '{MODEL}');"
-    ))
+        "INSERT INTO session VALUES ('mixed-session', {fixture_time_0}, 9.99, 9999, 9999, 0, 0, 0, '{MODEL}');
+         INSERT INTO session VALUES ('lone-session', {fixture_time_1}, 0.05, 300, 40, 30, 5, 7, '{MODEL}');",
+        fixture_time_0 = instant("2026-01-02T00:00:00Z").millis(), fixture_time_1 = instant("2026-02-02T00:00:00Z").millis()))
     .unwrap();
     fixture
 }

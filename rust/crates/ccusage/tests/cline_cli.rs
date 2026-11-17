@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use ccusage_test_support::{Fixture, fs_fixture};
+use ccusage_test_support::{Fixture, fs_fixture, instant};
 
 mod support;
 
@@ -23,7 +23,7 @@ fn snapshots_cline_focused_json_and_table_reports_for_all_kinds() {
 #[test]
 fn table_reports_render_recorded_costs() {
     let fixture = fs_fixture!({
-        "data/sessions/costly/costly.messages.json": r#"{"version":1,"sessionId":"costly","messages":[{"role":"assistant","ts":1793491260000,"id":"costly-1","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":1.25}},{"role":"assistant","ts":1793491320000,"id":"costly-2","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":2.5}}]}"#,
+        "data/sessions/costly/costly.messages.json": &format!(r#"{{"version":1,"sessionId":"costly","messages":[{{"role":"assistant","ts":{fixture_time_0},"id":"costly-1","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":1.25}}}},{{"role":"assistant","ts":{fixture_time_1},"id":"costly-2","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":2.5}}}}]}}"#, fixture_time_0 = instant("2026-11-01T00:01:00Z").millis(), fixture_time_1 = instant("2026-11-01T00:02:00Z").millis()),
     });
 
     for kind in ["daily", "weekly", "monthly", "session"] {
@@ -103,7 +103,7 @@ fn cline_fixture() -> Fixture {
     });
     let _ = fixture.write_file(
         "data/sessions/rejected-cache/rejected-cache.messages.json",
-        r#"{"version":1,"sessionId":"rejected-cache","messages":[{"role":"assistant","ts":1793491260000,"id":"cache-exceeds-input-session","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}]}"#,
+        format!(r#"{{"version":1,"sessionId":"rejected-cache","messages":[{{"role":"assistant","ts":{fixture_time_0},"id":"cache-exceeds-input-session","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}}}]}}"#, fixture_time_0 = instant("2026-11-01T00:01:00Z").millis()),
     );
     fixture
 }

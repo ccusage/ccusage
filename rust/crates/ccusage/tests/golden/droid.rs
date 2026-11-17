@@ -1,14 +1,14 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+
+use ccusage_test_support::{instant, set_modified};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "droid-mystery-1";
 
-/// 2026-01-02T12:00:00Z, for the session whose only usable time is its mtime.
-const MTIME_FALLBACK_SECONDS: u64 = 1_767_355_200;
-
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let sessions = root.join("droid/sessions");
     let archive = root.join("droid/archive");
     let alpha = sessions.join("-Users-dev-alpha");
@@ -151,7 +151,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{{"model":"{SONNET}","providerLock":"anthropic","providerLockTimestamp":"2026-01-02 11:00:00","tokenUsage":{{"inputTokens":500,"outputTokens":120}}}}"#
         ),
     );
-    crate::golden::set_modified(&mtime_only, MTIME_FALLBACK_SECONDS);
+    set_modified(&mtime_only, instant("2026-01-02T12:00:00Z"));
 
     // Everything below must stay out of the reports.
     write(
@@ -204,11 +204,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
     // The variable is a comma-separated list: a repeated root must not double
     // the usage and a missing one must not fail.
-    let roots = format!(
-        "{sessions}, {archive},{sessions},{missing}",
-        sessions = sessions.display(),
-        archive = archive.display(),
-        missing = root.join("droid/missing").display(),
-    );
-    vec![("DROID_SESSIONS_DIR", PathBuf::from(roots))]
+    let mut padded = OsString::from(" ");
+    padded.push(archive);
+    let roots = vec![
+        sessions.clone().into_os_string(),
+        padded,
+        sessions.into_os_string(),
+        root.join("droid/missing").into_os_string(),
+    ];
+    vec![("DROID_SESSIONS_DIR", roots)]
 }

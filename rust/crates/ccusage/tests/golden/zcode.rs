@@ -1,4 +1,7 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+
+use ccusage_test_support::instant;
 
 use crate::golden::Case;
 
@@ -14,18 +17,6 @@ const ZAI_PLAN: &str = "'builtin:zai-coding-plan'";
 const CUSTOM_PROVIDER: &str = "'847d13c9-0568-4f2f-818e-8bd498e5d920'";
 
 const COMPLETED: &str = "'completed'";
-
-/// Midnight UTC of the shared timeline days, in epoch seconds.
-const DEC_27: i64 = 1_766_793_600;
-const DEC_30: i64 = 1_767_052_800;
-const DEC_31: i64 = 1_767_139_200;
-const JAN_01: i64 = 1_767_225_600;
-const JAN_02: i64 = 1_767_312_000;
-
-/// `started_at` as the epoch-millisecond SQL literal ZCode stores.
-fn at(day: i64, hour: i64, minute: i64, millis: i64) -> String {
-    ((day + hour * 3600 + minute * 60) * 1000 + millis).to_string()
-}
 
 /// Which optional columns a fixture database has. The adapter probes for each
 /// of them separately.
@@ -144,7 +135,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-stale'",
             "'s-alpha'",
-            at(DEC_27, 22, 0, 0),
+            instant("2025-12-27T22:00:00Z").millis().to_string(),
             "'GLM-5.2'",
             "'builtin:bigmodel-coding-plan'",
             ["180", "50", "30", "50", "230"],
@@ -152,7 +143,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-before'",
             "'s-alpha'",
-            at(DEC_30, 10, 0, 0),
+            instant("2025-12-30T10:00:00Z").millis().to_string(),
             SONNET,
             "NULL",
             ["1000", "200", "100", "300", "1200"],
@@ -162,7 +153,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-odd-types'",
             "'s-alpha'",
-            format!("{}.9", at(DEC_30, 11, 0, 0)),
+            format!("{}.9", instant("2025-12-30T11:00:00Z").millis()),
             "' GLM-5.3 '",
             "'z.ai'",
             ["'120abc'", "30.7", "-9999", "NULL", "NULL"],
@@ -170,7 +161,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-custom'",
             "'s-alpha'",
-            at(DEC_31, 12, 0, 0),
+            instant("2025-12-31T12:00:00Z").millis().to_string(),
             SONNET,
             CUSTOM_PROVIDER,
             ["500", "50", "0", "0", "550"],
@@ -179,7 +170,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-tokyo'",
             "'s-beta'",
-            at(DEC_31, 15, 30, 666),
+            instant("2025-12-31T15:30:00.666Z").millis().to_string(),
             "'GLM-5.3'",
             ZAI_PLAN,
             ["2000", "300", "400", "600", "2300"],
@@ -188,7 +179,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-empty-provider'",
             "'s-beta'",
-            at(DEC_31, 16, 0, 0),
+            instant("2025-12-31T16:00:00Z").millis().to_string(),
             "'GLM-5.3'",
             "''",
             ["200", "20", "0", "0", "220"],
@@ -196,7 +187,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-replayed'",
             "'s-beta'",
-            at(DEC_31, 23, 50, 0),
+            instant("2025-12-31T23:50:00Z").millis().to_string(),
             "'GLM-5.3-Flash'",
             "'account:zai-start-plan'",
             ["900", "400", "0", "100", "1300"],
@@ -205,7 +196,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-replayed'",
             "'s-beta'",
-            at(DEC_31, 23, 55, 0),
+            instant("2025-12-31T23:55:00Z").millis().to_string(),
             "'GLM-5.3-Flash'",
             "'account:zai-start-plan'",
             ["9999", "7777", "0", "0", "17776"],
@@ -214,7 +205,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-replayed-fork'",
             "'s-beta'",
-            at(JAN_01, 0, 10, 0),
+            instant("2026-01-01T00:10:00Z").millis().to_string(),
             "'GLM-5.3-Flash'",
             "'account:zai-start-plan'",
             ["900", "400", "0", "100", "1300"],
@@ -222,7 +213,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-mystery'",
             "'s-alpha'",
-            at(JAN_01, 12, 0, 0),
+            instant("2026-01-01T12:00:00Z").millis().to_string(),
             UNPRICED,
             "NULL",
             ["300", "70", "0", "0", "370"],
@@ -231,7 +222,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-implicit-zai'",
             "'s-orphan'",
-            at(JAN_01, 13, 0, 0),
+            instant("2026-01-01T13:00:00Z").millis().to_string(),
             "'glm-5.3'",
             "NULL",
             ["500", "100", "50", "0", "600"],
@@ -240,7 +231,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-zai-haiku'",
             "'s-blank-dir'",
-            at(JAN_01, 14, 0, 0),
+            instant("2026-01-01T14:00:00Z").millis().to_string(),
             HAIKU,
             "' ZAI '",
             ["800", "120", "200", "100", "920"],
@@ -249,7 +240,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-extra-total'",
             "'s-alpha'",
-            at(JAN_02, 9, 0, 0),
+            instant("2026-01-02T09:00:00Z").millis().to_string(),
             GPT5,
             "NULL",
             ["400", "100", "0", "0", "650"],
@@ -258,7 +249,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-total-as-output'",
             "'s-alpha'",
-            at(JAN_02, 10, 0, 0),
+            instant("2026-01-02T10:00:00Z").millis().to_string(),
             OPUS,
             "NULL",
             ["300", "0", "0", "50", "420"],
@@ -266,7 +257,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-total-only'",
             "'s-beta'",
-            at(JAN_02, 11, 0, 0),
+            instant("2026-01-02T11:00:00Z").millis().to_string(),
             GPT5,
             "NULL",
             ["0", "0", "0", "0", "345"],
@@ -276,7 +267,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-clamped-creation'",
             "'s-beta'",
-            at(JAN_02, 12, 0, 0),
+            instant("2026-01-02T12:00:00Z").millis().to_string(),
             SONNET,
             "NULL",
             ["100", "20", "500", "60", "90"],
@@ -285,7 +276,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-clamped-read'",
             "'s-beta'",
-            at(JAN_02, 13, 0, 0),
+            instant("2026-01-02T13:00:00Z").millis().to_string(),
             SONNET,
             "NULL",
             ["100", "10", "30", "250", "NULL"],
@@ -294,7 +285,7 @@ fn current_rows() -> Vec<Row> {
         counted(
             "'u-seconds'",
             "'s-beta'",
-            (DEC_31 + 15 * 3600).to_string(),
+            instant("2025-12-31T15:00:00Z").secs().to_string(),
             GPT5,
             "NULL",
             ["11", "7", "0", "0", "18"],
@@ -306,7 +297,7 @@ fn current_rows() -> Vec<Row> {
 /// `x-no-tokens` clamps to zero usage instead.
 fn ignored_rows() -> Vec<Row> {
     let leak = ["9999", "7777", "0", "0", "17776"];
-    let noon = || at(DEC_31, 12, 0, 0);
+    let noon = || instant("2025-12-31T12:00:00Z").millis().to_string();
     let row = |id, session, started_at, model, status| Row {
         id,
         session,
@@ -387,7 +378,7 @@ fn legacy_rows() -> Vec<Row> {
         counted(
             "'l-glm'",
             "'s-legacy'",
-            at(DEC_30, 20, 0, 0),
+            instant("2025-12-30T20:00:00Z").millis().to_string(),
             "'GLM-5.2'",
             "NULL",
             ["700", "90", "0", "200", "790"],
@@ -395,7 +386,7 @@ fn legacy_rows() -> Vec<Row> {
         counted(
             "'l-sonnet'",
             "'s-legacy'",
-            at(DEC_31, 18, 0, 0),
+            instant("2025-12-31T18:00:00Z").millis().to_string(),
             SONNET,
             "NULL",
             ["600", "80", "0", "100", "680"],
@@ -404,7 +395,7 @@ fn legacy_rows() -> Vec<Row> {
         counted(
             "'u-tokyo'",
             "'s-alpha'",
-            at(DEC_31, 15, 30, 666),
+            instant("2025-12-31T15:30:00.666Z").millis().to_string(),
             "'GLM-5.3'",
             "NULL",
             ["9999", "7777", "0", "0", "17776"],
@@ -414,7 +405,7 @@ fn legacy_rows() -> Vec<Row> {
         counted(
             "'l-tokyo-fork'",
             "'s-alpha'",
-            at(JAN_01, 2, 0, 0),
+            instant("2026-01-01T02:00:00Z").millis().to_string(),
             "'GLM-5.3'",
             "NULL",
             ["2000", "300", "0", "600", "2300"],
@@ -422,7 +413,7 @@ fn legacy_rows() -> Vec<Row> {
         Row {
             id: "'l-running'",
             session: "'s-legacy'",
-            started_at: at(DEC_31, 12, 0, 0),
+            started_at: instant("2025-12-31T12:00:00Z").millis().to_string(),
             model: SONNET,
             provider: "NULL",
             status: "'running'",
@@ -436,7 +427,7 @@ fn minimal_rows() -> Vec<Row> {
         counted(
             "'m-stale'",
             "'s-minimal'",
-            at(DEC_27, 23, 0, 0),
+            instant("2025-12-27T23:00:00Z").millis().to_string(),
             OPUS,
             "NULL",
             ["150", "25", "0", "0", "0"],
@@ -444,7 +435,7 @@ fn minimal_rows() -> Vec<Row> {
         counted(
             "'m-last-ms'",
             "'s-minimal'",
-            at(JAN_01, 23, 59, 59_999),
+            instant("2026-01-01T23:59:59.999Z").millis().to_string(),
             GPT5,
             "NULL",
             ["250", "40", "0", "0", "0"],
@@ -456,7 +447,7 @@ fn leak_row(id: &'static str) -> Row {
     counted(
         id,
         "'s-alpha'",
-        at(DEC_31, 12, 0, 0),
+        instant("2025-12-31T12:00:00Z").millis().to_string(),
         SONNET,
         "NULL",
         ["9999", "7777", "0", "0", "17776"],
@@ -467,7 +458,7 @@ fn db_path(home: &Path) -> PathBuf {
     home.join("cli/db/db.sqlite")
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("zcode");
 
     let current = store.join("current");
@@ -542,7 +533,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "ALTER TABLE model_usage DROP COLUMN status;
          INSERT INTO session VALUES ('s-alpha', '/work/project-alpha');
          INSERT INTO model_usage VALUES ('x-incomplete', 's-alpha', {}, {SONNET}, 9999, 7777);",
-        at(DEC_31, 12, 0, 0),
+        instant("2025-12-31T12:00:00Z").millis(),
     ))
     .expect("failed to fill incomplete database");
     drop(db);
@@ -583,10 +574,21 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "not-a-dir",
         "missing",
     ]
-    .map(|home| store.join(home).to_string_lossy().into_owned())
-    .join(" , ");
-
-    vec![("ZCODE_HOME", PathBuf::from(homes))]
+    .into_iter()
+    .enumerate()
+    .map(|(index, name)| {
+        let mut entry = OsString::new();
+        if index > 0 {
+            entry.push(" ");
+        }
+        entry.push(store.join(name));
+        if index < 11 {
+            entry.push(" ");
+        }
+        entry
+    })
+    .collect::<Vec<_>>();
+    vec![("ZCODE_HOME", homes)]
 }
 
 pub fn extra_cases(_root: &Path) -> Vec<Case> {

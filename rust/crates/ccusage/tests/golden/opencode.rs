@@ -1,22 +1,14 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::golden::{Case, set_modified};
+use ccusage_test_support::{instant, set_modified};
+
+use crate::golden::Case;
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "opencode-mystery-1";
-
-/// Unix milliseconds for `hour:minute` UTC on the day `days` after 2026-01-01.
-const fn at(days: i64, hour: i64, minute: i64) -> i64 {
-    (1_767_225_600 + days * 86_400 + hour * 3_600 + minute * 60) * 1_000
-}
-
-const DEC_27: i64 = -5;
-const DEC_30: i64 = -2;
-const DEC_31: i64 = -1;
-const JAN_01: i64 = 0;
-const JAN_02: i64 = 1;
 
 /// The v1 and legacy-JSON model reference: flat members on the message.
 fn flat(model: &str, provider: &str) -> String {
@@ -175,10 +167,10 @@ fn seed_main_database(path: &Path) {
     db.message(
         "msg-v1-a1",
         alpha,
-        at(DEC_30, 10, 0),
+        instant("2025-12-30T10:00:00Z").millis(),
         &payload(
             &flat(SONNET, "anthropic"),
-            Some(at(DEC_30, 10, 0)),
+            Some(instant("2025-12-30T10:00:00Z").millis()),
             &tokens(1000, 200, 4000, 300),
             r#","cost":0.5"#,
         ),
@@ -187,10 +179,10 @@ fn seed_main_database(path: &Path) {
     db.message(
         "msg-v1-a2",
         alpha,
-        at(DEC_31, 15, 30),
+        instant("2025-12-31T15:30:00Z").millis(),
         &payload(
             &flat("gpt-5", "openai"),
-            Some(at(DEC_31, 15, 30)),
+            Some(instant("2025-12-31T15:30:00Z").millis()),
             r#"{"input":700,"output":150,"reasoning":50,"cache":{"read":2500,"write":0}}"#,
             "",
         ),
@@ -198,10 +190,10 @@ fn seed_main_database(path: &Path) {
     db.message(
         "msg-v1-a3",
         alpha,
-        at(JAN_01, 12, 0),
+        instant("2026-01-01T12:00:00Z").millis(),
         &payload(
             &flat(UNPRICED, "mystery"),
-            Some(at(JAN_01, 12, 0)),
+            Some(instant("2026-01-01T12:00:00Z").millis()),
             &tokens(300, 70, 0, 0),
             "",
         ),
@@ -210,10 +202,10 @@ fn seed_main_database(path: &Path) {
     db.message(
         "msg-v1-alias",
         alpha,
-        at(JAN_01, 13, 0),
+        instant("2026-01-01T13:00:00Z").millis(),
         &payload(
             &flat("gemini-3-pro-high", "google"),
-            Some(at(JAN_01, 13, 0)),
+            Some(instant("2026-01-01T13:00:00Z").millis()),
             &tokens(200, 20, 0, 0),
             "",
         ),
@@ -223,16 +215,16 @@ fn seed_main_database(path: &Path) {
     db.message(
         "msg-v1-total",
         alpha,
-        at(JAN_02, 10, 0),
+        instant("2026-01-02T10:00:00Z").millis(),
         &payload(
             &flat("claude-haiku-4.5", "anthropic"),
-            Some(at(JAN_02, 10, 0)),
+            Some(instant("2026-01-02T10:00:00Z").millis()),
             r#"{"input":100,"output":0,"total":345}"#,
             r#","cost":0"#,
         ),
     );
     // Rows that must not be counted.
-    let ignored_at = at(DEC_31, 12, 0);
+    let ignored_at = instant("2025-12-31T12:00:00Z").millis();
     db.message(
         "msg-v1-user",
         alpha,
@@ -289,10 +281,10 @@ fn seed_main_database(path: &Path) {
         parent,
         "assistant",
         0,
-        Some(at(DEC_30, 11, 0)),
+        Some(instant("2025-12-30T11:00:00Z").millis()),
         &payload(
             &opus,
-            Some(at(DEC_30, 11, 0)),
+            Some(instant("2025-12-30T11:00:00Z").millis()),
             &tokens(500, 100, 1000, 200),
             r#","cost":0.25"#,
         ),
@@ -302,8 +294,13 @@ fn seed_main_database(path: &Path) {
         parent,
         "assistant",
         1,
-        Some(at(DEC_31, 9, 0)),
-        &turn(600, 120, at(DEC_31, 9, 0), r#","cost":0"#),
+        Some(instant("2025-12-31T09:00:00Z").millis()),
+        &turn(
+            600,
+            120,
+            instant("2025-12-31T09:00:00Z").millis(),
+            r#","cost":0"#,
+        ),
     );
     // The fork boundary; 2026-01-01 in Asia/Tokyo.
     db.session_message(
@@ -311,18 +308,18 @@ fn seed_main_database(path: &Path) {
         parent,
         "assistant",
         2,
-        Some(at(DEC_31, 16, 0)),
-        &turn(700, 140, at(DEC_31, 16, 0), ""),
+        Some(instant("2025-12-31T16:00:00Z").millis()),
+        &turn(700, 140, instant("2025-12-31T16:00:00Z").millis(), ""),
     );
     db.session_message(
         "msg-v2-p-compaction",
         parent,
         "compaction",
         3,
-        Some(at(DEC_31, 17, 0)),
+        Some(instant("2025-12-31T17:00:00Z").millis()),
         &payload(
             &nested("gpt-5", "openai"),
-            Some(at(DEC_31, 17, 0)),
+            Some(instant("2025-12-31T17:00:00Z").millis()),
             &tokens(90, 9, 0, 0),
             r#","status":"completed""#,
         ),
@@ -333,10 +330,10 @@ fn seed_main_database(path: &Path) {
         parent,
         "assistant",
         5,
-        Some(at(JAN_01, 8, 0)),
+        Some(instant("2026-01-01T08:00:00Z").millis()),
         &payload(
             &flat(SONNET, "anthropic"),
-            Some(at(JAN_01, 8, 0)),
+            Some(instant("2026-01-01T08:00:00Z").millis()),
             &tokens(800, 160, 0, 0),
             "",
         ),
@@ -384,8 +381,8 @@ fn seed_main_database(path: &Path) {
         alpha,
         "assistant",
         0,
-        Some(at(DEC_30, 10, 0)),
-        &turn(9999, 9999, at(DEC_30, 10, 0), ""),
+        Some(instant("2025-12-30T10:00:00Z").millis()),
+        &turn(9999, 9999, instant("2025-12-30T10:00:00Z").millis(), ""),
     );
 
     // Forks copy the parent's rows under new ids but the same `seq`. The
@@ -396,8 +393,8 @@ fn seed_main_database(path: &Path) {
             session,
             "assistant",
             seq,
-            Some(at(JAN_01, 9, 0)),
-            &turn(input, 9000, at(JAN_01, 9, 0), ""),
+            Some(instant("2026-01-01T09:00:00Z").millis()),
+            &turn(input, 9000, instant("2026-01-01T09:00:00Z").millis(), ""),
         );
     };
     let through = "ses-v2-fork-through";
@@ -409,8 +406,8 @@ fn seed_main_database(path: &Path) {
         through,
         "assistant",
         6,
-        Some(at(JAN_01, 9, 0)),
-        &turn(40, 4, at(JAN_01, 9, 0), ""),
+        Some(instant("2026-01-01T09:00:00Z").millis()),
+        &turn(40, 4, instant("2026-01-01T09:00:00Z").millis(), ""),
     );
     // A `before` fork stops one row short of the boundary, so its own row at
     // the boundary's `seq` is counted.
@@ -422,8 +419,8 @@ fn seed_main_database(path: &Path) {
         before,
         "assistant",
         2,
-        Some(at(JAN_01, 9, 30)),
-        &turn(33, 3, at(JAN_01, 9, 30), ""),
+        Some(instant("2026-01-01T09:30:00Z").millis()),
+        &turn(33, 3, instant("2026-01-01T09:30:00Z").millis(), ""),
     );
     // The boundary names a message the parent no longer has: every row stays.
     let lost = "ses-v2-fork-lost";
@@ -432,8 +429,8 @@ fn seed_main_database(path: &Path) {
         lost,
         "assistant",
         0,
-        Some(at(JAN_01, 10, 0)),
-        &turn(21, 2, at(JAN_01, 10, 0), ""),
+        Some(instant("2026-01-01T10:00:00Z").millis()),
+        &turn(21, 2, instant("2026-01-01T10:00:00Z").millis(), ""),
     );
     // Only copies: the fork-local `session_v2` counters are the fallback.
     let idle = "ses-v2-fork-idle";
@@ -446,10 +443,10 @@ fn seed_main_database(path: &Path) {
         "ses-v2-compact",
         "compaction",
         0,
-        Some(at(JAN_01, 10, 30)),
+        Some(instant("2026-01-01T10:30:00Z").millis()),
         &payload(
             &nested("gpt-5", "openai"),
-            Some(at(JAN_01, 10, 30)),
+            Some(instant("2026-01-01T10:30:00Z").millis()),
             &tokens(60, 6, 0, 0),
             r#","status":"completed""#,
         ),
@@ -463,7 +460,7 @@ fn seed_main_database(path: &Path) {
         misc,
         "assistant",
         0,
-        Some(at(JAN_02, 11, 0)),
+        Some(instant("2026-01-02T11:00:00Z").millis()),
         &payload(
             r#""model":{"modelID":"gpt-5","providerID":"openai"}"#,
             None,
@@ -488,24 +485,39 @@ fn seed_main_database(path: &Path) {
         agent,
         "assistant",
         0,
-        Some(at(DEC_31, 12, 5)),
-        &claude_agent("claude-native-a", at(DEC_31, 12, 5), 5000, 500),
+        Some(instant("2025-12-31T12:05:00Z").millis()),
+        &claude_agent(
+            "claude-native-a",
+            instant("2025-12-31T12:05:00Z").millis(),
+            5000,
+            500,
+        ),
     );
     db.session_message(
         "msg-v2-agent-other-day",
         agent,
         "assistant",
         1,
-        Some(at(JAN_01, 12, 0)),
-        &claude_agent("claude-native-a", at(JAN_01, 12, 0), 64, 6),
+        Some(instant("2026-01-01T12:00:00Z").millis()),
+        &claude_agent(
+            "claude-native-a",
+            instant("2026-01-01T12:00:00Z").millis(),
+            64,
+            6,
+        ),
     );
     db.session_message(
         "msg-v2-agent-no-transcript",
         agent,
         "assistant",
         2,
-        Some(at(JAN_01, 12, 10)),
-        &claude_agent("claude-native-missing", at(JAN_01, 12, 10), 7, 1),
+        Some(instant("2026-01-01T12:10:00Z").millis()),
+        &claude_agent(
+            "claude-native-missing",
+            instant("2026-01-01T12:10:00Z").millis(),
+            7,
+            1,
+        ),
     );
 
     // --- Session counters (session reports only) ---------------------------
@@ -522,7 +534,7 @@ fn seed_main_database(path: &Path) {
         db.aggregate(
             "session_v2",
             session,
-            Some(at(DEC_30, 11, 0)),
+            Some(instant("2025-12-30T11:00:00Z").millis()),
             &opus_model,
             covered,
         );
@@ -530,35 +542,35 @@ fn seed_main_database(path: &Path) {
     db.aggregate(
         "session_v2",
         idle,
-        Some(at(JAN_02, 9, 0)),
+        Some(instant("2026-01-02T09:00:00Z").millis()),
         &opus_model,
         "0.05, 55, 5, 0, 0, 0",
     );
     db.aggregate(
         "session_v2",
         "ses-v2-compact",
-        Some(at(JAN_01, 10, 30)),
+        Some(instant("2026-01-01T10:30:00Z").millis()),
         r#"{"modelID":"gpt-5","provider":"openai"}"#,
         "0, 160, 16, 0, 0, 0",
     );
     db.aggregate(
         "session_v2",
         "ses-agg-only",
-        Some(at(DEC_30, 13, 0)),
+        Some(instant("2025-12-30T13:00:00Z").millis()),
         &format!(r#"{{"id":"{SONNET}","providerID":"anthropic"}}"#),
         "0.4, 400, 80, 900, 100, 20",
     );
     db.aggregate(
         "session_v2",
         "ses-agg-cost-only",
-        Some(at(DEC_31, 18, 0)),
+        Some(instant("2025-12-31T18:00:00Z").millis()),
         "gpt-5",
         "0.33, 0, 0, 0, 0, 0",
     );
     db.aggregate(
         "session_v2",
         "ses-agg-zero",
-        Some(at(DEC_31, 18, 0)),
+        Some(instant("2025-12-31T18:00:00Z").millis()),
         "gpt-5",
         "0, 0, 0, 0, 0, 0",
     );
@@ -593,7 +605,7 @@ fn seed_main_database(path: &Path) {
     db.aggregate(
         "session",
         "ses-legacy-agg",
-        Some(at(JAN_02, 13, 0)),
+        Some(instant("2026-01-02T13:00:00Z").millis()),
         UNPRICED,
         "0, 70, 7, 0, 0, 0",
     );
@@ -602,7 +614,7 @@ fn seed_main_database(path: &Path) {
         db.aggregate(
             "session",
             session,
-            Some(at(DEC_30, 13, 0)),
+            Some(instant("2025-12-30T13:00:00Z").millis()),
             &opus_model,
             covered,
         );
@@ -620,7 +632,7 @@ fn seed_channel_database(directory: &Path) {
         gamma,
         &payload(
             &flat(SONNET, "anthropic"),
-            Some(at(JAN_01, 0, 10)),
+            Some(instant("2026-01-01T00:10:00Z").millis()),
             &tokens(600, 100, 3000, 0),
             "",
         ),
@@ -631,7 +643,7 @@ fn seed_channel_database(directory: &Path) {
         gamma,
         &payload(
             &flat("k2p6", "moonshot"),
-            Some(at(JAN_02, 8, 0)),
+            Some(instant("2026-01-02T08:00:00Z").millis()),
             &tokens(250, 25, 0, 0),
             "",
         ),
@@ -641,7 +653,7 @@ fn seed_channel_database(directory: &Path) {
         gamma,
         &payload(
             &flat("k2p6", "moonshot"),
-            Some(at(JAN_02, 8, 0)),
+            Some(instant("2026-01-02T08:00:00Z").millis()),
             &tokens(9999, 9999, 0, 0),
             "",
         ),
@@ -652,7 +664,7 @@ fn seed_channel_database(directory: &Path) {
         "ses-v1-alpha",
         &payload(
             &flat(UNPRICED, "mystery"),
-            Some(at(JAN_01, 12, 0)),
+            Some(instant("2026-01-01T12:00:00Z").millis()),
             &tokens(9999, 9999, 0, 0),
             "",
         ),
@@ -663,7 +675,7 @@ fn seed_channel_database(directory: &Path) {
         "ses-agg-xdir",
         &payload(
             &flat(SONNET, "anthropic"),
-            Some(at(DEC_30, 9, 0)),
+            Some(instant("2025-12-30T09:00:00Z").millis()),
             &tokens(30, 3, 0, 0),
             "",
         ),
@@ -676,7 +688,7 @@ fn seed_channel_database(directory: &Path) {
         gamma,
         &payload(
             &flat(SONNET, "anthropic"),
-            Some(at(JAN_01, 0, 20)),
+            Some(instant("2026-01-01T00:20:00Z").millis()),
             &tokens(9999, 9999, 0, 0),
             "",
         ),
@@ -717,7 +729,7 @@ fn seed_message_files(directory: &Path) {
   }}
 }}
 "#,
-            at(DEC_27, 22, 0)
+            instant("2025-12-27T22:00:00Z").millis()
         ),
     );
     // 2026-01-01 in Asia/Tokyo, with a stored cost.
@@ -728,7 +740,7 @@ fn seed_message_files(directory: &Path) {
             beta,
             &payload(
                 &flat(HAIKU, "anthropic"),
-                Some(at(DEC_31, 23, 50)),
+                Some(instant("2025-12-31T23:50:00Z").millis()),
                 &tokens(900, 400, 7000, 200),
                 r#","cost":2.0"#,
             ),
@@ -742,7 +754,7 @@ fn seed_message_files(directory: &Path) {
             "ses-agg-json",
             &payload(
                 &flat(SONNET, "anthropic"),
-                Some(at(JAN_01, 14, 0)),
+                Some(instant("2026-01-01T14:00:00Z").millis()),
                 &tokens(80, 8, 0, 0),
                 "",
             ),
@@ -753,7 +765,7 @@ fn seed_message_files(directory: &Path) {
         "ses-json-loose/no-id.json",
         &payload(
             &flat("gpt-5", "openai"),
-            Some(at(JAN_02, 12, 0)),
+            Some(instant("2026-01-02T12:00:00Z").millis()),
             &tokens(13, 3, 0, 0),
             "",
         ),
@@ -767,7 +779,7 @@ fn seed_message_files(directory: &Path) {
             "ses-v1-alpha",
             &payload(
                 &flat(SONNET, "anthropic"),
-                Some(at(DEC_30, 10, 0)),
+                Some(instant("2025-12-30T10:00:00Z").millis()),
                 &tokens(9999, 9999, 0, 0),
                 "",
             ),
@@ -806,10 +818,10 @@ fn seed_claude_store(directory: &Path) {
     )
     .expect("failed to write Claude transcript");
     // 2026-01-03T00:00:00Z: the Claude loader prunes by mtime under `--since`.
-    set_modified(&transcript, 1_767_398_400);
+    set_modified(&transcript, instant("2026-01-03T00:00:00Z"));
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("opencode");
     let directory = |name: &str| {
         let path = store.join(name);
@@ -836,7 +848,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{{"id":"msg-broken-1","sessionID":"ses-broken",{}"#,
             &payload(
                 &flat("gpt-5", "openai"),
-                Some(at(DEC_30, 12, 0)),
+                Some(instant("2025-12-30T12:00:00Z").millis()),
                 &tokens(17, 7, 0, 0),
                 "",
             )[1..]
@@ -853,12 +865,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     // `OPENCODE_DATA_DIR` is a comma-separated list; the last entry does not
     // exist and is skipped.
     let data_dirs = [main, channel, broken, empty, store.join("missing")]
-        .map(|path| path.to_string_lossy().into_owned())
-        .join(",");
+        .map(PathBuf::into_os_string)
+        .to_vec();
 
     vec![
-        ("OPENCODE_DATA_DIR", PathBuf::from(data_dirs)),
-        ("CLAUDE_CONFIG_DIR", claude),
+        ("OPENCODE_DATA_DIR", data_dirs),
+        ("CLAUDE_CONFIG_DIR", vec![claude.into_os_string()]),
     ]
 }
 

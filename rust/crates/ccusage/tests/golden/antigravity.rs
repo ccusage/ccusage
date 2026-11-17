@@ -1,16 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
+
+use ccusage_test_support::{Instant, instant, set_modified};
 
 use crate::golden::Case;
-
-const DEC27: u64 = 1_766_793_600;
-const DEC30: u64 = 1_767_052_800;
-const DEC31: u64 = 1_767_139_200;
-const JAN01: u64 = 1_767_225_600;
-const JAN02: u64 = 1_767_312_000;
-
-const fn at(day: u64, hour: u64, minute: u64) -> u64 {
-    day + hour * 3_600 + minute * 60
-}
 
 const API_PROVIDER_GOOGLE_GEMINI: u64 = 24;
 
@@ -18,7 +11,7 @@ const SONNET: &str = "claude-sonnet-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "antigravity-mystery-1";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let ide = root.join("antigravity/ide");
     let conversations = ide.join("conversations");
     // A root without `conversations/` is itself the conversation directory.
@@ -35,8 +28,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
     // The paths sort `cli-conversations` before `ide`, so session-beta is
     // loaded first and is the merge target for cross-database duplicates.
-    let data_dirs = format!("{},{}", ide.display(), cli.display());
-    vec![("ANTIGRAVITY_DATA_DIR", PathBuf::from(data_dirs))]
+    let data_dirs = vec![ide.into_os_string(), cli.into_os_string()];
+    vec![("ANTIGRAVITY_DATA_DIR", data_dirs)]
 }
 
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
@@ -69,7 +62,7 @@ fn seed_beta(path: &Path) {
         // under this model, at session-alpha's earlier timestamp.
         Generation {
             model: Some(SONNET),
-            timestamp: Some((at(DEC31, 16, 0), 0)),
+            timestamp: Some((instant("2025-12-31T16:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 400,
                 total_output: 90,
@@ -81,7 +74,7 @@ fn seed_beta(path: &Path) {
         },
         // Near miss: the same counts under another response ID are counted.
         Generation {
-            timestamp: Some((at(JAN01, 1, 0), 0)),
+            timestamp: Some((instant("2026-01-01T01:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 400,
                 total_output: 90,
@@ -95,7 +88,7 @@ fn seed_beta(path: &Path) {
         // and folds the first two into one event (30 in, 9 out).
         Generation {
             model: Some("GPT 5"),
-            timestamp: Some((at(JAN01, 2, 0), 0)),
+            timestamp: Some((instant("2026-01-01T02:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 30,
                 total_output: 7,
@@ -106,7 +99,7 @@ fn seed_beta(path: &Path) {
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(JAN01, 2, 5), 0)),
+            timestamp: Some((instant("2026-01-01T02:05:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 20,
                 total_output: 5,
@@ -117,7 +110,7 @@ fn seed_beta(path: &Path) {
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(JAN01, 2, 10), 0)),
+            timestamp: Some((instant("2026-01-01T02:10:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 10,
                 total_output: 9,
@@ -130,7 +123,7 @@ fn seed_beta(path: &Path) {
         },
         // Unmapped model ID with no model name: stays a placeholder.
         Generation {
-            timestamp: Some((at(JAN02, 8, 0), 0)),
+            timestamp: Some((instant("2026-01-02T08:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 model_id: Some(1499),
                 input: 60,
@@ -145,7 +138,7 @@ fn seed_beta(path: &Path) {
         Generation {
             model: Some(UNPRICED),
             model_id: Some(77),
-            timestamp: Some((at(JAN01, 12, 30), 0)),
+            timestamp: Some((instant("2026-01-01T12:30:00Z").secs(), 0)),
             usage: Some(Usage {
                 model_id: Some(77),
                 input: 300,
@@ -160,7 +153,7 @@ fn seed_beta(path: &Path) {
     ];
     create_database(
         path,
-        at(JAN02, 12, 0),
+        instant("2026-01-02T12:00:00Z"),
         &generation_rows(&generations),
         Some(&[]),
         Some(&[]),
@@ -213,7 +206,7 @@ fn seed_alpha(path: &Path) {
                     model: Some("gemini-3-pro-high"),
                     model_in_field_8: true,
                     provider: Some(API_PROVIDER_GOOGLE_GEMINI),
-                    timestamp: Some((at(DEC30, 9, 59) + 59, 0)),
+                    timestamp: Some((instant("2025-12-30T09:59:00Z").secs() + 59, 0)),
                     usage: Some(Usage {
                         cache_read: 4_500,
                         ..first
@@ -229,7 +222,7 @@ fn seed_alpha(path: &Path) {
             Some(
                 Step {
                     model: Some("gemini-3-flash-agent"),
-                    timestamp: Some((at(DEC31, 10, 0), 0)),
+                    timestamp: Some((instant("2025-12-31T10:00:00Z").secs(), 0)),
                     timestamp_in_field_1: true,
                     usage: Some(unkeyed),
                     ..Step::default()
@@ -243,7 +236,7 @@ fn seed_alpha(path: &Path) {
             4,
             Some(
                 Step {
-                    timestamp: Some((at(JAN01, 9, 0), 0)),
+                    timestamp: Some((instant("2026-01-01T09:00:00Z").secs(), 0)),
                     retries: vec![Usage {
                         input: 11,
                         total_output: 22,
@@ -260,7 +253,7 @@ fn seed_alpha(path: &Path) {
             5,
             Some(
                 Step {
-                    timestamp: Some((at(JAN01, 9, 30), 0)),
+                    timestamp: Some((instant("2026-01-01T09:30:00Z").secs(), 0)),
                     usage: Some(Usage {
                         response_id: Some("resp-alpha-step-empty"),
                         ..Usage::default()
@@ -275,14 +268,14 @@ fn seed_alpha(path: &Path) {
     let generations = [
         Generation {
             model: Some("Gemini 3 Pro"),
-            timestamp: Some((at(DEC30, 10, 0), 250_000_000)),
+            timestamp: Some((instant("2025-12-30T10:00:00Z").secs(), 250_000_000)),
             usage: Some(first),
             ..Generation::default()
         },
         // Continuation row after 15:00Z. The retry list repeats the primary
         // (dropped) and holds one failed attempt under its own ID (counted).
         Generation {
-            timestamp: Some((at(DEC31, 15, 30), 0)),
+            timestamp: Some((instant("2025-12-31T15:30:00Z").secs(), 0)),
             usage: Some(second),
             retries: vec![
                 second,
@@ -300,7 +293,7 @@ fn seed_alpha(path: &Path) {
         Generation {
             model: Some("gemini-3-flash-agent"),
             model_in_field_21: true,
-            timestamp: Some((at(DEC31, 10, 0) + 5, 0)),
+            timestamp: Some((instant("2025-12-31T10:00:00Z").secs() + 5, 0)),
             usage: Some(unkeyed),
             retries: vec![unkeyed],
             step_indices: vec![3],
@@ -309,21 +302,21 @@ fn seed_alpha(path: &Path) {
         // Near misses: unkeyed usage linked to steps that do not exist, and
         // the same counts again with no step link at all.
         Generation {
-            timestamp: Some((at(DEC31, 11, 0), 0)),
+            timestamp: Some((instant("2025-12-31T11:00:00Z").secs(), 0)),
             usage: Some(unkeyed_small),
             step_indices: vec![7, 8],
             packed_step_indices: true,
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(DEC31, 11, 5), 0)),
+            timestamp: Some((instant("2025-12-31T11:05:00Z").secs(), 0)),
             usage: Some(unkeyed_small),
             ..Generation::default()
         },
         // Model known only by ID, with more than 200k input tokens.
         Generation {
             model_id: Some(246),
-            timestamp: Some((at(JAN01, 12, 0), 0)),
+            timestamp: Some((instant("2026-01-01T12:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 model_id: Some(246),
                 input: 250_000,
@@ -336,7 +329,7 @@ fn seed_alpha(path: &Path) {
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(JAN01, 13, 0), 0)),
+            timestamp: Some((instant("2026-01-01T13:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 response_id: Some("resp-alpha-empty"),
                 ..Usage::default()
@@ -346,11 +339,11 @@ fn seed_alpha(path: &Path) {
         // A row without usage still switches the model for later rows.
         Generation {
             model: Some(SONNET),
-            timestamp: Some((at(JAN02, 8, 59), 0)),
+            timestamp: Some((instant("2026-01-02T08:59:00Z").secs(), 0)),
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(JAN02, 9, 0), 0)),
+            timestamp: Some((instant("2026-01-02T09:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 600,
                 cache_creation: 200,
@@ -364,7 +357,7 @@ fn seed_alpha(path: &Path) {
         },
         Generation {
             model_id: Some(1071),
-            timestamp: Some((at(JAN02, 10, 0), 0)),
+            timestamp: Some((instant("2026-01-02T10:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 model_id: Some(1071),
                 input: 40,
@@ -380,10 +373,13 @@ fn seed_alpha(path: &Path) {
 
     create_database(
         path,
-        at(JAN02, 12, 0),
+        instant("2026-01-02T12:00:00Z"),
         &generation_rows(&generations),
         Some(&steps),
-        Some(&[trajectory_blob(Some((at(DEC30, 8, 0), 0)))]),
+        Some(&[trajectory_blob(Some((
+            instant("2025-12-30T08:00:00Z").secs(),
+            0,
+        )))]),
     );
     let connection = sqlite::open(path).expect("failed to reopen Antigravity database");
     connection
@@ -393,7 +389,7 @@ fn seed_alpha(path: &Path) {
         )
         .expect("failed to add an unknown table");
     drop(connection);
-    crate::golden::set_modified(path, at(JAN02, 12, 0));
+    set_modified(path, instant("2026-01-02T12:00:00Z"));
 }
 
 /// Counted: 21,156 tokens in four events.
@@ -412,7 +408,7 @@ fn seed_gamma(path: &Path) {
         Some(
             Step {
                 model: Some(HAIKU),
-                timestamp: Some((at(JAN01, 0, 10), 0)),
+                timestamp: Some((instant("2026-01-01T00:10:00Z").secs(), 0)),
                 usage: Some(first),
                 ..Step::default()
             }
@@ -438,7 +434,7 @@ fn seed_gamma(path: &Path) {
         },
         Generation {
             model: Some("GPT 5"),
-            timestamp: Some((at(JAN01, 0, 20), 0)),
+            timestamp: Some((instant("2026-01-01T00:20:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: 2_000,
                 total_output: 500,
@@ -450,7 +446,7 @@ fn seed_gamma(path: &Path) {
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(DEC30, 18, 0), 0)),
+            timestamp: Some((instant("2025-12-30T18:00:00Z").secs(), 0)),
             retries: vec![Usage {
                 input: 5,
                 total_output: 1,
@@ -463,14 +459,14 @@ fn seed_gamma(path: &Path) {
     ];
     create_database(
         path,
-        at(JAN02, 12, 0),
+        instant("2026-01-02T12:00:00Z"),
         &generation_rows(&generations),
         Some(&steps),
         // The first row that carries a timestamp wins.
         Some(&[
             trajectory_blob(None),
-            trajectory_blob(Some((at(DEC31, 23, 50), 500_000_000))),
-            trajectory_blob(Some((at(JAN02, 20, 0), 0))),
+            trajectory_blob(Some((instant("2025-12-31T23:50:00Z").secs(), 500_000_000))),
+            trajectory_blob(Some((instant("2026-01-02T20:00:00Z").secs(), 0))),
         ]),
     );
 }
@@ -490,7 +486,7 @@ fn seed_delta(path: &Path) {
             ..Generation::default()
         },
         Generation {
-            timestamp: Some((at(DEC27, 23, 30), 0)),
+            timestamp: Some((instant("2025-12-27T23:30:00Z").secs(), 0)),
             usage: Some(Usage {
                 model_id: Some(77),
                 input: 10,
@@ -504,7 +500,7 @@ fn seed_delta(path: &Path) {
     ];
     create_database(
         path,
-        at(DEC27, 22, 0),
+        instant("2025-12-27T22:00:00Z"),
         &generation_rows(&generations),
         None,
         None,
@@ -517,7 +513,7 @@ fn seed_ignored(ide: &Path, conversations: &Path) {
     let leak = |tokens: u64, response_id: &'static str| {
         Generation {
             model: Some(SONNET),
-            timestamp: Some((at(DEC31, 12, 0), 0)),
+            timestamp: Some((instant("2025-12-31T12:00:00Z").secs(), 0)),
             usage: Some(Usage {
                 input: tokens,
                 total_output: tokens,
@@ -529,11 +525,11 @@ fn seed_ignored(ide: &Path, conversations: &Path) {
         }
         .blob()
     };
-    let mtime = at(JAN02, 12, 0);
+    let mtime = instant("2026-01-02T12:00:00Z");
     let write = |name: &str, contents: &str| {
         let path = conversations.join(name);
         std::fs::write(&path, contents).expect("failed to write Antigravity fixture file");
-        crate::golden::set_modified(&path, mtime);
+        set_modified(&path, mtime);
     };
 
     // One undecodable row discards the whole database, valid rows included.
@@ -578,7 +574,7 @@ fn seed_ignored(ide: &Path, conversations: &Path) {
         &leak(7_777, "resp-bad-steps"),
     );
     drop(connection);
-    crate::golden::set_modified(&bad_steps, mtime);
+    set_modified(&bad_steps, mtime);
 
     let missing_table = conversations.join("missing-table.db");
     let connection = sqlite::open(&missing_table).expect("failed to create Antigravity database");
@@ -589,7 +585,7 @@ fn seed_ignored(ide: &Path, conversations: &Path) {
         )
         .expect("failed to create an unrelated table");
     drop(connection);
-    crate::golden::set_modified(&missing_table, mtime);
+    set_modified(&missing_table, mtime);
 
     write("empty.db", "");
     write("not-a-database.db", "not sqlite");
@@ -660,7 +656,7 @@ struct Generation {
     model_id: Option<u64>,
     usage: Option<Usage>,
     retries: Vec<Usage>,
-    timestamp: Option<(u64, u64)>,
+    timestamp: Option<(i64, u64)>,
     step_indices: Vec<u64>,
     packed_step_indices: bool,
 }
@@ -714,7 +710,7 @@ struct Step {
     provider: Option<u64>,
     usage: Option<Usage>,
     retries: Vec<Usage>,
-    timestamp: Option<(u64, u64)>,
+    timestamp: Option<(i64, u64)>,
     /// Writes the timestamp to field 1 instead of field 8.
     timestamp_in_field_1: bool,
 }
@@ -755,14 +751,18 @@ fn generation_rows(generations: &[Generation]) -> Vec<(i64, Vec<u8>)> {
         .collect()
 }
 
-fn timestamp_blob((seconds, nanos): (u64, u64)) -> Vec<u8> {
+fn timestamp_blob((seconds, nanos): (i64, u64)) -> Vec<u8> {
     let mut out = Vec::new();
-    put_varint(&mut out, 1, seconds);
+    put_varint(
+        &mut out,
+        1,
+        u64::try_from(seconds).expect("fixture seconds are non-negative"),
+    );
     put_varint(&mut out, 2, nanos);
     out
 }
 
-fn trajectory_blob(timestamp: Option<(u64, u64)>) -> Vec<u8> {
+fn trajectory_blob(timestamp: Option<(i64, u64)>) -> Vec<u8> {
     let mut out = Vec::new();
     if let Some(timestamp) = timestamp {
         put_bytes(&mut out, 2, &timestamp_blob(timestamp));
@@ -806,7 +806,7 @@ type StepRow = (i64, Option<Vec<u8>>);
 /// leaves that table out entirely.
 fn create_database(
     path: &Path,
-    mtime: u64,
+    mtime: Instant,
     generations: &[(i64, Vec<u8>)],
     steps: Option<&[StepRow]>,
     trajectories: Option<&[Vec<u8>]>,
@@ -857,7 +857,7 @@ fn create_database(
         }
     }
     drop(connection);
-    crate::golden::set_modified(path, mtime);
+    set_modified(path, mtime);
 }
 
 fn insert_blob(connection: &sqlite::Connection, sql: &str, idx: i64, blob: &[u8]) {

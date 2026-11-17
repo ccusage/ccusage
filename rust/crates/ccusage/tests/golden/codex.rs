@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
-use crate::golden::{Case, set_modified};
+use ccusage_test_support::{Instant, instant, set_modified};
+
+use crate::golden::Case;
 
 const GPT5: &str = "gpt-5";
 // Priced with a fast and a flex multiplier, and a 272K long-context tier.
@@ -22,17 +25,6 @@ const LEGACY_FORK: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const COMPACTING_FORK: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ARCHIVED_COPY: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const MISSING_PARENT: &str = "99999999-9999-4999-8999-999999999999";
-
-const NEW_YEAR: u64 = 1_767_225_600; // 2026-01-01T00:00:00Z
-
-/// Unix seconds for a time on the day `day` days after 2026-01-01.
-fn utc(day: i64, hour: u64, minute: u64) -> u64 {
-    NEW_YEAR
-        .checked_add_signed(day * 86_400)
-        .expect("fixture day is in range")
-        + hour * 3_600
-        + minute * 60
-}
 
 /// Rollout path below a sessions directory; the session ID omits `.jsonl`.
 fn rollout(date: &str, time: &str, id: &str) -> String {
@@ -169,15 +161,15 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
     ]
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
-    let write_bytes = |relative: &str, contents: &[u8], modified: u64| {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let write_bytes = |relative: &str, contents: &[u8], modified: Instant| {
         let path = root.join("codex").join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
             .expect("failed to create fixture directory");
         std::fs::write(&path, contents).expect("failed to write fixture file");
         set_modified(&path, modified);
     };
-    let write = |relative: &str, lines: &[String], modified: u64| {
+    let write = |relative: &str, lines: &[String], modified: Instant| {
         write_bytes(relative, lines.join("\n").as_bytes(), modified);
     };
     let compress = |lines: &[String]| {
@@ -198,7 +190,7 @@ service_tier = "flex"
 service_tier = "fast"
 "#
         .to_string()],
-        utc(-2, 0, 0),
+        instant("2025-12-30T00:00:00Z"),
     );
 
     let main = rollout("2025-12-30", "10-00-00", MAIN);
@@ -278,10 +270,10 @@ service_tier = "fast"
                 .to_string(),
             // Epoch-seconds timestamp: 2026-01-02T08:00:00Z.
             format!(
-                r#"{{"timestamp":1767340800,"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{},"total_token_usage":{}}}}}}}"#,
+                r#"{{"timestamp":{fixture_time_0},"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{},"total_token_usage":{}}}}}}}"#,
                 usage(600, 200, 60, 0),
-                usage(1000, 350, 100, 0)
-            ),
+                usage(1000, 350, 100, 0),
+        fixture_time_0 = instant("2026-01-02T08:00:00Z").secs()),
             format!(
                 r#"{{"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{}}}}}}}"#,
                 usage(9999, 0, 9999, 0)
@@ -292,7 +284,7 @@ service_tier = "fast"
                 usage(1200, 350, 120, 0)
             ),
         ],
-        utc(1, 8, 31),
+        instant("2026-01-02T08:31:00Z"),
     );
 
     // A second Codex home without `sessions/`, so the home itself is scanned.
@@ -319,7 +311,7 @@ service_tier = "fast"
             twins.clone(),
             twins,
         ],
-        utc(-2, 23, 41),
+        instant("2025-12-30T23:41:00Z"),
     );
 
     let mut compacting = vec![meta("2025-12-31T16:00:00.000Z", COMPACTING, "")];
@@ -330,7 +322,7 @@ service_tier = "fast"
             rollout("2025-12-31", "16-00-00", COMPACTING)
         ),
         &compacting,
-        utc(0, 1, 6),
+        instant("2026-01-01T01:06:00Z"),
     );
 
     // User fork of the compacting session: the whole history is copied at the
@@ -364,7 +356,7 @@ service_tier = "fast"
             rollout("2026-01-01", "02-00-00", COMPACTING_FORK)
         ),
         &compacting_fork,
-        utc(0, 2, 12),
+        instant("2026-01-01T02:12:00Z"),
     );
 
     // An archived copy under another name and session ID, with no fork
@@ -392,7 +384,7 @@ service_tier = "fast"
             ),
             compacted("2025-12-31T16:05:01.000Z", "resp-remote-1"),
         ],
-        utc(-1, 16, 6),
+        instant("2025-12-31T16:06:00Z"),
     );
 
     // User fork of the main session: the three turns before the fork are
@@ -443,7 +435,7 @@ service_tier = "fast"
                 Some(&usage(5300, 2000, 630, 70)),
             ),
         ],
-        utc(-1, 15, 31),
+        instant("2025-12-31T15:31:00Z"),
     );
 
     // Spawned subagent of the main session: a spawn never copies the parent's
@@ -491,7 +483,7 @@ service_tier = "fast"
                 Some(&usage(3750, 1350, 475, 55)),
             ),
         ],
-        utc(0, 12, 7),
+        instant("2026-01-01T12:07:00Z"),
     );
 
     // Fork whose parent log is gone: the dense burst written at the fork
@@ -521,7 +513,7 @@ service_tier = "fast"
                 None,
             ),
         ],
-        utc(-2, 20, 1),
+        instant("2025-12-30T20:01:00Z"),
     );
 
     // Early rollout without model metadata. Last written before the window, so
@@ -539,7 +531,7 @@ service_tier = "fast"
                 Some(&usage(100, 0, 50, 0)),
             ),
         ],
-        utc(-5, 22, 1),
+        instant("2025-12-27T22:01:00Z"),
     );
     write(
         &format!(
@@ -564,7 +556,7 @@ service_tier = "fast"
                 Some(&usage(230, 30, 63, 0)),
             ),
         ],
-        utc(-1, 12, 2),
+        instant("2025-12-31T12:02:00Z"),
     );
 
     // Saved `codex exec --json` output: no event envelope, OpenAI field
@@ -583,8 +575,8 @@ service_tier = "fast"
             r#"{"timestamp":"2026-01-01T03:31:00.000Z","usage":"n/a","note":"9999"}"#.to_string(),
             // Epoch seconds: 2026-01-02T03:00:00Z.
             format!(
-                r#"{{"created_at":1767322800,"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#
-            ),
+                r#"{{"created_at":{fixture_time_0},"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#,
+        fixture_time_0 = instant("2026-01-02T03:00:00Z").secs()),
             r#"{"result":{"usage":{"input":120,"output":12}}}"#.to_string(),
             // A model of the wrong type takes the untyped parsing path.
             r#"{"timestamp":"2026-01-02T05:00:00Z","model":5,"usage":{"input_tokens":80,"output_tokens":8}}"#
@@ -593,7 +585,7 @@ service_tier = "fast"
             r#"{"timestamp":"2025-12-31T23:59:59.000Z","model":"codex-auto-review","usage":{"input_tokens":640,"cached_input_tokens":40,"output_tokens":64}}"#
                 .to_string(),
         ],
-        utc(1, 4, 0),
+        instant("2026-01-02T04:00:00Z"),
     );
 
     // Compressed only in `sessions/`, with a plain copy of the same relative
@@ -623,7 +615,7 @@ service_tier = "fast"
                 None,
             ),
         ]),
-        utc(1, 9, 1),
+        instant("2026-01-02T09:01:00Z"),
     );
     write(
         &format!("work/archived_sessions/{compressed}"),
@@ -635,7 +627,7 @@ service_tier = "fast"
                 None,
             ),
         ],
-        utc(1, 9, 31),
+        instant("2026-01-02T09:31:00Z"),
     );
 
     // Both encodings in one directory: the plain copy wins. Written with
@@ -652,7 +644,7 @@ service_tier = "fast"
             r#"{"timestamp": "2026-01-01T14:00:00.000+09:00", "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 210, "cached_input_tokens": 10, "output_tokens": 21}}}}"#
                 .to_string(),
         ],
-        utc(0, 5, 1),
+        instant("2026-01-01T05:01:00Z"),
     );
     write_bytes(
         &format!("work/sessions/{both}.zst"),
@@ -664,18 +656,18 @@ service_tier = "fast"
                 None,
             ),
         ]),
-        utc(0, 5, 31),
+        instant("2026-01-01T05:31:00Z"),
     );
 
     write(
         "work/sessions/2025/12/30/rollout-2025-12-30T00-00-00-empty.jsonl",
         &[],
-        utc(-2, 0, 0),
+        instant("2025-12-30T00:00:00Z"),
     );
     write_bytes(
         "work/sessions/2025/12/31/rollout-2025-12-31T00-00-00-corrupt.jsonl.zst",
         b"not a zstd frame",
-        utc(-1, 0, 0),
+        instant("2025-12-31T00:00:00Z"),
     );
     // Not rollouts by extension.
     let stray = [
@@ -689,20 +681,19 @@ service_tier = "fast"
     write(
         "work/sessions/2025/12/31/rollout-export.json",
         &stray,
-        utc(-1, 8, 1),
+        instant("2025-12-31T08:01:00Z"),
     );
     write_bytes(
         "work/sessions/2025/12/31/notes.zst",
         &compress(&stray),
-        utc(-1, 8, 1),
+        instant("2025-12-31T08:01:00Z"),
     );
 
-    let homes = format!(
-        "{},{}",
-        root.join("codex/work").display(),
-        root.join("codex/personal").display()
-    );
-    vec![("CODEX_HOME", PathBuf::from(homes))]
+    let homes = vec![
+        root.join("codex/work").into_os_string(),
+        root.join("codex/personal").into_os_string(),
+    ];
+    vec![("CODEX_HOME", homes)]
 }
 
 /// Codex-only options: `--speed`, `session --id`, and the single-threaded

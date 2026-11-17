@@ -13,15 +13,83 @@ mod support;
 
 use golden::{ALL_REPORT_KINDS, AgentMatrix, Case, UNSUPPORTED_VARIANT, agent_cases, run_case};
 
+#[test]
+fn seed_environment_preserves_list_entries() {
+    use std::{ffi::OsString, path::Path};
+
+    fn first(_root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+        vec![(
+            "CLAUDE_CONFIG_DIR",
+            vec!["first".into(), " first ".into(), "".into()],
+        )]
+    }
+
+    fn second(_root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+        vec![("CLAUDE_CONFIG_DIR", vec!["second".into()])]
+    }
+
+    let agents = [
+        AgentMatrix {
+            agent: "first",
+            seed: first,
+            extras: golden::no_extras,
+        },
+        AgentMatrix {
+            agent: "second",
+            seed: second,
+            extras: golden::no_extras,
+        },
+    ];
+    let fixture = Fixture::new();
+    let seeded = golden::seed_all(&agents, fixture.root());
+    let command = golden::hermetic_command(fixture.root(), &seeded, 200);
+
+    assert_eq!(
+        command
+            .get_envs()
+            .find(|(name, _)| *name == "CLAUDE_CONFIG_DIR")
+            .unwrap()
+            .1,
+        Some(std::ffi::OsStr::new("first, first ,,second")),
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn seed_environment_preserves_non_utf8_paths() {
+    use std::{
+        ffi::{OsStr, OsString},
+        os::unix::ffi::{OsStrExt as _, OsStringExt as _},
+    };
+
+    let fixture = Fixture::new();
+    let seeded = [(
+        "CLAUDE_CONFIG_DIR",
+        vec![OsString::from_vec(b"store-\xff".to_vec()), "other".into()],
+    )];
+    let command = golden::hermetic_command(fixture.root(), &seeded, 200);
+
+    assert_eq!(
+        command
+            .get_envs()
+            .find(|(name, _)| *name == "CLAUDE_CONFIG_DIR")
+            .unwrap()
+            .1,
+        Some(OsStr::from_bytes(b"store-\xff,other")),
+    );
+}
+
 /// Declares the agents of the matrix once, as both the table the coverage
 /// guard checks against the CLI and one `#[test]` per agent, so an agent
 /// cannot be in the table without being run.
 macro_rules! agent_matrix {
-    ($($agent:ident => $extras:expr),* $(,)?) => {
+    (@seed $agent:ident, $seed:path) => { $seed };
+    (@seed $agent:ident) => { golden::$agent::seed };
+    ($($agent:ident $(($seed:path))? => $extras:expr),* $(,)?) => {
         const AGENTS: &[AgentMatrix] = &[
             $(AgentMatrix {
                 agent: stringify!($agent),
-                seed: golden::$agent::seed,
+                seed: agent_matrix!(@seed $agent $(, $seed)?),
                 extras: $extras,
             }),*
         ];
@@ -32,7 +100,7 @@ macro_rules! agent_matrix {
             $(
                 #[test]
                 fn $agent() {
-                    golden::run_matrix(stringify!($agent), golden::$agent::seed, $extras);
+                    golden::run_matrix(stringify!($agent), agent_matrix!(@seed $agent $(, $seed)?), $extras);
                 }
             )*
         }
@@ -56,7 +124,7 @@ agent_matrix! {
     kimi => golden::no_extras,
     qwen => golden::no_extras,
     openclaw => golden::openclaw::extra_cases,
-    grok => golden::no_extras,
+    grok(golden::seed_grok) => golden::no_extras,
     zcode => golden::zcode::extra_cases,
     cline => golden::no_extras,
     dsh => golden::dsh::extra_cases,

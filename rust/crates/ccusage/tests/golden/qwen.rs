@@ -1,6 +1,7 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::golden::set_modified;
+use ccusage_test_support::{Instant, instant, set_modified};
 
 const CODER: &str = "qwen3-coder-plus";
 const SONNET: &str = "claude-sonnet-4-20250514";
@@ -10,25 +11,17 @@ const UNPRICED: &str = "qwen-mystery-1";
 const QWEN_PREFIXED: &str = "qwen-2.5-72b-instruct";
 const ALIBABA_PREFIXED: &str = "qwen-3-235b";
 
-// 2025-12-27T22:00:00Z, 2025-12-31T16:00:00Z, 2026-01-01T09:00:00Z,
-// 2026-01-02T12:00:00Z, 2026-01-02T23:30:00Z
-const STALE_MTIME: u64 = 1_766_872_800;
-const FALLBACK_MTIME: u64 = 1_767_196_800;
-const SECONDARY_MTIME: u64 = 1_767_258_000;
-const SESSION_A_MTIME: u64 = 1_767_355_200;
-const SESSION_B_MTIME: u64 = 1_767_396_600;
-
 fn assistant(session: &str, timestamp: &str, model: &str, usage: &str) -> String {
     format!(
         r#"{{"type":"assistant","sessionId":"{session}","timestamp":"{timestamp}","model":"{model}","usageMetadata":{{{usage}}}}}"#
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("qwen");
     let primary = store.join("primary");
     let secondary = store.join("secondary");
-    let write = |path: PathBuf, contents: &str, mtime: u64| {
+    let write = |path: PathBuf, contents: &str, mtime: Instant| {
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
             .expect("failed to create Qwen fixture directory");
         std::fs::write(&path, contents).expect("failed to write Qwen fixture file");
@@ -93,10 +86,10 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{"type":"assistant","timestamp":"2026-01-02T08:00:00.000Z","usageMetadata":{"promptTokenCount":70,"candidatesTokenCount":30}}"#.to_string(),
             assistant("sess-a", "yesterday", CODER, r#""promptTokenCount":60,"candidatesTokenCount":15"#),
             r#"{"type":"assistant","sessionId":"sess-a","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":61,"candidatesTokenCount":16}}"#.to_string(),
-            r#"{"type":"assistant","sessionId":"sess-a","timestamp":1767225600000,"model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":61,"candidatesTokenCount":16}}"#.to_string(),
+            format!(r#"{{"type":"assistant","sessionId":"sess-a","timestamp":{fixture_time_0},"model":"qwen3-coder-plus","usageMetadata":{{"promptTokenCount":61,"candidatesTokenCount":16}}}}"#, fixture_time_0 = instant("2026-01-01T00:00:00Z").millis()),
         ]
         .join("\n"),
-        SESSION_A_MTIME,
+        instant("2026-01-02T12:00:00Z"),
     );
 
     // Second project. Dedupe spans files: the copy of `a2` under the same
@@ -144,7 +137,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
         ]
         .join("\n"),
-        SESSION_B_MTIME,
+        instant("2026-01-02T23:30:00Z"),
     );
 
     // No session id and no timestamp: the session becomes `<project>-<stem>`
@@ -156,12 +149,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write(
         primary.join("projects/alpha/chats/fallback-c.jsonl"),
         &fallback,
-        FALLBACK_MTIME,
+        instant("2025-12-31T16:00:00Z"),
     );
     write(
         primary.join("projects/beta/chats/fallback-c.jsonl"),
         &fallback,
-        FALLBACK_MTIME,
+        instant("2025-12-31T16:00:00Z"),
     );
 
     // Qwen Code moves a finished session into the flat `chats/archive/`
@@ -170,7 +163,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write(
         primary.join("projects/beta/chats/archive/fallback-c.jsonl"),
         &fallback,
-        FALLBACK_MTIME,
+        instant("2025-12-31T16:00:00Z"),
     );
     write(
         primary.join("projects/alpha/chats/archive/session-e.jsonl"),
@@ -180,7 +173,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             CODER,
             r#""promptTokenCount":420,"candidatesTokenCount":70,"cachedContentTokenCount":100"#,
         ),
-        SECONDARY_MTIME,
+        instant("2026-01-01T09:00:00Z"),
     );
 
     // Second data root with CRLF line endings; its copy of `a1` is a replay of
@@ -198,7 +191,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             String::new(),
         ]
         .join("\r\n"),
-        SECONDARY_MTIME,
+        instant("2026-01-01T09:00:00Z"),
     );
 
     // Only `projects/<project>/chats/<file>.jsonl` and
@@ -221,17 +214,21 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "projects/alpha/chats/wrong-extension.json",
         "projects/alpha/chats/wrong-extension.jsonl.bak",
     ] {
-        write(primary.join(relative), &ignored, STALE_MTIME);
+        write(
+            primary.join(relative),
+            &ignored,
+            instant("2025-12-27T22:00:00Z"),
+        );
     }
     write(
         primary.join("projects/alpha/chats/empty.jsonl"),
         "",
-        STALE_MTIME,
+        instant("2025-12-27T22:00:00Z"),
     );
     write(
         primary.join("projects/beta/chats/truncated.jsonl"),
         r#"{"type":"assistant","sessionId":"sess-truncated","timestamp":"2025-12-31T12:00:00.000Z","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":9999,"candi"#,
-        STALE_MTIME,
+        instant("2025-12-27T22:00:00Z"),
     );
 
     // `QWEN_DATA_DIR` is a comma-separated list: a repeated root and a missing
@@ -242,7 +239,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         primary,
         store.join("missing-root"),
     ]
-    .map(|path| path.to_string_lossy().into_owned())
-    .join(",");
-    vec![("QWEN_DATA_DIR", PathBuf::from(roots))]
+    .map(PathBuf::into_os_string)
+    .to_vec();
+    vec![("QWEN_DATA_DIR", roots)]
 }

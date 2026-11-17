@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
-use crate::golden::{Case, json_path, set_modified};
+use ccusage_test_support::{Instant, instant, set_modified};
+
+use crate::golden::{Case, json_path};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
@@ -27,8 +30,8 @@ fn entry(
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
-    let write = |relative: &str, lines: &[String], modified: u64| {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let write = |relative: &str, lines: &[String], modified: Instant| {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
             .expect("failed to create fixture directory");
@@ -143,10 +146,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "msg_a8",
                 "<synthetic>",
                 r#""input_tokens":0,"output_tokens":0"#,
-                r#","isApiErrorMessage":true,"content":[{"type":"text","text":"Claude AI usage limit reached|1767344400"}]"#,
+                &format!(
+                    r#","isApiErrorMessage":true,"content":[{{"type":"text","text":"Claude AI usage limit reached|{fixture_time_0}"}}]"#,
+                    fixture_time_0 = instant("2026-01-02T09:00:00Z").secs()
+                ),
             ),
         ],
-        1_767_342_660, // 2026-01-02T08:31:00Z
+        instant("2026-01-02T08:31:00Z"),
     );
 
     // Subagent transcript: the session ID is the directory above `subagents/`.
@@ -183,7 +189,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 r#","isSidechain":true"#,
             ),
         ],
-        1_767_089_280, // 2025-12-30T10:08:00Z
+        instant("2025-12-30T10:08:00Z"),
     );
 
     // Nested transcript: the session ID is the directory name.
@@ -239,7 +245,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "",
             ),
         ],
-        1_767_348_060, // 2026-01-02T10:01:00Z
+        instant("2026-01-02T10:01:00Z"),
     );
 
     let resumed = "sess-beta-2";
@@ -269,10 +275,14 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "",
             ),
         ],
-        1_767_351_660, // 2026-01-02T11:01:00Z
+        instant("2026-01-02T11:01:00Z"),
     );
 
-    write(&format!("{BETA}/sess-empty.jsonl"), &[], 1_767_052_800); // 2025-12-30T00:00:00Z
+    write(
+        &format!("{BETA}/sess-empty.jsonl"),
+        &[],
+        instant("2025-12-30T00:00:00Z"),
+    );
 
     // Last written more than a day before the shared window opens, so the
     // window variants prune the file by mtime.
@@ -287,10 +297,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#""input_tokens":100,"output_tokens":50"#,
             r#","costUSD":0.01"#,
         )],
-        1_766_872_860, // 2025-12-27T22:01:00Z
+        instant("2025-12-27T22:01:00Z"),
     );
 
-    vec![("CLAUDE_CONFIG_DIR", root.join("claude"))]
+    vec![(
+        "CLAUDE_CONFIG_DIR",
+        vec![root.join("claude").into_os_string()],
+    )]
 }
 
 /// Claude-only options, plus `statusline`, which reads a hook payload from

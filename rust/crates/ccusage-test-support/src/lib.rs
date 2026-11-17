@@ -13,6 +13,48 @@ use assert_fs::{
 pub mod mutation;
 pub mod zcode;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Instant(jiff::Timestamp);
+
+pub fn instant(timestamp: &str) -> Instant {
+    Instant(
+        timestamp
+            .parse()
+            .expect("fixture instant is valid RFC 3339"),
+    )
+}
+
+impl Instant {
+    pub fn secs(self) -> i64 {
+        self.0.as_second()
+    }
+
+    pub fn millis(self) -> i64 {
+        self.0.as_millisecond()
+    }
+
+    pub fn secs_f64(self) -> f64 {
+        self.0
+            .duration_since(jiff::Timestamp::UNIX_EPOCH)
+            .as_secs_f64()
+    }
+
+    pub fn millis_f64(self) -> f64 {
+        self.0
+            .duration_since(jiff::Timestamp::UNIX_EPOCH)
+            .as_millis_f64()
+    }
+}
+
+pub fn set_modified(path: &Path, modified: Instant) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("failed to open fixture file")
+        .set_modified(std::time::SystemTime::from(modified.0))
+        .expect("failed to set fixture file mtime");
+}
+
 pub fn install_pricing_snapshots() {
     ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
         litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
@@ -154,6 +196,34 @@ macro_rules! fs_fixture {
 
 #[cfg(test)]
 mod tests {
+    use super::{Fixture, instant, set_modified};
+
+    #[test]
+    fn fixture_instant_preserves_epoch_units_and_fractional_seconds() {
+        let timestamp = instant("2026-01-02T08:31:00.125Z");
+
+        assert_eq!(timestamp.secs(), 1_767_342_660);
+        assert_eq!(timestamp.millis(), 1_767_342_660_125);
+        assert_eq!(timestamp.secs_f64(), 1_767_342_660.125);
+        assert_eq!(timestamp.millis_f64(), 1_767_342_660_125.0);
+        assert_eq!(timestamp, instant("2026-01-02T17:31:00.125+09:00"));
+    }
+
+    #[test]
+    fn fixture_file_mtime_preserves_the_instant() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("fixture.jsonl", "{}");
+        let timestamp = instant("2026-01-02T08:31:00.125Z");
+
+        set_modified(&path, timestamp);
+
+        let modified = std::fs::metadata(path).unwrap().modified().unwrap();
+        assert_eq!(
+            modified.duration_since(std::time::UNIX_EPOCH).unwrap(),
+            std::time::Duration::from_millis(1_767_342_660_125)
+        );
+    }
+
     #[test]
     fn creates_inline_fixture_tree() {
         let fixture = fs_fixture!({

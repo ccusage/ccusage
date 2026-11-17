@@ -1,6 +1,7 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::golden::set_modified;
+use ccusage_test_support::{instant, set_modified};
 
 fn write_chat(data_root: &Path, project: &str, chat_id: &str, contents: &str) -> PathBuf {
     let dir = data_root
@@ -14,7 +15,7 @@ fn write_chat(data_root: &Path, project: &str, chat_id: &str, contents: &str) ->
     path
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     // The session id is `<channel>/<project>/<chat id>`, where the channel is
     // the directory above `projects`. `backup/manicode` therefore produces the
     // same session ids as `manicode`, which is what lets a record be replayed
@@ -28,18 +29,22 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &manicode,
         "alpha",
         "2025-12-30T10-00-00.000Z",
-        r#"[
-  {"id":"u1","role":"user","timestamp":"2025-12-30T10:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":9999,"outputTokens":9999}},"credits":9.0},
+        &format!(
+            r#"[
+  {{"id":"u1","role":"user","timestamp":"2025-12-30T10:00:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":9999,"outputTokens":9999}}}},"credits":9.0}},
   "garbage",
-  {"id":"a1","role":"assistant","timestamp":"2025-12-30T10:00:01.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":1000,"outputTokens":200,"cacheCreationInputTokens":300,"cacheReadInputTokens":4000}},"credits":1.5},
-  {"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{"model":"gpt-5","usage":{"inputTokens":9999,"outputTokens":9999}},"credits":9.0},
-  {"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{"usage":{"model":"gpt-5","input_tokens":700,"output_tokens":150,"cache_read_input_tokens":2500,"credits":0.75}}},
-  {"id":"a3","variant":"agent","createdAt":1767268800,"metadata":{"codebuff":{"usage":{"model":"codebuff-mystery-1","promptTokens":300,"completionTokens":70}}},"credits":0.2},
-  {"id":"a4","role":"assistant","metadata":{"timestamp":1767270600000,"model":"gpt-5","usage":{"totalTokens":345}}},
-  {"id":"a5","role":"assistant","timestamp":"2026-01-01T13:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":0,"outputTokens":0}}},
-  {"id":"a6","variant":"user","role":"assistant","timestamp":"2026-01-01T13:10:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":8888,"outputTokens":8888}}},
-  {"id":"a7","variant":"tool","timestamp":"2026-01-01T13:20:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":7777,"outputTokens":7777}},"credits":7.0}
+  {{"id":"a1","role":"assistant","timestamp":"2025-12-30T10:00:01.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":1000,"outputTokens":200,"cacheCreationInputTokens":300,"cacheReadInputTokens":4000}}}},"credits":1.5}},
+  {{"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{{"model":"gpt-5","usage":{{"inputTokens":9999,"outputTokens":9999}}}},"credits":9.0}},
+  {{"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{{"usage":{{"model":"gpt-5","input_tokens":700,"output_tokens":150,"cache_read_input_tokens":2500,"credits":0.75}}}}}},
+  {{"id":"a3","variant":"agent","createdAt":{fixture_time_0},"metadata":{{"codebuff":{{"usage":{{"model":"codebuff-mystery-1","promptTokens":300,"completionTokens":70}}}}}},"credits":0.2}},
+  {{"id":"a4","role":"assistant","metadata":{{"timestamp":{fixture_time_1},"model":"gpt-5","usage":{{"totalTokens":345}}}}}},
+  {{"id":"a5","role":"assistant","timestamp":"2026-01-01T13:00:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":0,"outputTokens":0}}}}}},
+  {{"id":"a6","variant":"user","role":"assistant","timestamp":"2026-01-01T13:10:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":8888,"outputTokens":8888}}}}}},
+  {{"id":"a7","variant":"tool","timestamp":"2026-01-01T13:20:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":7777,"outputTokens":7777}}}},"credits":7.0}}
 ]"#,
+            fixture_time_0 = instant("2026-01-01T12:00:00Z").secs(),
+            fixture_time_1 = instant("2026-01-01T12:30:00Z").millis()
+        ),
     );
     let chat_dir = ledger_chat.parent().expect("chat file has a parent");
     let ignored_usage = r#"[{"id":"x1","role":"assistant","timestamp":"2025-12-31T12:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":5555,"outputTokens":5555}}}]"#;
@@ -99,7 +104,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
   {"role":"assistant","timestamp":0,"metadata":{"model":"claude-haiku-4-5-20251001","usage":{"inputTokens":30,"outputTokens":15}}}
 ]"#,
     );
-    set_modified(&mtime_chat, 1_767_171_600);
+    set_modified(&mtime_chat, instant("2025-12-31T09:00:00Z"));
 
     write_chat(&manicode, "alpha", "empty-chat", "");
     write_chat(
@@ -145,13 +150,16 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
     // Comma-separated roots: one given as the channel directory, one already
     // ending in `projects`, a repeat, an empty item, and a missing directory.
-    let data_dirs = format!(
-        "{}, {} ,,{},{},{}",
-        backup.display(),
-        dev.join("projects").display(),
-        manicode.display(),
-        manicode.display(),
-        root.join("codebuff/missing").display(),
-    );
-    vec![("CODEBUFF_DATA_DIR", PathBuf::from(data_dirs))]
+    let mut padded = OsString::from(" ");
+    padded.push(dev.join("projects"));
+    padded.push(" ");
+    let data_dirs = vec![
+        backup.into_os_string(),
+        padded,
+        OsString::new(),
+        manicode.clone().into_os_string(),
+        manicode.into_os_string(),
+        root.join("codebuff/missing").into_os_string(),
+    ];
+    vec![("CODEBUFF_DATA_DIR", data_dirs)]
 }

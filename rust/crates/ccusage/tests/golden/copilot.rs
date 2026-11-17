@@ -1,19 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
-use crate::golden::set_modified;
+use ccusage_test_support::{instant, set_modified};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const GPT: &str = "gpt-5";
 const UNPRICED: &str = "copilot-mystery-1";
-
-const HOUR: u64 = 3_600;
-const MINUTE: u64 = 60;
-const DEC_30: u64 = 1_767_052_800;
-const DEC_31: u64 = 1_767_139_200;
-const JAN_01: u64 = 1_767_225_600;
-const JAN_02: u64 = 1_767_312_000;
 
 /// One GitHub AI credit in nano-AIU.
 const CREDIT: u64 = 1_000_000_000;
@@ -50,7 +44,7 @@ fn model(name: &str, usage: &str, rest: &str) -> String {
 
 /// One OpenTelemetry chat span that ended at `end_seconds`. `attributes` holds
 /// the attributes after the operation name, each with its leading comma.
-fn chat_span((trace_id, span_id): (&str, &str), end_seconds: u64, attributes: &str) -> String {
+fn chat_span((trace_id, span_id): (&str, &str), end_seconds: i64, attributes: &str) -> String {
     format!(
         r#"{{"type":"span","traceId":"{trace_id}","spanId":"{span_id}","name":"chat","endTime":[{end_seconds},0],"attributes":{{"gen_ai.operation.name":"chat"{attributes}}}}}"#
     )
@@ -65,7 +59,7 @@ fn tokens(input: u64, output: u64) -> String {
     format!(r#""gen_ai.usage.input_tokens":{input},"gen_ai.usage.output_tokens":{output}"#)
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let home = root.join("copilot");
     let write = |relative: &str, lines: &[String]| {
         let path = home.join(relative);
@@ -330,7 +324,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     // where the record IDs it carries make it the same call, counted once.
     let exported_twice = chat_span(
         ("trace-export", "span-x1"),
-        JAN_02 + 15 * HOUR,
+        instant("2026-01-02T15:00:00Z").secs(),
         &format!(
             r#"{},"gen_ai.response.id":"resp-x1""#,
             call("conv-export", OPUS, &tokens(900, 90))
@@ -350,19 +344,19 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // At or before the first session-beta shutdown: part of its breakdown.
             chat_span(
                 ("trace-b1", "span-b1"),
-                DEC_31 + 9 * HOUR,
+                instant("2025-12-31T09:00:00Z").secs(),
                 &call("session-beta", GPT, &tokens(9999, 9999)),
             ),
             chat_span(
                 ("trace-b1", "span-b2"),
-                DEC_31 + 9 * HOUR + 30 * MINUTE,
+                instant("2025-12-31T09:30:00Z").secs(),
                 &call("session-beta", GPT, &tokens(7777, 7777)),
             ),
             // Between the two session-beta shutdowns: covered by the second
             // one, unless `--until` hides that shutdown.
             chat_span(
                 ("trace-b3", "span-b3"),
-                DEC_31 + 23 * HOUR + 30 * MINUTE,
+                instant("2025-12-31T23:30:00Z").secs(),
                 &call(
                     "session-beta",
                     GPT,
@@ -375,20 +369,20 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // After the last session-beta shutdown.
             format!(
                 r#"{{"type":"span","traceId":"trace-b4","spanId":"span-b4","name":"chat","time":[{},0],"attributes":{{"gen_ai.operation.name":"chat"{}}}}}"#,
-                JAN_02 + 10 * HOUR,
+                instant("2026-01-02T10:00:00Z").secs(),
                 call("session-beta", GPT, &tokens(90, 9))
             ),
             // A model the session-beta shutdowns do not report.
             chat_span(
                 ("trace-b1", "span-b5"),
-                DEC_31 + 9 * HOUR + 15 * MINUTE,
+                instant("2025-12-31T09:15:00Z").secs(),
                 &call("session-beta", HAIKU, &tokens(400, 60)),
             ),
             // The calls of the session-gamma process that never shut down. The
             // first two are 2026-01-01 in Asia/Tokyo.
             chat_span(
                 ("trace-g1", "span-g1"),
-                DEC_31 + 15 * HOUR + 30 * MINUTE,
+                instant("2025-12-31T15:30:00Z").secs(),
                 &call(
                     "session-gamma",
                     &format!("{HAIKU}-1m"),
@@ -400,12 +394,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             format!(
                 r#"{{"type":"span","traceId":"trace-g2","spanId":"span-g2","name":"chat","timestamp":{},"attributes":{{"gen_ai.operation.name":"chat"{}}}}}"#,
-                (DEC_31 + 20 * HOUR) * 1_000_000_000,
+                (instant("2025-12-31T20:00:00Z").secs()) * 1_000_000_000,
                 call("session-gamma", HAIKU, &tokens(220, 31))
             ),
             chat_span(
                 ("trace-g3", "span-g3"),
-                JAN_01 + 11 * HOUR,
+                instant("2026-01-01T11:00:00Z").secs(),
                 &call("session-gamma", HAIKU, &tokens(230, 32)),
             ),
             // The OTel rows of two session-eta calls, which their usage
@@ -413,7 +407,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // The row of another model under the same response ID is kept.
             chat_span(
                 ("trace-h1", "span-h1"),
-                DEC_31 + 11 * HOUR,
+                instant("2025-12-31T11:00:00Z").secs(),
                 &format!(
                     r#"{},"github.copilot.service_request_id":"svc-h1""#,
                     call("session-eta", SONNET, &tokens(1500, 90))
@@ -421,7 +415,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             chat_span(
                 ("trace-h2", "span-h2"),
-                JAN_01 + 15 * HOUR + 30 * MINUTE,
+                instant("2026-01-01T15:30:00Z").secs(),
                 &format!(
                     r#"{},"gen_ai.response.id":"chatcmpl-h2""#,
                     call("session-eta", GPT, &tokens(600, 60))
@@ -429,7 +423,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             chat_span(
                 ("trace-h2", "span-h2b"),
-                JAN_01 + 15 * HOUR + 31 * MINUTE,
+                instant("2026-01-01T15:31:00Z").secs(),
                 &format!(
                     r#"{},"gen_ai.response.id":"chatcmpl-h2""#,
                     call("session-eta", HAIKU, &tokens(50, 5))
@@ -449,34 +443,38 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write(
         "otel/vscode.jsonl",
         &[
-            chat_span(("trace-1", "span-v1"), DEC_30 + 14 * HOUR, &first_call),
+            chat_span(
+                ("trace-1", "span-v1"),
+                instant("2025-12-30T14:00:00Z").secs(),
+                &first_call,
+            ),
             // Lower-priority records of the same call, by trace or response ID.
             format!(
                 r#"{{"hrTime":[{},0],"traceId":"trace-1","spanId":"span-v1","_body":"GenAI inference: {SONNET}","attributes":{{"event.name":"gen_ai.client.inference.operation.details","gen_ai.response.model":"{SONNET}",{}}}}}"#,
-                DEC_30 + 14 * HOUR,
+                instant("2025-12-30T14:00:00Z").secs(),
                 tokens(9999, 9999)
             ),
             format!(
                 r#"{{"hrTime":[{},0],"attributes":{{"event.name":"copilot_chat.agent.turn","gen_ai.response.id":"resp-1","session.id":"conv-vscode","gen_ai.request.model":"{SONNET}","turn.index":1,{}}}}}"#,
-                DEC_30 + 14 * HOUR,
+                instant("2025-12-30T14:00:00Z").secs(),
                 tokens(9999, 9999)
             ),
             format!(
                 r#"{{"type":"span","traceId":"trace-1","spanId":"span-agent-1","name":"invoke_agent GitHub Copilot Chat","endTime":[{},0],"attributes":{{"gen_ai.operation.name":"invoke_agent","gen_ai.conversation.id":"conv-vscode","gen_ai.response.model":"{SONNET}",{}}}}}"#,
-                DEC_30 + 14 * HOUR,
+                instant("2025-12-30T14:00:00Z").secs(),
                 tokens(9999, 9999)
             ),
             // The first call exported again under a new trace: same response ID
             // and usage, so it counts once.
             chat_span(
                 ("trace-5", "span-v5"),
-                DEC_30 + 14 * HOUR + 5 * MINUTE,
+                instant("2025-12-30T14:05:00Z").secs(),
                 &first_call,
             ),
             // Same response ID but other usage: another call of the same turn.
             chat_span(
                 ("trace-1", "span-v1b"),
-                DEC_30 + 14 * HOUR + 10 * MINUTE,
+                instant("2025-12-30T14:10:00Z").secs(),
                 &format!(
                     r#"{},"gen_ai.response.id":"resp-1""#,
                     call("conv-vscode", SONNET, &tokens(1200, 150))
@@ -487,50 +485,50 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // 2026-01-01 in Asia/Tokyo.
             format!(
                 r#"{{"hrTime":[{},500000000],"spanContext":{{"traceId":"trace-2","spanId":"span-v2"}},"body":"GenAI inference: completed","attributes":{{"gen_ai.response.id":"resp-2","gen_ai.usage.input_tokens":"500","gen_ai.usage.output_tokens":"80"}}}}"#,
-                DEC_31 + 18 * HOUR
+                instant("2025-12-31T18:00:00Z").secs()
             ),
             format!(
                 r#"{{"hrTime":[{},0],"traceId":"trace-2","attributes":{{"event.name":"copilot_chat.agent.turn","copilot_chat.session_id":"conv-vscode","gen_ai.request.model":"{GPT}","copilot_chat.turn.index":2,{}}}}}"#,
-                DEC_31 + 18 * HOUR,
+                instant("2025-12-31T18:00:00Z").secs(),
                 tokens(7777, 7777)
             ),
             format!(
                 r#"{{"type":"span","traceId":"trace-6","spanId":"span-agent-6","name":"invoke_agent GitHub Copilot Chat","endTime":[{},0],"attributes":{{"gen_ai.conversation.id":"conv-vscode","gen_ai.response.model":"{GPT}","gen_ai.response.id":"resp-2",{}}}}}"#,
-                DEC_31 + 18 * HOUR,
+                instant("2025-12-31T18:00:00Z").secs(),
                 tokens(9999, 9999)
             ),
             // Neither a chat span nor an inference log: the agent turn log counts.
             format!(
                 r#"{{"timestamp":{},"traceId":"trace-3","_body":"copilot_chat.agent.turn completed","attributes":{{"gen_ai.response.id":"resp-3","session.id":"conv-vscode","gen_ai.request.model":"{HAIKU}","turn.index":3,{}}}}}"#,
-                (JAN_01 + 9 * HOUR) * 1_000,
+                (instant("2026-01-01T09:00:00Z").secs()) * 1_000,
                 tokens(300, 40)
             ),
             format!(
                 r#"{{"type":"span","traceId":"trace-3","spanId":"span-agent-3","name":"invoke_agent GitHub Copilot Chat","endTime":[{},0],"attributes":{{"gen_ai.conversation.id":"conv-vscode","gen_ai.response.model":"{HAIKU}",{}}}}}"#,
-                JAN_01 + 9 * HOUR,
+                instant("2026-01-01T09:00:00Z").secs(),
                 tokens(9999, 9999)
             ),
             // Nothing else for this trace: the agent summary span counts. It is
             // a span by its shape, not by a `type` member.
             format!(
                 r#"{{"traceId":"trace-4","spanId":"span-agent-4","name":"invoke_agent GitHub Copilot Chat","startTime":[{},0],"attributes":{{"copilot_chat.chat_session_id":"conv-vscode","gen_ai.request.model":"{UNPRICED}",{}}}}}"#,
-                JAN_01 + 10 * HOUR,
+                instant("2026-01-01T10:00:00Z").secs(),
                 tokens(600, 60)
             ),
             // Only a total: reported as output tokens.
             format!(
                 r#"{{"type":"span","traceId":"trace-7","spanId":"span-v7","name":"chat {SONNET}","timeUnixNano":"{}","attributes":{{"gen_ai.conversation.id":"conv-vscode","gen_ai.response.model":"{SONNET}","gen_ai.usage.total.token_count":567,"gen_ai.usage.reasoning_tokens":5}}}}"#,
-                (JAN_02 + 13 * HOUR) * 1_000_000_000
+                (instant("2026-01-02T13:00:00Z").secs()) * 1_000_000_000
             ),
             chat_span(
                 ("trace-8", "span-v8"),
-                JAN_01 + 13 * HOUR,
+                instant("2026-01-01T13:00:00Z").secs(),
                 &call("conv-vscode", SONNET, &tokens(0, 0)),
             ),
             // No model and no session anywhere in the trace.
             format!(
                 r#"{{"type":"span","traceId":"trace-orphan","spanId":"span-orphan","name":"chat completion","observedTimestamp":{},"attributes":{{{}}}}}"#,
-                DEC_31 + 12 * HOUR,
+                instant("2025-12-31T12:00:00Z").secs(),
                 tokens(40, 4)
             ),
         ],
@@ -544,20 +542,23 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             call("conv-vscode", SONNET, &tokens(70, 7))
         )],
     );
-    set_modified(&undated, JAN_01 + 6 * HOUR);
+    set_modified(&undated, instant("2026-01-01T06:00:00Z"));
 
     write("otel/empty.jsonl", &[]);
     write(
         "otel/notes.txt",
         &[chat_span(
             ("trace-txt", "span-txt"),
-            DEC_31 + 12 * HOUR,
+            instant("2025-12-31T12:00:00Z").secs(),
             &call("conv-vscode", SONNET, &tokens(9999, 9999)),
         )],
     );
 
     vec![
-        ("COPILOT_HOME", home),
-        ("COPILOT_OTEL_FILE_EXPORTER_PATH", exporter),
+        ("COPILOT_HOME", vec![home.into_os_string()]),
+        (
+            "COPILOT_OTEL_FILE_EXPORTER_PATH",
+            vec![exporter.into_os_string()],
+        ),
     ]
 }

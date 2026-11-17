@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
+
+use ccusage_test_support::instant;
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
@@ -31,7 +34,7 @@ struct Row {
     id: &'static str,
     model_config: String,
     provider: &'static str,
-    created_at: &'static str,
+    created_at: String,
     tokens: [&'static str; 6],
 }
 
@@ -58,7 +61,7 @@ fn counted_rows() -> Vec<Row> {
             id: "s-stale",
             model_config: model(SONNET),
             provider: "'anthropic'",
-            created_at: "'2025-12-27 22:00:00'",
+            created_at: "'2025-12-27 22:00:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "180", "100", "50"],
         },
         // No total in either generation of columns: it is input + output.
@@ -66,47 +69,46 @@ fn counted_rows() -> Vec<Row> {
             id: "s-before",
             model_config: model("gpt-5"),
             provider: "'openai'",
-            created_at: "'2025-12-30T10:00:00.000Z'",
+            created_at: "'2025-12-30T10:00:00.000Z'".into(),
             tokens: ["NULL", "NULL", "NULL", "NULL", "1000", "200"],
         },
         // Only the non-accumulated columns, an integer epoch-seconds timestamp
-        // (2025-12-31T15:30:00Z) and no provider.
+        // and no provider.
         Row {
             id: "s-tokyo",
             model_config: model(OPUS),
             provider: "NULL",
-            created_at: "1767195000",
+            created_at: instant("2025-12-31T15:30:00Z").secs().to_string(),
             tokens: ["2500", "2000", "300", "NULL", "NULL", "NULL"],
         },
         Row {
             id: "s-replayed",
             model_config: model(HAIKU),
             provider: "'anthropic'",
-            created_at: "'2025-12-31T23:50:00'",
+            created_at: "'2025-12-31T23:50:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "1300", "900", "400"],
         },
         // Near miss of `s-replayed`: the same usage under another id is counted.
-        // Epoch milliseconds (2026-01-01T00:10:00Z); the non-positive
-        // accumulated values fall back to the plain columns one by one.
+        // The non-positive accumulated values fall back to the plain columns one by one.
         Row {
             id: "s-replayed-fork",
             model_config: model(HAIKU),
             provider: "'anthropic'",
-            created_at: "1767226200000",
+            created_at: instant("2026-01-01T00:10:00Z").millis().to_string(),
             tokens: ["1350", "900", "8888", "0", "-1", "400"],
         },
         Row {
             id: "s-mystery",
             model_config: model(UNPRICED),
             provider: "NULL",
-            created_at: "'2026-01-01 12:00:00'",
+            created_at: "'2026-01-01 12:00:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "370", "300", "70"],
         },
         Row {
             id: "s-prefixed",
             model_config: model(PROVIDER_PREFIXED),
             provider: "NULL",
-            created_at: "'2026-01-01T13:00:00+09:00'",
+            created_at: "'2026-01-01T13:00:00+09:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "600", "500", "100"],
         },
         // Date-only timestamp, blank provider, and a total with no split.
@@ -114,7 +116,7 @@ fn counted_rows() -> Vec<Row> {
             id: "s-total-only",
             model_config: model("gpt-5"),
             provider: "'  '",
-            created_at: "'2026-01-02'",
+            created_at: "'2026-01-02'".into(),
             tokens: ["NULL", "NULL", "NULL", "345", "NULL", "NULL"],
         },
         // Total below input + output.
@@ -122,7 +124,7 @@ fn counted_rows() -> Vec<Row> {
             id: "s-total-short",
             model_config: model(SONNET),
             provider: "'azure-openai'",
-            created_at: "'2026-01-02 10:00:00'",
+            created_at: "'2026-01-02 10:00:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "500", "800", "300"],
         },
     ]
@@ -132,11 +134,11 @@ fn counted_rows() -> Vec<Row> {
 /// `x-no-tokens` clamps to zero usage instead.
 fn ignored_rows() -> Vec<Row> {
     let leak = ["NULL", "NULL", "NULL", "17776", "9999", "7777"];
-    let ignored = |id, model_config: String, created_at| Row {
+    let ignored = |id, model_config: String, created_at: &str| Row {
         id,
         model_config,
         provider: "'anthropic'",
-        created_at,
+        created_at: created_at.into(),
         tokens: leak,
     };
     vec![
@@ -175,7 +177,7 @@ fn ignored_rows() -> Vec<Row> {
             id: "x-no-tokens",
             model_config: model(SONNET),
             provider: "'anthropic'",
-            created_at: "'2025-12-31 12:00:00'",
+            created_at: "'2025-12-31 12:00:00'".into(),
             tokens: ["0", "-9999", "NULL", "0", "0", "-7777"],
         },
     ]
@@ -198,7 +200,7 @@ fn create_db(path: &Path, rows: &[Row]) {
     }
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("goose");
     let sessions = store.join("data/sessions");
     std::fs::create_dir_all(&sessions).expect("failed to create Goose sessions directory");
@@ -211,7 +213,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         id: "x-wrong-location",
         model_config: model(SONNET),
         provider: "'anthropic'",
-        created_at: "'2025-12-31 12:00:00'",
+        created_at: "'2025-12-31 12:00:00'".into(),
         tokens: ["NULL", "NULL", "NULL", "17776", "9999", "7777"],
     };
     // Databases the adapter must not discover: outside `data/sessions`, and
@@ -229,9 +231,10 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "20251231_120000.jsonl",
         &format!(
             r#"{{"working_dir":"/work/project","total_tokens":17776,"input_tokens":9999,"output_tokens":7777,"model_config":{{"model_name":"{SONNET}"}}}}
-{{"role":"assistant","created":1767182400,"content":[{{"type":"text","te"#
+{{"role":"assistant","created":{fixture_time_0},"content":[{{"type":"text","te"#,
+            fixture_time_0 = instant("2025-12-31T12:00:00Z").secs()
         ),
     );
 
-    vec![("GOOSE_PATH_ROOT", store)]
+    vec![("GOOSE_PATH_ROOT", vec![store.into_os_string()])]
 }

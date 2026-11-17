@@ -1,21 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
+
+use ccusage_test_support::instant;
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "cline-mystery-1";
-
-const DEC_27: i64 = -3;
-const DEC_30: i64 = 0;
-const DEC_31: i64 = 1;
-const JAN_01: i64 = 2;
-const JAN_02: i64 = 3;
-
-/// Unix milliseconds for a time on a day counted from 2025-12-30 UTC.
-fn at(day: i64, hour: i64, minute: i64) -> i64 {
-    const DEC_30_MIDNIGHT: i64 = 1_767_052_800;
-    (DEC_30_MIDNIGHT + day * 86_400 + hour * 3_600 + minute * 60) * 1_000
-}
 
 /// One `ui_messages.json` event. `ts` and `model_info` are raw JSON so a case
 /// can pass a wrongly typed value; `text` is the JSON document Cline stores as
@@ -44,7 +35,7 @@ fn transcript(messages: &[String]) -> String {
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("cline");
     let write = |relative: &str, contents: &str| {
         let path = store.join(relative);
@@ -60,103 +51,126 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     // Extension task. The adapter has no dedupe, so the replayed request below
     // is expected to count twice.
     let replayed = request(
-        at(DEC_31, 15, 30),
+        instant("2025-12-31T15:30:00Z").millis(),
         &extension_model(OPUS, "anthropic"),
         r#"{"requestId":"req-replayed","tokensIn":700,"tokensOut":150,"cacheReads":2500,"cacheWrites":0}"#,
     );
     write(
         "tasks/task-alpha/ui_messages.json",
         &document(&[
-            r#"{"ts":1767088700000,"type":"say","say":"text","text":"hello"}"#.to_string(),
+            format!(
+                r#"{{"ts":{fixture_time_0},"type":"say","say":"text","text":"hello"}}"#,
+                fixture_time_0 = instant("2025-12-30T09:58:20Z").millis()
+            ),
             request(
-                at(DEC_30, 10, 0),
+                instant("2025-12-30T10:00:00Z").millis(),
                 &sonnet,
                 r#"{"request":"first","tokensIn":1000,"tokensOut":200,"cacheReads":4000,"cacheWrites":300,"cost":0.5}"#,
             ),
             replayed.clone(),
             replayed,
             request(
-                at(JAN_01, 12, 0),
+                instant("2026-01-01T12:00:00Z").millis(),
                 &extension_model(UNPRICED, "mystery"),
                 r#"{"tokensIn":300,"tokensOut":70,"cacheReads":0,"cacheWrites":0}"#,
             ),
             request(
-                at(JAN_01, 12, 30),
+                instant("2026-01-01T12:30:00Z").millis(),
                 &extension_model("gpt-5", "openai"),
                 r#"{"tokensIn":400,"tokensOut":45,"cacheReads":100,"cacheWrites":0,"cost":"0.25"}"#,
             ),
             // A negative cost is not a reported cost, so this one is priced.
             request(
-                at(JAN_02, 9, 0),
+                instant("2026-01-02T09:00:00Z").millis(),
                 &extension_model(HAIKU, "anthropic"),
                 r#"{"tokensIn":800,"tokensOut":300,"cacheReads":6000,"cacheWrites":50,"cost":-1}"#,
             ),
             // Everything from here on must be skipped.
             format!(
                 r#"{{"ts":{},"type":"say","say":"api_req_started","partial":true,"modelInfo":{sonnet},"text":"{}"}}"#,
-                at(DEC_31, 12, 0),
+                instant("2025-12-31T12:00:00Z").millis(),
                 ignored.replace('"', "\\\"")
             ),
             format!(
                 r#"{{"ts":{},"type":"ask","ask":"api_req_started","modelInfo":{sonnet},"text":"{}"}}"#,
-                at(DEC_31, 12, 1),
+                instant("2025-12-31T12:01:00Z").millis(),
                 ignored.replace('"', "\\\"")
             ),
             say(
                 "deleted_api_reqs",
-                &at(DEC_31, 12, 2).to_string(),
+                &instant("2025-12-31T12:02:00Z").millis().to_string(),
                 &sonnet,
                 r#"{"tokensIn":8888,"tokensOut":8888,"cacheReads":8888,"cacheWrites":8888,"cost":8.88}"#,
             ),
             say(
                 "subagent_usage",
-                &at(DEC_31, 12, 3).to_string(),
+                &instant("2025-12-31T12:03:00Z").millis().to_string(),
                 &sonnet,
                 r#"{"tokensIn":7777,"tokensOut":7777,"cacheReads":7777,"cacheWrites":7777,"cost":7.77}"#,
             ),
             request(
-                at(DEC_31, 12, 4),
+                instant("2025-12-31T12:04:00Z").millis(),
                 &sonnet,
                 r#"{"tokensIn":6666,"tokensOut":6666,"cacheReads":6666,"cost":6.66}"#,
             ),
             request(
-                at(DEC_31, 12, 5),
+                instant("2025-12-31T12:05:00Z").millis(),
                 &sonnet,
                 r#"{"tokensIn":"9999","tokensOut":9999,"cacheReads":9999,"cacheWrites":9999}"#,
             ),
             request(
-                at(DEC_31, 12, 6),
+                instant("2025-12-31T12:06:00Z").millis(),
                 &sonnet,
                 r#"{"tokensIn":9999.5,"tokensOut":9999,"cacheReads":9999,"cacheWrites":9999}"#,
             ),
             request(
-                at(DEC_31, 12, 7),
+                instant("2025-12-31T12:07:00Z").millis(),
                 &sonnet,
                 r#"{"tokensIn":0,"tokensOut":0,"cacheReads":0,"cacheWrites":0,"cost":5.55}"#,
             ),
-            request(at(DEC_31, 12, 8), "null", ignored),
+            request(instant("2025-12-31T12:08:00Z").millis(), "null", ignored),
             request(
-                at(DEC_31, 12, 9),
+                instant("2025-12-31T12:09:00Z").millis(),
                 &extension_model("UNKNOWN", "anthropic"),
                 ignored,
             ),
             request(
-                at(DEC_31, 12, 10),
+                instant("2025-12-31T12:10:00Z").millis(),
                 r#"{"id":"claude-sonnet-4-20250514"}"#,
                 ignored,
             ),
-            say("api_req_started", "\"1767182400000\"", &sonnet, ignored),
-            say("api_req_started", "1767182400000.5", &sonnet, ignored),
+            say(
+                "api_req_started",
+                &format!(
+                    "\"{fixture_time_0}\"",
+                    fixture_time_0 = instant("2025-12-31T12:00:00Z").millis()
+                ),
+                &sonnet,
+                ignored,
+            ),
+            say(
+                "api_req_started",
+                &format!(
+                    "{fixture_time_0}",
+                    fixture_time_0 = instant("2025-12-31T12:00:00.0005Z").millis_f64()
+                ),
+                &sonnet,
+                ignored,
+            ),
             say("api_req_started", "null", &sonnet, ignored),
             request(
-                at(DEC_31, 12, 11),
+                instant("2025-12-31T12:11:00Z").millis(),
                 &sonnet,
                 r#"{"tokensIn":9999,"tokensOut""#,
             ),
-            request(at(DEC_31, 12, 12), &sonnet, "[9999,9999,9999,9999]"),
+            request(
+                instant("2025-12-31T12:12:00Z").millis(),
+                &sonnet,
+                "[9999,9999,9999,9999]",
+            ),
             format!(
                 r#"{{"ts":{},"type":"say","say":"api_req_started","modelInfo":{sonnet},"text":{{"tokensIn":9999,"tokensOut":9999,"cacheReads":9999,"cacheWrites":9999}}}}"#,
-                at(DEC_31, 12, 13)
+                instant("2025-12-31T12:13:00Z").millis()
             ),
             "\"garbage\"".to_string(),
         ]),
@@ -166,7 +180,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "tasks/task-alpha/task_metadata.json",
         &format!(
             r#"{{"model_usage":[{{"ts":{},"model_id":"{SONNET}","model_provider_id":"anthropic","mode":"act"}}]}}"#,
-            at(DEC_31, 12, 0)
+            instant("2025-12-31T12:00:00Z").millis()
         ),
     );
     write(
@@ -179,7 +193,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write(
         "data/tasks/task-alpha/ui_messages.json",
         &document(&[request(
-            at(DEC_31, 23, 50),
+            instant("2025-12-31T23:50:00Z").millis(),
             r#"{"modelId":"anthropic/claude-sonnet-4","providerId":"openrouter"}"#,
             r#"{"id":"legacy-1","tokensIn":900,"tokensOut":400,"cacheReads":7000,"cacheWrites":200,"cost":2.0}"#,
         )]),
@@ -196,12 +210,15 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &transcript(&[
             format!(
                 r#"{{"role":"user","ts":{},"modelInfo":{cli_sonnet},"metrics":{cli_ignored}}}"#,
-                at(DEC_31, 15, 59)
+                instant("2025-12-31T15:59:00Z").millis()
             ),
             // `inputTokens` includes the cache counters; a reported zero cost
             // is still a reported cost.
             cli(
-                &format!(r#""ts":{},"id":"assistant-1""#, at(DEC_31, 16, 0)),
+                &format!(
+                    r#""ts":{},"id":"assistant-1""#,
+                    instant("2025-12-31T16:00:00Z").millis()
+                ),
                 &cli_sonnet,
                 r#"{"inputTokens":5000,"outputTokens":600,"cacheReadTokens":3000,"cacheWriteTokens":500,"cost":0}"#,
             ),
@@ -233,37 +250,37 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             cli(r#""id":"no-timestamp""#, &cli_sonnet, cli_ignored),
             cli(
-                &format!(r#""ts":{}"#, at(DEC_31, 12, 1)),
+                &format!(r#""ts":{}"#, instant("2025-12-31T12:01:00Z").millis()),
                 &cli_sonnet,
                 r#"{"inputTokens":5,"outputTokens":8888,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":8.88}"#,
             ),
             cli(
-                &format!(r#""ts":{}"#, at(DEC_31, 12, 2)),
+                &format!(r#""ts":{}"#, instant("2025-12-31T12:02:00Z").millis()),
                 &cli_sonnet,
                 r#"{"inputTokens":7777,"outputTokens":7777,"cacheReadTokens":0,"cost":7.77}"#,
             ),
             cli(
-                &format!(r#""ts":{}"#, at(DEC_31, 12, 3)),
+                &format!(r#""ts":{}"#, instant("2025-12-31T12:03:00Z").millis()),
                 r#"{"id":"unknown"}"#,
                 cli_ignored,
             ),
             cli(
-                &format!(r#""ts":{}"#, at(DEC_31, 12, 4)),
+                &format!(r#""ts":{}"#, instant("2025-12-31T12:04:00Z").millis()),
                 r#"{"modelId":"claude-sonnet-4-20250514"}"#,
                 cli_ignored,
             ),
             cli(
-                &format!(r#""ts":{}"#, at(DEC_31, 12, 5)),
+                &format!(r#""ts":{}"#, instant("2025-12-31T12:05:00Z").millis()),
                 &cli_sonnet,
                 r#"{"inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":5.55}"#,
             ),
             format!(
                 r#"{{"role":"assistant","ts":{},"modelInfo":{cli_sonnet}}}"#,
-                at(DEC_31, 12, 6)
+                instant("2025-12-31T12:06:00Z").millis()
             ),
             format!(
                 r#"{{"role":"tool","ts":{},"modelInfo":{cli_sonnet},"metrics":{cli_ignored}}}"#,
-                at(DEC_31, 12, 7)
+                instant("2025-12-31T12:07:00Z").millis()
             ),
             "\"garbage\"".to_string(),
         ]),
@@ -271,7 +288,10 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
     // Second CLI session, in the other transcript layout.
     let first_beta = cli(
-        &format!(r#""ts":{},"id":"beta-1""#, at(DEC_30, 22, 0)),
+        &format!(
+            r#""ts":{},"id":"beta-1""#,
+            instant("2025-12-30T22:00:00Z").millis()
+        ),
         r#"{"id":"gpt-5","provider":"openai"}"#,
         r#"{"inputTokens":2000,"outputTokens":250,"cacheReadTokens":1200,"cacheWriteTokens":0,"cost":0.01}"#,
     );
@@ -281,13 +301,19 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             first_beta.clone(),
             // LiteLLM lists this model only under its `mistral/` prefix.
             cli(
-                &format!(r#""ts":{},"id":"beta-2""#, at(JAN_02, 11, 0)),
+                &format!(
+                    r#""ts":{},"id":"beta-2""#,
+                    instant("2026-01-02T11:00:00Z").millis()
+                ),
                 r#"{"id":"devstral-medium-latest","provider":"mistral"}"#,
                 r#"{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0}"#,
             ),
             // Same message id as the previous record, different usage.
             cli(
-                &format!(r#""ts":{},"id":"beta-2""#, at(JAN_02, 11, 5)),
+                &format!(
+                    r#""ts":{},"id":"beta-2""#,
+                    instant("2026-01-02T11:05:00Z").millis()
+                ),
                 &cli_sonnet,
                 r#"{"inputTokens":1100,"outputTokens":20,"cacheReadTokens":1000,"cacheWriteTokens":0}"#,
             ),
@@ -302,15 +328,19 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write(
         "tasks/task-stale/ui_messages.json",
         &document(&[request(
-            at(DEC_27, 22, 0),
+            instant("2025-12-27T22:00:00Z").millis(),
             &sonnet,
             r#"{"tokensIn":100,"tokensOut":50,"cacheReads":0,"cacheWrites":0}"#,
         )]),
     );
 
-    let counted_if_discovered = document(&[request(at(DEC_31, 13, 0), &sonnet, ignored)]);
+    let counted_if_discovered = document(&[request(
+        instant("2025-12-31T13:00:00Z").millis(),
+        &sonnet,
+        ignored,
+    )]);
     let transcript_if_discovered = transcript(&[cli(
-        &format!(r#""ts":{}"#, at(DEC_31, 13, 1)),
+        &format!(r#""ts":{}"#, instant("2025-12-31T13:01:00Z").millis()),
         &cli_sonnet,
         cli_ignored,
     )]);
@@ -344,10 +374,11 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
     // The same root listed twice, a blank entry, and a missing root: every
     // file must still be read once.
-    let roots = format!(
-        "{0},{0}, ,{1}",
-        store.display(),
-        store.join("missing").display()
-    );
-    vec![("CLINE_DATA_DIR", PathBuf::from(roots))]
+    let roots = vec![
+        store.clone().into_os_string(),
+        store.clone().into_os_string(),
+        " ".into(),
+        store.join("missing").into_os_string(),
+    ];
+    vec![("CLINE_DATA_DIR", roots)]
 }

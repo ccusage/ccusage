@@ -1,6 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
-use crate::golden::set_modified;
+use ccusage_test_support::{instant, set_modified};
 
 const PRO: &str = "gemini-2.5-pro";
 const FLASH: &str = "gemini-2.5-flash";
@@ -8,12 +9,7 @@ const FLASH_PREVIEW: &str = "gemini-3-flash-preview";
 const SONNET: &str = "claude-sonnet-4-20250514";
 const UNPRICED: &str = "gemini-mystery-1";
 
-// 2025-12-27T22:00:00Z, 2026-01-01T15:00:00Z, 2026-01-02T12:00:00Z
-const STALE_MTIME: u64 = 1_766_872_800;
-const RESULT_MTIME: u64 = 1_767_279_600;
-const JSONL_MTIME: u64 = 1_767_355_200;
-
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("gemini");
     let write = |relative: &str, contents: &str| {
         let path = store.join(relative);
@@ -85,7 +81,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         ]
         .join("\n"),
     );
-    set_modified(&jsonl, JSONL_MTIME);
+    set_modified(&jsonl, instant("2026-01-02T12:00:00Z"));
 
     // Second project. The first line reuses the id `b-m1` from the other file,
     // which is not deduplicated across files, and is large enough to reach the
@@ -114,7 +110,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{{"type":"gemini","id":"h-1","startTime":"2025-12-30T00:00:00.000Z","model":"{SONNET}","tokens":{{"input":100,"output":50}}}}"#
         ),
     );
-    set_modified(&stale, STALE_MTIME);
+    set_modified(&stale, instant("2025-12-27T22:00:00Z"));
 
     // Headless `stats` output: per-model map, `result.stats`, and the flat
     // fallback when no model in the map yields usage.
@@ -145,7 +141,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{{"model":"{FLASH_PREVIEW}","result":{{"stats":{{"input_tokens":300,"output_tokens":45,"cached_tokens":100,"reasoning_tokens":5,"total_tokens":350}}}}}}"#
         ),
     );
-    set_modified(&result, RESULT_MTIME);
+    set_modified(&result, instant("2026-01-01T15:00:00Z"));
     write(
         "tmp/proj-beta/chats/fallback-gggg7777.json",
         &format!(
@@ -183,5 +179,5 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &format!(r#"{{"type":"gemini","model":"{PRO}","tokens":{{"input":4444,"output":4444}}}}"#),
     );
 
-    vec![("GEMINI_DATA_DIR", store)]
+    vec![("GEMINI_DATA_DIR", vec![store.into_os_string()])]
 }
