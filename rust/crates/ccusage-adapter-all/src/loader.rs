@@ -33,7 +33,7 @@ pub(super) fn load_rows(
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
     let run_sources = run_sources(shared, sources)?;
-    let pricing = load_pricing(&run_sources);
+    let pricing = load_pricing(&run_sources)?;
     match Bucket::for_report(kind, start_of_week) {
         Some(bucket) => {
             let loaded = load_day_rows(shared, &run_sources, &pricing)?;
@@ -61,7 +61,7 @@ pub(super) fn load_sections(
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
     let run_sources = run_sources(shared, sources)?;
-    let pricing = load_pricing(&run_sources);
+    let pricing = load_pricing(&run_sources)?;
     let mut daily_base = needs_daily_family(kinds)
         .then(|| load_day_rows(shared, &run_sources, &pricing))
         .transpose()?;
@@ -118,36 +118,28 @@ pub(super) fn load_sections(
 }
 
 struct CachedPricingMap {
-    offline: bool,
     overrides: BTreeMap<String, crate::cli::PricingOverride>,
     pricing: Arc<PricingMap>,
 }
 
 fn cached_pricing_map(
     shared: &SharedArgs,
-    bases: &mut BTreeMap<bool, Arc<PricingMap>>,
+    base: &Arc<PricingMap>,
     cached: &mut Vec<CachedPricingMap>,
 ) -> Arc<PricingMap> {
-    if let Some(entry) = cached.iter().find(|entry| {
-        entry.offline == shared.offline && entry.overrides == shared.pricing_overrides
-    }) {
+    if let Some(entry) = cached
+        .iter()
+        .find(|entry| entry.overrides == shared.pricing_overrides)
+    {
         return Arc::clone(&entry.pricing);
     }
 
-    let base = bases.entry(shared.offline).or_insert_with(|| {
-        Arc::new(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            std::iter::empty::<(&String, &crate::cli::PricingOverride)>(),
-        ))
-    });
     let pricing = if shared.pricing_overrides.is_empty() {
         Arc::clone(base)
     } else {
         Arc::new(base.with_user_overrides(shared.pricing_overrides.iter()))
     };
     cached.push(CachedPricingMap {
-        offline: shared.offline,
         overrides: shared.pricing_overrides.clone(),
         pricing: Arc::clone(&pricing),
     });
@@ -222,19 +214,43 @@ fn run_sources<'a>(
     Ok(run_sources)
 }
 
-fn load_pricing(sources: &[RunSource<'_>]) -> BTreeMap<&'static str, Arc<PricingMap>> {
-    let mut bases = BTreeMap::new();
-    let mut cached = Vec::new();
-    sources
+fn load_pricing(sources: &[RunSource<'_>]) -> Result<BTreeMap<&'static str, Arc<PricingMap>>> {
+    let needs_pricing = |source: &&RunSource<'_>| {
+        source.source().pricing_supply() == PricingSupply::Pipeline
+            && source.shared.mode != crate::cli::CostMode::Display
+    };
+    let modes = sources
         .iter()
-        .filter(|source| source.source().pricing_supply() == PricingSupply::Pipeline)
-        .map(|source| {
-            (
-                source.source().id(),
-                cached_pricing_map(source.shared, &mut bases, &mut cached),
+        .filter(needs_pricing)
+        .map(|source| source.shared.offline)
+        .collect::<BTreeSet<_>>();
+    let pending = modes
+        .into_iter()
+        .map(|offline| {
+            PricingMap::spawn_load(
+                offline,
+                crate::log_level() != Some(0),
+                std::iter::empty::<(&String, &crate::cli::PricingOverride)>(),
             )
+            .map(|pricing| (offline, pricing))
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    let mut result = BTreeMap::new();
+    for (offline, pending) in pending {
+        let base = Arc::new(pending.join()?.with_user_overrides(std::iter::empty()));
+        let mut cached = Vec::new();
+        for source in sources
+            .iter()
+            .filter(needs_pricing)
+            .filter(|source| source.shared.offline == offline)
+        {
+            result.insert(
+                source.source().id(),
+                cached_pricing_map(source.shared, &base, &mut cached),
+            );
+        }
+    }
+    Ok(result)
 }
 
 struct BaseRows<R> {
@@ -672,22 +688,34 @@ mod tests {
         };
         let sources = BTreeMap::new();
         let run_sources = run_sources(&shared, &sources).unwrap();
-        let pricing_by_source = load_pricing(&run_sources);
+        let pricing_by_source = load_pricing(&run_sources).unwrap();
 
-        for agent in ["claude", "opencode", "qwen"] {
+        for agent in ["claude", "opencode"] {
             assert!(
                 !pricing_by_source.contains_key(agent),
                 "{agent} has its own pricing map"
             );
         }
         for agent in BUILT_IN_AGENT_NAMES {
-            if !["claude", "opencode", "qwen"].contains(agent) {
+            if !["claude", "opencode"].contains(agent) {
                 assert!(
                     pricing_by_source.contains_key(agent),
                     "{agent} needs a pricing map"
                 );
             }
         }
+    }
+
+    #[test]
+    fn display_sources_do_not_load_shared_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            ..SharedArgs::default()
+        };
+        let sources = run_sources(&shared, &NO_SOURCES).unwrap();
+        assert!(load_pricing(&sources).unwrap().is_empty());
     }
 
     #[test]
@@ -705,7 +733,7 @@ mod tests {
         };
         let source_args = BTreeMap::new();
         let sources = run_sources(&shared, &source_args).unwrap();
-        let pricing = load_pricing(&sources);
+        let pricing = load_pricing(&sources).unwrap();
         assert_eq!(sources.len(), SOURCES.len() + 1);
         assert!(Arc::ptr_eq(&pricing["work"], &pricing["amp"]));
     }
