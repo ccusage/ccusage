@@ -29,9 +29,6 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let tz = cx.window.timezone();
     let mut files = discover_chat_files(cx.diagnostics)?;
     files.sort();
-    // Read files in parallel but apply the last-wins dedup sequentially over the
-    // original (sorted) file order, so the surviving entry per dedup key is
-    // identical to the single-threaded read.
     let loaded = read_units_flat(
         &files,
         cx.shared.single_thread,
@@ -42,12 +39,14 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     for entry in loaded {
         deduped.insert(entry.dedup_key.clone(), entry);
     }
-    let mut entries = deduped
-        .into_values()
+    let mut entries = deduped.into_values().collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        (left.timestamp, &left.dedup_key).cmp(&(right.timestamp, &right.dedup_key))
+    });
+    Ok(entries
+        .into_iter()
         .map(|entry| to_loaded_entry(entry, tz, pricing))
-        .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+        .collect())
 }
 
 fn to_loaded_entry(entry: CodebuffEntry, tz: &JiffTimeZone, pricing: &PricingMap) -> LoadedEntry {
@@ -100,6 +99,62 @@ mod tests {
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    #[test]
+    fn tied_timestamps_are_ordered_by_dedup_key_after_last_wins() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = "projects/project-a/chats/chat-a/chat-messages.json";
+        let mut messages = (0..32)
+            .rev()
+            .map(|index| {
+                serde_json::json!({
+                    "id": format!("message-{index:02}"),
+                    "role": "assistant",
+                    "timestamp": "2026-01-02T03:04:06.000Z",
+                    "metadata": {"model": "test-model", "usage": {"inputTokens": index + 1}}
+                })
+            })
+            .collect::<Vec<_>>();
+        messages.push(serde_json::json!({
+            "id": "message-00", "role": "assistant",
+            "timestamp": "2026-01-02T03:04:06.000Z",
+            "metadata": {"model": "test-model", "usage": {"inputTokens": 99}}
+        }));
+        let _path = fixture.write_file(path, serde_json::to_string(&messages).unwrap());
+        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let pricing = PricingMap::default();
+        for single_thread in [true, false] {
+            let entries = load_entries(
+                &SharedArgs {
+                    single_thread,
+                    ..SharedArgs::default()
+                },
+                &pricing,
+            )
+            .unwrap();
+            let ids = entries
+                .iter()
+                .map(|entry| {
+                    entry
+                        .data
+                        .message
+                        .id
+                        .as_deref()
+                        .unwrap()
+                        .rsplit(':')
+                        .next()
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                ids,
+                (0..32)
+                    .map(|index| format!("message-{index:02}"))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(entries[0].data.message.usage.input_tokens, 99);
+        }
+    }
 
     #[test]
     fn loads_assistant_usage_from_chat_messages() {

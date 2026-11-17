@@ -149,12 +149,7 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
         return None;
     }
     if let Ok(number) = trimmed.parse::<i64>() {
-        let millis = if number > 1_000_000_000_000 {
-            number
-        } else {
-            number.checked_mul(1_000)?
-        };
-        return (millis > 0).then(|| crate::TimestampMs::from_millis(millis));
+        return timestamp_from_epoch_secs_or_millis(number);
     }
     if let Some(timestamp) = crate::parse_ts_timestamp(trimmed) {
         return Some(timestamp);
@@ -174,6 +169,35 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
         return crate::parse_ts_timestamp(&format!("{trimmed}T00:00:00Z"));
     }
     None
+}
+
+fn timestamp_from_epoch_secs_or_millis(value: i64) -> Option<crate::TimestampMs> {
+    if value <= 0 {
+        return None;
+    }
+    if value < 10_000_000_000 {
+        crate::TimestampMs::from_unix_seconds(value)
+    } else {
+        Some(crate::TimestampMs::from_millis(value))
+    }
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    #[test]
+    fn mixed_epoch_units_use_one_boundary() {
+        for (raw, millis) in [
+            ("1767312000", 1_767_312_000_000),
+            ("10000000000", 10_000_000_000),
+            ("1000000000000", 1_000_000_000_000),
+        ] {
+            assert_eq!(
+                super::parse_goose_timestamp(raw).unwrap().as_millis(),
+                millis,
+                "{raw}"
+            );
+        }
+    }
 }
 
 fn normalize_provider(provider: Option<&str>, model: &str) -> String {

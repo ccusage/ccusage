@@ -174,15 +174,7 @@ pub(super) fn message_value_to_entry(
 }
 
 fn normalize_timestamp(value: i64) -> Option<TimestampMs> {
-    if value <= 0 {
-        return None;
-    }
-    let millis = if value < 1_000_000_000_000 {
-        value.checked_mul(1000)?
-    } else {
-        value
-    };
-    Some(TimestampMs::from_millis(millis))
+    (value > 0).then(|| TimestampMs::from_millis(value))
 }
 
 fn calculate_kilo_cost(
@@ -265,6 +257,16 @@ fn normalize_provider(provider: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn kilo_creation_time_is_always_milliseconds() {
+        assert_eq!(
+            super::normalize_timestamp(1_767_312_000)
+                .unwrap()
+                .as_millis(),
+            1_767_312_000
+        );
+    }
+
     use std::path::Path;
 
     use super::*;

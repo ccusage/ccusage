@@ -317,16 +317,19 @@ fn parse_codebuff_chat_id_timestamp(chat_id: &str) -> Option<crate::TimestampMs>
 fn timestamp_value(value: Option<&Value>) -> Option<crate::TimestampMs> {
     match value? {
         Value::String(value) => parse_ts_timestamp(value),
-        Value::Number(value) => {
-            let raw = value.as_i64()?;
-            let millis = if raw < 10_000_000_000 {
-                raw.checked_mul(1_000)?
-            } else {
-                raw
-            };
-            (millis > 0).then(|| crate::TimestampMs::from_millis(millis))
-        }
+        Value::Number(value) => timestamp_from_epoch_secs_or_millis(value.as_i64()?),
         _ => None,
+    }
+}
+
+fn timestamp_from_epoch_secs_or_millis(value: i64) -> Option<crate::TimestampMs> {
+    if value <= 0 {
+        return None;
+    }
+    if value < 10_000_000_000 {
+        crate::TimestampMs::from_unix_seconds(value)
+    } else {
+        Some(crate::TimestampMs::from_millis(value))
     }
 }
 

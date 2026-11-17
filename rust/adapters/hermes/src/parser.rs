@@ -106,11 +106,12 @@ fn read_non_negative_f64(statement: &sqlite::Statement<'_>, index: usize) -> Opt
 }
 
 fn timestamp_from_number(value: f64) -> Option<TimestampMs> {
-    if !value.is_finite() {
+    if value <= 0.0 {
         return None;
     }
-    let millis = if value > 1e12 { value } else { value * 1000.0 };
-    (millis > 0.0).then(|| TimestampMs::from_millis(millis.trunc() as i64))
+    let duration = std::time::Duration::try_from_secs_f64(value).ok()?;
+    let millis = i64::try_from(duration.as_millis()).ok()?;
+    TimestampMs::from_instant_millis(millis)
 }
 
 fn normalize_provider(value: Option<&str>, model: &str) -> String {
@@ -246,6 +247,18 @@ fn model_candidates(entry: &HermesEntry, pricing: &PricingMap) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hermes_start_time_is_always_seconds() {
+        assert_eq!(
+            super::timestamp_from_number(10_000_000_000.125)
+                .unwrap()
+                .as_millis(),
+            10_000_000_000_125
+        );
+        assert_eq!(super::timestamp_from_number(1_000_000_000_001.0), None);
+        assert_eq!(super::timestamp_from_number(f64::MAX), None);
+    }
+
     use super::*;
 
     #[test]
