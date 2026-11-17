@@ -16,6 +16,16 @@
 	},
 	"minimumReleaseAge": "3 days",
 	"mode": "full",
+	"customManagers": [
+		{
+			"description": "Bump the pkg-pr-new version pinned in `pnpm dlx` workflow commands.",
+			"customType": "regex",
+			"managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+			"matchStrings": ["pnpm dlx pkg-pr-new@(?<currentValue>[0-9][^\\s]*)"],
+			"depNameTemplate": "pkg-pr-new",
+			"datasourceTemplate": "npm"
+		}
+	],
 	"packageRules": [
 		{
 			"description": "Keep bun2nix lockfile v2/v3 support pinned until released.",
