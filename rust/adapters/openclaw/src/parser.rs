@@ -283,6 +283,9 @@ pub(super) fn parse_session_file(
     )
 }
 
+/// Admits the records a transcript reader needs before JSON parsing: the
+/// model-tracking records (`model_change`/`model-snapshot`) and assistant
+/// records carrying `usage`.
 pub(super) fn record_prefilter() -> LinePrefilter {
     LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#])
 }
@@ -308,6 +311,8 @@ fn is_model_change(record: &OpenClawLine) -> bool {
         && record.custom_type.as_deref() == Some("model-snapshot")
 }
 
+/// Model/provider carried by a `model_change`/`model-snapshot` record, either
+/// at the root or nested under its `data` key.
 fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
     let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
         Some(source) => (
@@ -472,6 +477,7 @@ fn timestamp_from_value(value: Option<&Value>) -> Option<TimestampMs> {
     crate::parse_ts_timestamp(value.as_str()?)
 }
 
+/// OpenClaw writes `created_at` and message timestamps as Unix milliseconds.
 pub(super) fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
     (raw >= 0)
         .then_some(raw)

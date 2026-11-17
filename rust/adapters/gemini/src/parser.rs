@@ -75,6 +75,9 @@ struct GeminiRecord {
     result: Option<Value>,
 }
 
+/// Deserialize a JSON string verbatim, and any other value as `None`. The
+/// `type` discriminator is compared exactly and [`crate::parse_ts_timestamp`]
+/// checks exact lengths, so these fields must stay untrimmed.
 fn lenient_str<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -87,12 +90,15 @@ where
 }
 
 impl GeminiRecord {
+    /// Resolve the session id, preferring `sessionId` then `session_id`.
     fn session_id(&self) -> Option<String> {
         self.session_id_camel
             .clone()
             .or_else(|| self.session_id.clone())
     }
 
+    /// Resolve the `stats` value, preferring the top-level `stats` then the
+    /// nested `result.stats`.
     fn stats(&self) -> Option<&Value> {
         self.stats
             .as_ref()

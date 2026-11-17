@@ -105,6 +105,10 @@ fn load_directories(
         let mut files = Vec::new();
         collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
 
+        // Message files are stored as `storage/message/<sessionID>/<messageID>.json`,
+        // so a stem an earlier source already claimed names a file the id dedup
+        // would discard; skipping it saves the read. Files without a usable stem
+        // are parsed normally.
         files.retain(|file| {
             file.file_stem()
                 .and_then(|stem| stem.to_str())
@@ -1111,6 +1115,15 @@ fn prepare_message_query(
 /// needs at least 12 digits, while second-scale values stay far below it.
 const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 
+/// Reports whether a sample of `table.time_created` looks like Unix
+/// milliseconds, the scale the payload's `time.created` uses.
+///
+/// Sampling keeps this cheap on databases tens of gigabytes in size, and proves
+/// nothing about the rows it did not read: a column with mixed scales can still
+/// slip through, and matching scales say nothing about matching values. What it
+/// does catch is a build that stored seconds, or left the column at zero, where
+/// millisecond bounds would otherwise exclude every row — those disable the
+/// push-down and leave the payload check to filter.
 fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table) -> bool {
     let Ok(mut statement) = connection.prepare(format!(
         "SELECT max(time_created) FROM (SELECT time_created FROM {} LIMIT 8)",
@@ -1587,6 +1600,8 @@ mod tests {
         statement.next().unwrap();
     }
 
+    // Pre-SQLite-era layout: no `time_created` column, so the loader cannot
+    // push the window into SQL and scans unfiltered.
     fn create_db_message_legacy_schema(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
         db.execute("CREATE TABLE IF NOT EXISTS message (id TEXT, session_id TEXT, data TEXT)")

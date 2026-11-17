@@ -16,6 +16,15 @@ const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const CACHE_ETAG_MAX_BYTES: u64 = 4096;
 const CACHE_FILE_MAX_BYTES: u64 = PRICING_FETCH_MAX_BYTES + CACHE_ETAG_MAX_BYTES + 1;
 
+/// Fetches a pricing document for the refresh and hands its body to `load`.
+///
+/// This lives in the binary so that `ureq` and its TLS stack are not dependencies
+/// of `ccusage-core`, which every adapter builds against; `main` installs it
+/// through `ccusage_core::pricing::set_json_fetcher`.
+///
+/// Each body `load` accepts is kept on disk next to its ETag, and later fetches
+/// revalidate with `If-None-Match`. A 304 hands the cached body to `load`, and a
+/// cached body it rejects is dropped so the next fetch is unconditional.
 pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::Result<()> {
     let cache_dir = default_cache_dir();
     fetch_json_with_cache_dir(url, cache_dir.as_deref(), load)
