@@ -52,7 +52,8 @@ Malformed JSONL lines are skipped during parsing.
 Advisor entries:
 
 - Advisor usage is stored in `message.usage.iterations` records whose type is
-  `advisor_message`.
+  `advisor_message`. AgentProgress wrappers carry the same assistant message
+  under `data.message.message`, including its advisor iterations.
 - ccusage counts each advisor record separately under the record's own model.
   The top-level usage remains attributed only to the main model, and other
   iteration types are not added again.
@@ -72,4 +73,5 @@ Explicit null values in the record fields ccusage reads (`sessionId`, `requestId
 record quietly; so does such a null in an advisor iteration that is read. Missing
 optional fields remain valid. Unread members, including `cwd`, nested tool-result
 metadata and non-advisor iterations, do not impose a null contract. An advisor
-iteration that does not decode rejects its line as invalid data.
+iteration that does not decode produces an invalid-data diagnostic while the
+parent usage and valid sibling iterations remain counted.

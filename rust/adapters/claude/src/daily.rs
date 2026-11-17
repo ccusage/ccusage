@@ -520,7 +520,14 @@ pub(super) fn parse_usage_line(
         }
         Err(_) => deserialize_usage_line::<AgentProgressEntry>(line)
             .and_then(AgentProgressEntry::decode)
-            .map(|entry| (entry, AdvisorLookup::AskLine)),
+            .map(|entry| {
+                let lookup = if entry.message.usage.has_advisor_iteration {
+                    AdvisorLookup::AskProgress
+                } else {
+                    AdvisorLookup::AskLine
+                };
+                (entry, lookup)
+            }),
     }
 }
 
@@ -528,6 +535,7 @@ pub(super) fn parse_usage_line(
 pub(super) enum AdvisorLookup {
     RuledOut,
     AskLine,
+    AskProgress,
 }
 
 impl AdvisorLookup {
@@ -535,6 +543,7 @@ impl AdvisorLookup {
         match self {
             Self::RuledOut => Ok(super::AdvisorUsages::default()),
             Self::AskLine => advisor_usages_from_line(line),
+            Self::AskProgress => super::advisor_usages_from_progress_line(line),
         }
     }
 }
@@ -1704,11 +1713,23 @@ mod tests {
             ] {
                 let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
                 let previous = super::advisor_usages_from_line(line.as_bytes()).unwrap();
-                if matches!(lookup, super::AdvisorLookup::AskLine) {
-                    retained += 1;
-                } else {
-                    skipped += 1;
-                    assert!(previous.usages.is_empty(), "{line}");
+                let actual = lookup.usages(line.as_bytes()).unwrap();
+                match lookup {
+                    super::AdvisorLookup::AskLine => {
+                        retained += 1;
+                        assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
+                        assert_eq!(actual.malformed, previous.malformed, "{line}");
+                    }
+                    super::AdvisorLookup::AskProgress => {
+                        retained += 1;
+                        assert_eq!(actual.usages.len(), previous.usages.len() * 2, "{line}");
+                        assert_eq!(actual.malformed, previous.malformed * 2, "{line}");
+                    }
+                    super::AdvisorLookup::RuledOut => {
+                        skipped += 1;
+                        assert!(previous.usages.is_empty(), "{line}");
+                        assert!(actual.usages.is_empty(), "{line}");
+                    }
                 }
             }
         }

@@ -558,6 +558,16 @@ struct UsageIterationsEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
+struct ProgressIterationsEnvelope {
+    data: ProgressIterationsData,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProgressIterationsData {
+    message: UsageIterationsEnvelope,
+}
+
+#[derive(Debug, Deserialize)]
 struct UsageIterationsMessage {
     #[serde(default)]
     usage: Option<UsageIterations>,
@@ -589,6 +599,26 @@ pub(crate) fn advisor_usages_from_line(
         return Ok(AdvisorUsages::default());
     }
     let envelope = deserialize_usage_line::<UsageIterationsEnvelope>(line)?;
+    Ok(advisor_usages_from_envelope(envelope))
+}
+
+fn advisor_usages_from_progress_line(line: &[u8]) -> std::result::Result<AdvisorUsages, Rejection> {
+    let mut advisors = match advisor_usages_from_line(line) {
+        Ok(advisors) => advisors,
+        Err(Rejection::Malformed) => AdvisorUsages {
+            malformed: 1,
+            ..AdvisorUsages::default()
+        },
+        Err(Rejection::NullContract) => AdvisorUsages::default(),
+    };
+    let envelope = deserialize_usage_line::<ProgressIterationsEnvelope>(line)?;
+    let nested = advisor_usages_from_envelope(envelope.data.message);
+    advisors.malformed += nested.malformed;
+    advisors.usages.extend(nested.usages);
+    Ok(advisors)
+}
+
+fn advisor_usages_from_envelope(envelope: UsageIterationsEnvelope) -> AdvisorUsages {
     let iterations = envelope
         .message
         .and_then(|message| message.usage)
@@ -615,7 +645,7 @@ pub(crate) fn advisor_usages_from_line(
             usage: usage.usage.usage,
         });
     }
-    Ok(advisors)
+    advisors
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

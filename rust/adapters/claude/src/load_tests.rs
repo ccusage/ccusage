@@ -353,3 +353,68 @@ fn uses_direct_subagent_cost_for_duplicate_daily_agent_progress() {
     assert_eq!(daily[0].total_cost, 0.06);
     assert_eq!(rows_json(&daily), rows_json(&daily_from_entries(&entries)));
 }
+
+#[test]
+fn wrapped_advisors_share_daily_and_full_parsing_and_dedupe() {
+    ccusage_test_support::install_pricing_snapshots();
+    let wrapped = r#"{"type":"progress","sessionId":"session-a","data":{"type":"agent_progress","message":{"type":"assistant","timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"claude-opus-5","input_tokens":10,"output_tokens":2}]}}}}}"#;
+    let fixture = fs_fixture!({
+        "projects/p/s.jsonl": [wrapped, wrapped].join("\n"),
+    });
+    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    for mode in [CostMode::Auto, CostMode::Calculate, CostMode::Display] {
+        let shared = SharedArgs {
+            offline: true,
+            mode,
+            ..display_shared_in_utc()
+        };
+        let entries = load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 2, "{mode:?}");
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.message.usage.input_tokens)
+                .sum::<u64>(),
+            110
+        );
+        let daily = load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].input_tokens, 110);
+        assert_eq!(daily[0].models_used.len(), 2);
+        assert!(
+            (daily[0].total_cost - entries.iter().map(|entry| entry.cost).sum::<f64>()).abs()
+                < 1e-12
+        );
+    }
+}
+
+#[test]
+fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
+    let fixture = fs_fixture!({
+        "projects/p/s.jsonl": r#"{"type":"progress","sessionId":"session-a","data":{"type":"agent_progress","message":{"type":"assistant","timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"invalid"},{"type":"advisor_message","model":"good","input_tokens":10,"output_tokens":2},{"type":"advisor_message","model":"null","input_tokens":5,"cache_read_input_tokens":null}]}}}}}"#,
+    });
+    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let shared = display_shared_in_utc();
+    let diagnostics = crate::Diagnostics::new("claude");
+    let entries = crate::load_entries_since_with_diagnostics(&shared, None, &diagnostics).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .sum::<u64>(),
+        110
+    );
+    assert_eq!(diagnostics.skipped(crate::SkipKind::InvalidData), 1);
+    let daily_diagnostics = crate::Diagnostics::new("claude");
+    let daily = crate::load_daily_summaries_with_detection_progress(
+        &shared,
+        None,
+        false,
+        ccusage_adapter_common::source::ProgressOwner::Caller,
+        &daily_diagnostics,
+    )
+    .unwrap();
+    assert_eq!(daily.summaries[0].input_tokens, 110);
+    assert_eq!(daily_diagnostics.skipped(crate::SkipKind::InvalidData), 1);
+}
