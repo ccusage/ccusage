@@ -7,9 +7,9 @@ use std::{
 use serde_json::{Map, Value};
 
 use ccusage_cli::{
-    BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs,
-    NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay,
-    WeeklyArgs, normalize_date_bound,
+    AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DATE_BOUND_FORMATS,
+    DailyArgs, NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::config_schema::{
@@ -551,6 +551,36 @@ fn apply_config_to_agent_args(
 }
 
 impl ccusage_cli::CliConfig for ConfigContext {
+    fn agent_options(&self, agent: &str) -> AgentOptions {
+        let mut resolved = AgentOptions::default();
+        for options in self.option_maps() {
+            match agent {
+                "claude" => {
+                    if let Some(project) = DailySpecificOptions::from_map(options).project {
+                        resolved.claude_project = Some(project);
+                    }
+                }
+                "codex" => {
+                    if let Some(speed) = CodexOptions::from_map(options).speed {
+                        resolved.codex_speed = speed.into();
+                    }
+                }
+                "pi" => {
+                    if let Some(path) = PiOptions::from_map(options).pi_path {
+                        resolved.pi_path = Some(path);
+                    }
+                }
+                "openclaw" => {
+                    if let Some(path) = OpenClawOptions::from_map(options).open_claw_path {
+                        resolved.open_claw_path = Some(path);
+                    }
+                }
+                _ => {}
+            }
+        }
+        resolved
+    }
+
     fn config_error(&self) -> Option<&str> {
         self.active_pi_store_error()
             .or(self.date_bound_error.as_deref())

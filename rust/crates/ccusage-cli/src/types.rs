@@ -230,6 +230,14 @@ impl AgentCommandArgs {
 /// The options a unified report loads one source with: the same command line
 /// read through that source's config sections, so `ccusage daily` sees an agent
 /// the way `ccusage <agent> daily` does.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AgentOptions {
+    pub claude_project: Option<String>,
+    pub codex_speed: CodexSpeed,
+    pub pi_path: Option<String>,
+    pub open_claw_path: Option<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SourceArgs {
     pub shared: SharedArgs,
@@ -237,6 +245,18 @@ pub struct SourceArgs {
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
+}
+
+impl SourceArgs {
+    pub fn from_options(shared: SharedArgs, options: AgentOptions) -> Self {
+        Self {
+            shared,
+            claude_project: options.claude_project,
+            codex_speed: options.codex_speed,
+            pi_path: options.pi_path,
+            open_claw_path: options.open_claw_path,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -377,6 +397,19 @@ pub trait CliConfig {
     fn apply_blocks_args(&self, _args: &mut BlocksArgs) {}
 
     fn apply_statusline_args(&self, _args: &mut StatuslineArgs) {}
+
+    fn agent_options(&self, agent: &str) -> AgentOptions {
+        let mut options = AgentOptions::default();
+        self.apply_agent_args(
+            &mut options.codex_speed,
+            (agent == "pi").then_some(&mut options.pi_path),
+            (agent == "openclaw").then_some(&mut options.open_claw_path),
+        );
+        if agent != "codex" {
+            options.codex_speed = CodexSpeed::Auto;
+        }
+        options
+    }
 
     fn apply_agent_args(
         &self,

@@ -574,9 +574,8 @@ fn parse_codex_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::Codex)?;
-    let mut codex_speed = CodexSpeed::Auto;
+    let mut codex_speed = config.agent_options("codex").codex_speed;
     let mut session_id = None;
-    config.apply_agent_args(&mut codex_speed, None, None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -605,9 +604,7 @@ fn parse_pi_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::Pi)?;
-    let mut pi_path = None;
-    let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None);
+    let mut pi_path = config.agent_options("pi").pi_path;
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -621,7 +618,6 @@ fn parse_pi_command(
         StandardAgent::Pi,
         AgentCommandArgs {
             pi_path,
-            codex_speed,
             ..agent_command_args(shared, kind)
         },
     ))
@@ -633,9 +629,7 @@ fn parse_openclaw_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::OpenClaw)?;
-    let mut open_claw_path = None;
-    let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path));
+    let mut open_claw_path = config.agent_options("openclaw").open_claw_path;
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -649,7 +643,6 @@ fn parse_openclaw_command(
         StandardAgent::OpenClaw,
         AgentCommandArgs {
             open_claw_path,
-            codex_speed,
             ..agent_command_args(shared, kind)
         },
     ))

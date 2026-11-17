@@ -1,8 +1,6 @@
 use std::ffi::OsString;
 
-use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, CliConfig, CodexSpeed, DailyArgs, SharedArgs, SourceArgs,
-};
+use ccusage_cli::{AgentCommandArgs, CliConfig, SourceArgs};
 use ccusage_config::ConfigContext;
 use ccusage_core::BUILT_IN_AGENT_NAMES;
 
@@ -19,90 +17,16 @@ pub(crate) fn resolve(
     args: &[OsString],
     config: &ConfigContext,
 ) -> Result<(), String> {
-    let start_of_week = unified.start_of_week;
-    if unified.kind == AgentReportKind::Daily
-        && let Some(claude_project) = project_from_config(config, unified.shared.clone())
-    {
-        unified.sources.insert(
-            "claude".to_string(),
-            SourceArgs {
-                shared: unified.shared.clone(),
-                claude_project: Some(claude_project),
-                ..SourceArgs::default()
-            },
-        );
-    }
-    let mut global_source = SourceArgs {
-        shared: unified.shared.clone(),
-        ..SourceArgs::default()
-    };
-    config.apply_agent_args(
-        &mut global_source.codex_speed,
-        Some(&mut global_source.pi_path),
-        Some(&mut global_source.open_claw_path),
-    );
-    if global_source.codex_speed != CodexSpeed::Auto {
-        unified.sources.insert(
-            "codex".to_string(),
-            SourceArgs {
-                shared: global_source.shared.clone(),
-                codex_speed: global_source.codex_speed,
-                ..SourceArgs::default()
-            },
-        );
-    }
-    if let Some(pi_path) = global_source.pi_path {
-        unified.sources.insert(
-            "pi".to_string(),
-            SourceArgs {
-                shared: global_source.shared.clone(),
-                pi_path: Some(pi_path),
-                ..SourceArgs::default()
-            },
-        );
-    }
-    if let Some(open_claw_path) = global_source.open_claw_path {
-        unified.sources.insert(
-            "openclaw".to_string(),
-            SourceArgs {
-                shared: global_source.shared,
-                open_claw_path: Some(open_claw_path),
-                ..SourceArgs::default()
-            },
-        );
-    }
     for agent in BUILT_IN_AGENT_NAMES {
-        let Some(view) = config.for_source(agent) else {
-            continue;
-        };
-        let report = super::try_parse_report_with(args.to_vec(), &view, start_of_week)
+        let view = config.for_dependency(agent);
+        let report = super::try_parse_report_with(args.to_vec(), &view, unified.start_of_week)
             .map_err(|message| format!("{message} (in {agent} config)"))?;
-        let mut source = SourceArgs {
-            shared: report.shared,
-            ..SourceArgs::default()
-        };
-        view.apply_agent_args(
-            &mut source.codex_speed,
-            Some(&mut source.pi_path),
-            Some(&mut source.open_claw_path),
+        unified.sources.insert(
+            agent.to_string(),
+            SourceArgs::from_options(report.shared, view.agent_options(agent)),
         );
-        if *agent == "claude" && unified.kind == AgentReportKind::Daily {
-            source.claude_project = project_from_config(&view, source.shared.clone());
-        }
-        unified.sources.insert(agent.to_string(), source);
     }
     Ok(())
-}
-
-fn project_from_config(config: &dyn CliConfig, shared: SharedArgs) -> Option<String> {
-    let mut daily = DailyArgs {
-        shared,
-        instances: false,
-        project: None,
-        project_aliases: None,
-    };
-    config.apply_daily_args(&mut daily);
-    daily.project
 }
 
 pub(crate) fn resolve_opencode_claims(
@@ -112,14 +36,10 @@ pub(crate) fn resolve_opencode_claims(
 ) -> Result<(), String> {
     let view = config.for_dependency("claude");
     let parsed = super::try_parse_report_with(args.to_vec(), &view, focused.start_of_week)?;
-    let claude_project = project_from_config(&view, parsed.shared.clone());
+    let options = view.agent_options("claude");
     focused.sources.insert(
         "claude".to_string(),
-        SourceArgs {
-            shared: parsed.shared,
-            claude_project,
-            ..Default::default()
-        },
+        SourceArgs::from_options(parsed.shared, options),
     );
     Ok(())
 }
@@ -231,7 +151,7 @@ mod tests {
             unified.sources["openclaw"].open_claw_path.as_deref(),
             Some("/data/openclaw")
         );
-        assert!(!unified.sources.contains_key("amp"));
+        assert_eq!(unified.sources["amp"].shared.since, unified.shared.since);
     }
 
     #[test]
@@ -277,15 +197,6 @@ mod tests {
             let unified = unified_with_config(args, GLOBAL_AGENT_CONFIG);
 
             assert_eq!(unified.kind, kind, "{name}");
-            assert_eq!(
-                unified
-                    .sources
-                    .keys()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>(),
-                ["codex", "openclaw", "pi"],
-                "{name}"
-            );
 
             let codex = &unified.sources["codex"];
             assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
@@ -331,14 +242,7 @@ mod tests {
 
         assert_eq!(unified.shared.since.as_deref(), Some("20260401"));
         assert!(unified.shared.offline);
-        assert_eq!(
-            unified
-                .sources
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["codex", "openclaw", "pi"]
-        );
+
         for source in unified.sources.values() {
             assert_eq!(source.shared.since.as_deref(), Some("20260401"));
             assert!(source.shared.offline);
@@ -374,14 +278,6 @@ mod tests {
         assert_eq!(
             unified.sources["openclaw"].open_claw_path.as_deref(),
             Some("/global/openclaw")
-        );
-        assert_eq!(
-            unified
-                .sources
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["codex", "openclaw", "pi"]
         );
     }
 

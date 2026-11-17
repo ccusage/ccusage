@@ -714,6 +714,65 @@ mod tests {
     }
 
     #[test]
+    fn focused_opencode_claims_use_the_claude_source_timezone() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "claude-config/projects/project-a/native-a.jsonl": r#"{"timestamp":"2099-01-02T20:00:00.000Z","sessionId":"native-a","requestId":"req-a","costUSD":1.0,"message":{"id":"msg-a","model":"claude-opus-4-20250514","usage":{"input_tokens":100,"output_tokens":70}}}"#,
+        });
+        let db_path = fixture.create_dir_all("opencode").join("opencode.db");
+        let db = sqlite::open(db_path).unwrap();
+        db.execute("CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT)").unwrap();
+        let created = 4_071_067_200_000_i64;
+        let data = json!({
+            "time": { "created": created },
+            "model": { "id": "opus", "providerID": "claude-agent" },
+            "content": [{ "type": "text", "text": "hi", "native": { "sessionID": "native-a", "messageID": "m" } }],
+            "tokens": { "input": 100, "output": 50 }, "cost": 0
+        }).to_string();
+        let mut statement = db
+            .prepare(
+                "INSERT INTO session_message VALUES ('m', 'ses-agent', 'assistant', 1, ?1, ?2)",
+            )
+            .unwrap();
+        statement.bind((1, created)).unwrap();
+        statement.bind((2, data.as_str())).unwrap();
+        statement.next().unwrap();
+        let _environment = EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().as_os_str().to_os_string())),
+            (
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.path("claude-config").into_os_string()),
+            ),
+            (
+                "OPENCODE_DATA_DIR",
+                Some(fixture.path("opencode").into_os_string()),
+            ),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            json: true,
+            mode: CostMode::Display,
+            timezone: Some("UTC".into()),
+            since: Some("20990102".into()),
+            until: Some("20990102".into()),
+            ..SharedArgs::with_defaults()
+        };
+        let source = SourceArgs {
+            shared: SharedArgs {
+                timezone: Some("Asia/Tokyo".into()),
+                ..shared.clone()
+            },
+            ..SourceArgs::default()
+        };
+        let (entries, _) =
+            load_opencode_entries(&shared, AgentReportKind::Daily, false, Some(&source)).unwrap();
+        assert_eq!(entries.len(), 1);
+        let (entries, _) =
+            load_opencode_entries(&shared, AgentReportKind::Daily, false, None).unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
     fn source_claude_project_filters_daily_and_session_rows_without_filtering_other_sources() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
