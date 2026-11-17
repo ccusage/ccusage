@@ -1,7 +1,8 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use ccusage_adapter_common::units::UnitError;
@@ -121,11 +122,74 @@ pub(super) struct KimiUsageEntry {
     extra_total_tokens: u64,
 }
 
+#[derive(Debug)]
+struct WireConfig {
+    root: Option<PathBuf>,
+    model: OnceLock<String>,
+}
+
+#[derive(Debug)]
+pub(super) struct WireFile {
+    path: PathBuf,
+    session_id: String,
+    config: Arc<WireConfig>,
+}
+
+impl AsRef<Path> for WireFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl WireFile {
+    pub(super) fn from_paths(paths: Vec<PathBuf>) -> Vec<Self> {
+        let mut configs = HashMap::new();
+        paths
+            .into_iter()
+            .map(|path| {
+                let parent = path.parent();
+                let session = if parent
+                    .and_then(Path::parent)
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+                    == Some("agents")
+                {
+                    parent.and_then(Path::parent).and_then(Path::parent)
+                } else {
+                    parent
+                };
+                let root = session
+                    .and_then(Path::parent)
+                    .and_then(Path::parent)
+                    .and_then(Path::parent)
+                    .map(Path::to_path_buf);
+                let session_id = session
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let config = Arc::clone(configs.entry(root.clone()).or_insert_with(|| {
+                    Arc::new(WireConfig {
+                        root,
+                        model: OnceLock::new(),
+                    })
+                }));
+                Self {
+                    path,
+                    session_id,
+                    config,
+                }
+            })
+            .collect()
+    }
+}
+
 pub(super) fn read_wire_file(
-    path: &Path,
+    file: &WireFile,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<KimiUsageEntry>, UnitError> {
-    let model = read_model_from_config(path);
+    let path = file.as_ref();
     let content = fs::read(path).map_err(UnitError::from)?;
     // Usable Kimi wire lines carry either `token_usage` (old format) or `usage.record` (new).
     let prefilter = LinePrefilter::any(&[br#""token_usage""#, br#""usage.record""#]);
@@ -137,7 +201,7 @@ pub(super) fn read_wire_file(
             diagnostics,
             is_usage_envelope,
         )
-        .filter_map(|(number, line)| wire_line_to_entry(&line, path, &model, number, diagnostics))
+        .filter_map(|(number, line)| wire_line_to_entry(&line, file, number, diagnostics))
         .collect::<Vec<_>>(),
     )
 }
@@ -160,8 +224,8 @@ fn is_usage_envelope(value: &serde_json::Value) -> bool {
     has_new_usage || has_old_usage
 }
 
-fn read_model_from_config(file_path: &Path) -> String {
-    let Some(root) = kimi_root_from_wire_path(file_path) else {
+fn read_model_from_config(root: Option<&Path>) -> String {
+    let Some(root) = root else {
         return DEFAULT_MODEL.to_string();
     };
     let Ok(content) = fs::read_to_string(root.join("config.json")) else {
@@ -173,48 +237,26 @@ fn read_model_from_config(file_path: &Path) -> String {
     config.model.unwrap_or_else(|| DEFAULT_MODEL.to_string())
 }
 
-fn kimi_root_from_wire_path(file_path: &Path) -> Option<PathBuf> {
-    // Old layout: root/sessions/<group>/<session>/wire.jsonl
-    // New layout: root/sessions/<ws>/<session>/agents/<agent>/wire.jsonl
-    let agent_dir = file_path.parent()?;
-    if agent_dir.parent()?.file_name()?.to_str() == Some("agents") {
-        agent_dir
-            .parent()?
-            .parent()?
-            .parent()?
-            .parent()?
-            .parent()
-            .map(Path::to_path_buf)
-    } else {
-        file_path
-            .parent()?
-            .parent()?
-            .parent()?
-            .parent()
-            .map(Path::to_path_buf)
-    }
-}
-
 fn wire_line_to_entry(
     line: &KimiWireLine,
-    file_path: &Path,
-    model: &str,
+    file: &WireFile,
     number: u32,
     diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
     match line.r#type.as_deref() {
-        Some("usage.record") => wire_line_to_entry_new(line, file_path, number, diagnostics),
+        Some("usage.record") => wire_line_to_entry_new(line, file, number, diagnostics),
         Some("metadata") => None,
-        _ => wire_line_to_entry_old(line, file_path, model, number, diagnostics),
+        _ => wire_line_to_entry_old(line, file, number, diagnostics),
     }
 }
 
 fn wire_line_to_entry_new(
     line: &KimiWireLine,
-    file_path: &Path,
+    file: &WireFile,
     number: u32,
     diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
+    let file_path = file.as_ref();
     // Only aggregate turn-level records; session records are cumulative totals.
     if line.usage_scope.as_deref() != Some("turn") {
         return None;
@@ -242,7 +284,7 @@ fn wire_line_to_entry_new(
     Some(KimiUsageEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
-        session_id: extract_session_id(file_path),
+        session_id: file.session_id.clone(),
         model,
         message_id: None,
         input_tokens: usage.input_tokens,
@@ -255,11 +297,11 @@ fn wire_line_to_entry_new(
 
 fn wire_line_to_entry_old(
     line: &KimiWireLine,
-    file_path: &Path,
-    model: &str,
+    file: &WireFile,
     number: u32,
     diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
+    let file_path = file.as_ref();
     let message = line.message.as_ref()?;
     if message.r#type.as_deref() != Some("StatusUpdate") {
         return None;
@@ -287,8 +329,12 @@ fn wire_line_to_entry_old(
     Some(KimiUsageEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
-        session_id: extract_session_id(file_path),
-        model: model.to_string(),
+        session_id: file.session_id.clone(),
+        model: file
+            .config
+            .model
+            .get_or_init(|| read_model_from_config(file.config.root.as_deref()))
+            .clone(),
         message_id: payload.message_id.clone(),
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
@@ -324,28 +370,6 @@ fn timestamp_from_seconds(seconds: f64) -> Option<TimestampMs> {
         return None;
     }
     TimestampMs::from_instant_millis(millis as i64)
-}
-
-fn extract_session_id(file_path: &Path) -> String {
-    // Old layout: sessions/<group>/<session>/wire.jsonl
-    // New layout: sessions/<ws>/<session>/agents/<agent>/wire.jsonl
-    let parent = file_path.parent();
-    let session_dir = if parent
-        .and_then(|p| p.parent())
-        .and_then(Path::file_name)
-        .and_then(|n| n.to_str())
-        == Some("agents")
-    {
-        parent.and_then(|p| p.parent()).and_then(|p| p.parent())
-    } else {
-        parent
-    };
-    session_dir
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("unknown")
-        .to_string()
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -495,6 +519,45 @@ mod tests {
     use ccusage_test_support::fs_fixture;
 
     #[test]
+    fn shares_the_config_model_per_root_and_loads_it_only_for_legacy_usage() {
+        let legacy = r#"{"timestamp":1770983427,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":10}}}}"#;
+        let modern = r#"{"type":"usage.record","model":"kimi-k2","usageScope":"turn","usage":{"inputOther":10},"time":1770983427000}"#;
+        let fixture = fs_fixture!({
+            "first/config.json": r#"{"model":"initial"}"#,
+            "first/sessions/group/modern/wire.jsonl": modern,
+            "first/sessions/group/old-a/wire.jsonl": legacy,
+            "first/sessions/group/old-b/wire.jsonl": legacy,
+            "second/config.json": r#"{"model":"other-root"}"#,
+            "second/sessions/group/old/wire.jsonl": legacy,
+        });
+        let files = WireFile::from_paths(vec![
+            fixture.path("first/sessions/group/modern/wire.jsonl"),
+            fixture.path("first/sessions/group/old-a/wire.jsonl"),
+            fixture.path("first/sessions/group/old-b/wire.jsonl"),
+            fixture.path("second/sessions/group/old/wire.jsonl"),
+        ]);
+        let diagnostics = Diagnostics::new("kimi");
+        assert_eq!(
+            read_wire_file(&files[0], &diagnostics).unwrap()[0].model,
+            "kimi-k2"
+        );
+        let _ = fixture.write_file("first/config.json", r#"{"model":"configured"}"#);
+        assert_eq!(
+            read_wire_file(&files[1], &diagnostics).unwrap()[0].model,
+            "configured"
+        );
+        let _ = fixture.write_file("first/config.json", r#"{"model":"changed"}"#);
+        assert_eq!(
+            read_wire_file(&files[2], &diagnostics).unwrap()[0].model,
+            "configured"
+        );
+        assert_eq!(
+            read_wire_file(&files[3], &diagnostics).unwrap()[0].model,
+            "other-root"
+        );
+    }
+
+    #[test]
     fn diagnoses_both_wire_formats_without_a_timestamp() {
         let fixture = ccusage_test_support::fs_fixture!({
             "sessions/group/session/wire.jsonl": concat!(
@@ -505,7 +568,8 @@ mod tests {
         });
         let diagnostics = Diagnostics::new("kimi");
         let events = read_wire_file(
-            &fixture.path("sessions/group/session/wire.jsonl"),
+            &WireFile::from_paths(vec![fixture.path("sessions/group/session/wire.jsonl")])
+                .remove(0),
             &diagnostics,
         )
         .unwrap();
@@ -524,8 +588,9 @@ mod tests {
         let old_path = fixture.path("sessions/group/session-a/wire.jsonl");
         let new_path = fixture.path("sessions/ws/session-b/agents/agent-1/wire.jsonl");
 
-        let old_root = kimi_root_from_wire_path(&old_path).unwrap();
-        let new_root = kimi_root_from_wire_path(&new_path).unwrap();
+        let files = WireFile::from_paths(vec![old_path, new_path]);
+        let old_root = files[0].config.root.clone().unwrap();
+        let new_root = files[1].config.root.clone().unwrap();
 
         assert_eq!(old_root, fixture.root().to_path_buf());
         assert_eq!(new_root, fixture.root().to_path_buf());
@@ -550,8 +615,13 @@ mod tests {
         }))
         .unwrap();
 
-        let entry =
-            wire_line_to_entry(&line, &file, "kimi-k2", 1, &Diagnostics::new("kimi")).unwrap();
+        let entry = wire_line_to_entry(
+            &line,
+            &WireFile::from_paths(vec![file]).remove(0),
+            1,
+            &Diagnostics::new("kimi"),
+        )
+        .unwrap();
 
         assert_eq!(entry.output_tokens, 432);
         assert_eq!(entry.extra_total_tokens, 0);

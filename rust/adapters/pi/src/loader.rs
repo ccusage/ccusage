@@ -3,7 +3,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use ccusage_adapter_common::{collect_files_with_extension, read_units, source::LoadContext};
+use ccusage_adapter_common::{
+    collect_files_with_extension, dedupe::dedupe_first_wins, source::LoadContext,
+    units::read_typed_units,
+};
 
 use crate::{LoadedEntry, Result};
 
@@ -30,8 +33,6 @@ fn load_entries_for_context(
     store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();
     for path in paths {
@@ -45,10 +46,7 @@ fn load_entries_for_context(
         // `run-*/` fresh-context child sessions are the primary record for
         // those children and must keep counting.
         files.retain(|file| !is_subagent_artifact_transcript(file));
-        // Read session files in parallel; the first-wins dedup runs sequentially
-        // over the original file order so the surviving record per id matches the
-        // single-threaded read.
-        let loaded = read_units(&files, shared.single_thread, cx.diagnostics, |file| {
+        let loaded = read_typed_units(&files, shared.single_thread, cx.diagnostics, |file| {
             parser::read_session_file_data_for_store_with_diagnostics(
                 file,
                 path,
@@ -59,31 +57,22 @@ fn load_entries_for_context(
                 cx.diagnostics,
             )
         });
-        discovered_files.extend(files.into_iter().map(|file| DiscoveredFile { path: file }));
+        discovered_files.extend(files);
         loaded_files.extend(loaded);
     }
 
     let replay_plan = PiReplayPlan::new(&discovered_files, &loaded_files);
-    for (index, (_file, data)) in discovered_files.into_iter().zip(loaded_files).enumerate() {
-        let Some(data) = data else {
-            continue;
-        };
-        for entry in data
-            .entries
-            .into_iter()
-            .skip(replay_plan.skip_prefix(index))
-        {
-            if seen.insert(parser::entry_id(&entry)) {
-                entries.push(entry);
-            }
-        }
-    }
+    let records = loaded_files
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, data)| {
+            data.into_iter()
+                .flat_map(|data| data.entries)
+                .skip(replay_plan.skip_prefix(index))
+        });
+    let mut entries = dedupe_first_wins(records, parser::entry_id);
     entries.sort_by_cached_key(|entry| (entry.timestamp, parser::entry_id(entry)));
     Ok(entries)
-}
-
-struct DiscoveredFile {
-    path: PathBuf,
 }
 
 struct ParentReplay {
@@ -96,12 +85,10 @@ struct PiReplayPlan {
 }
 
 impl PiReplayPlan {
-    fn new(files: &[DiscoveredFile], loaded: &[Option<parser::PiSessionData>]) -> Self {
+    fn new(files: &[PathBuf], loaded: &[Option<parser::PiSessionData>]) -> Self {
         let mut files_by_path = HashMap::new();
         for (index, file) in files.iter().enumerate() {
-            files_by_path
-                .entry(normalize_path(&file.path))
-                .or_insert(index);
+            files_by_path.entry(normalize_path(file)).or_insert(index);
         }
 
         let mut invalid_lineage = HashSet::new();
@@ -127,7 +114,7 @@ impl PiReplayPlan {
                 continue;
             };
             let Some(parent_index) =
-                resolve_parent_index(parent_path, &files[child_index].path, &files_by_path)
+                resolve_parent_index(parent_path, &files[child_index], &files_by_path)
             else {
                 invalid_lineage.insert(child_index);
                 continue;

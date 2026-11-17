@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    path::Path,
     sync::Arc,
 };
 
@@ -22,8 +23,6 @@ use ccusage_adapter_common::{
 };
 use ccusage_core::Diagnostics;
 use ccusage_core::fast::LinePrefilter;
-
-use super::paths::GrokSessionFiles;
 
 #[derive(Debug, Default, Deserialize)]
 struct GrokUpdateLine {
@@ -203,26 +202,26 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
 
 #[cfg(test)]
 pub(super) fn parse_session_files(
-    files: &GrokSessionFiles,
+    updates: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
     let diagnostics = Diagnostics::new("grok");
-    parse_session_files_with_diagnostics(files, tz, mode, pricing, &diagnostics)
+    parse_session_files_with_diagnostics(updates, tz, mode, pricing, &diagnostics)
         .map(|entries| entries.into_iter().map(|(_, entry)| entry).collect())
         .map_err(|error| crate::cli_error(error.to_string()))
 }
 
 pub(super) fn parse_session_files_with_diagnostics(
-    files: &GrokSessionFiles,
+    updates: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<(GrokDedupeKey, LoadedEntry)>, UnitError> {
-    let meta = load_session_meta(files, diagnostics);
-    let content = fs::read(&files.updates)?;
+    let meta = load_session_meta(updates, diagnostics);
+    let content = fs::read(updates)?;
     let prefilter = LinePrefilter::all(&[br#""turn_completed""#]);
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
@@ -230,7 +229,7 @@ pub(super) fn parse_session_files_with_diagnostics(
     for (number, line) in jsonl::numbered_records_with_usage_diagnostics::<GrokUpdateLine>(
         &content,
         Some(&prefilter),
-        &files.updates,
+        updates,
         diagnostics,
         is_grok_usage,
     ) {
@@ -277,7 +276,7 @@ pub(super) fn parse_session_files_with_diagnostics(
         let event_id = params.meta.as_ref().and_then(|meta| meta.event_id.clone());
         let Some(timestamp_ms) = resolve_timestamp_ms(&line, params.meta.as_ref()) else {
             diagnostics.record(ccusage_core::Skip::record(
-                &files.updates,
+                updates,
                 number,
                 ccusage_core::SkipKind::InvalidTimestamp,
                 "Grok usage has no valid timestamp",
@@ -413,16 +412,14 @@ fn model_usage_rows(
     )]
 }
 
-fn load_session_meta(files: &GrokSessionFiles, diagnostics: &Diagnostics) -> SessionMeta {
-    let session_dir_name = files
-        .updates
+fn load_session_meta(updates: &Path, diagnostics: &Diagnostics) -> SessionMeta {
+    let session_dir_name = updates
         .parent()
         .and_then(|parent| parent.file_name())
         .and_then(|name| name.to_str())
         .unwrap_or("unknown")
         .to_string();
-    let project_from_path = files
-        .updates
+    let project_from_path = updates
         .parent()
         .and_then(|session| session.parent())
         .and_then(|project| project.file_name())
@@ -436,7 +433,8 @@ fn load_session_meta(files: &GrokSessionFiles, diagnostics: &Diagnostics) -> Ses
 
     // summary.json only refines metadata the session path already supplies,
     // so a summary that cannot be read loses no usage and is not a skip.
-    let summary = files.summary.as_ref().and_then(|summary_path| {
+    let summary_path = updates.with_file_name("summary.json");
+    let summary = summary_path.is_file().then_some(&summary_path).and_then(|summary_path| {
         read_json::<GrokSummary>(summary_path)
             .inspect_err(|error| {
                 diagnostics.debug_note(
@@ -723,10 +721,7 @@ mod tests {
                 "sessions/proj/sess-1/updates.jsonl": content,
             })
         };
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: summary.map(|_| fixture.path("sessions/proj/sess-1/summary.json")),
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         // Keep the fixture alive until parse finishes by reading paths first.
         let _root = fixture.root().to_path_buf();
         parse_session_files(
@@ -840,10 +835,7 @@ mod tests {
                 None,
             ),
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: None,
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
         let entries = parse_session_files(
             &files,
@@ -875,10 +867,7 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": line,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: None,
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let entries = parse_session_files(
             &files,
             &jiff::tz::TimeZone::UTC,
@@ -897,10 +886,7 @@ mod tests {
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"sess-1","cwd":"D:\\work\\proj"},"current_model_id":"grok-4.5"}"#,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: Some(fixture.path("sessions/proj/sess-1/summary.json")),
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
         let entries = parse_session_files(
             &files,
@@ -1014,10 +1000,7 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1,"outputTokens":1}}}}"#,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/project/session/updates.jsonl"),
-            summary: None,
-        };
+        let files = fixture.path("sessions/project/session/updates.jsonl");
         let diagnostics = Diagnostics::new("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
@@ -1039,10 +1022,7 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0}}}}"#,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/project/session/updates.jsonl"),
-            summary: None,
-        };
+        let files = fixture.path("sessions/project/session/updates.jsonl");
         let diagnostics = Diagnostics::new("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
@@ -1078,10 +1058,7 @@ mod tests {
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: Some(fixture.path("sessions/proj/sess-1/summary.json")),
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let diagnostics = Diagnostics::new("grok");
 
         let entries = parse_session_files_with_diagnostics(
@@ -1129,12 +1106,8 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl": line,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path(
-                "sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl",
-            ),
-            summary: None,
-        };
+        let files = fixture
+            .path("sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl");
         let entries = parse_session_files(
             &files,
             &jiff::tz::TimeZone::system(),
@@ -1175,12 +1148,9 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl": line,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path(
-                "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl",
-            ),
-            summary: None,
-        };
+        let files = fixture.path(
+            "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl",
+        );
         let entries = parse_session_files(
             &files,
             &jiff::tz::TimeZone::system(),
@@ -1273,10 +1243,7 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: None,
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
         let entries = parse_session_files(
             &files,
@@ -1315,10 +1282,7 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#,
         });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: None,
-        };
+        let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let pricing = PricingMap::load_embedded();
         let stored_cost = |mode| {
             parse_session_files(&files, &jiff::tz::TimeZone::system(), mode, &pricing).unwrap()[0]

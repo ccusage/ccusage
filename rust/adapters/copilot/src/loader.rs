@@ -11,9 +11,12 @@ use super::{
         CallIdKind, CallIds, CallKey, CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
         CopilotUsageRecordEntry, parse_otel_file, parse_session_state_file,
     },
-    paths::CopilotSourceKind,
+    paths::{CopilotSourceFile, CopilotSourceKind},
 };
-use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
+use ccusage_adapter_common::{
+    source::LoadContext,
+    units::{UnitError, read_typed_units},
+};
 use ccusage_core::Diagnostics;
 #[cfg(test)]
 use ccusage_core::ReportWindow;
@@ -24,25 +27,19 @@ use crate::{
     stored_cost_for_mode,
 };
 
+impl AsRef<Path> for CopilotSourceFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let sources = super::paths::paths(cx.diagnostics)?;
-    let source_kinds = sources
-        .iter()
-        .map(|source| (source.path.clone(), source.kind))
-        .collect::<HashMap<_, _>>();
-    let files = sources
-        .iter()
-        .map(|source| source.path.clone())
-        .collect::<Vec<_>>();
-    let parsed = read_units(&files, shared.single_thread, cx.diagnostics, |path| {
-        let kind = source_kinds
-            .get(path)
-            .copied()
-            .expect("discovered Copilot file has source metadata");
-        read_source_file(path, kind, cx.diagnostics)
+    let parsed = read_typed_units(&sources, shared.single_thread, cx.diagnostics, |source| {
+        read_source_file(&source.path, source.kind, cx.diagnostics)
     });
     let mut otel_entries = Vec::new();
     let mut otel_keys = HashSet::<CallKey>::new();

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use ccusage_adapter_common::{read_units, source::LoadContext};
+use ccusage_adapter_common::{source::LoadContext, units::read_typed_units};
 
 use crate::{LoadedEntry, Result};
 
@@ -9,28 +9,26 @@ use super::{
     paths::{GrokSessionFiles, discover_session_files},
 };
 
+impl AsRef<std::path::Path> for GrokSessionFiles {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.updates
+    }
+}
+
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
     let sessions = super::paths::discover_session_files(cx.diagnostics)?;
-    let updates_paths: Vec<_> = sessions
-        .iter()
-        .map(|session| session.updates.clone())
-        .collect();
-    let loaded = read_units(
-        &updates_paths,
+    let loaded = read_typed_units(
+        &sessions,
         shared.single_thread,
         cx.diagnostics,
-        |updates| {
-            let session = GrokSessionFiles {
-                updates: updates.to_path_buf(),
-                summary: {
-                    let summary = updates.with_file_name("summary.json");
-                    summary.is_file().then_some(summary)
-                },
-            };
+        |GrokSessionFiles {
+             updates,
+             summary: _summary,
+         }| {
             super::parser::parse_session_files_with_diagnostics(
-                &session,
+                updates,
                 cx.window.timezone(),
                 shared.mode,
                 pricing,

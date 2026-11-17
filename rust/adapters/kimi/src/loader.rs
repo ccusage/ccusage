@@ -1,37 +1,24 @@
-use std::collections::HashSet;
-
-use ccusage_adapter_common::{read_units, source::LoadContext};
+use ccusage_adapter_common::{
+    dedupe::dedupe_first_wins, source::LoadContext, units::read_typed_units_flat,
+};
 
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{kimi_entry_to_loaded, read_wire_file},
+    parser::{KimiUsageEntry, WireFile, kimi_entry_to_loaded, read_wire_file},
     paths::discover_wire_files,
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let files = discover_wire_files(cx.diagnostics)?;
+    let files = WireFile::from_paths(discover_wire_files(cx.diagnostics)?);
     let pricing = cx.pipeline_pricing()?;
-    // Read wire files in parallel, then apply the first-wins dedup sequentially
-    // over the original discovery order so the surviving entry per key matches
-    // the single-threaded read.
-    let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
+    let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
     });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for file_entries in loaded.into_iter().flatten() {
-        for entry in file_entries {
-            if seen.insert(entry.dedupe_key()) {
-                entries.push(kimi_entry_to_loaded(
-                    entry,
-                    cx.window.timezone(),
-                    cx.shared.mode,
-                    pricing,
-                ));
-            }
-        }
-    }
+    let mut entries = dedupe_first_wins(loaded, KimiUsageEntry::dedupe_key)
+        .into_iter()
+        .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), cx.shared.mode, pricing))
+        .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
@@ -146,7 +133,8 @@ mod tests {
         let diagnostics = Diagnostics::new("kimi");
 
         let entries = super::super::parser::read_wire_file(
-            &fixture.path("sessions/group/session-a/wire.jsonl"),
+            &super::WireFile::from_paths(vec![fixture.path("sessions/group/session-a/wire.jsonl")])
+                .remove(0),
             &diagnostics,
         )
         .unwrap();

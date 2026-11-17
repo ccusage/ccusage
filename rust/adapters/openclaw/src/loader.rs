@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crate::{LoadedEntry, Result};
-use ccusage_adapter_common::{read_units, source::LoadContext};
+use ccusage_adapter_common::{source::LoadContext, units::read_typed_units};
 
 use super::{
     parser::{content_id, migration_id, parse_session_file},
@@ -22,7 +22,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             cx.diagnostics,
         ));
         let files = collect_session_files(&root, cx.diagnostics);
-        let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
+        let loaded = read_typed_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
             parse_session_file(
                 file,
                 cx.window.timezone(),
