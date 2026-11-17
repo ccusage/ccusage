@@ -795,8 +795,6 @@ mod tests {
                     ..Default::default()
                 },
                 shared: shared.clone(),
-
-                ..SourceArgs::default()
             },
         )]);
 
@@ -1120,7 +1118,6 @@ mod tests {
                     long_context_cached_input_tokens: 875_306,
                     long_context_cache_creation_tokens: 57_610,
                     long_context_output_tokens: 11_150,
-                    ..Default::default()
                 },
                 Default::default(),
             )
@@ -1806,8 +1803,6 @@ mod tests {
                     ..Default::default()
                 },
                 shared: shared.clone(),
-
-                ..SourceArgs::default()
             },
         )]);
 
@@ -1928,8 +1923,6 @@ mod tests {
                         pricing_overrides,
                         ..shared.clone()
                     },
-
-                    ..SourceArgs::default()
                 },
             ),
             (
@@ -2001,8 +1994,6 @@ mod tests {
                     )]),
                     ..shared.clone()
                 },
-
-                ..SourceArgs::default()
             },
         )]);
 
@@ -2040,8 +2031,6 @@ mod tests {
                     ..Default::default()
                 },
                 shared: shared.clone(),
-
-                ..SourceArgs::default()
             },
         )]);
 
@@ -2080,8 +2069,6 @@ mod tests {
                     ..Default::default()
                 },
                 shared: shared.clone(),
-
-                ..SourceArgs::default()
             },
         )]);
 

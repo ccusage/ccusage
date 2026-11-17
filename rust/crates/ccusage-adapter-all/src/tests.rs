@@ -1037,8 +1037,6 @@ fn focused_opencode_claims_use_claude_source_window_and_project() {
                 ..Default::default()
             },
             shared: shared.clone(),
-
-            ..Default::default()
         },
     ] {
         let (entries, _) =
@@ -1799,8 +1797,6 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
                 )]),
                 ..shared.clone()
             },
-
-            ..SourceArgs::default()
         },
     )]);
 
