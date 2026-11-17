@@ -1,7 +1,7 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell --command nu
 
-use ./contribution-gate/coauthor.nu [coauthor-validation]
+use ./contribution-gate/coauthor.nu [coauthor-validation is-implementation-pull-request]
 use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/mutations.nu [is-contribution-gate-comment]
@@ -38,6 +38,30 @@ def expect [name: string, actual, expected]: nothing -> nothing {
 }
 
 def test-coauthor-validation []: nothing -> nothing {
+    let published = {
+        state: open
+        user: {login: 'github-actions[bot]'}
+        head: {
+            repo: {full_name: 'test/repo'}
+            ref: implementation
+        }
+        body: '<!-- publication:123 -->'
+    }
+    expect 'accepts the published PR identity' (
+        is-implementation-pull-request $published test/repo implementation '<!-- publication:123 -->'
+    ) true
+    [
+        ($published | update state closed)
+        ($published | update user.login stranger)
+        ($published | update head.repo.full_name fork/repo)
+        ($published | update head.ref other)
+        ($published | update body '<!-- publication:456 -->')
+        ($published | update body null)
+    ] | each {|candidate|
+        expect 'rejects another publication' (
+            is-implementation-pull-request $candidate test/repo implementation '<!-- publication:123 -->'
+        ) false
+    } | ignore
     let trailer = 'Co-authored-by: alice <alice@users.noreply.github.com>'
     let message = $"Implement the fix\n\n($trailer)"
     let attribution = [
