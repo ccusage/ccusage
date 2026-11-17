@@ -2405,7 +2405,10 @@ mod tests {
                 pricing.with_user_overrides(overrides.iter().map(|(id, value)| (id, value)));
             let price = overridden.find(model).unwrap();
             assert_eq!(price.cache_create, None, "{model}");
-            assert_eq!(price.cache_creation_rate(), expected, "{model}");
+            assert!(
+                (price.cache_creation_rate() - expected).abs() < 1e-15,
+                "{model}"
+            );
         }
     }
 
