@@ -8,6 +8,6 @@ self-hosted-runner:
 paths:
   # NOTE(2026-11-17, actionlint 1.7.12): actionlint does not model
   # `parallel:` steps yet and reports them as steps without run or uses.
-  .github/workflows/{ci,update-pricing}.yaml:
+  .github/workflows/ci.yaml:
     ignore:
       - 'step must run script with "run" section or run action with "uses" section'

@@ -65,27 +65,15 @@ in
         sourceRoot = "source/rust";
         cargoExtraArgs = "--all";
       };
-      # Fail `nix flake check` when a tool's committed `bun.nix` no longer matches
-      # what `bun2nix` derives from its `bun.lock`. Renovate bumps `bun.lock`
-      # without knowing about `bun.nix`, and a stale pair would otherwise only
-      # surface as a confusing sandbox install failure. `bun2nix` only parses the
-      # lockfile, so this needs no network access.
       bun-nix =
         mkRepoCheck "bun-nix-check"
           [
-            inputs.bun2nix.packages.${system}.default
+            config.packages.generate-bun-nix
             pkgs.diffutils
           ]
           ''
-            for lockfile in nix/tools/*/bun.lock; do
-              toolDir="$(dirname "$lockfile")"
-              (cd "$toolDir" && bun2nix -o generated.nix)
-              if ! diff -u "$toolDir/bun.nix" "$toolDir/generated.nix"; then
-                echo "ERROR: $toolDir/bun.nix is out of sync with $lockfile." >&2
-                echo "Run 'just gen-bun-nix' and commit the result." >&2
-                exit 1
-              fi
-            done
+            generate-bun-nix
+            diff -ru "$src/nix/tools" nix/tools
           '';
       mkRepoCheck =
         name: nativeBuildInputs: command:
@@ -110,6 +98,20 @@ in
       # optimized native package here too only duplicated a ~70s release compile
       # on cache-cold runners.
       checks = {
+        ccusage-tests = config.packages.ccusage-tests;
+        models-dev-dependencies = mkRepoCheck "models-dev-dependencies-check" [ pkgs.nushell ] ''
+          nu scripts/check-models-dev-dependencies.nu \
+            ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
+        '';
+        infra-scripts = mkRepoCheck "infra-script-tests" [ pkgs.nushell pkgs.just ] ''
+          nu scripts/validate-commit-scope.test.nu
+          nu scripts/check-models-dev-dependencies.test.nu
+          nu .github/scripts/contribution-gate.test.nu
+          nu .github/scripts/pricing-lock.test.nu
+          nu .github/scripts/upsert-pr-comment.test.nu
+          nu .github/scripts/check-links.test.nu
+          nu .github/scripts/install.test.nu
+        '';
         inherit
           bun-nix
           ccusage-clippy
@@ -148,15 +150,6 @@ in
               const fs = require("node:fs");
               const path = require("node:path");
 
-              const generatedArtifacts = new Map([
-                ["@ccusage/ccusage-darwin-arm64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-darwin-x64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-linux-arm64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-linux-x64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-win32-arm64", ["bin/ccusage.exe"]],
-                ["@ccusage/ccusage-win32-x64", ["bin/ccusage.exe"]],
-              ]);
-
               function touchGeneratedFile(packageDir, relativePath) {
                 const targetPath = path.join(packageDir, relativePath);
                 fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -171,10 +164,11 @@ in
               for (const manifestPath of process.argv.slice(2)) {
                 const packageDir = path.dirname(manifestPath);
                 const packageJson = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-                const files = new Set(packageJson.files ?? []);
-                for (const relativePath of generatedArtifacts.get(packageJson.name) ?? []) {
-                  if (files.has(relativePath)) {
-                    touchGeneratedFile(packageDir, relativePath);
+                if (path.normalize(manifestPath).startsWith("packages/")) {
+                  for (const relativePath of packageJson.files ?? []) {
+                    if (relativePath.startsWith("bin/")) {
+                      touchGeneratedFile(packageDir, relativePath);
+                    }
                   }
                 }
               }

@@ -71,6 +71,7 @@ in
       };
     in
     {
+      packages.generate-bun-nix = generateBunNix;
       treefmt = {
         inherit pkgs;
         projectRoot = root;

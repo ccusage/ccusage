@@ -1,7 +1,7 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#git --command nu
 
-use ./pricing-lock.nu report
+use ./pricing-lock.nu [report run-update]
 
 # Bump the pinned LiteLLM input and report whether it moved the pricing JSON that
 # the build embeds, so the workflow can skip validating lock-only churn.
@@ -19,12 +19,12 @@ def main [] {
     open --raw flake.nix
     | str replace --regex 'BerriAI/litellm/[0-9a-f]{40}/' $"BerriAI/litellm/($rev)/"
     | save --force flake.nix
-    ^nix flake update litellm
+    run-update nix flake update litellm
 
     let changed = match ((locked-pricing) == $before) {
         false => true
         true => {
-            print 'LiteLLM pricing JSON is unchanged; dropping the lock-only bump.'
+            print --stderr 'LiteLLM pricing JSON is unchanged; dropping the lock-only bump.'
             ^git checkout -- flake.nix flake.lock
             false
         }

@@ -7,9 +7,6 @@ inputs:
   binary:
     description: Path to the built ccusage binary
     required: true
-  nix-github-token:
-    description: Whether Nix builds may use the GitHub token from Nix config
-    default: 'true'
   cache-scope:
     description: >
       Unique matrix-entry identifier (the matrix `name`) used to scope the Nix
@@ -28,14 +25,7 @@ runs:
 
     - name: Build Linux static binary
       shell: bash
-      env:
-        NIX_GITHUB_TOKEN: ${{ inputs.nix-github-token }}
-      run: |
-        if [ "$NIX_GITHUB_TOKEN" = "false" ]; then
-          NIX_CONFIG="access-tokens =" nix build .#ccusage-static --print-build-logs
-        else
-          nix build .#ccusage-static --print-build-logs
-        fi
+      run: nix build .#ccusage-static --print-build-logs
 
     # The link lives inside the store's own gcroots, so it persists with the
     # sticky disk and protects these artifacts (and, through keep-outputs, their

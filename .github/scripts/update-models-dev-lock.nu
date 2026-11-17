@@ -1,7 +1,7 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#git --command nu
 
-use ./pricing-lock.nu report
+use ./pricing-lock.nu [report run-update]
 
 const SNAPSHOTS = [
     'rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json'
@@ -19,8 +19,8 @@ def main [] {
         error make {msg: $"snapshot paths no longer exist: ($missing | str join ', ')"}
     }
 
-    ^nix flake update models-dev
-    ^nix develop --command just gen-models-dev-pricing
+    run-update nix flake update models-dev
+    run-update nix shell --inputs-from . nixpkgs#just --command just gen-models-dev-pricing
 
     let state = {
         snapshots: (dirty ...$SNAPSHOTS)
@@ -29,7 +29,7 @@ def main [] {
     let changed = match $state {
         {snapshots: true} => true
         {snapshots: false, lock: true} => {
-            print 'models.dev pricing snapshots are unchanged; dropping the lock-only bump.'
+            print --stderr 'models.dev pricing snapshots are unchanged; dropping the lock-only bump.'
             ^git checkout -- flake.lock ...$SNAPSHOTS
             false
         }

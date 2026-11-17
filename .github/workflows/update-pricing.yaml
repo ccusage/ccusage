@@ -51,34 +51,11 @@ jobs:
         id: update
         env:
           SCRIPT: ${{ matrix.script }}
-        run: $SCRIPT
-      # The push below cannot trigger ci.yaml, so the checks a pull request would
-      # have run happen here instead: `nix flake check` covers the preflight job's
-      # treefmt and gitleaks checks, and the remaining legs mirror the test job.
-      # Each leg no-ops when the update turned out to be lock-only churn.
-      - parallel:
-          - name: Run nix flake check
-            run: |
-              git diff --quiet && exit 0
-              nix flake check --print-build-logs
-          - name: Run Rust tests
-            run: |
-              git diff --quiet && exit 0
-              nix build .#ccusage-tests --no-link --print-build-logs
-          - name: JS test
-            run: |
-              git diff --quiet && exit 0
-              nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
-              pnpm install --frozen-lockfile
-              just test-node
-          - name: Babashka performance harness test
-            run: |
-              git diff --quiet && exit 0
-              apps/ccusage/scripts/compare-pr-performance_test.clj
-          - name: Babashka diff-refs test
-            run: |
-              git diff --quiet && exit 0
-              apps/ccusage/scripts/diff-refs_test.clj
+        run: |
+          $SCRIPT | jq -r '"changed=\(.changed)", "paths=\(.paths | join(" "))"' >> "$GITHUB_OUTPUT"
+      - name: Validate changed pricing
+        if: steps.update.outputs.changed == 'true'
+        run: nix flake check
       - uses: ./.github/actions/commit-and-push-main
         if: steps.update.outputs.changed == 'true'
         with:

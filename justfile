@@ -20,15 +20,36 @@ default:
     @just --list
 
 # Install the JS dependencies needed to work in this repository
-install:
+install mode="always":
     #!/usr/bin/env bash
     set -euo pipefail
-    pnpm install --frozen-lockfile
-    # Tool directories under nix/tools are outside the pnpm workspace. Nix builds
-    # their dependencies itself, so only the ones carrying a tsconfig need a local
-    # node_modules — `just typecheck` resolves their types out of it.
+    toolDirs=()
+    lockfiles=(pnpm-lock.yaml)
     for tsconfig in nix/tools/*/tsconfig.json; do
         toolDir="$(dirname "$tsconfig")"
+        toolDirs+=("$toolDir")
+        lockfiles+=("$toolDir/bun.lock")
+    done
+    case "{{mode}}" in
+        always) ;;
+        if-stale)
+            if [ -e node_modules/.install-stamp ]; then
+                needsInstall=false
+                for lockfile in "${lockfiles[@]}"; do
+                    if [ "$lockfile" -nt node_modules/.install-stamp ]; then
+                        needsInstall=true
+                        break
+                    fi
+                done
+                if [ "$needsInstall" = false ]; then
+                    exit 0
+                fi
+            fi
+            ;;
+        *) echo "Unknown install mode: {{mode}}" >&2; exit 1 ;;
+    esac
+    pnpm install --frozen-lockfile
+    for toolDir in "${toolDirs[@]}"; do
         (cd "$toolDir" && bun install --frozen-lockfile)
     done
     # The dev shell re-installs when a lockfile is newer than this stamp. It
@@ -84,12 +105,13 @@ gen-bun-nix:
     for lockfile in nix/tools/*/bun.lock; do
         toolDir="$(dirname "$lockfile")"
         echo "Regenerating $toolDir"
-        (cd "$toolDir" && bun install && bun2nix -o bun.nix)
+        (cd "$toolDir" && bun install)
     done
+    nix run .#generate-bun-nix
 
 # Update the locked LiteLLM pricing snapshot and validate the result
 update-litellm-pricing:
-    GITHUB_OUTPUT=/dev/null .github/scripts/update-litellm-lock.nu
+    .github/scripts/update-litellm-lock.nu
     just check
 
 # Regenerate committed models.dev snapshots from the pinned input

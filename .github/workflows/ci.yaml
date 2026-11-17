@@ -235,6 +235,8 @@ jobs:
       contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      NIX_CONFIG: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'access-tokens =' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -274,9 +276,6 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
-          # Pull requests and merge groups build code not yet on main, so they
-          # get no token.
-          nix-github-token: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           cache-scope: ${{ matrix.name }}
           save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-macos-nix-native-package
@@ -496,6 +495,7 @@ jobs:
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      NIX_CONFIG: 'access-tokens ='
 
     steps:
       - name: Checkout merge commit
@@ -526,8 +526,8 @@ jobs:
 
       - name: Build base and PR binaries
         run: |
-          NIX_CONFIG="access-tokens =" nix build .#ccusage-static --out-link "$RUNNER_TEMP/ccusage-head"
-          NIX_CONFIG="access-tokens =" nix build "git+file://$PWD?rev=$BASE_SHA#ccusage-static" \
+          nix build .#ccusage-static --out-link "$RUNNER_TEMP/ccusage-head"
+          nix build "git+file://$PWD?rev=$BASE_SHA#ccusage-static" \
             --out-link "$RUNNER_TEMP/ccusage-base"
 
       - name: Generate large ccusage fixture

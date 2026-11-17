@@ -13,9 +13,6 @@
   modelsDevSrc,
 }:
 let
-  # Keep the versions in the sibling `package.json` matching the `remeda` and
-  # `zod` entries in `${modelsDevSrc}/bun.lock` whenever the input is bumped,
-  # then run `just gen-bun-nix`.
   nodeModules = bunNodeModules { toolDir = ./.; };
 in
 pkgs.runCommand "models-dev-snapshots"
