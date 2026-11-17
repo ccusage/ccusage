@@ -1146,9 +1146,13 @@ mod tests {
         ];
 
         for kind in cases {
-            let named_rows = load_named_pi_store_rows("omp", &store_path, kind, &shared, &pricing)
-                .unwrap()
-                .rows;
+            let mut named_rows =
+                load_named_pi_store_rows("omp", &store_path, kind, &shared, &pricing)
+                    .unwrap()
+                    .rows;
+            if let Some(bucket) = Bucket::for_report(kind, ccusage_core::cli::WeekDay::Sunday) {
+                named_rows = aggregate_rows(named_rows, bucket).unwrap();
+            }
             let pi_rows = pi_path_subcommand_rows(&store_path, kind, &shared, &pricing).unwrap();
 
             assert_eq!(usage_fingerprint(&named_rows), usage_fingerprint(&pi_rows));
@@ -1243,7 +1247,7 @@ mod tests {
     }
 
     #[test]
-    fn default_pi_session_rows_keep_main_project_path_derivation() {
+    fn default_pi_session_rows_derive_project_from_the_store_root() {
         let fixture = fs_fixture!({
             "default-root/archive/sessions/project-a/agent_default-session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200}}}"#,
         });
@@ -1264,7 +1268,7 @@ mod tests {
         assert_eq!(rows.rows[0].agent, "pi");
         assert_eq!(
             rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-a")
+            json!("archive")
         );
     }
 

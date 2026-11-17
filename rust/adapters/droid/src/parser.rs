@@ -128,20 +128,8 @@ fn settings_timestamp(
     {
         return Some((timestamp, format_rfc3339_millis(timestamp), Some(timestamp)));
     }
-    let timestamp = file_mtime(path)?;
+    let timestamp = ccusage_adapter_common::timestamps::file_mtime(path)?;
     Some((timestamp, format_rfc3339_millis(timestamp), None))
-}
-
-fn file_mtime(path: &Path) -> Option<crate::TimestampMs> {
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let millis = i64::try_from(
-        modified
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_millis(),
-    )
-    .ok()?;
-    Some(crate::TimestampMs::from_millis(millis))
 }
 
 pub(super) fn calculate_droid_cost(entry: &DroidEntry, pricing: &PricingMap) -> f64 {

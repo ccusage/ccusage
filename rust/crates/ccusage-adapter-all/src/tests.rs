@@ -1744,7 +1744,7 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     assert_eq!(session_rows[0].agent, "pi");
     assert_eq!(
         session_rows[0].metadata.as_ref().unwrap()["projectPath"],
-        "project-a"
+        "sessions"
     );
     assert_eq!(session_rows[0].input_tokens, 1_000);
     assert_eq!(session_rows[0].output_tokens, 500);
@@ -1868,14 +1868,7 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
         statement.bind((1, usage.id)).unwrap();
         statement.bind((2, usage.session_id)).unwrap();
         statement
-            .bind((
-                3,
-                usage
-                    .timestamp
-                    .parse::<jiff::Timestamp>()
-                    .unwrap()
-                    .as_millisecond(),
-            ))
+            .bind((3, ccusage_test_support::instant(usage.timestamp).millis()))
             .unwrap();
         statement.bind((4, usage.model)).unwrap();
         statement.bind((5, usage.input_tokens)).unwrap();

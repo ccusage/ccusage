@@ -422,7 +422,6 @@ fn seed_gamma(path: &Path) {
             usage: Some(first),
             ..Generation::default()
         },
-        // No timestamp and no identity: falls back to the trajectory timestamp.
         Generation {
             usage: Some(Usage {
                 input: 120,
@@ -475,7 +474,6 @@ fn seed_gamma(path: &Path) {
 /// names a model.
 fn seed_delta(path: &Path) {
     let generations = [
-        // No timestamp anywhere: falls back to the file mtime.
         Generation {
             usage: Some(Usage {
                 input: 100,

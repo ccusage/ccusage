@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use ccusage_adapter_common::units::{UnitError, read_json};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -45,8 +45,8 @@ pub(super) fn load_chat_file(
 ) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
     let messages = read_json::<Vec<Value>>(path)?;
     let context = derive_context(path);
-    let fallback_timestamp =
-        parse_codebuff_chat_id_timestamp(&context.chat_id).or_else(|| file_mtime(path));
+    let fallback_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id)
+        .or_else(|| ccusage_adapter_common::timestamps::file_mtime(path));
     let mut entries = Vec::new();
     for (ordinal, message) in messages.iter().enumerate() {
         let Some(message) = message.as_object() else {
@@ -327,32 +327,11 @@ fn parse_codebuff_chat_id_timestamp(chat_id: &str) -> Option<crate::TimestampMs>
 fn timestamp_value(value: Option<&Value>) -> Option<crate::TimestampMs> {
     match value? {
         Value::String(value) => parse_ts_timestamp(value),
-        Value::Number(value) => timestamp_from_epoch_secs_or_millis(value.as_i64()?),
+        Value::Number(value) => {
+            ccusage_adapter_common::timestamps::epoch_secs_or_millis(value.as_i64()?)
+        }
         _ => None,
     }
-}
-
-fn timestamp_from_epoch_secs_or_millis(value: i64) -> Option<crate::TimestampMs> {
-    if value <= 0 {
-        return None;
-    }
-    if value < 10_000_000_000 {
-        crate::TimestampMs::from_unix_seconds(value)
-    } else {
-        Some(crate::TimestampMs::from_millis(value))
-    }
-}
-
-fn file_mtime(path: &Path) -> Option<crate::TimestampMs> {
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let millis = i64::try_from(
-        modified
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_millis(),
-    )
-    .ok()?;
-    Some(crate::TimestampMs::from_millis(millis))
 }
 
 fn dedup_key(

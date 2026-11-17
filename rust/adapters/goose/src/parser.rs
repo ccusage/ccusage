@@ -149,7 +149,7 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
         return None;
     }
     if let Ok(number) = trimmed.parse::<i64>() {
-        return timestamp_from_epoch_secs_or_millis(number);
+        return ccusage_adapter_common::timestamps::epoch_secs_or_millis(number);
     }
     if let Some(timestamp) = crate::parse_ts_timestamp(trimmed) {
         return Some(timestamp);
@@ -169,17 +169,6 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
         return crate::parse_ts_timestamp(&format!("{trimmed}T00:00:00Z"));
     }
     None
-}
-
-fn timestamp_from_epoch_secs_or_millis(value: i64) -> Option<crate::TimestampMs> {
-    if value <= 0 {
-        return None;
-    }
-    if value < 10_000_000_000 {
-        crate::TimestampMs::from_unix_seconds(value)
-    } else {
-        Some(crate::TimestampMs::from_millis(value))
-    }
 }
 
 fn normalize_provider(provider: Option<&str>, model: &str) -> String {

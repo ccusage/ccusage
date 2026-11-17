@@ -140,9 +140,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2026-01-02T23:30:00Z"),
     );
 
-    // No session id and no timestamp: the session becomes `<project>-<stem>`
-    // and the time is the file mtime, so the same line under two projects is
-    // two records.
     let fallback = format!(
         r#"{{"type":"assistant","model":"{CODER}","usageMetadata":{{"promptTokenCount":150,"candidatesTokenCount":25}}}}"#
     );
@@ -158,8 +155,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     );
 
     // Qwen Code moves a finished session into the flat `chats/archive/`
-    // directory unchanged: the archived copy of the fallback file names the
-    // same session and dedupes against it, and an archived-only session counts.
+    // directory unchanged.
     write(
         primary.join("projects/beta/chats/archive/fallback-c.jsonl"),
         &fallback,

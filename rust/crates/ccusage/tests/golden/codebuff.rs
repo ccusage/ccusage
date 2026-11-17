@@ -81,8 +81,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     );
     // The first message has the same key as its `manicode` twin (credits are
     // not part of the key) and is dropped; the second differs from its twin
-    // only by one second and counts. It does not share the twin's timestamp
-    // because the loader orders equal timestamps by hash-map iteration.
+    // only by one second and counts.
     write_chat(
         &backup,
         "alpha",
