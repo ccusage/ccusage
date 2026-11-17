@@ -1,16 +1,17 @@
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
-use ccusage_adapter_common::collect_files_matching;
+use ccusage_adapter_common::{
+    collect_files_matching,
+    roots::{self, RootsEnv},
+};
 use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
-use crate::{
-    Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet, home, resolve_tz,
-};
+use crate::{Result, cli::SharedArgs, date_range_bounds_ms, fast::FxHashSet, home, resolve_tz};
 
 use super::reader::{is_rollout_file, uncompressed_rollout_path};
 
@@ -208,17 +209,12 @@ fn codex_usage_file_key(source: &CodexUsageSource, file: &Path) -> (PathBuf, Pat
 }
 
 pub(super) fn codex_home_paths() -> Result<Vec<PathBuf>> {
-    if let Ok(env_paths) = env::var("CODEX_HOME") {
-        return Ok(env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect());
-    }
-
-    let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
-    Ok(vec![home.join(".codex")])
+    Ok(roots::resolve(RootsEnv::List("CODEX_HOME"), || {
+        home::home_dir()
+            .map(|home| home.join(".codex"))
+            .into_iter()
+            .collect()
+    }))
 }
 
 #[cfg(test)]
@@ -234,6 +230,32 @@ mod tests {
 
     use ccusage_core::SkipKind;
     use ccusage_test_support::Fixture;
+
+    #[test]
+    fn configured_codex_roots_share_list_normalization() {
+        let fixture = Fixture::new();
+        let first = fixture.create_dir_all("first");
+        let second = fixture.create_dir_all("second");
+        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().into())),
+            (
+                "CODEX_HOME",
+                Some(" ~/first, ~/second, ~/first/., , ".into()),
+            ),
+        ]);
+        assert_eq!(codex_home_paths().unwrap(), vec![first, second]);
+    }
+
+    #[test]
+    fn blank_codex_list_uses_the_default_home() {
+        let fixture = Fixture::new();
+        let root = fixture.create_dir_all(".codex");
+        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().into())),
+            ("CODEX_HOME", Some(" , , ".into())),
+        ]);
+        assert_eq!(codex_home_paths().unwrap(), vec![root]);
+    }
 
     #[test]
     fn includes_archived_sessions_next_to_sessions() {
