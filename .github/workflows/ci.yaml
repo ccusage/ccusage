@@ -399,6 +399,11 @@ jobs:
           - npm
           - pnpm
           - bun
+        exclude:
+          # pnpm dlx on Windows doesn't install optional native binaries into
+          # its temporary store, so the CLI launcher fails with spawn ENOENT.
+          - os: blacksmith-32vcpu-windows-2025
+            runner: pnpm
 
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -449,13 +454,6 @@ jobs:
           # https://pnpm.io/settings#blockexoticsubdeps
           PNPM_CONFIG_BLOCK_EXOTIC_SUBDEPS: 'false'
         run: |
-          # pnpm dlx on Windows doesn't install optional native binaries into its
-          # temporary store, so the CLI launcher fails with spawn ENOENT; skip
-          # that one combination.
-          if ($env:RUNNER_KIND -eq 'pnpm' -and $IsWindows) {
-            Write-Host 'skip: pnpm dlx on Windows cannot install the native binary'
-            exit 0
-          }
           $url = $env:CCUSAGE_PREVIEW_URL
           function Invoke-Ccusage([string[]]$ccArgs) {
             switch ($env:RUNNER_KIND) {
