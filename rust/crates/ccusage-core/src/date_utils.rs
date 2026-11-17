@@ -124,7 +124,7 @@ impl IsoDate {
     }
 
     pub(crate) fn weekday_from_sunday(self) -> u32 {
-        (self.days_since_epoch() + 4).rem_euclid(7) as u32
+        weekday_from_epoch_days(self.days_since_epoch())
     }
 
     pub(crate) fn checked_add_days(self, days: i64) -> Option<Self> {
@@ -132,6 +132,10 @@ impl IsoDate {
         let (year, month, day) = civil_from_days(days);
         Some(Self { year, month, day })
     }
+}
+
+pub(crate) fn weekday_from_epoch_days(days: i64) -> u32 {
+    (days + 4).rem_euclid(7) as u32
 }
 
 impl fmt::Display for IsoDate {
