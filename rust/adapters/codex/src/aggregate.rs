@@ -26,14 +26,22 @@ use super::{
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 struct StringId(NonZeroUsize);
 
-#[derive(Default)]
-struct StringInterner {
+struct StringInterner<T> {
     ids: FxHashMap<CompactString, StringId>,
-    values: Vec<CompactString>,
+    values: Vec<T>,
 }
 
-impl StringInterner {
-    fn intern(&mut self, value: &str) -> Result<StringId> {
+impl<T> Default for StringInterner<T> {
+    fn default() -> Self {
+        Self {
+            ids: FxHashMap::default(),
+            values: Vec::new(),
+        }
+    }
+}
+
+impl<T> StringInterner<T> {
+    fn intern(&mut self, value: &str, create: impl FnOnce() -> T) -> Result<StringId> {
         if let Some(id) = self.ids.get(value) {
             return Ok(*id);
         }
@@ -44,7 +52,7 @@ impl StringInterner {
                 .and_then(NonZeroUsize::new)
                 .ok_or_else(|| crate::cli_error("too many interned Codex strings"))?,
         );
-        self.values.push(CompactString::new(value));
+        self.values.push(create());
         self.ids.insert(CompactString::new(value), id);
         Ok(id)
     }
@@ -89,7 +97,8 @@ impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
 struct CodexEventProvenance {
     file_index: usize,
     occurrences: CodexFileOccurrences<CodexUsageKey>,
-    ids: FxHashMap<CompactString, StringId>,
+    models: FxHashMap<CompactString, StringId>,
+    sessions: FxHashMap<CompactString, StringId>,
 }
 
 impl CodexEventProvenance {
@@ -97,20 +106,25 @@ impl CodexEventProvenance {
         Self {
             file_index,
             occurrences: CodexFileOccurrences::default(),
-            ids: FxHashMap::default(),
+            models: FxHashMap::default(),
+            sessions: FxHashMap::default(),
         }
     }
 
-    fn intern(&mut self, seen: &CodexDedupe, value: &str) -> Result<StringId> {
-        if let Some(id) = self.ids.get(value) {
+    fn intern<T>(
+        cache: &mut FxHashMap<CompactString, StringId>,
+        strings: &Mutex<StringInterner<T>>,
+        value: &str,
+        create: impl FnOnce() -> T,
+    ) -> Result<StringId> {
+        if let Some(id) = cache.get(value) {
             return Ok(*id);
         }
-        let id = seen
-            .strings
+        let id = strings
             .lock()
             .map_err(|_| crate::cli_error("codex interner poisoned"))?
-            .intern(value)?;
-        self.ids.insert(CompactString::new(value), id);
+            .intern(value, create)?;
+        cache.insert(CompactString::new(value), id);
         Ok(id)
     }
 }
@@ -157,7 +171,8 @@ struct CodexDedupeMap {
 
 struct CodexDedupe {
     shards: Vec<Mutex<CodexDedupeMap>>,
-    strings: Mutex<StringInterner>,
+    models: Mutex<StringInterner<CodexModel>>,
+    sessions: Mutex<StringInterner<CompactString>>,
 }
 
 impl CodexDedupe {
@@ -167,7 +182,8 @@ impl CodexDedupe {
             shards: (0..count)
                 .map(|_| Mutex::new(CodexDedupeMap::default()))
                 .collect(),
-            strings: Mutex::new(StringInterner::default()),
+            models: Mutex::new(StringInterner::default()),
+            sessions: Mutex::new(StringInterner::default()),
         }
     }
 
@@ -190,12 +206,26 @@ impl CodexDedupe {
         let model = crate::model_aliases::resolve_model_name(&event.model);
         let mut key = CodexUsageKey {
             session: if kind == AgentReportKind::Session {
-                Some(provenance.intern(self, &event.session_id)?)
+                Some(CodexEventProvenance::intern(
+                    &mut provenance.sessions,
+                    &self.sessions,
+                    &event.session_id,
+                    || CompactString::new(&event.session_id),
+                )?)
             } else {
                 None
             },
             timestamp: event.timestamp,
-            model: provenance.intern(self, &model)?,
+            model: CodexEventProvenance::intern(
+                &mut provenance.models,
+                &self.models,
+                &model,
+                || CodexModel {
+                    name: CompactString::new(&model),
+                    long_context_threshold: crate::pricing::long_context_split_threshold(&model),
+                    time_dependent: crate::has_time_dependent_pricing(&model),
+                },
+            )?,
             usage: event.raw_usage(),
             occurrence: 0,
         };
@@ -239,13 +269,16 @@ impl CodexDedupe {
         shared: &SharedArgs,
         kind: AgentReportKind,
     ) -> Result<BTreeMap<String, CodexGroup>> {
-        let strings = self
-            .strings
+        let models = self
+            .models
+            .into_inner()
+            .map_err(|_| crate::cli_error("codex interner poisoned"))?;
+        let sessions = self
+            .sessions
             .into_inner()
             .map_err(|_| crate::cli_error("codex interner poisoned"))?;
         let timezone = resolve_tz(shared.timezone.as_deref());
         let mut groups = BTreeMap::new();
-        let mut models = FxHashMap::default();
         for shard in self.shards {
             let records = shard
                 .into_inner()
@@ -256,17 +289,10 @@ impl CodexDedupe {
                     .into_values()
                     .map(|record| (record.key, record.attribution)),
             ) {
-                let model = models.entry(key.model).or_insert_with(|| {
-                    let name = strings.values[key.model.0.get() - 1].as_str();
-                    CodexModel {
-                        name,
-                        long_context_threshold: crate::pricing::long_context_split_threshold(name),
-                        time_dependent: crate::has_time_dependent_pricing(name),
-                    }
-                });
+                let model = &models.values[key.model.0.get() - 1];
                 let session = key
                     .session
-                    .map(|id| strings.values[id.0.get() - 1].as_str());
+                    .map(|id| sessions.values[id.0.get() - 1].as_str());
                 let Some(period) =
                     codex_period_for(key.timestamp, session, kind, &timezone, shared)
                 else {
@@ -285,8 +311,8 @@ impl CodexDedupe {
     }
 }
 
-struct CodexModel<'a> {
-    name: &'a str,
+struct CodexModel {
+    name: CompactString,
     long_context_threshold: u64,
     time_dependent: bool,
 }
@@ -566,7 +592,7 @@ fn codex_period_for(
 fn accumulate_codex_usage_into_group(
     group: &mut CodexGroup,
     event: crate::CodexRawUsage,
-    model: &CodexModel<'_>,
+    model: &CodexModel,
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
@@ -590,7 +616,7 @@ fn accumulate_codex_usage_into_group(
         group.last_activity = Some(attribution.last_activity.to_string());
     }
 
-    if let Some(model_usage) = group.models.get_mut(model.name) {
+    if let Some(model_usage) = group.models.get_mut(model.name.as_str()) {
         accumulate_codex_usage_into_model_usage(model_usage, event, model, timestamp, attribution);
     } else {
         accumulate_codex_usage_into_model_usage(
@@ -606,7 +632,7 @@ fn accumulate_codex_usage_into_group(
 fn accumulate_codex_usage_into_model_usage(
     model_usage: &mut crate::CodexModelUsage,
     event: crate::CodexRawUsage,
-    model: &CodexModel<'_>,
+    model: &CodexModel,
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
