@@ -514,28 +514,6 @@ fn visit_codex_session_entry(
         compaction_usage,
     } = state;
     let entry_type = value.entry_type.as_deref();
-    if value.invalid_fields {
-        let info = value.payload.as_ref().and_then(|payload| {
-            (entry_type == Some("event_msg")
-                && payload.payload_type.as_deref() == Some("token_count"))
-            .then_some(payload.info.as_ref())
-            .flatten()
-        });
-        if entry_type == Some("token_usage_record") || info.is_some() {
-            if info.is_some() {
-                codex_token_count_usage(info, previous_totals);
-            }
-            location.invalid_usage("record did not decode");
-        } else {
-            location.diagnostics.record(Skip::record(
-                location.path,
-                location.line,
-                SkipKind::UndecodedUsage,
-                "record did not decode",
-            ));
-        }
-        return;
-    }
     if entry_type == Some("compacted") {
         let Some(response_id) = value
             .payload
@@ -576,11 +554,15 @@ fn visit_codex_session_entry(
         let raw_usage = match payload.usage {
             CodexUsageCandidate::Missing => return,
             CodexUsageCandidate::Malformed => {
-                location.invalid_usage("compaction usage did not decode");
+                location.invalid_usage("field `payload.usage` did not decode");
                 return;
             }
             CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
         };
+        if payload.thread_token_usage == CodexUsageCandidate::Malformed {
+            location.invalid_usage("field `payload.thread_token_usage` did not decode");
+            return;
+        }
         let Some((timestamp, last_activity)) = codex_usage_timestamp(value.timestamp.as_ref())
         else {
             location.rejected_timestamp(value.timestamp.as_ref());
@@ -639,7 +621,10 @@ fn visit_codex_session_entry(
                 .entry(response_id)
                 .or_insert(CodexPendingUsage {
                     event,
-                    thread_token_usage: payload.thread_token_usage.map(normalize_codex_raw_usage),
+                    thread_token_usage: payload
+                        .thread_token_usage
+                        .decoded()
+                        .map(normalize_codex_raw_usage),
                 });
         }
         return;
@@ -679,10 +664,19 @@ fn visit_codex_session_entry(
         return;
     }
     let info = payload.info.as_ref();
+    if let Some(field) = info.and_then(malformed_token_count_field) {
+        codex_token_count_usage(info, previous_totals);
+        location.invalid_usage(field);
+        return;
+    }
     let parsed_timestamp = codex_usage_timestamp(value.timestamp.as_ref());
     replay.observe_token_count(
         parsed_timestamp.as_ref().map(|(timestamp, _)| *timestamp),
-        info.and_then(|info| info.last_token_usage.or(info.total_token_usage)),
+        info.and_then(|info| {
+            info.last_token_usage
+                .decoded()
+                .or(info.total_token_usage.decoded())
+        }),
         visit,
     );
     let CodexTokenCountUsage {
@@ -691,9 +685,10 @@ fn visit_codex_session_entry(
         delta,
     } = codex_token_count_usage(info, previous_totals);
     let Some((timestamp, last_activity)) = parsed_timestamp else {
-        if info
-            .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
-        {
+        if info.is_some_and(|info| {
+            info.last_token_usage != CodexUsageCandidate::Missing
+                || info.total_token_usage != CodexUsageCandidate::Missing
+        }) {
             location.rejected_timestamp(value.timestamp.as_ref());
         }
         return;
@@ -1168,6 +1163,16 @@ fn file_modified_timestamp(path: &Path) -> TimestampMs {
     ccusage_adapter_common::timestamps::file_mtime(path).unwrap_or(TimestampMs::UNIX_EPOCH)
 }
 
+fn malformed_token_count_field(info: &CodexInfo<'_>) -> Option<&'static str> {
+    if info.last_token_usage == CodexUsageCandidate::Malformed {
+        Some("field `payload.info.last_token_usage` did not decode")
+    } else if info.total_token_usage == CodexUsageCandidate::Malformed {
+        Some("field `payload.info.total_token_usage` did not decode")
+    } else {
+        None
+    }
+}
+
 fn subtract_codex_raw_usage(
     current: &CodexRawUsage,
     previous: Option<&CodexRawUsage>,
@@ -1198,12 +1203,12 @@ fn codex_token_count_usage(
     info: Option<&CodexInfo<'_>>,
     previous_totals: &mut Option<CodexRawUsage>,
 ) -> CodexTokenCountUsage {
-    let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
+    let total_usage = info.and_then(|info| info.total_token_usage.decoded());
     let cumulative_advanced = total_usage
         .as_ref()
         .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
     let raw_usage = info
-        .and_then(|info| info.last_token_usage.as_ref().copied())
+        .and_then(|info| info.last_token_usage.decoded())
         .filter(|_| cumulative_advanced)
         .or_else(|| {
             total_usage
@@ -1282,7 +1287,7 @@ impl RecordLocation<'_> {
 
     fn rejected_timestamp(&self, timestamp: Option<&CodexTimestamp<'_>>) {
         if matches!(timestamp, Some(CodexTimestamp::Invalid)) {
-            self.invalid_usage("usage timestamp did not decode");
+            self.invalid_usage("field `timestamp` did not decode");
             return;
         }
         self.diagnostics.record(Skip::record(
@@ -2004,14 +2009,84 @@ mod diagnostic_tests {
         );
         assert!(events.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
-        // Like every JSONL source, a selected record that does not decode and
-        // carries no usage is listed only under `--debug`.
-        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
         let _log_level = ccusage_test_support::EnvVarGuard::set("LOG_LEVEL", "1");
         assert!(
             diagnostics
                 .warnings(&crate::cli::SharedArgs::default())
                 .is_empty()
         );
+    }
+
+    fn session_events(lines: &[&str]) -> (Vec<CodexTokenUsageEvent>, Diagnostics) {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("session.jsonl", lines.join("\n"));
+        let diagnostics = Diagnostics::new("codex");
+        let mut events = Vec::new();
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |event| events.push(event),
+            &diagnostics,
+        );
+        (events, diagnostics)
+    }
+
+    #[test]
+    fn malformed_descriptive_session_fields_keep_the_usage() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"turn_context","timestamp":{},"payload":{"model":"gpt-5.4","metadata":[]}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","model":{},"model_name":7,"metadata":"x","info":{"model":[],"last_token_usage":{"input_tokens":10,"output_tokens":2},"total_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:01Z","payload":{"type":"thread_settings_applied","thread_settings":"fast"}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert_eq!((events[0].input_tokens, events[0].output_tokens), (10, 2));
+        assert_eq!(events[0].model, "gpt-5.4");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
+    }
+
+    #[test]
+    fn session_usage_objects_keep_the_last_value_of_a_repeated_key() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"input_tokens":10,"output_tokens":2}}}}"#,
+            r#"{"type":"token_usage_record","timestamp":"2026-01-02T00:00:01Z","payload":{"response_id":"r","usage":{"input_tokens":999,"input_tokens":20,"output_tokens":3}}}"#,
+            r#"{"type":"compacted","timestamp":"2026-01-02T00:00:02Z","payload":{"compaction_response_id":"r"}}"#,
+        ]);
+        let usage: Vec<_> = events
+            .iter()
+            .map(|event| (event.input_tokens, event.output_tokens))
+            .collect();
+        assert_eq!(usage, [(10, 2), (20, 3)]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn a_malformed_usage_field_is_named_by_its_static_key_path() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":{"x":"SECRET_CANARY"}}}}}"#,
+            r#"{"type":"event_msg","timestamp":{"x":"SECRET_CANARY"},"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#,
+            r#"{"type":"token_usage_record","timestamp":"2026-01-02T00:00:01Z","payload":{"response_id":"r","usage":{"input_tokens":10},"thread_token_usage":{"input_tokens":[]}}}"#,
+        ]);
+        assert!(events.is_empty());
+        let warnings = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 3, "{warnings}");
+        for field in [
+            "payload.info.last_token_usage",
+            "timestamp",
+            "payload.thread_token_usage",
+        ] {
+            assert!(
+                warnings.contains(&format!("field `{field}` did not decode")),
+                "{warnings}"
+            );
+        }
+        assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
     }
 }

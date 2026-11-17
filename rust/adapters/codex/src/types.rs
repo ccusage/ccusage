@@ -30,6 +30,15 @@ pub(super) enum CodexUsageCandidate {
     Decoded(CodexRawUsage),
 }
 
+impl CodexUsageCandidate {
+    pub(super) const fn decoded(self) -> Option<CodexRawUsage> {
+        match self {
+            Self::Decoded(usage) => Some(usage),
+            Self::Missing | Self::Malformed => None,
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for CodexUsageCandidate {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -262,15 +271,10 @@ pub struct CodexGroup {
 }
 
 macro_rules! codex_record {
-    ($name:ident { $($field:ident: $ty:ty = $key:literal => $variant:ident, $read:ident, $strict:literal),* $(,)? }) => {
+    ($name:ident { $($field:ident: $ty:ty = $key:literal => $variant:ident, $read:ident),* $(,)? }) => {
         #[derive(Default)]
         pub(super) struct $name<'a> {
             $(pub(super) $field: $ty,)*
-            pub(super) invalid_fields: bool,
-        }
-
-        impl CodexRecordState for $name<'_> {
-            fn invalid_fields(&self) -> bool { self.invalid_fields }
         }
 
         impl<'de: 'a, 'a> Deserialize<'de> for $name<'a> {
@@ -298,14 +302,10 @@ macro_rules! codex_record {
                             Unknown,
                         }
                         let mut record = $name::default();
-                        $(let mut $field = false;)*
                         while let Some(field) = map.next_key()? {
                             match field {
                                 $(Field::$variant => {
-                                    let value = map.next_value::<$read<_>>()?;
-                                    record.invalid_fields |= $strict && ($field || value.invalid_fields());
-                                    $field = true;
-                                    record.$field = value.0;
+                                    record.$field = map.next_value::<$read<_>>()?.0;
                                 },)*
                                 Field::Unknown => { map.next_value::<serde::de::IgnoredAny>()?; }
                             }
@@ -320,81 +320,81 @@ macro_rules! codex_record {
 }
 
 codex_record! { CodexLogEntry {
-    entry_type: Option<Cow<'a, str>> = "type" => EntryType, LossyString, true,
-    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp, true,
-    created_at: Option<CodexTimestamp<'a>> = "created_at" => CreatedAt, LossyTimestamp, false,
-    created_at_camel: Option<CodexTimestamp<'a>> = "createdAt" => CreatedAtCamel, LossyTimestamp, false,
-    payload: Option<CodexPayload<'a>> = "payload" => Payload, LossyObject, true,
-    data: Option<CodexResultFields<'a>> = "data" => Data, LossyObject, false,
-    result: Option<CodexResultFields<'a>> = "result" => Result, LossyObject, false,
-    response: Option<CodexResultFields<'a>> = "response" => Response, LossyObject, false,
-    usage: CodexUsageCandidate = "usage" => Usage, DecodedField, false,
-    model: Option<Cow<'a, str>> = "model" => Model, LossyString, false,
-    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, false,
-    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, false,
+    entry_type: Option<Cow<'a, str>> = "type" => EntryType, LossyString,
+    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp,
+    created_at: Option<CodexTimestamp<'a>> = "created_at" => CreatedAt, LossyTimestamp,
+    created_at_camel: Option<CodexTimestamp<'a>> = "createdAt" => CreatedAtCamel, LossyTimestamp,
+    payload: Option<CodexPayload<'a>> = "payload" => Payload, LossyObject,
+    data: Option<CodexResultFields<'a>> = "data" => Data, LossyObject,
+    result: Option<CodexResultFields<'a>> = "result" => Result, LossyObject,
+    response: Option<CodexResultFields<'a>> = "response" => Response, LossyObject,
+    usage: CodexUsageCandidate = "usage" => Usage, DecodedField,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject,
 } }
 
 codex_record! { CodexPayload {
-    payload_type: Option<Cow<'a, str>> = "type" => PayloadType, LossyString, true,
-    info: Option<CodexInfo<'a>> = "info" => Info, LossyObject, true,
-    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
-    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, true,
-    response_id: Option<Cow<'a, str>> = "response_id" => ResponseId, LossyString, true,
-    compaction_response_id: Option<Cow<'a, str>> = "compaction_response_id" => CompactionResponseId, LossyString, true,
-    usage: CodexUsageCandidate = "usage" => Usage, DecodedField, true,
-    thread_token_usage: Option<CodexRawUsage> = "thread_token_usage" => ThreadTokenUsage, LossyRawUsage, true,
-    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, true,
-    thread_settings: Option<CodexThreadSettings<'a>> = "thread_settings" => ThreadSettings, LossyObject, true,
+    payload_type: Option<Cow<'a, str>> = "type" => PayloadType, LossyString,
+    info: Option<CodexInfo<'a>> = "info" => Info, LossyObject,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString,
+    response_id: Option<Cow<'a, str>> = "response_id" => ResponseId, LossyString,
+    compaction_response_id: Option<Cow<'a, str>> = "compaction_response_id" => CompactionResponseId, LossyString,
+    usage: CodexUsageCandidate = "usage" => Usage, DecodedField,
+    thread_token_usage: CodexUsageCandidate = "thread_token_usage" => ThreadTokenUsage, LossyRawUsage,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject,
+    thread_settings: Option<CodexThreadSettings<'a>> = "thread_settings" => ThreadSettings, LossyObject,
 } }
 
 codex_record! { CodexThreadSettings {
-    service_tier: Option<Cow<'a, str>> = "service_tier" => ServiceTier, LossyString, true,
+    service_tier: Option<Cow<'a, str>> = "service_tier" => ServiceTier, LossyString,
 } }
 
 codex_record! { CodexInfo {
-    last_token_usage: Option<CodexRawUsage> = "last_token_usage" => LastTokenUsage, LossyRawUsage, true,
-    total_token_usage: Option<CodexRawUsage> = "total_token_usage" => TotalTokenUsage, LossyRawUsage, true,
-    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
-    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, true,
-    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, true,
+    last_token_usage: CodexUsageCandidate = "last_token_usage" => LastTokenUsage, LossyRawUsage,
+    total_token_usage: CodexUsageCandidate = "total_token_usage" => TotalTokenUsage, LossyRawUsage,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject,
 } }
 
 codex_record! { CodexResultFields {
-    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp, true,
-    created_at: Option<CodexTimestamp<'a>> = "created_at" => CreatedAt, LossyTimestamp, true,
-    created_at_camel: Option<CodexTimestamp<'a>> = "createdAt" => CreatedAtCamel, LossyTimestamp, true,
-    usage: CodexUsageCandidate = "usage" => Usage, DecodedField, true,
-    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
-    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString, true,
-    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject, true,
+    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp,
+    created_at: Option<CodexTimestamp<'a>> = "created_at" => CreatedAt, LossyTimestamp,
+    created_at_camel: Option<CodexTimestamp<'a>> = "createdAt" => CreatedAtCamel, LossyTimestamp,
+    usage: CodexUsageCandidate = "usage" => Usage, DecodedField,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString,
+    model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString,
+    metadata: Option<CodexModelMetadata<'a>> = "metadata" => Metadata, LossyObject,
 } }
 
 codex_record! { CodexModelMetadata {
-    model: Option<Cow<'a, str>> = "model" => Model, LossyString, true,
+    model: Option<Cow<'a, str>> = "model" => Model, LossyString,
 } }
 
 codex_record! { CodexSessionMeta {
-    entry_type: Option<Cow<'a, str>> = "type" => EntryType, LossyString, true,
-    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp, true,
-    payload: Option<CodexSessionMetaPayload<'a>> = "payload" => Payload, LossyObject, true,
+    entry_type: Option<Cow<'a, str>> = "type" => EntryType, LossyString,
+    timestamp: Option<CodexTimestamp<'a>> = "timestamp" => Timestamp, LossyTimestamp,
+    payload: Option<CodexSessionMetaPayload<'a>> = "payload" => Payload, LossyObject,
 } }
 
 codex_record! { CodexSessionMetaPayload {
-    id: Option<Cow<'a, str>> = "id" => Id, LossyString, true,
-    forked_from_id: Option<Cow<'a, str>> = "forked_from_id" => ForkedFromId, LossyString, true,
-    source: Option<CodexSessionSource<'a>> = "source" => Source, LossyObject, true,
+    id: Option<Cow<'a, str>> = "id" => Id, LossyString,
+    forked_from_id: Option<Cow<'a, str>> = "forked_from_id" => ForkedFromId, LossyString,
+    source: Option<CodexSessionSource<'a>> = "source" => Source, LossyObject,
 } }
 
 codex_record! { CodexSessionSource {
-    subagent: Option<CodexSubagent<'a>> = "subagent" => Subagent, LossyObject, true,
+    subagent: Option<CodexSubagent<'a>> = "subagent" => Subagent, LossyObject,
 } }
 
 codex_record! { CodexSubagent {
-    thread_spawn: Option<CodexThreadSpawn<'a>> = "thread_spawn" => ThreadSpawn, LossyObject, true,
+    thread_spawn: Option<CodexThreadSpawn<'a>> = "thread_spawn" => ThreadSpawn, LossyObject,
 } }
 
 codex_record! { CodexThreadSpawn {
-    parent_thread_id: Option<Cow<'a, str>> = "parent_thread_id" => ParentThreadId, LossyString, true,
+    parent_thread_id: Option<Cow<'a, str>> = "parent_thread_id" => ParentThreadId, LossyString,
 } }
 
 #[derive(Clone)]
@@ -404,16 +404,7 @@ pub(super) enum CodexTimestamp<'a> {
     Invalid,
 }
 
-trait CodexRecordState {
-    fn invalid_fields(&self) -> bool;
-}
-
 struct DecodedField<T>(T);
-impl<T> CodexRecordState for DecodedField<T> {
-    fn invalid_fields(&self) -> bool {
-        false
-    }
-}
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for DecodedField<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         T::deserialize(deserializer).map(Self)
@@ -421,47 +412,30 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for DecodedField<T> {
 }
 
 struct LossyObject<T>(Option<T>);
-impl<T: CodexRecordState> CodexRecordState for LossyObject<T> {
-    fn invalid_fields(&self) -> bool {
-        self.0
-            .as_ref()
-            .is_some_and(CodexRecordState::invalid_fields)
-    }
-}
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for LossyObject<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserialize_optional_object_lossy(deserializer).map(Self)
     }
 }
 
-struct LossyRawUsage<T>(T, bool);
-impl<T> CodexRecordState for LossyRawUsage<T> {
-    fn invalid_fields(&self) -> bool {
-        self.1
-    }
-}
-impl<'de> Deserialize<'de> for LossyRawUsage<Option<CodexRawUsage>> {
+struct LossyRawUsage<T>(T);
+impl<'de> Deserialize<'de> for LossyRawUsage<CodexUsageCandidate> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let fields = deserialize_optional_object_lossy::<D, CodexRawUsageFields>(deserializer)?;
-        Ok(match fields {
-            Some(fields) if fields.invalid_fields => Self(None, true),
-            Some(fields) => Self(Some(CodexRawUsage::from_fields(fields)), false),
-            None => Self(None, false),
-        })
+        Ok(Self(match fields {
+            Some(fields) if fields.invalid_fields => CodexUsageCandidate::Malformed,
+            Some(fields) => CodexUsageCandidate::Decoded(CodexRawUsage::from_fields(fields)),
+            None => CodexUsageCandidate::Missing,
+        }))
     }
 }
 
-struct LossyString<T>(T, bool);
-impl<T> CodexRecordState for LossyString<T> {
-    fn invalid_fields(&self) -> bool {
-        self.1
-    }
-}
+struct LossyString<T>(T);
 impl<'de: 'a, 'a> Deserialize<'de> for LossyString<Option<Cow<'a, str>>> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct StringVisitor;
         impl<'de> serde::de::Visitor<'de> for StringVisitor {
-            type Value = (Option<Cow<'de, str>>, bool);
+            type Value = Option<Cow<'de, str>>;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str("an optional string")
             }
@@ -469,28 +443,28 @@ impl<'de: 'a, 'a> Deserialize<'de> for LossyString<Option<Cow<'a, str>>> {
                 self,
                 value: &'de str,
             ) -> Result<Self::Value, E> {
-                Ok((Some(Cow::Borrowed(value)), false))
+                Ok(Some(Cow::Borrowed(value)))
             }
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                Ok((Some(Cow::Owned(value.to_string())), false))
+                Ok(Some(Cow::Owned(value.to_string())))
             }
             fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
-                Ok((Some(Cow::Owned(value)), false))
+                Ok(Some(Cow::Owned(value)))
             }
             fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-                Ok((None, false))
+                Ok(None)
             }
             fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
-                Ok((None, true))
+                Ok(None)
             }
             fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
-                Ok((None, true))
+                Ok(None)
             }
             fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
-                Ok((None, true))
+                Ok(None)
             }
             fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
-                Ok((None, true))
+                Ok(None)
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
@@ -499,7 +473,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for LossyString<Option<Cow<'a, str>>> {
                 serde::de::IgnoredAny::deserialize(serde::de::value::MapAccessDeserializer::new(
                     map,
                 ))?;
-                Ok((None, true))
+                Ok(None)
             }
             fn visit_seq<A: serde::de::SeqAccess<'de>>(
                 self,
@@ -508,21 +482,14 @@ impl<'de: 'a, 'a> Deserialize<'de> for LossyString<Option<Cow<'a, str>>> {
                 serde::de::IgnoredAny::deserialize(serde::de::value::SeqAccessDeserializer::new(
                     seq,
                 ))?;
-                Ok((None, true))
+                Ok(None)
             }
         }
-        deserializer
-            .deserialize_any(StringVisitor)
-            .map(|(value, invalid)| Self(value, invalid))
+        deserializer.deserialize_any(StringVisitor).map(Self)
     }
 }
 
 struct LossyTimestamp<T>(T);
-impl CodexRecordState for LossyTimestamp<Option<CodexTimestamp<'_>>> {
-    fn invalid_fields(&self) -> bool {
-        matches!(self.0, Some(CodexTimestamp::Invalid))
-    }
-}
 impl<'de: 'a, 'a> Deserialize<'de> for LossyTimestamp<Option<CodexTimestamp<'a>>> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct TimestampVisitor;
@@ -644,39 +611,29 @@ impl<'de> Deserialize<'de> for CodexRawUsageFields {
                     Unknown,
                 }
                 let mut fields = CodexRawUsageFields::default();
-                let mut seen = 0_u16;
                 while let Some(field) = map.next_key()? {
-                    let (target, bit) = match field {
-                        Field::InputTokens => (&mut fields.input_tokens, 1_u16 << 0),
-                        Field::PromptTokens => (&mut fields.prompt_tokens, 1_u16 << 1),
-                        Field::Input => (&mut fields.input, 1_u16 << 2),
-                        Field::CachedInputTokens => (&mut fields.cached_input_tokens, 1_u16 << 3),
-                        Field::CacheReadInputTokens => {
-                            (&mut fields.cache_read_input_tokens, 1_u16 << 4)
-                        }
-                        Field::CacheCreationInputTokens => {
-                            (&mut fields.cache_creation_input_tokens, 1_u16 << 5)
-                        }
-                        Field::CacheWriteInputTokens => {
-                            (&mut fields.cache_write_input_tokens, 1_u16 << 6)
-                        }
-                        Field::CachedTokens => (&mut fields.cached_tokens, 1_u16 << 7),
-                        Field::OutputTokens => (&mut fields.output_tokens, 1_u16 << 8),
-                        Field::CompletionTokens => (&mut fields.completion_tokens, 1_u16 << 9),
-                        Field::Output => (&mut fields.output, 1_u16 << 10),
-                        Field::ReasoningOutputTokens => {
-                            (&mut fields.reasoning_output_tokens, 1_u16 << 11)
-                        }
-                        Field::ReasoningTokens => (&mut fields.reasoning_tokens, 1_u16 << 12),
-                        Field::TotalTokens => (&mut fields.total_tokens, 1_u16 << 13),
+                    let target = match field {
+                        Field::InputTokens => &mut fields.input_tokens,
+                        Field::PromptTokens => &mut fields.prompt_tokens,
+                        Field::Input => &mut fields.input,
+                        Field::CachedInputTokens => &mut fields.cached_input_tokens,
+                        Field::CacheReadInputTokens => &mut fields.cache_read_input_tokens,
+                        Field::CacheCreationInputTokens => &mut fields.cache_creation_input_tokens,
+                        Field::CacheWriteInputTokens => &mut fields.cache_write_input_tokens,
+                        Field::CachedTokens => &mut fields.cached_tokens,
+                        Field::OutputTokens => &mut fields.output_tokens,
+                        Field::CompletionTokens => &mut fields.completion_tokens,
+                        Field::Output => &mut fields.output,
+                        Field::ReasoningOutputTokens => &mut fields.reasoning_output_tokens,
+                        Field::ReasoningTokens => &mut fields.reasoning_tokens,
+                        Field::TotalTokens => &mut fields.total_tokens,
                         Field::Unknown => {
                             map.next_value::<serde::de::IgnoredAny>()?;
                             continue;
                         }
                     };
                     let OptionalU64(value, invalid) = map.next_value()?;
-                    fields.invalid_fields |= invalid || seen & bit != 0;
-                    seen |= bit;
+                    fields.invalid_fields |= invalid;
                     *target = value;
                 }
                 Ok(fields)
