@@ -111,9 +111,8 @@ pub struct Pricing {
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
     pub(crate) family: ProviderFamily,
-    schedule: Option<ScheduleId>,
     overridden: bool,
-    explicit_schedule_rates: u16,
+    explicit_fields: u16,
 }
 
 /// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
@@ -280,9 +279,8 @@ impl Pricing {
             ultrafast_multiplier: 1.0,
             flex_multiplier: 1.0,
             family: ProviderFamily::Unrecorded,
-            schedule: None,
             overridden: false,
-            explicit_schedule_rates: 0,
+            explicit_fields: 0,
         }
     }
 }
@@ -356,7 +354,8 @@ struct PricingSchedule {
     peak: ScheduledRates,
 }
 
-// NOTE(2026-08-31, #1679): Historical cutoff and UTC windows: https://github.com/ryoppippi/ccusage/pull/1679; rates: https://github.com/ryoppippi/ccusage/issues/1643.
+// NOTE(2026-08-31, #1679): Historical cutoff: https://github.com/ccusage/ccusage/pull/1679; rates: https://github.com/ccusage/ccusage/issues/1643.
+// NOTE(2026-11-17): https://api-docs.deepseek.com/quick_start/pricing/ confirms Monday-Friday peak windows at 01:00-04:00 and 06:00-10:00 UTC; preserve the historical schedule.
 const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
@@ -427,93 +426,146 @@ pub fn has_time_dependent_pricing(model: &str) -> bool {
     ScheduleId::for_request(model).is_some()
 }
 
+struct OverrideFields;
+
+impl OverrideFields {
+    const INPUT: u16 = 1;
+    const OUTPUT: u16 = 2;
+    const CACHE_CREATE: u16 = 4;
+    const CACHE_READ: u16 = 8;
+    const LONG_INPUT: u16 = 16;
+    const LONG_OUTPUT: u16 = 32;
+    const LONG_CACHE_CREATE: u16 = 64;
+    const LONG_CACHE_READ: u16 = 128;
+    const CACHE_CREATE_1H: u16 = 256;
+    const FAST: u16 = 512;
+    const FLEX: u16 = 1024;
+}
+
 impl Pricing {
-    fn at(mut self, timestamp: TimestampMs, explicit: Option<Self>) -> Self {
-        let Some(schedule) = self.schedule else {
-            return self;
-        };
+    fn at(mut self, schedule: ScheduleId, timestamp: TimestampMs, explicit: Option<Self>) -> Self {
         let rates = schedule.data().rates_at(timestamp);
         let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
                 self.$field = match explicit {
-                    Some(entry) if entry.explicit_schedule_rates & $bit != 0 => entry.$field,
+                    Some(entry) if entry.explicit_fields & $bit != 0 => entry.$field,
                     _ => $rate,
                 };
             };
         }
-        scheduled!(input, rates.input, 1);
-        scheduled!(output, rates.output, 2);
-        scheduled!(cache_create, Some(rates.cache_create), 4);
-        scheduled!(cache_read, Some(rates.cache_read), 8);
+        scheduled!(input, rates.input, OverrideFields::INPUT);
+        scheduled!(output, rates.output, OverrideFields::OUTPUT);
+        scheduled!(
+            cache_create,
+            Some(rates.cache_create),
+            OverrideFields::CACHE_CREATE
+        );
+        scheduled!(
+            cache_read,
+            Some(rates.cache_read),
+            OverrideFields::CACHE_READ
+        );
         long_context.rates.input = match explicit {
-            Some(entry) if entry.explicit_schedule_rates & 16 != 0 => {
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_INPUT != 0 => {
                 entry.long_context.and_then(|context| context.rates.input)
             }
             _ => Some(rates.input),
         };
         long_context.rates.output = match explicit {
-            Some(entry) if entry.explicit_schedule_rates & 32 != 0 => {
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_OUTPUT != 0 => {
                 entry.long_context.and_then(|context| context.rates.output)
             }
             _ => Some(rates.output),
         };
         long_context.rates.cache_create = match explicit {
-            Some(entry) if entry.explicit_schedule_rates & 64 != 0 => entry
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_CACHE_CREATE != 0 => entry
                 .long_context
                 .and_then(|context| context.rates.cache_create),
             _ => Some(rates.cache_create),
         };
         long_context.rates.cache_read = match explicit {
-            Some(entry) if entry.explicit_schedule_rates & 128 != 0 => entry
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_CACHE_READ != 0 => entry
                 .long_context
                 .and_then(|context| context.rates.cache_read),
             _ => Some(rates.cache_read),
         };
-        scheduled!(cache_create_1h, self.cache_create_1h, 256);
-        scheduled!(fast_multiplier, self.fast_multiplier, 512);
-        scheduled!(flex_multiplier, self.flex_multiplier, 1024);
+        scheduled!(
+            cache_create_1h,
+            self.cache_create_1h,
+            OverrideFields::CACHE_CREATE_1H
+        );
+        scheduled!(fast_multiplier, self.fast_multiplier, OverrideFields::FAST);
+        scheduled!(flex_multiplier, self.flex_multiplier, OverrideFields::FLEX);
         self.long_context = Some(long_context);
         self
     }
 
     fn apply_override(&mut self, value: &PricingOverride) {
         self.overridden = true;
-        self.explicit_schedule_rates = 0;
+        self.explicit_fields = 0;
         macro_rules! rate {
             ($source:ident, $field:ident, $wrap:expr, $bit:expr) => {
                 if let Some(value) = value.$source {
                     self.$field = $wrap(value);
-                    self.explicit_schedule_rates |= $bit;
+                    self.explicit_fields |= $bit;
                 }
             };
         }
-        rate!(input_cost_per_token, input, std::convert::identity, 1);
-        rate!(output_cost_per_token, output, std::convert::identity, 2);
-        rate!(cache_creation_input_token_cost, cache_create, Some, 4);
-        rate!(cache_read_input_token_cost, cache_read, Some, 8);
+        rate!(
+            input_cost_per_token,
+            input,
+            std::convert::identity,
+            OverrideFields::INPUT
+        );
+        rate!(
+            output_cost_per_token,
+            output,
+            std::convert::identity,
+            OverrideFields::OUTPUT
+        );
+        rate!(
+            cache_creation_input_token_cost,
+            cache_create,
+            Some,
+            OverrideFields::CACHE_CREATE
+        );
+        rate!(
+            cache_read_input_token_cost,
+            cache_read,
+            Some,
+            OverrideFields::CACHE_READ
+        );
         let mut context = self.long_context.unwrap_or(LongContext::empty_marginal());
         let mut changed = false;
         macro_rules! long_rate {
             ($source:ident, $field:ident, $bit:expr) => {
                 if let Some(value) = value.$source {
                     context.rates.$field = Some(value);
-                    self.explicit_schedule_rates |= $bit;
+                    self.explicit_fields |= $bit;
                     changed = true;
                 }
             };
         }
-        long_rate!(input_cost_per_token_above_200k_tokens, input, 16);
-        long_rate!(output_cost_per_token_above_200k_tokens, output, 32);
+        long_rate!(
+            input_cost_per_token_above_200k_tokens,
+            input,
+            OverrideFields::LONG_INPUT
+        );
+        long_rate!(
+            output_cost_per_token_above_200k_tokens,
+            output,
+            OverrideFields::LONG_OUTPUT
+        );
         long_rate!(
             cache_creation_input_token_cost_above_200k_tokens,
             cache_create,
-            64
+            OverrideFields::LONG_CACHE_CREATE
         );
         long_rate!(
             cache_read_input_token_cost_above_200k_tokens,
             cache_read,
-            128
+            OverrideFields::LONG_CACHE_READ
         );
         if changed {
             self.long_context = Some(context);
@@ -522,19 +574,19 @@ impl Pricing {
             cache_creation_input_token_cost_above_1hr,
             cache_create_1h,
             Some,
-            256
+            OverrideFields::CACHE_CREATE_1H
         );
         rate!(
             fast_multiplier,
             fast_multiplier,
             std::convert::identity,
-            512
+            OverrideFields::FAST
         );
         rate!(
             flex_multiplier,
             flex_multiplier,
             std::convert::identity,
-            1024
+            OverrideFields::FLEX
         );
     }
 }
@@ -1424,7 +1476,6 @@ impl PricingMap {
             }
             loaded_count += 1;
         }
-        self.attach_schedules();
         self.clear_find_cache();
         loaded_count
     }
@@ -1651,17 +1702,8 @@ impl PricingMap {
                 loaded_count += 1;
             }
         }
-        self.attach_schedules();
         self.clear_find_cache();
         loaded_count
-    }
-
-    fn attach_schedules(&mut self) {
-        for schedule in [ScheduleId::DeepSeekV4Flash, ScheduleId::DeepSeekV4Pro] {
-            if let Some(pricing) = self.rows_mut().entries.get_mut(schedule.model()) {
-                pricing.schedule = Some(schedule);
-            }
-        }
     }
 
     pub fn find(&self, model: &str) -> Option<Pricing> {
@@ -1966,14 +2008,13 @@ impl PricingMap {
         resolved: &str,
         schedule: ScheduleId,
         timestamp: TimestampMs,
-        mut pricing: Pricing,
+        pricing: Pricing,
     ) -> Pricing {
-        pricing.schedule = Some(schedule);
         let explicit = [model, resolved, schedule.model()]
             .into_iter()
             .find_map(|key| self.rows.entries.get(key).filter(|entry| entry.overridden))
             .copied();
-        pricing.at(timestamp, explicit)
+        pricing.at(schedule, timestamp, explicit)
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
@@ -3552,6 +3593,14 @@ mod tests {
         let base = direct_deepseek_pricing();
         let model = "custom-base".to_string();
         let value = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(1.0),
+            output_cost_per_token: Some(2.0),
+            cache_creation_input_token_cost: Some(3.0),
+            cache_read_input_token_cost: Some(4.0),
+            input_cost_per_token_above_200k_tokens: Some(5.0),
+            output_cost_per_token_above_200k_tokens: Some(6.0),
+            cache_creation_input_token_cost_above_200k_tokens: Some(7.0),
+            cache_read_input_token_cost_above_200k_tokens: Some(8.0),
             cache_creation_input_token_cost_above_1hr: Some(13.0),
             fast_multiplier: Some(3.0),
             flex_multiplier: Some(0.4),
@@ -3561,6 +3610,15 @@ mod tests {
         let scheduled = pricing
             .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
             .unwrap();
+        assert_eq!(scheduled.input, 1.0);
+        assert_eq!(scheduled.output, 2.0);
+        assert_eq!(scheduled.cache_create, Some(3.0));
+        assert_eq!(scheduled.cache_read, Some(4.0));
+        let rates = scheduled.long_context.unwrap().rates;
+        assert_eq!(rates.input, Some(5.0));
+        assert_eq!(rates.output, Some(6.0));
+        assert_eq!(rates.cache_create, Some(7.0));
+        assert_eq!(rates.cache_read, Some(8.0));
         assert_eq!(scheduled.cache_create_1h, Some(13.0));
         assert_eq!(scheduled.fast_multiplier, 3.0);
         assert_eq!(scheduled.flex_multiplier, 0.4);
@@ -5539,11 +5597,11 @@ mod tests {
         );
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5.6")
+                .long_context_pricing("gpt-5.6")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             embedded_models_dev_pricing()
-                .find("gpt-5.6-sol")
+                .long_context_pricing("gpt-5.6-sol")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
         );
@@ -5733,7 +5791,7 @@ mod tests {
         }
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("grok-4.5")
+                .long_context_pricing("grok-4.5")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             200_000
@@ -5746,21 +5804,21 @@ mod tests {
         // OpenAI two-stage models switch tiers above 272K input tokens.
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5.6-sol")
+                .long_context_pricing("gpt-5.6-sol")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
         );
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5.5")
+                .long_context_pricing("gpt-5.5")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
         );
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5.5-pro")
+                .long_context_pricing("gpt-5.5-pro")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
@@ -5768,7 +5826,7 @@ mod tests {
         // Date-pinned keys share their base model's boundary.
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5.5-2026-04-23")
+                .long_context_pricing("gpt-5.5-2026-04-23")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             272_000
@@ -5777,14 +5835,14 @@ mod tests {
         // LiteLLM `*_above_200k_tokens` data.
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5")
+                .long_context_pricing("gpt-5")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             200_000
         );
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-5.4-mini")
+                .long_context_pricing("gpt-5.4-mini")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             200_000
@@ -6263,11 +6321,11 @@ mod tests {
         assert_eq!(reserve.fast_multiplier, luna.fast_multiplier);
         assert_eq!(
             embedded_models_dev_pricing()
-                .find("gpt-reserve")
+                .long_context_pricing("gpt-reserve")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
             embedded_models_dev_pricing()
-                .find("gpt-5.6-luna")
+                .long_context_pricing("gpt-5.6-luna")
                 .map(Pricing::long_context_split_threshold)
                 .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
         );
