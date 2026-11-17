@@ -12,7 +12,7 @@ use ccusage_adapter_common::{
 };
 
 use crate::{
-    Diagnostics, LoadedEntry, PricingMap, Result,
+    Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind,
     adapter::{claude, opencode, pi},
     cli::{AgentReportKind, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
 };
@@ -22,7 +22,7 @@ use super::{
     sources::SOURCES,
     types::{
         AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult, Bucket,
-        LoadedAgentRows, ReportDay,
+        DayRow, LoadedAgentRows, ReportDay,
     },
 };
 
@@ -34,12 +34,24 @@ pub(super) fn load_rows(
 ) -> Result<AllLoadResult> {
     let run_sources = run_sources(shared, sources)?;
     let pricing = load_pricing(&run_sources);
-    let loaded = load_base_rows(LoadKind::for_report(kind), shared, &run_sources, &pricing)?;
-    Ok(AllLoadResult {
-        rows: finish_rows(kind, loaded.rows, shared, start_of_week)?,
-        detected_agents: loaded.detected_agents,
-        diagnostics: loaded.diagnostics,
-    })
+    match Bucket::for_report(kind, start_of_week) {
+        Some(bucket) => {
+            let loaded = load_day_rows(shared, &run_sources, &pricing)?;
+            Ok(AllLoadResult {
+                rows: finish_days(loaded.rows, bucket, shared),
+                detected_agents: loaded.detected_agents,
+                diagnostics: loaded.diagnostics,
+            })
+        }
+        None => {
+            let loaded = load_session_rows(shared, &run_sources, &pricing)?;
+            Ok(AllLoadResult {
+                rows: finish_sessions(loaded.rows, shared),
+                detected_agents: loaded.detected_agents,
+                diagnostics: loaded.diagnostics,
+            })
+        }
+    }
 }
 
 pub(super) fn load_sections(
@@ -51,10 +63,10 @@ pub(super) fn load_sections(
     let run_sources = run_sources(shared, sources)?;
     let pricing = load_pricing(&run_sources);
     let mut daily_base = needs_daily_family(kinds)
-        .then(|| load_base_rows(LoadKind::Day, shared, &run_sources, &pricing))
+        .then(|| load_day_rows(shared, &run_sources, &pricing))
         .transpose()?;
     let mut session_base = needs_session(kinds)
-        .then(|| load_base_rows(LoadKind::Session, shared, &run_sources, &pricing))
+        .then(|| load_session_rows(shared, &run_sources, &pricing))
         .transpose()?;
 
     let daily_detected_agents = daily_base
@@ -68,8 +80,12 @@ pub(super) fn load_sections(
     // The two loads read different files for one source, so their skips are
     // merged per source rather than listed twice.
     let mut diagnostics = Vec::new();
-    for base in daily_base.iter_mut().chain(&mut session_base) {
-        for loaded in std::mem::take(&mut base.diagnostics) {
+    let loaded_diagnostics = daily_base
+        .iter_mut()
+        .map(|base| &mut base.diagnostics)
+        .chain(session_base.iter_mut().map(|base| &mut base.diagnostics));
+    for base_diagnostics in loaded_diagnostics {
+        for loaded in std::mem::take(base_diagnostics) {
             match diagnostics
                 .iter()
                 .find(|merged: &&Diagnostics| merged.source() == loaded.source())
@@ -82,20 +98,15 @@ pub(super) fn load_sections(
 
     let mut sections = Vec::with_capacity(kinds.len());
     for kind in kinds {
-        let rows = if *kind == AgentReportKind::Session {
-            session_base
+        let rows = match Bucket::for_report(*kind, start_of_week) {
+            Some(bucket) => daily_base
                 .as_ref()
-                .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
-                .transpose()?
-                .unwrap_or_default()
-        } else {
-            daily_base
+                .map(|base| finish_days(base.rows.clone(), bucket, shared)),
+            None => session_base
                 .as_ref()
-                .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
-                .transpose()?
-                .unwrap_or_default()
+                .map(|base| finish_sessions(base.rows.clone(), shared)),
         };
-        sections.push((*kind, rows));
+        sections.push((*kind, rows.unwrap_or_default()));
     }
 
     Ok(AllSectionsLoadResult {
@@ -217,12 +228,53 @@ fn load_pricing(sources: &[RunSource<'_>]) -> BTreeMap<&'static str, Arc<Pricing
         .collect()
 }
 
-fn load_base_rows(
+struct BaseRows<R> {
+    rows: Vec<R>,
+    detected_agents: Vec<&'static str>,
+    diagnostics: Vec<Diagnostics>,
+}
+
+fn load_day_rows(
+    shared: &SharedArgs,
+    sources: &[RunSource<'_>],
+    pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
+) -> Result<BaseRows<DayRow>> {
+    load_base_rows(
+        LoadKind::Day,
+        shared,
+        sources,
+        pricing,
+        |row, diagnostics| match ReportDay::parse(&row.period) {
+            Some(day) => Some(DayRow { day, row }),
+            None => {
+                diagnostics.record(Skip::unit(
+                    Path::new(&row.period),
+                    SkipKind::InvalidTimestamp,
+                    "daily row period is not a calendar day",
+                ));
+                None
+            }
+        },
+    )
+}
+
+fn load_session_rows(
+    shared: &SharedArgs,
+    sources: &[RunSource<'_>],
+    pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
+) -> Result<BaseRows<UnifiedRow>> {
+    load_base_rows(LoadKind::Session, shared, sources, pricing, |row, _| {
+        Some(row)
+    })
+}
+
+fn load_base_rows<R>(
     load_kind: LoadKind,
     shared: &SharedArgs,
     sources: &[RunSource<'_>],
     pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
-) -> Result<AllLoadResult> {
+    admit: impl Fn(UnifiedRow, &Diagnostics) -> Option<R>,
+) -> Result<BaseRows<R>> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
             && crate::progress::should_show_usage_load_progress(
@@ -289,43 +341,41 @@ fn load_base_rows(
         if detected {
             detected_agents.push(loaded.agent);
         }
-        rows.extend(agent_rows);
+        rows.extend(
+            agent_rows
+                .into_iter()
+                .filter_map(|row| admit(row, &agent_diagnostics)),
+        );
         diagnostics.push(agent_diagnostics);
     }
-    Ok(AllLoadResult {
+    Ok(BaseRows {
         rows,
         detected_agents,
         diagnostics,
     })
 }
 
-fn finish_rows(
-    kind: AgentReportKind,
-    mut rows: Vec<UnifiedRow>,
-    shared: &SharedArgs,
-    start_of_week: WeekDay,
-) -> Result<Vec<UnifiedRow>> {
-    let Some(bucket) = Bucket::for_report(kind, start_of_week) else {
-        for row in &mut rows {
-            row.metadata_agents = None;
-        }
-        rows.sort_by(|a, b| {
-            let cost_order = if shared.order_explicit && shared.order == crate::cli::SortOrder::Asc
-            {
-                a.total_cost.total_cmp(&b.total_cost)
-            } else {
-                b.total_cost.total_cmp(&a.total_cost)
-            };
-            cost_order
-                .then_with(|| a.period.cmp(&b.period))
-                .then_with(|| a.agent.cmp(b.agent))
-        });
-        return Ok(rows);
-    };
+fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<UnifiedRow> {
+    for row in &mut rows {
+        row.metadata_agents = None;
+    }
+    rows.sort_by(|a, b| {
+        let cost_order = if shared.order_explicit && shared.order == crate::cli::SortOrder::Asc {
+            a.total_cost.total_cmp(&b.total_cost)
+        } else {
+            b.total_cost.total_cmp(&a.total_cost)
+        };
+        cost_order
+            .then_with(|| a.period.cmp(&b.period))
+            .then_with(|| a.agent.cmp(b.agent))
+    });
+    rows
+}
 
-    let mut aggregated = aggregate_rows(rows, bucket)?;
+fn finish_days(rows: Vec<DayRow>, bucket: Bucket, shared: &SharedArgs) -> Vec<UnifiedRow> {
+    let mut aggregated = aggregate_rows(rows, bucket);
     sort_rows(&mut aggregated, &shared.order);
-    Ok(aggregated)
+    aggregated
 }
 
 pub(super) fn load_agent_rows_parallel(
@@ -479,18 +529,17 @@ fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
 }
 
-pub(super) fn aggregate_rows(rows: Vec<UnifiedRow>, bucket: Bucket) -> Result<Vec<UnifiedRow>> {
+pub(super) fn aggregate_rows(rows: Vec<DayRow>, bucket: Bucket) -> Vec<UnifiedRow> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
-    for mut row in rows {
-        let date = ReportDay::parse(&row.period)?;
-        let period = bucket.key(date)?;
+    for DayRow { day, mut row } in rows {
+        let period = bucket.key(day);
         row.period = period.clone();
         groups.entry(period).or_default().add(row);
     }
-    Ok(groups
+    groups
         .into_iter()
         .map(|(period, group)| group.into_row(period))
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]
@@ -502,7 +551,7 @@ mod tests {
         BUILT_IN_AGENT_NAMES, UsageSummary,
         adapter::codex,
         cli::{CodexSpeed, CostMode},
-        tests::NO_SOURCES,
+        tests::{NO_SOURCES, aggregate_periods},
     };
     use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
     use ccusage_adapter_common::source::LoadRequest;
@@ -569,6 +618,21 @@ mod tests {
         }
     }
 
+    fn finish_rows(
+        kind: AgentReportKind,
+        rows: Vec<UnifiedRow>,
+        shared: &SharedArgs,
+        start_of_week: WeekDay,
+    ) -> Option<Vec<UnifiedRow>> {
+        match Bucket::for_report(kind, start_of_week) {
+            Some(bucket) => aggregate_periods(rows, bucket).map(|mut rows| {
+                sort_rows(&mut rows, &shared.order);
+                rows
+            }),
+            None => Some(finish_sessions(rows, shared)),
+        }
+    }
+
     fn sorting_row(period: &str, agent: &'static str, cost: f64) -> UnifiedRow {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
@@ -579,7 +643,7 @@ mod tests {
     fn invalid_daily_periods_cannot_become_report_buckets() {
         for period in ["invalid", "2026-02-30", "2026-01", "2026-01-02T00:00:00Z"] {
             for bucket in [Bucket::Day, Bucket::Month, Bucket::Week(WeekDay::Monday)] {
-                assert!(aggregate_rows(vec![sorting_row(period, "amp", 1.0)], bucket).is_err());
+                assert!(aggregate_periods(vec![sorting_row(period, "amp", 1.0)], bucket).is_none());
             }
         }
     }
@@ -1150,7 +1214,7 @@ mod tests {
                     .unwrap()
                     .rows;
             if let Some(bucket) = Bucket::for_report(kind, ccusage_core::cli::WeekDay::Sunday) {
-                named_rows = aggregate_rows(named_rows, bucket).unwrap();
+                named_rows = aggregate_periods(named_rows, bucket).unwrap();
             }
             let pi_rows = pi_path_subcommand_rows(&store_path, kind, &shared, &pricing).unwrap();
 
@@ -2004,7 +2068,7 @@ mod tests {
             .rows,
         );
 
-        let aggregated = aggregate_rows(rows, Bucket::Day).unwrap();
+        let aggregated = aggregate_periods(rows, Bucket::Day).unwrap();
 
         assert_eq!(aggregated.len(), 1);
         assert_eq!(aggregated[0].metadata_agents, Some(vec!["omp", "pi"]));

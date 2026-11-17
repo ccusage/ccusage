@@ -2,27 +2,50 @@ use std::collections::BTreeSet;
 
 use ccusage_adapter_common::rows::UnifiedRow;
 
-use crate::{Diagnostics, ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
+use crate::{
+    Diagnostics, ModelBreakdown,
+    cli::{AgentReportKind, WeekDay},
+    fast::FxHashMap,
+};
 
 #[derive(Clone, Copy)]
 pub(super) enum Bucket {
     Day,
     Month,
-    Week(crate::cli::WeekDay),
+    Week(WeekDay),
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct ReportDay(crate::TimestampMs);
 
 impl ReportDay {
-    pub(super) fn parse(value: &str) -> crate::Result<Self> {
-        crate::parse_ts_timestamp(&format!("{value}T00:00:00Z"))
-            .map(Self)
-            .ok_or_else(|| crate::cli_error("source returned an invalid daily period"))
+    pub(super) fn parse(value: &str) -> Option<Self> {
+        crate::parse_ts_timestamp(&format!("{value}T00:00:00Z")).map(Self)
+    }
+
+    fn days_since_epoch(self) -> i64 {
+        self.0.as_millis().div_euclid(crate::MILLIS_PER_DAY)
+    }
+
+    fn weekday_from_sunday(self) -> i64 {
+        (self.days_since_epoch() + 4).rem_euclid(7)
+    }
+
+    fn minus_days(self, days: i64) -> Self {
+        Self(crate::TimestampMs::from_millis(
+            self.0.as_millis() - days * crate::MILLIS_PER_DAY,
+        ))
     }
 }
 
+#[derive(Clone)]
+pub(super) struct DayRow {
+    pub(super) day: ReportDay,
+    pub(super) row: UnifiedRow,
+}
+
 impl Bucket {
-    pub(super) fn for_report(kind: AgentReportKind, start: crate::cli::WeekDay) -> Option<Self> {
+    pub(super) fn for_report(kind: AgentReportKind, start: WeekDay) -> Option<Self> {
         match kind {
             AgentReportKind::Daily => Some(Self::Day),
             AgentReportKind::Monthly => Some(Self::Month),
@@ -31,14 +54,29 @@ impl Bucket {
         }
     }
 
-    pub(super) fn key(self, date: ReportDay) -> crate::Result<String> {
-        let parts = date.0.utc_parts();
-        let day = format!("{:04}-{:02}-{:02}", parts.year, parts.month, parts.day);
+    pub(super) fn key(self, date: ReportDay) -> String {
+        let day = |date: ReportDay| {
+            let parts = date.0.utc_parts();
+            format!("{:04}-{:02}-{:02}", parts.year, parts.month, parts.day)
+        };
         match self {
-            Self::Day => Ok(day),
-            Self::Month => Ok(format!("{:04}-{:02}", parts.year, parts.month)),
-            Self::Week(start) => crate::week_start(&day, start)
-                .ok_or_else(|| crate::cli_error("cannot calculate unified week boundary")),
+            Self::Day => day(date),
+            Self::Month => {
+                let parts = date.0.utc_parts();
+                format!("{:04}-{:02}", parts.year, parts.month)
+            }
+            Self::Week(start) => {
+                let start = match start {
+                    WeekDay::Sunday => 0,
+                    WeekDay::Monday => 1,
+                    WeekDay::Tuesday => 2,
+                    WeekDay::Wednesday => 3,
+                    WeekDay::Thursday => 4,
+                    WeekDay::Friday => 5,
+                    WeekDay::Saturday => 6,
+                };
+                day(date.minus_days((date.weekday_from_sunday() - start).rem_euclid(7)))
+            }
         }
     }
 }

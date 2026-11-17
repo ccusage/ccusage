@@ -25,6 +25,7 @@ use crate::{
         sections_report_json,
     },
     types::{AgentLoadSpec, AgentRows, Bucket},
+    types::{DayRow, ReportDay},
 };
 use ccusage_adapter_codex::{self as codex, CodexGroup, CodexModelUsage};
 use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::UnifiedRow};
@@ -33,6 +34,13 @@ use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 /// No per-source options, which is how the tests that do not exercise them
 /// call the loader.
 pub(crate) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
+
+pub(crate) fn aggregate_periods(rows: Vec<UnifiedRow>, bucket: Bucket) -> Option<Vec<UnifiedRow>> {
+    rows.into_iter()
+        .map(|row| ReportDay::parse(&row.period).map(|day| DayRow { day, row }))
+        .collect::<Option<Vec<_>>>()
+        .map(|rows| aggregate_rows(rows, bucket))
+}
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
     AgentRows {
@@ -96,7 +104,7 @@ fn loads_agent_rows_concurrently() {
 
 #[test]
 fn aggregates_daily_agent_rows_by_period() {
-    let rows = aggregate_rows(
+    let rows = aggregate_periods(
         vec![
             UnifiedRow {
                 period: "2026-01-02".to_string(),
@@ -158,9 +166,9 @@ fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
         extreme_all_row("2099-01-02", u64::MAX),
         extreme_all_row("2099-01-03", 1),
     ];
-    let daily_rows = aggregate_rows(rows.clone(), Bucket::Day).unwrap();
+    let daily_rows = aggregate_periods(rows.clone(), Bucket::Day).unwrap();
     let daily_report = report_json_with_agents(&daily_rows, AgentReportKind::Daily, false);
-    let weekly_rows = aggregate_rows(rows, Bucket::Week(WeekDay::Monday)).unwrap();
+    let weekly_rows = aggregate_periods(rows, Bucket::Week(WeekDay::Monday)).unwrap();
     let weekly_report = report_json_with_agents(&weekly_rows, AgentReportKind::Weekly, false);
 
     for report in [daily_report, weekly_report] {
@@ -185,7 +193,7 @@ fn buckets_unified_weekly_rows_by_requested_start_of_week() {
         extreme_all_row("2026-01-05", 1),
     ];
     let periods = |start_of_week| {
-        aggregate_rows(rows.clone(), Bucket::Week(start_of_week))
+        aggregate_periods(rows.clone(), Bucket::Week(start_of_week))
             .unwrap()
             .into_iter()
             .map(|row| row.period)
@@ -224,7 +232,7 @@ fn extreme_all_row(period: &str, tokens: u64) -> UnifiedRow {
 
 #[test]
 fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
-    let rows = aggregate_rows(
+    let rows = aggregate_periods(
         vec![
             UnifiedRow {
                 period: "2026-01-02".to_string(),
@@ -582,7 +590,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
 
 #[test]
 fn omits_by_agent_json_breakdowns_by_default() {
-    let rows = aggregate_rows(
+    let rows = aggregate_periods(
         vec![UnifiedRow {
             period: "2026-01-02".to_string(),
             agent: "codex",
@@ -624,7 +632,7 @@ fn renders_multi_section_json_with_command_totals() {
         agent_breakdowns: None,
         model_breakdowns: Vec::new(),
     }];
-    let monthly_rows = aggregate_rows(daily_rows.clone(), Bucket::Month).unwrap();
+    let monthly_rows = aggregate_periods(daily_rows.clone(), Bucket::Month).unwrap();
     let session_rows = vec![UnifiedRow {
         period: "session-a".to_string(),
         agent: "codex",
@@ -862,6 +870,43 @@ fn unified_totals(
 ) -> Value {
     let result = load_rows(kind, shared, sources, WeekDay::Monday).unwrap();
     report_json_with_agents(&result.rows, kind, false)["totals"].clone()
+}
+
+#[test]
+fn an_undatable_daily_row_is_skipped_with_a_diagnostic_naming_its_source() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-a.jsonl",
+        claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
+    );
+    let microseconds = 1_700_000_000_000_000;
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[("m-api", "ses-api", microseconds, api_row(microseconds, 20))],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        timezone: Some("UTC".to_string()),
+        ..SharedArgs::default()
+    };
+
+    for kind in [
+        AgentReportKind::Daily,
+        AgentReportKind::Weekly,
+        AgentReportKind::Monthly,
+    ] {
+        let result = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let totals = &report_json_with_agents(&result.rows, kind, false)["totals"];
+        assert_eq!(totals["inputTokens"], 100, "{kind:?}");
+        let opencode = result
+            .diagnostics
+            .iter()
+            .find(|diagnostics| diagnostics.source() == "opencode")
+            .unwrap();
+        assert_eq!(opencode.skipped(SkipKind::InvalidTimestamp), 1, "{kind:?}");
+    }
 }
 
 #[test]
@@ -2675,7 +2720,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
 
 #[test]
 fn aggregates_model_breakdowns_across_agents() {
-    let rows = aggregate_rows(
+    let rows = aggregate_periods(
         vec![
             UnifiedRow {
                 period: "2026-01-02".to_string(),
