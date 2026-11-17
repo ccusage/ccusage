@@ -182,24 +182,6 @@ fn timestamp_from_epoch_secs_or_millis(value: i64) -> Option<crate::TimestampMs>
     }
 }
 
-#[cfg(test)]
-mod timestamp_tests {
-    #[test]
-    fn mixed_epoch_units_use_one_boundary() {
-        for (raw, millis) in [
-            ("1767312000", 1_767_312_000_000),
-            ("10000000000", 10_000_000_000),
-            ("1000000000000", 1_000_000_000_000),
-        ] {
-            assert_eq!(
-                super::parse_goose_timestamp(raw).unwrap().as_millis(),
-                millis,
-                "{raw}"
-            );
-        }
-    }
-}
-
 fn normalize_provider(provider: Option<&str>, model: &str) -> String {
     let provider = provider
         .map(str::trim)
@@ -279,4 +261,22 @@ fn missing_goose_pricing(
         crate::total_usage_tokens(cost_usage),
         Some(pricing),
     )
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    #[test]
+    fn mixed_epoch_units_use_one_boundary() {
+        for (raw, millis) in [
+            ("1767312000", 1_767_312_000_000),
+            ("10000000000", 10_000_000_000),
+            ("1000000000000", 1_000_000_000_000),
+        ] {
+            assert_eq!(
+                super::parse_goose_timestamp(raw).unwrap().as_millis(),
+                millis,
+                "{raw}"
+            );
+        }
+    }
 }
