@@ -416,6 +416,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # actions/download-artifact talks to the artifact backend through the
           # Blacksmith-proxied results-receiver endpoint, whose local agent is
@@ -424,20 +425,9 @@ jobs:
           # ListArtifacts (re-running the job, once the agent is warm, succeeds).
           # gh run download uses the api.github.com REST API directly, sidestepping
           # that proxy, and we retry with backoff to ride out any transient hiccup.
-          # These jobs skip actions/checkout, so create a minimal git context
-          # for gh instead of relying on --repo (which some gh versions still
-          # follow with a local git probe).
-          $gitDir = "$env:RUNNER_TEMP/gh-context"
-          New-Item -ItemType Directory -Force -Path $gitDir | Out-Null
-          Push-Location $gitDir
-          git init -q
-          git remote add origin "https://github.com/$env:GITHUB_REPOSITORY.git"
-          Pop-Location
           $dir = "$env:RUNNER_TEMP/e2e-fixture"
           for ($i = 1; $i -le 5; $i++) {
-            Push-Location $gitDir
             gh run download $env:GITHUB_RUN_ID --name ccusage-e2e-fixture --dir $dir
-            Pop-Location
             if ($LASTEXITCODE -eq 0) { break }
             if ($i -eq 5) { throw "failed to download the E2E fixture after 5 attempts" }
             Start-Sleep -Seconds ($i * 5)
