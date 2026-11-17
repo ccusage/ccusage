@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
-};
+use std::{fs, path::Path, sync::Arc};
 
 use ccusage_adapter_common::units::UnitError;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -122,68 +117,7 @@ pub(super) struct KimiUsageEntry {
     extra_total_tokens: u64,
 }
 
-#[derive(Debug)]
-struct WireConfig {
-    root: Option<PathBuf>,
-    model: OnceLock<String>,
-}
-
-#[derive(Debug)]
-pub(super) struct WireFile {
-    path: PathBuf,
-    session_id: String,
-    config: Arc<WireConfig>,
-}
-
-impl AsRef<Path> for WireFile {
-    fn as_ref(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl WireFile {
-    pub(super) fn from_paths(paths: Vec<PathBuf>) -> Vec<Self> {
-        let mut configs = HashMap::new();
-        paths
-            .into_iter()
-            .map(|path| {
-                let parent = path.parent();
-                let session = if parent
-                    .and_then(Path::parent)
-                    .and_then(Path::file_name)
-                    .and_then(|name| name.to_str())
-                    == Some("agents")
-                {
-                    parent.and_then(Path::parent).and_then(Path::parent)
-                } else {
-                    parent
-                };
-                let root = session
-                    .and_then(Path::parent)
-                    .and_then(Path::parent)
-                    .and_then(Path::parent)
-                    .map(Path::to_path_buf);
-                let session_id = session
-                    .and_then(Path::file_name)
-                    .and_then(|name| name.to_str())
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let config = Arc::clone(configs.entry(root.clone()).or_insert_with(|| {
-                    Arc::new(WireConfig {
-                        root,
-                        model: OnceLock::new(),
-                    })
-                }));
-                Self {
-                    path,
-                    session_id,
-                    config,
-                }
-            })
-            .collect()
-    }
-}
+use super::paths::WireFile;
 
 pub(super) fn read_wire_file(
     file: &WireFile,

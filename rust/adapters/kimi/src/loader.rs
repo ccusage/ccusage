@@ -5,12 +5,12 @@ use ccusage_adapter_common::{
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{KimiUsageEntry, WireFile, kimi_entry_to_loaded, read_wire_file},
+    parser::{KimiUsageEntry, kimi_entry_to_loaded, read_wire_file},
     paths::discover_wire_files,
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let files = WireFile::from_paths(discover_wire_files(cx.diagnostics)?);
+    let files = discover_wire_files(cx.diagnostics)?;
     let pricing = cx.pipeline_pricing()?;
     let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
@@ -133,8 +133,10 @@ mod tests {
         let diagnostics = Diagnostics::new("kimi");
 
         let entries = super::super::parser::read_wire_file(
-            &super::WireFile::from_paths(vec![fixture.path("sessions/group/session-a/wire.jsonl")])
-                .remove(0),
+            &crate::paths::WireFile::from_paths(vec![
+                fixture.path("sessions/group/session-a/wire.jsonl"),
+            ])
+            .remove(0),
             &diagnostics,
         )
         .unwrap();

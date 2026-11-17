@@ -1,4 +1,8 @@
-use std::path::{Component, Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Component, Path, PathBuf},
+    sync::{Arc, OnceLock},
+};
 
 use ccusage_adapter_common::roots::{self, RootsEnv};
 
@@ -20,39 +24,103 @@ fn paths() -> Result<Vec<PathBuf>> {
     }))
 }
 
-pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
+pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<WireFile>> {
     let mut files = Vec::new();
     for kimi_path in paths()? {
         let sessions_path = kimi_path.join(KIMI_SESSIONS_DIR_NAME);
         let mut candidates = Vec::new();
         collect_files_with_extension(&sessions_path, "jsonl", &mut candidates, diagnostics);
-        files.extend(
-            candidates
-                .into_iter()
-                .filter(|file| is_kimi_wire_file(&sessions_path, file)),
-        );
+        files.extend(candidates);
     }
     files.sort();
     files.dedup();
-    Ok(files)
+    Ok(WireFile::from_paths(files))
 }
 
-fn is_kimi_wire_file(sessions_path: &Path, file_path: &Path) -> bool {
-    if file_path.file_name().and_then(|name| name.to_str()) != Some(KIMI_WIRE_FILE_NAME) {
-        return false;
+fn is_kimi_wire_file(file_path: &Path) -> bool {
+    file_path
+        .file_name()
+        .is_some_and(|name| name == KIMI_WIRE_FILE_NAME)
+        && file_path.ancestors().skip(1).any(|ancestor| {
+            ancestor
+                .file_name()
+                .is_some_and(|name| name == KIMI_SESSIONS_DIR_NAME)
+                && file_path.strip_prefix(ancestor).is_ok_and(|relative| {
+                    matches!(
+                        relative
+                            .components()
+                            .filter(|component| matches!(component, Component::Normal(_)))
+                            .count(),
+                        3 | 5
+                    )
+                })
+        })
+}
+
+#[derive(Debug)]
+pub(super) struct WireConfig {
+    pub(super) root: Option<PathBuf>,
+    pub(super) model: OnceLock<String>,
+}
+
+#[derive(Debug)]
+pub(super) struct WireFile {
+    pub(super) path: PathBuf,
+    pub(super) session_id: String,
+    pub(super) config: Arc<WireConfig>,
+}
+
+impl AsRef<Path> for WireFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
     }
-    let Ok(relative) = file_path.strip_prefix(sessions_path) else {
-        return false;
-    };
-    // Old format: sessions/<group>/<session>/wire.jsonl             → 3 components
-    // New format: sessions/<workspace>/<session>/agents/<agent>/wire.jsonl → 5 components
-    matches!(
-        relative
-            .components()
-            .filter(|component| matches!(component, Component::Normal(_)))
-            .count(),
-        3 | 5
-    )
+}
+
+impl WireFile {
+    pub(super) fn from_paths(paths: Vec<PathBuf>) -> Vec<Self> {
+        let mut configs = HashMap::new();
+        paths
+            .into_iter()
+            .filter_map(|path| {
+                if !is_kimi_wire_file(&path) {
+                    return None;
+                }
+                let parent = path.parent();
+                let session = if parent
+                    .and_then(Path::parent)
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+                    == Some("agents")
+                {
+                    parent.and_then(Path::parent).and_then(Path::parent)
+                } else {
+                    parent
+                };
+                let root = session
+                    .and_then(Path::parent)
+                    .and_then(Path::parent)
+                    .and_then(Path::parent)
+                    .map(Path::to_path_buf);
+                let session_id = session
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let config = Arc::clone(configs.entry(root.clone()).or_insert_with(|| {
+                    Arc::new(WireConfig {
+                        root,
+                        model: OnceLock::new(),
+                    })
+                }));
+                Some(Self {
+                    path,
+                    session_id,
+                    config,
+                })
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -68,7 +136,11 @@ mod tests {
             "sessions/nested/path/session/wire.jsonl": "{}\n",
         });
         let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
+        let files = discover_wire_files(&Diagnostics::new("kimi"))
+            .unwrap()
+            .into_iter()
+            .map(|file| file.path)
+            .collect::<Vec<_>>();
 
         assert_eq!(
             files,
@@ -84,7 +156,11 @@ mod tests {
             "sessions/group/session-d/wire.jsonl": "{}\n",
         });
         let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
+        let files = discover_wire_files(&Diagnostics::new("kimi"))
+            .unwrap()
+            .into_iter()
+            .map(|file| file.path)
+            .collect::<Vec<_>>();
 
         assert_eq!(
             files,

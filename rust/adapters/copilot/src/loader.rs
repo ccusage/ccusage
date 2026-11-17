@@ -11,7 +11,7 @@ use super::{
         CallIdKind, CallIds, CallKey, CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
         CopilotUsageRecordEntry, parse_otel_file, parse_session_state_file,
     },
-    paths::{CopilotSourceFile, CopilotSourceKind},
+    paths::CopilotSourceKind,
 };
 use ccusage_adapter_common::{
     source::LoadContext,
@@ -24,12 +24,6 @@ use crate::{
     calculate_cost_for_usage_at, cli::CostMode, format_date_tz, missing_pricing_model_for_usage,
     stored_cost_for_mode,
 };
-
-impl AsRef<Path> for CopilotSourceFile {
-    fn as_ref(&self) -> &Path {
-        &self.path
-    }
-}
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;

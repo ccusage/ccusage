@@ -1,15 +1,7 @@
-use std::path::Path;
-
 use crate::{LoadedEntry, Result};
 use ccusage_adapter_common::{source::LoadContext, units::read_typed_units_flat};
 
-use super::paths::{SourceFile, discover_files};
-
-impl AsRef<Path> for SourceFile {
-    fn as_ref(&self) -> &Path {
-        &self.path
-    }
-}
+use super::paths::discover_files;
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;

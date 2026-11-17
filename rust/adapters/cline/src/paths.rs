@@ -335,3 +335,9 @@ mod tests {
         );
     }
 }
+
+impl AsRef<Path> for SourceFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}

@@ -219,3 +219,9 @@ mod tests {
         );
     }
 }
+
+impl AsRef<std::path::Path> for CopilotSourceFile {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.path
+    }
+}
