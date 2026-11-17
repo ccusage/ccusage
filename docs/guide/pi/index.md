@@ -109,14 +109,34 @@ npx ccusage@latest pi daily
 
 ### Example Output
 
-Excerpt from the fixture report; additional rows are omitted.
+`ccusage pi daily` on the fixture data:
 
 ```text
 ┌────────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
 │ Date       │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
 ├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-27 │ - [pi] gpt-5            │     5,412 │       542 │         1,134 │         443 │         7,531 │       $3.38 │
+│            │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+│            │ - [pi] pi-mystery-2     │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
 │ 2025-12-30 │ - [pi] claude-opus-4    │     2,070 │       450 │           400 │       8,000 │        10,920 │       $1.17 │
 │            │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-31 │ - [pi] claude-haiku-4-5 │     2,550 │       956 │           501 │      19,006 │        23,013 │       $4.02 │
+│            │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-01 │ - [pi] claude-haiku-4-5 │     1,915 │     1,185 │           200 │      11,000 │        14,550 │       $0.05 │
+│            │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│            │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│            │ - [pi] gpt-5            │           │           │               │             │               │             │
+│            │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-02 │ - [pi] claude-haiku-4-5 │     3,620 │       963 │             0 │       6,000 │        10,583 │       $0.50 │
+│            │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│            │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│            │ - [pi] gpt-5            │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                         │    15,567 │     4,096 │         2,235 │      44,449 │        66,597 │       $9.12 │
 └────────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
@@ -128,30 +148,50 @@ Use `--json` for automation and scripting:
 ccusage pi daily --json
 ```
 
-This excerpt shows one row and omits per-model details; `totals` covers the complete report. Model names carry the `[pi]` prefix, and `storedCost` is the part of `cost` that pi-agent recorded itself:
+This excerpt keeps one row; `totals` covers the complete report. Model names carry the `[pi]` prefix, and `storedCost` is the part of `cost` that pi-agent recorded itself:
 
 ```json
 {
 	"daily": [
 		{
-			"date": "2025-12-31",
-			"inputTokens": 2550,
-			"outputTokens": 956,
-			"cacheCreationTokens": 501,
-			"cacheReadTokens": 19006,
-			"totalTokens": 23013,
-			"totalCost": 4.020076850000001,
-			"modelsUsed": ["[pi] claude-sonnet-4-20250514", "[pi] claude-haiku-4-5-20251001"]
+			"cacheCreationTokens": 400,
+			"cacheReadTokens": 8000,
+			"date": "2025-12-30",
+			"inputTokens": 2070,
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 0,
+					"cost": 1.1,
+					"inputTokens": 270,
+					"modelName": "[pi] claude-opus-4-20250514",
+					"outputTokens": 90,
+					"storedCost": 1.1
+				},
+				{
+					"cacheCreationTokens": 400,
+					"cacheReadTokens": 8000,
+					"cost": 0.07,
+					"inputTokens": 1800,
+					"modelName": "[pi] claude-sonnet-4-20250514",
+					"outputTokens": 360,
+					"storedCost": 0.07
+				}
+			],
+			"modelsUsed": ["[pi] claude-sonnet-4-20250514", "[pi] claude-opus-4-20250514"],
+			"outputTokens": 450,
+			"totalCost": 1.17,
+			"totalTokens": 10920
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 701,
-		"cacheReadTokens": 30006,
-		"inputTokens": 4465,
-		"outputTokens": 2141,
-		"totalCost": 4.066926850000001,
-		"totalTokens": 37563,
-		"unpricedModels": ["[pi] pi-mystery-1"]
+		"cacheCreationTokens": 2235,
+		"cacheReadTokens": 44449,
+		"inputTokens": 15567,
+		"outputTokens": 4096,
+		"totalCost": 9.11883435,
+		"totalTokens": 66597,
+		"unpricedModels": ["[pi] pi-mystery-1", "[pi] pi-mystery-2"]
 	}
 }
 ```
@@ -194,7 +234,7 @@ npx ccusage@latest pi monthly
 
 ### Example Output
 
-Excerpt from the fixture report; additional rows are omitted.
+`ccusage pi monthly` on the fixture data:
 
 ```text
 ┌──────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
@@ -206,6 +246,14 @@ Excerpt from the fixture report; additional rows are omitted.
 │          │ - [pi] gpt-5            │           │           │               │             │               │             │
 │          │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
 │          │ - [pi] pi-mystery-2     │           │           │               │             │               │             │
+├──────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - [pi] claude-haiku-4-5 │     5,535 │     2,148 │           200 │      17,000 │        25,133 │       $0.55 │
+│          │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│          │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│          │ - [pi] gpt-5            │           │           │               │             │               │             │
+│          │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+├──────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                         │    15,567 │     4,096 │         2,235 │      44,449 │        66,597 │       $9.12 │
 └──────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
@@ -257,7 +305,7 @@ npx ccusage@latest pi session
 
 ### Example Output
 
-Excerpt from the fixture report; additional rows are omitted.
+This excerpt from the fixture report keeps one session and the Total row; the other sessions are omitted:
 
 ```text
 ┌────────────────────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┬───────────────┐
@@ -265,12 +313,14 @@ Excerpt from the fixture report; additional rows are omitted.
 ├────────────────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
 │ sess-alpha-fork        │ - [pi] claude-haiku-4-5 │     1,150 │       450 │           200 │       7,000 │         8,800 │       $0.03 │ 2026-01-02    │
 │                        │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │               │
+├────────────────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ Total                  │                         │    15,567 │     4,096 │         2,235 │      44,449 │        66,597 │       $9.12 │               │
 └────────────────────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┴───────────────┘
 ```
 
 ### Session Identification
 
-The Session column shows the full session ID. In JSON output, `projectPath` holds the project folder name from `~/.pi/agent/sessions/{project}/`.
+The Session column shows the session ID, shortened with `…` when the table is wider than the terminal; `sessionId` in the JSON output always holds the full ID. In JSON output, `projectPath` holds the project folder name from `~/.pi/agent/sessions/{project}/`.
 
 ### JSON Output
 
@@ -280,33 +330,52 @@ Use `--json` for detailed session data:
 ccusage pi session --json
 ```
 
-This excerpt omits other sessions and per-model details; `totals` covers the complete report. Each session row carries its `sessionId`, `projectPath`, `firstActivity`, and `lastActivity`:
+This excerpt keeps one session; `totals` covers the complete report. Each session row carries its `sessionId`, `projectPath`, `firstActivity`, and `lastActivity`:
 
 ```json
 {
 	"sessions": [
 		{
-			"sessionId": "sess-alpha-fork",
-			"projectPath": "--Users-dev-alpha--",
-			"firstActivity": "2026-01-01T13:10:00.000Z",
-			"lastActivity": "2026-01-01T13:10:00.000Z",
-			"inputTokens": 900,
-			"outputTokens": 400,
 			"cacheCreationTokens": 200,
 			"cacheReadTokens": 7000,
-			"totalTokens": 8500,
-			"totalCost": 0.03,
-			"modelsUsed": ["[pi] claude-haiku-4-5-20251001"]
+			"firstActivity": "2026-01-01T13:10:00.000Z",
+			"inputTokens": 1150,
+			"lastActivity": "2026-01-02T10:30:00.000Z",
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.03,
+					"inputTokens": 900,
+					"modelName": "[pi] claude-haiku-4-5-20251001",
+					"outputTokens": 400,
+					"storedCost": 0.03
+				},
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 0,
+					"cost": 0.0015,
+					"inputTokens": 250,
+					"modelName": "[pi] claude-sonnet-4-20250514",
+					"outputTokens": 50
+				}
+			],
+			"modelsUsed": ["[pi] claude-haiku-4-5-20251001", "[pi] claude-sonnet-4-20250514"],
+			"outputTokens": 450,
+			"projectPath": "--Users-dev-alpha--",
+			"sessionId": "sess-alpha-fork",
+			"totalCost": 0.0315,
+			"totalTokens": 8800
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 701,
-		"cacheReadTokens": 30006,
-		"inputTokens": 4465,
-		"outputTokens": 2141,
-		"totalCost": 4.06692685,
-		"totalTokens": 37563,
-		"unpricedModels": ["[pi] pi-mystery-1"]
+		"cacheCreationTokens": 2235,
+		"cacheReadTokens": 44449,
+		"inputTokens": 15567,
+		"outputTokens": 4096,
+		"totalCost": 9.11883435,
+		"totalTokens": 66597,
+		"unpricedModels": ["[pi] pi-mystery-1", "[pi] pi-mystery-2"]
 	}
 }
 ```

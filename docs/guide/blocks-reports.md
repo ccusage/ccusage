@@ -10,15 +10,25 @@ ccusage blocks
 
 ## Example Output
 
-`ccusage blocks --offline`:
-
-Excerpt from the fixture report; additional rows are omitted.
+This excerpt of `ccusage claude blocks --offline` on the test fixtures keeps the last completed block, the gap after it, and the active block with its REMAINING and PROJECTED rows; earlier blocks are omitted:
 
 ```text
 ┌────────────────────────────────────────────────────────────┬─────────────────┬──────────────────────┬───────────┬───────────┬───────────┐
 │ Block Start                                                │ Duration/Status │ Models               │    Tokens │         % │      Cost │
 ├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
-│ 12/27/2025, 10:00:00 PM (0m)                               │                 │ - sonnet-4           │       150 │      0.5% │     $0.01 │
+│ 1/1/2026, 12:00:00 PM (30m)                                │                 │ - mystery-model-9000 │     3,470 │     12.6% │     $0.01 │
+│                                                            │                 │ - opus-4             │           │           │           │
+│                                                            │                 │ - sonnet-4           │           │           │           │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│ 1/1/2026, 5:30:00 PM - 1/2/2026, 8:00:00 AM (14h gap)      │ (inactive)      │ -                    │         - │         - │         - │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│ 1/2/2026, 8:00:00 AM (4h 0m elapsed, 1h 0m remaining)      │ ACTIVE          │ - opus-4             │    10,950 │     39.9% │     $0.06 │
+│                                                            │                 │ - opus-5-fast        │           │           │           │
+│                                                            │                 │ - sonnet-4           │           │           │           │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│                              (assuming 27,470 token limit) │ REMAINING       │                      │    16,520 │     60.1% │           │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│                               (assuming current burn rate) │ PROJECTED       │                      │    14,600 │     53.1% │     $0.09 │
 └────────────────────────────────────────────────────────────┴─────────────────┴──────────────────────┴───────────┴───────────┴───────────┘
 ```
 
@@ -158,131 +168,11 @@ Export block data for analysis:
 ccusage blocks --json
 ```
 
-`blocks` holds every block, including gaps (`isGap: true`). `burnRate` and `projection` are set only on the active block, `tokenLimitStatus` appears on the active block when `--token-limit` is given, and `usageLimitResetTime` appears when Claude Code reported a usage-limit reset inside the block. There is no `totals` object.
+`blocks` holds every block, including gaps (`isGap: true`). `burnRate` and `projection` are set only on the active block, `tokenLimitStatus` appears on the active block when `--token-limit` is given, and `usageLimitResetTime` appears when Claude Code reported a usage-limit reset inside the block. There is no `totals` object. This excerpt of `ccusage claude blocks --json` on the test fixtures keeps the same three blocks as the table above:
 
 ```json
 {
 	"blocks": [
-		{
-			"actualEndTime": "2025-12-31T09:00:02.000Z",
-			"burnRate": null,
-			"costUSD": 0.00606,
-			"endTime": "2025-12-31T14:00:00.000Z",
-			"entries": 1,
-			"id": "2025-12-31T09:00:00.000Z",
-			"isActive": false,
-			"isGap": false,
-			"models": ["claude-sonnet-4-20250514"],
-			"projection": null,
-			"startTime": "2025-12-31T09:00:00.000Z",
-			"tokenCounts": {
-				"cacheCreationInputTokens": 0,
-				"cacheReadInputTokens": 2000,
-				"inputTokens": 120,
-				"outputTokens": 340
-			},
-			"totalTokens": 2460
-		},
-		{
-			"actualEndTime": null,
-			"burnRate": null,
-			"costUSD": 0,
-			"endTime": "2025-12-31T15:30:00.000Z",
-			"entries": 0,
-			"id": "gap-2025-12-31T14:00:02.000Z",
-			"isActive": false,
-			"isGap": true,
-			"models": [],
-			"projection": null,
-			"startTime": "2025-12-31T14:00:02.000Z",
-			"tokenCounts": {
-				"cacheCreationInputTokens": 0,
-				"cacheReadInputTokens": 0,
-				"inputTokens": 0,
-				"outputTokens": 0
-			},
-			"totalTokens": 0
-		},
-		{
-			"actualEndTime": "2025-12-31T15:30:00.000Z",
-			"burnRate": null,
-			"costUSD": 0.02,
-			"endTime": "2025-12-31T20:00:00.000Z",
-			"entries": 1,
-			"id": "2025-12-31T15:00:00.000Z",
-			"isActive": false,
-			"isGap": false,
-			"models": ["claude-sonnet-4-20250514"],
-			"projection": null,
-			"startTime": "2025-12-31T15:00:00.000Z",
-			"tokenCounts": {
-				"cacheCreationInputTokens": 100,
-				"cacheReadInputTokens": 5000,
-				"inputTokens": 700,
-				"outputTokens": 150
-			},
-			"totalTokens": 5950
-		},
-		{
-			"actualEndTime": null,
-			"burnRate": null,
-			"costUSD": 0,
-			"endTime": "2025-12-31T23:50:00.000Z",
-			"entries": 0,
-			"id": "gap-2025-12-31T20:30:00.000Z",
-			"isActive": false,
-			"isGap": true,
-			"models": [],
-			"projection": null,
-			"startTime": "2025-12-31T20:30:00.000Z",
-			"tokenCounts": {
-				"cacheCreationInputTokens": 0,
-				"cacheReadInputTokens": 0,
-				"inputTokens": 0,
-				"outputTokens": 0
-			},
-			"totalTokens": 0
-		},
-		{
-			"actualEndTime": "2026-01-01T03:00:00.000Z",
-			"burnRate": null,
-			"costUSD": 0.5840595,
-			"endTime": "2026-01-01T04:00:00.000Z",
-			"entries": 6,
-			"id": "2025-12-31T23:00:00.000Z",
-			"isActive": false,
-			"isGap": false,
-			"models": ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-opus-5"],
-			"projection": null,
-			"startTime": "2025-12-31T23:00:00.000Z",
-			"tokenCounts": {
-				"cacheCreationInputTokens": 1450,
-				"cacheReadInputTokens": 13000,
-				"inputTokens": 3524,
-				"outputTokens": 860
-			},
-			"totalTokens": 18834
-		},
-		{
-			"actualEndTime": null,
-			"burnRate": null,
-			"costUSD": 0,
-			"endTime": "2026-01-01T12:00:00.000Z",
-			"entries": 0,
-			"id": "gap-2026-01-01T08:00:00.000Z",
-			"isActive": false,
-			"isGap": true,
-			"models": [],
-			"projection": null,
-			"startTime": "2026-01-01T08:00:00.000Z",
-			"tokenCounts": {
-				"cacheCreationInputTokens": 0,
-				"cacheReadInputTokens": 0,
-				"inputTokens": 0,
-				"outputTokens": 0
-			},
-			"totalTokens": 0
-		},
 		{
 			"actualEndTime": "2026-01-01T12:30:00.000Z",
 			"burnRate": null,
@@ -322,6 +212,35 @@ ccusage blocks --json
 				"outputTokens": 0
 			},
 			"totalTokens": 0
+		},
+		{
+			"actualEndTime": "2026-01-02T11:00:00.000Z",
+			"burnRate": {
+				"costPerHour": 0.021562500000000002,
+				"tokensPerMinute": 60.833333333333336,
+				"tokensPerMinuteForIndicator": 11.666666666666666
+			},
+			"costUSD": 0.06468750000000001,
+			"endTime": "2026-01-02T13:00:00.000Z",
+			"entries": 4,
+			"id": "2026-01-02T08:00:00.000Z",
+			"isActive": true,
+			"isGap": false,
+			"models": ["claude-opus-5-fast", "claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+			"projection": {
+				"remainingMinutes": 60,
+				"totalCost": 0.09,
+				"totalTokens": 14600
+			},
+			"startTime": "2026-01-02T08:00:00.000Z",
+			"tokenCounts": {
+				"cacheCreationInputTokens": 50,
+				"cacheReadInputTokens": 8800,
+				"inputTokens": 1150,
+				"outputTokens": 950
+			},
+			"totalTokens": 10950,
+			"usageLimitResetTime": "2026-01-02T09:00:00.000Z"
 		}
 	]
 }
