@@ -1,12 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    thread,
 };
 
 use ccusage_core::Diagnostics;
 
-use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size};
+use crate::{CodexRawUsage, TimestampMs};
 
 use super::{
     parser::{
@@ -165,16 +164,6 @@ fn collect_replay_files<'a>(
         .collect()
 }
 
-fn replay_worker_count(files: usize, single_thread: bool) -> usize {
-    if single_thread || files <= 1 {
-        return 1;
-    }
-    thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(files)
-}
-
 pub(super) fn read_session_metadata<'a>(
     groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
     single_thread: bool,
@@ -198,40 +187,19 @@ fn read_parent_usage(
     single_thread: bool,
     diagnostics: &Diagnostics,
 ) -> HashMap<PathBuf, ParentUsage> {
-    if parents.is_empty() {
-        return HashMap::new();
-    }
-    let worker_count = replay_worker_count(parents.len(), single_thread);
     // A parent the report also reads records the same skips again, which
     // `Diagnostics` counts once.
     let read = |(path, sessions_dir): &(PathBuf, &Path)| {
         read_parent_usage_file(path, sessions_dir, diagnostics)
     };
-    if worker_count <= 1 {
-        return parents.iter().map(read).collect();
-    }
-    let paths = parents
-        .iter()
-        .map(|(path, _)| path.clone())
-        .collect::<Vec<_>>();
-    let chunks = chunk_file_indexes_by_size(&paths, worker_count);
-    thread::scope(|scope| {
-        chunks
-            .into_iter()
-            .map(|chunk| {
-                let read = &read;
-                scope.spawn(move || {
-                    chunk
-                        .into_iter()
-                        .map(|index| read(&parents[index]))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("codex replay worker panicked"))
-            .collect()
-    })
+    ccusage_adapter_common::map_parallel(
+        parents,
+        single_thread,
+        ccusage_adapter_common::Split::BySize(|(path, _)| path.as_path()),
+        read,
+    )
+    .into_iter()
+    .collect()
 }
 
 fn read_parent_usage_file(
