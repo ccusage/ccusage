@@ -610,16 +610,6 @@ fn accumulate_codex_usage_into_model_usage(
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
-    model_usage.input_tokens = model_usage.input_tokens.saturating_add(event.input_tokens);
-    model_usage.cached_input_tokens = model_usage
-        .cached_input_tokens
-        .saturating_add(event.cached_input_tokens);
-    model_usage.cache_creation_tokens = model_usage
-        .cache_creation_tokens
-        .saturating_add(event.cache_creation_tokens);
-    model_usage.output_tokens = model_usage
-        .output_tokens
-        .saturating_add(event.output_tokens);
     model_usage.reasoning_output_tokens = model_usage
         .reasoning_output_tokens
         .saturating_add(event.reasoning_output_tokens);
@@ -630,85 +620,19 @@ fn accumulate_codex_usage_into_model_usage(
     // different threshold) rather than a single global constant, matching the
     // threshold used to price the long-context buckets.
     let is_long_context = event.input_tokens > model.long_context_threshold;
-    if is_long_context {
-        model_usage.long_context_input_tokens = model_usage
-            .long_context_input_tokens
-            .saturating_add(event.input_tokens);
-        model_usage.long_context_cached_input_tokens = model_usage
-            .long_context_cached_input_tokens
-            .saturating_add(event.cached_input_tokens);
-        model_usage.long_context_cache_creation_tokens = model_usage
-            .long_context_cache_creation_tokens
-            .saturating_add(event.cache_creation_tokens);
-        model_usage.long_context_output_tokens = model_usage
-            .long_context_output_tokens
-            .saturating_add(event.output_tokens);
-    }
+    let usage = CodexUsageBucket::from_usage(event, is_long_context);
+    model_usage.add_usage(usage, attribution.service_tier);
     if model.time_dependent {
         let timestamped_usage = model_usage
             .timestamped_usage
             .entry(timestamp.as_millis())
             .or_default();
-        accumulate_codex_usage_into_bucket(&mut timestamped_usage.usage, event, is_long_context);
-        {
-            let recorded_usage = match attribution.service_tier {
-                Some(CodexServiceTier::Standard) => {
-                    Some(&mut timestamped_usage.recorded_standard_usage)
-                }
-                Some(CodexServiceTier::Fast) => Some(&mut timestamped_usage.recorded_fast_usage),
-                Some(CodexServiceTier::Flex) => Some(&mut timestamped_usage.recorded_flex_usage),
-                Some(CodexServiceTier::Ultrafast) => {
-                    Some(&mut timestamped_usage.recorded_ultrafast_usage)
-                }
-                None => None,
-            };
-            if let Some(recorded_usage) = recorded_usage {
-                accumulate_codex_usage_into_bucket(recorded_usage, event, is_long_context);
-            }
-        }
-    }
-    {
-        let recorded_usage = match attribution.service_tier {
-            Some(CodexServiceTier::Standard) => Some(&mut model_usage.recorded_standard_usage),
-            Some(CodexServiceTier::Fast) => Some(&mut model_usage.recorded_fast_usage),
-            Some(CodexServiceTier::Flex) => Some(&mut model_usage.recorded_flex_usage),
-            Some(CodexServiceTier::Ultrafast) => Some(&mut model_usage.recorded_ultrafast_usage),
-            None => None,
-        };
-        if let Some(recorded_usage) = recorded_usage {
-            accumulate_codex_usage_into_bucket(recorded_usage, event, is_long_context);
+        timestamped_usage.usage += usage;
+        if let Some(tier) = attribution.service_tier {
+            timestamped_usage.recorded_usage[tier] += usage;
         }
     }
     model_usage.is_fallback |= attribution.is_fallback;
-}
-
-fn accumulate_codex_usage_into_bucket(
-    usage: &mut CodexUsageBucket,
-    event: crate::CodexRawUsage,
-    is_long_context: bool,
-) {
-    usage.input_tokens = usage.input_tokens.saturating_add(event.input_tokens);
-    usage.cached_input_tokens = usage
-        .cached_input_tokens
-        .saturating_add(event.cached_input_tokens);
-    usage.cache_creation_tokens = usage
-        .cache_creation_tokens
-        .saturating_add(event.cache_creation_tokens);
-    usage.output_tokens = usage.output_tokens.saturating_add(event.output_tokens);
-    if is_long_context {
-        usage.long_context_input_tokens = usage
-            .long_context_input_tokens
-            .saturating_add(event.input_tokens);
-        usage.long_context_cached_input_tokens = usage
-            .long_context_cached_input_tokens
-            .saturating_add(event.cached_input_tokens);
-        usage.long_context_cache_creation_tokens = usage
-            .long_context_cache_creation_tokens
-            .saturating_add(event.cache_creation_tokens);
-        usage.long_context_output_tokens = usage
-            .long_context_output_tokens
-            .saturating_add(event.output_tokens);
-    }
 }
 
 fn has_date_bounds(shared: &SharedArgs) -> bool {
@@ -786,8 +710,8 @@ mod tests {
             ..crate::CodexRawUsage::default()
         };
         let mut usage = CodexUsageBucket::default();
-        accumulate_codex_usage_into_bucket(&mut usage, event, true);
-        accumulate_codex_usage_into_bucket(&mut usage, event, true);
+        usage += CodexUsageBucket::from_usage(event, true);
+        usage += CodexUsageBucket::from_usage(event, true);
         assert_eq!(
             usage,
             CodexUsageBucket {

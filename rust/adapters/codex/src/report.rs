@@ -205,11 +205,8 @@ pub fn calculate_codex_model_cost(
     };
     calculate_codex_usage_cost(
         CodexTimestampedUsage {
-            usage: model_usage_bucket(usage),
-            recorded_standard_usage: usage.recorded_standard_usage,
-            recorded_fast_usage: usage.recorded_fast_usage,
-            recorded_flex_usage: usage.recorded_flex_usage,
-            recorded_ultrafast_usage: usage.recorded_ultrafast_usage,
+            usage: usage.usage_bucket(),
+            recorded_usage: usage.recorded_usage(),
         },
         &pricing,
         speed,
@@ -223,22 +220,13 @@ fn calculate_codex_usage_cost(
 ) -> f64 {
     let CodexTimestampedUsage {
         usage: total_usage,
-        recorded_standard_usage,
-        recorded_fast_usage,
-        recorded_flex_usage,
-        recorded_ultrafast_usage,
+        recorded_usage,
     } = usage;
+    let recorded_flex_usage = recorded_usage[CodexServiceTier::Flex];
+    let recorded_fast_usage = recorded_usage[CodexServiceTier::Fast];
+    let recorded_ultrafast_usage = recorded_usage[CodexServiceTier::Ultrafast];
     let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
-    let unclassified_usage = subtract_codex_usage_bucket(
-        total_usage,
-        add_codex_usage_buckets(
-            recorded_standard_usage,
-            add_codex_usage_buckets(
-                recorded_flex_usage,
-                add_codex_usage_buckets(recorded_fast_usage, recorded_ultrafast_usage),
-            ),
-        ),
-    );
+    let unclassified_usage = total_usage.saturating_sub(recorded_usage.total());
     let empty = CodexUsageBucket::default();
     let (flex_usage, fast_usage, ultrafast_usage) = match speed {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => {
@@ -253,19 +241,19 @@ fn calculate_codex_usage_cost(
             recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Flex) => (
-            add_codex_usage_buckets(recorded_flex_usage, unclassified_usage),
+            recorded_flex_usage + unclassified_usage,
             recorded_fast_usage,
             recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => (
             recorded_flex_usage,
-            add_codex_usage_buckets(recorded_fast_usage, unclassified_usage),
+            recorded_fast_usage + unclassified_usage,
             recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Ultrafast) => (
             recorded_flex_usage,
             recorded_fast_usage,
-            add_codex_usage_buckets(recorded_ultrafast_usage, unclassified_usage),
+            recorded_ultrafast_usage + unclassified_usage,
         ),
     };
     standard_cost
@@ -273,72 +261,6 @@ fn calculate_codex_usage_cost(
         + calculate_codex_bucket_cost(&fast_usage, pricing) * (pricing.fast_multiplier - 1.0)
         + calculate_codex_bucket_cost(&ultrafast_usage, pricing)
             * (pricing.ultrafast_multiplier - 1.0)
-}
-
-fn model_usage_bucket(usage: &CodexModelUsage) -> CodexUsageBucket {
-    CodexUsageBucket {
-        input_tokens: usage.input_tokens,
-        cached_input_tokens: usage.cached_input_tokens,
-        cache_creation_tokens: usage.cache_creation_tokens,
-        output_tokens: usage.output_tokens,
-        long_context_input_tokens: usage.long_context_input_tokens,
-        long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
-        long_context_cache_creation_tokens: usage.long_context_cache_creation_tokens,
-        long_context_output_tokens: usage.long_context_output_tokens,
-    }
-}
-
-fn subtract_codex_usage_bucket(
-    total: CodexUsageBucket,
-    excluded: CodexUsageBucket,
-) -> CodexUsageBucket {
-    CodexUsageBucket {
-        input_tokens: total.input_tokens.saturating_sub(excluded.input_tokens),
-        cached_input_tokens: total
-            .cached_input_tokens
-            .saturating_sub(excluded.cached_input_tokens),
-        cache_creation_tokens: total
-            .cache_creation_tokens
-            .saturating_sub(excluded.cache_creation_tokens),
-        output_tokens: total.output_tokens.saturating_sub(excluded.output_tokens),
-        long_context_input_tokens: total
-            .long_context_input_tokens
-            .saturating_sub(excluded.long_context_input_tokens),
-        long_context_cached_input_tokens: total
-            .long_context_cached_input_tokens
-            .saturating_sub(excluded.long_context_cached_input_tokens),
-        long_context_cache_creation_tokens: total
-            .long_context_cache_creation_tokens
-            .saturating_sub(excluded.long_context_cache_creation_tokens),
-        long_context_output_tokens: total
-            .long_context_output_tokens
-            .saturating_sub(excluded.long_context_output_tokens),
-    }
-}
-
-fn add_codex_usage_buckets(left: CodexUsageBucket, right: CodexUsageBucket) -> CodexUsageBucket {
-    CodexUsageBucket {
-        input_tokens: left.input_tokens.saturating_add(right.input_tokens),
-        cached_input_tokens: left
-            .cached_input_tokens
-            .saturating_add(right.cached_input_tokens),
-        cache_creation_tokens: left
-            .cache_creation_tokens
-            .saturating_add(right.cache_creation_tokens),
-        output_tokens: left.output_tokens.saturating_add(right.output_tokens),
-        long_context_input_tokens: left
-            .long_context_input_tokens
-            .saturating_add(right.long_context_input_tokens),
-        long_context_cached_input_tokens: left
-            .long_context_cached_input_tokens
-            .saturating_add(right.long_context_cached_input_tokens),
-        long_context_cache_creation_tokens: left
-            .long_context_cache_creation_tokens
-            .saturating_add(right.long_context_cache_creation_tokens),
-        long_context_output_tokens: left
-            .long_context_output_tokens
-            .saturating_add(right.long_context_output_tokens),
-    }
 }
 
 fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricing) -> f64 {

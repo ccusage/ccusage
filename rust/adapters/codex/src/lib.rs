@@ -34,7 +34,7 @@ pub use source::unified_row_from_group;
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,
-    CodexUsageBucket,
+    CodexUsageBucket, TierBuckets,
 };
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
@@ -1229,18 +1229,18 @@ mod tests {
                 }
             }"#,
         );
+        let mut recorded = TierBuckets::default();
+        recorded[CodexServiceTier::Standard].input_tokens = 10;
+        recorded[CodexServiceTier::Fast].input_tokens = 10;
         let usage = CodexModelUsage {
-            input_tokens: 30,
             total_tokens: 30,
-            recorded_standard_usage: CodexUsageBucket {
-                input_tokens: 10,
-                ..CodexUsageBucket::default()
-            },
-            recorded_fast_usage: CodexUsageBucket {
-                input_tokens: 10,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                CodexUsageBucket {
+                    input_tokens: 30,
+                    ..CodexUsageBucket::default()
+                },
+                recorded,
+            )
         };
         let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Fast);
 
@@ -1261,18 +1261,18 @@ mod tests {
                 }
             }"#,
         );
+        let mut recorded = TierBuckets::default();
+        recorded[CodexServiceTier::Standard].input_tokens = 10;
+        recorded[CodexServiceTier::Fast].input_tokens = 10;
         let usage = CodexModelUsage {
-            input_tokens: 30,
             total_tokens: 30,
-            recorded_standard_usage: CodexUsageBucket {
-                input_tokens: 10,
-                ..CodexUsageBucket::default()
-            },
-            recorded_fast_usage: CodexUsageBucket {
-                input_tokens: 10,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                CodexUsageBucket {
+                    input_tokens: 30,
+                    ..CodexUsageBucket::default()
+                },
+                recorded,
+            )
         };
         let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Standard);
 

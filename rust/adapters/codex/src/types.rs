@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    marker::PhantomData,
+    ops::{Add, AddAssign, Index, IndexMut},
+};
 
 use serde::Deserialize;
 
@@ -223,13 +228,144 @@ pub struct CodexUsageBucket {
     pub long_context_output_tokens: u64,
 }
 
+impl CodexUsageBucket {
+    pub(crate) fn from_usage(usage: CodexRawUsage, is_long_context: bool) -> Self {
+        Self {
+            input_tokens: usage.input_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+            cache_creation_tokens: usage.cache_creation_tokens,
+            output_tokens: usage.output_tokens,
+            long_context_input_tokens: if is_long_context {
+                usage.input_tokens
+            } else {
+                0
+            },
+            long_context_cached_input_tokens: if is_long_context {
+                usage.cached_input_tokens
+            } else {
+                0
+            },
+            long_context_cache_creation_tokens: if is_long_context {
+                usage.cache_creation_tokens
+            } else {
+                0
+            },
+            long_context_output_tokens: if is_long_context {
+                usage.output_tokens
+            } else {
+                0
+            },
+        }
+    }
+
+    pub(crate) fn saturating_sub(self, other: Self) -> Self {
+        Self {
+            input_tokens: self.input_tokens.saturating_sub(other.input_tokens),
+            cached_input_tokens: self
+                .cached_input_tokens
+                .saturating_sub(other.cached_input_tokens),
+            cache_creation_tokens: self
+                .cache_creation_tokens
+                .saturating_sub(other.cache_creation_tokens),
+            output_tokens: self.output_tokens.saturating_sub(other.output_tokens),
+            long_context_input_tokens: self
+                .long_context_input_tokens
+                .saturating_sub(other.long_context_input_tokens),
+            long_context_cached_input_tokens: self
+                .long_context_cached_input_tokens
+                .saturating_sub(other.long_context_cached_input_tokens),
+            long_context_cache_creation_tokens: self
+                .long_context_cache_creation_tokens
+                .saturating_sub(other.long_context_cache_creation_tokens),
+            long_context_output_tokens: self
+                .long_context_output_tokens
+                .saturating_sub(other.long_context_output_tokens),
+        }
+    }
+}
+
+impl AddAssign for CodexUsageBucket {
+    fn add_assign(&mut self, other: Self) {
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.cached_input_tokens = self
+            .cached_input_tokens
+            .saturating_add(other.cached_input_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(other.cache_creation_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.long_context_input_tokens = self
+            .long_context_input_tokens
+            .saturating_add(other.long_context_input_tokens);
+        self.long_context_cached_input_tokens = self
+            .long_context_cached_input_tokens
+            .saturating_add(other.long_context_cached_input_tokens);
+        self.long_context_cache_creation_tokens = self
+            .long_context_cache_creation_tokens
+            .saturating_add(other.long_context_cache_creation_tokens);
+        self.long_context_output_tokens = self
+            .long_context_output_tokens
+            .saturating_add(other.long_context_output_tokens);
+    }
+}
+
+impl Add for CodexUsageBucket {
+    type Output = Self;
+
+    fn add(mut self, other: Self) -> Self {
+        self += other;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TierBuckets([CodexUsageBucket; 4]);
+
+impl CodexServiceTier {
+    const fn index(self) -> usize {
+        match self {
+            Self::Standard => 0,
+            Self::Fast => 1,
+            Self::Flex => 2,
+            Self::Ultrafast => 3,
+        }
+    }
+}
+
+impl Index<CodexServiceTier> for TierBuckets {
+    type Output = CodexUsageBucket;
+
+    fn index(&self, tier: CodexServiceTier) -> &Self::Output {
+        &self.0[tier.index()]
+    }
+}
+
+impl IndexMut<CodexServiceTier> for TierBuckets {
+    fn index_mut(&mut self, tier: CodexServiceTier) -> &mut Self::Output {
+        &mut self.0[tier.index()]
+    }
+}
+
+impl AddAssign for TierBuckets {
+    fn add_assign(&mut self, other: Self) {
+        for (target, source) in self.0.iter_mut().zip(other.0) {
+            *target += source;
+        }
+    }
+}
+
+impl TierBuckets {
+    pub(crate) fn total(self) -> CodexUsageBucket {
+        self.0
+            .into_iter()
+            .fold(CodexUsageBucket::default(), Add::add)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CodexTimestampedUsage {
     pub(crate) usage: CodexUsageBucket,
-    pub(crate) recorded_standard_usage: CodexUsageBucket,
-    pub(crate) recorded_fast_usage: CodexUsageBucket,
-    pub(crate) recorded_flex_usage: CodexUsageBucket,
-    pub(crate) recorded_ultrafast_usage: CodexUsageBucket,
+    pub(crate) recorded_usage: TierBuckets,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -256,6 +392,59 @@ pub struct CodexModelUsage {
     /// Exact event timestamps keep time-dependent pricing available after aggregation.
     pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub is_fallback: bool,
+}
+
+impl CodexModelUsage {
+    pub fn from_buckets(usage: CodexUsageBucket, recorded_usage: TierBuckets) -> Self {
+        let mut model = Self::default();
+        model.set_buckets(usage, recorded_usage);
+        model
+    }
+
+    pub(crate) fn usage_bucket(&self) -> CodexUsageBucket {
+        CodexUsageBucket {
+            input_tokens: self.input_tokens,
+            cached_input_tokens: self.cached_input_tokens,
+            cache_creation_tokens: self.cache_creation_tokens,
+            output_tokens: self.output_tokens,
+            long_context_input_tokens: self.long_context_input_tokens,
+            long_context_cached_input_tokens: self.long_context_cached_input_tokens,
+            long_context_cache_creation_tokens: self.long_context_cache_creation_tokens,
+            long_context_output_tokens: self.long_context_output_tokens,
+        }
+    }
+
+    pub(crate) fn recorded_usage(&self) -> TierBuckets {
+        TierBuckets([
+            self.recorded_standard_usage,
+            self.recorded_fast_usage,
+            self.recorded_flex_usage,
+            self.recorded_ultrafast_usage,
+        ])
+    }
+
+    pub(crate) fn add_usage(&mut self, usage: CodexUsageBucket, tier: Option<CodexServiceTier>) {
+        let mut recorded = self.recorded_usage();
+        if let Some(tier) = tier {
+            recorded[tier] += usage;
+        }
+        self.set_buckets(self.usage_bucket() + usage, recorded);
+    }
+
+    fn set_buckets(&mut self, usage: CodexUsageBucket, recorded: TierBuckets) {
+        self.input_tokens = usage.input_tokens;
+        self.cached_input_tokens = usage.cached_input_tokens;
+        self.cache_creation_tokens = usage.cache_creation_tokens;
+        self.output_tokens = usage.output_tokens;
+        self.long_context_input_tokens = usage.long_context_input_tokens;
+        self.long_context_cached_input_tokens = usage.long_context_cached_input_tokens;
+        self.long_context_cache_creation_tokens = usage.long_context_cache_creation_tokens;
+        self.long_context_output_tokens = usage.long_context_output_tokens;
+        self.recorded_standard_usage = recorded[CodexServiceTier::Standard];
+        self.recorded_fast_usage = recorded[CodexServiceTier::Fast];
+        self.recorded_flex_usage = recorded[CodexServiceTier::Flex];
+        self.recorded_ultrafast_usage = recorded[CodexServiceTier::Ultrafast];
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -903,6 +1092,21 @@ impl<'de> Deserialize<'de> for OptionalU64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tier_addition_saturates_and_keeps_each_tier_separate() {
+        let mut first = TierBuckets::default();
+        first[CodexServiceTier::Fast].input_tokens = u64::MAX - 1;
+        let mut second = TierBuckets::default();
+        second[CodexServiceTier::Fast].input_tokens = 3;
+        second[CodexServiceTier::Flex].input_tokens = 5;
+        first += second;
+        assert_eq!(first[CodexServiceTier::Standard].input_tokens, 0);
+        assert_eq!(first[CodexServiceTier::Fast].input_tokens, u64::MAX);
+        assert_eq!(first[CodexServiceTier::Flex].input_tokens, 5);
+        assert_eq!(first[CodexServiceTier::Ultrafast].input_tokens, 0);
+        assert_eq!(first.total().input_tokens, u64::MAX);
+    }
 
     #[test]
     fn merged_ultrafast_copies_beat_fast_and_flex_but_not_standard() {
