@@ -603,7 +603,7 @@ exit: 0
         "[pi] gpt-5"
       ],
       "outputTokens": 3,
-      "projectPath": "loose.jsonl",
+      "projectPath": "unknown",
       "sessionId": "loose",
       "totalCost": 0.0,
       "totalTokens": 33

@@ -31,7 +31,7 @@ pub(crate) fn load_entries(
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, PiLoadScope::Default)
+    load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, "pi")
 }
 
 pub(crate) fn load_named_store_entries(
@@ -39,19 +39,13 @@ pub(crate) fn load_named_store_entries(
     store_paths: &[PathBuf],
     store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
-    load_entries_for_context(cx, store_paths, PiLoadScope::Named { store_name })
-}
-
-#[derive(Clone, Copy)]
-enum PiLoadScope<'a> {
-    Default,
-    Named { store_name: &'a str },
+    load_entries_for_context(cx, store_paths, store_name)
 }
 
 fn load_entries_for_context(
     cx: &LoadContext<'_>,
     paths: &[PathBuf],
-    scope: PiLoadScope<'_>,
+    store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let mut entries = Vec::new();
@@ -72,31 +66,17 @@ fn load_entries_for_context(
         // Read session files in parallel; the first-wins dedup runs sequentially
         // over the original file order so the surviving record per id matches the
         // single-threaded read.
-        let loaded = read_units(
-            &files,
-            shared.single_thread,
-            cx.diagnostics,
-            |file| match scope {
-                PiLoadScope::Default => parser::read_session_file_data_with_diagnostics(
-                    file,
-                    cx.window.timezone(),
-                    shared.mode,
-                    cx.pricing,
-                    cx.diagnostics,
-                ),
-                PiLoadScope::Named { store_name } => {
-                    parser::read_session_file_data_for_store_with_diagnostics(
-                        file,
-                        path,
-                        cx.window.timezone(),
-                        shared.mode,
-                        cx.pricing,
-                        store_name,
-                        cx.diagnostics,
-                    )
-                }
-            },
-        );
+        let loaded = read_units(&files, shared.single_thread, cx.diagnostics, |file| {
+            parser::read_session_file_data_for_store_with_diagnostics(
+                file,
+                path,
+                cx.window.timezone(),
+                shared.mode,
+                cx.pricing,
+                store_name,
+                cx.diagnostics,
+            )
+        });
         discovered_files.extend(files.into_iter().map(|file| DiscoveredFile { path: file }));
         loaded_files.extend(loaded);
     }
@@ -116,7 +96,7 @@ fn load_entries_for_context(
             }
         }
     }
-    entries.sort_by_key(|entry| entry.timestamp);
+    entries.sort_by_cached_key(|entry| (entry.timestamp, parser::entry_id(entry)));
     Ok(entries)
 }
 
@@ -315,6 +295,44 @@ mod tests {
         )
         .unwrap()
         .0
+    }
+
+    #[test]
+    fn default_store_uses_its_root_for_project_names() {
+        let fixture = ccusage_test_support::fs_fixture!({});
+        let _ = fixture.write_file(
+            "sessions/outer/pi-data/project-a/agent_session-a.jsonl",
+            usage_line("2026-01-02T00:00:00.000Z", 10, 1, 0, 0),
+        );
+        let entries = load_default(
+            &SharedArgs::default(),
+            fixture.path("sessions/outer/pi-data"),
+            None,
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(&*entries[0].project, "project-a");
+    }
+
+    #[test]
+    fn tied_timestamps_are_ordered_by_usage_identity() {
+        let fixture = ccusage_test_support::fs_fixture!({});
+        let timestamp = "2026-01-02T00:00:00.000Z";
+        let _ = fixture.write_file(
+            "data/project/agent_session.jsonl",
+            [
+                usage_line(timestamp, 20, 1, 0, 0),
+                usage_line(timestamp, 10, 1, 0, 0),
+            ]
+            .join("\n"),
+        );
+        let entries = load_default(&SharedArgs::default(), fixture.path("data"), None);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.message.usage.input_tokens)
+                .collect::<Vec<_>>(),
+            [10, 20],
+        );
     }
 
     fn session_line(id: &str, timestamp: &str, parent: Option<&Path>) -> String {

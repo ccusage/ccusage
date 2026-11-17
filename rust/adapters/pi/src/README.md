@@ -22,6 +22,11 @@ prefixed or bare model name recalculates cost from tokens, even when the session
 contains a display cost of zero. Without an override, Auto keeps a valid stored
 cost and calculates from tokens only when that cost is missing or invalid.
 
+The default store is named `pi` and follows the same parsing and pricing rules
+as configured stores. Project names use the first directory beneath the store
+root; files directly in the root have project `unknown`. Missing-pricing
+diagnostics name the model without the store prefix.
+
 Forked session files may replay the usage history of their parent. For Pi's
 tree-format sessions, the parent candidate follows the root-to-leaf path ending
 at the final physical entry rather than physical JSONL order; abandoned sibling

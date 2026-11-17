@@ -27,7 +27,7 @@ exit: 0
         "[pi] pi-mystery-1"
       ],
       "outputTokens": 13,
-      "projectPath": "unknown",
+      "projectPath": "extra-project",
       "sessionId": "outside-root",
       "totalCost": 0.0,
       "totalTokens": 43

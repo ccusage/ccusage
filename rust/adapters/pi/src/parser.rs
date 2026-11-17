@@ -11,9 +11,8 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, Pricing, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, calculate_cost_from_pricing,
-    cli::CostMode, fast::LinePrefilter, format_date_tz, missing_pricing_model_for_usage,
-    stored_cost_for_mode,
+    apply_total_token_fallback, calculate_cost_from_pricing, cli::CostMode, fast::LinePrefilter,
+    format_date_tz, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -176,57 +175,6 @@ impl PiSessionData {
     }
 }
 
-#[cfg(test)]
-fn read_session_file(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> crate::Result<Vec<LoadedEntry>> {
-    read_session_file_data_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("pi"))
-        .map(|data| data.entries)
-        .map_err(|error| crate::cli_error(error.to_string()))
-}
-
-#[cfg(test)]
-fn read_session_file_for_store(
-    path: &Path,
-    store_root: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    store_name: &str,
-) -> crate::Result<Vec<LoadedEntry>> {
-    read_session_file_data_for_store_with_diagnostics(
-        path,
-        store_root,
-        tz,
-        mode,
-        pricing,
-        store_name,
-        &Diagnostics::new("pi"),
-    )
-    .map(|data| data.entries)
-    .map_err(|error| crate::cli_error(error.to_string()))
-}
-
-pub(crate) fn read_session_file_data_with_diagnostics(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    diagnostics: &Diagnostics,
-) -> std::result::Result<PiSessionData, UnitError> {
-    read_session_file_data_with_context(
-        path,
-        tz,
-        mode,
-        pricing,
-        PiStoreContext::Default,
-        diagnostics,
-    )
-}
-
 pub(crate) fn read_session_file_data_for_store_with_diagnostics(
     path: &Path,
     store_root: &Path,
@@ -241,7 +189,7 @@ pub(crate) fn read_session_file_data_for_store_with_diagnostics(
         tz,
         mode,
         pricing,
-        PiStoreContext::Named {
+        PiStoreContext {
             root: store_root,
             name: store_name,
         },
@@ -250,95 +198,9 @@ pub(crate) fn read_session_file_data_for_store_with_diagnostics(
 }
 
 #[derive(Clone, Copy)]
-enum PiStoreContext<'a> {
-    Default,
-    Named { root: &'a Path, name: &'a str },
-}
-
-#[derive(Clone, Copy)]
-struct PiCostInput<'a> {
-    raw_model: Option<&'a str>,
-    display_model: Option<&'a str>,
-    usage: TokenUsageRaw,
-    display_cost: Option<f64>,
-    timestamp: crate::TimestampMs,
-}
-
-impl<'a> PiStoreContext<'a> {
-    fn store_name(self) -> &'a str {
-        match self {
-            Self::Default => "pi",
-            Self::Named { name, .. } => name,
-        }
-    }
-
-    fn project(self, path: &Path) -> String {
-        match self {
-            Self::Default => extract_project(path),
-            Self::Named { root, .. } => extract_project_for_store(path, root),
-        }
-    }
-
-    fn cost(self, input: PiCostInput<'_>, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
-        let override_model = pricing_override_model(input.raw_model, input.display_model, pricing);
-        let source_cost = source_cost_for_mode(input.display_cost, mode, override_model.is_some());
-        match self {
-            Self::Default => {
-                let model = override_model
-                    .or_else(|| {
-                        input.display_model.filter(|model| {
-                            pricing.is_some_and(|pricing| pricing.find_exact(model).is_some())
-                        })
-                    })
-                    .or(input.raw_model)
-                    .or(input.display_model);
-                calculate_cost_for_usage_at(
-                    model,
-                    input.usage,
-                    source_cost,
-                    Some(input.timestamp),
-                    mode,
-                    pricing,
-                )
-            }
-            Self::Named { .. } => calculate_store_cost(
-                input.raw_model,
-                input.display_model,
-                input.usage,
-                source_cost,
-                input.timestamp,
-                mode,
-                pricing,
-            ),
-        }
-    }
-
-    fn missing_pricing_model(
-        self,
-        raw_model: Option<&str>,
-        display_model: Option<&str>,
-        usage: TokenUsageRaw,
-        display_cost: Option<f64>,
-        mode: CostMode,
-        pricing: Option<&PricingMap>,
-    ) -> Option<String> {
-        let override_model = pricing_override_model(raw_model, display_model, pricing);
-        let source_cost = source_cost_for_mode(display_cost, mode, override_model.is_some());
-        match self {
-            Self::Default => {
-                let model = override_model.or(display_model);
-                missing_pricing_model_for_usage(model, usage, source_cost, mode, pricing)
-            }
-            Self::Named { .. } => missing_store_pricing_model(
-                raw_model,
-                display_model,
-                usage,
-                source_cost,
-                mode,
-                pricing,
-            ),
-        }
-    }
+struct PiStoreContext<'a> {
+    root: &'a Path,
+    name: &'a str,
 }
 
 fn read_session_file_data_with_context(
@@ -350,7 +212,7 @@ fn read_session_file_data_with_context(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<PiSessionData, UnitError> {
     let content = fs::read(path)?;
-    let project = context.project(path);
+    let project = extract_project_for_store(path, context.root);
     let session_id = extract_session_id(path);
     let header = parse_session_header(&content);
     // Usable pi lines carry token counts under a `usage` key nested in a
@@ -407,18 +269,15 @@ fn read_session_file_data_with_context(
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
         let model = raw_model
             .as_ref()
-            .map(|model| format!("[{}] {model}", context.store_name()));
-        let cost = context.cost(
-            PiCostInput {
-                raw_model: raw_model.as_deref(),
-                display_model: model.as_deref(),
-                usage,
-                display_cost,
-                timestamp,
-            },
+            .map(|model| format!("[{}] {model}", context.name));
+        let resolved_pricing =
+            store_pricing_at(raw_model.as_deref(), model.as_deref(), timestamp, pricing);
+        let source_cost = source_cost_for_mode(
+            display_cost,
             mode,
-            pricing,
+            pricing_override_model(raw_model.as_deref(), model.as_deref(), pricing).is_some(),
         );
+        let cost = store_cost(usage, source_cost, mode, resolved_pricing);
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
@@ -433,13 +292,12 @@ fn read_session_file_data_with_context(
             },
             entry_id: record.id.clone(),
         });
-        let missing_pricing_model = context.missing_pricing_model(
+        let missing_pricing_model = missing_store_pricing_model(
             raw_model.as_deref(),
-            model.as_deref(),
             usage,
-            display_cost,
+            source_cost,
             mode,
-            pricing,
+            resolved_pricing,
         );
         let stored_cost = pi_stored_cost(
             raw_model.as_deref(),
@@ -652,43 +510,29 @@ fn extract_session_id(path: &Path) -> String {
         .to_string()
 }
 
-fn extract_project(path: &Path) -> String {
-    let mut previous_was_sessions = false;
-    for component in path.components() {
-        let segment = component.as_os_str().to_string_lossy();
-        if previous_was_sessions {
-            return segment.into_owned();
-        }
-        previous_was_sessions = segment == "sessions";
-    }
-    "unknown".to_string()
-}
-
 fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
-    if let Ok(relative) = path.strip_prefix(store_root)
-        && let Some(project) = relative.components().next()
-    {
-        return project.as_os_str().to_string_lossy().into_owned();
-    }
-    extract_project(path)
+    path.parent()
+        .and_then(|parent| parent.strip_prefix(store_root).ok())
+        .and_then(|relative| relative.components().next())
+        .map_or_else(
+            || "unknown".to_string(),
+            |project| project.as_os_str().to_string_lossy().into_owned(),
+        )
 }
 
-fn calculate_store_cost(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
+fn store_cost(
     usage: TokenUsageRaw,
     display_cost: Option<f64>,
-    timestamp: crate::TimestampMs,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: Option<Pricing>,
 ) -> f64 {
     match mode {
         CostMode::Display => display_cost.unwrap_or(0.0),
         CostMode::Auto => display_cost.unwrap_or_else(|| {
-            calculate_store_cost_from_tokens(raw_model, display_model, usage, timestamp, pricing)
+            pricing.map_or(0.0, |pricing| calculate_cost_from_pricing(usage, pricing))
         }),
         CostMode::Calculate => {
-            calculate_store_cost_from_tokens(raw_model, display_model, usage, timestamp, pricing)
+            pricing.map_or(0.0, |pricing| calculate_cost_from_pricing(usage, pricing))
         }
     }
 }
@@ -727,49 +571,21 @@ fn source_cost_for_mode(
     }
 }
 
-fn calculate_store_cost_from_tokens(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    usage: TokenUsageRaw,
-    timestamp: crate::TimestampMs,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    let Some(pricing) = store_pricing_at(raw_model, display_model, timestamp, pricing) else {
-        return 0.0;
-    };
-    calculate_cost_from_pricing(usage, pricing)
-}
-
 fn missing_store_pricing_model(
     raw_model: Option<&str>,
-    display_model: Option<&str>,
     usage: TokenUsageRaw,
     display_cost: Option<f64>,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: Option<Pricing>,
 ) -> Option<String> {
-    if mode == CostMode::Display || (mode == CostMode::Auto && display_cost.is_some()) {
+    if mode == CostMode::Display
+        || (mode == CostMode::Auto && display_cost.is_some())
+        || crate::total_usage_tokens(usage) == 0
+        || pricing.is_some()
+    {
         return None;
     }
-    if crate::total_usage_tokens(usage) == 0 {
-        return None;
-    }
-    let raw_model = raw_model?;
-    store_pricing(Some(raw_model), display_model, pricing)
-        .is_none()
-        .then(|| crate::model_aliases::resolve_model_name(raw_model).into_owned())
-}
-
-fn store_pricing(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Option<Pricing> {
-    let pricing = pricing?;
-    pricing_override_model(raw_model, display_model, Some(pricing))
-        .and_then(|model| pricing.find(model))
-        .or_else(|| display_model.and_then(|model| pricing.find_exact(model)))
-        .or_else(|| raw_model.and_then(|model| pricing.find(model)))
+    raw_model.map(|model| crate::model_aliases::resolve_model_name(model).into_owned())
 }
 
 fn store_pricing_at(
@@ -785,7 +601,7 @@ fn store_pricing_at(
         .or_else(|| raw_model.and_then(|model| pricing.find_at(model, timestamp)))
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PiEntryId {
     project: Arc<str>,
     session_id: Arc<str>,
@@ -818,6 +634,46 @@ mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
     use std::path::Path;
+
+    fn read_session_file(
+        path: &Path,
+        tz: &JiffTimeZone,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> crate::Result<Vec<LoadedEntry>> {
+        read_session_file_data_for_store_with_diagnostics(
+            path,
+            path.parent().and_then(Path::parent).unwrap(),
+            tz,
+            mode,
+            pricing,
+            "pi",
+            &Diagnostics::new("pi"),
+        )
+        .map(|data| data.entries)
+        .map_err(|error| crate::cli_error(error.to_string()))
+    }
+
+    fn read_session_file_for_store(
+        path: &Path,
+        store_root: &Path,
+        tz: &JiffTimeZone,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+        store_name: &str,
+    ) -> crate::Result<Vec<LoadedEntry>> {
+        read_session_file_data_for_store_with_diagnostics(
+            path,
+            store_root,
+            tz,
+            mode,
+            pricing,
+            store_name,
+            &Diagnostics::new("pi"),
+        )
+        .map(|data| data.entries)
+        .map_err(|error| crate::cli_error(error.to_string()))
+    }
 
     fn pricing_for_cost_tests() -> PricingMap {
         let mut pricing = PricingMap::default();
@@ -967,11 +823,13 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
         let diagnostics = Diagnostics::new("pi");
 
-        let data = read_session_file_data_with_diagnostics(
+        let data = read_session_file_data_for_store_with_diagnostics(
             &file,
+            &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
+            "pi",
             &diagnostics,
         )
         .unwrap();
@@ -1029,7 +887,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(
             entries[0].missing_pricing_model.as_deref(),
-            Some("[pi] unknown-model-xyz")
+            Some("unknown-model-xyz")
         );
     }
 
@@ -1320,66 +1178,22 @@ mod tests {
 
     #[test]
     fn auto_recalculates_non_finite_source_cost_while_display_preserves_it() {
-        let pricing = pricing_for_cost_tests();
+        let pricing = pricing_for_cost_tests().find("test-model");
         let usage = usage_for_cost_tests();
-        let expected_cost = 0.018000000000000002;
-        let contexts = [
-            PiStoreContext::Default,
-            PiStoreContext::Named {
-                root: Path::new("."),
-                name: "omp",
-            },
-        ];
-
-        for context in contexts {
-            let display_cost = context.cost(
-                PiCostInput {
-                    raw_model: Some("test-model"),
-                    display_model: Some(match context {
-                        PiStoreContext::Default => "[pi] test-model",
-                        PiStoreContext::Named { .. } => "[omp] test-model",
-                    }),
-                    usage,
-                    display_cost: Some(f64::NAN),
-                    timestamp: crate::TimestampMs::UNIX_EPOCH,
-                },
-                CostMode::Display,
-                Some(&pricing),
-            );
-            assert!(display_cost.is_nan());
-
-            let auto_cost = context.cost(
-                PiCostInput {
-                    raw_model: Some("test-model"),
-                    display_model: Some(match context {
-                        PiStoreContext::Default => "[pi] test-model",
-                        PiStoreContext::Named { .. } => "[omp] test-model",
-                    }),
-                    usage,
-                    display_cost: Some(f64::INFINITY),
-                    timestamp: crate::TimestampMs::UNIX_EPOCH,
-                },
+        assert!(store_cost(usage, Some(f64::NAN), CostMode::Display, pricing).is_nan());
+        assert_eq!(
+            store_cost(
+                usage,
+                source_cost_for_mode(Some(f64::INFINITY), CostMode::Auto, false),
                 CostMode::Auto,
-                Some(&pricing),
-            );
-            assert_eq!(auto_cost, expected_cost);
-
-            let calculated_cost = context.cost(
-                PiCostInput {
-                    raw_model: Some("test-model"),
-                    display_model: Some(match context {
-                        PiStoreContext::Default => "[pi] test-model",
-                        PiStoreContext::Named { .. } => "[omp] test-model",
-                    }),
-                    usage,
-                    display_cost: Some(f64::NEG_INFINITY),
-                    timestamp: crate::TimestampMs::UNIX_EPOCH,
-                },
-                CostMode::Calculate,
-                Some(&pricing),
-            );
-            assert_eq!(calculated_cost, expected_cost);
-        }
+                pricing
+            ),
+            0.018000000000000002
+        );
+        assert_eq!(
+            store_cost(usage, Some(f64::NEG_INFINITY), CostMode::Calculate, pricing),
+            0.018000000000000002
+        );
     }
 
     #[test]
@@ -1402,7 +1216,7 @@ mod tests {
         assert_eq!(default_entry.cost, 0.0);
         assert_eq!(
             default_entry.missing_pricing_model.as_deref(),
-            Some("[pi] unknown-model")
+            Some("unknown-model")
         );
 
         let named_entry = read_session_file_for_store(

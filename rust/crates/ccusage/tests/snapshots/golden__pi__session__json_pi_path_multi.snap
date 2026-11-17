@@ -627,7 +627,7 @@ exit: 0
         "[pi] gpt-5"
       ],
       "outputTokens": 3,
-      "projectPath": "loose.jsonl",
+      "projectPath": "unknown",
       "sessionId": "loose",
       "totalCost": 0.00006750000000000001,
       "totalTokens": 33
@@ -653,7 +653,7 @@ exit: 0
         "[pi] pi-mystery-1"
       ],
       "outputTokens": 13,
-      "projectPath": "unknown",
+      "projectPath": "extra-project",
       "sessionId": "outside-root",
       "totalCost": 0.0,
       "totalTokens": 43
