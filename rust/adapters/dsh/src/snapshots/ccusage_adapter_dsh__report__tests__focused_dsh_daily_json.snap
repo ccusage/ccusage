@@ -1,6 +1,6 @@
 ---
 source: adapters/dsh/src/report.rs
-expression: "report_from_rows(&rows, kind)"
+expression: "ccusage_adapter_common::source::EntrySource::report_json(&crate::SOURCE,\n&rows, kind)"
 ---
 {
   "daily": [
@@ -35,7 +35,7 @@ expression: "report_from_rows(&rows, kind)"
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0033299999999999996,
+          "cost": 0.006659999999999999,
           "inputTokens": 19000,
           "modelName": "deepseek-flash",
           "outputTokens": 800
@@ -45,7 +45,7 @@ expression: "report_from_rows(&rows, kind)"
         "deepseek-flash"
       ],
       "outputTokens": 800,
-      "totalCost": 0.0033299999999999996,
+      "totalCost": 0.006659999999999999,
       "totalTokens": 19800
     },
     {
@@ -98,7 +98,7 @@ expression: "report_from_rows(&rows, kind)"
     "cacheReadTokens": 22000,
     "inputTokens": 23850,
     "outputTokens": 1770,
-    "totalCost": 0.0344326,
+    "totalCost": 0.0377626,
     "totalTokens": 50220
   }
 }
