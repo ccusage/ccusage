@@ -105,7 +105,7 @@ enum Refusal {
 struct Admitted {
     record: ClaudeUsageRecord,
     timestamp: TimestampMs,
-    advisors: Vec<super::AdvisorUsage>,
+    advisors: super::AdvisorUsages,
 }
 
 fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
@@ -119,7 +119,14 @@ fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
     if !is_valid_usage_record(&record) {
         return Err(Refusal::Rejected(Rejection::Malformed));
     }
-    let advisors = advisor_lookup.usages(line).map_err(Refusal::Rejected)?;
+    let advisors = match advisor_lookup.usages(line) {
+        Ok(advisors) => advisors,
+        Err(Rejection::Malformed) => super::AdvisorUsages {
+            malformed: 1,
+            ..super::AdvisorUsages::default()
+        },
+        Err(Rejection::NullContract) => super::AdvisorUsages::default(),
+    };
     Ok(Admitted {
         record,
         timestamp,
@@ -492,9 +499,9 @@ pub(super) enum AdvisorLookup {
 }
 
 impl AdvisorLookup {
-    fn usages(self, line: &[u8]) -> std::result::Result<Vec<super::AdvisorUsage>, Rejection> {
+    fn usages(self, line: &[u8]) -> std::result::Result<super::AdvisorUsages, Rejection> {
         match self {
-            Self::RuledOut => Ok(Vec::new()),
+            Self::RuledOut => Ok(super::AdvisorUsages::default()),
             Self::AskLine => advisor_usages_from_line(line),
         }
     }
@@ -587,6 +594,14 @@ pub(super) fn read_usage_file<E>(
                 return;
             }
         };
+        for _ in 0..advisors.malformed {
+            diagnostics.record(ccusage_core::Skip::record(
+                path,
+                ccusage_core::Skip::line_number(current.index),
+                ccusage_core::SkipKind::InvalidData,
+                "invalid advisor usage",
+            ));
+        }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
         let raw_model = data.message.model;
         let cost = calculate_cost_for_usage_at(
@@ -634,6 +649,7 @@ pub(super) fn read_usage_file<E>(
             is_api_error_message: data.is_api_error_message,
         };
         let advisors = advisors
+            .usages
             .into_iter()
             .enumerate()
             .map(|(index, advisor)| ParsedUsage {
@@ -979,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn detection_and_reports_reject_the_same_null_advisor_usage() {
+    fn detection_and_reports_keep_parent_usage_with_a_null_advisor() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":1,"output_tokens":2,"cache_read_input_tokens":null}]}}}"#,
         });
@@ -992,8 +1008,9 @@ mod tests {
             None,
             &diagnostics,
         );
-        assert!(loaded.is_empty());
-        assert!(!super::has_usage(&path));
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].usage.input_tokens, 10);
+        assert!(super::has_usage(&path));
         assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
     }
 
@@ -1023,6 +1040,54 @@ mod tests {
     }
 
     #[test]
+    fn malformed_advisors_preserve_parent_and_valid_sibling_usage() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"x"},{"type":"advisor_message","model":"good","input_tokens":3,"output_tokens":2}]}}}"#,
+        });
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+        assert_eq!(
+            loaded
+                .iter()
+                .map(|entry| entry.usage.input_tokens)
+                .collect::<Vec<_>>(),
+            [10, 3]
+        );
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn malformed_advisor_envelopes_preserve_agent_progress_usage() {
+        for message in [
+            r#""advisor_message""#,
+            r#"{"usage":{"iterations":null},"content":"advisor_message"}"#,
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": format!(r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}}}}}"#),
+            });
+            let path = fixture.path("projects/project-a/session-a.jsonl");
+            let diagnostics = Diagnostics::new("claude");
+            let loaded = super::read_daily_usage_file_with_diagnostics(
+                &path,
+                &JiffTimeZone::UTC,
+                CostMode::Display,
+                None,
+                &diagnostics,
+            );
+            assert_eq!(loaded.len(), 1, "{message}");
+            assert_eq!(loaded[0].usage.input_tokens, 10);
+            assert!(super::has_usage(&path));
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        }
+    }
+
+    #[test]
     fn records_a_malformed_advisor_iteration_as_invalid_data() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":"SECRET_CANARY","output_tokens":1}]}}}"#,
@@ -1036,8 +1101,10 @@ mod tests {
             None,
             &diagnostics,
         );
-        assert!(loaded.is_empty());
-        assert!(!super::has_usage(&path));
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].usage.input_tokens, 10);
+        assert_eq!(loaded[0].usage.output_tokens, 1);
+        assert!(super::has_usage(&path));
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
     }
 
@@ -1609,7 +1676,7 @@ mod tests {
                     retained += 1;
                 } else {
                     skipped += 1;
-                    assert!(previous.is_empty(), "{line}");
+                    assert!(previous.usages.is_empty(), "{line}");
                 }
             }
         }

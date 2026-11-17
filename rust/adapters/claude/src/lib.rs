@@ -581,13 +581,19 @@ pub(crate) struct AdvisorUsage {
     usage: TokenUsageRaw,
 }
 
+#[derive(Default)]
+pub(crate) struct AdvisorUsages {
+    usages: Vec<AdvisorUsage>,
+    malformed: usize,
+}
+
 pub(crate) fn advisor_usages_from_line(
     line: &[u8],
-) -> std::result::Result<Vec<AdvisorUsage>, Rejection> {
+) -> std::result::Result<AdvisorUsages, Rejection> {
     static ADVISOR_MARKER: LazyLock<LinePrefilter> =
         LazyLock::new(|| LinePrefilter::all(&[br#""advisor_message""#]));
     if !ADVISOR_MARKER.matches(line) {
-        return Ok(Vec::new());
+        return Ok(AdvisorUsages::default());
     }
     let envelope = deserialize_usage_line::<UsageIterationsEnvelope>(line)?;
     let iterations = envelope
@@ -595,7 +601,7 @@ pub(crate) fn advisor_usages_from_line(
         .and_then(|message| message.usage)
         .map(|usage| usage.iterations)
         .unwrap_or_default();
-    let mut advisors = Vec::new();
+    let mut advisors = AdvisorUsages::default();
     for iteration in &iterations {
         let text = |key: &str| iteration.get(key).and_then(serde_json::Value::as_str);
         let Some(model) = text("model").filter(|model| !model.is_empty()) else {
@@ -604,11 +610,14 @@ pub(crate) fn advisor_usages_from_line(
         if text("type") != Some("advisor_message") {
             continue;
         }
-        let usage = GuardedUsage::deserialize(iteration).map_err(|_| Rejection::Malformed)?;
+        let Ok(usage) = GuardedUsage::deserialize(iteration) else {
+            advisors.malformed += 1;
+            continue;
+        };
         if usage.has_null {
-            return Err(Rejection::NullContract);
+            continue;
         }
-        advisors.push(AdvisorUsage {
+        advisors.usages.push(AdvisorUsage {
             model: model.to_owned(),
             usage: usage.usage.usage,
         });
