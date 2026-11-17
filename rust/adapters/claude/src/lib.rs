@@ -10,7 +10,7 @@ mod load_tests;
 mod paths;
 mod source;
 
-pub use commands::{run_blocks, run_bucket, run_daily, run_session, run_statusline, run_weekly};
+pub use commands::{run_blocks, run_bucket, run_daily, run_session, run_statusline};
 pub use source::SOURCE;
 
 use std::{

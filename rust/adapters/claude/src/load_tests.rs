@@ -1,10 +1,11 @@
+use ccusage_core::summary::KeyTarget;
 use ccusage_test_support::{EnvVarGuard, fs_fixture};
 use serde_json::Value;
 
 use crate::{
     LoadedEntry, UsageSummary,
     cli::{CostMode, SharedArgs},
-    load_daily_summaries, load_entries, summarize_by_key,
+    load_daily_summaries, load_entries, summarize_by_key_target,
 };
 
 fn display_shared() -> SharedArgs {
@@ -28,10 +29,11 @@ fn rows_json(rows: &[UsageSummary]) -> Vec<Value> {
 }
 
 fn daily_from_entries(entries: &[LoadedEntry]) -> Vec<UsageSummary> {
-    summarize_by_key(
+    summarize_by_key_target(
         entries,
         |entry| entry.date.clone(),
         |key| (key.to_string(), None),
+        KeyTarget::Date,
     )
     .unwrap()
 }
@@ -293,7 +295,7 @@ fn loads_daily_summaries_like_loaded_entry_aggregation() {
     let grouped_daily = load_daily_summaries(&shared, None, true).unwrap();
 
     assert_eq!(rows_json(&daily), rows_json(&daily_from_entries(&entries)));
-    let expected_grouped_daily = summarize_by_key(
+    let expected_grouped_daily = summarize_by_key_target(
         &entries,
         |entry| format!("{}\0{}", entry.date, entry.project),
         |key| {
@@ -303,6 +305,7 @@ fn loads_daily_summaries_like_loaded_entry_aggregation() {
                 parts.next().map(str::to_string),
             )
         },
+        KeyTarget::Date,
     )
     .unwrap();
     assert_eq!(

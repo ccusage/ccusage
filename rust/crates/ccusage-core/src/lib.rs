@@ -47,10 +47,7 @@ pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
 pub(crate) use project_names::parse_project_aliases;
 pub(crate) use project_names::short_model_name;
 pub use project_names::{format_breakdown_model_label, format_project_name};
-pub use summary::{
-    BucketKind, SessionAccumulator, sort_summaries, summarize_by_key,
-    summarize_summaries_by_bucket, week_start,
-};
+pub use summary::{SessionAccumulator, sort_summaries, summarize_by_key_target, week_start};
 pub use types::*;
 pub use utils::{
     apply_total_token_fallback, json_value_u64, non_empty_json_string, total_usage_tokens,

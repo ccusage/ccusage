@@ -11,18 +11,6 @@ use crate::{
     format_rfc3339_millis, parse_iso_date,
 };
 
-pub fn summarize_by_key<F, M>(
-    entries: &[LoadedEntry],
-    key_fn: F,
-    meta_fn: M,
-) -> Result<Vec<UsageSummary>>
-where
-    F: Fn(&LoadedEntry) -> String,
-    M: Fn(&str) -> (String, Option<String>),
-{
-    summarize_by_key_target(entries, key_fn, |key| meta_fn(key), KeyTarget::Date)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyTarget {
     Date,
@@ -184,26 +172,6 @@ impl SessionAccumulator {
         summary.versions = Some(self.versions.into_iter().collect());
         Ok(summary)
     }
-}
-
-#[derive(Clone, Copy)]
-pub enum BucketKind {
-    Monthly,
-    Weekly,
-}
-
-pub fn summarize_summaries_by_bucket(
-    rows: &[UsageSummary],
-    kind: BucketKind,
-    start: WeekDay,
-) -> Vec<UsageSummary> {
-    summarize_bucket(
-        rows,
-        match kind {
-            BucketKind::Monthly => Bucket::Monthly,
-            BucketKind::Weekly => Bucket::Weekly(start),
-        },
-    )
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -439,13 +407,14 @@ mod tests {
             }),
         ];
 
-        let rows = summarize_by_key(
+        let rows = summarize_by_key_target(
             &entries,
             |entry| format!("{}|{}", entry.date, entry.project_path),
             |key| {
                 let (date, project) = key.split_once('|').unwrap();
                 (date.to_string(), Some(project.to_string()))
             },
+            KeyTarget::Date,
         )
         .unwrap();
 
@@ -530,8 +499,8 @@ mod tests {
             }),
         ];
 
-        let weekly = summarize_summaries_by_bucket(&rows, BucketKind::Weekly, WeekDay::Monday);
-        let monthly = summarize_summaries_by_bucket(&rows, BucketKind::Monthly, WeekDay::Sunday);
+        let weekly = summarize_bucket(&rows, Bucket::Weekly(WeekDay::Monday));
+        let monthly = summarize_bucket(&rows, Bucket::Monthly);
 
         insta::assert_json_snapshot!(serde_json::json!({
             "weekly": weekly,
@@ -592,10 +561,11 @@ mod tests {
         let calculated = loaded_entry(fixture(1_767_316_801_000, "claude-sonnet-4-20250514", 0.25));
         let other = loaded_entry(fixture(1_767_316_802_000, "gpt-5", 0.125));
 
-        let rows = summarize_by_key(
+        let rows = summarize_by_key_target(
             &[stored.clone(), calculated, other, stored],
             |entry| entry.date.clone(),
             |key| (key.to_string(), None),
+            KeyTarget::Date,
         )
         .unwrap();
 
@@ -613,11 +583,7 @@ mod tests {
             input_tokens: 100,
         });
         next_day.model_breakdowns[0].stored_cost = Some(0.25);
-        let monthly = summarize_summaries_by_bucket(
-            &[rows[0].clone(), next_day],
-            BucketKind::Monthly,
-            WeekDay::Sunday,
-        );
+        let monthly = summarize_bucket(&[rows[0].clone(), next_day], Bucket::Monthly);
 
         assert_eq!(monthly[0].model_breakdowns[0].stored_cost, Some(1.25));
         assert_eq!(monthly[0].model_breakdowns[1].stored_cost, None);

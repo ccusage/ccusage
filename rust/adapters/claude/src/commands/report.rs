@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use ccusage_core::{
-    BucketKind, DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, ReportWindow, Result, SessionAccumulator,
-    TimestampMs, UsageSummary,
-    cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder, WeekDay, WeeklyArgs},
+    DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, ReportWindow, Result, SessionAccumulator, TimestampMs,
+    UsageSummary,
+    cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder},
     cli_error,
     fast::FxHashMap,
-    print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key,
-    summarize_summaries_by_bucket, totals_json, utc_now, wants_json,
+    print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key_target,
+    summary::{Bucket, KeyTarget, summarize_bucket},
+    totals_json, utc_now, wants_json,
 };
 use ccusage_report::{group_project_output, session_summary_json, summary_json};
 use serde_json::json;
@@ -59,31 +60,28 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
-    run_bucket_with_start(shared, kind, WeekDay::Sunday)
-}
-
-fn run_bucket_with_start(shared: SharedArgs, kind: BucketKind, start: WeekDay) -> Result<()> {
+pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
     let entries = load_entries_since(&shared, None)?;
-    let mut daily = summarize_by_key(
+    let mut daily = summarize_by_key_target(
         &entries,
         |entry| entry.date.clone(),
         |key| (key.to_string(), None),
+        KeyTarget::Date,
     )?;
     sort_summaries(&mut daily, &shared.order, |row| {
         row.date.as_deref().unwrap_or_default()
     });
 
-    let mut buckets = summarize_summaries_by_bucket(&daily, kind, start);
-    sort_summaries(&mut buckets, &shared.order, |row| match kind {
-        BucketKind::Monthly => row.month.as_deref().unwrap_or_default(),
-        BucketKind::Weekly => row.week.as_deref().unwrap_or_default(),
+    let mut buckets = summarize_bucket(&daily, bucket);
+    sort_summaries(&mut buckets, &shared.order, |row| match bucket {
+        Bucket::Monthly => row.month.as_deref().unwrap_or_default(),
+        Bucket::Weekly(_) => row.week.as_deref().unwrap_or_default(),
     });
 
     if wants_json(&shared) {
-        let key = match kind {
-            BucketKind::Monthly => "monthly",
-            BucketKind::Weekly => "weekly",
+        let key = match bucket {
+            Bucket::Monthly => "monthly",
+            Bucket::Weekly(_) => "weekly",
         };
         let output = json!({
             key: buckets.iter().map(summary_json).collect::<Vec<_>>(),
@@ -93,16 +91,12 @@ fn run_bucket_with_start(shared: SharedArgs, kind: BucketKind, start: WeekDay) -
         return Ok(());
     }
 
-    let (title, col) = match kind {
-        BucketKind::Monthly => ("Claude Code Token Usage Report - Monthly", "Month"),
-        BucketKind::Weekly => ("Claude Code Token Usage Report - Weekly", "Week"),
+    let (title, col) = match bucket {
+        Bucket::Monthly => ("Claude Code Token Usage Report - Monthly", "Month"),
+        Bucket::Weekly(_) => ("Claude Code Token Usage Report - Weekly", "Week"),
     };
     print_usage_table(title, col, &buckets, &shared, false, None)?;
     Ok(())
-}
-
-pub fn run_weekly(args: WeeklyArgs) -> Result<()> {
-    run_bucket_with_start(args.shared, BucketKind::Weekly, args.start_of_week)
 }
 
 pub fn run_session(args: SessionArgs) -> Result<()> {

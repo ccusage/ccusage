@@ -3,7 +3,7 @@ mod cli;
 mod http;
 
 use ccusage_cli::Command;
-use ccusage_core::{BucketKind, Result, pricing};
+use ccusage_core::{Result, pricing, summary::Bucket};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
 #[global_allocator]
@@ -23,8 +23,10 @@ fn main() -> Result<()> {
     match cli::parse() {
         Command::All(args) => adapter::all::run(args),
         Command::Daily(args) => adapter::claude::run_daily(args),
-        Command::Monthly(shared) => adapter::claude::run_bucket(shared, BucketKind::Monthly),
-        Command::Weekly(args) => adapter::claude::run_weekly(args),
+        Command::Monthly(shared) => adapter::claude::run_bucket(shared, Bucket::Monthly),
+        Command::Weekly(args) => {
+            adapter::claude::run_bucket(args.shared, Bucket::Weekly(args.start_of_week))
+        }
         Command::Session(args) => adapter::claude::run_session(args),
         Command::Blocks(args) => adapter::claude::run_blocks(args),
         Command::Statusline(args) => adapter::claude::run_statusline(args),
