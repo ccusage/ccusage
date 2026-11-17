@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
@@ -30,8 +31,8 @@ pub struct ConfigContext {
     pi_stores_error: Option<String>,
     error: Option<String>,
     layers: BTreeMap<String, crate::layers::Layer>,
-    warnings: Vec<String>,
-    context_thresholds: ContextThresholds,
+    warnings: RefCell<Vec<String>>,
+    threshold_origin: Option<(PathBuf, bool)>,
 }
 
 impl ConfigContext {
@@ -46,18 +47,18 @@ impl ConfigContext {
         let (file, error, warnings) = load_config_value(scan_config_path(args).as_deref());
         let mut context = Self::empty(command);
         context.error = error;
-        context.warnings = warnings;
+        context.warnings = RefCell::new(warnings);
         if let Some(file) = file {
             context.pi_stores = file.pi_stores;
             context.pi_stores_error = file.pi_stores_error;
             context.layers = file.layers;
-            context.resolve_context_thresholds(&file.path, scan_config_path(args).is_some());
+            context.threshold_origin = Some((file.path, scan_config_path(args).is_some()));
         }
         context
     }
 
-    pub fn warnings(&self) -> &[String] {
-        &self.warnings
+    pub fn warnings(&self) -> Vec<String> {
+        self.warnings.borrow().clone()
     }
 
     fn empty(command: ConfigCommand) -> Self {
@@ -67,8 +68,8 @@ impl ConfigContext {
             pi_stores_error: None,
             error: None,
             layers: BTreeMap::new(),
-            warnings: Vec::new(),
-            context_thresholds: ContextThresholds::default(),
+            warnings: RefCell::new(Vec::new()),
+            threshold_origin: None,
         }
     }
 
@@ -85,14 +86,15 @@ impl ConfigContext {
             error: self.error.clone(),
             layers: self.layers.clone(),
             warnings: self.warnings.clone(),
-            context_thresholds: self.context_thresholds,
+            threshold_origin: self.threshold_origin.clone(),
         }
     }
 
-    fn resolve_context_thresholds(&mut self, file: &Path, strict: bool) {
-        if self.command.report != "statusline" {
-            return;
-        }
+    fn resolve_context_thresholds(
+        &self,
+        low_override: Option<u8>,
+        medium_override: Option<u8>,
+    ) -> Result<ContextThresholds, String> {
         let mut lows = Vec::new();
         let mut mediums = Vec::new();
         for (index, path) in self.option_paths().into_iter().enumerate() {
@@ -105,6 +107,12 @@ impl ConfigContext {
                 }
             }
         }
+        if let Some(value) = low_override {
+            lows.push((usize::MAX, String::new(), value));
+        }
+        if let Some(value) = medium_override {
+            mediums.push((usize::MAX, String::new(), value));
+        }
         let defaults = ContextThresholds::default();
         loop {
             let low = lows.last().map_or(defaults.low(), |(_, _, value)| *value);
@@ -113,10 +121,12 @@ impl ConfigContext {
                 .map_or(defaults.medium(), |(_, _, value)| *value);
             match ContextThresholds::new(low, medium) {
                 Ok(thresholds) => {
-                    self.context_thresholds = thresholds;
-                    return;
+                    return Ok(thresholds);
                 }
                 Err(error) => {
+                    if low_override.is_some() || medium_override.is_some() {
+                        return Err(error);
+                    }
                     let drop_low = lows.last().is_some_and(|(index, _, _)| {
                         mediums.last().is_none_or(|(other, _, _)| index >= other)
                     });
@@ -126,15 +136,17 @@ impl ConfigContext {
                         ("contextMediumThreshold", mediums.pop())
                     };
                     let Some((_, path, _)) = invalid else {
-                        self.error = Some(config_error(error));
-                        return;
+                        return Err(config_error(error));
+                    };
+                    let Some((file, strict)) = &self.threshold_origin else {
+                        return Err(error);
                     };
                     let message = format!("{}: {path}.{field}: {error}", file.display());
-                    if strict {
-                        self.error = Some(config_error(message));
-                        return;
+                    if *strict {
+                        return Err(config_error(message));
                     }
                     self.warnings
+                        .borrow_mut()
                         .push(format!("Invalid ccusage config field: {message}"));
                 }
             }
@@ -496,7 +508,6 @@ fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
 }
 
 fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigContext) {
-    args.context_thresholds = config.context_thresholds;
     for options in config.option_maps() {
         let options = options.statusline.clone();
         if let Some(offline) = options.offline {
@@ -536,6 +547,14 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
 }
 
 impl ccusage_cli::CliConfig for ConfigContext {
+    fn context_thresholds(
+        &self,
+        low: Option<u8>,
+        medium: Option<u8>,
+    ) -> Result<ContextThresholds, String> {
+        self.resolve_context_thresholds(low, medium)
+    }
+
     fn agent_options(&self, agent: &str) -> AgentOptions {
         let mut resolved = AgentOptions::default();
         for options in self.option_maps() {
@@ -990,7 +1009,7 @@ mod tests {
         let mut args = StatuslineArgs::default();
         config.apply_statusline_args(&mut args);
         assert_eq!(
-            args.context_thresholds,
+            config.context_thresholds(None, None).unwrap(),
             ContextThresholds::new(90, 95).unwrap()
         );
     }
@@ -1006,12 +1025,12 @@ mod tests {
             None,
             "statusline",
         );
-        config.resolve_context_thresholds(Path::new("selected.json"), false);
+        config.threshold_origin = Some((PathBuf::from("selected.json"), false));
         assert!(config.config_error().is_none());
         let mut args = StatuslineArgs::default();
         config.apply_statusline_args(&mut args);
         assert_eq!(
-            args.context_thresholds,
+            config.context_thresholds(None, None).unwrap(),
             ContextThresholds::new(70, 80).unwrap()
         );
         assert!(!args.cache);
@@ -1032,8 +1051,8 @@ mod tests {
         ]);
         assert!(
             config
-                .config_error()
-                .unwrap()
+                .context_thresholds(None, None)
+                .unwrap_err()
                 .contains("commands.statusline.contextLowThreshold")
         );
     }
@@ -1167,14 +1186,14 @@ mod tests {
         ] {
             assert!(
                 config
-                    .warnings
+                    .warnings()
                     .iter()
                     .any(|warning| warning.ends_with(path)),
                 "{path}: {:?}",
                 config.warnings
             );
         }
-        assert_eq!(config.warnings.len(), 4);
+        assert_eq!(config.warnings().len(), 4);
     }
 
     #[test]
@@ -1356,7 +1375,7 @@ mod tests {
             None,
             "statusline",
         );
-        config.resolve_context_thresholds(Path::new("config.json"), true);
+        config.threshold_origin = Some((PathBuf::from("config.json"), true));
         let mut statusline = StatuslineArgs::default();
         apply_config_to_statusline_args(&mut statusline, &config);
 
@@ -1365,8 +1384,8 @@ mod tests {
         assert_eq!(statusline.cost_source, ccusage_cli::CostSource::Both);
         assert!(!statusline.cache);
         assert_eq!(statusline.refresh_interval, 3);
-        assert_eq!(statusline.context_thresholds.low(), 45);
-        assert_eq!(statusline.context_thresholds.medium(), 75);
+        assert_eq!(config.context_thresholds(None, None).unwrap().low(), 45);
+        assert_eq!(config.context_thresholds(None, None).unwrap().medium(), 75);
         assert_eq!(statusline.timezone.as_deref(), Some("Asia/Tokyo"));
         assert!(statusline.debug);
     }
@@ -2121,8 +2140,8 @@ mod tests {
             pi_stores: Vec::new(),
             pi_stores_error: None,
             error,
-            warnings,
-            context_thresholds: ContextThresholds::default(),
+            warnings: RefCell::new(warnings),
+            threshold_origin: None,
         }
     }
 

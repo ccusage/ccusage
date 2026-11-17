@@ -377,6 +377,18 @@ pub struct PricingOverride {
 }
 
 pub trait CliConfig {
+    fn context_thresholds(
+        &self,
+        low: Option<u8>,
+        medium: Option<u8>,
+    ) -> Result<ContextThresholds, String> {
+        let defaults = ContextThresholds::default();
+        ContextThresholds::new(
+            low.unwrap_or(defaults.low()),
+            medium.unwrap_or(defaults.medium()),
+        )
+    }
+
     fn config_error(&self) -> Option<&str> {
         None
     }

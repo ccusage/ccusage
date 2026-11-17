@@ -82,6 +82,48 @@ fn statusline_threshold_overrides_are_validated_together() {
     };
 }
 
+#[test]
+fn statusline_merges_config_thresholds_before_validation() {
+    use ccusage_config::ConfigContext;
+    use ccusage_test_support::EnvVarsGuard;
+    let fixture = fs_fixture!({
+        "home/.claude/ccusage.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
+        "explicit.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
+    });
+    let _env = EnvVarsGuard::set_many([
+        ("HOME", Some(fixture.path("home").into_os_string())),
+        (
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.path("home/.claude").into_os_string()),
+        ),
+        (
+            "XDG_CONFIG_HOME",
+            Some(fixture.path("home/.config").into_os_string()),
+        ),
+    ]);
+    for explicit in [false, true] {
+        let path = fixture.path("explicit.json").display().to_string();
+        let mut args = vec!["ccusage", "statusline", "--context-medium-threshold", "95"];
+        if explicit {
+            args.extend(["--config", &path]);
+        }
+        let config = ConfigContext::from_args(
+            &args[1..]
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>(),
+        );
+        let Command::Statusline(statusline) = parse_with_config(&args, &config) else {
+            panic!("expected statusline");
+        };
+        assert_eq!(
+            statusline.context_thresholds,
+            ContextThresholds::new(85, 95).unwrap()
+        );
+        assert!(config.warnings().is_empty(), "{:?}", config.warnings());
+    }
+}
+
 #[derive(Default)]
 struct TestConfig {
     shared_json: Option<bool>,

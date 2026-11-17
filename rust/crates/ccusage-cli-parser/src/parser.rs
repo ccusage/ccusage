@@ -4,9 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, ColorChoice,
-    Command, ContextThresholds, CostMode, CostSource, DATE_BOUND_FORMATS,
-    DEFAULT_SESSION_DURATION_HOURS, DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder,
-    StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DEFAULT_SESSION_DURATION_HOURS, DailyArgs,
+    SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 use ccusage_cli::{is_shared_flag, option_takes_value};
 
@@ -275,8 +275,8 @@ fn parse_statusline_command(
     args.color = shared.color;
     args.mode = shared.mode;
     args.pricing_overrides = shared.pricing_overrides.clone();
-    let mut low = args.context_thresholds.low();
-    let mut medium = args.context_thresholds.medium();
+    let mut low = None;
+    let mut medium = None;
     while parser.peek().is_some() {
         match parser.next_flag()?.as_str() {
             "-O" | "--offline" => args.offline = true,
@@ -297,16 +297,20 @@ fn parse_statusline_command(
                     .map_err(|_| "Invalid value for --refresh-interval".to_string())?
             }
             "--context-low-threshold" => {
-                low = parser
-                    .value_for("--context-low-threshold")?
-                    .parse()
-                    .map_err(|_| "Invalid value for --context-low-threshold".to_string())?
+                low = Some(
+                    parser
+                        .value_for("--context-low-threshold")?
+                        .parse()
+                        .map_err(|_| "Invalid value for --context-low-threshold".to_string())?,
+                )
             }
             "--context-medium-threshold" => {
-                medium = parser
-                    .value_for("--context-medium-threshold")?
-                    .parse()
-                    .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?
+                medium = Some(
+                    parser
+                        .value_for("--context-medium-threshold")?
+                        .parse()
+                        .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?,
+                )
             }
             "-z" | "--timezone" => args.timezone = Some(parser.value_for("--timezone")?),
             "--config" => {
@@ -316,7 +320,7 @@ fn parse_statusline_command(
             flag => return Err(format!("Unknown statusline option '{flag}'")),
         }
     }
-    args.context_thresholds = ContextThresholds::new(low, medium)?;
+    args.context_thresholds = config.context_thresholds(low, medium)?;
     Ok(Command::Statusline(args))
 }
 
