@@ -36,6 +36,19 @@ def main []: nothing -> nothing {
             '}'
         ] | str join "\n" | save ($fixture | path join git)
         ^chmod +x ($fixture | path join nix) ($fixture | path join git)
+        let destination = $fixture | path join destination
+        mkdir ($destination | path join rust/pricing)
+        let copy_script = $env.FILE_PWD | path join ../../scripts/copy-models-dev-snapshots.nu
+        let copied = with-env {
+            PATH: ($env.PATH | prepend $fixture)
+            TEST_SNAPSHOT_OUTPUT: $generated
+            TEST_UNTRACKED: 'true'
+        } {
+            cd $destination
+            nu $copy_script | complete
+        }
+        assert equal $copied.exit_code 0 $copied.stderr
+        assert equal (open --raw ($destination | path join rust/pricing/snapshot.json)) '{}'
         [
             {
                 name: 'unchanged snapshots'

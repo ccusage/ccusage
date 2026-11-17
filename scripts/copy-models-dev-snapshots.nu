@@ -8,12 +8,6 @@ export def snapshot-paths [output: path]: nothing -> list<string> {
     if ($paths | is-empty) {
         error make {msg: 'The pricing generator produced no snapshots'}
     }
-    let tracked = ^git ls-files --error-unmatch -- ...$paths | complete
-    if $tracked.exit_code != 0 {
-        error make {
-            msg: $"The pricing generator writes snapshots git does not track; move them back or update the embedding crate: ($tracked.stderr | str trim)"
-        }
-    }
     $paths
 }
 

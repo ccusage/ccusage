@@ -10,6 +10,12 @@ def main [] {
 
     let output = build-snapshots
     let snapshots = snapshot-paths ($output | str trim)
+    let tracked = ^git ls-files --error-unmatch -- ...$snapshots | complete
+    if $tracked.exit_code != 0 {
+        error make {
+            msg: $"Generated snapshots must be tracked before comparing changes; git add each new snapshot: ($tracked.stderr | str trim)"
+        }
+    }
     let state = {
         snapshots: (dirty ...$snapshots)
         lock: (dirty flake.lock)
