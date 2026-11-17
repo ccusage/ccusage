@@ -121,6 +121,14 @@ in
         gitleaks = mkRepoCheck "gitleaks-check" [ pkgs.gitleaks ] ''
           gitleaks detect --source . --config .gitleaks.toml --no-git
         '';
+        # CI jobs that need only Nushell install it without Nix, so the
+        # version is pinned in the action and checked against the dev shell.
+        nushell-version = mkRepoCheck "nushell-version-check" [ ] ''
+          if ! grep -qxF '        version: ${pkgs.nushell.version}' .github/actions/setup-nu/action.yaml; then
+            echo "ERROR: .github/actions/setup-nu must install Nushell ${pkgs.nushell.version}, the flake's version." >&2
+            exit 1
+          fi
+        '';
         config-example = mkRepoCheck "config-example-check" [ pkgs.check-jsonschema ] ''
           check-jsonschema --schemafile apps/ccusage/config-schema.json ccusage.example.json
         '';
