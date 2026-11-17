@@ -7,8 +7,8 @@ use std::{
 };
 
 use ccusage_core::{
-    Color, Context, DEFAULT_SESSION_DURATION_HOURS, Diagnostics, LoadedEntry, MILLIS_PER_DAY,
-    MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow, Result, TimestampMs,
+    Color, Context, Diagnostics, LoadedEntry, MILLIS_PER_DAY, MILLIS_PER_MINUTE, ReportWindow,
+    Result, TimestampMs,
     cli::{CostSource, SharedArgs, StatuslineArgs, VisualBurnRate},
     cli_error, color, format_currency, format_number, format_rfc3339_millis,
     pricing::PricingMap,
@@ -294,7 +294,7 @@ fn load_statusline_active_block(
     now: TimestampMs,
     diagnostics: &Diagnostics,
 ) -> Option<SessionBlock> {
-    let session_ms = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64;
+    let session_ms = crate::blocks::SessionDuration::DEFAULT.as_millis();
     for lookback_days in STATUSLINE_BLOCK_LOOKBACK_DAYS {
         let window_shared = statusline_block_shared(args, shared, now, lookback_days);
         let mut entries =
@@ -321,7 +321,7 @@ fn load_statusline_active_block(
 }
 
 fn find_active_block(entries: Vec<LoadedEntry>, now: TimestampMs) -> Option<SessionBlock> {
-    identify_session_blocks(entries, DEFAULT_SESSION_DURATION_HOURS, now)
+    identify_session_blocks(entries, crate::blocks::SessionDuration::DEFAULT, now)
         .into_iter()
         .find(|block| block.is_active && !block.is_gap)
 }
@@ -378,8 +378,8 @@ fn statusline_block_shared(
     now: TimestampMs,
     lookback_days: i64,
 ) -> SharedArgs {
-    let lookback = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64
-        + lookback_days * MILLIS_PER_DAY;
+    let lookback =
+        crate::blocks::SessionDuration::DEFAULT.as_millis() + lookback_days * MILLIS_PER_DAY;
     let since = format_date(
         TimestampMs::from_millis(now.as_millis() - lookback),
         args.timezone.as_deref(),
@@ -675,6 +675,7 @@ struct HookContext {
 
 #[cfg(test)]
 mod tests {
+    use ccusage_core::DEFAULT_SESSION_DURATION_HOURS;
     use std::assert_matches;
     use std::ffi::OsString;
 

@@ -1370,6 +1370,27 @@ fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> s
 const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
 
 #[test]
+fn blocks_reject_unrepresentable_session_lengths() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+    for value in ["NaN", "inf", "1e300"] {
+        let output = claude_command(&fixture)
+            .args([
+                "claude",
+                "blocks",
+                "--offline",
+                "--json",
+                "--session-length",
+                value,
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "accepted {value}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Session length"));
+    }
+}
+
+#[test]
 fn config_warnings_follow_log_level() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);

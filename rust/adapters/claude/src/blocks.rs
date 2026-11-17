@@ -19,6 +19,29 @@ const BLOCKS_WARNING_THRESHOLD: f64 = 0.8;
 /// Terminal width below which the blocks table drops columns.
 const BLOCKS_COMPACT_WIDTH_THRESHOLD: usize = 120;
 
+#[derive(Clone, Copy)]
+pub(crate) struct SessionDuration(i64);
+
+impl SessionDuration {
+    pub(crate) const DEFAULT: Self = Self(5 * MILLIS_PER_HOUR);
+
+    pub(crate) fn from_hours(hours: f64) -> Result<Self> {
+        let error =
+            || cli_error("Session length must be a positive, representable number of hours");
+        if !hours.is_finite() || hours <= 0.0 {
+            return Err(error());
+        }
+        let duration =
+            std::time::Duration::try_from_secs_f64(hours * 3600.0).map_err(|_| error())?;
+        let millis = i64::try_from(duration.as_millis()).map_err(|_| error())?;
+        Ok(Self(millis))
+    }
+
+    pub(crate) const fn as_millis(self) -> i64 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionBlock {
     pub id: String,
@@ -50,15 +73,15 @@ pub struct Projection {
     pub remaining_minutes: u64,
 }
 
-pub fn identify_session_blocks(
+pub(crate) fn identify_session_blocks(
     mut entries: Vec<LoadedEntry>,
-    session_duration_hours: f64,
+    session_duration: SessionDuration,
     now: TimestampMs,
 ) -> Vec<SessionBlock> {
     if entries.is_empty() {
         return Vec::new();
     }
-    let session_duration = (session_duration_hours * MILLIS_PER_HOUR as f64) as i64;
+    let session_duration = session_duration.as_millis();
     entries.sort_by_key(|entry| entry.timestamp);
     let mut blocks = Vec::new();
     let mut current_start: Option<TimestampMs> = None;
@@ -726,7 +749,7 @@ mod tests {
             .unwrap();
             let blocks = identify_session_blocks(
                 entries,
-                5.0,
+                SessionDuration::DEFAULT,
                 crate::parse_ts_timestamp("2026-01-02T16:00:00Z").unwrap(),
             );
             assert_eq!(blocks.len(), expected_blocks, "{next}");

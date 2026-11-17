@@ -222,13 +222,11 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 }
 
 pub fn run_blocks(args: BlocksArgs) -> Result<()> {
-    if args.session_length <= 0.0 {
-        return Err(cli_error("Session length must be a positive number"));
-    }
+    let session_duration = crate::blocks::SessionDuration::from_hours(args.session_length)?;
     let shared = args.shared.clone();
     let now = utc_now();
     let entries = load_entries(&shared, None)?;
-    let mut blocks = identify_session_blocks(entries, args.session_length, now);
+    let mut blocks = identify_session_blocks(entries, session_duration, now);
     let window = ReportWindow::from_shared(&shared);
     filter_blocks_by_date(&mut blocks, &window);
     sort_blocks(&mut blocks, &shared.order.unwrap_or_default());
