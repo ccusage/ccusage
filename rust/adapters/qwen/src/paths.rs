@@ -1,8 +1,6 @@
-use std::{
-    collections::HashSet,
-    env,
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use crate::Result;
 use ccusage_adapter_common::collect_files_with_extension;
@@ -11,24 +9,12 @@ use ccusage_core::Diagnostics;
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
 
 fn paths() -> Result<Vec<PathBuf>> {
-    let candidates = if let Ok(paths) = env::var(QWEN_DATA_DIR_ENV) {
-        paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect::<Vec<_>>()
-    } else {
+    Ok(roots::resolve(RootsEnv::List(QWEN_DATA_DIR_ENV), || {
         crate::home::home_dir()
-            .map(|home| vec![home.join(".qwen")])
-            .unwrap_or_default()
-    };
-    let mut seen = HashSet::new();
-    Ok(candidates
-        .into_iter()
-        .filter(|path| path.is_dir())
-        .filter(|path| seen.insert(path.clone()))
-        .collect())
+            .into_iter()
+            .flat_map(|home| [".qwen"].map(|path| home.join(path)))
+            .collect()
+    }))
 }
 
 pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {

@@ -4,6 +4,8 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use ccusage_adapter_common::roots::{self, RootsEnv};
+
 use crate::Result;
 use ccusage_core::Diagnostics;
 
@@ -71,29 +73,10 @@ pub(super) fn discover_files(diagnostics: &Diagnostics) -> Result<Vec<SourceFile
 }
 
 fn data_roots() -> Result<Vec<PathBuf>> {
-    let candidates = if let Ok(configured_roots) = env::var(CLINE_DATA_DIR_ENV) {
-        configured_roots
-            .split(',')
-            .map(str::trim)
-            .filter(|root| !root.is_empty())
-            .map(PathBuf::from)
-            .collect()
-    } else {
-        default_roots()
-    };
-
-    let mut roots = Vec::new();
-    let mut seen = HashSet::new();
-    for path in candidates {
-        if !path.is_dir() {
-            continue;
-        }
-        let identity = path.canonicalize().unwrap_or_else(|_| path.clone());
-        if seen.insert(identity) {
-            roots.push(path);
-        }
-    }
-    Ok(roots)
+    Ok(roots::resolve(
+        RootsEnv::List(CLINE_DATA_DIR_ENV),
+        default_roots,
+    ))
 }
 
 fn default_roots() -> Vec<PathBuf> {
@@ -275,14 +258,22 @@ mod tests {
     }
 
     #[test]
-    fn empty_configured_roots_disable_default_discovery() {
-        let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, " , ");
+    fn empty_configured_roots_fall_back_to_default_discovery() {
+        let fixture = fs_fixture!({
+            ".cline/tasks/task-a/ui_messages.json": "[]",
+        });
+        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+            (CLINE_DATA_DIR_ENV, Some(" , ".into())),
+            ("HOME", Some(fixture.root().into())),
+            ("USERPROFILE", None),
+            ("APPDATA", None),
+            ("XDG_CONFIG_HOME", None),
+        ]);
 
-        assert!(
-            discover_files(&Diagnostics::new("cline"))
-                .unwrap()
-                .is_empty()
-        );
+        let files = discover_files(&Diagnostics::new("cline")).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].session_id, "task-a");
     }
 
     #[test]

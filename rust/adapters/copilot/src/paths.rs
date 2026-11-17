@@ -1,5 +1,7 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
+use ccusage_adapter_common::roots::{self, RootsEnv};
+
 use crate::Result;
 use ccusage_adapter_common::{collect_files_with_extension, dir_entries};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -62,12 +64,14 @@ fn record_discovery_failure(diagnostics: &Diagnostics, path: &std::path::Path) {
 }
 
 fn copilot_root() -> Option<PathBuf> {
-    env::var(COPILOT_HOME_ENV)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| crate::home::home_dir().map(|home| home.join(".copilot")))
+    roots::resolve(RootsEnv::Single(COPILOT_HOME_ENV), || {
+        crate::home::home_dir()
+            .map(|home| home.join(".copilot"))
+            .into_iter()
+            .collect()
+    })
+    .into_iter()
+    .next()
 }
 
 fn add_file(

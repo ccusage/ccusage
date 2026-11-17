@@ -1,4 +1,6 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
@@ -17,23 +19,24 @@ const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 6] = [
 ];
 
 fn conversation_dirs() -> Vec<PathBuf> {
-    if let Ok(value) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
-        return value
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(|root| custom_conversation_dir(PathBuf::from(root)))
-            .collect();
-    }
-
-    crate::home::home_dir()
-        .into_iter()
-        .flat_map(|home| {
-            DEFAULT_ANTIGRAVITY_ROOTS
-                .into_iter()
-                .map(move |root| home.join(root).join("conversations"))
-        })
-        .collect()
+    roots::directories(
+        RootsEnv::List(ANTIGRAVITY_DATA_DIR_ENV)
+            .configured()
+            .map(|paths| {
+                paths
+                    .into_iter()
+                    .map(custom_conversation_dir)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| {
+                crate::home::home_dir()
+                    .into_iter()
+                    .flat_map(|home| {
+                        DEFAULT_ANTIGRAVITY_ROOTS.map(|root| home.join(root).join("conversations"))
+                    })
+                    .collect()
+            }),
+    )
 }
 
 fn custom_conversation_dir(root: PathBuf) -> PathBuf {

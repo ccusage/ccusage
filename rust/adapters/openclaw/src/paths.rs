@@ -1,8 +1,6 @@
-use std::{
-    collections::HashSet,
-    env,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use ccusage_adapter_common::collect_files_matching;
 use ccusage_core::Diagnostics;
@@ -10,36 +8,17 @@ use ccusage_core::Diagnostics;
 const OPENCLAW_DIR_ENV: &str = "OPENCLAW_DIR";
 
 pub(super) fn paths(custom_path: Option<&str>) -> Vec<PathBuf> {
-    if let Some(custom_path) = custom_path.filter(|path| !path.trim().is_empty()) {
-        return existing_path_list(custom_path);
+    if let Some(paths) = custom_path.and_then(roots::from_list) {
+        return paths;
     }
-    if let Ok(env_paths) = env::var(OPENCLAW_DIR_ENV)
-        && !env_paths.trim().is_empty()
-    {
-        return existing_path_list(&env_paths);
-    }
-    let Some(home) = crate::home::home_dir() else {
-        return Vec::new();
-    };
-    [
-        home.join(".openclaw"),
-        home.join(".clawdbot"),
-        home.join(".moltbot"),
-        home.join(".moldbot"),
-    ]
-    .into_iter()
-    .filter(|path| path.is_dir())
-    .collect()
-}
-
-fn existing_path_list(raw: &str) -> Vec<PathBuf> {
-    let mut seen = HashSet::new();
-    raw.split(',')
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_dir() && seen.insert(path.clone()))
-        .collect()
+    roots::resolve(RootsEnv::List(OPENCLAW_DIR_ENV), || {
+        crate::home::home_dir()
+            .into_iter()
+            .flat_map(|home| {
+                [".openclaw", ".clawdbot", ".moltbot", ".moldbot"].map(|path| home.join(path))
+            })
+            .collect()
+    })
 }
 
 pub(super) fn collect_session_files(root: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {

@@ -1,7 +1,6 @@
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use crate::Result;
 use ccusage_adapter_common::collect_files_with_extension;
@@ -18,16 +17,14 @@ pub(super) struct GrokSessionFiles {
 
 /// Resolve the Grok data root from `GROK_HOME`, then `~/.grok`.
 fn resolve_root() -> Option<PathBuf> {
-    if let Ok(home) = env::var(GROK_HOME_ENV)
-        && !home.trim().is_empty()
-    {
-        let path = PathBuf::from(home.trim());
-        return path.is_dir().then_some(path);
-    }
-
-    let home = crate::home::home_dir()?;
-    let path = home.join(".grok");
-    path.is_dir().then_some(path)
+    roots::resolve(RootsEnv::Single(GROK_HOME_ENV), || {
+        crate::home::home_dir()
+            .map(|home| home.join(".grok"))
+            .into_iter()
+            .collect()
+    })
+    .into_iter()
+    .next()
 }
 
 /// Discover every `sessions/**/updates.jsonl` under the resolved root.

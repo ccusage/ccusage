@@ -15,6 +15,7 @@ pub mod jsonl;
 pub mod parity;
 pub mod pipeline;
 pub mod report;
+pub mod roots;
 pub mod rows;
 pub mod source;
 #[cfg(feature = "sqlite")]

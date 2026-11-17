@@ -1,8 +1,6 @@
-use std::{
-    collections::HashSet,
-    env,
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
@@ -14,31 +12,12 @@ const KIMI_SESSIONS_DIR_NAME: &str = "sessions";
 const KIMI_WIRE_FILE_NAME: &str = "wire.jsonl";
 
 fn paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
-    if let Ok(env_paths) = env::var(KIMI_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        return Ok(paths);
-    }
-
-    if let Some(home) = crate::home::home_dir() {
-        for dir in [".kimi", ".kimi-code"] {
-            let path = home.join(dir);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-    }
-    Ok(paths)
+    Ok(roots::resolve(RootsEnv::List(KIMI_DATA_DIR_ENV), || {
+        crate::home::home_dir()
+            .into_iter()
+            .flat_map(|home| [".kimi", ".kimi-code"].map(|path| home.join(path)))
+            .collect()
+    }))
 }
 
 pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {

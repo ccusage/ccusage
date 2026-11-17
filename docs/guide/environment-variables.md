@@ -4,7 +4,7 @@ ccusage reads environment variables for where each data source stores its logs, 
 
 ## Agent Data Directories
 
-ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME`, `GROK_HOME`, and `GOOSE_PATH_ROOT` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
+ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME`, `GROK_HOME`, `GOOSE_PATH_ROOT`, `HERMES_HOME`, and `ZCODE_HOME` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
 
 | Variable                          | Agent            | Default                                                  |
 | --------------------------------- | ---------------- | -------------------------------------------------------- |
@@ -39,7 +39,7 @@ export AMP_DATA_DIR="/path/to/amp,/archive/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions,/archive/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode,/archive/manicode"
 export CLINE_DATA_DIR="/path/to/cline,/archive/cline"
-export HERMES_HOME="/path/to/hermes,/archive/hermes"
+export HERMES_HOME="/path/to/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions,/archive/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose"
 export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
@@ -51,12 +51,14 @@ export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export GROK_HOME="/path/to/grok-home"
-export ZCODE_HOME="/path/to/zcode-home,/archive/zcode-home"
+export ZCODE_HOME="/path/to/zcode-home"
 export DSH_HOME="/path/to/dsh-home,/archive/dsh-home"
 ccusage daily
 ```
 
-Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
+For example, `GOOSE_PATH_ROOT="/path/to/goose"` reads `/path/to/goose/data/sessions/sessions.db`.
+
+For directory variables other than `CODEX_HOME`, a blank override falls back to the default locations, and a leading `~` expands to the home directory. Empty list entries, directories that do not exist, and missing explicit files are skipped. Canonical duplicates of these directory roots are read once. Without a home directory or a configured location, these sources have no default roots. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
 
 ## CLAUDE_CONFIG_DIR
 

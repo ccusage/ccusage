@@ -1,6 +1,6 @@
 use std::{
     env,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
 };
 
@@ -15,6 +15,35 @@ pub fn home_dir() -> Option<PathBuf> {
 
 pub fn expand_home_path(raw: &str) -> PathBuf {
     expand_home(raw, home_dir().as_deref())
+}
+
+pub fn parse_paths(
+    raw: &OsStr,
+    separator: Option<char>,
+    home: Option<&Path>,
+) -> Option<Vec<PathBuf>> {
+    let Some(raw) = raw.to_str() else {
+        return Some(vec![PathBuf::from(raw)]);
+    };
+    let entries = raw
+        .split(|ch| separator == Some(ch))
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return None;
+    }
+    Some(
+        entries
+            .into_iter()
+            .filter_map(|raw| {
+                if home.is_none() && (raw == "~" || raw.starts_with("~/")) {
+                    return None;
+                }
+                Some(expand_home(raw, home))
+            })
+            .collect(),
+    )
 }
 
 fn expand_home(raw: &str, home: Option<&Path>) -> PathBuf {
@@ -58,15 +87,15 @@ fn claude_config_dirs_from(
     xdg_config_home: Option<OsString>,
     home: Option<PathBuf>,
 ) -> ClaudeConfigDirs {
-    if let Some(value) = claude_config_dir {
+    if let Some(value) = claude_config_dir
+        && let Some(paths) = parse_paths(value.as_ref(), Some(','), home.as_deref())
+    {
         let mut dirs = Vec::new();
-        for raw in value
-            .split(',')
-            .map(str::trim)
-            .filter(|raw| !raw.is_empty())
-        {
-            let dir = normalize_claude_config_dir(expand_home(raw, home.as_deref()));
-            if !dirs.contains(&dir) {
+        let mut seen = std::collections::HashSet::new();
+        for path in paths {
+            let dir = normalize_claude_config_dir(path);
+            let identity = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            if seen.insert(identity) {
                 dirs.push(dir);
             }
         }
@@ -184,6 +213,24 @@ mod tests {
     fn claude_dirs_without_home_or_env_are_reported_as_no_home() {
         let resolved = claude_config_dirs_from(None, Some(OsString::from("/custom/xdg")), None);
         assert!(matches!(resolved, ClaudeConfigDirs::NoHome));
+    }
+
+    #[test]
+    fn blank_claude_directories_use_defaults() {
+        for value in ["", "  ", " , , "] {
+            let resolved = claude_config_dirs_from(
+                Some(value.to_string()),
+                None,
+                Some(PathBuf::from("/home/user")),
+            );
+            assert_eq!(
+                dirs(resolved),
+                [
+                    PathBuf::from("/home/user/.config/claude"),
+                    PathBuf::from("/home/user/.claude"),
+                ]
+            );
+        }
     }
 
     #[test]

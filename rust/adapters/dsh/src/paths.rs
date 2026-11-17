@@ -1,8 +1,9 @@
 use std::{
-    collections::{BTreeMap, HashSet},
-    env,
+    collections::BTreeMap,
     path::{Path, PathBuf},
 };
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use ccusage_adapter_common::collect_files_matching;
 
@@ -14,31 +15,12 @@ const DSH_SESSIONS_DIR_NAME: &str = "sessions";
 const COMPRESSED_SUFFIX: &str = ".zstd";
 
 fn roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    let mut seen = HashSet::new();
-    if let Ok(env_paths) = env::var(DSH_HOME_ENV)
-        && !env_paths.trim().is_empty()
-    {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                roots.push(path);
-            }
-        }
-        return roots;
-    }
-
-    if let Some(home) = crate::home::home_dir() {
-        let path = home.join(DSH_HOME_DIR_NAME);
-        if path.is_dir() {
-            roots.push(path);
-        }
-    }
-    roots
+    roots::resolve(RootsEnv::List(DSH_HOME_ENV), || {
+        crate::home::home_dir()
+            .map(|home| home.join(DSH_HOME_DIR_NAME))
+            .into_iter()
+            .collect()
+    })
 }
 
 /// Returns the newest session log generation in every session directory.

@@ -1,4 +1,6 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use crate::Result;
 
@@ -6,44 +8,37 @@ const GOOSE_PATH_ROOT_ENV: &str = "GOOSE_PATH_ROOT";
 pub(super) const GOOSE_DB_FILE_NAME: &str = "sessions.db";
 
 pub(super) fn goose_db_paths() -> Result<Vec<PathBuf>> {
-    let candidates = if let Ok(root) = env::var(GOOSE_PATH_ROOT_ENV) {
-        let root = root.trim();
-        if root.is_empty() {
-            default_goose_db_candidates()?
-        } else {
-            vec![
-                PathBuf::from(root)
-                    .join("data")
-                    .join("sessions")
-                    .join(GOOSE_DB_FILE_NAME),
-            ]
-        }
-    } else {
-        default_goose_db_candidates()?
-    };
-
-    let mut paths = Vec::new();
+    let roots = RootsEnv::Single(GOOSE_PATH_ROOT_ENV)
+        .configured()
+        .map(|paths| {
+            paths
+                .into_iter()
+                .map(|root| root.join("data/sessions"))
+                .collect()
+        })
+        .unwrap_or_else(default_goose_db_candidates);
     let mut seen = HashSet::new();
-    for path in candidates {
-        let path = path.canonicalize().unwrap_or(path);
-        if path.is_file() && seen.insert(path.clone()) {
-            paths.push(path);
-        }
-    }
-    Ok(paths)
+    Ok(roots::directories(roots)
+        .into_iter()
+        .map(|root| root.join(GOOSE_DB_FILE_NAME))
+        .filter_map(|path| path.canonicalize().ok())
+        .filter(|path| path.is_file())
+        .filter(|path| seen.insert(path.clone()))
+        .collect())
 }
 
-fn default_goose_db_candidates() -> Result<Vec<PathBuf>> {
-    let home =
-        crate::home::home_dir().ok_or_else(|| crate::cli_error("home directory is not set"))?;
-    Ok(vec![
-        home.join(".local/share/goose/sessions")
-            .join(GOOSE_DB_FILE_NAME),
-        home.join("Library/Application Support/goose/sessions")
-            .join(GOOSE_DB_FILE_NAME),
-        home.join(".local/share/Block/goose/sessions")
-            .join(GOOSE_DB_FILE_NAME),
-    ])
+fn default_goose_db_candidates() -> Vec<PathBuf> {
+    crate::home::home_dir()
+        .into_iter()
+        .flat_map(|home| {
+            [
+                ".local/share/goose/sessions",
+                "Library/Application Support/goose/sessions",
+                ".local/share/Block/goose/sessions",
+            ]
+            .map(|path| home.join(path))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -51,6 +46,24 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn default_roots_read_a_shared_database_once() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let database = fixture.write_file(".local/share/goose/sessions/sessions.db", "");
+        let alias_root = fixture.create_dir_all("Library/Application Support/goose/sessions");
+        std::os::unix::fs::symlink(&database, alias_root.join("sessions.db")).unwrap();
+        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+            (GOOSE_PATH_ROOT_ENV, None),
+            ("HOME", Some(fixture.root().into())),
+        ]);
+
+        assert_eq!(
+            goose_db_paths().unwrap(),
+            vec![database.canonicalize().unwrap()]
+        );
+    }
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     #[test]
@@ -64,5 +77,26 @@ mod tests {
 
         assert_eq!(paths.len(), 1);
         assert!(paths[0].ends_with(Path::new("data/sessions/sessions.db")));
+    }
+
+    #[test]
+    fn configured_home_is_one_root_even_with_commas() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "first,second/data/sessions/sessions.db": "",
+        });
+        let _guard = ccusage_test_support::EnvVarGuard::set(
+            GOOSE_PATH_ROOT_ENV,
+            format!(" {} ", fixture.path("first,second").display()),
+        );
+
+        assert_eq!(
+            goose_db_paths().unwrap(),
+            vec![
+                fixture
+                    .path("first,second/data/sessions/sessions.db")
+                    .canonicalize()
+                    .unwrap()
+            ]
+        );
     }
 }

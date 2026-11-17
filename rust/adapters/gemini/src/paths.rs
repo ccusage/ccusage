@@ -1,4 +1,6 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::path::PathBuf;
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use ccusage_adapter_common::collect_files_matching;
 use ccusage_core::Diagnostics;
@@ -8,30 +10,12 @@ use crate::Result;
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
 /// Returns all discovery candidate directories for Gemini CLI logs.
 fn paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
-
-    if let Ok(env_paths) = env::var(GEMINI_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        return Ok(paths);
-    }
-
-    if let Some(home) = crate::home::home_dir() {
-        let path = home.join(".gemini").join("tmp");
-        if path.is_dir() && seen.insert(path.clone()) {
-            paths.push(path);
-        }
-    }
-    Ok(paths)
+    Ok(roots::resolve(RootsEnv::List(GEMINI_DATA_DIR_ENV), || {
+        crate::home::home_dir()
+            .into_iter()
+            .flat_map(|home| [".gemini/tmp"].map(|path| home.join(path)))
+            .collect()
+    }))
 }
 
 /// Discovers all `.json` and `.jsonl` log files across known directories.
