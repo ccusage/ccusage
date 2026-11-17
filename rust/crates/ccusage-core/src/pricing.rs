@@ -2186,7 +2186,7 @@ impl PricingMap {
             self.resolve_override(model, &overrides, &mut resolved);
         }
         let mut resolved: Vec<_> = resolved.into_iter().collect();
-        resolved.sort_by(|(left, _), (right, _)| left.cmp(right));
+        resolved.sort_by_key(|(model, _)| *model);
         let mut grouped = FxHashMap::default();
         for (model, pricing) in &resolved {
             let combined = grouped
