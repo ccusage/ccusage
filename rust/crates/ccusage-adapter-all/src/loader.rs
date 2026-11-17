@@ -1155,7 +1155,14 @@ mod tests {
             Some(pricing),
         )?;
         filter_loaded_entries_by_date(&mut entries, shared);
-        let summaries = pi::summarize_entries(&entries, kind)?;
+        let summaries = ccusage_adapter_common::source::EntrySource::summarize(
+            &pi::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                kind,
+                ccusage_core::cli::WeekDay::Sunday,
+            ),
+        )?;
         Ok(summary_rows("pi", summaries, true))
     }
 

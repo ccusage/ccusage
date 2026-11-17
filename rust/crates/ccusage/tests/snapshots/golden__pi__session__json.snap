@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage/tests/golden/mod.rs
+assertion_line: 366
 description: COLUMNS=200 ccusage pi session --offline --json
 ---
 exit: 0
@@ -778,10 +779,36 @@ exit: 0
       "totalTokens": 25831
     },
     {
-      "cacheCreationTokens": 100,
-      "cacheReadTokens": 4000,
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 2000,
       "firstActivity": "2025-12-30T08:10:00.000Z",
-      "inputTokens": 950,
+      "inputTokens": 400,
+      "lastActivity": "2025-12-30T08:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 2000,
+          "cost": 0.01,
+          "inputTokens": 400,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 80,
+          "storedCost": 0.01
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "sess-beta-shared",
+      "totalCost": 0.01,
+      "totalTokens": 2530
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 2000,
+      "firstActivity": "2025-12-30T08:10:00.000Z",
+      "inputTokens": 550,
       "lastActivity": "2025-12-30T20:10:00.000Z",
       "modelBreakdowns": [
         {
@@ -794,24 +821,24 @@ exit: 0
           "storedCost": 0.2
         },
         {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 4000,
-          "cost": 0.02,
-          "inputTokens": 800,
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 2000,
+          "cost": 0.01,
+          "inputTokens": 400,
           "modelName": "[pi] claude-sonnet-4-20250514",
-          "outputTokens": 160,
-          "storedCost": 0.02
+          "outputTokens": 80,
+          "storedCost": 0.01
         }
       ],
       "modelsUsed": [
         "[pi] claude-sonnet-4-20250514",
         "[pi] claude-opus-4-20250514"
       ],
-      "outputTokens": 220,
+      "outputTokens": 140,
       "projectPath": "--Users-dev-beta--",
       "sessionId": "sess-beta-shared",
-      "totalCost": 0.22,
-      "totalTokens": 5270
+      "totalCost": 0.21000000000000002,
+      "totalTokens": 2740
     },
     {
       "cacheCreationTokens": 1,
