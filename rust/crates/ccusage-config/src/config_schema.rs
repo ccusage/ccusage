@@ -1142,7 +1142,14 @@ mod tests {
         let value = serde_json::from_str::<Value>(&schema).unwrap();
 
         assert!(!schema.contains("\"null\""));
-        assert!(!contains_key(&value, "anyOf"));
+        let limit = schema_property(&value, &["commands", "blocks", "tokenLimit"]).unwrap();
+        let types = limit["anyOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|branch| branch["type"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(types, ["string", "integer"]);
     }
 
     #[test]
@@ -1566,16 +1573,6 @@ mod tests {
 
     fn with_keys<'a>(base: &[&'a str], extra: &[&'a str]) -> Vec<&'a str> {
         base.iter().chain(extra).copied().collect()
-    }
-
-    fn contains_key(value: &Value, key: &str) -> bool {
-        match value {
-            Value::Object(map) => {
-                map.contains_key(key) || map.values().any(|value| contains_key(value, key))
-            }
-            Value::Array(values) => values.iter().any(|value| contains_key(value, key)),
-            _ => false,
-        }
     }
 
     fn assert_value_keys_allowed_by_schema(value: &Value, schema: &Value, root: &Value) {
