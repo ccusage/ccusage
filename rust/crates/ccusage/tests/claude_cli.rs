@@ -1370,6 +1370,26 @@ fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> s
 const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
 
 #[test]
+fn config_warnings_follow_log_level() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+    fixture.write_file("ccusage.json", r#"{"defaults":{"json":true,"jsoon":true}}"#);
+    for (level, expected) in [("0", false), ("1", true)] {
+        let output = claude_command(&fixture)
+            .env("LOG_LEVEL", level)
+            .args(["claude", "daily", "--offline"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).contains("defaults.jsoon"),
+            expected
+        );
+        assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_ok());
+    }
+}
+
+#[test]
 fn configured_project_preserves_base_report_scope() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);

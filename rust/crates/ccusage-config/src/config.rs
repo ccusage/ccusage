@@ -50,10 +50,11 @@ impl ConfigContext {
             context.value = Some(file.value);
             context.layers = file.layers;
         }
-        for warning in &context.warnings {
-            eprintln!("WARN {warning}");
-        }
         context
+    }
+
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 
     fn empty(command: ConfigCommand) -> Self {

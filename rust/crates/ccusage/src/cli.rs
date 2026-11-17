@@ -14,6 +14,11 @@ pub(crate) fn parse() -> Command {
         exit_with_usage(&message);
     });
     let config = ConfigContext::from_args(&arg_strings);
+    if ccusage_core::log_level() != Some(0) {
+        for warning in config.warnings() {
+            eprintln!("WARN {warning}");
+        }
+    }
     let mut command =
         try_parse_with(args.clone(), &config).unwrap_or_else(|message| exit_with_usage(&message));
     if let Command::All(unified) = &mut command
