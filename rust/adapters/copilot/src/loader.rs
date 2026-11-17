@@ -8,7 +8,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        CallIdKind, CallIds, CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
+        CallIdKind, CallIds, CallKey, CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
         CopilotUsageRecordEntry, parse_otel_file, parse_session_state_file,
     },
     paths::CopilotSourceKind,
@@ -45,7 +45,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         read_source_file(path, kind, cx.diagnostics)
     });
     let mut otel_entries = Vec::new();
-    let mut otel_keys = HashSet::<String>::new();
+    let mut otel_keys = HashSet::<CallKey>::new();
     let mut session_state_entries = Vec::new();
     let mut usage_records = Vec::new();
     let mut credit_snapshots = Vec::new();
@@ -62,15 +62,13 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
                     .entries
                     .into_iter()
                     .filter(|entry| {
-                        !entry.file_independent_key || !otel_keys.contains(&entry.dedup_key)
+                        entry
+                            .call_key
+                            .as_ref()
+                            .is_none_or(|key| !otel_keys.contains(key))
                     })
                     .collect::<Vec<_>>();
-                otel_keys.extend(
-                    new_rows
-                        .iter()
-                        .filter(|entry| entry.file_independent_key)
-                        .map(|entry| entry.dedup_key.clone()),
-                );
+                otel_keys.extend(new_rows.iter().filter_map(|entry| entry.call_key.clone()));
                 otel_entries.extend(new_rows);
             }
             CopilotSourceKind::SessionState => {
@@ -455,7 +453,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         request_count: 0,
         nano_aiu: Some(nano_aiu),
         dedup_key: snapshot.dedup_key.clone(),
-        file_independent_key: false,
+        call_key: None,
         call_ids: CallIds::default(),
     }
 }
@@ -506,7 +504,7 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
             .zip(baseline.nano_aiu)
             .map(|(current, baseline)| current.saturating_sub(baseline)),
         dedup_key: current.dedup_key.clone(),
-        file_independent_key: false,
+        call_key: None,
         call_ids: CallIds::default(),
     }
 }
@@ -741,6 +739,66 @@ mod tests {
                 .iter()
                 .all(|warning| !warning.contains("SECRET_CANARY"))
         );
+    }
+
+    #[test]
+    fn keeps_a_span_and_a_log_whose_ids_spell_the_same_string_in_two_files() {
+        let fixture = fs_fixture!({
+            "home/.copilot/otel/a.jsonl": json!({
+                "type": "span",
+                "traceId": "log:trace-1",
+                "spanId": "span-1",
+                "name": "chat test-model",
+                "endTime": [1_767_320_400_u64, 0_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "test-model",
+                    "gen_ai.conversation.id": "session-1",
+                    "gen_ai.usage.input_tokens": 11,
+                    "gen_ai.usage.output_tokens": 12
+                }
+            })
+            .to_string(),
+            "home/.copilot/otel/b.jsonl": json!({
+                "hrTime": [1_767_320_460_u64, 0_u64],
+                "traceId": "trace-1",
+                "spanId": "span-1",
+                "attributes": {
+                    "event.name": "gen_ai.client.inference.operation.details",
+                    "gen_ai.response.model": "test-model",
+                    "gen_ai.conversation.id": "session-2",
+                    "gen_ai.usage.input_tokens": 21,
+                    "gen_ai.usage.output_tokens": 22
+                },
+                "_body": "GenAI inference: test-model"
+            })
+            .to_string(),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+
+        let mut inputs = entries
+            .iter()
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .collect::<Vec<_>>();
+        inputs.sort_unstable();
+        assert_eq!(inputs, [11, 21]);
     }
 
     #[test]

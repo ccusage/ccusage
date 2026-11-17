@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs,
+    fmt, fs,
     path::Path,
 };
 
@@ -70,9 +70,27 @@ pub(super) struct CopilotUsageEntry {
     /// source has no credits, which leaves the cost to token pricing.
     pub(super) nano_aiu: Option<u64>,
     pub(super) dedup_key: String,
-    /// Whether `dedup_key` names the same call in every file that holds it.
-    pub(super) file_independent_key: bool,
+    /// The key built from the IDs the record carries, which names the same
+    /// call in every file that holds it.
+    pub(super) call_key: Option<CallKey>,
     pub(super) call_ids: CallIds,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) enum CallKey {
+    Span { trace: String, span: String },
+    Log { trace: String, span: String },
+    AgentTurn { trace: String, turn: u64 },
+}
+
+impl fmt::Display for CallKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Span { trace, span } => write!(formatter, "{trace}:{span}"),
+            Self::Log { trace, span } => write!(formatter, "log:{trace}:{span}"),
+            Self::AgentTurn { trace, turn } => write!(formatter, "agent-turn:{trace}:{turn}"),
+        }
+    }
 }
 
 /// IDs of a single call that its usage record and its OpenTelemetry rows
@@ -165,7 +183,7 @@ struct CopilotUsageCandidate {
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
     dedup_key: String,
-    file_independent_key: bool,
+    call_key: Option<CallKey>,
 }
 
 pub(super) fn parse_otel_file(
@@ -212,7 +230,7 @@ pub(super) fn parse_otel_file(
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
-            file_independent_key: candidate.file_independent_key,
+            call_key: candidate.call_key,
             call_ids: CallIds {
                 response_id: candidate.response_id,
                 service_request_id: candidate.service_request_id,
@@ -546,7 +564,7 @@ pub(super) fn parse_session_state_file(
                 request_count,
                 nano_aiu: model_nano_aiu,
                 dedup_key,
-                file_independent_key: false,
+                call_key: None,
                 call_ids: CallIds::default(),
             });
         }
@@ -644,7 +662,7 @@ fn usage_record_entries(
                     request_count: 1,
                     nano_aiu: record.nano_aiu,
                     dedup_key,
-                    file_independent_key: false,
+                    call_key: None,
                     call_ids: record.call_ids,
                 },
                 source_session_id: record.accounting.map(|(source, _)| source),
@@ -759,7 +777,7 @@ fn to_candidate(
         .or_else(|| trace_id.clone())
         .unwrap_or_else(|| "unknown-session".to_string());
     let timestamp = timestamp_from_record(record).unwrap_or(fallback_timestamp);
-    let (dedup_key, file_independent_key) = dedup_key_for_record(
+    let (dedup_key, call_key) = dedup_key_for_record(
         source,
         record,
         attributes,
@@ -783,7 +801,7 @@ fn to_candidate(
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
         dedup_key,
-        file_independent_key,
+        call_key,
     })
 }
 
@@ -969,9 +987,10 @@ fn is_agent_turn_log_record(record: &CopilotRecord, attributes: &Map<String, Val
             || record_body(record).is_some_and(|body| body.starts_with("copilot_chat.agent.turn")))
 }
 
-/// Returns the row's key and whether it comes from IDs the record carries.
-/// Only such a key names the same call in another file; the fallbacks use the
-/// row's line and time, which can come from the file's modification time.
+/// Returns the row's key, and the call key when the record carries the IDs to
+/// build one. Only a call key names the same call in another file; the
+/// fallbacks use the row's line and time, which can come from the file's
+/// modification time.
 fn dedup_key_for_record(
     source: CopilotUsageSource,
     record: &CopilotRecord,
@@ -980,24 +999,21 @@ fn dedup_key_for_record(
     session_id: &str,
     timestamp: TimestampMs,
     index: usize,
-) -> (String, bool) {
-    let span_id = span_id_from_record(record);
-    let record_key = match source {
-        CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => trace_id
-            .as_ref()
-            .zip(span_id.as_ref())
-            .map(|(trace_id, span_id)| format!("{trace_id}:{span_id}")),
-        CopilotUsageSource::InferenceLog => trace_id
-            .as_ref()
-            .zip(span_id.as_ref())
-            .map(|(trace_id, span_id)| format!("log:{trace_id}:{span_id}")),
-        CopilotUsageSource::AgentTurnLog => trace_id
-            .as_ref()
+) -> (String, Option<CallKey>) {
+    let trace = trace_id.clone();
+    let call_key = match source {
+        CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => trace
+            .zip(span_id_from_record(record))
+            .map(|(trace, span)| CallKey::Span { trace, span }),
+        CopilotUsageSource::InferenceLog => trace
+            .zip(span_id_from_record(record))
+            .map(|(trace, span)| CallKey::Log { trace, span }),
+        CopilotUsageSource::AgentTurnLog => trace
             .zip(turn_index(attributes))
-            .map(|(trace_id, turn_index)| format!("agent-turn:{trace_id}:{turn_index}")),
+            .map(|(trace, turn)| CallKey::AgentTurn { trace, turn }),
     };
-    if let Some(key) = record_key {
-        return (key, true);
+    if let Some(call_key) = call_key {
+        return (call_key.to_string(), Some(call_key));
     }
     let millis = timestamp.as_millis();
     let key = match source {
@@ -1014,7 +1030,7 @@ fn dedup_key_for_record(
             )
         }
     };
-    (key, false)
+    (key, None)
 }
 
 fn turn_index(attributes: &Map<String, Value>) -> Option<u64> {
