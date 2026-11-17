@@ -19,6 +19,17 @@ in
         overlays = [ inputs.rust-overlay.overlays.default ];
       };
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
+      # Hooks run from any worktree, with or without the dev shell loaded, so
+      # each one brings its own tools instead of relying on the caller's PATH.
+      hookCommand =
+        name: runtimeInputs: text:
+        lib.getExe (
+          pkgs.writeShellApplication {
+            name = "ccusage-hook-${name}";
+            inherit runtimeInputs text;
+          }
+        );
+      inherit (config.checks.ccusage-clippy.passthru.clippyArgs) cargoExtraArgs cargoClippyExtraArgs;
     in
     {
       pre-commit = {
@@ -101,7 +112,9 @@ in
             ccusage-clippy = {
               enable = true;
               name = "clippy";
-              entry = "${lib.getExe' rustToolchain "cargo"} clippy --manifest-path rust/Cargo.toml --workspace --all-targets --config 'build.warnings=\"deny\"'";
+              entry = hookCommand "clippy" [
+                rustToolchain
+              ] "cargo clippy --manifest-path rust/Cargo.toml ${cargoExtraArgs} ${cargoClippyExtraArgs}";
               files = "^rust/.*\\.rs$";
               pass_filenames = false;
               stages = [ "pre-push" ];
@@ -110,7 +123,10 @@ in
             node-test = {
               enable = true;
               name = "node test";
-              entry = "${lib.getExe pkgs.nodejs} --test apps/ccusage/src/cli.test.ts nix/tools/models-dev-gen/compact.test.ts";
+              entry = hookCommand "node-test" [
+                pkgs.just
+                pkgs.nodejs
+              ] "just test-node";
               files = "\\.(ts|tsx|js|jsx|mjs|cjs)$";
               pass_filenames = false;
               stages = [ "pre-push" ];
@@ -119,7 +135,10 @@ in
             cargo-test = {
               enable = true;
               name = "cargo test";
-              entry = "${lib.getExe' rustToolchain "cargo"} test --manifest-path rust/Cargo.toml --workspace --all-targets";
+              entry = hookCommand "cargo-test" [
+                pkgs.just
+                rustToolchain
+              ] "just rust::test";
               files = "^rust/(.*\\.rs|.*Cargo\\.toml|Cargo\\.lock)$";
               pass_filenames = false;
               stages = [ "pre-push" ];

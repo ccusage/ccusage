@@ -49,7 +49,7 @@ test: rust::test test-node
 
 # Run Node's built-in test runner for TypeScript package and tooling tests
 test-node:
-    TZ=UTC node --test apps/ccusage/src/cli.test.ts nix/tools/models-dev-gen/compact.test.ts
+    TZ=UTC node --test 'apps/ccusage/**/*.test.ts' 'nix/tools/**/*.test.ts'
 
 # Generate a large benchmark fixture for PR performance comparisons
 generate-large-fixture output_dir codex_output_dir size_mib="1024":

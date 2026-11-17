@@ -41,16 +41,21 @@ in
             ]
           );
       };
+      clippyArgs = {
+        cargoExtraArgs = "--workspace";
+        cargoClippyExtraArgs = "--all-targets --config 'build.warnings=\"deny\"'";
+      };
       ccusage-clippy = craneLib.cargoClippy (
         commonArgs
         // testArtifacts.consumerArgs
+        // clippyArgs
         // {
           src = rustSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
           inherit cargoArtifacts;
-          cargoExtraArgs = "--workspace";
-          cargoClippyExtraArgs = "--all-targets --config 'build.warnings=\"deny\"'";
+          # The pre-push hook runs the same lint outside Nix.
+          passthru = { inherit clippyArgs; };
         }
       );
       ccusage-fmt = craneLib.cargoFmt {
