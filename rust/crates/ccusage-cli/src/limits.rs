@@ -45,7 +45,7 @@ impl SessionLength {
 
     pub fn from_hours(hours: f64) -> Result<Self, String> {
         let error = || {
-            "Invalid value for --session-length: expected a positive, representable number of hours"
+            "Invalid value for --session-length: Session length must be a positive, representable number of hours"
                 .to_string()
         };
         if !hours.is_finite() || hours <= 0.0 {

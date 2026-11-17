@@ -251,10 +251,7 @@ fn parse_blocks_command(
                 args.token_limit = Some(parser.value_for("--token-limit")?.parse()?)
             }
             "-n" | "--session-length" => {
-                args.session_length = parser
-                    .value_for("--session-length")?
-                    .parse()
-                    .map_err(|_| "Invalid value for --session-length".to_string())?
+                args.session_length = parser.value_for("--session-length")?.parse()?
             }
             flag => return Err(format!("Unknown blocks option '{flag}'")),
         }
