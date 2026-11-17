@@ -17,7 +17,6 @@ fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Command {
         config,
         5.0,
         env!("CARGO_PKG_VERSION"),
-        None,
     )
     .unwrap()
 }
@@ -28,7 +27,6 @@ fn parse_error(args: &[&str]) -> String {
         &NoConfig,
         5.0,
         env!("CARGO_PKG_VERSION"),
-        None,
     ) {
         Ok(_) => panic!("expected parse error"),
         Err(error) => error,
@@ -234,7 +232,7 @@ fn commandless_invocation_resolves_the_unified_daily_report() {
 
 #[test]
 fn source_reparse_keeps_the_unified_week_start() {
-    let command = parse_from_with_config(
+    let args = parse_report_args_with_config(
         ["ccusage", "weekly", "--start-of-week", "friday"]
             .into_iter()
             .map(OsString::from),
@@ -242,15 +240,27 @@ fn source_reparse_keeps_the_unified_week_start() {
             weekly_start: Some(WeekDay::Sunday),
             ..TestConfig::default()
         },
-        5.0,
         "test",
-        Some(WeekDay::Wednesday),
+        WeekDay::Wednesday,
     )
     .unwrap();
-    let Command::All(args) = command else {
-        panic!("expected unified weekly report");
-    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
     assert_eq!(args.start_of_week, WeekDay::Wednesday);
+}
+
+#[test]
+fn report_reparse_carries_focused_agent_options() {
+    let args = parse_report_args_with_config(
+        ["ccusage", "opencode", "weekly", "--since", "20260102"]
+            .into_iter()
+            .map(OsString::from),
+        &TestConfig::default(),
+        "test",
+        WeekDay::Monday,
+    )
+    .unwrap();
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
 }
 
 #[test]
@@ -587,7 +597,6 @@ fn rejects_a_config_since_date_later_than_the_until_flag() {
         &config,
         5.0,
         env!("CARGO_PKG_VERSION"),
-        None,
     );
     let Err(error) = result else {
         panic!("expected parse error");
@@ -618,7 +627,6 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
             &config,
             ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
             env!("CARGO_PKG_VERSION"),
-            None,
         )
     };
 
@@ -656,7 +664,6 @@ fn statusline_ignores_reversed_default_date_window() {
         &config,
         ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
-        None,
     );
 
     let Ok(cli) = result else {
@@ -1408,7 +1415,6 @@ fn rejects_removed_locale_option() {
         &NoConfig,
         5.0,
         env!("CARGO_PKG_VERSION"),
-        None,
     );
     assert!(result.is_err());
 }
@@ -1828,7 +1834,6 @@ fn named_pi_store_validation_does_not_break_statusline() {
         &config,
         ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
-        None,
     );
 
     assert!(parsed.is_ok());
@@ -1855,7 +1860,6 @@ fn named_pi_store_validation_does_not_break_agent_commands() {
         &config,
         ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
-        None,
     );
 
     assert!(parsed.is_ok());
@@ -1881,7 +1885,6 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
         &config,
         ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
-        None,
     );
     let Err(error) = result else {
         panic!("expected config error");

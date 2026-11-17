@@ -1,4 +1,4 @@
-use ccusage_cli::Command;
+use ccusage_cli::{Command, PeriodUnit, SharedArgs, WeekDay};
 use ccusage_core::utc_now;
 use ccusage_report::{format_date, last_periods_since};
 
@@ -8,12 +8,19 @@ use ccusage_report::{format_date, last_periods_since};
 /// can only be resolved once the command is known: `daily --last 1` is today,
 /// `weekly --last 1` is the current week, `monthly --last 1` is this month.
 pub(crate) fn resolve(command: &mut Command) -> Result<(), String> {
-    let Some((unit, start_of_week)) = command.period() else {
+    let Some(period) = command.period() else {
         return Ok(());
     };
     let Some(shared) = command.shared_mut() else {
         return Ok(());
     };
+    resolve_shared(shared, period)
+}
+
+pub(crate) fn resolve_shared(
+    shared: &mut SharedArgs,
+    (unit, start_of_week): (PeriodUnit, WeekDay),
+) -> Result<(), String> {
     let Some(last) = shared.last else {
         return Ok(());
     };
@@ -152,7 +159,6 @@ mod tests {
             &ccusage_cli::NoConfig,
             5.0,
             "test",
-            None,
         )
         .unwrap();
         resolve(&mut command).unwrap();

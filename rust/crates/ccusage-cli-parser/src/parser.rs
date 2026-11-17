@@ -4,9 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, ColorChoice,
-    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SharedArgs,
-    SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DEFAULT_SESSION_DURATION_HOURS, DailyArgs,
+    SessionArgs, SharedArgs, SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay,
+    WeeklyArgs, normalize_date_bound,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +50,6 @@ pub fn parse_from_with_config<I>(
     config: &dyn CliConfig,
     default_session_duration_hours: f64,
     version: &'static str,
-    week_start_override: Option<WeekDay>,
 ) -> Result<Command, String>
 where
     I: IntoIterator<Item = OsString>,
@@ -98,7 +97,7 @@ where
         }
     }
 
-    let mut command = match parser.next() {
+    let command = match parser.next() {
         None => Command::All(root_options.into_agent_args(shared.clone(), AgentReportKind::Daily)),
         Some(command) => parse_command(
             &command,
@@ -109,9 +108,6 @@ where
             root_options,
         )?,
     };
-    if let (Some(start_of_week), Command::All(args)) = (week_start_override, &mut command) {
-        args.start_of_week = start_of_week;
-    }
     parser.finish()?;
     if let Some(message) = last_option_error(&command, &shared) {
         return Err(message);
@@ -120,6 +116,24 @@ where
         return Err(message);
     }
     Ok(command)
+}
+
+pub fn parse_report_args_with_config<I>(
+    args: I,
+    config: &dyn CliConfig,
+    version: &'static str,
+    start_of_week: WeekDay,
+) -> Result<AgentCommandArgs, String>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    match parse_from_with_config(args, config, DEFAULT_SESSION_DURATION_HOURS, version)? {
+        Command::All(args) | Command::Agent(_, args) => Ok(AgentCommandArgs {
+            start_of_week,
+            ..args
+        }),
+        _ => Err("Expected a report that loads agent sources".to_string()),
+    }
 }
 
 fn control_arg(args: &[String]) -> Option<ControlArg> {

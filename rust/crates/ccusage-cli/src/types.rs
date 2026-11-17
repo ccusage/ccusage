@@ -47,15 +47,7 @@ impl Command {
 
     pub fn period(&self) -> Option<(PeriodUnit, WeekDay)> {
         match self {
-            Self::All(args) | Self::Agent(_, args) => {
-                let unit = match args.kind {
-                    AgentReportKind::Daily => PeriodUnit::Day,
-                    AgentReportKind::Weekly => PeriodUnit::Week,
-                    AgentReportKind::Monthly => PeriodUnit::Month,
-                    AgentReportKind::Session => return None,
-                };
-                Some((unit, args.start_of_week))
-            }
+            Self::All(args) | Self::Agent(_, args) => args.period(),
             Self::Daily(_) => Some((PeriodUnit::Day, WeekDay::Monday)),
             Self::Monthly(_) => Some((PeriodUnit::Month, WeekDay::Monday)),
             Self::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
@@ -214,6 +206,18 @@ pub struct AgentCommandArgs {
     /// Per-source options of a unified report, keyed by agent name. A source
     /// without an entry loads with `shared`.
     pub sources: BTreeMap<String, SourceArgs>,
+}
+
+impl AgentCommandArgs {
+    pub fn period(&self) -> Option<(PeriodUnit, WeekDay)> {
+        let unit = match self.kind {
+            AgentReportKind::Daily => PeriodUnit::Day,
+            AgentReportKind::Weekly => PeriodUnit::Week,
+            AgentReportKind::Monthly => PeriodUnit::Month,
+            AgentReportKind::Session => return None,
+        };
+        Some((unit, self.start_of_week))
+    }
 }
 
 /// The options a unified report loads one source with: the same command line

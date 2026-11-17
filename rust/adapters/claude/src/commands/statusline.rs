@@ -748,7 +748,6 @@ mod tests {
             &config,
             DEFAULT_SESSION_DURATION_HOURS,
             env!("CARGO_PKG_VERSION"),
-            None,
         )
         .unwrap();
         let Command::Statusline(args) = command else {

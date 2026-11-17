@@ -1,8 +1,7 @@
 use std::ffi::OsString;
 
 use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, CliConfig, CodexSpeed, Command, DailyArgs, SharedArgs,
-    SourceArgs,
+    AgentCommandArgs, AgentReportKind, CliConfig, CodexSpeed, DailyArgs, SharedArgs, SourceArgs,
 };
 use ccusage_config::ConfigContext;
 use ccusage_core::BUILT_IN_AGENT_NAMES;
@@ -76,13 +75,10 @@ pub(crate) fn resolve(
         let Some(view) = config.for_source(agent) else {
             continue;
         };
-        let cli = super::try_parse_with(args.to_vec(), &view, Some(start_of_week))
+        let report = super::try_parse_report_with(args.to_vec(), &view, start_of_week)
             .map_err(|message| format!("{message} (in {agent} config)"))?;
         let mut source = SourceArgs {
-            shared: match cli {
-                Command::All(args) => args.shared,
-                _ => return Err("Expected a unified source report".to_string()),
-            },
+            shared: report.shared,
             ..SourceArgs::default()
         };
         view.apply_agent_args(
@@ -115,10 +111,7 @@ pub(crate) fn resolve_opencode_claims(
     config: &ConfigContext,
 ) -> Result<(), String> {
     let view = config.for_dependency("claude");
-    let command = super::try_parse_with(args.to_vec(), &view, Some(focused.start_of_week))?;
-    let Command::Agent(_, parsed) = command else {
-        return Err("Expected a focused source report".to_string());
-    };
+    let parsed = super::try_parse_report_with(args.to_vec(), &view, focused.start_of_week)?;
     let claude_project = project_from_config(&view, parsed.shared.clone());
     focused.sources.insert(
         "claude".to_string(),
@@ -133,7 +126,7 @@ pub(crate) fn resolve_opencode_claims(
 
 #[cfg(test)]
 mod tests {
-    use ccusage_cli::{AgentReportKind, CodexSpeed, CostMode, WeekDay};
+    use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, WeekDay};
     use ccusage_core::utc_now;
     use ccusage_report::{PeriodUnit, format_date, last_periods_since};
     use ccusage_test_support::fs_fixture;
@@ -204,7 +197,7 @@ mod tests {
         let argv = std::iter::once(OsString::from("ccusage"))
             .chain(args.iter().map(OsString::from))
             .collect::<Vec<_>>();
-        let cli = try_parse_with(argv.clone(), &config, None)?;
+        let cli = try_parse_with(argv.clone(), &config)?;
         let Command::All(mut unified) = cli else {
             return Err("expected a unified report".to_string());
         };
@@ -259,8 +252,7 @@ mod tests {
         let args = std::iter::once(OsString::from("ccusage"))
             .chain(strings.iter().map(OsString::from))
             .collect::<Vec<_>>();
-        let Command::Agent(_, mut focused) = try_parse_with(args.clone(), &config, None).unwrap()
-        else {
+        let Command::Agent(_, mut focused) = try_parse_with(args.clone(), &config).unwrap() else {
             panic!("expected focused command")
         };
         resolve_opencode_claims(&mut focused, &args, &config).unwrap();

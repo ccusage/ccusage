@@ -5,7 +5,7 @@
 //! script, so keeping it here means editing help text does not invalidate
 //! ccusage-core or any adapter.
 
-pub use parser::parse_from_with_config;
+pub use parser::{parse_from_with_config, parse_report_args_with_config};
 
 mod arg_parser;
 mod help;

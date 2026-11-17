@@ -5,8 +5,8 @@ use ccusage_report::is_valid_timezone;
 /// land on the parsed args before this runs. Checking here, once, rejects an
 /// unknown name instead of letting `resolve_tz` fall back to the local zone,
 /// which can group usage under the wrong date.
-pub(crate) fn validate(command: &Command) -> Result<(), String> {
-    match effective_timezone(command) {
+pub(crate) fn validate(timezone: Option<&str>) -> Result<(), String> {
+    match timezone {
         Some(timezone) if !is_valid_timezone(timezone) => Err(format!(
             "Invalid value for --timezone '{timezone}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
         )),
@@ -14,7 +14,7 @@ pub(crate) fn validate(command: &Command) -> Result<(), String> {
     }
 }
 
-fn effective_timezone(command: &Command) -> Option<&str> {
+pub(crate) fn of_command(command: &Command) -> Option<&str> {
     match command {
         Command::Statusline(args) => args.timezone.as_deref(),
         command => command
@@ -41,10 +41,9 @@ mod tests {
             &config,
             5.0,
             "test",
-            None,
         )
         .unwrap();
-        validate(&cli)
+        validate(of_command(&cli))
     }
 
     fn rejection(timezone: &str) -> Result<(), String> {
