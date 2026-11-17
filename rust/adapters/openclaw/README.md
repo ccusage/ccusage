@@ -9,7 +9,6 @@ and per-agent SQLite transcript stores into the usage entries the reports render
 - `parser.rs` — raw record parsing, token mapping, and model naming.
 - `paths.rs` — environment variables, default directories, and file discovery.
 - `sqlite.rs` — per-agent `openclaw-agent.sqlite` transcript reading.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
 `ccusage-adapter-common` instead.
@@ -29,9 +28,8 @@ contract as the JSONL path, and win over migrated JSONL duplicates.
 
 ## Public surface
 
-- `loader::load_entries`
-- `report::report_from_rows`
-- `report::summarize_entries`
+- `SOURCE`
+- `summarize_entries`
 - `run`
 
 ## Depends on

@@ -28,8 +28,8 @@ chunking, and ordered parallel reads.
 - `SOURCE`
 - `paths::named_store_paths`
 - `paths::paths as default_paths`
-- `report::report_from_rows`
-- `report::summarize_entries`
+- `report_from_rows`
+- `summarize_entries`
 - `run`
 
 ## Depends on

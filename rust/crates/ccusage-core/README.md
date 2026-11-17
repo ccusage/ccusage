@@ -4,7 +4,7 @@ The runtime every adapter and the binary share: pricing, cost calculation,
 report shaping, table output, and the date and progress helpers. Helpers
 only the binary uses live in `ccusage-report` instead, so editing them does not
 recompile every adapter. Configuration
-lives in `ccusage-config` and the billing-block report in the binary, because
+lives in `ccusage-config` and the billing-block report in the Claude adapter, because
 neither has a consumer outside it.
 
 ## Owns

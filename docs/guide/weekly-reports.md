@@ -44,6 +44,8 @@ The columns are identical to daily reports but aggregated by week:
 
 ### Week Start Day
 
+Every focused agent command that supports weekly reports accepts `-w` and `--start-of-week`, as well as the `startOfWeek` configuration setting. Unified weekly reports apply their resolved week start to every source.
+
 Configure which day starts the week:
 
 ```bash

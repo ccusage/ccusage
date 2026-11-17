@@ -35,7 +35,7 @@ Statusline reads share caller-owned diagnostics and emit warnings once after ren
 
 - `SOURCE`
 - `load_entries`
-- `run_daily`, `run_bucket`, `run_weekly`, `run_session`, `run_blocks`, `run_statusline`
+- `run_daily`, `run_bucket`, `run_session`, `run_blocks`, `run_statusline`
 
 ## Depends on
 

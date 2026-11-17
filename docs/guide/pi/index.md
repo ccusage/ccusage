@@ -281,7 +281,7 @@ ccusage pi monthly --since 2026-01-01 --until 2026-03-31
 
 ## Session View
 
-This view shows usage grouped by individual pi-agent sessions.
+This view shows usage grouped by project and session ID. Sessions in different projects remain separate even when their IDs match.
 
 ```bash
 # Recommended (fastest)
@@ -305,13 +305,15 @@ npx ccusage@latest pi session
 
 ### Example Output
 
-This excerpt from the fixture report keeps one session and the Total row; the other sessions are omitted:
+This excerpt keeps two project sessions with the same ID and the Total row; the other sessions are omitted:
 
 ```text
 ┌────────────────────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┬───────────────┐
 │ Session                │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │ Last Activity │
 ├────────────────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
-│ sess-alpha-fork        │ - [pi] claude-haiku-4-5 │     1,150 │       450 │           200 │       7,000 │         8,800 │       $0.03 │ 2026-01-02    │
+│ sess-beta-shared       │ - [pi] claude-sonnet-4  │       400 │        80 │            50 │       2,000 │         2,530 │       $0.01 │ 2025-12-30    │
+├────────────────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ sess-beta-shared       │ - [pi] claude-opus-4    │       550 │       140 │            50 │       2,000 │         2,740 │       $0.21 │ 2025-12-30    │
 │                        │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │               │
 ├────────────────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
 │ Total                  │                         │    15,567 │     4,096 │         2,235 │      44,449 │        66,597 │       $9.12 │               │
@@ -330,42 +332,67 @@ Use `--json` for detailed session data:
 ccusage pi session --json
 ```
 
-This excerpt keeps one session; `totals` covers the complete report. Each session row carries its `sessionId`, `projectPath`, `firstActivity`, and `lastActivity`:
+This excerpt keeps those two project sessions; `totals` covers the complete report. Each row carries its `sessionId`, `projectPath`, `firstActivity`, and `lastActivity`:
 
 ```json
 {
 	"sessions": [
 		{
-			"cacheCreationTokens": 200,
-			"cacheReadTokens": 7000,
-			"firstActivity": "2026-01-01T13:10:00.000Z",
-			"inputTokens": 1150,
-			"lastActivity": "2026-01-02T10:30:00.000Z",
+			"cacheCreationTokens": 50,
+			"cacheReadTokens": 2000,
+			"firstActivity": "2025-12-30T08:10:00.000Z",
+			"inputTokens": 400,
+			"lastActivity": "2025-12-30T08:10:00.000Z",
 			"modelBreakdowns": [
 				{
-					"cacheCreationTokens": 200,
-					"cacheReadTokens": 7000,
-					"cost": 0.03,
-					"inputTokens": 900,
-					"modelName": "[pi] claude-haiku-4-5-20251001",
-					"outputTokens": 400,
-					"storedCost": 0.03
-				},
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 2000,
+					"cost": 0.01,
+					"inputTokens": 400,
+					"modelName": "[pi] claude-sonnet-4-20250514",
+					"outputTokens": 80,
+					"storedCost": 0.01
+				}
+			],
+			"modelsUsed": ["[pi] claude-sonnet-4-20250514"],
+			"outputTokens": 80,
+			"projectPath": "--Users-dev-alpha--",
+			"sessionId": "sess-beta-shared",
+			"totalCost": 0.01,
+			"totalTokens": 2530
+		},
+		{
+			"cacheCreationTokens": 50,
+			"cacheReadTokens": 2000,
+			"firstActivity": "2025-12-30T08:10:00.000Z",
+			"inputTokens": 550,
+			"lastActivity": "2025-12-30T20:10:00.000Z",
+			"modelBreakdowns": [
 				{
 					"cacheCreationTokens": 0,
 					"cacheReadTokens": 0,
-					"cost": 0.0015,
-					"inputTokens": 250,
+					"cost": 0.2,
+					"inputTokens": 150,
+					"modelName": "[pi] claude-opus-4-20250514",
+					"outputTokens": 60,
+					"storedCost": 0.2
+				},
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 2000,
+					"cost": 0.01,
+					"inputTokens": 400,
 					"modelName": "[pi] claude-sonnet-4-20250514",
-					"outputTokens": 50
+					"outputTokens": 80,
+					"storedCost": 0.01
 				}
 			],
-			"modelsUsed": ["[pi] claude-haiku-4-5-20251001", "[pi] claude-sonnet-4-20250514"],
-			"outputTokens": 450,
-			"projectPath": "--Users-dev-alpha--",
-			"sessionId": "sess-alpha-fork",
-			"totalCost": 0.0315,
-			"totalTokens": 8800
+			"modelsUsed": ["[pi] claude-sonnet-4-20250514", "[pi] claude-opus-4-20250514"],
+			"outputTokens": 140,
+			"projectPath": "--Users-dev-beta--",
+			"sessionId": "sess-beta-shared",
+			"totalCost": 0.21000000000000002,
+			"totalTokens": 2740
 		}
 	],
 	"totals": {

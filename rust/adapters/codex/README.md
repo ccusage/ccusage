@@ -51,6 +51,7 @@ lenient field conversions are unchanged.
 - `types::CodexServiceTier`
 - `types::CodexTokenUsageEvent`
 - `types::CodexUsageBucket`
+- `types::TierBuckets`
 - `types::merge_codex_service_tiers`
 - `run`
 

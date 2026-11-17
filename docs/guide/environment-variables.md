@@ -4,7 +4,7 @@ ccusage reads environment variables for where each data source stores its logs, 
 
 ## Agent Data Directories
 
-ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME`, `GROK_HOME`, `GOOSE_PATH_ROOT`, `HERMES_HOME`, and `ZCODE_HOME` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
+ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME`, `GROK_HOME`, and `GOOSE_PATH_ROOT` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
 
 | Variable                          | Agent            | Default                                                  |
 | --------------------------------- | ---------------- | -------------------------------------------------------- |
@@ -58,7 +58,7 @@ ccusage daily
 
 For example, `GOOSE_PATH_ROOT="/path/to/goose"` reads `/path/to/goose/data/sessions/sessions.db`.
 
-For directory variables other than `CODEX_HOME`, a blank override falls back to the default locations, and a leading `~` expands to the home directory. Empty list entries, directories that do not exist, and missing explicit files are skipped. Canonical duplicates of these directory roots are read once. Without a home directory or a configured location, these sources have no default roots. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
+For directory variables, a blank override falls back to the default locations, and a leading `~` expands to the home directory. Empty list entries, directories that do not exist, and missing explicit files are skipped. Canonical duplicates of these directory roots are read once. Without a home directory or a configured location, these sources have no default roots. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
 
 ## CLAUDE_CONFIG_DIR
 

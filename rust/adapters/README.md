@@ -37,7 +37,7 @@ semantics require it.
 `common::source::UsageSource` supplies unified rows without prescribing an
 intermediate representation. Sources that already load `Vec<LoadedEntry>`
 implement `EntrySource`: the common pipeline owns progress, date windows and
-detection, while the source owns aggregation and rendering. Claude, Codex and
+detection, while common defaults own standard aggregation, JSON and table rendering. Sources declare session identity and table policies through their descriptor and override only differing output. Claude, Codex and
 OpenCode implement `UsageSource` directly: Claude's rows come from the same
 loader as `ccusage claude daily`, and Codex's from its grouped loader.
 

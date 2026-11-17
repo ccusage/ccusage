@@ -35,7 +35,7 @@ lenient field conversions are unchanged.
 - `loader::load_entries_with_native_sessions`
 - `print_report`
 - `report::report_json`
-- `report::summarize_entries`
+- `summarize_entries`
 
 ## Depends on
 

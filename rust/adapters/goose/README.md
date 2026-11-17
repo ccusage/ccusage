@@ -24,9 +24,9 @@ most adapters do not.
 
 ## Public surface
 
-- `loader::load_entries`
-- `report::report_from_rows`
-- `report::summarize_entries`
+- `SOURCE`
+- `report_from_rows`
+- `summarize_entries`
 - `run`
 
 ## Depends on

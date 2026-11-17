@@ -13,9 +13,9 @@ Keep command names and flag semantics aligned across agents unless the source
 data forces a difference. Declare supported reports in the agent table in
 `rust/crates/ccusage-cli/src/agents.rs`.
 
-Cost handling is shared, not per-agent: `auto`, `calculate`, and `display`
-differ only in how a record's precomputed `costUSD` competes with token-derived
-cost, decided in `rust/crates/ccusage-core/src/cost.rs`. Pricing comes from
+Keep each source's stored-cost, reasoning-token and residual-token policies
+unchanged unless the task explicitly changes them. Use the shared pricing APIs
+in `rust/crates/ccusage-core/src/cost.rs` only when their results are identical. Pricing comes from
 LiteLLM with an embedded snapshot behind `--offline` (`pricing.rs`, and the
 `rust` skill for how both snapshots are built into the binary).
 

@@ -65,9 +65,9 @@ per-request long-context tiering.
 
 ## Public surface
 
-- `loader::load_entries`
+- `SOURCE`
 - `loader::has_data`
-- `report::summarize_entries`
+- `summarize_entries`
 - `run`
 
 ## Depends on

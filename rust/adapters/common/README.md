@@ -27,7 +27,7 @@ layers.
 - `source` — the contract between a usage source and the reports: `UsageSource`,
   the object-safe trait the unified report holds, and
   `EntrySource`, the hooks of a source whose loader yields `Vec<LoadedEntry>`,
-  with its declared window, detection and pricing policies.
+  with its declared window, detection, pricing, session identity and table policies. Standard aggregation, JSON and table hooks have shared defaults.
 - `pipeline` — the one order an `EntrySource` report runs in, with focused
   and unified entry points sharing date-window and pricing policies. Detection
   applies to the unified entry point.
@@ -46,6 +46,8 @@ layers.
 ## Public surface
 
 - `report::print_table_for_agent`
+- `roots::{resolve, RootsEnv}` for normalized list or single directory roots
+- `source::{EntryDescriptor, SummaryKind, SessionScope, SessionShape}`
 - `collect_files_with_extension`, `collect_files_matching`,
   `visit_usage_files` and `dir_entries`, which record directories, entries
   and file types they cannot read in a `Diagnostics`

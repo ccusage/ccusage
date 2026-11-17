@@ -69,8 +69,8 @@ warning. No provider billing is inferred from a local provider UUID.
 
 ## Public surface
 
-- `loader::load_entries`
-- `report::summarize_entries`
+- `SOURCE`
+- `summarize_entries`
 - `run`
 
 ## Depends on

@@ -8,7 +8,6 @@ into the usage entries the reports render.
 - `loader.rs` — reading the source, dedupe, and date filtering.
 - `parser.rs` — raw record parsing, token mapping, and model naming.
 - `paths.rs` — environment variables, default directories, and file discovery.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
 `ccusage-adapter-common` instead.
@@ -25,8 +24,8 @@ chunking, ordered parallel reads, and recording the files that could not be read
 ## Public surface
 
 - `SOURCE` — the `UsageSource` both reports go through
-- `report::report_from_rows`
-- `report::summarize_entries`
+- `report_from_rows`
+- `summarize_entries`
 - `run`
 
 ## Depends on

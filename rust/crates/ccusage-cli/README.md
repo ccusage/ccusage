@@ -1,7 +1,7 @@
 # ccusage-cli
 
 The plain argument types the runtime shares: `SharedArgs`, the per-command
-argument structs, the enums the reports switch on, the built-in agent table
+argument structs (including an optional requested sort order), the enums the reports switch on, the built-in agent table
 (`AGENTS`: each agent's name, label and reports), and the few constants and
 helpers (`DEFAULT_SESSION_DURATION_HOURS`,
 `home::home_dir`, `home::expand_home_path`, `home::claude_config_dirs`) that
@@ -28,6 +28,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `home::expand_home_path`
 - `home::home_dir`
 - `types::AgentCommandArgs`
+- `types::AgentOptions`
 - `types::AgentReportKind`
 - `types::BlocksArgs`
 - `types::CliConfig`
