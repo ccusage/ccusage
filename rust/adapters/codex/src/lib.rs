@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_cache_read_rates_follow_the_shared_provider_family_default() {
+    fn absent_cache_read_rates_preserve_the_shared_read_fallback() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -609,7 +609,7 @@ mod tests {
             )
         };
 
-        assert!((cost("gpt-test") - 0.00015).abs() < 1e-15);
+        assert!((cost("gpt-test") - (60e-6 + 40e-6 * 0.1 + 50e-6)).abs() < 1e-15);
         assert!((cost("other-test") - (60e-6 + 40e-6 * 0.1 + 50e-6)).abs() < 1e-15);
     }
 
