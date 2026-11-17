@@ -39,7 +39,6 @@ mod tests {
     use ccusage_cli::{
         AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
     };
-    use ccusage_report::PeriodUnit;
 
     use super::*;
 

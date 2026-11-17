@@ -126,9 +126,9 @@ pub(crate) fn resolve_opencode_claims(
 
 #[cfg(test)]
 mod tests {
-    use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, WeekDay};
+    use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, PeriodUnit, WeekDay};
     use ccusage_core::utc_now;
-    use ccusage_report::{PeriodUnit, format_date, last_periods_since};
+    use ccusage_report::{format_date, last_periods_since};
     use ccusage_test_support::fs_fixture;
 
     use super::*;

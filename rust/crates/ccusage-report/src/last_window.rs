@@ -1,8 +1,9 @@
 use jiff::{Span, civil::Date as JiffDate};
 
-use ccusage_core::{cli::WeekDay, week_start};
-
-pub use ccusage_core::cli::PeriodUnit;
+use ccusage_core::{
+    cli::{PeriodUnit, WeekDay},
+    week_start,
+};
 
 /// Compact `YYYYMMDD` start of the window covering the most recent `count`
 /// periods, the last of which is the one `today` falls in.

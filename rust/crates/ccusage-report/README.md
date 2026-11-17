@@ -7,7 +7,7 @@ statusline reports print.
 
 ## Owns
 
-- `last_window.rs` — `PeriodUnit` and `last_periods_since`.
+- `last_window.rs` — `last_periods_since`.
 - `output.rs` — `summary_json`, `session_summary_json`, and `group_project_output`.
 - `summary.rs` — `filter_and_sort_summaries`.
 - `date_utils.rs` — `format_date`, `format_utc_second`,
@@ -19,7 +19,6 @@ adapters belong in core or `ccusage-adapter-common`.
 
 ## Public surface
 
-- `PeriodUnit`
 - `am_pm`
 - `filter_and_sort_summaries`
 - `format_date`
