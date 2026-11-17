@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl};
+use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl, sqlite::read_i64};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded, millis_from_f64};
-use crate::{LoadedEntry, PricingMap, TimestampMs, cli::CostMode};
+use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded, timestamp_from_millis};
+use crate::{LoadedEntry, PricingMap, cli::CostMode};
 
 /// One per-agent SQLite store (`agents/<agentId>/agent/openclaw-agent.sqlite`).
 struct AgentDatabase {
@@ -151,12 +151,7 @@ fn read_agent_database(
                     Some(reader) if reader.session_id() == session_id => session.insert(reader),
                     _ => session.insert(TranscriptReader::sqlite(session_id)),
                 };
-                let created_at = statement
-                    .read::<i64, _>(3)
-                    .ok()
-                    .or_else(|| statement.read::<f64, _>(3).ok().and_then(millis_from_f64))
-                    .unwrap_or(0);
-                let fallback_timestamp = TimestampMs::from_millis(created_at.max(0));
+                let fallback_timestamp = read_i64(&statement, 3).and_then(timestamp_from_millis);
                 let Ok(event_json) = statement.read::<String, _>(2) else {
                     diagnostics.record(Skip::record(
                         &database.path,
@@ -285,6 +280,41 @@ mod tests {
         );
         assert!((entries[0].cost - 0.02).abs() < f64::EPSILON);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-2"));
+    }
+
+    #[test]
+    fn an_undatable_event_is_skipped_instead_of_dated_by_a_clamped_created_at() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let usage = r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":5}}}"#;
+        create_agent_db(&db_path, &[("session-a", 1_769_753_935_279, usage)]);
+        let db = sqlite::open(&db_path).unwrap();
+        let mut statement = db
+            .prepare(
+                "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session-a', 1, ?1, 1e300)",
+            )
+            .unwrap();
+        statement.bind((1, usage)).unwrap();
+        statement.next().unwrap();
+        let diagnostics = diagnostics();
+
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.timestamp.as_millis())
+                .collect::<Vec<_>>(),
+            [1_769_753_935_279]
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
     }
 
     #[test]

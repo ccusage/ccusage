@@ -35,6 +35,12 @@ impl TimestampMs {
         Self(millis)
     }
 
+    pub fn from_instant_millis(millis: i64) -> Option<Self> {
+        JiffTimestamp::from_millisecond(millis)
+            .ok()
+            .map(|_| Self(millis))
+    }
+
     pub fn from_unix_seconds(seconds: i64) -> Option<Self> {
         seconds.checked_mul(MILLIS_PER_SECOND).map(Self)
     }
@@ -362,12 +368,23 @@ pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date,
+        MILLIS_PER_HOUR, TimestampMs, date_range_bounds_ms, date_within_range, parse_compact_date,
         parse_test_now, resolve_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
     const JAN_2_UTC: i64 = 1_767_312_000_000;
+
+    #[test]
+    fn accepts_only_millis_that_name_a_representable_instant() {
+        assert_eq!(
+            TimestampMs::from_instant_millis(JAN_2_UTC),
+            Some(TimestampMs::from_millis(JAN_2_UTC))
+        );
+        for millis in [9_000_000_000_000_000_000, i64::MAX, i64::MIN] {
+            assert_eq!(TimestampMs::from_instant_millis(millis), None, "{millis}");
+        }
+    }
 
     #[test]
     fn formats_local_dates_across_dst_boundaries() {

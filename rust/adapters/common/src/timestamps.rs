@@ -14,10 +14,12 @@ pub fn epoch_secs_or_millis(raw: i64) -> Option<TimestampMs> {
     if raw <= 0 {
         return None;
     }
-    if raw < SECONDS_BELOW {
-        return TimestampMs::from_unix_seconds(raw);
-    }
-    Some(TimestampMs::from_millis(raw))
+    let millis = if raw < SECONDS_BELOW {
+        raw.checked_mul(1_000)?
+    } else {
+        raw
+    };
+    TimestampMs::from_instant_millis(millis)
 }
 
 #[cfg(test)]
@@ -48,9 +50,10 @@ mod tests {
     }
 
     #[test]
-    fn a_non_positive_epoch_number_is_no_timestamp() {
+    fn an_epoch_number_that_names_no_instant_is_no_timestamp() {
         assert_eq!(epoch_secs_or_millis(0), None);
         assert_eq!(epoch_secs_or_millis(-1), None);
+        assert_eq!(epoch_secs_or_millis(i64::MAX), None);
     }
 
     #[test]

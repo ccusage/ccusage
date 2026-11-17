@@ -1,6 +1,6 @@
 use std::{fs, path::Path, sync::Arc};
 
-use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_adapter_common::{jsonl, timestamps::file_mtime, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -217,7 +217,7 @@ impl TranscriptReader {
         record: &OpenClawLine,
         unit: &Path,
         number: u32,
-        fallback_timestamp: TimestampMs,
+        fallback_timestamp: Option<TimestampMs>,
         diagnostics: &Diagnostics,
     ) -> Option<OpenClawEntry> {
         record_message_error(record, unit, number, diagnostics);
@@ -231,13 +231,24 @@ impl TranscriptReader {
             }
             return None;
         }
-        let mut entry = parse_transcript_message(
+        let mut entry = match parse_transcript_message(
             record,
             &self.session_id,
             self.model.as_deref(),
             self.provider.as_deref(),
             fallback_timestamp,
-        )?;
+        )? {
+            Ok(entry) => entry,
+            Err(MissingTimestamp) => {
+                diagnostics.record(Skip::record(
+                    unit,
+                    number,
+                    SkipKind::InvalidTimestamp,
+                    "OpenClaw usage record has no timestamp",
+                ));
+                return None;
+            }
+        };
         if !self.keeps_event_ids {
             entry.event_id = None;
         }
@@ -253,7 +264,7 @@ pub(super) fn parse_session_file(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let mut reader = TranscriptReader::jsonl(extract_session_id(path));
-    let fallback_timestamp = file_modified_timestamp(path);
+    let fallback_timestamp = file_mtime(path);
     let content = fs::read(path).map_err(UnitError::from)?;
     let prefilter = record_prefilter();
     Ok(
@@ -318,8 +329,8 @@ fn parse_transcript_message(
     session_id: &str,
     current_model: Option<&str>,
     current_provider: Option<&str>,
-    fallback_timestamp: TimestampMs,
-) -> Option<OpenClawEntry> {
+    fallback_timestamp: Option<TimestampMs>,
+) -> Option<Result<OpenClawEntry, MissingTimestamp>> {
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
@@ -346,8 +357,12 @@ fn parse_transcript_message(
         return None;
     }
     let total_tokens = total_tokens.max(crate::total_usage_tokens(raw_usage) + extra_total_tokens);
-    let timestamp = timestamp_from_value(message.timestamp.as_ref().or(record.timestamp.as_ref()))
-        .unwrap_or(fallback_timestamp);
+    let Some(timestamp) =
+        timestamp_from_value(message.timestamp.as_ref().or(record.timestamp.as_ref()))
+            .or(fallback_timestamp)
+    else {
+        return Some(Err(MissingTimestamp));
+    };
     let model = message
         .model_id
         .clone()
@@ -358,7 +373,7 @@ fn parse_transcript_message(
         .provider
         .clone()
         .or_else(|| current_provider.map(str::to_string));
-    Some(OpenClawEntry {
+    Some(Ok(OpenClawEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: session_id.to_string(),
@@ -372,7 +387,7 @@ fn parse_transcript_message(
         total_tokens,
         cost: usage.cost.as_ref().and_then(|cost| cost.total),
         event_id: record.id.clone(),
-    })
+    }))
 }
 
 pub(super) fn entry_to_loaded(
@@ -457,11 +472,13 @@ fn timestamp_from_value(value: Option<&Value>) -> Option<TimestampMs> {
     crate::parse_ts_timestamp(value.as_str()?)
 }
 
-fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
-    (raw >= 0).then(|| TimestampMs::from_millis(raw))
+pub(super) fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
+    (raw >= 0)
+        .then_some(raw)
+        .and_then(TimestampMs::from_instant_millis)
 }
 
-pub(super) fn millis_from_f64(raw: f64) -> Option<i64> {
+fn millis_from_f64(raw: f64) -> Option<i64> {
     (raw.is_finite() && raw.abs() < i64::MAX as f64).then(|| raw.trunc() as i64)
 }
 
@@ -481,15 +498,8 @@ fn extract_session_id(path: &Path) -> String {
     }
 }
 
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .map(TimestampMs::from_millis)
-        .unwrap_or(TimestampMs::UNIX_EPOCH)
-}
+#[derive(Debug)]
+struct MissingTimestamp;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct ContentId {
@@ -688,31 +698,48 @@ mod tests {
             }
         }))
         .unwrap();
-        let entry =
-            parse_transcript_message(&record, "session-a", None, None, TimestampMs::UNIX_EPOCH)
-                .unwrap();
+        let entry = parse_transcript_message(
+            &record,
+            "session-a",
+            None,
+            None,
+            Some(TimestampMs::UNIX_EPOCH),
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);
     }
 
     #[test]
-    fn falls_back_for_a_float_timestamp_beyond_the_millisecond_range() {
-        let record = serde_json::from_value::<OpenClawLine>(serde_json::json!({
+    fn falls_back_for_a_timestamp_beyond_the_millisecond_range() {
+        let record_value = serde_json::json!({
             "type": "message",
             "message": {
                 "role": "assistant",
                 "model": "gpt-5.2",
                 "usage": { "input": 10, "output": 20 },
-                "timestamp": 1e300
+                "timestamp": null
             }
-        }))
-        .unwrap();
+        });
         let fallback = TimestampMs::from_millis(1_769_753_935_279);
 
-        let entry = parse_transcript_message(&record, "session-a", None, None, fallback).unwrap();
+        for timestamp in [
+            serde_json::json!(1e300),
+            serde_json::json!(9e18),
+            serde_json::json!(9_000_000_000_000_000_000_i64),
+        ] {
+            let mut record = record_value.clone();
+            record["message"]["timestamp"] = timestamp.clone();
+            let record = serde_json::from_value::<OpenClawLine>(record).unwrap();
 
-        assert_eq!(entry.timestamp, fallback);
+            let entry = parse_transcript_message(&record, "session-a", None, None, Some(fallback))
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(entry.timestamp, fallback, "{timestamp}");
+        }
     }
 
     #[test]
