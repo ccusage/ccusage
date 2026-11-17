@@ -148,6 +148,14 @@ exit: 0
           "outputTokens": 740
         },
         {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.01155,
+          "inputTokens": 900,
+          "modelName": "anthropic/claude-sonnet-4",
+          "outputTokens": 400
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
           "cost": 0.011025,
@@ -170,14 +178,6 @@ exit: 0
           "inputTokens": 2400,
           "modelName": "gpt-5-codex",
           "outputTokens": 680
-        },
-        {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 7000,
-          "cost": 0.01,
-          "inputTokens": 900,
-          "modelName": "anthropic/claude-sonnet-4",
-          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -517,7 +517,7 @@ exit: 0
       ],
       "outputTokens": 29586,
       "period": "2025-12",
-      "totalCost": 4.973214780000004,
+      "totalCost": 4.974764780000004,
       "totalTokens": 448770
     },
     {
@@ -730,7 +730,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0026,
+          "cost": 0.003,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 100
@@ -1163,7 +1163,7 @@ exit: 0
       ],
       "outputTokens": 28198,
       "period": "2026-01",
-      "totalCost": 4.0469718949999995,
+      "totalCost": 4.0473718949999995,
       "totalTokens": 2278810
     },
     {
@@ -1200,7 +1200,7 @@ exit: 0
     "cacheReadTokens": 1309587,
     "inputTokens": 1345278,
     "outputTokens": 58441,
-    "totalCost": 9.026227925000004,
+    "totalCost": 9.028177925000005,
     "totalTokens": 2734448,
     "unpricedModels": [
       "GLM-5.3",

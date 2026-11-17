@@ -2517,7 +2517,7 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
-              "cost": 0.0026,
+              "cost": 0.003,
               "inputTokens": 500,
               "modelName": "anthropic/claude-sonnet-4",
               "outputTokens": 100
@@ -2540,7 +2540,7 @@ exit: 0
             "kilo-mystery-1"
           ],
           "outputTokens": 952,
-          "totalCost": 1.457325,
+          "totalCost": 1.457725,
           "totalTokens": 12452
         },
         {
@@ -3183,7 +3183,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0026,
+          "cost": 0.003,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 100
@@ -3580,7 +3580,7 @@ exit: 0
       ],
       "outputTokens": 28198,
       "period": "2026-01",
-      "totalCost": 6.968916895000001,
+      "totalCost": 6.969316895,
       "totalTokens": 2278810
     },
     {
@@ -3641,7 +3641,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346288,
     "outputTokens": 58561,
-    "totalCost": 28.134758924999993,
+    "totalCost": 28.135158924999992,
     "totalTokens": 2735648,
     "unpricedModels": [
       "GLM-5.3",

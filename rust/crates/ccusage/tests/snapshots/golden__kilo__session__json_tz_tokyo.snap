@@ -67,7 +67,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0026,
+          "cost": 0.003,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 100
@@ -98,7 +98,7 @@ exit: 0
       ],
       "outputTokens": 622,
       "sessionId": "ses-beta",
-      "totalCost": 2.0028430000000004,
+      "totalCost": 2.0032430000000003,
       "totalTokens": 12895
     },
     {
@@ -153,7 +153,7 @@ exit: 0
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
     "outputTokens": 1819,
-    "totalCost": 4.0005105,
+    "totalCost": 4.0009105,
     "totalTokens": 30362,
     "unpricedModels": [
       "kilo-mystery-1"

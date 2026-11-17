@@ -1409,7 +1409,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0026,
+          "cost": 0.003,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 100
@@ -1627,7 +1627,7 @@ exit: 0
       ],
       "outputTokens": 10955,
       "period": "2026-01-02",
-      "totalCost": 3.2486614500000006,
+      "totalCost": 3.2490614500000006,
       "totalTokens": 668623
     },
     {
@@ -1703,7 +1703,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346288,
     "outputTokens": 58561,
-    "totalCost": 28.134758925000003,
+    "totalCost": 28.135158925000002,
     "totalTokens": 2735648,
     "unpricedModels": [
       "GLM-5.3",

@@ -1491,20 +1491,20 @@ exit: 0
           "outputTokens": 150
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.003,
+          "inputTokens": 500,
+          "modelName": "anthropic/claude-sonnet-4",
+          "outputTokens": 100
+        },
+        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 6000,
           "cost": 0.0029625,
           "inputTokens": 800,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 300
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0026,
-          "inputTokens": 500,
-          "modelName": "anthropic/claude-sonnet-4",
-          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 50,
@@ -1709,7 +1709,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 3.26673145,
+      "totalCost": 3.26713145,
       "totalTokens": 670468
     },
     {
@@ -1746,7 +1746,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346288,
     "outputTokens": 58561,
-    "totalCost": 28.134758925,
+    "totalCost": 28.135158925000002,
     "totalTokens": 2735648,
     "unpricedModels": [
       "GLM-5.3",

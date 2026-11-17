@@ -1311,18 +1311,18 @@ exit: 0
           "outputTokens": 150
         },
         {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 6000,
-          "inputTokens": 800,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 300
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "inputTokens": 800,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 50,

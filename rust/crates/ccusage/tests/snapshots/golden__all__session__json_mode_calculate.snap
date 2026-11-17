@@ -730,7 +730,7 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
-          "cost": 0.01,
+          "cost": 0.01155,
           "inputTokens": 900,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 400
@@ -779,7 +779,7 @@ exit: 0
       ],
       "outputTokens": 1315,
       "period": "task:task-alpha",
-      "totalCost": 0.07325000000000001,
+      "totalCost": 0.0748,
       "totalTokens": 28765
     },
     {
@@ -1826,6 +1826,56 @@ exit: 0
       "totalTokens": 18592
     },
     {
+      "agent": "kilo",
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 10000,
+      "inputTokens": 2073,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.003943,
+          "inputTokens": 933,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 412
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.003,
+          "inputTokens": 500,
+          "modelName": "anthropic/claude-sonnet-4",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00015000000000000001,
+          "inputTokens": 40,
+          "modelName": "gpt-5",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "anthropic/claude-sonnet-4",
+        "gpt-5"
+      ],
+      "outputTokens": 622,
+      "period": "ses-beta",
+      "totalCost": 0.011293000000000001,
+      "totalTokens": 12895
+    },
+    {
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
@@ -1878,56 +1928,6 @@ exit: 0
       "period": "sess-a",
       "totalCost": 0.010992000000000002,
       "totalTokens": 6886
-    },
-    {
-      "agent": "kilo",
-      "cacheCreationTokens": 200,
-      "cacheReadTokens": 10000,
-      "inputTokens": 2073,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0042,
-          "inputTokens": 600,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 7000,
-          "cost": 0.003943,
-          "inputTokens": 933,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 412
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0026,
-          "inputTokens": 500,
-          "modelName": "anthropic/claude-sonnet-4",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00015000000000000001,
-          "inputTokens": 40,
-          "modelName": "gpt-5",
-          "outputTokens": 10
-        }
-      ],
-      "modelsUsed": [
-        "claude-haiku-4-5-20251001",
-        "claude-sonnet-4-20250514",
-        "anthropic/claude-sonnet-4",
-        "gpt-5"
-      ],
-      "outputTokens": 622,
-      "period": "ses-beta",
-      "totalCost": 0.010893000000000002,
-      "totalTokens": 12895
     },
     {
       "agent": "pi",
@@ -5450,7 +5450,7 @@ exit: 0
     "cacheReadTokens": 1311187,
     "inputTokens": 1346839,
     "outputTokens": 58707,
-    "totalCost": 9.809907924999994,
+    "totalCost": 9.811857924999995,
     "totalTokens": 2737995,
     "unpricedModels": [
       "GLM-5.3",
