@@ -89,7 +89,7 @@ impl Skip {
     }
 }
 
-/// The skips of one kind. A skip is identified by its unit and line, so
+/// The skips of one kind. A skip is identified by its unit, table and line, so
 /// recording or merging the same one twice counts it once.
 #[derive(Default)]
 struct Tally {
@@ -117,7 +117,7 @@ impl Tally {
         }
     }
 
-    /// Keeps the first skips by unit, line and detail, so `--debug` lists the
+    /// Keeps the first skips by unit, table, line and detail, so `--debug` lists the
     /// same ones whatever order parallel readers record them in.
     fn sample(&mut self, skip: Skip) {
         if let Some(sample) = self.samples.iter_mut().find(|sample| {
@@ -215,7 +215,6 @@ impl Diagnostics {
         self.source
     }
 
-    /// Shares the source's input tally while identifying rows by table and line.
     pub fn for_table(&self, table: &'static str) -> Self {
         Self {
             source: self.source,
