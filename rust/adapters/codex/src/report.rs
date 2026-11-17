@@ -347,7 +347,7 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
     } else {
         pricing.input
     };
-    let cache_creation = pricing.cache_creation_input_token_cost();
+    let cache_creation = pricing.cache_create;
     // OpenAI bills every token of a long-context request (input above 272K
     // tokens) at the long-context rates, so the aggregated usage is priced as
     // two independent buckets. Models without long-context rates fall back to
@@ -359,9 +359,7 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
     } else {
         long_input_rate
     };
-    let long_cache_creation_rate = pricing
-        .cache_creation_input_token_cost_above_200k_tokens()
-        .unwrap_or(cache_creation);
+    let long_cache_creation_rate = pricing.cache_create_above_200k.unwrap_or(cache_creation);
     let long_input = usage.long_context_input_tokens.min(usage.input_tokens);
     let long_cached = usage
         .long_context_cached_input_tokens

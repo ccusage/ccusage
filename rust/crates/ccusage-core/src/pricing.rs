@@ -129,16 +129,6 @@ pub struct Pricing {
 pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 impl Pricing {
-    /// Returns the per-token rate for cache creation input.
-    pub fn cache_creation_input_token_cost(&self) -> f64 {
-        self.cache_create
-    }
-
-    /// Returns the per-token rate for cache creation input above the long-context threshold.
-    pub fn cache_creation_input_token_cost_above_200k_tokens(&self) -> Option<f64> {
-        self.cache_create_above_200k
-    }
-
     const fn empty() -> Self {
         Self {
             input: 0.0,
