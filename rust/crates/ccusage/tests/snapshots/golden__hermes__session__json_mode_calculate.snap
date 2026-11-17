@@ -100,29 +100,6 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 0,
-      "messageCount": 1,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 0,
-          "modelName": "gpt-5",
-          "outputTokens": 0
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 0,
-      "sessionId": "p-cost-only",
-      "totalCost": 0.0,
-      "totalTokens": 0
-    },
-    {
-      "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
       "inputTokens": 700,
       "messageCount": 8,

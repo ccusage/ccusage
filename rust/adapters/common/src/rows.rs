@@ -70,6 +70,7 @@ pub fn summary_rows(
 ) -> Vec<SourceRow> {
     summaries
         .into_iter()
+        .filter(summary_has_usage)
         .filter_map(|summary| {
             let period = summary
                 .date
@@ -79,10 +80,6 @@ pub fn summary_rows(
                 .or(summary.session_id.as_ref())?
                 .clone();
             let total_tokens = summary.total_tokens();
-            // Cost-only rows, such as Copilot credits missing from modelMetrics, still bill.
-            if total_tokens == 0 && summary.total_cost == 0.0 {
-                return None;
-            }
             let metadata = summary_metadata(&summary, include_project_path);
             Some(SourceRow {
                 agent,
@@ -109,7 +106,8 @@ pub fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSumm
     session_groups(entries, crate::source::SessionScope::Project)
         .into_values()
         .map(|(_, group)| group.into_summary())
-        .collect()
+        .collect::<Result<Vec<_>>>()
+        .map(nonempty_summaries)
 }
 
 pub fn summarize_source_sessions_in_order(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
@@ -120,7 +118,8 @@ pub fn summarize_source_sessions_in_order(entries: &[LoadedEntry]) -> Result<Vec
     groups
         .into_iter()
         .map(|(_, group)| group.into_summary())
-        .collect()
+        .collect::<Result<Vec<_>>>()
+        .map(nonempty_summaries)
 }
 
 type SessionKey = (Option<Arc<str>>, Arc<str>);
@@ -173,7 +172,7 @@ pub fn summarize_entries(
     use crate::source::{SessionShape, SummaryKind};
     use ccusage_core::summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target};
 
-    match kind {
+    let summaries = match kind {
         SummaryKind::Session => match session {
             SessionShape::Plain => summarize_by_key_target(
                 entries,
@@ -199,7 +198,17 @@ pub fn summarize_entries(
                 _ => daily,
             })
         }
-    }
+    };
+    summaries.map(nonempty_summaries)
+}
+
+fn summary_has_usage(summary: &UsageSummary) -> bool {
+    summary.total_tokens() != 0 || summary.total_cost != 0.0
+}
+
+fn nonempty_summaries(mut rows: Vec<UsageSummary>) -> Vec<UsageSummary> {
+    rows.retain(summary_has_usage);
+    rows
 }
 
 #[cfg(test)]
@@ -223,6 +232,39 @@ mod tests {
         summaries[0].credits = Some(3.0);
         let rows = summary_rows("test", summaries, true);
         assert!(rows[0].metadata.is_none());
+    }
+
+    #[test]
+    fn tokenless_zero_cost_rows_are_omitted_in_every_report_shape() {
+        let entries = [entry("s", "2026-01-01T00:00:00Z", 0)];
+        for kind in [
+            SummaryKind::Daily,
+            SummaryKind::Monthly,
+            SummaryKind::Weekly(WeekDay::Monday),
+            SummaryKind::Session,
+        ] {
+            assert!(
+                summarize_entries(
+                    &entries,
+                    kind,
+                    SessionShape::WithActivity,
+                    SessionScope::Source
+                )
+                .unwrap()
+                .is_empty()
+            );
+        }
+        assert!(
+            summarize_source_sessions_in_order(&entries)
+                .unwrap()
+                .is_empty()
+        );
+        let mut billed = entries[0].clone();
+        billed.cost = 3.0;
+        assert_eq!(
+            summarize_source_sessions_in_order(&[billed]).unwrap()[0].total_cost,
+            3.0
+        );
     }
 
     #[test]
