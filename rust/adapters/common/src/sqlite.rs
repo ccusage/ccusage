@@ -148,6 +148,84 @@ mod tests {
         }
     }
 
+    fn values(
+        units: &[std::path::PathBuf],
+        sql: &str,
+        diagnostics: &ccusage_core::Diagnostics,
+    ) -> Vec<i64> {
+        let mut loaded = super::sqlite_units(
+            units,
+            true,
+            diagnostics,
+            |connection, _| {
+                connection.prepare(sql).map_err(|error| {
+                    crate::UnitError::sqlite(crate::SqliteStage::Setup, error.code)
+                })
+            },
+            |statement, _, _| Ok(read_i64(statement, 0)),
+        );
+        loaded.sort_unstable();
+        loaded
+    }
+
+    #[test]
+    fn sqlite_units_keep_healthy_units_beside_a_corrupt_one() {
+        use ccusage_core::{Diagnostics, SkipKind};
+        let fixture = ccusage_test_support::Fixture::new();
+        let healthy = fixture.path("healthy.db");
+        sqlite::open(&healthy)
+            .unwrap()
+            .execute("CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (2)")
+            .unwrap();
+        let corrupt = fixture.write_file("corrupt.db", "SECRET_CANARY is not a database");
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = values(
+            &[healthy, corrupt],
+            "SELECT value FROM records",
+            &diagnostics,
+        );
+
+        assert_eq!(loaded, [1, 2]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert!(
+            !diagnostics
+                .warnings(&ccusage_core::cli::SharedArgs {
+                    debug: true,
+                    ..Default::default()
+                })
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
+    }
+
+    #[test]
+    fn sqlite_units_keep_rows_read_before_a_stepping_failure() {
+        use ccusage_core::Diagnostics;
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("rows.db");
+        sqlite::open(&path)
+            .unwrap()
+            .execute(
+                "CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (2), (3), (4)",
+            )
+            .unwrap();
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = values(
+            &[path],
+            "SELECT CASE WHEN value = 3 THEN abs(-9223372036854775807 - 1) ELSE value END FROM records ORDER BY rowid",
+            &diagnostics,
+        );
+
+        assert_eq!(loaded, [1, 2]);
+        assert!(
+            !diagnostics
+                .warnings(&ccusage_core::cli::SharedArgs::default())
+                .is_empty()
+        );
+    }
+
     #[test]
     fn read_only_open_never_creates_or_writes_a_database() {
         let fixture = ccusage_test_support::Fixture::new();
