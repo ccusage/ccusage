@@ -1723,8 +1723,9 @@ impl PricingMap {
         let mut prices: FxHashSet<_> = self
             .rows
             .entries
-            .keys()
-            .map(|key| normalized_pricing_key(key).into_owned())
+            .iter()
+            .filter(|(_, pricing)| !pricing.overridden)
+            .map(|(key, _)| normalized_pricing_key(key).into_owned())
             .collect();
         let mut limits: FxHashSet<_> = self.rows.context_limits.keys().cloned().collect();
         for (index, layer) in self.models_dev.iter_mut().enumerate() {
@@ -1733,7 +1734,10 @@ impl PricingMap {
                 .rows
                 .entries
                 .keys()
-                .filter(|key| prices.contains(normalized_pricing_key(key).as_ref()))
+                .filter(|key| {
+                    self.rows.entries.contains_key(key.as_str())
+                        || prices.contains(normalized_pricing_key(key).as_ref())
+                })
                 .cloned()
                 .collect();
             layer.excluded_limits = layer
@@ -6290,6 +6294,31 @@ mod tests {
             .unwrap();
 
         assert_eq!(matched.input, 2.0);
+    }
+
+    #[test]
+    fn respelled_override_preserves_the_models_dev_exact_only_row() {
+        crate::test_support::install_pricing_snapshots();
+        use crate::cli::PricingOverride;
+        let original = "kimi-k2.7-code-highspeed";
+        let key = "kimi-k2-7-code-highspeed".to_string();
+        let baseline = PricingMap::load_embedded().find_exact(original).unwrap();
+        let value = PricingOverride {
+            input_cost_per_token: Some(7e-6),
+            ..PricingOverride::default()
+        };
+        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &value)]);
+        for resolved in [
+            pricing.find(original),
+            pricing.find_exact(original),
+            pricing.find_exact_with_fallback(original),
+        ] {
+            let resolved = resolved.unwrap();
+            assert_eq!(resolved.input, baseline.input);
+            assert_eq!(resolved.output, baseline.output);
+            assert_eq!(resolved.cache_read, baseline.cache_read);
+        }
+        assert_eq!(pricing.find_exact(&key).unwrap().input, 7e-6);
     }
 
     mod overrides {
