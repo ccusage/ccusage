@@ -9,7 +9,6 @@ assert_fs.workspace = true
 ccusage-core.workspace = true
 ccusage-pricing-snapshots.workspace = true
 jiff.workspace = true
-sqlite.workspace = true
 
 [lints]
 workspace = true

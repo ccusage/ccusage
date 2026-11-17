@@ -428,10 +428,3 @@ fn redacts_windows_fixture_paths_without_rewriting_other_escapes() {
         r#"{"path":"[ROOT]/antigravity/ide/empty.db","model":"keep\\slashes","text":"line\nquote\""}"#
     );
 }
-
-pub fn seed_grok(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
-    grok::seed(root)
-        .into_iter()
-        .map(|(name, path)| (name, vec![path.into_os_string()]))
-        .collect()
-}

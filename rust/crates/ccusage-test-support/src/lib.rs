@@ -11,7 +11,6 @@ use assert_fs::{
 };
 
 pub mod mutation;
-pub mod zcode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Instant(jiff::Timestamp);

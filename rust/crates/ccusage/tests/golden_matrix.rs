@@ -124,7 +124,7 @@ agent_matrix! {
     kimi => golden::no_extras,
     qwen => golden::no_extras,
     openclaw => golden::openclaw::extra_cases,
-    grok(golden::seed_grok) => golden::no_extras,
+    grok(golden::grok::seed) => golden::no_extras,
     zcode => golden::zcode::extra_cases,
     cline => golden::no_extras,
     dsh => golden::dsh::extra_cases,

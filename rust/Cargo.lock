@@ -520,7 +520,6 @@ dependencies = [
  "ccusage-core",
  "ccusage-pricing-snapshots",
  "jiff",
- "sqlite",
 ]
 
 [[package]]

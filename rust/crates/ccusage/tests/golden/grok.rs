@@ -1,4 +1,5 @@
-use std::path::{Path, PathBuf};
+use ccusage_test_support::instant;
+use std::{ffi::OsString, path::Path};
 
 const GROK_45: &str = "grok-4.5-build";
 const CODE_FAST: &str = "grok-code-fast-1";
@@ -6,19 +7,6 @@ const UNPRICED: &str = "grok-mystery-1";
 
 const ALPHA: &str = "grok/sessions/%2Fwork%2Falpha";
 const BETA: &str = "grok/sessions/%2Fwork%2Fbeta";
-
-// Envelope timestamps are Unix seconds.
-const DEC_27_2200: u64 = 1_766_872_800;
-const DEC_30_1000: u64 = 1_767_088_800;
-const DEC_30_1030: u64 = 1_767_090_600;
-const DEC_31_1530: u64 = 1_767_195_000;
-const DEC_31_1600: u64 = 1_767_196_800;
-const DEC_31_2350: u64 = 1_767_225_000;
-const JAN_01_0010: u64 = 1_767_226_200;
-const JAN_01_1200: u64 = 1_767_268_800;
-const JAN_01_1230: u64 = 1_767_270_600;
-const JAN_02_1000: u64 = 1_767_348_000;
-const JAN_02_1100: u64 = 1_767_351_600;
 
 /// One `updates.jsonl` line. `envelope` is the raw JSON of the top-level
 /// `timestamp`, `usage` the body of the usage object, and `meta` the body of
@@ -40,7 +28,7 @@ fn update(
 }
 
 /// A `turn_completed` line stamped with envelope seconds and an event ID.
-fn turn(seconds: u64, session: Option<&str>, event_id: &str, usage: &str) -> String {
+fn turn(seconds: i64, session: Option<&str>, event_id: &str, usage: &str) -> String {
     update(
         "turn_completed",
         Some(&seconds.to_string()),
@@ -58,7 +46,18 @@ fn model_usage(rows: &[(&str, &str)]) -> String {
     format!(r#""modelUsage":{{{}}}"#, rows.join(","))
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let dec_27_2200 = instant("2025-12-27T22:00:00Z").secs();
+    let dec_30_1000 = instant("2025-12-30T10:00:00Z").secs();
+    let dec_30_1030 = instant("2025-12-30T10:30:00Z").secs();
+    let dec_31_1530 = instant("2025-12-31T15:30:00Z").secs();
+    let dec_31_1600 = instant("2025-12-31T16:00:00Z").secs();
+    let dec_31_2350 = instant("2025-12-31T23:50:00Z").secs();
+    let jan_01_0010 = instant("2026-01-01T00:10:00Z").secs();
+    let jan_01_1200 = instant("2026-01-01T12:00:00Z").secs();
+    let jan_01_1230 = instant("2026-01-01T12:30:00Z").secs();
+    let jan_02_1000 = instant("2026-01-02T10:00:00Z").secs();
+    let jan_02_1100 = instant("2026-01-02T11:00:00Z").secs();
     let write = |relative: &str, contents: &str| {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
@@ -76,7 +75,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     let multi_model_turn = update(
         "turn_completed",
         // The envelope says 2026-01-02; `agentTimestampMs` wins.
-        Some(&JAN_02_1000.to_string()),
+        Some(&jan_02_1000.to_string()),
         Some(alpha),
         // The top-level counts are ignored once `modelUsage` has rows.
         Some(&format!(
@@ -94,7 +93,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         )),
         Some(&format!(
             r#""eventId":"evt-a2","agentTimestampMs":{}"#,
-            DEC_30_1000 * 1000
+            dec_30_1000 * 1000
         )),
     );
     write_lines(
@@ -102,7 +101,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &[
             update(
                 "tool_call",
-                Some(&DEC_30_1000.to_string()),
+                Some(&dec_30_1000.to_string()),
                 Some(alpha),
                 Some(never_counted),
                 Some(r#""eventId":"evt-tool""#),
@@ -110,13 +109,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // Passes the byte prefilter but is not a completed turn.
             update(
                 "agent_message_chunk",
-                Some(&DEC_30_1000.to_string()),
+                Some(&dec_30_1000.to_string()),
                 Some(alpha),
                 Some(&format!(r#"{never_counted},"note":"turn_completed""#)),
                 Some(r#""eventId":"evt-chunk""#),
             ),
             turn(
-                DEC_27_2200,
+                dec_27_2200,
                 Some(alpha),
                 "evt-a1",
                 &model_usage(&[(
@@ -128,7 +127,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             multi_model_turn,
             // 2026-01-01 in Asia/Tokyo.
             turn(
-                DEC_31_1530,
+                dec_31_1530,
                 Some(alpha),
                 "evt-a3",
                 &model_usage(&[(
@@ -138,26 +137,26 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             // Same event and model with other counts: the first one wins.
             turn(
-                DEC_31_1600,
+                dec_31_1600,
                 Some(alpha),
                 "evt-a3",
                 &model_usage(&[(GROK_45, r#""inputTokens":7777,"outputTokens":7777"#)]),
             ),
             // Same event under another model is a separate row.
             turn(
-                DEC_31_1600,
+                dec_31_1600,
                 Some(alpha),
                 "evt-a3",
                 &model_usage(&[(UNPRICED, r#""inputTokens":300,"outputTokens":70"#)]),
             ),
             turn(
-                DEC_31_1600,
+                dec_31_1600,
                 Some(alpha),
                 "evt-a4",
                 &model_usage(&[("grok-4.7-build", r#""reasoningTokens":42"#)]),
             ),
             turn(
-                JAN_01_1200,
+                jan_01_1200,
                 Some(alpha),
                 "evt-a5",
                 &model_usage(&[(
@@ -166,7 +165,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 )]),
             ),
             turn(
-                JAN_01_1230,
+                jan_01_1230,
                 Some(alpha),
                 "evt-a6",
                 &model_usage(&[(
@@ -176,13 +175,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             update(
                 "turn_completed",
-                Some(&JAN_01_1230.to_string()),
+                Some(&jan_01_1230.to_string()),
                 Some(alpha),
                 None,
                 Some(r#""eventId":"evt-no-usage""#),
             ),
             turn(
-                JAN_01_1230,
+                jan_01_1230,
                 Some(alpha),
                 "evt-zero",
                 &model_usage(&[(
@@ -191,14 +190,14 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 )]),
             ),
             format!(
-                r#"{{"timestamp":{JAN_01_1230},"params":{{"sessionId":"{alpha}","update":{{"sessionUpdate":"turn_completed","usage":{{"inputTokens":9999,"outp"#
+                r#"{{"timestamp":{jan_01_1230},"params":{{"sessionId":"{alpha}","update":{{"sessionUpdate":"turn_completed","usage":{{"inputTokens":9999,"outp"#
             ),
         ],
     );
     write_lines(
         &format!("{session_a}/events.jsonl"),
         &[turn(
-            DEC_31_1530,
+            dec_31_1530,
             Some(alpha),
             "evt-events-file",
             &model_usage(&[(GROK_45, never_counted)]),
@@ -207,7 +206,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write_lines(
         &format!("{session_a}/updates.jsonl.bak"),
         &[turn(
-            DEC_31_1530,
+            dec_31_1530,
             Some(alpha),
             "evt-backup-file",
             &model_usage(&[(GROK_45, never_counted)]),
@@ -224,7 +223,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     let turn_without_event_id = |reasoning: u64, meta: Option<&str>| {
         update(
             "turn_completed",
-            Some(&JAN_01_1200.to_string()),
+            Some(&jan_01_1200.to_string()),
             Some(gamma),
             Some(&model_usage(&[(
                 UNPRICED,
@@ -237,7 +236,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &format!("{session_b}/updates.jsonl"),
         &[
             turn(
-                DEC_31_2350,
+                dec_31_2350,
                 None,
                 "evt-b1",
                 r#""inputTokens":900,"outputTokens":400,"cachedReadTokens":700,"cacheCreationTokens":50,"reasoningTokens":30,"totalTokens":1300,"costUsdTicks":30000000"#,
@@ -245,7 +244,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // A line's own session ID beats the summary's; the cache read is
             // clamped to the input.
             turn(
-                JAN_01_0010,
+                jan_01_0010,
                 Some(gamma),
                 "evt-b2",
                 &model_usage(&[(
@@ -260,7 +259,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             turn_without_event_id(20, None),
             // The cache write is clamped to the uncached input.
             turn(
-                JAN_02_1000,
+                jan_02_1000,
                 None,
                 "evt-b4",
                 &model_usage(&[(
@@ -272,7 +271,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // envelope seconds are truncated.
             update(
                 "turn_completed",
-                Some(&format!("{JAN_02_1100}.9")),
+                Some(&format!("{jan_02_1100}.9")),
                 None,
                 Some(&model_usage(&[(
                     CODE_FAST,
@@ -280,7 +279,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 )])),
                 Some(&format!(
                     r#""eventId":"evt-b5","agentTimestampMs":"{}""#,
-                    DEC_30_1000 * 1000
+                    dec_30_1000 * 1000
                 )),
             ),
             update(
@@ -308,7 +307,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &[
             // The same event as in the alpha session, exported a second time.
             turn(
-                DEC_31_1530,
+                dec_31_1530,
                 Some(alpha),
                 "evt-a3",
                 &model_usage(&[(GROK_45, r#""inputTokens":8888,"outputTokens":8888"#)]),
@@ -317,7 +316,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             // matched across files.
             turn_without_event_id(10, None),
             turn(
-                JAN_01_1230,
+                jan_01_1230,
                 None,
                 "evt-c3",
                 r#""inputTokens":345,"outputTokens":55"#,
@@ -333,7 +332,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write_lines(
         &format!("{session_d}/updates.jsonl"),
         &[turn(
-            JAN_02_1100,
+            jan_02_1100,
             None,
             "evt-d1",
             &model_usage(&[(
@@ -347,7 +346,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write_lines(
         &format!("{ALPHA}/nested/deeper/eeeeeeee-0000-4000-8000-000000000005/updates.jsonl"),
         &[turn(
-            DEC_30_1030,
+            dec_30_1030,
             None,
             "evt-e1",
             &model_usage(&[(CODE_FAST, r#""inputTokens":120,"outputTokens":30"#)]),
@@ -365,12 +364,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write_lines(
         "grok/logs/unified.jsonl",
         &[turn(
-            DEC_31_1530,
+            dec_31_1530,
             Some(alpha),
             "evt-unified-log",
             &model_usage(&[(GROK_45, never_counted)]),
         )],
     );
 
-    vec![("GROK_HOME", root.join("grok"))]
+    vec![("GROK_HOME", vec![root.join("grok").into_os_string()])]
 }
