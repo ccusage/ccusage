@@ -602,6 +602,7 @@ pub(crate) fn advisor_usages_from_line(
     Ok(advisor_usages_from_envelope(envelope))
 }
 
+#[cold]
 fn advisor_usages_from_progress_line(line: &[u8]) -> std::result::Result<AdvisorUsages, Rejection> {
     let mut advisors = match advisor_usages_from_line(line) {
         Ok(advisors) => advisors,
