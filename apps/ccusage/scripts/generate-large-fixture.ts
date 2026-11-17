@@ -934,10 +934,6 @@ async function generateFixture(
 	format: 'claude' | 'codex',
 	codexLayout: CodexLayout = 'current',
 ): Promise<FixtureResult> {
-	await createEmptyDirectory(
-		outputDir,
-		format === 'claude' ? '--output-dir' : '--codex-output-dir',
-	);
 	const fileSizeTargets = createFileSizeTargets(sizeMib * MIB);
 
 	let totalBytes = 0;
@@ -977,11 +973,17 @@ function printResult(name: string, outputDir: string, result: FixtureResult): vo
 async function main(): Promise<void> {
 	const options = parseArguments(process.argv.slice(2));
 	const outputDir = resolve(options.outputDir);
+	const codexOutputDir =
+		options.codexOutputDir === undefined ? undefined : resolve(options.codexOutputDir);
+	await createEmptyDirectory(outputDir, '--output-dir');
+	if (codexOutputDir !== undefined) {
+		await createEmptyDirectory(codexOutputDir, '--codex-output-dir');
+	}
+
 	const claudeResult = await generateFixture(outputDir, options.sizeMib, 'claude');
 	printResult('Claude', outputDir, claudeResult);
 
-	if (options.codexOutputDir) {
-		const codexOutputDir = resolve(options.codexOutputDir);
+	if (codexOutputDir !== undefined) {
 		const codexResult = await generateFixture(
 			codexOutputDir,
 			options.codexSizeMib,
