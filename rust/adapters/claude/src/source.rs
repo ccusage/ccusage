@@ -30,7 +30,7 @@ impl Claude {
         )?;
         Ok(ClaudeCounted::sessions(
             deduped
-                .main_thread_session_days(|_| true)
+                .main_thread_session_days()
                 .into_iter()
                 .map(|(session, _)| session)
                 .collect(),
@@ -78,7 +78,7 @@ impl Claude {
             )?;
             let detected = deduped.detected;
             let sessions = deduped
-                .main_thread_session_days(|_| true)
+                .main_thread_session_days()
                 .into_iter()
                 .map(|(session, _)| session)
                 .collect();

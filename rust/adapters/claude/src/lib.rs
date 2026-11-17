@@ -100,12 +100,9 @@ pub(crate) struct DedupedEntries {
 }
 
 impl DedupedEntries {
-    /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. A
+    /// Main-thread days of the entries, by recorded session ID. A
     /// merged copy's session counts on the day its survivor does.
-    pub(crate) fn main_thread_session_days(
-        &self,
-        is_counted: impl Fn(&LoadedEntry) -> bool,
-    ) -> SessionDays {
+    pub(crate) fn main_thread_session_days(&self) -> SessionDays {
         main_thread_session_days(
             self.entries
                 .iter()
@@ -115,7 +112,6 @@ impl DedupedEntries {
                         .iter()
                         .map(|(index, session)| (session.as_ref(), &self.entries[*index])),
                 )
-                .filter(|(_, entry)| is_counted(entry))
                 .map(|(session, entry)| (session, entry.date.as_str(), entry.is_sidechain())),
         )
     }
@@ -1732,9 +1728,9 @@ mod tests {
             ..SharedArgs::default()
         };
         let deduped = load_deduped_entries(&shared, None).unwrap();
-        let sorted_days = |is_counted: &dyn Fn(&LoadedEntry) -> bool| {
+        let sorted_days = |deduped: &crate::DedupedEntries| {
             let mut days: Vec<_> = deduped
-                .main_thread_session_days(is_counted)
+                .main_thread_session_days()
                 .into_iter()
                 .map(|(session, date)| (session.to_string(), date))
                 .collect();
@@ -1745,17 +1741,22 @@ mod tests {
 
         assert_eq!(deduped.entries.len(), 2);
         assert_eq!(
-            sorted_days(&|_| true),
+            sorted_days(&deduped),
             [
                 day("session-a", "2026-01-02"),
                 day("session-b", "2026-01-02"),
                 day("session-b", "2026-01-03"),
             ]
         );
-        assert_eq!(
-            sorted_days(&|entry| entry.date != "2026-01-02"),
-            [day("session-b", "2026-01-03")]
-        );
+        let filtered = crate::DedupedEntries {
+            entries: deduped
+                .entries
+                .into_iter()
+                .filter(|entry| entry.date != "2026-01-02")
+                .collect(),
+            ..Default::default()
+        };
+        assert_eq!(sorted_days(&filtered), [day("session-b", "2026-01-03")]);
     }
 
     #[test]
