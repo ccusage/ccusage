@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -10,9 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, Pricing, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_from_pricing, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, stored_cost_for_mode,
+    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    cli::CostMode, fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -270,14 +273,25 @@ fn read_session_file_data_with_context(
         let model = raw_model
             .as_ref()
             .map(|model| format!("[{}] {model}", context.name));
-        let resolved_pricing =
-            store_pricing_at(raw_model.as_deref(), model.as_deref(), timestamp, pricing);
+        let candidates = store_pricing_candidates(raw_model.as_deref(), model.as_deref(), pricing);
         let source_cost = source_cost_for_mode(
             display_cost,
             mode,
             pricing_override_model(raw_model.as_deref(), model.as_deref(), pricing).is_some(),
         );
-        let cost = store_cost(usage, source_cost, mode, resolved_pricing);
+        let priced = price_entry(
+            EntryPricing {
+                usage,
+                reasoning_tokens: 0,
+                residual_tokens: 0,
+                candidates: &candidates,
+                stored_cost: source_cost,
+                mode,
+                timestamp: Some(timestamp),
+            },
+            pricing,
+        );
+        let cost = priced.cost;
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
@@ -292,13 +306,16 @@ fn read_session_file_data_with_context(
             },
             entry_id: record.id.clone(),
         });
-        let missing_pricing_model = missing_store_pricing_model(
-            raw_model.as_deref(),
-            usage,
-            source_cost,
-            mode,
-            resolved_pricing,
-        );
+        let missing_pricing_model = (mode != CostMode::Display
+            && !(mode == CostMode::Auto && source_cost.is_some())
+            && crate::total_usage_tokens(usage) != 0
+            && priced.matched.is_none())
+        .then(|| {
+            raw_model
+                .as_deref()
+                .map(|model| crate::model_aliases::resolve_model_name(model).into_owned())
+        })
+        .flatten();
         let stored_cost = pi_stored_cost(
             raw_model.as_deref(),
             model.as_deref(),
@@ -520,23 +537,6 @@ fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
         )
 }
 
-fn store_cost(
-    usage: TokenUsageRaw,
-    display_cost: Option<f64>,
-    mode: CostMode,
-    pricing: Option<Pricing>,
-) -> f64 {
-    match mode {
-        CostMode::Display => display_cost.unwrap_or(0.0),
-        CostMode::Auto => display_cost.unwrap_or_else(|| {
-            pricing.map_or(0.0, |pricing| calculate_cost_from_pricing(usage, pricing))
-        }),
-        CostMode::Calculate => {
-            pricing.map_or(0.0, |pricing| calculate_cost_from_pricing(usage, pricing))
-        }
-    }
-}
-
 fn pricing_override_model<'a>(
     raw_model: Option<&'a str>,
     display_model: Option<&'a str>,
@@ -571,34 +571,17 @@ fn source_cost_for_mode(
     }
 }
 
-fn missing_store_pricing_model(
-    raw_model: Option<&str>,
-    usage: TokenUsageRaw,
-    display_cost: Option<f64>,
-    mode: CostMode,
-    pricing: Option<Pricing>,
-) -> Option<String> {
-    if mode == CostMode::Display
-        || (mode == CostMode::Auto && display_cost.is_some())
-        || crate::total_usage_tokens(usage) == 0
-        || pricing.is_some()
-    {
-        return None;
-    }
-    raw_model.map(|model| crate::model_aliases::resolve_model_name(model).into_owned())
-}
-
-fn store_pricing_at(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    timestamp: crate::TimestampMs,
+fn store_pricing_candidates<'a>(
+    raw_model: Option<&'a str>,
+    display_model: Option<&'a str>,
     pricing: Option<&PricingMap>,
-) -> Option<Pricing> {
-    let pricing = pricing?;
-    pricing_override_model(raw_model, display_model, Some(pricing))
-        .and_then(|model| pricing.find_at(model, timestamp))
-        .or_else(|| display_model.and_then(|model| pricing.find_exact(model)))
-        .or_else(|| raw_model.and_then(|model| pricing.find_at(model, timestamp)))
+) -> Vec<(&'a str, MatchKind)> {
+    pricing_override_model(raw_model, display_model, pricing)
+        .into_iter()
+        .map(|model| (model, MatchKind::Fuzzy))
+        .chain(display_model.map(|model| (model, MatchKind::StrictExact)))
+        .chain(raw_model.map(|model| (model, MatchKind::Fuzzy)))
+        .collect()
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -631,6 +614,95 @@ pub(crate) fn entry_id(entry: &LoadedEntry) -> PiEntryId {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
+        use ccusage_core::pricing::MatchKind;
+        ccusage_test_support::install_pricing_snapshots();
+        for override_key in [
+            None,
+            Some("gpt-5"),
+            Some("[pi] gpt-5"),
+            Some("[openclaw] gpt-5"),
+            Some("grok-4.5-build"),
+            Some("google/gemini-2.5-pro"),
+            Some("moonshot/kimi-k2.5"),
+        ] {
+            let override_value = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            };
+            let override_key = override_key.map(str::to_string);
+            let pricing = PricingMap::load_embedded()
+                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
+            for model in [
+                "claude-sonnet-4",
+                "anthropic/claude-sonnet-4",
+                "claude-sonnet-4-20250514",
+                "claude-opus-4.1",
+                "claude-opus-5",
+                "gpt-5",
+                "openai/gpt-5",
+                "gpt-5.1-codex",
+                "o3",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-pro-preview",
+                "google/gemini-2.5-pro",
+                "kimi-k2",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-for-coding",
+                "moonshot/kimi-k2.5",
+                "grok-4",
+                "grok-4.5",
+                "grok-4.5-build",
+                "xai/grok-4.5",
+                "deepseek-chat",
+                "unknown-wave4-model",
+                "",
+            ] {
+                for timestamp in [
+                    crate::TimestampMs::from_millis(1_776_698_890_071),
+                    crate::TimestampMs::from_millis(1_776_698_890_072),
+                ] {
+                    let display = format!("[pi] {model}");
+                    let overridden =
+                        pricing_override_model(Some(model), Some(&display), Some(&pricing));
+                    let legacy = overridden
+                        .and_then(|name| {
+                            pricing.find_at(name, timestamp).map(|rates| (name, rates))
+                        })
+                        .or_else(|| {
+                            pricing
+                                .find_exact(&display)
+                                .map(|rates| (display.as_str(), rates))
+                        })
+                        .or_else(|| {
+                            pricing
+                                .find_at(model, timestamp)
+                                .map(|rates| (model, rates))
+                        });
+                    let candidates: Vec<(&str, MatchKind)> = overridden
+                        .into_iter()
+                        .map(|name| (name, MatchKind::Fuzzy))
+                        .chain([
+                            (display.as_str(), MatchKind::StrictExact),
+                            (model, MatchKind::Fuzzy),
+                        ])
+                        .collect();
+                    let resolved = pricing.resolve_at(&candidates, Some(timestamp));
+                    assert_eq!(
+                        format!("{legacy:?}"),
+                        format!("{resolved:?}"),
+                        "{model}, {override_key:?}, {timestamp:?}"
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use ccusage_test_support::fs_fixture;
     use std::path::Path;
@@ -1178,20 +1250,34 @@ mod tests {
 
     #[test]
     fn auto_recalculates_non_finite_source_cost_while_display_preserves_it() {
-        let pricing = pricing_for_cost_tests().find("test-model");
+        let pricing = pricing_for_cost_tests();
         let usage = usage_for_cost_tests();
-        assert!(store_cost(usage, Some(f64::NAN), CostMode::Display, pricing).is_nan());
+        let candidates = [("test-model", MatchKind::Fuzzy)];
+        let cost = |stored_cost, mode| {
+            price_entry(
+                EntryPricing {
+                    usage,
+                    reasoning_tokens: 0,
+                    residual_tokens: 0,
+                    candidates: &candidates,
+                    stored_cost,
+                    mode,
+                    timestamp: None,
+                },
+                Some(&pricing),
+            )
+            .cost
+        };
+        assert!(cost(Some(f64::NAN), CostMode::Display).is_nan());
         assert_eq!(
-            store_cost(
-                usage,
+            cost(
                 source_cost_for_mode(Some(f64::INFINITY), CostMode::Auto, false),
                 CostMode::Auto,
-                pricing
             ),
             0.018000000000000002
         );
         assert_eq!(
-            store_cost(usage, Some(f64::NEG_INFINITY), CostMode::Calculate, pricing),
+            cost(Some(f64::NEG_INFINITY), CostMode::Calculate),
             0.018000000000000002
         );
     }

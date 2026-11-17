@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{collections::HashMap, fmt, fs, path::Path, sync::Arc};
 
 use ccusage_adapter_common::{jsonl, units::UnitError};
@@ -11,7 +15,6 @@ use serde_json::{Map, Value};
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_candidates,
 };
 
 const DEFAULT_MODEL: &str = "unknown";
@@ -579,16 +582,30 @@ pub(super) fn event_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let cost_usage = TokenUsageRaw {
-        output_tokens: event.output_tokens + event.reasoning_tokens,
-        cache_creation: None,
-        ..usage
-    };
     let extra_total_tokens = event
         .total_tokens
         .saturating_sub(event.input_tokens + event.output_tokens + event.cache_read_tokens);
-    let cost = calculate_gemini_cost(&event.model, cost_usage, event.timestamp, mode, pricing);
-    let missing_pricing_model = missing_gemini_pricing(&event.model, cost_usage, mode, pricing);
+    let names = model_candidates(&event.model);
+    let candidates: Vec<_> = names
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: event.reasoning_tokens,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(event.timestamp),
+        },
+        Some(pricing),
+    );
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| crate::model_aliases::resolve_model_name(&event.model).into_owned());
     let data = UsageEntry {
         session_id: Some(event.session_id.clone()),
         timestamp: event.timestamp_text,
@@ -621,50 +638,6 @@ pub(super) fn event_to_loaded(
     }
 }
 
-fn calculate_gemini_cost(
-    model: &str,
-    usage: TokenUsageRaw,
-    timestamp: TimestampMs,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> f64 {
-    let names = model_candidates(model);
-    let candidates: Vec<_> = names
-        .iter()
-        .map(|name| (name.as_str(), ccusage_core::pricing::MatchKind::Fuzzy))
-        .collect();
-    ccusage_core::cost::price_entry(
-        ccusage_core::cost::EntryPricing {
-            usage,
-            reasoning_tokens: 0,
-            residual_tokens: 0,
-            candidates: &candidates,
-            stored_cost: None,
-            mode,
-            timestamp: Some(timestamp),
-        },
-        Some(pricing),
-    )
-    .cost
-}
-
-fn missing_gemini_pricing(
-    model: &str,
-    usage: TokenUsageRaw,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> Option<String> {
-    if mode == CostMode::Display {
-        return None;
-    }
-    missing_pricing_model_for_candidates(
-        model,
-        model_candidates(model),
-        crate::total_usage_tokens(usage),
-        Some(pricing),
-    )
-}
-
 fn model_candidates(model: &str) -> Vec<String> {
     let mut candidates = Vec::with_capacity(PROVIDER_PREFIXES.len() + 1);
     candidates.extend(
@@ -680,6 +653,75 @@ fn model_candidates(model: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
+        use ccusage_core::pricing::MatchKind;
+        ccusage_test_support::install_pricing_snapshots();
+        for override_key in [
+            None,
+            Some("gpt-5"),
+            Some("[pi] gpt-5"),
+            Some("[openclaw] gpt-5"),
+            Some("grok-4.5-build"),
+            Some("google/gemini-2.5-pro"),
+            Some("moonshot/kimi-k2.5"),
+        ] {
+            let override_value = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            };
+            let override_key = override_key.map(str::to_string);
+            let pricing = PricingMap::load_embedded()
+                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
+            for model in [
+                "claude-sonnet-4",
+                "anthropic/claude-sonnet-4",
+                "claude-sonnet-4-20250514",
+                "claude-opus-4.1",
+                "claude-opus-5",
+                "gpt-5",
+                "openai/gpt-5",
+                "gpt-5.1-codex",
+                "o3",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-pro-preview",
+                "google/gemini-2.5-pro",
+                "kimi-k2",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-for-coding",
+                "moonshot/kimi-k2.5",
+                "grok-4",
+                "grok-4.5",
+                "grok-4.5-build",
+                "xai/grok-4.5",
+                "deepseek-chat",
+                "unknown-wave4-model",
+                "",
+            ] {
+                {
+                    let names = model_candidates(model);
+                    let legacy = names
+                        .iter()
+                        .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                    let candidates: Vec<(&str, MatchKind)> = names
+                        .iter()
+                        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                        .collect();
+                    let resolved = pricing.resolve_at(&candidates, None);
+                    assert_eq!(
+                        format!("{legacy:?}"),
+                        format!("{resolved:?}"),
+                        "{model}, {override_key:?}"
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use ccusage_core::Diagnostics;
     use ccusage_test_support::fs_fixture;

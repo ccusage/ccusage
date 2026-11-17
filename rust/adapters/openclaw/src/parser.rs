@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{fs, path::Path, sync::Arc};
 
 use ccusage_adapter_common::{jsonl, units::UnitError};
@@ -8,8 +12,8 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, missing_pricing_model_for_usage, stored_cost_for_mode,
+    apply_total_token_fallback, cli::CostMode, fast::LinePrefilter, format_date_tz,
+    stored_cost_for_mode,
 };
 
 /// A single parsed OpenClaw session line. Only the fields ccusage consumes are
@@ -420,22 +424,26 @@ pub(super) fn entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let pricing_model = if pricing.is_some_and(|pricing| pricing.find_exact(&entry.model).is_some())
-    {
-        &entry.model
-    } else {
-        &entry.pricing_model
-    };
-    let cost = calculate_cost_for_usage_at(
-        Some(pricing_model),
-        usage,
-        entry.cost,
-        Some(entry.timestamp),
-        mode,
+    let candidates = [
+        (entry.model.as_str(), MatchKind::StrictExact),
+        (entry.pricing_model.as_str(), MatchKind::Fuzzy),
+    ];
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: entry.cost,
+            mode,
+            timestamp: Some(entry.timestamp),
+        },
         pricing,
     );
-    let missing_pricing_model =
-        missing_pricing_model_for_usage(Some(pricing_model), usage, entry.cost, mode, pricing);
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| crate::model_aliases::resolve_model_name(&entry.pricing_model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
@@ -547,6 +555,79 @@ pub(super) fn migration_id(entry: &LoadedEntry) -> MigrationId {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
+        use ccusage_core::pricing::MatchKind;
+        ccusage_test_support::install_pricing_snapshots();
+        for override_key in [
+            None,
+            Some("gpt-5"),
+            Some("[pi] gpt-5"),
+            Some("[openclaw] gpt-5"),
+            Some("grok-4.5-build"),
+            Some("google/gemini-2.5-pro"),
+            Some("moonshot/kimi-k2.5"),
+        ] {
+            let override_value = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            };
+            let override_key = override_key.map(str::to_string);
+            let pricing = PricingMap::load_embedded()
+                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
+            for model in [
+                "claude-sonnet-4",
+                "anthropic/claude-sonnet-4",
+                "claude-sonnet-4-20250514",
+                "claude-opus-4.1",
+                "claude-opus-5",
+                "gpt-5",
+                "openai/gpt-5",
+                "gpt-5.1-codex",
+                "o3",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-pro-preview",
+                "google/gemini-2.5-pro",
+                "kimi-k2",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-for-coding",
+                "moonshot/kimi-k2.5",
+                "grok-4",
+                "grok-4.5",
+                "grok-4.5-build",
+                "xai/grok-4.5",
+                "deepseek-chat",
+                "unknown-wave4-model",
+                "",
+            ] {
+                {
+                    let display = format!("[openclaw] {model}");
+                    let legacy = if pricing.find_exact(&display).is_some() {
+                        pricing
+                            .find(&display)
+                            .map(|rates| (display.as_str(), rates))
+                    } else {
+                        pricing.find(model).map(|rates| (model, rates))
+                    };
+                    let candidates: Vec<(&str, MatchKind)> = vec![
+                        (&display, MatchKind::StrictExact),
+                        (model, MatchKind::Fuzzy),
+                    ];
+                    let resolved = pricing.resolve_at(&candidates, None);
+                    assert_eq!(
+                        format!("{legacy:?}"),
+                        format!("{resolved:?}"),
+                        "{model}, {override_key:?}"
+                    );
+                }
+            }
+        }
+    }
+
     use ccusage_test_support::fs_fixture;
 
     use super::*;

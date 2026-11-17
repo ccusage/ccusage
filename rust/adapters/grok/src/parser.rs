@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -10,9 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
-    missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    format_date_tz, format_rfc3339_millis, stored_cost_for_mode, total_usage_tokens,
 };
 
 use ccusage_adapter_common::{
@@ -291,7 +294,7 @@ pub(super) fn parse_session_files_with_diagnostics(
             let display_model = raw_model.clone();
             let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
             // Cost bills full output_tokens only; reasoning is never added to billable output.
-            let cost = calculate_grok_cost_at(
+            let (cost, missing_pricing_model) = price_grok_usage(
                 &raw_model,
                 usage_raw,
                 cost_usd,
@@ -299,8 +302,6 @@ pub(super) fn parse_session_files_with_diagnostics(
                 mode,
                 pricing,
             );
-            let missing_pricing_model =
-                missing_grok_pricing(&raw_model, usage_raw, cost_usd, mode, pricing);
             let timestamp_text = format_rfc3339_millis(timestamp_ms);
             let data = UsageEntry {
                 session_id: Some(session_id.clone()),
@@ -524,71 +525,39 @@ impl GrokDedupeKey {
     }
 }
 
-fn calculate_grok_cost_at(
+fn price_grok_usage(
     raw_model: &str,
     usage: TokenUsageRaw,
     cost_usd: Option<f64>,
     timestamp: Option<TimestampMs>,
     mode: CostMode,
     pricing: &PricingMap,
-) -> f64 {
-    match mode {
-        CostMode::Display => cost_usd.unwrap_or(0.0),
-        // Grok's own figure is authoritative, so `auto` prefers it and only falls
-        // back to the pricing table when a turn recorded no ticks.
-        CostMode::Auto if cost_usd.is_some() => cost_usd.unwrap_or(0.0),
-        CostMode::Auto | CostMode::Calculate => {
-            // Exact hits across every candidate first: `find` falls back to
-            // substring matching, and a fuzzy hit on the first candidate would
-            // shadow an exact entry - a user pricing override included - that a
-            // later candidate names precisely.
-            let candidates = pricing_candidates(raw_model);
-            for candidate in &candidates {
-                if pricing.find_exact(candidate).is_some() {
-                    return calculate_cost_for_usage_at(
-                        Some(candidate),
-                        usage,
-                        None,
-                        timestamp,
-                        CostMode::Calculate,
-                        Some(pricing),
-                    );
-                }
-            }
-            for candidate in &candidates {
-                if pricing.find(candidate).is_some() {
-                    return calculate_cost_for_usage_at(
-                        Some(candidate),
-                        usage,
-                        None,
-                        timestamp,
-                        CostMode::Calculate,
-                        Some(pricing),
-                    );
-                }
-            }
-            0.0
-        }
-    }
-}
-
-fn missing_grok_pricing(
-    raw_model: &str,
-    usage: TokenUsageRaw,
-    cost_usd: Option<f64>,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> Option<String> {
-    // A turn that carried its own cost needs no pricing entry, so `display` and a
-    // ticks-backed `auto` never warn about a missing model.
-    if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
-        return None;
-    }
-    missing_pricing_model_for_candidates(
-        raw_model,
-        pricing_candidates(raw_model),
-        total_usage_tokens(usage),
+) -> (f64, Option<String>) {
+    let names = pricing_candidates(raw_model);
+    let candidates: Vec<_> = names
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::StrictExact))
+        .chain(names.iter().map(|name| (name.as_str(), MatchKind::Fuzzy)))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: cost_usd,
+            mode,
+            timestamp,
+        },
         Some(pricing),
+    );
+    (
+        priced.cost,
+        (mode != CostMode::Display
+            && !(mode == CostMode::Auto && cost_usd.is_some())
+            && total_usage_tokens(usage) != 0
+            && priced.matched.is_none())
+        .then(|| crate::model_aliases::resolve_model_name(raw_model).into_owned()),
     )
 }
 
@@ -625,6 +594,115 @@ fn from_hex(byte: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn preserves_missing_pricing_for_blank_model_keys_in_each_cost_mode() {
+        let pricing = PricingMap::default();
+        let usage = TokenUsageRaw {
+            input_tokens: 1,
+            ..Default::default()
+        };
+        for model in ["", "  "] {
+            assert_eq!(
+                price_grok_usage(model, usage, None, None, CostMode::Calculate, &pricing),
+                (0.0, Some(model.to_string()))
+            );
+            assert_eq!(
+                price_grok_usage(model, usage, None, None, CostMode::Auto, &pricing),
+                (0.0, Some(model.to_string()))
+            );
+            assert_eq!(
+                price_grok_usage(model, usage, Some(1.0), None, CostMode::Auto, &pricing),
+                (1.0, None)
+            );
+            assert_eq!(
+                price_grok_usage(model, usage, None, None, CostMode::Display, &pricing),
+                (0.0, None)
+            );
+            assert_eq!(
+                price_grok_usage(
+                    model,
+                    TokenUsageRaw::default(),
+                    None,
+                    None,
+                    CostMode::Calculate,
+                    &pricing
+                ),
+                (0.0, None)
+            );
+        }
+    }
+
+    #[test]
+    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
+        use ccusage_core::pricing::MatchKind;
+        ccusage_test_support::install_pricing_snapshots();
+        for override_key in [
+            None,
+            Some("gpt-5"),
+            Some("[pi] gpt-5"),
+            Some("[openclaw] gpt-5"),
+            Some("grok-4.5-build"),
+            Some("google/gemini-2.5-pro"),
+            Some("moonshot/kimi-k2.5"),
+        ] {
+            let override_value = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            };
+            let override_key = override_key.map(str::to_string);
+            let pricing = PricingMap::load_embedded()
+                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
+            for model in [
+                "claude-sonnet-4",
+                "anthropic/claude-sonnet-4",
+                "claude-sonnet-4-20250514",
+                "claude-opus-4.1",
+                "claude-opus-5",
+                "gpt-5",
+                "openai/gpt-5",
+                "gpt-5.1-codex",
+                "o3",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-pro-preview",
+                "google/gemini-2.5-pro",
+                "kimi-k2",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-for-coding",
+                "moonshot/kimi-k2.5",
+                "grok-4",
+                "grok-4.5",
+                "grok-4.5-build",
+                "xai/grok-4.5",
+                "deepseek-chat",
+                "unknown-wave4-model",
+                "",
+            ] {
+                {
+                    let names = pricing_candidates(model);
+                    let legacy = names
+                        .iter()
+                        .find(|name| pricing.find_exact(name).is_some())
+                        .or_else(|| names.iter().find(|name| pricing.find(name).is_some()))
+                        .and_then(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                    let candidates: Vec<(&str, MatchKind)> = names
+                        .iter()
+                        .map(|name| (name.as_str(), MatchKind::StrictExact))
+                        .chain(names.iter().map(|name| (name.as_str(), MatchKind::Fuzzy)))
+                        .collect();
+                    let resolved = pricing.resolve_at(&candidates, None);
+                    assert_eq!(
+                        format!("{legacy:?}"),
+                        format!("{resolved:?}"),
+                        "{model}, {override_key:?}"
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use ccusage_test_support::fs_fixture;
 
@@ -758,7 +836,7 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost_at(&model, usage, None, None, CostMode::Calculate, &pricing),
+            price_grok_usage(&model, usage, None, None, CostMode::Calculate, &pricing).0,
             3.0
         );
     }
@@ -793,14 +871,15 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost_at(
+            price_grok_usage(
                 "grok-unreleased-9.9-build",
                 usage,
                 None,
                 None,
                 CostMode::Calculate,
                 &pricing
-            ),
+            )
+            .0,
             0.02
         );
     }
@@ -1373,25 +1452,27 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost_at(
+            price_grok_usage(
                 "grok-4.5-build",
                 usage,
                 Some(0.25),
                 None,
                 CostMode::Auto,
                 &pricing
-            ),
+            )
+            .0,
             0.25
         );
         assert_eq!(
-            calculate_grok_cost_at(
+            price_grok_usage(
                 "grok-4.5-build",
                 usage,
                 Some(0.25),
                 None,
                 CostMode::Calculate,
                 &pricing
-            ),
+            )
+            .0,
             20.0
         );
     }
@@ -1413,14 +1494,15 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost_at(
+            price_grok_usage(
                 "grok-4.5-build",
                 usage,
                 None,
                 None,
                 CostMode::Auto,
                 &pricing
-            ),
+            )
+            .0,
             20.0
         );
     }

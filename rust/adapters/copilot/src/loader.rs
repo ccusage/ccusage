@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::Path,
@@ -20,9 +24,8 @@ use ccusage_adapter_common::{
 use ccusage_core::Diagnostics;
 
 use crate::{
-    LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, missing_pricing_model_for_usage,
-    stored_cost_for_mode,
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    format_date_tz, stored_cost_for_mode,
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
@@ -542,11 +545,6 @@ fn usage_entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let cost_usage = TokenUsageRaw {
-        output_tokens: usage.output_tokens.saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..usage
-    };
     let cost_usd = entry.nano_aiu.map(nano_aiu_to_usd);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
@@ -562,21 +560,23 @@ fn usage_entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost = calculate_cost_for_usage_at(
-        Some(&entry.model),
-        cost_usage,
-        cost_usd,
-        Some(entry.timestamp),
-        mode,
+    let candidates = [(entry.model.as_str(), MatchKind::Fuzzy)];
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: entry.extra_total_tokens,
+            candidates: &candidates,
+            stored_cost: cost_usd,
+            mode,
+            timestamp: Some(entry.timestamp),
+        },
         Some(pricing),
     );
-    let missing_pricing_model = missing_pricing_model_for_usage(
-        Some(&entry.model),
-        cost_usage,
-        cost_usd,
-        mode,
-        Some(pricing),
-    );
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(cost_usd, mode);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
@@ -598,6 +598,69 @@ fn usage_entry_to_loaded(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
+        use ccusage_core::pricing::MatchKind;
+        ccusage_test_support::install_pricing_snapshots();
+        for override_key in [
+            None,
+            Some("gpt-5"),
+            Some("[pi] gpt-5"),
+            Some("[openclaw] gpt-5"),
+            Some("grok-4.5-build"),
+            Some("google/gemini-2.5-pro"),
+            Some("moonshot/kimi-k2.5"),
+        ] {
+            let override_value = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            };
+            let override_key = override_key.map(str::to_string);
+            let pricing = crate::PricingMap::load_embedded()
+                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
+            for model in [
+                "claude-sonnet-4",
+                "anthropic/claude-sonnet-4",
+                "claude-sonnet-4-20250514",
+                "claude-opus-4.1",
+                "claude-opus-5",
+                "gpt-5",
+                "openai/gpt-5",
+                "gpt-5.1-codex",
+                "o3",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-pro-preview",
+                "google/gemini-2.5-pro",
+                "kimi-k2",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-for-coding",
+                "moonshot/kimi-k2.5",
+                "grok-4",
+                "grok-4.5",
+                "grok-4.5-build",
+                "xai/grok-4.5",
+                "deepseek-chat",
+                "unknown-wave4-model",
+                "",
+            ] {
+                {
+                    let legacy = pricing.find(model).map(|rates| (model, rates));
+                    let candidates: Vec<(&str, MatchKind)> = vec![(model, MatchKind::Fuzzy)];
+                    let resolved = pricing.resolve_at(&candidates, None);
+                    assert_eq!(
+                        format!("{legacy:?}"),
+                        format!("{resolved:?}"),
+                        "{model}, {override_key:?}"
+                    );
+                }
+            }
+        }
+    }
+
     use ccusage_core::ReportWindow;
     use std::ffi::OsString;
 

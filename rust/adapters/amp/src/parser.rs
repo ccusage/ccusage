@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 use ccusage_adapter_common::{
@@ -10,8 +14,7 @@ use serde_json::Value;
 
 use crate::{
     Diagnostics, LoadedEntry, PricingMap, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageMessage, apply_total_token_fallback, calculate_cost, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_usage,
+    UsageMessage, apply_total_token_fallback, cli::CostMode, format_date_tz,
 };
 
 /// A single Amp thread file: one JSON object holding the thread id, the chat
@@ -413,28 +416,26 @@ fn amp_entry(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost_data = UsageEntry {
-        message: UsageMessage {
+    let candidates = [(record.model.as_str(), MatchKind::Fuzzy)];
+    let priced = price_entry(
+        EntryPricing {
             usage: TokenUsageRaw {
-                output_tokens: record
-                    .usage
-                    .output_tokens
-                    .saturating_add(record.extra_total_tokens),
                 cache_creation: None,
                 ..record.usage
             },
-            ..data.message.clone()
+            reasoning_tokens: 0,
+            residual_tokens: record.extra_total_tokens,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(record.timestamp),
         },
-        ..data.clone()
-    };
-    let cost = calculate_cost(&cost_data, mode, pricing);
-    let missing_pricing_model = missing_pricing_model_for_usage(
-        Some(&record.model),
-        cost_data.message.usage,
-        None,
-        mode,
         pricing,
     );
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| crate::model_aliases::resolve_model_name(&record.model).into_owned());
     LoadedEntry {
         date: format_date_tz(record.timestamp, tz),
         timestamp: record.timestamp,
@@ -473,6 +474,69 @@ fn cache_tokens_by_message_id(messages: &[AmpMessage]) -> HashMap<i64, (u64, u64
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
+        use ccusage_core::pricing::MatchKind;
+        ccusage_test_support::install_pricing_snapshots();
+        for override_key in [
+            None,
+            Some("gpt-5"),
+            Some("[pi] gpt-5"),
+            Some("[openclaw] gpt-5"),
+            Some("grok-4.5-build"),
+            Some("google/gemini-2.5-pro"),
+            Some("moonshot/kimi-k2.5"),
+        ] {
+            let override_value = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            };
+            let override_key = override_key.map(str::to_string);
+            let pricing = PricingMap::load_embedded()
+                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
+            for model in [
+                "claude-sonnet-4",
+                "anthropic/claude-sonnet-4",
+                "claude-sonnet-4-20250514",
+                "claude-opus-4.1",
+                "claude-opus-5",
+                "gpt-5",
+                "openai/gpt-5",
+                "gpt-5.1-codex",
+                "o3",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-pro-preview",
+                "google/gemini-2.5-pro",
+                "kimi-k2",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-for-coding",
+                "moonshot/kimi-k2.5",
+                "grok-4",
+                "grok-4.5",
+                "grok-4.5-build",
+                "xai/grok-4.5",
+                "deepseek-chat",
+                "unknown-wave4-model",
+                "",
+            ] {
+                {
+                    let legacy = pricing.find(model).map(|rates| (model, rates));
+                    let candidates: Vec<(&str, MatchKind)> = vec![(model, MatchKind::Fuzzy)];
+                    let resolved = pricing.resolve_at(&candidates, None);
+                    assert_eq!(
+                        format!("{legacy:?}"),
+                        format!("{resolved:?}"),
+                        "{model}, {override_key:?}"
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use ccusage_test_support::{fs_fixture, mutation::assert_parser_survives_mutations};
 
