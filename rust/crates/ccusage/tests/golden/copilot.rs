@@ -534,7 +534,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // No time member at all: the record is dated by the file's mtime.
     let undated = write(
         "otel/undated.jsonl",
         &[format!(

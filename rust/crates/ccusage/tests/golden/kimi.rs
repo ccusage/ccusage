@@ -3,9 +3,6 @@ use std::path::{Path, PathBuf};
 
 use ccusage_test_support::{Instant, instant, set_modified};
 
-// File mtimes double as the timestamp of every record that carries none, so
-// each one is a deliberate point on the shared timeline.
-
 pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let legacy = root.join("kimi/legacy");
     let code = root.join("kimi/code");
@@ -76,7 +73,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"timestamp":{fixture_time_0},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":0,"output":0,"input_cache_read":0,"input_cache_creation":0}},"message_id":"msg-a5"}}}}}}"#,
                 fixture_time_0 = instant("2026-01-01T12:02:00Z").secs()
             ),
-            // A string timestamp and a missing one both fall back to the mtime.
             r#"{"timestamp":"2025-12-31T10:00:00Z","message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":80,"output":20},"message_id":"msg-a6"}}}"#,
             r#"{"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":60,"output":40}}}}"#,
             "not json but mentions \"token_usage\"",
@@ -208,7 +204,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"type":"usage.record","usage":{{"inputOther":200,"output":45}},"usageScope":"turn","time":{fixture_time_0}}}"#,
                 fixture_time_0 = instant("2026-01-01T12:30:00Z").millis()
             ),
-            // A missing `time` and a fractional one both fall back to the mtime.
             r#"{"type":"usage.record","model":"gpt-5","usage":{"inputOther":600,"output":100,"inputCacheRead":3000},"usageScope":"turn"}"#,
             &format!(
                 r#"{{"type":"usage.record","model":"kimi-code/kimi-k2.5","usage":{{"inputOther":120,"output":30}},"usageScope":"turn","time":{fixture_time_0}}}"#,

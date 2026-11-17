@@ -36,8 +36,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let a4_usage = r#""promptTokenCount":100,"candidatesTokenCount":40,"totalTokenCount":200"#;
 
     // Records are deduplicated on (session, timestamp text, model, tokens),
-    // first one wins. Records without a parseable timestamp take the file
-    // mtime, and string fields are trimmed before any of this.
+    // first one wins. String fields are trimmed before deduplication.
     write(
         primary.join("projects/alpha/chats/session-a.jsonl"),
         &[

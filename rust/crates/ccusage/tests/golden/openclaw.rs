@@ -7,11 +7,6 @@ use crate::golden::Case;
 
 const TRANSCRIPT_EVENTS_SCHEMA: &str = "CREATE TABLE transcript_events (session_id TEXT NOT NULL, seq INTEGER NOT NULL, event_json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (session_id, seq))";
 
-// 2025-12-30T12:00:00Z, 2026-01-01T00:00:00Z, 2026-01-02T10:00:00Z and
-// 2025-12-28T22:00:00Z. Records without a usable timestamp take the file's.
-
-// 2026-01-01T12:00:00Z in milliseconds, the SQLite `created_at` fallback.
-
 pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let state = root.join("openclaw/state");
     seed_legacy_sessions(&state);
@@ -100,7 +95,6 @@ fn seed_legacy_sessions(state: &Path) {
                 r#"{{"type":"message","id":"a-6","message":{{"role":"assistant","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.75}}}},"timestamp":{fixture_time_0}}}}}"#,
                 fixture_time_0 = instant("2025-12-30T10:00:00Z").millis()
             ),
-            // No timestamp anywhere: falls back to the file mtime.
             r#"{"type":"message","message":{"role":"assistant","model":"gpt-5","usage":{"input":120,"output":30}}}"#,
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":9999,"outp"#,
             r#"{"type":"custom","customType":"note","data":{"modelId":"openclaw-ignored-model"},"usage":{"input":9999}}"#,
@@ -139,7 +133,6 @@ fn seed_legacy_sessions(state: &Path) {
             r#"{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{"input":600,"output":100,"cacheRead":3000},"timestamp":"2026-01-01T00:10:00.000Z"}}"#,
             // totalTokens exceeds the parts by 350.
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":800,"output":300,"cacheWrite":50,"cacheRead":6000,"totalTokens":7500,"cost":{"total":0.33}},"timestamp":"2026-01-02T10:00:00.000Z"}}"#,
-            // Negative timestamp: falls back to the file mtime.
             r#"{"type":"message","message":{"role":"assistant","modelId":"claude-sonnet-4-20250514","usage":{"input":50,"output":25},"timestamp":-5}}"#,
         ],
         instant("2026-01-02T10:00:00Z"),
