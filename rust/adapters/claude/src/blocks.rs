@@ -659,6 +659,37 @@ mod tests {
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     #[test]
+    fn fractional_session_hours_keep_exact_millisecond_boundaries() {
+        let fixture = fs_fixture!({
+            "projects/p/s.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1}}}"#,
+                r#"{"timestamp":"2026-01-02T15:00:00Z","message":{"usage":{"input_tokens":20,"output_tokens":1}}}"#,
+            ].join("\n"),
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let entries = crate::load_entries(
+            &SharedArgs {
+                mode: ccusage_core::cli::CostMode::Display,
+                ..SharedArgs::default()
+            },
+            None,
+        )
+        .unwrap();
+        let now = crate::parse_ts_timestamp("2026-01-03T00:00:00Z").unwrap();
+        let blocks = identify_session_blocks(entries, "4.35".parse().unwrap(), now);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(
+            block_json(&blocks[0], None, now)["endTime"],
+            "2026-01-02T14:21:00.000Z"
+        );
+        assert!(blocks[1].is_gap);
+        assert_eq!(
+            block_json(&blocks[1], None, now)["startTime"],
+            "2026-01-02T14:21:00.000Z"
+        );
+    }
+
+    #[test]
     fn block_times_follow_the_report_timezone_across_midnight() {
         let timestamp = crate::parse_ts_timestamp("2026-01-02T23:30:45Z").unwrap();
         let zone = jiff::tz::TimeZone::get("Asia/Tokyo").unwrap();
