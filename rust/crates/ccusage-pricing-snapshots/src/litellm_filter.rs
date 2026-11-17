@@ -1,9 +1,10 @@
 use serde_json::{Map, Value};
 
-const RATE_FIELDS: [&str; 9] = [
+const RATE_FIELDS: [&str; 10] = [
     "input_cost_per_token",
     "output_cost_per_token",
     "cache_creation_input_token_cost",
+    "cache_creation_input_token_cost_above_1hr",
     "cache_read_input_token_cost",
     "input_cost_per_token_above_200k_tokens",
     "output_cost_per_token_above_200k_tokens",
@@ -76,6 +77,16 @@ fn is_embedded_model(model: &str) -> bool {
 mod tests {
     use super::filter_pricing_json;
     use ccusage_core::PricingMap;
+
+    #[test]
+    fn retains_published_one_hour_cache_rates() {
+        let filtered = filter_pricing_json(r#"{"claude-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002,"cache_creation_input_token_cost_above_1hr":0.000007}}"#).unwrap();
+        let pricing: serde_json::Value = serde_json::from_str(&filtered).unwrap();
+        assert_eq!(
+            pricing["claude-test"]["cache_creation_input_token_cost_above_1hr"],
+            7e-6
+        );
+    }
 
     #[test]
     fn keeps_service_tier_multipliers_in_embedded_pricing() {

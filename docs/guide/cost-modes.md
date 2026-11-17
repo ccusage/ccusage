@@ -42,15 +42,19 @@ The Claude calculation prices input, output, cache writes, and cache reads separ
 cost = inputTokens         × input price
      + outputTokens        × output price
      + cacheCreate5mTokens × cache creation price
-     + cacheCreate1hTokens × input price × 2
+     + cacheCreate1hTokens × one-hour cache creation price
      + cacheReadTokens     × cache read price
 ```
 
 When a record includes a cache-write duration split, the calculation uses its 5-minute and 1-hour counts. Otherwise, all `cache_creation_input_tokens` use the standard cache creation rate.
 
+The one-hour rate uses the published duration price or `cacheCreationInputTokenCostAbove1hr` override. If neither is available, it falls back to twice the input price.
+
 For pricing entries with a context threshold, the request input context (including cache reads and writes) selects the rate tier for the whole request. Other entries with above-200K rates apply the higher rate only to the portion of each token category above 200,000. Fast-mode usage applies the model fast multiplier.
 
 Pricing comes from LiteLLM, models.dev, built-in model data, and configured [pricing overrides](/guide/config-files#pricing-overrides). Timestamp-aware historical rates use the entry timestamp where supported. `--offline` uses embedded pricing without network requests; `--no-offline` enables online pricing retrieval, including its cache.
+
+An exact embedded model match takes precedence over a fuzzy primary-source match. Explicit pricing overrides retain precedence over both sources.
 
 ## Comparing Stored and Calculated Costs
 

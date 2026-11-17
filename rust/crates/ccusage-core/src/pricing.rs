@@ -270,6 +270,9 @@ fn apply_explicit_pricing_override(pricing: &mut Pricing, override_value: &Prici
     if let Some(value) = override_value.cache_creation_input_token_cost {
         pricing.cache_create = Some(value);
     }
+    if let Some(value) = override_value.cache_creation_input_token_cost_above_1hr {
+        pricing.cache_create_1h = Some(value);
+    }
     if let Some(value) = override_value.cache_read_input_token_cost {
         pricing.cache_read = Some(value);
     }
@@ -2593,6 +2596,20 @@ mod tests {
         prewarm_embedded(true);
 
         assert!(EMBEDDED_PREWARM.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn one_hour_cache_override_replaces_the_published_rate() {
+        crate::test_support::install_pricing_snapshots();
+        let model = "claude-sonnet-4-20250514".to_string();
+        for rate in [0.0, 7e-6] {
+            let override_value = ccusage_cli::PricingOverride {
+                cache_creation_input_token_cost_above_1hr: Some(rate),
+                ..Default::default()
+            };
+            let pricing = PricingMap::load_with_overrides(true, false, [(&model, &override_value)]);
+            assert_eq!(pricing.find(&model).unwrap().cache_create_1h, Some(rate));
+        }
     }
 
     #[test]

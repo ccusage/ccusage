@@ -665,6 +665,10 @@ fn merge_override_fields(target: &mut PricingOverride, source: ConfigPricingOver
     if source.cache_creation_input_token_cost.is_some() {
         target.cache_creation_input_token_cost = source.cache_creation_input_token_cost;
     }
+    if source.cache_creation_input_token_cost_above_1hr.is_some() {
+        target.cache_creation_input_token_cost_above_1hr =
+            source.cache_creation_input_token_cost_above_1hr;
+    }
     if source.cache_read_input_token_cost.is_some() {
         target.cache_read_input_token_cost = source.cache_read_input_token_cost;
     }
@@ -707,6 +711,8 @@ impl From<ConfigPricingOverride> for PricingOverride {
             input_cost_per_token: value.input_cost_per_token,
             output_cost_per_token: value.output_cost_per_token,
             cache_creation_input_token_cost: value.cache_creation_input_token_cost,
+            cache_creation_input_token_cost_above_1hr: value
+                .cache_creation_input_token_cost_above_1hr,
             cache_read_input_token_cost: value.cache_read_input_token_cost,
             input_cost_per_token_above_200k_tokens: value.input_cost_per_token_above_200k_tokens,
             output_cost_per_token_above_200k_tokens: value.output_cost_per_token_above_200k_tokens,
@@ -1327,6 +1333,30 @@ mod tests {
                 "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
             )
         );
+    }
+
+    #[test]
+    fn one_hour_cache_rates_survive_parsing_and_partial_config_merges() {
+        let parent: ConfigPricingOverride = serde_json::from_str(
+            r#"{"inputCostPerToken":0.000001,"cacheCreationInputTokenCostAbove1hr":0.000007}"#,
+        )
+        .unwrap();
+        let mut current = BTreeMap::from([("model".to_string(), parent.into())]);
+        let child: ConfigPricingOverride =
+            serde_json::from_str(r#"{"outputCostPerToken":0.000002}"#).unwrap();
+        merge_pricing_overrides(&mut current, BTreeMap::from([("model".to_string(), child)]));
+        assert_eq!(
+            current["model"].cache_creation_input_token_cost_above_1hr,
+            Some(7e-6)
+        );
+        let child: ConfigPricingOverride =
+            serde_json::from_str(r#"{"cacheCreationInputTokenCostAbove1hr":0}"#).unwrap();
+        merge_pricing_overrides(&mut current, BTreeMap::from([("model".to_string(), child)]));
+        assert_eq!(
+            current["model"].cache_creation_input_token_cost_above_1hr,
+            Some(0.0)
+        );
+        assert_eq!(current["model"].input_cost_per_token, Some(1e-6));
     }
 
     #[test]

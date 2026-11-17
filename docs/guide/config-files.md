@@ -469,6 +469,7 @@ All fields are optional. Unspecified fields keep existing values. Without a pric
 
 - `inputCostPerToken`, `outputCostPerToken` — base per-token rates
 - `cacheCreationInputTokenCost`, `cacheReadInputTokenCost` — cache pricing
+- `cacheCreationInputTokenCostAbove1hr` — one-hour cache write pricing, including an explicit zero rate
 - `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — tiered pricing past 200k tokens
 - `maxInputTokens` — context window limit (used by the Claude statusline hook)
 - `fastMultiplier` applies when Codex usage uses Fast pricing.

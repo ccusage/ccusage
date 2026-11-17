@@ -334,6 +334,7 @@ pub struct PricingOverride {
     pub input_cost_per_token: Option<f64>,
     pub output_cost_per_token: Option<f64>,
     pub cache_creation_input_token_cost: Option<f64>,
+    pub cache_creation_input_token_cost_above_1hr: Option<f64>,
     pub cache_read_input_token_cost: Option<f64>,
     pub input_cost_per_token_above_200k_tokens: Option<f64>,
     pub output_cost_per_token_above_200k_tokens: Option<f64>,
