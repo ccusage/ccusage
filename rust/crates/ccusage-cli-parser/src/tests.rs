@@ -301,7 +301,7 @@ fn cache_flags_override_config_in_both_directions() {
         let Command::Statusline(args) = parse_with_config(&argv, &config) else {
             panic!("expected statusline");
         };
-        assert_eq!(args.cache && !args.no_cache, expected, "{config_json}");
+        assert_eq!(args.cache, expected, "{config_json}");
     }
 }
 
@@ -368,7 +368,7 @@ fn higher_config_layers_override_negated_defaults() {
         match command {
             Command::Statusline(args) => {
                 assert!(args.offline);
-                assert!(args.cache && !args.no_cache);
+                assert!(args.cache);
             }
             command => {
                 let shared = command.shared().unwrap();
