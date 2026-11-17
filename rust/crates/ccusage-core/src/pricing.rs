@@ -1685,13 +1685,16 @@ impl PricingMap {
     }
 
     pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-        if let Some(merged) = self.live_merged.get() {
-            return merged.find_exact_normalized(model);
-        }
-        self.find_exact_normalized(model).or_else(|| {
-            self.for_lookup(model, Lookup::Exact)
-                .find_exact_normalized(model)
-        })
+        self.find_exact_with_fallback_using(model, models_dev_pricing)
+    }
+
+    fn find_exact_with_fallback_using<'a>(
+        &self,
+        model: &str,
+        live: impl FnOnce() -> Option<&'a Self>,
+    ) -> Option<Pricing> {
+        self.with_live_layer(model, Lookup::Exact, live)
+            .find_exact_normalized(model)
     }
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
@@ -2564,6 +2567,43 @@ mod tests {
         let offline = layered(&PricingMap::default(), Some(&embedded));
         assert_eq!(
             offline.find_with_live("md-only-1", || None).unwrap().input,
+            1.0
+        );
+    }
+
+    #[test]
+    fn exact_fallback_uses_live_models_dev_before_the_embedded_snapshot() {
+        crate::test_support::install_pricing_snapshots();
+        let mut embedded = PricingMap::default();
+        embedded.load_models_dev_json_for_tests(
+            r#"{"md-only-1": {"cost": {"input": 1000000, "output": 2000000}}}"#,
+        );
+        let mut live = PricingMap::default();
+        live.load_models_dev_json_for_tests(
+            r#"{"md-only-1": {"cost": {"input": 3000000, "output": 4000000}}}"#,
+        );
+        let pricing = layered(&PricingMap::default(), Some(&embedded));
+        let lookups = AtomicUsize::new(0);
+        let fetch = || {
+            lookups.fetch_add(1, Ordering::Relaxed);
+            Some(&live)
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                pricing
+                    .find_exact_with_fallback_using("md-only-1", fetch)
+                    .unwrap()
+                    .input,
+                3.0
+            );
+        }
+        assert_eq!(lookups.load(Ordering::Relaxed), 1);
+        let offline = layered(&PricingMap::default(), Some(&embedded));
+        assert_eq!(
+            offline
+                .find_exact_with_fallback_using("md-only-1", || None)
+                .unwrap()
+                .input,
             1.0
         );
     }
