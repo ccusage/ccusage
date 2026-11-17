@@ -5,7 +5,7 @@ into the usage entries the reports render.
 
 ## Owns
 
-- `loader.rs` — reading the source, dedupe, and date filtering.
+- `loader.rs` — read-only SQLite session loading and diagnostics for rejected rows.
 - `parser.rs` — raw record parsing, token mapping, and model naming.
 - `paths.rs` — environment variables, default directories, and file discovery.
 - `report.rs` — the JSON and table shapes where they differ from the shared ones.
