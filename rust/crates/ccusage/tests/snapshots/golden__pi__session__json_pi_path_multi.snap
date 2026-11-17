@@ -1,6 +1,5 @@
 ---
 source: crates/ccusage/tests/golden/mod.rs
-assertion_line: 366
 description: "COLUMNS=200 ccusage pi session --offline --json --pi-path [ROOT]/pi/sessions,[ROOT]/pi/outside,[ROOT]/pi/missing,[ROOT]/pi/sessions"
 ---
 exit: 0

@@ -1,6 +1,5 @@
 ---
 source: crates/ccusage/tests/golden/mod.rs
-assertion_line: 366
 description: COLUMNS=120 ccusage pi session --offline --breakdown
 ---
 exit: 0
