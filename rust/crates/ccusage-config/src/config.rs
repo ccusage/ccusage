@@ -76,10 +76,15 @@ impl ConfigContext {
         if !addressed {
             return None;
         }
+        Some(self.for_dependency(agent))
+    }
+
+    pub fn for_dependency(&self, agent: &str) -> Self {
+        let report = &self.command.report;
         let mut context = Self {
             value: self.value.clone(),
             command: ConfigCommand {
-                raw,
+                raw: format!("{agent} {report}"),
                 agent: Some(agent.to_string()),
                 report: report.clone(),
             },
@@ -88,7 +93,7 @@ impl ConfigContext {
             date_bound_error: None,
         };
         context.date_bound_error = context.detect_date_bound_error();
-        Some(context)
+        context
     }
 
     /// Named pi stores only reach commands that read them, so their parse error

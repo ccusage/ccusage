@@ -914,7 +914,7 @@ fn focused_opencode_input(
     include_claude_agent: bool,
 ) -> u64 {
     let (mut entries, _) =
-        loader::load_opencode_entries(shared, kind, include_claude_agent).unwrap();
+        loader::load_opencode_entries(shared, kind, include_claude_agent, None).unwrap();
     filter_loaded_entries_by_date(&mut entries, shared);
     entries
         .iter()
@@ -978,6 +978,36 @@ fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
 }
 
 #[test]
+fn focused_opencode_claims_use_claude_source_window_and_project() {
+    let fixture = fs_fixture!({});
+    write_claude_agent_fixture(&fixture);
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990103");
+    for source in [
+        SourceArgs {
+            shared: claude_agent_shared("20990103", "20990103"),
+            ..Default::default()
+        },
+        SourceArgs {
+            shared: shared.clone(),
+            claude_project: Some("another-project".to_string()),
+            ..Default::default()
+        },
+    ] {
+        let (entries, _) =
+            loader::load_opencode_entries(&shared, AgentReportKind::Daily, false, Some(&source))
+                .unwrap();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.message.usage.input_tokens)
+                .sum::<u64>(),
+            127
+        );
+    }
+}
+
+#[test]
 fn focused_opencode_reports_what_the_claude_cross_check_skipped() {
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
@@ -991,9 +1021,9 @@ fn focused_opencode_reports_what_the_claude_cross_check_skipped() {
     let shared = claude_agent_shared("20990101", "20990103");
 
     let (_, claude_diagnostics) =
-        loader::load_opencode_entries(&shared, AgentReportKind::Daily, false).unwrap();
+        loader::load_opencode_entries(&shared, AgentReportKind::Daily, false, None).unwrap();
     let (_, included) =
-        loader::load_opencode_entries(&shared, AgentReportKind::Daily, true).unwrap();
+        loader::load_opencode_entries(&shared, AgentReportKind::Daily, true, None).unwrap();
 
     assert_eq!(
         claude_diagnostics.unwrap().warnings(&shared),
@@ -1078,7 +1108,7 @@ fn focused_opencode_reports_fail_like_unified_reports_on_claude_errors() {
 
     for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         assert!(
-            loader::load_opencode_entries(&shared, kind, false).is_err(),
+            loader::load_opencode_entries(&shared, kind, false, None).is_err(),
             "{kind:?}"
         );
         assert!(
@@ -1086,7 +1116,7 @@ fn focused_opencode_reports_fail_like_unified_reports_on_claude_errors() {
             "{kind:?}"
         );
         assert!(
-            loader::load_opencode_entries(&shared, kind, true).is_ok(),
+            loader::load_opencode_entries(&shared, kind, true, None).is_ok(),
             "{kind:?}"
         );
     }

@@ -15,12 +15,13 @@ impl Claude {
     pub fn counted(
         &self,
         shared: &ccusage_core::cli::SharedArgs,
+        project_filter: Option<&str>,
         diagnostics: &Diagnostics,
     ) -> Result<ClaudeCounted> {
         let window = ReportWindow::from_shared(shared);
         let deduped = crate::load_entries_with_mode(
             shared,
-            None,
+            project_filter,
             false,
             diagnostics,
             ccusage_core::cli::CostMode::Display,
@@ -144,7 +145,7 @@ mod diagnostic_tests {
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("claude");
-        let counted = SOURCE.counted(&shared, &diagnostics).unwrap();
+        let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
         let entry = crate::read_usage_file_with_diagnostics(
             &path,
             ReportWindow::from_shared(&shared).timezone(),

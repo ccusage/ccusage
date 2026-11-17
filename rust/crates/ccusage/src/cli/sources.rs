@@ -109,6 +109,28 @@ fn project_from_config(config: &dyn CliConfig, shared: SharedArgs) -> Option<Str
     daily.project
 }
 
+pub(crate) fn resolve_opencode_claims(
+    focused: &mut AgentCommandArgs,
+    args: &[OsString],
+    config: &ConfigContext,
+) -> Result<(), String> {
+    let view = config.for_dependency("claude");
+    let command = super::try_parse_with(args.to_vec(), &view, Some(focused.start_of_week))?;
+    let Command::Agent(_, parsed) = command else {
+        return Err("Expected a focused source report".to_string());
+    };
+    let claude_project = project_from_config(&view, parsed.shared.clone());
+    focused.sources.insert(
+        "claude".to_string(),
+        SourceArgs {
+            shared: parsed.shared,
+            claude_project,
+            ..Default::default()
+        },
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use ccusage_cli::{AgentReportKind, CodexSpeed, CostMode, WeekDay};
@@ -217,6 +239,36 @@ mod tests {
             Some("/data/openclaw")
         );
         assert!(!unified.sources.contains_key("amp"));
+    }
+
+    #[test]
+    fn focused_opencode_resolves_claude_claim_options_and_cli_precedence() {
+        let fixture = fs_fixture!({
+            "config.json": r#"{"opencode":{"defaults":{"timezone":"UTC","since":"20990101"}},"claude":{"defaults":{"timezone":"Asia/Tokyo","since":"20990103","project":"selected"}}}"#,
+        });
+        let config_path = fixture.path("config.json");
+        let strings = vec![
+            "opencode".to_string(),
+            "daily".to_string(),
+            "--config".to_string(),
+            config_path.to_string_lossy().into_owned(),
+            "--since".to_string(),
+            "20990102".to_string(),
+        ];
+        let config = ConfigContext::from_args(&strings);
+        let args = std::iter::once(OsString::from("ccusage"))
+            .chain(strings.iter().map(OsString::from))
+            .collect::<Vec<_>>();
+        let Command::Agent(_, mut focused) = try_parse_with(args.clone(), &config, None).unwrap()
+        else {
+            panic!("expected focused command")
+        };
+        resolve_opencode_claims(&mut focused, &args, &config).unwrap();
+        assert_eq!(focused.shared.timezone.as_deref(), Some("UTC"));
+        let claude = &focused.sources["claude"];
+        assert_eq!(claude.shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(claude.shared.since.as_deref(), Some("20990102"));
+        assert_eq!(claude.claude_project.as_deref(), Some("selected"));
     }
 
     #[test]

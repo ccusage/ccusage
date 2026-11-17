@@ -21,6 +21,11 @@ pub(crate) fn parse() -> Command {
     {
         exit_with_usage(&message);
     }
+    if let Command::Agent(ccusage_cli::AgentId::OpenCode, focused) = &mut command
+        && let Err(message) = sources::resolve_opencode_claims(focused, &args, &config)
+    {
+        exit_with_usage(&message);
+    }
     command
 }
 

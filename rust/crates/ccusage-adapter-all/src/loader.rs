@@ -458,13 +458,16 @@ pub(super) fn load_opencode_entries(
     shared: &SharedArgs,
     kind: AgentReportKind,
     include_claude_agent: bool,
+    claude_source: Option<&ccusage_cli::SourceArgs>,
 ) -> Result<(Vec<LoadedEntry>, Option<Diagnostics>)> {
     let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
     if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
         return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
     let diagnostics = Diagnostics::new("claude");
-    let counted = claude::SOURCE.counted(shared, &diagnostics)?;
+    let claude_shared = claude_source.map_or(shared, |source| &source.shared);
+    let project = claude_source.and_then(|source| source.claude_project.as_deref());
+    let counted = claude::SOURCE.counted(claude_shared, project, &diagnostics)?;
     Ok((counted.retain_uncounted(entries), Some(diagnostics)))
 }
 
@@ -513,18 +516,16 @@ mod tests {
         shared: &SharedArgs,
         pricing: &PricingMap,
     ) -> Result<AgentRows> {
-        pi::SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
-                shared,
-                options: SourceOptions {
-                    pi_path: custom_path,
-                    ..SourceOptions::default()
-                },
-                pricing: Some(pricing),
-                progress: ProgressOwner::Caller,
-            })
-            .map(Into::into)
+        pi::SOURCE.load_rows(&LoadRequest {
+            kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
+            shared,
+            options: SourceOptions {
+                pi_path: custom_path,
+                ..SourceOptions::default()
+            },
+            pricing: Some(pricing),
+            progress: ProgressOwner::Caller,
+        })
     }
 
     fn load_named_pi_store_rows(
@@ -535,15 +536,13 @@ mod tests {
         pricing: &PricingMap,
     ) -> Result<AgentRows> {
         let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
-        store
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
-                shared,
-                options: SourceOptions::default(),
-                pricing: Some(pricing),
-                progress: ProgressOwner::Caller,
-            })
-            .map(Into::into)
+        store.load_rows(&LoadRequest {
+            kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
+            shared,
+            options: SourceOptions::default(),
+            pricing: Some(pricing),
+            progress: ProgressOwner::Caller,
+        })
     }
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
