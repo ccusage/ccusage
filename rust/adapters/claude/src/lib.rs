@@ -23,7 +23,10 @@ use std::{
 use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use rustc_hash::FxHasher;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{
+    Deserialize, Deserializer,
+    de::{DeserializeOwned, DeserializeSeed, MapAccess, Visitor, value::MapAccessDeserializer},
+};
 use smallvec::SmallVec;
 
 use crate::{
@@ -407,6 +410,8 @@ fn usage_dedupe_hash(
     hasher.finish()
 }
 
+/// The prefix is a heuristic: only a request ID proves two lines belong to one response, so a
+/// gateway that reused a `msg_`-shaped placeholder would collapse to one entry per session.
 pub(crate) fn is_per_response_message_id(message_id: &str) -> bool {
     message_id.starts_with("msg_") || message_id.starts_with("resp_")
 }
@@ -588,8 +593,8 @@ struct UsageIteration {
     #[serde(rename = "type")]
     kind: String,
     model: Option<String>,
-    #[serde(flatten)]
-    usage: TokenUsageRaw,
+    #[serde(flatten, deserialize_with = "deserialize_usage_fields")]
+    usage: IteratedTokenUsage,
 }
 
 pub(crate) struct AdvisorUsage {
@@ -597,16 +602,20 @@ pub(crate) struct AdvisorUsage {
     usage: TokenUsageRaw,
 }
 
-pub(crate) fn advisor_usages_from_line(line: &[u8]) -> Vec<AdvisorUsage> {
+pub(crate) fn advisor_usages_from_line(
+    line: &[u8],
+) -> std::result::Result<Vec<AdvisorUsage>, Rejection> {
     static ADVISOR_MARKER: LazyLock<LinePrefilter> =
         LazyLock::new(|| LinePrefilter::all(&[br#""advisor_message""#]));
     if !ADVISOR_MARKER.matches(line) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let Ok(envelope) = serde_json::from_slice::<UsageIterationsEnvelope>(line) else {
-        return Vec::new();
+    let envelope = match deserialize_usage_line::<UsageIterationsEnvelope>(line) {
+        Ok(envelope) => envelope,
+        Err(Rejection::NullContract) => return Err(Rejection::NullContract),
+        Err(Rejection::Malformed) => return Ok(Vec::new()),
     };
-    envelope
+    Ok(envelope
         .message
         .usage
         .iterations
@@ -618,148 +627,225 @@ pub(crate) fn advisor_usages_from_line(line: &[u8]) -> Vec<AdvisorUsage> {
                 .filter(|model| !model.is_empty())
                 .map(|model| AdvisorUsage {
                     model,
-                    usage: iteration.usage,
+                    usage: iteration.usage.usage,
                 })
         })
-        .collect()
+        .collect())
 }
 
-/// Mirrors the TypeScript loader's schema: a line whose known non-nullable field is `null`
-/// is skipped before deserialisation. The direct `model` member of an element in either
-/// assistant or AgentProgress `usage.iterations` is the one exception, because
-/// `UsageIteration.model` is optional and Claude Code writes it as `null`.
-#[cfg(test)]
-fn has_unsupported_null_field(line: &[u8]) -> bool {
-    if memmem::find(line, b"null").is_none() {
-        return false;
-    }
-    let Ok(root) = serde_json::from_slice::<serde_json::Value>(line) else {
-        return false;
-    };
-    let unsupported = has_unsupported_null_field_in_value(&root);
-    assert!(
-        !unsupported || may_have_unsupported_null_field(line),
-        "the raw pre-check must not skip a line the value check rejects"
-    );
-    unsupported
-}
-
-/// Why [`deserialize_usage_line`] did not return a record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Rejection {
-    /// A member the nullable-field contract guards is `null`. Claude Code
-    /// writes such lines itself, such as `<synthetic>` records with
-    /// `"speed":null`, so skipping one is by design rather than a sign of bad
-    /// input.
     NullContract,
-    /// The line did not decode as the record type.
     Malformed,
 }
 
-/// Deserializes a transcript line while enforcing Claude's nullable-field contract.
-///
-/// Every other rejection, such as a duplicate known field, comes from the typed parse
-/// of the raw line, so a line is loaded or skipped the same way whether or not it
-/// also needed the null check.
+const NULL_CONTRACT_ERROR: &str = "null Claude usage field";
+
 pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
     line: &[u8],
 ) -> std::result::Result<T, Rejection> {
-    if may_have_unsupported_null_field(line) {
-        let root =
-            serde_json::from_slice::<serde_json::Value>(line).map_err(|_| Rejection::Malformed)?;
-        if has_unsupported_null_field_in_value(&root) {
-            return Err(Rejection::NullContract);
+    serde_json::from_slice(line).map_err(|error| {
+        if error.to_string().starts_with(NULL_CONTRACT_ERROR) {
+            Rejection::NullContract
+        } else {
+            Rejection::Malformed
         }
-    }
-    serde_json::from_slice(line).map_err(|_| Rejection::Malformed)
-}
-
-/// Whether a `null` in `line` could be the value of a member that
-/// [`is_unsupported_nullable_field`] guards.
-///
-/// Claude Code writes always-null members such as `stop_sequence` and `container` on
-/// every assistant line, so the mere presence of `null` would send nearly every line
-/// through the value-tree check. A key holding an escape sequence counts as guarded,
-/// because its decoded name cannot be compared from the raw bytes; any other false
-/// positive only costs the slower validated parse.
-fn may_have_unsupported_null_field(line: &[u8]) -> bool {
-    memmem::find_iter(line, b"null").any(|null_start| {
-        let Some(before_value) = trim_json_whitespace_end(&line[..null_start]).strip_suffix(b":")
-        else {
-            return false;
-        };
-        let Some(before_closing_quote) = trim_json_whitespace_end(before_value).strip_suffix(b"\"")
-        else {
-            return false;
-        };
-        let key_start = memchr::memrchr(b'"', before_closing_quote).map_or(0, |index| index + 1);
-        let key = &before_closing_quote[key_start..];
-        key.contains(&b'\\') || is_unsupported_nullable_field(key)
     })
 }
 
-fn trim_json_whitespace_end(bytes: &[u8]) -> &[u8] {
-    let end = bytes
-        .iter()
-        .rposition(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
-        .map_or(0, |index| index + 1);
-    &bytes[..end]
+fn non_null_option<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
+    Option::<T>::deserialize(deserializer)?
+        .map(Some)
+        .ok_or_else(|| serde::de::Error::custom(NULL_CONTRACT_ERROR))
 }
 
-fn has_unsupported_null_field_in_value(root: &serde_json::Value) -> bool {
-    let iteration_arrays = [
-        root.pointer("/message/usage/iterations"),
-        root.pointer("/data/message/message/usage/iterations"),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
-    has_unsupported_null_value(root, false, &iteration_arrays)
-}
+struct NonNull<S>(S);
 
-fn has_unsupported_null_value(
-    value: &serde_json::Value,
-    allow_iteration_model: bool,
-    iteration_arrays: &[&serde_json::Value],
-) -> bool {
-    match value {
-        serde_json::Value::Object(fields) => fields.iter().any(|(field, value)| {
-            if value.is_null() && is_unsupported_nullable_field(field.as_bytes()) {
-                return !(allow_iteration_model && field == "model");
-            }
-            has_unsupported_null_value(value, false, iteration_arrays)
-        }),
-        serde_json::Value::Array(values) => {
-            let is_iteration_array = iteration_arrays
-                .iter()
-                .any(|array| std::ptr::eq(*array, value));
-            values.iter().any(|value| {
-                has_unsupported_null_value(value, is_iteration_array, iteration_arrays)
-            })
-        }
-        _ => false,
+impl<'de, S: DeserializeSeed<'de>> DeserializeSeed<'de> for NonNull<S> {
+    type Value = S::Value;
+
+    fn deserialize<D: Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        deserializer.deserialize_option(self)
     }
 }
 
-fn is_unsupported_nullable_field(field: &[u8]) -> bool {
-    // Match the raw field bytes directly against the known set of fields that
-    // are not allowed to be `null`. Comparing byte slices lets rustc dispatch on
-    // length before comparing bytes, which avoids both UTF-8 validation and the
-    // hash computation a `phf::Set` lookup would incur on every call.
-    matches!(
-        field,
-        b"id"
-            | b"cwd"
-            | b"model"
-            | b"speed"
-            | b"costUSD"
-            | b"version"
-            | b"sessionId"
-            | b"requestId"
-            | b"isApiErrorMessage"
-            | b"cache_read_input_tokens"
-            | b"cache_creation_input_tokens"
-    )
+impl<'de, S: DeserializeSeed<'de>> Visitor<'de> for NonNull<S> {
+    type Value = S::Value;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a non-null usage field")
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Err(E::custom(NULL_CONTRACT_ERROR))
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Err(E::custom(NULL_CONTRACT_ERROR))
+    }
+
+    fn visit_some<D: Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        self.0.deserialize(deserializer)
+    }
+}
+
+struct UsageKeySeed<'a, S> {
+    seed: S,
+    non_null: &'a mut bool,
+}
+
+impl<'de, S: DeserializeSeed<'de>> DeserializeSeed<'de> for UsageKeySeed<'_, S> {
+    type Value = S::Value;
+
+    fn deserialize<D: Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        self.seed.deserialize(UsageKeyDeserializer {
+            deserializer,
+            non_null: self.non_null,
+        })
+    }
+}
+
+struct UsageKeyDeserializer<'a, D> {
+    deserializer: D,
+    non_null: &'a mut bool,
+}
+
+impl<'de, D: Deserializer<'de>> Deserializer<'de> for UsageKeyDeserializer<'_, D> {
+    type Error = D::Error;
+
+    fn deserialize_identifier<V: Visitor<'de>>(
+        self,
+        visitor: V,
+    ) -> std::result::Result<V::Value, Self::Error> {
+        self.deserializer.deserialize_identifier(UsageKeyVisitor {
+            visitor,
+            non_null: self.non_null,
+        })
+    }
+
+    fn deserialize_any<V: Visitor<'de>>(
+        self,
+        visitor: V,
+    ) -> std::result::Result<V::Value, Self::Error> {
+        self.deserializer.deserialize_any(UsageKeyVisitor {
+            visitor,
+            non_null: self.non_null,
+        })
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum ignored_any
+    }
+}
+
+struct UsageKeyVisitor<'a, V> {
+    visitor: V,
+    non_null: &'a mut bool,
+}
+
+impl<V> UsageKeyVisitor<'_, V> {
+    fn check(&mut self, key: &str) {
+        *self.non_null = matches!(
+            key,
+            "speed" | "cache_creation_input_tokens" | "cache_read_input_tokens"
+        );
+    }
+}
+
+impl<'de, V: Visitor<'de>> Visitor<'de> for UsageKeyVisitor<'_, V> {
+    type Value = V::Value;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.visitor.expecting(formatter)
+    }
+
+    fn visit_str<E: serde::de::Error>(mut self, key: &str) -> std::result::Result<Self::Value, E> {
+        self.check(key);
+        self.visitor.visit_str(key)
+    }
+
+    fn visit_borrowed_str<E: serde::de::Error>(
+        mut self,
+        key: &'de str,
+    ) -> std::result::Result<Self::Value, E> {
+        self.check(key);
+        self.visitor.visit_borrowed_str(key)
+    }
+
+    fn visit_string<E: serde::de::Error>(
+        mut self,
+        key: String,
+    ) -> std::result::Result<Self::Value, E> {
+        self.check(&key);
+        self.visitor.visit_string(key)
+    }
+}
+
+struct UsageFields<A> {
+    map: A,
+    non_null: bool,
+}
+
+impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
+    type Error = A::Error;
+
+    fn next_key_seed<K: DeserializeSeed<'de>>(
+        &mut self,
+        seed: K,
+    ) -> std::result::Result<Option<K::Value>, Self::Error> {
+        self.map.next_key_seed(UsageKeySeed {
+            seed,
+            non_null: &mut self.non_null,
+        })
+    }
+
+    fn next_value_seed<V: DeserializeSeed<'de>>(
+        &mut self,
+        seed: V,
+    ) -> std::result::Result<V::Value, Self::Error> {
+        if self.non_null {
+            self.map.next_value_seed(NonNull(seed))
+        } else {
+            self.map.next_value_seed(seed)
+        }
+    }
+}
+
+fn deserialize_usage_fields<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<IteratedTokenUsage, D::Error> {
+    struct UsageVisitor;
+    impl<'de> Visitor<'de> for UsageVisitor {
+        type Value = IteratedTokenUsage;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a usage object")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(
+            self,
+            map: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            IteratedTokenUsage::deserialize(MapAccessDeserializer::new(UsageFields {
+                map,
+                non_null: false,
+            }))
+        }
+    }
+    deserializer.deserialize_map(UsageVisitor)
 }
 
 pub(crate) fn is_semver_prefix(value: &str) -> bool {
@@ -817,9 +903,8 @@ mod tests {
     use std::{path::Path, sync::Arc};
 
     use super::{
-        deserialize_usage_line, extract_session_parts, has_unsupported_null_field,
-        load_deduped_entries, may_have_unsupported_null_field, paths::is_project_path_segment,
-        usage_files, usage_limit_reset_time_from_line_bytes,
+        deserialize_usage_line, extract_session_parts, load_deduped_entries,
+        paths::is_project_path_segment, usage_files, usage_limit_reset_time_from_line_bytes,
     };
     use crate::{
         Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
@@ -975,6 +1060,28 @@ mod tests {
     }
 
     #[test]
+    fn counts_usage_with_nulls_in_unrelated_nested_members() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","cwd":null,"toolUseResult":{"iterations":[{"model":null,"id":null,"cwd":null,"speed":null}]},"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","content":[{"id":null,"model":null}],"usage":{"input_tokens":10,"output_tokens":1,"metadata":{"cache_read_input_tokens":null}}}}"#,
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..Default::default()
+        };
+        let entries = super::load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily[0].input_tokens, 10);
+    }
+
+    #[test]
     fn extracts_usage_limit_reset_time_from_raw_line() {
         let line = br#"{"timestamp":"2025-01-10T10:00:00.000Z","isApiErrorMessage":true,"message":{"content":[{"text":"Claude AI usage limit reached|1736503200 remaining"}],"usage":{"input_tokens":0,"output_tokens":0}}}"#;
         let reset_time = usage_limit_reset_time_from_line_bytes(line, Some(true)).unwrap();
@@ -1099,138 +1206,84 @@ mod tests {
     }
 
     #[test]
-    fn rejects_null_schema_fields_like_typescript_loader() {
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"usage":{"speed":null}}}"#
-        ));
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model":null,"usage":{"input_tokens":0}}}"#
-        ));
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model": null,"usage":{"input_tokens":0}}}"#
-        ));
-        assert!(has_unsupported_null_field(
-            br#"{"sessionId":null,"message":{"usage":{"input_tokens":0}}}"#
-        ));
+    fn rejects_null_in_each_read_non_nullable_field() {
+        for pointer in [
+            "/sessionId",
+            "/requestId",
+            "/version",
+            "/costUSD",
+            "/isApiErrorMessage",
+            "/message/id",
+            "/message/model",
+            "/message/usage/speed",
+            "/message/usage/cache_read_input_tokens",
+            "/message/usage/cache_creation_input_tokens",
+        ] {
+            let mut record = serde_json::json!({
+                "timestamp": "2026-01-02T10:00:00Z", "sessionId": "session-a", "requestId": "request-a",
+                "version": "1.2.3", "costUSD": 1, "isApiErrorMessage": false,
+                "message": {"id": "msg-a", "model": "model-a", "usage": {"input_tokens": 10, "output_tokens": 1, "speed": "standard", "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}
+            });
+            *record.pointer_mut(pointer).unwrap() = serde_json::Value::Null;
+            let bytes = serde_json::to_vec(&record).unwrap();
+            assert_eq!(
+                super::daily::parse_usage_line(&bytes).unwrap_err(),
+                super::Rejection::NullContract,
+                "{pointer}"
+            );
+            let wrapped =
+                serde_json::json!({"sessionId":record["sessionId"], "data":{"message":record}});
+            if pointer != "/version" {
+                assert_eq!(
+                    super::daily::parse_usage_line(&serde_json::to_vec(&wrapped).unwrap())
+                        .unwrap_err(),
+                    super::Rejection::NullContract,
+                    "wrapped {pointer}"
+                );
+            }
+        }
     }
 
     #[test]
-    fn allows_null_content_like_typescript_loader() {
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
-        ));
-    }
-
-    /// Claude Code 2.1.266+ writes `"model":null` for the main-model iteration of Fable 5.1
-    /// entries; `UsageIteration.model` is optional, so those lines must be kept while every
-    /// other unsupported null keeps being rejected.
-    #[test]
-    fn allows_null_iteration_model_but_still_rejects_other_nulls() {
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"claude-fable-5-1","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
-        ));
-        // A missing iteration model and an empty iterations array are unchanged.
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"input_tokens":2,"iterations":[{"type":"message","input_tokens":2}]}}}"#
-        ));
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"input_tokens":2,"iterations":[]}}}"#
-        ));
-        // Strings inside the array may contain brackets or escaped quotes without ending the span.
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"ad]vi\"sor}","model":null,"input_tokens":1}]}}}"#
-        ));
-        // `message.model` null is still rejected, before or after the iterations array.
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model":null,"usage":{"iterations":[{"type":"message","model":"m"}]}}}"#
-        ));
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"usage":{"iterations":[{"type":"message","model":"m"}]},"model":null}}"#
-        ));
-        // Other unsupported nulls inside the array are still rejected.
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null,"cache_read_input_tokens":null}]}}}"#
-        ));
-    }
-
-    /// The exemption is scoped to the `iterations` member of a `usage` object: whitespace
-    /// around the member is fine, but a same-named array elsewhere in the line, an `iterations`
-    /// member nested deeper inside `usage`, or the key as text inside a string never qualifies.
-    #[test]
-    fn scopes_the_iteration_model_exemption_to_the_usage_object() {
-        // JSON whitespace between the key, the colon and the array is tolerated.
-        assert!(!has_unsupported_null_field(
-            br#"{"message": {"model": "m", "usage" : { "input_tokens": 2, "iterations" : [ {"type": "message", "model": null} ] }}}"#
-        ));
-        // Escaped property names are decoded before the structural path check.
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"iter\u0061tions" : [{"type":"message","model" : null}]}}}"#
-        ));
-        // An earlier `iterations` array in another object does not stand in for the real one.
-        assert!(!has_unsupported_null_field(
-            br#"{"toolUseResult":{"iterations":[{"model":"x"}]},"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
-        ));
-        assert!(has_unsupported_null_field(
-            br#"{"toolUseResult":{"iterations":[{"model":null}]},"message":{"model":"m","usage":{"input_tokens":1}}}"#
-        ));
-        // A `usage` member that is not an object is skipped in favor of the real one.
-        assert!(!has_unsupported_null_field(
-            br#"{"usage":"n/a","message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
-        ));
-        // Only a direct member of `usage` counts, not one nested deeper inside it.
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"server_tool_use":{"iterations":[{"model":null}]},"input_tokens":1}}}"#
-        ));
-        // A nested object's model is not the optional model of the iteration itself.
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"message","metadata":{"model":null}}]}}}"#
-        ));
-        // The key as text inside a string value is not a member.
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"content":"\"usage\":{\"iterations\":[","model":null,"usage":{"input_tokens":1}}}"#
-        ));
-        // Members before `iterations` may hold nested containers and strings with brackets.
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"cache_creation":{"ephemeral_5m_input_tokens":0},"server_tool_use":{"web_search_requests":0},"inference_geo":"[not]{available}","iterations":[{"type":"message","model":null}]}}}"#
-        ));
-        // Only the direct `message.usage` object may provide the exempted array.
-        assert!(!has_unsupported_null_field(
-            br#"{"usage":{"iterations":[{"model":"decoy"}]},"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
-        ));
-        // AgentProgress records wrap the assistant message under `data.message.message`.
-        assert!(!has_unsupported_null_field(
-            br#"{"type":"progress","data":{"message":{"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}}}"#
-        ));
+    fn allows_missing_optional_fields_and_nullable_unread_members() {
+        for extra in [
+            r#","cwd":null,"content":[{"id":null,"model":null}],"toolUseResult":{"iterations":[{"model":null}]}"#,
+            r#","isSidechain":null"#,
+            "",
+        ] {
+            let line = format!(
+                r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"iterations":[{{"type":"message","model":null}}]}}}}{extra}}}"#
+            );
+            assert!(
+                super::daily::parse_usage_line(line.as_bytes()).is_ok(),
+                "{line}"
+            );
+        }
     }
 
     #[test]
-    fn malformed_usage_members_do_not_panic_the_null_precheck() {
-        assert!(!has_unsupported_null_field(
-            br#"{"message":{"model":"m","usage":{"input_tokens":,"iterations":[{"type":"message","model":null}]}}}"#
-        ));
+    fn rejects_null_under_escaped_read_field_names() {
+        let line = br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"m\u006fdel":null,"usage":{"input_tokens":1,"output_tokens":2}}}"#;
+        assert_eq!(
+            super::daily::parse_usage_line(line).unwrap_err(),
+            super::Rejection::NullContract
+        );
     }
 
     #[test]
-    fn null_precheck_skips_only_unguarded_members() {
-        assert!(!may_have_unsupported_null_field(
-            br#"{"message":{"model":"m","stop_sequence":null,"container":null,"content":"null","usage":{"input_tokens":1,"iterations":null}}}"#
-        ));
-        assert!(!may_have_unsupported_null_field(
-            br#"{"message":{"content":[null],"usage":{"input_tokens":1}}}"#
-        ));
-        assert!(may_have_unsupported_null_field(
-            br#"{"message":{"model" :
-null,"usage":{"input_tokens":1}}}"#
-        ));
-        assert!(may_have_unsupported_null_field(
-            br#"{"message":{"model":null,"usage":{"input_tokens":1}}}"#
-        ));
-        assert!(has_unsupported_null_field(
-            br#"{"message":{"model":null,"usage":{"input_tokens":1}}}"#
-        ));
-        assert!(may_have_unsupported_null_field(
-            br#"{"message":{"content":"\"id\":null","usage":{"input_tokens":1}}}"#
-        ));
+    fn malformed_required_usage_is_diagnosed_separately_from_null_contract() {
+        for usage in [
+            r#"{"input_tokens":null,"output_tokens":2}"#,
+            r#"{"input_tokens":1,"output_tokens":null}"#,
+            r#"{"input_tokens":1}"#,
+        ] {
+            let line =
+                format!(r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{usage}}}}}"#);
+            assert_eq!(
+                super::daily::parse_usage_line(line.as_bytes()).unwrap_err(),
+                super::Rejection::Malformed
+            );
+        }
     }
 
     /// Duplicate handling is the typed parse's alone, so it must not depend on whether
@@ -1255,19 +1308,48 @@ null,"usage":{"input_tokens":1}}}"#
             );
 
             assert!(
-                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_err(),
+                deserialize_usage_line::<super::daily::ClaudeUsageRecord>(
+                    duplicate_known.as_bytes()
+                )
+                .is_err(),
                 "{duplicate_known}"
             );
             assert!(
-                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_ok(),
+                deserialize_usage_line::<super::daily::ClaudeUsageRecord>(
+                    duplicate_unknown.as_bytes()
+                )
+                .is_ok(),
                 "{duplicate_unknown}"
             );
         }
     }
 
     #[test]
+    fn rejects_duplicate_known_usage_fields_but_keeps_unknown_duplicates() {
+        for (field, value) in [
+            ("input_tokens", "1"),
+            ("output_tokens", "2"),
+            ("cache_read_input_tokens", "0"),
+            ("cache_creation_input_tokens", "0"),
+            ("speed", r#""fast""#),
+            ("cache_creation", "{}"),
+            ("iterations", "[]"),
+        ] {
+            let line = format!(
+                r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"{field}":{value},"{field}":{value}}}}}}}"#
+            );
+            assert!(
+                deserialize_usage_line::<super::daily::ClaudeUsageRecord>(line.as_bytes()).is_err(),
+                "{field}"
+            );
+        }
+        let line = br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"metadata":null,"metadata":{}}}}"#;
+        assert!(deserialize_usage_line::<super::daily::ClaudeUsageRecord>(line).is_ok());
+    }
+
+    #[test]
     fn rejects_duplicate_members_before_typed_deserialization() {
-        assert!(deserialize_usage_line::<UsageEntry>(
+        assert!(deserialize_usage_line::<super::daily::ClaudeUsageRecord>(
             br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
         )
         .is_err());

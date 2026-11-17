@@ -176,9 +176,10 @@ mod tests {
         let line = br#"{"timestamp":"2026-09-01T00:00:01Z","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#;
         let lines = read_lines(Cursor::new(line).chain(Interrupted), &diagnostics);
         assert_eq!(lines.len(), 1);
-        let entry = crate::deserialize_usage_line::<crate::UsageEntry>(&lines[0].1).unwrap();
-        assert_eq!(entry.message.usage.input_tokens, 10);
-        assert_eq!(entry.message.usage.output_tokens, 2);
+        let entry =
+            crate::deserialize_usage_line::<crate::daily::ClaudeUsageRecord>(&lines[0].1).unwrap();
+        assert_eq!(entry.message.usage.usage.input_tokens, 10);
+        assert_eq!(entry.message.usage.usage.output_tokens, 2);
         assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
     }
 

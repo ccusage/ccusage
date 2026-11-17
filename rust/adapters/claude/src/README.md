@@ -64,3 +64,9 @@ All reports parse direct assistant records first, then AgentProgress records und
 `data.message.message`. Duplicate selection prefers main-thread usage, then the
 larger token total, then the speed tier and cache-write TTL detail. Stored cost
 does not determine which copy survives.
+
+Explicit null values in the record fields ccusage reads (`sessionId`, `requestId`,
+`version`, `costUSD`, `isApiErrorMessage`, message `id` and `model`, and usage
+`speed`, `cache_read_input_tokens` and `cache_creation_input_tokens`) reject that
+record quietly. Missing optional fields remain valid. Unread members, including
+`cwd` and nested tool-result metadata, do not impose a null contract.

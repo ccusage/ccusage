@@ -104,9 +104,10 @@ fn has_usage(path: &Path) -> bool {
             Ok(0) | Err(_) => return false,
             Ok(_) => {
                 if marker.matches(&line)
-                    && let Ok((data, _)) = parse_usage_line(&line)
+                    && let Ok((data, advisor_lookup)) = parse_usage_line(&line)
                     && is_valid_usage_record(&data)
                     && parse_ts_timestamp(&data.timestamp).is_some()
+                    && advisor_lookup.usages(&line).is_ok()
                 {
                     return true;
                 }
@@ -269,12 +270,17 @@ pub(super) struct ClaudeEntry<M = ()> {
 pub(super) struct ClaudeUsageRecord {
     pub(super) timestamp: String,
     pub(super) message: ClaudeUsageMessage,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) version: Option<String>,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) session_id: Option<String>,
     #[serde(rename = "costUSD")]
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) cost_usd: Option<f64>,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) request_id: Option<String>,
     pub(super) is_sidechain: Option<bool>,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) is_api_error_message: Option<bool>,
 }
 
@@ -283,7 +289,7 @@ pub(super) struct ClaudeUsageRecord {
 /// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
 /// use; the derive would first buffer every line, message content included, into an
 /// intermediate tree.
-fn parse_usage_line(
+pub(super) fn parse_usage_line(
     line: &[u8],
 ) -> std::result::Result<(ClaudeUsageRecord, AdvisorLookup), Rejection> {
     match deserialize_usage_line::<ClaudeUsageRecord>(line) {
@@ -302,14 +308,24 @@ fn parse_usage_line(
 }
 
 #[derive(Debug, Clone, Copy)]
-enum AdvisorLookup {
+pub(super) enum AdvisorLookup {
     RuledOut,
     AskLine,
+}
+
+impl AdvisorLookup {
+    fn usages(self, line: &[u8]) -> std::result::Result<Vec<super::AdvisorUsage>, Rejection> {
+        match self {
+            Self::RuledOut => Ok(Vec::new()),
+            Self::AskLine => advisor_usages_from_line(line),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct AgentProgressEntry {
     #[serde(rename = "sessionId")]
+    #[serde(default, deserialize_with = "super::non_null_option")]
     session_id: Option<String>,
     data: AgentProgressData,
 }
@@ -337,19 +353,25 @@ struct AgentProgressData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentProgressMessage {
+    #[serde(default, deserialize_with = "super::non_null_option")]
     is_api_error_message: Option<bool>,
     timestamp: String,
     message: ClaudeUsageMessage,
     #[serde(rename = "costUSD")]
+    #[serde(default, deserialize_with = "super::non_null_option")]
     cost_usd: Option<f64>,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     request_id: Option<String>,
     is_sidechain: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ClaudeUsageMessage {
+    #[serde(deserialize_with = "super::deserialize_usage_fields")]
     pub(super) usage: IteratedTokenUsage,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) model: Option<String>,
+    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) id: Option<String>,
 }
 
@@ -400,6 +422,14 @@ pub(super) fn read_usage_file_with_metadata<M>(
             super::diagnostics::rejected(path, current, diagnostics);
             return;
         }
+        let advisors = match advisor_lookup.usages(line) {
+            Ok(advisors) => advisors,
+            Err(Rejection::NullContract) => return,
+            Err(Rejection::Malformed) => {
+                super::diagnostics::rejected(path, current, diagnostics);
+                return;
+            }
+        };
         let parent_metadata = metadata(&data, line, None);
         let IteratedTokenUsage { usage, .. } = data.message.usage;
         let cost = calculate_cost_for_usage_at(
@@ -452,10 +482,7 @@ pub(super) fn read_usage_file_with_metadata<M>(
             stored_cost: stored_cost_for_mode(data.cost_usd, mode),
             metadata: parent_metadata,
         });
-        if matches!(advisor_lookup, AdvisorLookup::RuledOut) {
-            return;
-        }
-        for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
+        for (index, advisor) in advisors.into_iter().enumerate() {
             let metadata = metadata(&data, line, Some(&advisor));
             let parent = &loaded_file.entries[parent_index];
             let missing_pricing_model = missing_pricing_model_for_usage(
@@ -788,6 +815,25 @@ mod tests {
         pricing: Option<&PricingMap>,
     ) -> UsageFile {
         read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+    }
+
+    #[test]
+    fn detection_and_reports_reject_the_same_null_advisor_usage() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":1,"output_tokens":2,"cache_read_input_tokens":null}]}}}"#,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &path,
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+        assert!(loaded.entries.is_empty());
+        assert!(!super::has_usage(&path));
+        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
     }
 
     #[test]
@@ -1367,7 +1413,7 @@ mod tests {
                 ),
             ] {
                 let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
-                let previous = super::advisor_usages_from_line(line.as_bytes());
+                let previous = super::advisor_usages_from_line(line.as_bytes()).unwrap();
                 if matches!(lookup, super::AdvisorLookup::AskLine) {
                     retained += 1;
                 } else {
