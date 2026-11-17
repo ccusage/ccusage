@@ -5780,14 +5780,14 @@ mod tests {
             pricing.context_limit("gpt-5.6-sol")
         );
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.6")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.6-sol")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
+            PricingMap::load_embedded()
+                .find("gpt-5.6")
+                .unwrap()
+                .long_context_split_threshold(),
+            PricingMap::load_embedded()
+                .find("gpt-5.6-sol")
+                .unwrap()
+                .long_context_split_threshold()
         );
     }
 
@@ -5974,10 +5974,10 @@ mod tests {
             );
         }
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("grok-4.5")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("grok-4.5")
+                .unwrap()
+                .long_context_split_threshold(),
             200_000
         );
     }
@@ -5987,48 +5987,48 @@ mod tests {
         crate::test_support::install_pricing_snapshots();
         // OpenAI two-stage models switch tiers above 272K input tokens.
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.6-sol")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("gpt-5.6-sol")
+                .unwrap()
+                .long_context_split_threshold(),
             272_000
         );
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.5")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("gpt-5.5")
+                .unwrap()
+                .long_context_split_threshold(),
             272_000
         );
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.5-pro")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("gpt-5.5-pro")
+                .unwrap()
+                .long_context_split_threshold(),
             272_000
         );
         // Date-pinned keys share their base model's boundary.
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.5-2026-04-23")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("gpt-5.5-2026-04-23")
+                .unwrap()
+                .long_context_split_threshold(),
             272_000
         );
         // Models without a built-in tier fall back to the 200K default used for
         // LiteLLM `*_above_200k_tokens` data.
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("gpt-5")
+                .unwrap()
+                .long_context_split_threshold(),
             200_000
         );
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.4-mini")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+            PricingMap::load_embedded()
+                .find("gpt-5.4-mini")
+                .unwrap()
+                .long_context_split_threshold(),
             200_000
         );
     }
@@ -6504,14 +6504,14 @@ mod tests {
         assert_eq!(reserve.cache_read, luna.cache_read);
         assert_eq!(reserve.fast_multiplier, luna.fast_multiplier);
         assert_eq!(
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-reserve")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
-            embedded_models_dev_pricing()
-                .long_context_pricing("gpt-5.6-luna")
-                .map(Pricing::long_context_split_threshold)
-                .unwrap_or(super::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
+            PricingMap::load_embedded()
+                .find("gpt-reserve")
+                .unwrap()
+                .long_context_split_threshold(),
+            PricingMap::load_embedded()
+                .find("gpt-5.6-luna")
+                .unwrap()
+                .long_context_split_threshold()
         );
     }
 
