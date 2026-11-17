@@ -83,13 +83,11 @@ fn seed_environment_preserves_non_utf8_paths() {
 /// guard checks against the CLI and one `#[test]` per agent, so an agent
 /// cannot be in the table without being run.
 macro_rules! agent_matrix {
-    (@seed $agent:ident, $seed:path) => { $seed };
-    (@seed $agent:ident) => { golden::$agent::seed };
-    ($($agent:ident $(($seed:path))? => $extras:expr),* $(,)?) => {
+    ($($agent:ident => $extras:expr),* $(,)?) => {
         const AGENTS: &[AgentMatrix] = &[
             $(AgentMatrix {
                 agent: stringify!($agent),
-                seed: agent_matrix!(@seed $agent $(, $seed)?),
+                seed: golden::$agent::seed,
                 extras: $extras,
             }),*
         ];
@@ -100,7 +98,7 @@ macro_rules! agent_matrix {
             $(
                 #[test]
                 fn $agent() {
-                    golden::run_matrix(stringify!($agent), agent_matrix!(@seed $agent $(, $seed)?), $extras);
+                    golden::run_matrix(stringify!($agent), golden::$agent::seed, $extras);
                 }
             )*
         }
@@ -124,7 +122,7 @@ agent_matrix! {
     kimi => golden::no_extras,
     qwen => golden::no_extras,
     openclaw => golden::openclaw::extra_cases,
-    grok(golden::grok::seed) => golden::no_extras,
+    grok => golden::no_extras,
     zcode => golden::zcode::extra_cases,
     cline => golden::no_extras,
     dsh => golden::dsh::extra_cases,
