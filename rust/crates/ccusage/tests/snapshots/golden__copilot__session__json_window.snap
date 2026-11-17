@@ -9,10 +9,10 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "firstActivity": "2026-01-01T06:00:00.000Z",
-      "inputTokens": 970,
+      "firstActivity": "2026-01-01T09:00:00.000Z",
+      "inputTokens": 900,
       "lastActivity": "2026-01-01T10:00:00.000Z",
-      "messageCount": 3,
+      "messageCount": 2,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -25,14 +25,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000315,
-          "inputTokens": 70,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 600,
           "missingPricing": true,
@@ -41,15 +33,14 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
         "claude-haiku-4-5-20251001",
         "copilot-mystery-1"
       ],
-      "outputTokens": 107,
+      "outputTokens": 100,
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "conv-vscode",
-      "totalCost": 0.000815,
-      "totalTokens": 1077
+      "totalCost": 0.0005,
+      "totalTokens": 1000
     },
     {
       "cacheCreationTokens": 0,
@@ -287,10 +278,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 2900,
-    "inputTokens": 6620,
-    "outputTokens": 1489,
-    "totalCost": 0.5619750000000001,
-    "totalTokens": 11309,
+    "inputTokens": 6550,
+    "outputTokens": 1482,
+    "totalCost": 0.56166,
+    "totalTokens": 11232,
     "unpricedModels": [
       "copilot-mystery-1",
       "unknown"

@@ -68,24 +68,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 30,
-      "inputTokens": 270,
+      "inputTokens": 210,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
-          "cost": 0.00011595,
-          "inputTokens": 270,
+          "cost": 0.0000882,
+          "inputTokens": 210,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 60
+          "outputTokens": 45
         }
       ],
       "modelsUsed": [
         "gemini-2.5-flash"
       ],
-      "outputTokens": 60,
+      "outputTokens": 45,
       "sessionId": "bbbb2222-renamed",
-      "totalCost": 0.00011595,
-      "totalTokens": 360
+      "totalCost": 0.0000882,
+      "totalTokens": 285
     },
     {
       "cacheCreationTokens": 0,
@@ -319,10 +319,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 0,
     "cacheReadTokens": 155413,
-    "inputTokens": 306559,
-    "outputTokens": 3184,
-    "totalCost": 0.8231939450000001,
-    "totalTokens": 465451,
+    "inputTokens": 306499,
+    "outputTokens": 3169,
+    "totalCost": 0.823166195,
+    "totalTokens": 465376,
     "unpricedModels": [
       "gemini-mystery-1",
       "unknown"

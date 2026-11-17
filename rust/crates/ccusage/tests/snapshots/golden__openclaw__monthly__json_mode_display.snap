@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 1600,
       "cacheReadTokens": 23000,
-      "inputTokens": 5971,
+      "inputTokens": 5851,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 600,
@@ -39,9 +39,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
           "cost": 0.06,
-          "inputTokens": 1520,
+          "inputTokens": 1400,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 675
+          "outputTokens": 645
         },
         {
           "cacheCreationTokens": 0,
@@ -64,19 +64,19 @@ exit: 0
         "[openclaw] unknown",
         "[openclaw] claude-opus-4-20250514",
         "[openclaw] claude-sonnet-4-20250514",
-        "[openclaw] gpt-5",
         "[openclaw] claude-haiku-4-5-20251001",
+        "[openclaw] gpt-5",
         "[openclaw] openclaw-mystery-1"
       ],
       "month": "2025-12",
-      "outputTokens": 1712,
+      "outputTokens": 1682,
       "totalCost": 1.48,
-      "totalTokens": 32283
+      "totalTokens": 32133
     },
     {
       "cacheCreationTokens": 250,
       "cacheReadTokens": 17500,
-      "inputTokens": 3323,
+      "inputTokens": 3273,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 50,
@@ -90,9 +90,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0,
-          "inputTokens": 650,
+          "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 125
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -127,18 +127,18 @@ exit: 0
         "[openclaw] openclaw-mystery-1"
       ],
       "month": "2026-01",
-      "outputTokens": 1219,
+      "outputTokens": 1194,
       "totalCost": 0.33,
-      "totalTokens": 22642
+      "totalTokens": 22567
     }
   ],
   "totals": {
     "cacheCreationTokens": 1850,
     "cacheReadTokens": 40500,
-    "inputTokens": 9294,
-    "outputTokens": 2931,
+    "inputTokens": 9124,
+    "outputTokens": 2876,
     "totalCost": 1.81,
-    "totalTokens": 54925
+    "totalTokens": 54700
   }
 }
 

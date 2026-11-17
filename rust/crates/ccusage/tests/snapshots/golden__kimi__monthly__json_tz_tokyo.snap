@@ -39,8 +39,8 @@ exit: 0
     },
     {
       "cacheCreationTokens": 650,
-      "cacheReadTokens": 37000,
-      "inputTokens": 8110,
+      "cacheReadTokens": 34000,
+      "inputTokens": 7250,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 600,
@@ -53,10 +53,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.0053714,
-          "inputTokens": 1640,
+          "cost": 0.0051536,
+          "inputTokens": 1500,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 842
+          "outputTokens": 782
         },
         {
           "cacheCreationTokens": 50,
@@ -68,19 +68,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037500000000000003,
-          "inputTokens": 1100,
-          "modelName": "gpt-5",
-          "outputTokens": 200
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000162,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
+          "cost": 0.0016250000000000001,
+          "inputTokens": 500,
+          "modelName": "gpt-5",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -97,13 +89,12 @@ exit: 0
         "kimi-k2-thinking",
         "claude-sonnet-4-20250514",
         "gpt-5",
-        "kimi-k2.5",
         "kimi-mystery-1"
       ],
       "month": "2026-01",
-      "outputTokens": 3237,
-      "totalCost": 0.0488059,
-      "totalTokens": 49247
+      "outputTokens": 3047,
+      "totalCost": 0.04630109999999999,
+      "totalTokens": 45197
     },
     {
       "cacheCreationTokens": 0,
@@ -130,11 +121,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 1570,
-    "cacheReadTokens": 66000,
-    "inputTokens": 15621,
-    "outputTokens": 4616,
-    "totalCost": 0.06619312,
-    "totalTokens": 88057,
+    "cacheReadTokens": 63000,
+    "inputTokens": 14761,
+    "outputTokens": 4426,
+    "totalCost": 0.06368831999999999,
+    "totalTokens": 84007,
     "unpricedModels": [
       "kimi-mystery-1"
     ]
