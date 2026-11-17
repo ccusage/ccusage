@@ -186,6 +186,34 @@ pub(super) struct GeminiUsageEvent {
     message_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct GeminiUsage {
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
+    reasoning_tokens: u64,
+    total_tokens: u64,
+    message_id: Option<String>,
+}
+
+impl GeminiUsage {
+    fn at(self, session_id: &str, timestamp: TimestampMs) -> GeminiUsageEvent {
+        GeminiUsageEvent {
+            timestamp,
+            timestamp_text: crate::format_rfc3339_millis(timestamp),
+            session_id: session_id.to_string(),
+            model: self.model,
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+            cache_read_tokens: self.cache_read_tokens,
+            reasoning_tokens: self.reasoning_tokens,
+            total_tokens: self.total_tokens,
+            message_id: self.message_id,
+        }
+    }
+}
+
 pub(super) fn parse_json_file(
     path: &Path,
     diagnostics: &ccusage_core::Diagnostics,
@@ -248,19 +276,14 @@ pub(super) fn parse_json_file(
         .collect());
     }
     Ok(parse_stats_events(
-        record.stats(),
+        &record,
         record.model.as_deref(),
         &session_id,
-        match (GeminiRecordTime {
+        &GeminiRecordTime {
             fallback: fallback_timestamp,
             path,
             line: None,
             diagnostics,
-        })
-        .resolve(&record)
-        {
-            Some(timestamp) => timestamp,
-            None => return Ok(Vec::new()),
         },
     ))
 }
@@ -317,25 +340,17 @@ pub(super) fn parse_jsonl_file(
             }
             continue;
         }
-        let stats = record.stats();
-        if stats.is_some() {
-            events.extend(parse_stats_events(
-                stats,
-                current_model.as_deref(),
-                &session_id,
-                match (GeminiRecordTime {
-                    fallback: None,
-                    path,
-                    line: Some(number),
-                    diagnostics,
-                })
-                .resolve(&record)
-                {
-                    Some(timestamp) => timestamp,
-                    None => continue,
-                },
-            ));
-        }
+        events.extend(parse_stats_events(
+            &record,
+            current_model.as_deref(),
+            &session_id,
+            &GeminiRecordTime {
+                fallback: None,
+                path,
+                line: Some(number),
+                diagnostics,
+            },
+        ));
     }
     Ok(events)
 }
@@ -408,22 +423,35 @@ fn parse_direct_event_record(
     time: &GeminiRecordTime<'_>,
 ) -> Option<GeminiUsageEvent> {
     let tokens = parse_tokens(record.tokens.as_ref())?;
-    build_event(
+    let usage = build_usage(
         record.model.as_deref().or(model_hint),
-        session_id,
-        time.resolve(record)?,
         tokens,
         normalize_session_input,
         record.id.clone(),
-    )
+    )?;
+    Some(usage.at(session_id, time.resolve(record)?))
 }
 
 fn parse_stats_events(
-    stats: Option<&Value>,
+    record: &GeminiRecord,
     model_hint: Option<&str>,
     session_id: &str,
-    timestamp: TimestampMs,
+    time: &GeminiRecordTime<'_>,
 ) -> Vec<GeminiUsageEvent> {
+    let usages = parse_stats_usages(record.stats(), model_hint);
+    if usages.is_empty() {
+        return Vec::new();
+    }
+    let Some(timestamp) = time.resolve(record) else {
+        return Vec::new();
+    };
+    usages
+        .into_iter()
+        .map(|usage| usage.at(session_id, timestamp))
+        .collect()
+}
+
+fn parse_stats_usages(stats: Option<&Value>, model_hint: Option<&str>) -> Vec<GeminiUsage> {
     let Some(stats) = stats.and_then(Value::as_object) else {
         return Vec::new();
     };
@@ -433,14 +461,7 @@ fn parse_stats_events(
             .filter_map(|(model, data)| {
                 let data = data.as_object()?;
                 let tokens = parse_tokens(data.get("tokens"))?;
-                build_event(
-                    Some(model),
-                    session_id,
-                    timestamp,
-                    tokens,
-                    subtract_cached_overlap_tokens,
-                    None,
-                )
+                build_usage(Some(model), tokens, subtract_cached_overlap_tokens, None)
             })
             .collect::<Vec<_>>();
         if !events.is_empty() {
@@ -450,10 +471,8 @@ fn parse_stats_events(
     let Some(tokens) = parse_tokens(Some(&Value::Object(stats.clone()))) else {
         return Vec::new();
     };
-    build_event(
+    build_usage(
         model_hint.or(Some(DEFAULT_MODEL)),
-        session_id,
-        timestamp,
         tokens,
         subtract_cached_overlap_tokens,
         None,
@@ -462,14 +481,12 @@ fn parse_stats_events(
     .collect()
 }
 
-fn build_event(
+fn build_usage(
     model: Option<&str>,
-    session_id: &str,
-    timestamp: TimestampMs,
     tokens: GeminiTokens,
     normalize_input: fn(GeminiTokens) -> (u64, u64),
     message_id: Option<String>,
-) -> Option<GeminiUsageEvent> {
+) -> Option<GeminiUsage> {
     let model = model.filter(|model| !model.trim().is_empty())?;
     let (input_without_cache, cache_read_tokens) = normalize_input(tokens);
     let input_tokens = input_without_cache + tokens.tool;
@@ -493,10 +510,7 @@ fn build_event(
     {
         return None;
     }
-    Some(GeminiUsageEvent {
-        timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
-        session_id: session_id.to_string(),
+    Some(GeminiUsage {
         model: model.to_string(),
         input_tokens: display_usage.input_tokens,
         output_tokens: display_usage.output_tokens,
@@ -706,6 +720,28 @@ mod tests {
             1
         );
     }
+
+    #[test]
+    fn undated_jsonl_records_without_countable_usage_are_not_diagnosed() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "chat.jsonl": concat!(
+                r#"{"type":"gemini","tokens":{"input":10,"output":2}}"#,
+                "\n",
+                r#"{"type":"gemini","model":"gemini-3-flash-preview","tokens":{"input":0,"output":0}}"#,
+                "\n",
+                r#"{"stats":{"models":{"gemini-3-flash-preview":{"tokens":{"input":0}}}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = ccusage_core::Diagnostics::new("gemini");
+        let events = parse_jsonl_file(&fixture.path("chat.jsonl"), &diagnostics).unwrap();
+        assert!(events.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            0
+        );
+    }
+
     #[test]
     fn diagnoses_malformed_whole_file_json() {
         let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":}"});
@@ -773,10 +809,8 @@ mod tests {
 
     #[test]
     fn falls_back_to_total_tokens_when_gemini_parts_are_missing() {
-        let event = build_event(
+        let event = build_usage(
             Some("gemini-test"),
-            "session-a",
-            TimestampMs::UNIX_EPOCH,
             GeminiTokens {
                 total: Some(654),
                 ..GeminiTokens::default()
