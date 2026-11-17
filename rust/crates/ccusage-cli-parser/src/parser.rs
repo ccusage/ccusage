@@ -958,6 +958,9 @@ fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<Stri
     None
 }
 
+/// Both bounds are already normalized to `YYYYMMDD`, so a plain string comparison
+/// orders them. A reversed window would otherwise load everything and print an
+/// empty report that looks like missing data.
 fn date_window_error(command: &Command) -> Option<String> {
     let shared = command.shared()?;
     let since = shared.since.as_deref()?;
