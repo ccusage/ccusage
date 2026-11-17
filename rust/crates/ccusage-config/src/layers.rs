@@ -30,6 +30,14 @@ pub(crate) struct ConfigFile {
 
 impl ConfigFile {
     pub(crate) fn parse(value: Value) -> Result<Self, String> {
+        Self::parse_with(value, true)
+    }
+
+    pub(crate) fn parse_discovered(value: Value) -> Result<Self, String> {
+        Self::parse_with(value, false)
+    }
+
+    fn parse_with(value: Value, strict: bool) -> Result<Self, String> {
         let root = object(&value, "$")?;
         let mut layers = BTreeMap::new();
         let mut warnings = Vec::new();
@@ -37,26 +45,44 @@ impl ConfigFile {
         for (key, value) in root {
             match key.as_str() {
                 "$schema" => {
-                    decode::<String>(value, "$schema")?;
+                    if let Err(error) = decode::<String>(value, "$schema") {
+                        if strict {
+                            return Err(error);
+                        }
+                        warnings.push(format!("Invalid ccusage config field: {error}"));
+                    }
                 }
                 "defaults" if !value.is_null() => {
-                    layers.insert(key.clone(), layer(value, key, &schema, &mut warnings)?);
+                    layers.insert(
+                        key.clone(),
+                        layer(value, key, &schema, strict, &mut warnings)?,
+                    );
                 }
                 "commands" if !value.is_null() => {
-                    commands(value, key, &schema, &mut layers, &mut warnings)?;
+                    commands(value, key, &schema, strict, &mut layers, &mut warnings)?;
                 }
                 agent if ccusage_cli::BUILT_IN_AGENT_NAMES.contains(&agent) && !value.is_null() => {
-                    for (name, value) in object(value, key)? {
+                    let Some(fields) = option_object(value, key, strict, &mut warnings)? else {
+                        continue;
+                    };
+                    for (name, value) in fields {
                         let path = format!("{key}.{name}");
                         match name.as_str() {
                             "defaults" if !value.is_null() => {
                                 layers.insert(
                                     path.clone(),
-                                    layer(value, &path, &schema, &mut warnings)?,
+                                    layer(value, &path, &schema, strict, &mut warnings)?,
                                 );
                             }
                             "commands" if !value.is_null() => {
-                                commands(value, &path, &schema, &mut layers, &mut warnings)?;
+                                commands(
+                                    value,
+                                    &path,
+                                    &schema,
+                                    strict,
+                                    &mut layers,
+                                    &mut warnings,
+                                )?;
                             }
                             "stores" if agent == "pi" && !value.is_null() => {
                                 decode::<Vec<PiStoreConfig>>(value, &path)?;
@@ -100,10 +126,14 @@ fn commands(
     value: &Value,
     path: &str,
     schema: &Value,
+    strict: bool,
     layers: &mut BTreeMap<String, Layer>,
     warnings: &mut Vec<String>,
 ) -> Result<(), String> {
-    for (name, value) in object(value, path)? {
+    let Some(fields) = option_object(value, path, strict, warnings)? else {
+        return Ok(());
+    };
+    for (name, value) in fields {
         let path = format!("{path}.{name}");
         let known = matches!(
             name.as_str(),
@@ -117,7 +147,7 @@ fn commands(
         if !known {
             warnings.push(format!("Unknown ccusage config key: {path}"));
         } else if !value.is_null() {
-            layers.insert(path.clone(), layer(value, &path, schema, warnings)?);
+            layers.insert(path.clone(), layer(value, &path, schema, strict, warnings)?);
         }
     }
     Ok(())
@@ -127,21 +157,91 @@ fn layer(
     value: &Value,
     path: &str,
     schema: &Value,
+    strict: bool,
     warnings: &mut Vec<String>,
 ) -> Result<Layer, String> {
-    object(value, path)?;
+    if option_object(value, path, strict, warnings)?.is_none() {
+        return Ok(Layer::default());
+    }
+    let mut retained = value.clone();
     let layer = Layer {
-        shared: decode(value, path)?,
-        daily: decode(value, path)?,
-        weekly: decode(value, path)?,
-        blocks: decode(value, path)?,
-        statusline: decode(value, path)?,
-        codex: decode(value, path)?,
-        pi: decode(value, path)?,
-        openclaw: decode(value, path)?,
+        shared: decode_options(&mut retained, path, strict, warnings)?,
+        daily: decode_options(&mut retained, path, strict, warnings)?,
+        weekly: decode_options(&mut retained, path, strict, warnings)?,
+        blocks: decode_options(&mut retained, path, strict, warnings)?,
+        statusline: decode_options(&mut retained, path, strict, warnings)?,
+        codex: decode_options(&mut retained, path, strict, warnings)?,
+        pi: decode_options(&mut retained, path, strict, warnings)?,
+        openclaw: decode_options(&mut retained, path, strict, warnings)?,
     };
     unknown_fields(value, schema, schema, path, warnings);
     Ok(layer)
+}
+
+fn option_object<'a>(
+    value: &'a Value,
+    path: &str,
+    strict: bool,
+    warnings: &mut Vec<String>,
+) -> Result<Option<&'a Map<String, Value>>, String> {
+    match object(value, path) {
+        Ok(fields) => Ok(Some(fields)),
+        Err(error) if strict => Err(error),
+        Err(error) => {
+            warnings.push(format!("Invalid ccusage config field: {error}"));
+            Ok(None)
+        }
+    }
+}
+
+fn decode_options<T: DeserializeOwned>(
+    retained: &mut Value,
+    path: &str,
+    strict: bool,
+    warnings: &mut Vec<String>,
+) -> Result<T, String> {
+    loop {
+        match decode(retained, path) {
+            Ok(options) => return Ok(options),
+            Err(error) => {
+                if strict || error.contains(".since:") || error.contains(".until:") {
+                    return Err(error);
+                }
+                if !prune_invalid(retained, &|candidate| {
+                    serde_json::from_value::<T>(candidate.clone()).is_err()
+                }) {
+                    return Err(error);
+                }
+                warnings.push(format!("Invalid ccusage config field: {error}"));
+            }
+        }
+    }
+}
+
+fn prune_invalid(value: &mut Value, rejects: &dyn Fn(&Value) -> bool) -> bool {
+    let Value::Object(fields) = value else {
+        return false;
+    };
+    let invalid = fields
+        .iter()
+        .find(|(key, child)| {
+            rejects(&Value::Object(Map::from_iter([(
+                (*key).clone(),
+                (*child).clone(),
+            )])))
+        })
+        .map(|(key, _)| key.clone());
+    let Some(key) = invalid else {
+        return false;
+    };
+    let wrap = |child: &Value| Value::Object(Map::from_iter([(key.clone(), child.clone())]));
+    if let Some(child) = fields.get_mut(&key)
+        && prune_invalid(child, &|child| rejects(&wrap(child)))
+    {
+        return true;
+    }
+    fields.remove(&key);
+    true
 }
 
 pub(crate) fn decode<T: DeserializeOwned>(value: &Value, path: &str) -> Result<T, String> {
@@ -155,11 +255,23 @@ pub(crate) fn decode<T: DeserializeOwned>(value: &Value, path: &str) -> Result<T
 
 fn failing_path(value: &Value, path: &str, rejects: &dyn Fn(&Value) -> bool) -> String {
     if let Value::Object(fields) = value {
+        if rejects(&Value::Object(Map::new())) {
+            return path.to_string();
+        }
         for (key, child) in fields {
             let wrap = |child: Value| Value::Object(Map::from_iter([(key.clone(), child)]));
             if rejects(&wrap(child.clone())) {
                 return failing_path(child, &format!("{path}.{key}"), &|child| {
                     rejects(&wrap(child.clone()))
+                });
+            }
+        }
+    }
+    if let Value::Array(values) = value {
+        for (index, child) in values.iter().enumerate() {
+            if rejects(&Value::Array(vec![child.clone()])) {
+                return failing_path(child, &format!("{path}[{index}]"), &|child| {
+                    rejects(&Value::Array(vec![child.clone()]))
                 });
             }
         }

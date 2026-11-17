@@ -258,7 +258,13 @@ fn load_config_paths(
         };
         let file = serde_json::from_str(&content)
             .map_err(|error| error.to_string())
-            .and_then(crate::layers::ConfigFile::parse);
+            .and_then(|value| {
+                if explicit {
+                    crate::layers::ConfigFile::parse(value)
+                } else {
+                    crate::layers::ConfigFile::parse_discovered(value)
+                }
+            });
         match file {
             Ok(mut file) => {
                 match parse_named_pi_stores(&file.value) {
@@ -268,11 +274,7 @@ fn load_config_paths(
                             .strip_prefix("Invalid ccusage config: ")
                             .unwrap_or(&error);
                         let message = config_error(format!("{}: {detail}", path.display()));
-                        if explicit {
-                            return (None, Some(message), warnings);
-                        }
-                        warnings.push(message);
-                        continue;
+                        return (None, Some(message), warnings);
                     }
                 }
                 warnings.extend(
@@ -284,10 +286,7 @@ fn load_config_paths(
             }
             Err(error) => {
                 let message = config_error(format!("{}: {error}", path.display()));
-                if explicit {
-                    return (None, Some(message), warnings);
-                }
-                warnings.push(message);
+                return (None, Some(message), warnings);
             }
         }
     }
@@ -786,32 +785,57 @@ impl From<ConfigCostSource> for CostSource {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn invalid_discovered_files_warn_and_are_ignored_before_the_next_file() {
+    fn discovered_config_retains_valid_fields_without_falling_through() {
         let fixture = fs_fixture!({
-            "broken.json": "{",
-            "wrong-type.json": r#"{"defaults":{"json":"yes"}}"#,
-            "bad-stores.json": r#"{"pi":{"stores":[{"name":"pi","path":"/tmp/pi"}]}}"#,
-            "valid.json": r#"{"defaults":{"json":true}}"#,
+            "selected.json": r#"{"defaults":{"json":true,"timezone":"Asia/Tokyo","mode":"Calculate","pricingOverrides":{"sample":{"inputCostPerToken":0.1,"outputCostPerToken":"bad"}}},"commands":{"weekly":{"startOfWeek":"Sunday"}}}"#,
+            "lower.json": r#"{"defaults":{"json":false,"timezone":"UTC"}}"#,
         });
         let (file, error, warnings) = load_config_paths(
             false,
-            [
-                "missing.json",
-                "broken.json",
-                "wrong-type.json",
-                "bad-stores.json",
-                "valid.json",
-            ]
-            .map(|name| fixture.path(name))
-            .to_vec(),
+            vec![fixture.path("selected.json"), fixture.path("lower.json")],
         );
-        assert!(error.is_none());
-        let file = file.expect("valid later file should load");
+        assert!(error.is_none(), "{error:?}");
+        let file = file.unwrap();
         assert_eq!(file.layers["defaults"].shared.json, Some(true));
-        assert_eq!(warnings.len(), 3);
-        assert!(warnings[0].contains("broken.json"));
-        assert!(warnings[1].contains("defaults.json"));
-        assert!(warnings[2].contains("bad-stores.json"));
+        assert_eq!(
+            file.layers["defaults"].shared.timezone.as_deref(),
+            Some("Asia/Tokyo")
+        );
+        assert_eq!(
+            file.layers["defaults"]
+                .shared
+                .pricing_overrides
+                .as_ref()
+                .unwrap()["sample"]
+                .input_cost_per_token,
+            Some(0.1)
+        );
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        for path in [
+            "defaults.mode",
+            "defaults.pricingOverrides.sample.outputCostPerToken",
+            "commands.weekly.startOfWeek",
+        ] {
+            assert!(
+                warnings.iter().any(|warning| warning.contains(path)),
+                "{warnings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn discovered_invalid_bounds_and_pi_stores_stay_fatal() {
+        for raw in [
+            r#"{"defaults":{"since":"2026-13-45"}}"#,
+            r#"{"defaults":{"until":"no"}}"#,
+            r#"{"pi":{"stores":[{"name":"claude","path":"/tmp/store"}]}}"#,
+            r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
+        ] {
+            let fixture = fs_fixture!({"selected.json": raw});
+            let (file, error, _) = load_config_paths(false, vec![fixture.path("selected.json")]);
+            assert!(file.is_none());
+            assert!(error.is_some(), "{raw}");
+        }
     }
 
     #[test]
@@ -1536,7 +1560,7 @@ mod tests {
     fn rejects_named_pi_store_bad_shape() {
         let config = config_context_from_json(r#"{ "pi": { "stores": [{ "name": "omp" }] } }"#);
 
-        assert_config_error(&config, "pi.stores: missing field `path`");
+        assert_config_error(&config, "pi.stores[0]: missing field `path`");
     }
 
     #[test]
@@ -1686,7 +1710,7 @@ mod tests {
         let raw = r#"{"pi":{"stores":[{"name":"omp"}]}}"#;
         for command in [vec!["daily"], vec!["blocks"], vec!["codex", "daily"]] {
             let config = config_context_for_command(raw, &command);
-            assert_config_error(&config, "pi.stores: missing field `path`");
+            assert_config_error(&config, "pi.stores[0]: missing field `path`");
         }
     }
 
