@@ -155,6 +155,8 @@ fn cached_pricing_map(
 }
 
 enum RunSourceKind {
+    Claude,
+    OpenCode,
     BuiltIn(&'static dyn UsageSource),
     Named(pi::NamedStore),
 }
@@ -168,6 +170,8 @@ struct RunSource<'a> {
 impl RunSource<'_> {
     fn source(&self) -> &dyn UsageSource {
         match &self.source {
+            RunSourceKind::Claude => &claude::SOURCE,
+            RunSourceKind::OpenCode => &opencode::SOURCE,
             RunSourceKind::BuiltIn(source) => *source,
             RunSourceKind::Named(source) => source,
         }
@@ -192,8 +196,13 @@ fn run_sources<'a>(
         .iter()
         .map(|source| {
             let args = sources.get(source.id());
+            let kind = match source.id() {
+                id if id == claude::SOURCE.id() => RunSourceKind::Claude,
+                id if id == opencode::SOURCE.id() => RunSourceKind::OpenCode,
+                _ => RunSourceKind::BuiltIn(*source),
+            };
             RunSource {
-                source: RunSourceKind::BuiltIn(*source),
+                source: kind,
                 shared: args.map_or(shared, |args| &args.shared),
                 options: SourceOptions::from_source(args),
             }
@@ -282,52 +291,7 @@ fn load_base_rows<R>(
                 crate::progress::usage_load_output_is_tty(),
             ),
     );
-    let is_claude = |source: &RunSource<'_>| source.source().id() == claude::SOURCE.id();
-    let is_opencode = |source: &RunSource<'_>| source.source().id() == opencode::SOURCE.id();
-    let (claude_index, claude_source) = sources
-        .iter()
-        .enumerate()
-        .find(|(_, source)| is_claude(source))
-        .ok_or_else(|| crate::cli_error("Claude source is not registered"))?;
-    let (opencode_index, opencode_source) = sources
-        .iter()
-        .enumerate()
-        .find(|(_, source)| is_opencode(source))
-        .ok_or_else(|| crate::cli_error("OpenCode source is not registered"))?;
-    let (sender, receiver) = claims::channel();
-    let mut specs = Vec::with_capacity(sources.len());
-    {
-        let request = claude_source.request(load_kind, None);
-        specs.push(AgentLoadSpec {
-            index: claude_index,
-            agent: "claude",
-            progress_agent: crate::progress::UsageLoadAgent(claude::SOURCE.label()),
-            load: Box::new(move || claude::SOURCE.load_with_claims(&request, sender)),
-        });
-    }
-    {
-        let request = opencode_source.request(load_kind, None);
-        specs.push(AgentLoadSpec {
-            index: opencode_index,
-            agent: "opencode",
-            progress_agent: crate::progress::UsageLoadAgent(opencode::SOURCE.label()),
-            load: Box::new(move || opencode::SOURCE.load_with_claims(&request, receiver)),
-        });
-    }
-    for (index, source) in sources
-        .iter()
-        .enumerate()
-        .filter(|(_, source)| !is_claude(source) && !is_opencode(source))
-    {
-        let id = source.source().id();
-        let request = source.request(load_kind, pricing.get(id).map(Arc::as_ref));
-        specs.push(AgentLoadSpec {
-            index,
-            agent: id,
-            progress_agent: crate::progress::UsageLoadAgent(source.source().label()),
-            load: Box::new(move || source.source().load_rows(&request)),
-        });
-    }
+    let specs = load_specs(load_kind, sources, pricing);
     let loaded = load_agent_rows_parallel(specs, &mut progress)?;
     let mut detected_agents = Vec::new();
     let mut rows = Vec::new();
@@ -353,6 +317,50 @@ fn load_base_rows<R>(
         detected_agents,
         diagnostics,
     })
+}
+
+fn load_specs<'a>(
+    load_kind: LoadKind,
+    sources: &'a [RunSource<'a>],
+    pricing: &'a BTreeMap<&'static str, Arc<PricingMap>>,
+) -> Vec<AgentLoadSpec<'a>> {
+    let runs =
+        |wanted: fn(&RunSourceKind) -> bool| sources.iter().any(|source| wanted(&source.source));
+    let (mut claims_tx, mut claims_rx) = if runs(|kind| matches!(kind, RunSourceKind::Claude))
+        && runs(|kind| matches!(kind, RunSourceKind::OpenCode))
+    {
+        let (sender, receiver) = claims::channel();
+        (Some(sender), Some(receiver))
+    } else {
+        (None, None)
+    };
+    let mut specs = Vec::with_capacity(sources.len());
+    for (index, source) in sources.iter().enumerate() {
+        let id = source.source().id();
+        let request = source.request(load_kind, pricing.get(id).map(Arc::as_ref));
+        let load: Box<dyn FnOnce() -> Result<AgentRows> + Send + '_> = match &source.source {
+            RunSourceKind::Claude => match claims_tx.take() {
+                Some(sender) => Box::new(move || claude::SOURCE.load_with_claims(&request, sender)),
+                None => Box::new(move || claude::SOURCE.load_rows(&request)),
+            },
+            RunSourceKind::OpenCode => match claims_rx.take() {
+                Some(receiver) => {
+                    Box::new(move || opencode::SOURCE.load_with_claims(&request, receiver))
+                }
+                None => Box::new(move || opencode::SOURCE.load_rows(&request)),
+            },
+            RunSourceKind::BuiltIn(_) | RunSourceKind::Named(_) => {
+                Box::new(move || source.source().load_rows(&request))
+            }
+        };
+        specs.push(AgentLoadSpec {
+            index,
+            agent: id,
+            progress_agent: crate::progress::UsageLoadAgent(source.source().label()),
+            load,
+        });
+    }
+    specs
 }
 
 fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<UnifiedRow> {
@@ -637,6 +645,16 @@ mod tests {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
+    }
+
+    #[test]
+    fn sources_start_loading_in_registry_order() {
+        let shared = SharedArgs::default();
+        let sources = run_sources(&shared, &NO_SOURCES).unwrap();
+        let pricing = BTreeMap::new();
+        let specs = load_specs(LoadKind::Day, &sources, &pricing);
+        let agents = specs.iter().map(|spec| spec.agent).collect::<Vec<_>>();
+        assert_eq!(agents, BUILT_IN_AGENT_NAMES);
     }
 
     #[test]
