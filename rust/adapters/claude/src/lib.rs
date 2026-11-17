@@ -73,7 +73,7 @@ pub(crate) fn load_deduped_entries(
         ProgressOwner::Source,
         &diagnostics,
     )?;
-    diagnostics.emit(shared);
+    diagnostics.emit_with_verbosity(shared.debug);
     Ok(loaded)
 }
 
@@ -128,7 +128,7 @@ pub(crate) fn load_entries_since(
 ) -> Result<Vec<LoadedEntry>> {
     let diagnostics = Diagnostics::new("claude");
     let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
-    diagnostics.emit(shared);
+    diagnostics.emit_with_verbosity(shared.debug);
     Ok(entries)
 }
 
@@ -158,7 +158,7 @@ pub(crate) fn load_daily_summaries(
         progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
             daily::load_daily_entries(shared, project_filter, &diagnostics)
         })?;
-    diagnostics.emit(shared);
+    diagnostics.emit_with_verbosity(shared.debug);
     Ok(daily.summaries(group_by_project))
 }
 

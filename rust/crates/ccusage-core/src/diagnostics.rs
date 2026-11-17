@@ -103,18 +103,27 @@ struct UnitSkips {
     records: BTreeSet<(Option<&'static str>, u32)>,
 }
 
-impl Tally {
-    fn count(&mut self, unit: &Path, table: Option<&'static str>, line: Option<u32>) {
-        if !self.units.contains_key(unit) {
-            self.units.insert(unit.to_path_buf(), UnitSkips::default());
-        }
-        let skips = self.units.get_mut(unit).expect("unit was just inserted");
+impl UnitSkips {
+    fn record(&mut self, table: Option<&'static str>, line: Option<u32>) {
         match line {
             Some(line) => {
-                skips.records.insert((table, line));
+                self.records.insert((table, line));
             }
-            None => skips.whole = true,
+            None => self.whole = true,
         }
+    }
+}
+
+impl Tally {
+    fn count(&mut self, unit: &Path, table: Option<&'static str>, line: Option<u32>) {
+        if let Some(skips) = self.units.get_mut(unit) {
+            skips.record(table, line);
+            return;
+        }
+        self.units
+            .entry(unit.to_path_buf())
+            .or_default()
+            .record(table, line);
     }
 
     /// Keeps the first skips by unit, table, line and detail, so `--debug` lists the
@@ -269,7 +278,11 @@ impl Diagnostics {
 
     /// Prints [`warnings`](Self::warnings) to stderr.
     pub fn emit(&self, shared: &SharedArgs) {
-        for warning in self.warnings(shared) {
+        self.emit_with_verbosity(shared.debug);
+    }
+
+    pub fn emit_with_verbosity(&self, debug: bool) {
+        for warning in self.render(log_level() != Some(0), debug) {
             eprintln!("{warning}");
         }
     }

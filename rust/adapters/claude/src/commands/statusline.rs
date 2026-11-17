@@ -8,7 +8,7 @@ use std::{
 
 use ccusage_core::{
     Color, Context, DEFAULT_SESSION_DURATION_HOURS, Diagnostics, LoadedEntry, MILLIS_PER_DAY,
-    MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, TimestampMs,
+    MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow, Result, TimestampMs,
     cli::{CostSource, SharedArgs, StatuslineArgs, VisualBurnRate},
     cli_error, color, format_currency, format_number, format_rfc3339_millis,
     pricing::PricingMap,
@@ -61,15 +61,9 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
         mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
-    // Every load records into one Diagnostics, so a skip that several windows
-    // read is reported once.
     let diagnostics = Diagnostics::new("claude");
     let statusline_result = render_statusline(&hook, &args, &shared, &diagnostics);
-    let shared = SharedArgs {
-        debug: args.debug,
-        ..shared
-    };
-    diagnostics.emit(&shared);
+    diagnostics.emit_with_verbosity(args.debug);
     match statusline_result {
         Ok(statusline) => {
             println!("{statusline}");
@@ -138,34 +132,42 @@ fn render_statusline(
     shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> Result<String> {
+    let needs_history = matches!(args.cost_source, CostSource::Ccusage | CostSource::Both)
+        || (args.cost_source == CostSource::Auto && hook.cost.is_none());
+    let history = needs_history
+        .then(|| load_entries_since_with_diagnostics(shared, None, diagnostics).ok())
+        .flatten();
+    let ccusage_cost = history
+        .as_deref()
+        .map(|entries| calculate_session_cost(&hook.session_id, entries));
+    let cc_cost = hook.cost.as_ref().map(|cost| cost.total_cost_usd);
     let session_cost = match args.cost_source {
-        CostSource::Cc => hook.cost.as_ref().map(|cost| cost.total_cost_usd),
-        CostSource::Ccusage => calculate_session_cost(&hook.session_id, shared, diagnostics).ok(),
-        CostSource::Auto => hook
-            .cost
-            .as_ref()
-            .map(|cost| cost.total_cost_usd)
-            .or_else(|| calculate_session_cost(&hook.session_id, shared, diagnostics).ok()),
+        CostSource::Cc => cc_cost,
+        CostSource::Ccusage => ccusage_cost,
+        CostSource::Auto => cc_cost.or(ccusage_cost),
         CostSource::Both => None,
     };
 
-    let ccusage_cost = if args.cost_source == CostSource::Both {
-        calculate_session_cost(&hook.session_id, shared, diagnostics).ok()
-    } else {
-        None
-    };
-    let cc_cost = if args.cost_source == CostSource::Both {
-        hook.cost.as_ref().map(|cost| cost.total_cost_usd)
-    } else {
-        None
-    };
-
     let today_shared = statusline_today_shared(args, shared, utc_now());
-    let today_cost = load_entries_since_with_diagnostics(&today_shared, None, diagnostics)
-        .map(|entries| sum_costs(entries.iter().map(|entry| entry.cost)))
-        .unwrap_or(0.0);
+    let today_cost = if let Some(entries) = history.as_ref() {
+        let window = ReportWindow::from_shared(&today_shared);
+        sum_costs(
+            entries
+                .iter()
+                .filter(|entry| window.contains_timestamp(entry.timestamp))
+                .map(|entry| entry.cost),
+        )
+    } else {
+        load_entries_since_with_diagnostics(&today_shared, None, diagnostics)
+            .map(|entries| sum_costs(entries.iter().map(|entry| entry.cost)))
+            .unwrap_or(0.0)
+    };
 
-    let active_block = load_statusline_active_block(args, shared, utc_now(), diagnostics);
+    let active_block = if let Some(entries) = history {
+        find_active_block(entries)
+    } else {
+        load_statusline_active_block(args, shared, utc_now(), diagnostics)
+    };
     let (block_info, burn_rate_info) = if let Some(block) = active_block.as_ref() {
         let remaining = block.end_time.duration_since(utc_now()) / MILLIS_PER_MINUTE;
         let mut burn = String::new();
@@ -381,20 +383,16 @@ fn statusline_block_shared(
     }
 }
 
-fn calculate_session_cost(
-    session_id: &str,
-    shared: &SharedArgs,
-    diagnostics: &Diagnostics,
-) -> Result<f64> {
-    Ok(sum_costs(
-        load_entries_since_with_diagnostics(shared, None, diagnostics)?
-            .into_iter()
+fn calculate_session_cost(session_id: &str, entries: &[LoadedEntry]) -> f64 {
+    sum_costs(
+        entries
+            .iter()
             .filter(|entry| {
                 entry.data.session_id.as_deref() == Some(session_id)
                     || entry.session_id.as_ref() == session_id
             })
             .map(|entry| entry.cost),
-    ))
+    )
 }
 
 fn format_statusline_context(
