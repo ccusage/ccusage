@@ -1,16 +1,17 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#hyperfine nixpkgs#git --command bb
 
-(require '[babashka.fs :as fs])
+(ns bench-history
+  (:require [babashka.classpath :as cp]
+            [babashka.fs :as fs]))
 
-(def script-dir (fs/parent (fs/file *file*)))
+(cp/add-classpath (str (fs/parent (fs/absolutize *file*))))
 
-(doseq [source ["data.clj" "system.clj" "benchmark.clj" "report.clj" "main.clj" "history.clj"]]
-  (load-file (str (fs/path script-dir "compare_pr_performance" source))))
+(require '[compare-pr-performance.history :as history])
 
 (when (= *file* (System/getProperty "babashka.file"))
   (try
-    (apply history-main *command-line-args*)
+    (apply history/history-main *command-line-args*)
     (catch Exception error
       (binding [*out* *err*]
         (println (ex-message error)))

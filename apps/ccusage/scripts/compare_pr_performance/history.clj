@@ -1,3 +1,15 @@
+(ns compare-pr-performance.history
+  (:require [babashka.cli :as cli]
+            [babashka.fs :as fs]
+            [clojure.string :as str]
+            [compare-pr-performance.benchmark :as benchmark]
+            [compare-pr-performance.data :as data]
+            [compare-pr-performance.main :as main]
+            [compare-pr-performance.report :as report]
+            [compare-pr-performance.system :as system])
+  (:import [java.nio.channels FileChannel]
+           [java.nio.file OpenOption StandardOpenOption]))
+
 (def history-spec
   {:fixture-dir {:ref "DIR" :desc "Claude fixture; pass with --codex-fixture-dir, or omit both to generate them"}
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture; pass with --fixture-dir"}
@@ -12,40 +24,40 @@
    :help {:alias :h :coerce :boolean}})
 
 (defn local-logs-env []
-  {:clean? false :vars (array-map "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC")})
+  {:clean? false :vars (assoc system/report-vars "LOG_LEVEL" "0")})
 
 (defn render-history-table
   "One table per command: every ref against the previous one, judged like a PR."
   [{:keys [command rounds]} variants threshold]
   (let [rows (map-indexed
               (fn [index {:keys [label commit]}]
-                (let [summary (variant-summary rounds label)
+                (let [summary (benchmark/variant-summary rounds label)
                       previous (when (pos? index) (:label (nth variants (dec index))))
-                      comparison (when previous (compare-variants rounds previous label threshold))]
-                  (array-map "Ref" label "Commit" (if commit (str "`" (format-sha commit) "`") "-")
-                             "CPU" (format-spread (:cpu summary) format-duration)
-                             "Wall" (format-spread (:wall summary) format-duration)
-                             "Peak RSS" (format-memory-size (get-in summary [:rss :median]))
-                             "CPU vs prev" (if comparison (format-ratio-spread (:cpu comparison)) "-")
-                             "RSS vs prev" (if comparison (format-ratio-spread (:rss comparison)) "-")
-                             "Instructions vs prev" (if (:instructions comparison) (format-ratio-spread (:instructions comparison)) "-")
-                             "Verdict" (if comparison (comparison-verdict comparison) "-"))))
+                      comparison (when previous (benchmark/compare-variants rounds previous label threshold))]
+                  (array-map "Ref" label "Commit" (if commit (str "`" (data/format-sha commit) "`") "-")
+                             "CPU" (report/format-spread (:cpu summary) data/format-duration)
+                             "Wall" (report/format-spread (:wall summary) data/format-duration)
+                             "Peak RSS" (data/format-memory-size (get-in summary [:rss :median]))
+                             "CPU vs prev" (if comparison (report/format-ratio-spread (:cpu comparison)) "-")
+                             "RSS vs prev" (if comparison (report/format-ratio-spread (:rss comparison)) "-")
+                             "Instructions vs prev" (if (:instructions comparison) (report/format-ratio-spread (:instructions comparison)) "-")
+                             "Verdict" (if comparison (report/comparison-verdict comparison) "-"))))
               variants)
         rows (if (some #(not= "-" (get % "Instructions vs prev")) (rest rows))
                rows
                (map #(dissoc % "Instructions vs prev") rows))]
-    (str "### `" command " --offline --json`\n\n" (table-md rows))))
+    (str "### `" command " --offline --json`\n\n" (report/table-md rows))))
 
 (defn parse-history-cli [argv]
   (let [{:keys [args opts]} (cli/parse-args argv {:spec history-spec :restrict true})]
     (when-not (:help opts)
       (when (empty? args)
-        (fail! "Pass at least one git ref or ccusage binary path" {:kind :invalid-cli}))
+        (data/fail! "Pass at least one git ref or ccusage binary path" {:kind :invalid-cli}))
       (when-let [duplicates (seq (for [[ref n] (frequencies args) :when (> n 1)] ref))]
-        (fail! (str "Each ref or binary may appear once: " (str/join ", " duplicates)) {:kind :invalid-cli}))
+        (data/fail! (str "Each ref or binary may appear once: " (str/join ", " duplicates)) {:kind :invalid-cli}))
       (when (not= (some? (:fixture-dir opts)) (some? (:codex-fixture-dir opts)))
-        (fail! "Pass --fixture-dir and --codex-fixture-dir together" {:kind :invalid-cli}))
-      (assert-sample-options opts))
+        (data/fail! "Pass --fixture-dir and --codex-fixture-dir together" {:kind :invalid-cli}))
+      (data/assert-sample-options opts))
     (assoc opts :refs (vec args))))
 
 (defn history-help-text []
@@ -55,14 +67,11 @@
        "previous one.\n\n"
        (cli/format-opts {:spec history-spec})))
 
-(defn repo-root [] (str/trim (:out (run-checked ["git" "rev-parse" "--show-toplevel"] {} "git rev-parse"))))
+(defn repo-root [] (str/trim (:out (system/run-checked ["git" "rev-parse" "--show-toplevel"] {} "git rev-parse"))))
 
 (defn resolve-commit [repo ref]
-  (str/trim (:out (run-checked ["git" "rev-parse" "--verify" "--quiet" (str ref "^{commit}")] {:dir repo}
+  (str/trim (:out (system/run-checked ["git" "rev-parse" "--verify" "--quiet" (str ref "^{commit}")] {:dir repo}
                                (str "Unknown git ref " ref)))))
-
-(import '[java.nio.channels FileChannel]
-        '[java.nio.file OpenOption StandardOpenOption])
 
 (defn with-file-lock
   "Runs f while holding an exclusive lock on file, so runs sharing the cache
@@ -84,15 +93,15 @@
 (defn- build-commit-locked! [repo cache commit worktree features bin]
   (when-not (fs/exists? bin)
     (when-not (fs/exists? worktree)
-      (run-checked ["git" "worktree" "add" "--detach" "--quiet" worktree commit] {:dir repo} "git worktree add"))
-    (run-checked ["git" "-C" worktree "checkout" "--detach" "--quiet" commit] {} "git checkout")
-    (write-progress (str "building " (build-key (format-sha commit) features)))
-    (run-checked (cond-> ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
+      (system/run-checked ["git" "worktree" "add" "--detach" "--quiet" worktree commit] {:dir repo} "git worktree add"))
+    (system/run-checked ["git" "-C" worktree "checkout" "--detach" "--quiet" commit] {} "git checkout")
+    (system/write-progress (str "building " (build-key (data/format-sha commit) features)))
+    (system/run-checked (cond-> ["cargo" "build" "--manifest-path" (system/path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
                    (seq features) (into ["--features" (str/join "," features)]))
-                 {:env {"CARGO_TARGET_DIR" (path cache "target")}} (str "cargo build " (format-sha commit)))
+                 {:env {"CARGO_TARGET_DIR" (system/path cache "target")}} (str "cargo build " (data/format-sha commit)))
     (fs/create-dirs (fs/parent bin))
     (let [partial (str bin ".partial")]
-      (fs/copy (path cache "target" "release" "ccusage") partial {:copy-attributes true :replace-existing true})
+      (fs/copy (system/path cache "target" "release" "ccusage") partial {:copy-attributes true :replace-existing true})
       (fs/move partial bin {:atomic-move true :replace-existing true}))))
 
 (defn build-commit!
@@ -100,9 +109,9 @@
   target directory keeps dependency artifacts across refs, so building and
   copying its binary out happen under one lock."
   [repo cache commit worktree features]
-  (let [bin (path cache "bin" (build-key commit features) "ccusage")]
+  (let [bin (system/path cache "bin" (build-key commit features) "ccusage")]
     (when-not (fs/exists? bin)
-      (with-file-lock (path cache "build.lock") #(build-commit-locked! repo cache commit worktree features bin)))
+      (with-file-lock (system/path cache "build.lock") #(build-commit-locked! repo cache commit worktree features bin)))
     bin))
 
 (defn resolve-variants
@@ -112,12 +121,12 @@
   known."
   ([repo cache refs] (resolve-variants repo cache refs (constantly [])))
   ([repo cache refs features-for]
-   (let [scratch (temp-dir "ccusage-bench-src.")
-         worktree (path scratch "src")]
+   (let [scratch (system/temp-dir "ccusage-bench-src.")
+         worktree (system/path scratch "src")]
      (try
        (mapv (fn [ref]
                (if (fs/regular-file? ref)
-                 {:label ref :bin (expand ref) :features []}
+                 {:label ref :bin (system/expand ref) :features []}
                  (let [commit (resolve-commit repo ref)
                        features (vec (features-for commit))]
                    {:label ref :commit commit :features features
@@ -125,7 +134,7 @@
              refs)
        (finally
          (when (fs/exists? worktree)
-           (run-process ["git" "worktree" "remove" "--force" worktree] {:dir repo}))
+           (system/run-process ["git" "worktree" "remove" "--force" worktree] {:dir repo}))
          (fs/delete-tree scratch))))))
 
 (defn file-sha256 [file]
@@ -159,7 +168,7 @@
   class's reader support counts as reading it."
   [repo {:keys [commit]} input-class]
   (and (some? commit)
-       (zero? (:exit (run-process ["git" "merge-base" "--is-ancestor" (:commit input-class) commit] {:dir repo})))))
+       (zero? (:exit (system/run-process ["git" "merge-base" "--is-ancestor" (:commit input-class) commit] {:dir repo})))))
 
 (defn- refs-text [variants] (str/join ", " (map #(str "`" (:label %) "`") variants)))
 
@@ -169,36 +178,37 @@
   faster, or its successor slower, only because the input it read changed.
   `reads?` takes a variant and an input class."
   [reads? variants fixture-codex-dir]
-  (let [skipped (keep (fn [input-class]
-                        (when-let [refs (seq (remove #(reads? % input-class) variants))]
-                          (assoc input-class :refs refs)))
+  (let [skipped (into [] (keep (fn [input-class]
+                               (when-let [refs (seq (remove #(reads? % input-class) variants))]
+                                 (assoc input-class :refs refs))))
                       codex-input-classes)
         describe (fn [classes] (str/join "; " (map #(format "%s cannot read %s (added in %s)" (refs-text (:refs %)) (:name %) (:pr %)) classes)))]
     (cond
-      (empty? skipped) {:layout "current"}
+      (empty? skipped) {:layout "current" :skipped skipped}
       (nil? fixture-codex-dir)
-      {:layout "legacy"
+      {:layout "legacy" :skipped skipped
        :note (str "Note: " (describe skipped) ". The Codex fixture therefore uses the legacy layout: every rollout "
                   "uncompressed under `sessions/`, which every ref reads in full.")}
       :else
       (let [files (codex-rollout-paths fixture-codex-dir)
             present (filter (fn [input-class] (some (:matches? input-class) files)) skipped)]
-        (when (seq present)
-          {:warning (str "⚠️ **Warning:** the custom Codex fixture contains input some refs skip: " (describe present)
-                         ". Those refs read less input, so their Codex and unified rows are not comparable. "
-                         "Omit both fixture options to get a fixture every ref reads.")})))))
+        (cond-> {:layout "custom" :skipped skipped}
+          (seq present)
+          (assoc :warning (str "⚠️ **Warning:** the custom Codex fixture contains input some refs skip: " (describe present)
+                               ". Those refs read less input, so their Codex and unified rows are not comparable. "
+                               "Omit both fixture options to get a fixture every ref reads.")))))))
 
 (defn ensure-fixture!
   "Generates the fixture once per generator revision, size, and Codex layout."
   [repo cache size-mib layout]
-  (let [generator (path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
-        dir (path cache "fixture" (str size-mib "-" layout "-" (subs (file-sha256 generator) 0 12)))
-        claude (path dir "claude") codex (path dir "codex") done (path dir ".complete")]
+  (let [generator (system/path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
+        dir (system/path cache "fixture" (str size-mib "-" layout "-" (subs (file-sha256 generator) 0 12)))
+        claude (system/path dir "claude") codex (system/path dir "codex") done (system/path dir ".complete")]
     (with-file-lock (str dir ".lock")
       #(when-not (fs/exists? done)
          (fs/delete-tree dir)
-         (write-progress (str "generating " size-mib " MiB fixtures in " dir))
-         (run-checked [generator "--output-dir" claude "--codex-output-dir" codex
+         (system/write-progress (str "generating " size-mib " MiB fixtures in " dir))
+         (system/run-checked [generator "--output-dir" claude "--codex-output-dir" codex
                        "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib) "--codex-layout" layout]
                       {:dir repo} "generate-large-fixture")
          (spit done "")))
@@ -206,7 +216,7 @@
 
 (defn history-section [title variants env commands options]
   (str "## " title "\n\n"
-       (str/join "\n\n" (map #(render-history-table (measure-command variants % env (assoc options :title title))
+       (str/join "\n\n" (map #(render-history-table (benchmark/measure-command variants % env (assoc options :title title))
                                                     variants (:threshold options))
                              commands))
        "\n"))
@@ -216,32 +226,30 @@
     (if (:help options)
       (println (history-help-text))
       (let [repo (repo-root)
-            cache (expand (or (:cache-dir options) (path repo "rust" "target" "bench-history")))
-            commands (if (:commands options) (mapv str/trim (str/split (:commands options) #",")) default-commands)
+            cache (system/expand (or (:cache-dir options) (system/path repo "rust" "target" "bench-history")))
+            commands (if (:commands options) (mapv str/trim (str/split (:commands options) #",")) data/default-commands)
             variants (resolve-variants repo cache (:refs options))
-            custom-codex (some-> (:codex-fixture-dir options) expand)
+            custom-codex (some-> (:codex-fixture-dir options) system/expand)
             compatibility (codex-compatibility (partial reads-input-class? repo) variants custom-codex)
             fixture (if custom-codex
-                      {:claude (expand (:fixture-dir options)) :codex custom-codex}
+                      {:claude (system/expand (:fixture-dir options)) :codex custom-codex}
                       (ensure-fixture! repo cache (:size-mib options) (:layout compatibility)))
-            empty-home (temp-dir "ccusage-perf-home.")
-            stats (fn [dir] (let [s (summarize-directory dir)] (format "%s, %d files" (format-data-size (:bytes s)) (:files s))))]
+            empty-home (system/temp-dir "ccusage-perf-home.")
+            stats (fn [dir] (let [s (system/summarize-directory dir)] (format "%s, %d files" (data/format-data-size (:bytes s)) (:files s))))]
         (try
           (let [synthetic (history-section (format "Synthetic fixture (Claude %s; Codex %s)" (stats (:claude fixture)) (stats (:codex fixture)))
-                                           variants (fixture-env (:claude fixture) (:codex fixture) (str empty-home)) commands options)
+                                           variants (system/fixture-env (:claude fixture) (:codex fixture) (str empty-home)) commands options)
                 real (when (:real options)
                        (history-section "Local logs" variants (local-logs-env) commands options))
-                real-warning (when (and real (not= "current" (:layout compatibility)))
+                real-warning (when (and real (seq (:skipped compatibility)))
                                (str "⚠️ **Warning:** in local logs, "
-                                    (str/join "; " (keep (fn [input-class]
-                                                           (when-let [refs (seq (remove #(reads-input-class? repo % input-class) variants))]
-                                                             (format "%s skip %s" (refs-text refs) (:name input-class))))
-                                                         codex-input-classes))
+                                    (str/join "; " (map #(format "%s skip %s" (refs-text (:refs %)) (:name %))
+                                                       (:skipped compatibility)))
                                     ", so Codex and unified rows across those changes compare different input.\n\n"))
                 report (str "# ccusage performance history\n\n"
                             (some-> (or (:warning compatibility) (:note compatibility)) (str "\n\n"))
                             (format "%d interleaved rounds after %d warmup rounds; cells show median (min–max); ratios are this ref / previous ref per round. "
                                     (:runs options) (:warmup options))
                             "\n\n" synthetic (when real (str "\n" real-warning real)))]
-            (write-output! (:output options) report))
+            (main/write-output! (:output options) report))
           (finally (fs/delete-tree empty-home)))))))

@@ -1,3 +1,15 @@
+(ns diff-refs.main
+  (:require [babashka.cli :as cli]
+            [babashka.fs :as fs]
+            [babashka.process :as process]
+            [cheshire.core :as json]
+            [clojure.string :as str]
+            [compare-pr-performance.data :as data]
+            [compare-pr-performance.history :as history]
+            [compare-pr-performance.report :as report]
+            [compare-pr-performance.system :as system])
+  (:import [java.util.concurrent Callable]))
+
 (def diff-spec
   {:real {:coerce :boolean :desc "Read the caller's real local agent logs instead of a hermetic environment"}
    :fixture {:ref "DIR" :desc "Golden fixture to reuse; exported there first when DIR is missing or empty (default: a fresh export)"}
@@ -27,7 +39,7 @@
   of logs."
   [bin]
   (let [help (fn [& command]
-               (:out (run-checked (into [bin] (concat command ["--help"])) {}
+               (:out (system/run-checked (into [bin] (concat command ["--help"])) {}
                                   (str/join " " (concat [bin] command ["--help"])))))
         report? #(not= "statusline" %)
         commands (vec (mapcat (fn [command]
@@ -36,7 +48,7 @@
                                   (when (report? command) [command])))
                               (help-commands (help))))]
     (when (empty? commands)
-      (fail! (str bin " --help lists no report commands") {:kind :invalid-help}))
+      (data/fail! (str bin " --help lists no report commands") {:kind :invalid-help}))
     commands))
 
 (def output-variants
@@ -69,9 +81,6 @@
                           real ["--until" (:until dates)]
                           window? ["--since" (:since dates) "--until" (:until dates)])))}))
 
-;; LOG_LEVEL=0 would hide box titles and warnings, which are part of the output under comparison.
-(def output-vars (dissoc (:vars (local-logs-env)) "LOG_LEVEL"))
-
 (def fixture-manifest
   "Written by golden::export_fixture in rust/crates/ccusage/tests/golden/mod.rs."
   "golden-env.json")
@@ -80,8 +89,8 @@
   "Writes the golden matrix seeds of the checkout at `repo` into `dir`, so
   both refs read the stores the goldens snapshot instead of nothing."
   [repo dir]
-  (write-progress (str "exporting the golden fixture to " dir))
-  (run-checked ["cargo" "test" "--manifest-path" (path repo "rust" "Cargo.toml") "--package" "ccusage"
+  (system/write-progress (str "exporting the golden fixture to " dir))
+  (system/run-checked ["cargo" "test" "--manifest-path" (system/path repo "rust" "Cargo.toml") "--package" "ccusage"
                 "--test" "golden_matrix" "--" "--ignored" "--exact" "export_golden_fixture"]
                {:env {"CCUSAGE_GOLDEN_FIXTURE_DIR" dir}} "golden fixture export"))
 
@@ -112,16 +121,16 @@
                 (str "seeded variable " name " names no existing store")))))))
 
 (defn read-golden-fixture [dir]
-  (let [manifest (path dir fixture-manifest)]
+  (let [manifest (system/path dir fixture-manifest)]
     (when-not (fs/regular-file? manifest)
-      (fail! (str dir " is not a golden fixture: " fixture-manifest " is missing") {:kind :invalid-fixture}))
+      (data/fail! (str dir " is not a golden fixture: " fixture-manifest " is missing") {:kind :invalid-fixture}))
     (let [parsed (try (json/parse-string (slurp manifest))
                       (catch Exception error {::unparsable (ex-message error)}))
           problems (if-let [error (::unparsable parsed)]
                      [(str fixture-manifest " is not JSON: " error)]
                      (manifest-problems parsed))]
       (when (seq problems)
-        (fail! (str dir " is not a usable golden fixture: " (str/join "; " problems)
+        (data/fail! (str dir " is not a usable golden fixture: " (str/join "; " problems)
                     ". Pass an empty --fixture directory to export a fresh one.")
                {:kind :invalid-fixture}))
       parsed)))
@@ -148,7 +157,7 @@
   "The features that make `commit` honor the golden clock; none for a commit
   whose ccusage-core predates the test clock."
   [repo commit]
-  (let [manifest (run-process ["git" "show" (str commit ":rust/crates/ccusage-core/Cargo.toml")] {:dir repo})]
+  (let [manifest (system/run-process ["git" "show" (str commit ":rust/crates/ccusage-core/Cargo.toml")] {:dir repo})]
     (if (and (zero? (:exit manifest)) (declares-test-clock? (:out manifest))) [test-clock-feature] [])))
 
 (defn pins-clock? [variant] (boolean (some #{test-clock-feature} (:features variant))))
@@ -162,9 +171,9 @@
   {:clean? true
    :vars (merge (into (sorted-map) (cond-> (dissoc (get manifest "env") "LOG_LEVEL")
                                      (not pinned-clock?) (dissoc test-clock-var)))
-                output-vars)})
+                system/report-vars)})
 
-(defn real-env [] {:clean? false :vars output-vars})
+(defn real-env [] {:clean? false :vars system/report-vars})
 
 (defn process-env [{:keys [clean? vars]} inherited]
   (if clean? (into {} vars) (merge (dissoc (into {} inherited) "LOG_LEVEL" test-clock-var) vars)))
@@ -173,7 +182,7 @@
   "Runs one binary and keeps stdout and stderr as files, so they are compared
   as bytes and never decoded."
   [bin args env dir prefix cwd]
-  (let [out (path dir (str prefix ".stdout")) err (path dir (str prefix ".stderr"))
+  (let [out (system/path dir (str prefix ".stdout")) err (system/path dir (str prefix ".stderr"))
         result @(process/process (into [bin] args)
                                  (cond-> {:env (process-env env (System/getenv)) :in ""
                                           :out :write :out-file (fs/file out) :err :write :err-file (fs/file err)}
@@ -218,7 +227,7 @@
   3)
 
 (defn compare-command! [bins env output-dir cwd allow-stderr-diff {:keys [id args] :as command}]
-  (let [dir (path output-dir id)
+  (let [dir (system/path output-dir id)
         _ (fs/create-dirs dir)
         run (fn [variant n] (assoc (run-captured! (get bins variant) args env dir (str (name variant) "-" n) cwd)
                                    :label (str (name variant) " run " n)))
@@ -235,7 +244,7 @@
 (def diff-line-limit 40)
 
 (defn- sorted-json! [file]
-  (let [result (run-process ["jq" "-S" "." file])]
+  (let [result (system/run-process ["jq" "-S" "." file])]
     (when (zero? (:exit result))
       (let [sorted (str file ".sorted.json")] (spit sorted (:out result)) sorted))))
 
@@ -247,16 +256,16 @@
   (let [[a b] (or (when json?
                     (let [a (sorted-json! left) b (sorted-json! right)] (when (and a b) [a b])))
                   [left right])
-        difference (:out (run-process ["diff" "-u" a b]))
+        difference (:out (system/run-process ["diff" "-u" a b]))
         difference (if (and (empty? difference) (not= [a b] [left right]))
-                     (:out (run-process ["diff" "-u" left right]))
+                     (:out (system/run-process ["diff" "-u" left right]))
                      difference)
         lines (str/split-lines difference)]
     (str/join "\n" (cond-> (vec (take diff-line-limit lines))
                      (> (count lines) diff-line-limit)
                      (conj (format "... (%d more lines)" (- (count lines) diff-line-limit)))))))
 
-(defn command-label [{:keys [args]}] (str/join " " (map command-text-arg args)))
+(defn command-label [{:keys [args]}] (str/join " " (map data/command-text-arg args)))
 
 (defn report-result! [{:keys [status streams pair json? error] :as result}]
   (println (format "%-8s %s" (case status :identical "PASS" :different "FAIL" :unstable "UNSTABLE" :failed "ERROR") (command-label result)))
@@ -279,13 +288,13 @@
   (let [{:keys [args opts]} (cli/parse-args argv {:spec diff-spec :restrict true})]
     (when-not (:help opts)
       (when (not= 2 (count args))
-        (fail! "Pass exactly two git refs or ccusage binary paths: <base> <head>" {:kind :invalid-cli}))
+        (data/fail! "Pass exactly two git refs or ccusage binary paths: <base> <head>" {:kind :invalid-cli}))
       (when (and (:real opts) (:fixture opts))
-        (fail! "--real and --fixture are mutually exclusive" {:kind :invalid-cli}))
+        (data/fail! "--real and --fixture are mutually exclusive" {:kind :invalid-cli}))
       (when (and (:fixture opts) (fs/exists? (:fixture opts)) (not (fs/directory? (:fixture opts))))
-        (fail! (str "--fixture is not a directory: " (:fixture opts)) {:kind :invalid-cli}))
+        (data/fail! (str "--fixture is not a directory: " (:fixture opts)) {:kind :invalid-cli}))
       (when (< (:jobs opts) 1)
-        (fail! "--jobs must be at least 1" {:kind :invalid-cli})))
+        (data/fail! "--jobs must be at least 1" {:kind :invalid-cli})))
     (assoc opts :refs (vec args))))
 
 (defn diff-help-text []
@@ -324,21 +333,21 @@
   (let [options (parse-diff-cli argv)]
     (if (:help options)
       (do (println (diff-help-text)) 0)
-      (let [repo (repo-root)
-            cache (expand (or (:cache-dir options) (path repo "rust" "target" "bench-history")))
-            [base head :as variants] (resolve-variants repo cache (:refs options) (partial clock-features repo))
+      (let [repo (history/repo-root)
+            cache (system/expand (or (:cache-dir options) (system/path repo "rust" "target" "bench-history")))
+            [base head :as variants] (history/resolve-variants repo cache (:refs options) (partial clock-features repo))
             bins {:base (:bin base) :head (:bin head)}
             real (:real options)
             fixture-dir (when-not real
-                          (if (:fixture options) (expand (:fixture options)) (str (temp-dir "ccusage-diff-fixture."))))
+                          (if (:fixture options) (system/expand (:fixture options)) (str (system/temp-dir "ccusage-diff-fixture."))))
             output-dir (if (:output-dir options)
-                         (doto (expand (:output-dir options)) fs/create-dirs)
-                         (str (temp-dir "ccusage-diff-refs.")))]
+                         (doto (system/expand (:output-dir options)) fs/create-dirs)
+                         (str (system/temp-dir "ccusage-diff-refs.")))]
         (try
           (let [manifest (when fixture-dir (prepare-golden-fixture! repo fixture-dir))
                 unpinned (remove pins-clock? variants)
                 _ (when (and manifest (contains? (get manifest "env") test-clock-var) (seq unpinned))
-                    (write-progress (str (str/join ", " (map :label unpinned))
+                    (system/write-progress (str (str/join ", " (map :label unpinned))
                                          " cannot honor " test-clock-var " (an existing binary, or a ref built without "
                                          test-clock-feature "), so both binaries run under the wall clock;"
                                          " clock-relative reports are compared at the current time")))
@@ -348,13 +357,13 @@
                         (merge (update-keys (get manifest "window") keyword)
                                (into {} (filter val (select-keys options [:since :until])))))
                 commands (command-plan options dates (report-commands (:head bins)))]
-            (write-progress (format "comparing %d commands: base %s, head %s (%s)" (count commands) (:bin base) (:bin head)
+            (system/write-progress (format "comparing %d commands: base %s, head %s (%s)" (count commands) (:bin base) (:bin head)
                                     (if real "real local logs" (str "golden fixture " fixture-dir))))
             (let [results (run-all! (:jobs options) commands
                                     #(compare-command! bins env output-dir (get manifest "cwd") (:allow-stderr-diff options) %))
                   counts (summary-counts results)]
               (println)
-              (println (table-md [counts]))
+              (println (report/table-md [counts]))
               (when-let [unstable (seq (filter #(= :unstable (:status %)) results))]
                 (println "\nUnstable (base differs between runs of the same binary):")
                 (doseq [result unstable] (println (str "  " (command-label result)))))

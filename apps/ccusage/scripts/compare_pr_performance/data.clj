@@ -1,8 +1,7 @@
-(require '[babashka.cli :as cli]
-         '[babashka.fs :as fs]
-         '[babashka.process :as process]
-         '[cheshire.core :as json]
-         '[clojure.string :as str])
+(ns compare-pr-performance.data
+  (:require [babashka.cli :as cli]
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (def default-commands ["claude daily" "claude session" "codex daily" "daily"])
 

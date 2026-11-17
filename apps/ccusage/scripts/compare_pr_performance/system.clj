@@ -1,3 +1,9 @@
+(ns compare-pr-performance.system
+  (:require [babashka.fs :as fs]
+            [babashka.process :as process]
+            [clojure.string :as str]
+            [compare-pr-performance.data :as data]))
+
 (defn run-process
   ([argv] (run-process argv {}))
   ([argv {:keys [dir env inherit?] :or {env {}}}]
@@ -11,7 +17,7 @@
 (defn run-checked [argv options label]
   (let [result (run-process argv options)]
     (if (zero? (:exit result)) result
-        (fail! (format "%s failed in %s: exit %d\n%s" label (or (:dir options) ".")
+        (data/fail! (format "%s failed in %s: exit %d\n%s" label (or (:dir options) ".")
                        (:exit result) (str/trim (or (not-empty (:err result)) (:out result))))
                {:kind :child-command-failed :argv argv :dir (:dir options)
                 :exit (:exit result) :stderr (:err result)}))))
@@ -28,10 +34,12 @@
   (let [files (filter fs/regular-file? (file-seq (fs/file directory)))]
     {:bytes (reduce + 0 (map fs/size files)) :files (count files)}))
 
+(def report-vars (sorted-map "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"))
+
 (defn fixture-env
   "Points Claude and Codex at the fixture and every other agent at an empty
   HOME, in an otherwise empty environment."
   [fixture-dir codex-fixture-dir empty-home]
   {:clean? true
-   :vars (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home
-                    "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC")})
+   :vars (into (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home)
+               (assoc report-vars "LOG_LEVEL" "0"))})
