@@ -112,6 +112,42 @@ mod tests {
     use super::{Number, read_count, read_f64, read_i64, read_number};
 
     #[test]
+    fn read_only_database_waits_for_an_exclusive_writer() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("locked.db");
+        let writer = sqlite::open(&path).unwrap();
+        writer.execute("CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (7); BEGIN EXCLUSIVE").unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let connection = super::open_read_only(&path).unwrap();
+            let result =
+                connection
+                    .prepare("SELECT value FROM records")
+                    .and_then(|mut statement| {
+                        statement.next()?;
+                        statement.read::<i64, _>(0)
+                    });
+            done_tx.send(result).unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(matches!(
+            done_rx.recv_timeout(std::time::Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        writer.execute("COMMIT").unwrap();
+        assert_eq!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+                .unwrap(),
+            7
+        );
+        reader.join().unwrap();
+    }
+
+    #[test]
     fn sqlite_units_keep_healthy_rows_and_record_rejected_rows() {
         use crate::UnitError;
         use ccusage_core::{Diagnostics, SkipKind};

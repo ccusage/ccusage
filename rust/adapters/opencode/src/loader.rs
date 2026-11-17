@@ -252,17 +252,14 @@ fn load_entries_from_database(
         diagnostics,
         ..
     } = context;
-    let connection = match sqlite::Connection::open_with_flags(
-        db_path,
-        sqlite::OpenFlags::new().with_read_only(),
-    ) {
+    let connection = match ccusage_adapter_common::sqlite::open_read_only(db_path) {
         Ok(connection) => connection,
         Err(error) => {
             debug_log(
                 shared,
                 format!("Failed to open OpenCode database: {}", db_path.display()),
             );
-            sqlite_setup_failure(error).record(db_path, diagnostics);
+            error.record(db_path, diagnostics);
             return;
         }
     };

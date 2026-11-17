@@ -188,9 +188,7 @@ pub(super) fn parse_sqlite_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> DatabaseResult<ParsedDatabase> {
-    let connection =
-        sqlite::Connection::open_with_flags(path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(sqlite_failure)?;
+    let connection = ccusage_adapter_common::sqlite::open_read_only(path)?;
     connection
         .execute("BEGIN DEFERRED TRANSACTION")
         .map_err(sqlite_failure)?;

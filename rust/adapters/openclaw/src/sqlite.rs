@@ -96,13 +96,10 @@ fn read_agent_database(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
-    let connection = match sqlite::Connection::open_with_flags(
-        &database.path,
-        sqlite::OpenFlags::new().with_read_only(),
-    ) {
+    let connection = match ccusage_adapter_common::sqlite::open_read_only(&database.path) {
         Ok(connection) => connection,
         Err(error) => {
-            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
+            error.record(&database.path, diagnostics);
             return Vec::new();
         }
     };
