@@ -4,14 +4,18 @@ Use `--mode auto`, `--mode calculate`, or `--mode display` to select how a repor
 
 The entry rules below describe Claude Code. Auto's stored-cost preference depends on the source:
 
-| Source                        | Auto                                                         | Calculate | Display                                     |
-| ----------------------------- | ------------------------------------------------------------ | --------- | ------------------------------------------- |
-| Claude Code                   | Recorded cost when present, including zero; otherwise tokens | Tokens    | Recorded cost only                          |
-| Codex, Goose, Droid, Codebuff | Tokens                                                       | Tokens    | $0; these logs contain no recorded USD cost |
-| Hermes                        | Positive recorded actual/estimated cost; otherwise tokens    | Tokens    | Recorded actual/estimated cost only         |
-| OpenCode                      | Positive recorded cost; otherwise tokens                     | Tokens    | Recorded cost only                          |
+| Source                                                                           | Auto                                                                          | Calculate | Display                                         |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------- | ----------------------------------------------- |
+| Claude Code, Amp, Cline, Kilo, OpenClaw                                          | Recorded cost when present, including zero; otherwise tokens                  | Tokens    | Recorded cost only                              |
+| Codex, Goose, Droid, Codebuff, Antigravity, Gemini, Grok, Kimi, Qwen, ZCode, dsh | Tokens                                                                        | Tokens    | $0; these logs contain no recorded USD cost     |
+| pi-agent                                                                         | Recorded cost when valid, unless a pricing override applies; otherwise tokens | Tokens    | Recorded cost only                              |
+| GitHub Copilot CLI                                                               | Recorded AI credits at $0.01 each when present; otherwise tokens              | Tokens    | Recorded credits converted to USD; otherwise $0 |
+| Hermes                                                                           | Positive recorded actual/estimated cost; otherwise tokens                     | Tokens    | Recorded actual/estimated cost only             |
+| OpenCode                                                                         | Positive recorded cost; otherwise tokens                                      | Tokens    | Recorded cost only                              |
 
-Tokens remain in Display reports even when their cost is zero. Display does not need a pricing table to obtain recorded costs. Other sources retain their documented stored-cost policies; see their source guide.
+Tokens remain in Display reports even when their cost is zero. Focused and unified Display reports load no pricing table and emit neither `missingPricing` nor `unpricedModels`.
+
+Rows with neither tokens nor a cost are omitted from focused and unified reports. A tokenless recorded cost remains when the selected mode uses it.
 
 ## auto (Default)
 

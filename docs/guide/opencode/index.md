@@ -64,7 +64,7 @@ The `claude-agent` provider runs Claude Code under the hood, so each turn is als
 
 Matching uses the native Claude Code session ID, including session aliases retained when repeated calls are deduplicated. An OpenCode turn is excluded when Claude main-thread usage claims that session, even when the turn and its model calls fall on different dates.
 
-With date bounds, claim discovery includes one calendar day on each side of the Claude source's window to cover turns crossing midnight. The report still contains only Claude usage inside the requested window. OpenCode rows remain when there is no main-thread Claude claim, for example when the native logs are missing, contain only subagent usage, or are outside that discovery margin.
+With date bounds, claim discovery keeps `--since` unchanged and includes one extra calendar day after `--until` to cover model calls recorded after their turn crossed midnight. The report still contains only Claude usage inside the requested window. OpenCode rows remain when there is no main-thread Claude claim, for example when the native logs are missing, contain only subagent usage, or are outside that discovery margin.
 
 Focused OpenCode reports use the same session claims. Pass `--include-claude-agent` to include every `claude-agent` row:
 

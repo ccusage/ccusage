@@ -225,6 +225,7 @@ You can customize the context usage color thresholds using command-line options 
 
 - Values must be integers from 0 to 255
 - The `LOW` threshold must be less than the `MEDIUM` threshold
+- Thresholds are validated together after configuration and command-line overrides are merged. For example, a configured low threshold of `85` works with `--context-medium-threshold 95`.
 - An invalid field in a discovered config is dropped with a warning while valid settings are retained. An invalid explicit `--config` file is an error.
 
 **Command-line usage:**
