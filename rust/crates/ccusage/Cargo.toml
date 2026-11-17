@@ -50,7 +50,7 @@ ureq.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["test-clock", "test-snapshots"] }
+ccusage-core = { workspace = true, features = ["test-clock"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
 serde_json.workspace = true

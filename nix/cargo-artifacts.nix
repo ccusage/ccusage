@@ -46,6 +46,7 @@ let
   foundationCrates = [
     "ccusage-cli"
     "ccusage-core"
+    "ccusage-report"
     "ccusage-adapter-common"
     "ccusage-terminal"
   ];
