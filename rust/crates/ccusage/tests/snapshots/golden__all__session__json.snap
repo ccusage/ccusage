@@ -2308,18 +2308,18 @@ exit: 0
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
-      "inputTokens": 4032,
+      "inputTokens": 3911,
       "metadata": {
-        "lastActivity": "2026-01-02T12:00:00.000Z"
+        "lastActivity": "2026-01-01T11:00:00.000Z"
       },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
-          "cost": 0.007812,
-          "inputTokens": 3232,
+          "cost": 0.007536000000000001,
+          "inputTokens": 3111,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 675
+          "outputTokens": 644
         },
         {
           "cacheCreationTokens": 0,
@@ -2353,10 +2353,10 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "qwen-mystery-1"
       ],
-      "outputTokens": 1509,
+      "outputTokens": 1478,
       "period": "sess-a",
-      "totalCost": 0.011268000000000002,
-      "totalTokens": 7038
+      "totalCost": 0.010992000000000002,
+      "totalTokens": 6886
     },
     {
       "agent": "kilo",
@@ -4250,58 +4250,6 @@ exit: 0
       "totalTokens": 1600
     },
     {
-      "agent": "qwen",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00027499999999999996,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "period": "alpha-fallback-c",
-      "totalCost": 0.00027499999999999996,
-      "totalTokens": 175
-    },
-    {
-      "agent": "qwen",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00027499999999999996,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "period": "beta-fallback-c",
-      "totalCost": 0.00027499999999999996,
-      "totalTokens": 175
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
@@ -5540,20 +5488,11 @@ exit: 0
       "agent": "antigravity",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 110,
+      "inputTokens": 10,
       "metadata": {
         "lastActivity": "2025-12-27T23:30:00.000Z"
       },
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -5565,13 +5504,12 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77"
       ],
-      "outputTokens": 55,
+      "outputTokens": 5,
       "period": "session-delta",
       "totalCost": 0,
-      "totalTokens": 165
+      "totalTokens": 15
     },
     {
       "agent": "copilot",
@@ -5604,10 +5542,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 18465,
     "cacheReadTokens": 1323217,
-    "inputTokens": 1350008,
-    "outputTokens": 59982,
-    "totalCost": 29.014982175000025,
-    "totalTokens": 2755109,
+    "inputTokens": 1349487,
+    "outputTokens": 59851,
+    "totalCost": 29.01415617500003,
+    "totalTokens": 2754457,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -5624,7 +5562,6 @@ exit: 0
       "copilot-mystery-1",
       "droid-mystery-1",
       "dsh-mystery-1",
-      "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",
       "gpt-unknown",

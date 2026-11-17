@@ -20,6 +20,9 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 Reads SQLite with the bundled `sqlite` crate, which is why this crate declares it and
 most adapters do not.
 
+Message creation times are epoch milliseconds. Usage records without a valid
+creation time are skipped with an invalid-timestamp diagnostic.
+
 ## Public surface
 
 - `loader::load_entries`

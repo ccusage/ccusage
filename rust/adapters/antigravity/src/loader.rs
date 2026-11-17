@@ -16,7 +16,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     let pricing = cx.pipeline_pricing()?;
     let mut events = Vec::new();
     for database_path in conversation_db_paths(cx.diagnostics)? {
-        match parse_sqlite_file(&database_path) {
+        match parse_sqlite_file(&database_path, cx.diagnostics) {
             Ok(ParsedDatabase::Events(parsed)) => events.extend(parsed),
             Ok(ParsedDatabase::EmptySnapshot) => cx.diagnostics.debug_note(
                 &database_path,
@@ -833,6 +833,80 @@ mod tests {
     }
 
     #[test]
+    fn untimed_database_rows_are_diagnosed_without_using_file_mtime() {
+        let fixture = Fixture::new();
+        let usage = Some(UsageFixture {
+            input_tokens: 1,
+            ..UsageFixture::default()
+        });
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[
+                (1, metadata_blob(Some("test-model"), usage, None, &[])),
+                (
+                    2,
+                    metadata_blob(Some("test-model"), usage, Some((1_778_300_000, 0)), &[]),
+                ),
+            ],
+            &[],
+            &[],
+        );
+        let _guard = EnvVarsGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+        let (entries, diagnostics) =
+            load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+    }
+
+    #[test]
+    fn untimed_step_usage_keeps_the_linked_generation_timestamp() {
+        let fixture = Fixture::new();
+        let usage = UsageFixture {
+            input_tokens: 10,
+            cache_read_tokens: 20,
+            response_id: Some("response"),
+            ..UsageFixture::default()
+        };
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                1,
+                metadata_blob_with_steps(
+                    Some("test-model"),
+                    Some(UsageFixture {
+                        input_tokens: 1,
+                        cache_read_tokens: 0,
+                        ..usage
+                    }),
+                    Some((1_778_300_000, 0)),
+                    &[],
+                    &[1],
+                ),
+            )],
+            &[(
+                1,
+                step_metadata_blob(Some("test-model"), Some(usage), None, &[], None),
+            )],
+            &[],
+        );
+        let _guard = EnvVarsGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+        let (entries, diagnostics) =
+            load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 20);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
+    }
+
+    #[test]
     fn snapshots_production_reports_for_focused_periods() {
         let fixture = Fixture::new();
         create_database(
@@ -1129,7 +1203,7 @@ mod tests {
         let database = fixture.write_file("conversations/empty.db", "");
 
         assert!(matches!(
-            parse_sqlite_file(&database).unwrap(),
+            parse_sqlite_file(&database, &Diagnostics::new("antigravity")).unwrap(),
             ParsedDatabase::EmptySnapshot
         ));
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ccusage_adapter_common::{UnitError, units::read_json};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
@@ -16,13 +17,14 @@ pub(super) fn read_file(
     mode: CostMode,
     pricing: &PricingMap,
     timezone: &jiff::tz::TimeZone,
+    diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let root = read_json::<Value>(&source.path)?;
     Ok(match source.kind {
         SourceKind::Extension | SourceKind::CliTask => {
-            parse_extension_messages(&root, source, mode, pricing, timezone)
+            parse_extension_messages(&root, source, mode, pricing, timezone, diagnostics)
         }
-        SourceKind::Cli => parse_cli_messages(&root, source, mode, pricing, timezone),
+        SourceKind::Cli => parse_cli_messages(&root, source, mode, pricing, timezone, diagnostics),
     })
 }
 
@@ -32,13 +34,14 @@ fn parse_extension_messages(
     mode: CostMode,
     pricing: &PricingMap,
     timezone: &jiff::tz::TimeZone,
+    diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let Some(messages) = root.as_array() else {
         return Vec::new();
     };
     let mut entries = Vec::new();
 
-    for message in messages {
+    for (ordinal, message) in messages.iter().enumerate() {
         if string_field(message, "type") != Some("say") {
             continue;
         }
@@ -51,9 +54,6 @@ fn parse_extension_messages(
         if message.get("partial").and_then(Value::as_bool) == Some(true) {
             continue;
         }
-        let Some(timestamp) = millisecond_timestamp(message.get("ts")) else {
-            continue;
-        };
         let Some(text) = message.get("text").and_then(Value::as_str) else {
             continue;
         };
@@ -72,6 +72,15 @@ fn parse_extension_messages(
         if is_empty_usage(usage) || !has_valid_total(usage) {
             continue;
         }
+        let Some(timestamp) = millisecond_timestamp(message.get("ts")) else {
+            diagnostics.record(Skip::record(
+                &source.path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Cline usage record has no valid timestamp",
+            ));
+            continue;
+        };
         let request_id = string_field_from(metrics, "requestId")
             .or_else(|| string_field_from(metrics, "id"))
             .or_else(|| string_field(message, "requestId"))
@@ -101,19 +110,17 @@ fn parse_cli_messages(
     mode: CostMode,
     pricing: &PricingMap,
     timezone: &jiff::tz::TimeZone,
+    diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let Some(messages) = root.get("messages").and_then(Value::as_array) else {
         return Vec::new();
     };
     let mut entries = Vec::new();
 
-    for message in messages {
+    for (ordinal, message) in messages.iter().enumerate() {
         if string_field(message, "role") != Some("assistant") {
             continue;
         }
-        let Some(timestamp) = cli_timestamp(message) else {
-            continue;
-        };
         let Some(metrics) = message.get("metrics").and_then(Value::as_object) else {
             continue;
         };
@@ -124,6 +131,15 @@ fn parse_cli_messages(
             continue;
         }
         let Some((model, provider)) = cli_model_info(message.get("modelInfo")) else {
+            continue;
+        };
+        let Some(timestamp) = cli_timestamp(message) else {
+            diagnostics.record(Skip::record(
+                &source.path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Cline usage record has no valid timestamp",
+            ));
             continue;
         };
         let request_id = string_field(message, "requestId")
@@ -423,6 +439,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -469,6 +486,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert!(entries.is_empty());
@@ -564,6 +582,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -645,6 +664,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -718,6 +738,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -761,6 +782,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert!(entries.is_empty());
@@ -797,6 +819,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 2);
@@ -840,6 +863,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
         let display = parse_cli_messages(
             &root,
@@ -847,6 +871,7 @@ mod tests {
             CostMode::Display,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
         let calculate = parse_cli_messages(
             &root,
@@ -854,6 +879,7 @@ mod tests {
             CostMode::Calculate,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(auto[0].cost, 0.0);
@@ -884,6 +910,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
         let display = parse_cli_messages(
             &root,
@@ -891,6 +918,7 @@ mod tests {
             CostMode::Display,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
         let calculate = parse_cli_messages(
             &root,
@@ -898,6 +926,7 @@ mod tests {
             CostMode::Calculate,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert!(auto[0].cost > 0.0);
@@ -926,6 +955,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries[0].data.cost_usd, None);
@@ -963,6 +993,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -982,6 +1013,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
+            &Diagnostics::new("cline"),
         );
 
         assert!(entries.is_empty());

@@ -15,16 +15,15 @@ exit: 0
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - ZCode              │ - gpt-5                   │         11 │         7 │       $0.00 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ 2025-12  │ All                  │                           │    113,680 │    29,836 │      $21.16 │
+│ 2025-12  │ All                  │                           │    113,280 │    29,736 │      $21.16 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - Amp                │ - gpt-5                   │      3,400 │       950 │       $0.02 │
 │          │                      │ - haiku-4-5               │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│          │ - Antigravity        │ - antigravity-model-77    │      3,175 │       516 │       $0.01 │
+│          │ - Antigravity        │ - antigravity-model-77    │      3,075 │       466 │       $0.01 │
 │          │                      │ - gemini-3-pro            │            │           │             │
 │          │                      │ - gemini-3.5-flash-high   │            │           │             │
-│          │                      │ - gemini-internal-model   │            │           │             │
 │          │                      │ - gpt-5                   │            │           │             │
 │          │                      │ - haiku-4-5               │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
@@ -118,7 +117,7 @@ exit: 0
 │          │                      │ - [pi] pi-mystery-1       │            │           │             │
 │          │                      │ - [pi] pi-mystery-2       │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│          │ - Qwen               │ - qwen-2.5-72b            │      7,043 │     2,031 │       $0.02 │
+│          │ - Qwen               │ - qwen-2.5-72b            │      6,743 │     1,981 │       $0.02 │
 │          │                      │ - qwen-3-235b             │            │           │             │
 │          │                      │ - qwen-mystery-1          │            │           │             │
 │          │                      │ - qwen3-coder-plus        │            │           │             │
@@ -130,7 +129,7 @@ exit: 0
 │          │                      │ - opus-4                  │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ 2026-01  │ All                  │                           │  1,232,578 │    28,466 │       $6.97 │
+│ 2026-01  │ All                  │                           │  1,232,457 │    28,435 │       $6.97 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - Amp                │ - amp-mystery-1           │      1,700 │     1,315 │       $0.02 │
 │          │                      │ - gpt-5                   │            │           │             │
@@ -246,7 +245,7 @@ exit: 0
 │          │                      │ - [pi] gpt-5              │            │           │             │
 │          │                      │ - [pi] pi-mystery-1       │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│          │ - Qwen               │ - qwen3-coder-plus        │    301,472 │     2,304 │       $0.33 │
+│          │ - Qwen               │ - qwen3-coder-plus        │    301,351 │     2,273 │       $0.33 │
 │          │                      │ - sonnet-4                │            │           │             │
 │          │                      │ - unknown                 │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
@@ -263,7 +262,7 @@ exit: 0
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │       $0.00 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ Total    │                      │                           │  1,347,980 │    58,960 │      $28.14 │
+│ Total    │                      │                           │  1,347,459 │    58,829 │      $28.14 │
 └──────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴─────────────┘
 
 --- stderr ---
@@ -282,7 +281,6 @@ WARN  Missing embedded pricing for codex-mystery-1; cost excludes this model. Ru
 WARN  Missing embedded pricing for copilot-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for droid-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
-WARN  Missing embedded pricing for gemini-internal-model; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for gemini-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for goose-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for gpt-unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

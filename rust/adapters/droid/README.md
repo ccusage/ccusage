@@ -20,6 +20,10 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
 
+A settings file uses its provider-lock timestamp, falling back to the file's
+modification time. If neither is usable, it is skipped with an invalid-timestamp
+diagnostic. A modification-time fallback does not select historical pricing.
+
 ## Public surface
 
 - `loader::load_entries`

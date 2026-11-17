@@ -10,17 +10,8 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
       "date": "2025-12-28",
-      "inputTokens": 110,
+      "inputTokens": 10,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -32,12 +23,11 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77"
       ],
-      "outputTokens": 55,
+      "outputTokens": 5,
       "totalCost": 0.0,
-      "totalTokens": 165
+      "totalTokens": 15
     },
     {
       "cacheCreationTokens": 50,
@@ -214,14 +204,13 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 450,
     "cacheReadTokens": 127500,
-    "inputTokens": 257516,
-    "outputTokens": 2730,
+    "inputTokens": 257416,
+    "outputTokens": 2680,
     "totalCost": 0.7002495,
-    "totalTokens": 388366,
+    "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",
       "antigravity-mystery-1",
-      "gemini-internal-model",
       "model_placeholder_m499"
     ]
   }

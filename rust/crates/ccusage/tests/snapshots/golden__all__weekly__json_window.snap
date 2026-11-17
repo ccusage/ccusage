@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 9001,
     "cacheReadTokens": 668744,
-    "inputTokens": 1171563,
-    "outputTokens": 37352,
-    "totalCost": 15.364746700000001,
-    "totalTokens": 1888322,
+    "inputTokens": 1171263,
+    "outputTokens": 37302,
+    "totalCost": 15.3641967,
+    "totalTokens": 1887972,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -45,7 +45,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 9001,
       "cacheReadTokens": 668744,
-      "inputTokens": 1171563,
+      "inputTokens": 1171263,
       "metadata": {
         "agents": [
           "amp",
@@ -146,10 +146,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 101600,
-          "cost": 0.326141,
-          "inputTokens": 302831,
+          "cost": 0.325591,
+          "inputTokens": 302531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2463
+          "outputTokens": 2413
         },
         {
           "cacheCreationTokens": 0,
@@ -700,10 +700,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 37352,
+      "outputTokens": 37302,
       "period": "2025-12-29",
-      "totalCost": 15.364746700000001,
-      "totalTokens": 1888322
+      "totalCost": 15.3641967,
+      "totalTokens": 1887972
     }
   ]
 }

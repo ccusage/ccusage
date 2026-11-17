@@ -124,19 +124,10 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "firstActivity": "2025-12-27T22:00:00.000Z",
-      "inputTokens": 110,
+      "firstActivity": "2025-12-27T23:30:00.000Z",
+      "inputTokens": 10,
       "lastActivity": "2025-12-27T23:30:00.000Z",
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -148,14 +139,13 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77"
       ],
-      "outputTokens": 55,
+      "outputTokens": 5,
       "projectPath": "Antigravity",
       "sessionId": "session-delta",
       "totalCost": 0.0,
-      "totalTokens": 165
+      "totalTokens": 15
     },
     {
       "cacheCreationTokens": 200,
@@ -195,19 +185,19 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 450,
     "cacheReadTokens": 127500,
-    "inputTokens": 257516,
-    "outputTokens": 2730,
+    "inputTokens": 257416,
+    "outputTokens": 2680,
     "totalCost": 0.7002495,
-    "totalTokens": 388366,
+    "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",
       "antigravity-mystery-1",
-      "gemini-internal-model",
       "model_placeholder_m499"
     ]
   }
 }
 
 --- stderr ---
+WARN  antigravity: skipped 1 record in 1 input (invalid timestamp)
 WARN  antigravity: skipped 1 input (unexpected shape)
 WARN  antigravity: skipped 2 inputs (invalid data)

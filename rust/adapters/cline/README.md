@@ -52,6 +52,9 @@ from its cache counters. Task-format records use `task:<id>` session IDs and
 CLI transcript records use `cli:<id>` so matching IDs from different formats
 do not collide.
 
+Otherwise eligible usage records without a valid timestamp are skipped with an
+invalid-timestamp diagnostic. Incomplete records remain ignored.
+
 The shared cost mode controls cost output: `auto` prefers a reported cost and
 calculates from historical pricing when no cost was recorded; `display` uses a
 reported cost without calculating one; `calculate` ignores recorded cost and

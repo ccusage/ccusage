@@ -1,9 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -14,11 +9,8 @@ use ccusage_adapter_common::{jsonl, units::UnitError};
 use super::paths;
 use crate::{
     Diagnostics, LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at,
-    cli::{CostMode, SharedArgs},
-    fast::LinePrefilter,
-    format_date_tz, format_rfc3339_millis, missing_pricing_model_for_candidates,
-    parse_ts_timestamp,
+    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
+    format_date_tz, missing_pricing_model_for_candidates, parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -60,24 +52,29 @@ pub(super) fn read_chat_file(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let fallback = file_timestamp(file, shared);
     let content = fs::read(file)?;
     // Every usable Qwen line carries token counts under the `usageMetadata`
     // key, so lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
     let mut entries = Vec::new();
-    for record in jsonl::records_with_usage_diagnostics::<QwenLine>(
+    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<QwenLine>(
         &content,
         Some(&prefilter),
         file,
         diagnostics,
         is_qwen_usage,
     ) {
-        if let Some(entry) = parse_line(file, fallback, &record, tz, mode, pricing) {
-            entries.push(entry);
+        match parse_line(file, &record, tz, mode, pricing) {
+            Ok(Some(entry)) => entries.push(entry),
+            Ok(None) => {}
+            Err(MissingTimestamp) => diagnostics.record(ccusage_core::Skip::record(
+                file,
+                number,
+                ccusage_core::SkipKind::InvalidTimestamp,
+                "Qwen usage record has no valid timestamp",
+            )),
         }
     }
     Ok(entries)
@@ -88,18 +85,22 @@ fn is_qwen_usage(value: &Value) -> bool {
         && value.get("usageMetadata").is_some()
 }
 
+#[derive(Debug)]
+struct MissingTimestamp;
+
 fn parse_line(
     file: &Path,
-    fallback: TimestampMs,
     record: &QwenLine,
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
+) -> std::result::Result<Option<LoadedEntry>, MissingTimestamp> {
     if record.r#type.as_deref() != Some("assistant") {
-        return None;
+        return Ok(None);
     }
-    let usage = record.usage_metadata.as_ref()?;
+    let Some(usage) = record.usage_metadata.as_ref() else {
+        return Ok(None);
+    };
     let input_tokens = usage.prompt_token_count;
     let output_tokens = usage.candidates_token_count;
     let reasoning_tokens = usage.thoughts_token_count;
@@ -120,15 +121,11 @@ fn parse_line(
         && display_usage.cache_read_input_tokens == 0
         && extra_total_tokens == 0
     {
-        return None;
+        return Ok(None);
     }
 
-    let timestamp_text = record
-        .timestamp
-        .clone()
-        .and_then(|value| parse_ts_timestamp(&value).map(|_| value))
-        .unwrap_or_else(|| format_rfc3339_millis(fallback));
-    let timestamp = parse_ts_timestamp(&timestamp_text).unwrap_or(fallback);
+    let timestamp_text = record.timestamp.as_ref().ok_or(MissingTimestamp)?;
+    let timestamp = parse_ts_timestamp(timestamp_text).ok_or(MissingTimestamp)?;
     let project = paths::project_from_file(file).unwrap_or_else(|| "unknown".to_string());
     let session_id = record.session_id.clone().unwrap_or_else(|| {
         let stem = file
@@ -152,7 +149,7 @@ fn parse_line(
     let missing_pricing_model = missing_qwen_pricing(&model, billable_usage, mode, pricing);
     let data = UsageEntry {
         session_id: Some(session_id.clone()),
-        timestamp: timestamp_text,
+        timestamp: timestamp_text.clone(),
         version: None,
         message: UsageMessage {
             usage: display_usage,
@@ -164,7 +161,7 @@ fn parse_line(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    Some(LoadedEntry {
+    Ok(Some(LoadedEntry {
         data,
         timestamp,
         date: format_date_tz(timestamp, tz),
@@ -179,7 +176,7 @@ fn parse_line(
         missing_pricing_model,
         extra_total_tokens,
         stored_cost: None,
-    })
+    }))
 }
 
 fn calculate_qwen_cost(
@@ -231,35 +228,6 @@ fn qwen_model_candidates(model: &str) -> Vec<String> {
     ]
 }
 
-fn file_timestamp(file: &Path, shared: &SharedArgs) -> TimestampMs {
-    match fs::metadata(file)
-        .and_then(|metadata| metadata.modified())
-        .and_then(|modified| {
-            modified
-                .duration_since(UNIX_EPOCH)
-                .map_err(std::io::Error::other)
-        }) {
-        Ok(duration) => TimestampMs::from_millis(duration.as_millis().min(i64::MAX as u128) as i64),
-        Err(error) => {
-            crate::debug_log(
-                shared,
-                format!(
-                    "Failed to read Qwen chat file timestamp for {}: {error}",
-                    file.display()
-                ),
-            );
-            system_time_timestamp(SystemTime::now())
-        }
-    }
-}
-
-fn system_time_timestamp(time: SystemTime) -> TimestampMs {
-    time.duration_since(UNIX_EPOCH).map_or_else(
-        |_| TimestampMs::UNIX_EPOCH,
-        |duration| TimestampMs::from_millis(duration.as_millis().min(i64::MAX as u128) as i64),
-    )
-}
-
 pub(super) fn entry_id(entry: &LoadedEntry) -> String {
     let usage = entry.data.message.usage;
     serde_json::json!([
@@ -277,6 +245,28 @@ pub(super) fn entry_id(entry: &LoadedEntry) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn untimed_jsonl_usage_is_diagnosed_without_using_file_mtime() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "chat.jsonl": "{\"type\":\"assistant\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"timestamp\":\"invalid\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"timestamp\":\"1970-01-01T00:00:00Z\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"usageMetadata\":{}}\n"
+        });
+        let diagnostics = Diagnostics::new("qwen");
+        let entries = read_chat_file(
+            &fixture.path("chat.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp, TimestampMs::UNIX_EPOCH);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            2
+        );
+    }
 
     #[test]
     fn calculate_qwen_cost_returns_explicit_zero_price() {
@@ -328,12 +318,12 @@ mod tests {
         .unwrap();
         let entry = parse_line(
             Path::new("/tmp/project/chat.jsonl"),
-            TimestampMs::UNIX_EPOCH,
             &record,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.data.message.usage.output_tokens, 321);

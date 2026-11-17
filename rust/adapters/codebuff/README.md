@@ -21,6 +21,10 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
 
+Usage records use their message timestamp, the timestamp in the chat directory
+name, or the whole chat document's modification time. Records without any usable
+timestamp are skipped with an invalid-timestamp diagnostic.
+
 ## Public surface
 
 - `loader::load_entries`

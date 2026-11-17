@@ -37,7 +37,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             .get(path)
             .copied()
             .expect("discovered Cline file has source metadata");
-        super::parser::read_file(source, shared.mode, pricing, timezone)
+        super::parser::read_file(source, shared.mode, pricing, timezone, cx.diagnostics)
     });
     entries.sort_by(|left, right| {
         left.timestamp
@@ -54,6 +54,34 @@ mod tests {
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
     use ccusage_test_support::{EnvVarGuard, Fixture};
+
+    #[test]
+    fn diagnoses_untimed_extension_and_cli_usage() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "tasks/task-a/ui_messages.json": r#"[
+                {"type":"say","say":"api_req_started","modelInfo":{"modelId":"test-model"},"text":"{\"tokensIn\":1,\"tokensOut\":0,\"cacheReads\":0,\"cacheWrites\":0}"},
+                {"type":"say","say":"api_req_started","ts":0,"modelInfo":{"modelId":"test-model"},"text":"{\"tokensIn\":1,\"tokensOut\":0,\"cacheReads\":0,\"cacheWrites\":0}"}
+            ]"#,
+            "data/sessions/session-a/session-a.messages.json": r#"{"messages":[
+                {"role":"assistant","modelInfo":{"id":"test-model"},"metrics":{"inputTokens":1,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0}},
+                {"role":"assistant","metrics":{}}
+            ]}"#
+        });
+        let _guard = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&PricingMap::default()),
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            2
+        );
+    }
 
     #[test]
     fn loads_extension_and_cli_fixture_records_with_source_namespaced_sessions() {

@@ -63,7 +63,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 8583,
+      "inputTokens": 8483,
       "metadata": {
         "agents": [
           "amp",
@@ -156,14 +156,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "inputTokens": 10,
           "missingPricing": true,
           "modelName": "antigravity-model-77",
@@ -204,15 +196,14 @@ exit: 0
         "antigravity-model-77",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
         "kimi-k2-thinking",
         "unknown"
       ],
-      "outputTokens": 1810,
+      "outputTokens": 1760,
       "period": "2025-12-27",
-      "totalTokens": 12780
+      "totalTokens": 12630
     },
     {
       "agent": "all",
@@ -450,7 +441,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 6111,
       "cacheReadTokens": 183116,
-      "inputTokens": 65694,
+      "inputTokens": 65394,
       "metadata": {
         "agents": [
           "amp",
@@ -594,9 +585,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "inputTokens": 2300,
+          "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 350
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -776,9 +767,9 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19602,
+      "outputTokens": 19552,
       "period": "2025-12-31",
-      "totalTokens": 275133
+      "totalTokens": 274783
     },
     {
       "agent": "all",
@@ -1257,7 +1248,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1650,
       "cacheReadTokens": 529980,
-      "inputTokens": 127209,
+      "inputTokens": 127088,
       "metadata": {
         "agents": [
           "amp",
@@ -1447,13 +1438,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 121,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 31
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
@@ -1576,12 +1560,11 @@ exit: 0
         "kimi-k2-thinking",
         "model_placeholder_m499",
         "openai/gpt-5",
-        "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10836,
+      "outputTokens": 10805,
       "period": "2026-01-02",
-      "totalTokens": 670970
+      "totalTokens": 670818
     },
     {
       "agent": "all",
@@ -1613,9 +1596,9 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1347980,
-    "outputTokens": 58960,
-    "totalTokens": 2740739,
+    "inputTokens": 1347459,
+    "outputTokens": 58829,
+    "totalTokens": 2740087,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -1632,7 +1615,6 @@ exit: 0
       "copilot-mystery-1",
       "droid-mystery-1",
       "dsh-mystery-1",
-      "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",
       "gpt-unknown",

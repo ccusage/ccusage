@@ -6,7 +6,7 @@ use ccusage_core::{Skip, SkipKind};
 use crate::{LoadedEntry, PricingMap, Result};
 
 use super::{
-    parser::{KiloMessage, message_value_to_entry},
+    parser::{KiloMessage, MissingTimestamp, message_value_to_entry},
     paths::{db_path, paths},
 };
 
@@ -88,7 +88,7 @@ fn load_entries_from_database(
                 ) else {
                     continue;
                 };
-                if let Some(entry) = message_value_to_entry(
+                match message_value_to_entry(
                     &value,
                     &row_id,
                     &row_session_id,
@@ -97,7 +97,14 @@ fn load_entries_from_database(
                     cx.shared.mode,
                     pricing,
                 ) {
-                    entries.push(entry);
+                    Ok(Some(entry)) => entries.push(entry),
+                    Ok(None) => {}
+                    Err(MissingTimestamp) => cx.diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        SkipKind::InvalidTimestamp,
+                        "Kilo usage record has no valid creation time",
+                    )),
                 }
             }
             Ok(sqlite::State::Done) => break,
@@ -181,9 +188,19 @@ mod tests {
         );
         let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert!(entries.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
     }
 
     #[test]

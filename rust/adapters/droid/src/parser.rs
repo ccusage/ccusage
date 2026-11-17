@@ -57,10 +57,13 @@ pub(super) fn load_settings_file(
     } else {
         provider
     };
-    let Some((timestamp, timestamp_text, pricing_timestamp)) = settings_timestamp(settings, path)
-    else {
-        return Ok(None);
-    };
+    let (timestamp, timestamp_text, pricing_timestamp) = settings_timestamp(settings, path)
+        .ok_or_else(|| {
+            UnitError::new(
+                ccusage_core::SkipKind::InvalidTimestamp,
+                "Droid settings have no valid timestamp or file modification time",
+            )
+        })?;
     let session_id = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -125,14 +128,20 @@ fn settings_timestamp(
     {
         return Some((timestamp, format_rfc3339_millis(timestamp), Some(timestamp)));
     }
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let millis = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_millis()
-        .min(i64::MAX as u128) as i64;
-    let timestamp = crate::TimestampMs::from_millis(millis);
+    let timestamp = file_mtime(path)?;
     Some((timestamp, format_rfc3339_millis(timestamp), None))
+}
+
+fn file_mtime(path: &Path) -> Option<crate::TimestampMs> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    let millis = i64::try_from(
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis(),
+    )
+    .ok()?;
+    Some(crate::TimestampMs::from_millis(millis))
 }
 
 pub(super) fn calculate_droid_cost(entry: &DroidEntry, pricing: &PricingMap) -> f64 {
@@ -327,6 +336,30 @@ fn extract_droid_model_from_line(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnoses_settings_without_a_usable_timestamp_or_file_mtime() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session.settings.json": r#"{"tokenUsage":{"inputTokens":1}}"#
+        });
+        let path = fixture.path("session.settings.json");
+        std::fs::File::open(&path)
+            .unwrap()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH - std::time::Duration::from_secs(1)),
+            )
+            .unwrap();
+        let error = load_settings_file(&path)
+            .err()
+            .expect("missing timestamp must be diagnosed");
+        let diagnostics = ccusage_core::Diagnostics::new("droid");
+        error.record(&path, &diagnostics);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
+    }
 
     fn deepseek_pricing() -> PricingMap {
         let mut pricing = PricingMap::default();

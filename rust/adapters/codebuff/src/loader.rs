@@ -29,12 +29,9 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let tz = cx.window.timezone();
     let mut files = discover_chat_files(cx.diagnostics)?;
     files.sort();
-    let loaded = read_units_flat(
-        &files,
-        cx.shared.single_thread,
-        cx.diagnostics,
-        load_chat_file,
-    );
+    let loaded = read_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |path| {
+        load_chat_file(path, cx.diagnostics)
+    });
     let mut deduped = HashMap::<String, CodebuffEntry>::new();
     for entry in loaded {
         deduped.insert(entry.dedup_key.clone(), entry);
@@ -154,6 +151,58 @@ mod tests {
             );
             assert_eq!(entries[0].data.message.usage.input_tokens, 99);
         }
+    }
+
+    #[test]
+    fn diagnoses_chat_records_only_when_all_timestamp_sources_fail() {
+        let fixture = fs_fixture!({
+            "projects/project-a/chats/chat-a/chat-messages.json": r#"[
+                {"role":"assistant","metadata":{"usage":{"inputTokens":1}}},
+                {"role":"assistant","timestamp":"invalid","metadata":{"usage":{"inputTokens":1}}},
+                {"role":"assistant","timestamp":"1970-01-01T00:00:00Z","metadata":{"usage":{"inputTokens":1}}},
+                {"role":"assistant","metadata":{"usage":{}}}
+            ]"#
+        });
+        let path = fixture.path("projects/project-a/chats/chat-a/chat-messages.json");
+        std::fs::File::open(&path)
+            .unwrap()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH - std::time::Duration::from_secs(1)),
+            )
+            .unwrap();
+        let _guard = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            SourceOptions::default(),
+            Some(&PricingMap::default()),
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+    }
+
+    #[test]
+    fn uses_file_mtime_for_an_untimed_whole_chat_document() {
+        let fixture = fs_fixture!({
+            "projects/project-a/chats/chat-a/chat-messages.json": r#"[
+                {"role":"assistant","metadata":{"usage":{"inputTokens":1}}}
+            ]"#
+        });
+        let path = fixture.path("projects/project-a/chats/chat-a/chat-messages.json");
+        std::fs::File::open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_767_312_000),
+            ))
+            .unwrap();
+        let diagnostics = Diagnostics::new("codebuff");
+        let entries = load_chat_file(&path, &diagnostics).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_767_312_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
     }
 
     #[test]

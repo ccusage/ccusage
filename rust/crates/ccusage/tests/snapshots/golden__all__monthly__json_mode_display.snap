@@ -49,7 +49,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 13225,
       "cacheReadTokens": 292809,
-      "inputTokens": 112680,
+      "inputTokens": 112280,
       "metadata": {
         "agents": [
           "amp",
@@ -272,14 +272,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "modelName": "antigravity-model-77",
           "outputTokens": 5
@@ -417,9 +409,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
           "cost": 0.0,
-          "inputTokens": 5300,
+          "inputTokens": 5000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 951
+          "outputTokens": 901
         },
         {
           "cacheCreationTokens": 0,
@@ -502,7 +494,6 @@ exit: 0
         "gemini-3-flash-preview",
         "gemini-3-pro",
         "gemini-3.5-flash-high",
-        "gemini-internal-model",
         "gemini-mystery-1",
         "gpt-5",
         "gpt-5-codex",
@@ -521,16 +512,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29736,
+      "outputTokens": 29636,
       "period": "2025-12",
       "totalCost": 20.618555999999995,
-      "totalTokens": 449520
+      "totalTokens": 449020
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
       "cacheReadTokens": 1015308,
-      "inputTokens": 1232578,
+      "inputTokens": 1232457,
       "metadata": {
         "agents": [
           "amp",
@@ -1046,9 +1037,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
           "cost": 0.0,
-          "inputTokens": 300652,
+          "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2144
+          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -1159,10 +1150,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 28466,
+      "outputTokens": 28435,
       "period": "2026-01",
       "totalCost": 3.6245447499999996,
-      "totalTokens": 2283239
+      "totalTokens": 2283087
     },
     {
       "agent": "all",
@@ -1196,10 +1187,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1346980,
-    "outputTokens": 58860,
+    "inputTokens": 1346459,
+    "outputTokens": 58729,
     "totalCost": 24.243100749999993,
-    "totalTokens": 2739639,
+    "totalTokens": 2738987,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use ccusage_adapter_common::{SqliteStage, UnitError};
-use ccusage_core::SkipKind;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use crate::{
     LoadedEntry, Pricing, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -184,8 +184,10 @@ pub(super) enum ParsedDatabase {
     NoGenerationTable,
 }
 
-pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
-    let fallback_timestamp = file_modified_timestamp(path);
+pub(super) fn parse_sqlite_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> DatabaseResult<ParsedDatabase> {
     let connection =
         sqlite::Connection::open_with_flags(path, sqlite::OpenFlags::new().with_read_only())
             .map_err(sqlite_failure)?;
@@ -218,7 +220,38 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
 
     let mut events = Vec::new();
     let mut identity_timestamps = HashMap::new();
-    for (idx, metadata) in step_rows {
+    let timed_steps = step_rows.iter().filter_map(|(idx, metadata)| {
+        metadata.timestamp.map(|timestamp| {
+            (
+                timestamp,
+                vec![format!("step:{session_id}:{idx}")],
+                metadata.usage.iter().chain(&metadata.retry_usages),
+            )
+        })
+    });
+    let timed_generations = generation_rows.iter().filter_map(|(idx, metadata)| {
+        metadata.timestamp.map(|timestamp| {
+            (
+                timestamp,
+                generation_identities(&session_id, *idx, &metadata.step_indices),
+                metadata.usage.iter().chain(&metadata.retry_usages),
+            )
+        })
+    });
+    for (timestamp, identities, usages) in timed_steps.chain(timed_generations) {
+        for identity in identities
+            .into_iter()
+            .chain(usages.flat_map(ModelUsage::identity_keys))
+        {
+            let known = identity_timestamps
+                .entry(identity)
+                .or_insert((timestamp, 3));
+            known.0 = known.0.min(timestamp);
+        }
+    }
+    let step_diagnostics = diagnostics.for_table("steps");
+    let generation_diagnostics = diagnostics.for_table("gen_metadata");
+    for (ordinal, (idx, metadata)) in step_rows.into_iter().enumerate() {
         let model = row_model(metadata.model.as_deref(), metadata.model_id)
             .or_else(|| generation_model.clone());
         let timestamp = metadata.timestamp.map(|timestamp| (timestamp, 3));
@@ -234,7 +267,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
                     provider: metadata.provider,
                     timestamp,
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &step_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &fallback_identities,
                 },
@@ -251,7 +285,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
                     provider: metadata.provider,
                     timestamp,
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &step_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &[],
                 },
@@ -260,7 +295,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
     }
 
     let mut current_model = None;
-    for (idx, metadata) in generation_rows {
+    for (ordinal, (idx, metadata)) in generation_rows.into_iter().enumerate() {
         let resolved_model =
             row_model(metadata.model.as_deref(), metadata.model_id).or_else(|| {
                 metadata
@@ -273,15 +308,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
             current_model = Some(model);
         }
         let model = current_model.clone();
-        let fallback_identities: Vec<String> = if metadata.step_indices.is_empty() {
-            vec![format!("gen:{session_id}:{idx}")]
-        } else {
-            metadata
-                .step_indices
-                .iter()
-                .map(|step_idx| format!("step:{session_id}:{step_idx}"))
-                .collect()
-        };
+        let fallback_identities = generation_identities(&session_id, idx, &metadata.step_indices);
         if let Some(usage) = metadata.usage {
             append_usage_event(
                 &mut events,
@@ -293,7 +320,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
                     provider: None,
                     timestamp: metadata.timestamp.map(|timestamp| (timestamp, 3)),
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &generation_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &fallback_identities,
                 },
@@ -310,7 +338,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
                     provider: None,
                     timestamp: metadata.timestamp.map(|timestamp| (timestamp, 3)),
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &generation_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &[],
                 },
@@ -318,6 +347,17 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
         }
     }
     Ok(ParsedDatabase::Events(events))
+}
+
+fn generation_identities(session_id: &str, idx: i64, step_indices: &[i64]) -> Vec<String> {
+    if step_indices.is_empty() {
+        vec![format!("gen:{session_id}:{idx}")]
+    } else {
+        step_indices
+            .iter()
+            .map(|idx| format!("step:{session_id}:{idx}"))
+            .collect()
+    }
 }
 
 fn database_snapshot_is_empty(connection: &sqlite::Connection) -> DatabaseResult<bool> {
@@ -426,7 +466,8 @@ struct EventContext<'a> {
     provider: Option<u64>,
     timestamp: Option<(TimestampMs, u8)>,
     trajectory_timestamp: Option<TimestampMs>,
-    fallback_timestamp: TimestampMs,
+    diagnostics: &'a Diagnostics,
+    record: (&'a Path, u32),
     session_id: &'a str,
     fallback_identities: &'a [String],
 }
@@ -444,15 +485,24 @@ fn append_usage_event(
     if identities.is_empty() {
         identities.extend(context.fallback_identities.iter().cloned());
     }
-    let (timestamp, timestamp_rank) = context
+    let Some((timestamp, timestamp_rank)) = context
         .timestamp
         .or_else(|| {
             identities
                 .iter()
+                .chain(context.fallback_identities)
                 .find_map(|identity| identity_timestamps.get(identity).copied())
         })
         .or_else(|| context.trajectory_timestamp.map(|timestamp| (timestamp, 1)))
-        .unwrap_or((context.fallback_timestamp, 0));
+    else {
+        context.diagnostics.record(Skip::record(
+            context.record.0,
+            context.record.1,
+            SkipKind::InvalidTimestamp,
+            "Antigravity usage record has no valid generation, step or trajectory timestamp",
+        ));
+        return;
+    };
     let total_output_tokens = usage.total_output_tokens.max(
         usage
             .visible_output_tokens
@@ -1177,16 +1227,6 @@ fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
     candidates
 }
 
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .map(TimestampMs::from_millis)
-        .unwrap_or(TimestampMs::UNIX_EPOCH)
-}
-
 #[cfg(test)]
 pub(super) mod test_support {
     use std::path::Path;
@@ -1437,9 +1477,10 @@ mod tests {
                     model,
                     model_id: None,
                     provider: None,
-                    timestamp: None,
+                    timestamp: Some((TimestampMs::UNIX_EPOCH, 3)),
                     trajectory_timestamp: None,
-                    fallback_timestamp: TimestampMs::UNIX_EPOCH,
+                    diagnostics: &ccusage_core::Diagnostics::new("antigravity"),
+                    record: (std::path::Path::new("fixture.db"), 1),
                     session_id: "session",
                     fallback_identities: &[],
                 },

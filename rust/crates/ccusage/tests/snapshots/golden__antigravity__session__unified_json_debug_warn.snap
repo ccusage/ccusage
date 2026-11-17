@@ -162,20 +162,11 @@ exit: 0
       "agent": "antigravity",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 110,
+      "inputTokens": 10,
       "metadata": {
         "lastActivity": "2025-12-27T23:30:00.000Z"
       },
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -187,26 +178,24 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77"
       ],
-      "outputTokens": 55,
+      "outputTokens": 5,
       "period": "session-delta",
       "totalCost": 0,
-      "totalTokens": 165
+      "totalTokens": 15
     }
   ],
   "totals": {
     "cacheCreationTokens": 450,
     "cacheReadTokens": 127500,
-    "inputTokens": 257516,
-    "outputTokens": 2730,
+    "inputTokens": 257416,
+    "outputTokens": 2680,
     "totalCost": 0.7002495,
-    "totalTokens": 388366,
+    "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",
       "antigravity-mystery-1",
-      "gemini-internal-model",
       "model_placeholder_m499"
     ]
   }
@@ -217,6 +206,8 @@ Scanning Claude data directories:
 Found 0 JSONL usage files
 Skipping uninitialized Antigravity database '[ROOT]/antigravity/ide/conversations/empty.db': empty SQLite snapshot
 Skipping Antigravity database '[ROOT]/antigravity/ide/conversations/missing-table.db': no gen_metadata table
+WARN  antigravity: skipped 1 record in 1 input (invalid timestamp)
+antigravity: invalid timestamp: [ROOT]/antigravity/ide/conversations/archive/session-delta.db:gen_metadata:1: Antigravity usage record has no valid generation, step or trajectory timestamp
 WARN  antigravity: skipped 1 input (unexpected shape)
 antigravity: unexpected shape: [ROOT]/antigravity/ide/conversations/bad-steps.db: database schema is not supported
 WARN  antigravity: skipped 2 inputs (invalid data)

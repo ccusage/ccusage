@@ -45,11 +45,7 @@ exit: 0
 │ └─       │               │        60 │        15 │           0 │          0 │         75 │      $0.00 │              │
 │ model_p… │               │           │           │             │            │            │            │              │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
-│ session… │ - antigravit… │       110 │        55 │           0 │          0 │        165 │      $0.00 │ 2025-12-27   │
-│          │ - gemini-int… │           │           │             │            │            │            │              │
-├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
-│ └─       │               │       100 │        50 │           0 │          0 │        150 │      $0.00 │              │
-│ gemini-… │               │           │           │             │            │            │            │              │
+│ session… │ - antigravit… │        10 │         5 │           0 │          0 │         15 │      $0.00 │ 2025-12-27   │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
 │ └─       │               │        10 │         5 │           0 │          0 │         15 │      $0.00 │              │
 │ antigra… │               │           │           │             │            │            │            │              │
@@ -62,11 +58,10 @@ exit: 0
 │ └─       │               │     1,020 │       430 │         200 │      7,000 │      8,650 │      $0.00 │              │
 │ haiku-4… │               │           │           │             │            │            │            │              │
 ├──────────┼───────────────┼───────────┼───────────┼─────────────┼────────────┼────────────┼────────────┼──────────────┤
-│ Total    │               │   257,516 │     2,730 │         450 │    127,500 │    388,366 │      $0.70 │              │
+│ Total    │               │   257,416 │     2,680 │         450 │    127,500 │    388,216 │      $0.70 │              │
 └──────────┴───────────────┴───────────┴───────────┴─────────────┴────────────┴────────────┴────────────┴──────────────┘
 
 --- stderr ---
 WARN  Missing embedded pricing for antigravity-model-77; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for antigravity-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
-WARN  Missing embedded pricing for gemini-internal-model; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.

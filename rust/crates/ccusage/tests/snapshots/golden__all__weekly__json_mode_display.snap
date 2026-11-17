@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1346980,
-    "outputTokens": 58860,
+    "inputTokens": 1346459,
+    "outputTokens": 58729,
     "totalCost": 24.243100749999996,
-    "totalTokens": 2739639,
+    "totalTokens": 2738987,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
@@ -83,7 +83,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 7583,
+      "inputTokens": 7483,
       "metadata": {
         "agents": [
           "amp",
@@ -169,14 +169,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "modelName": "antigravity-model-77",
           "outputTokens": 5
@@ -232,22 +224,21 @@ exit: 0
         "antigravity-model-77",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
         "kimi-k2-thinking",
         "unknown"
       ],
-      "outputTokens": 1710,
+      "outputTokens": 1660,
       "period": "2025-12-22",
       "totalCost": 3.8191624999999996,
-      "totalTokens": 11680
+      "totalTokens": 11530
     },
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
       "cacheReadTokens": 1307024,
-      "inputTokens": 1337675,
+      "inputTokens": 1337254,
       "metadata": {
         "agents": [
           "amp",
@@ -829,9 +820,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
           "cost": 0.0,
-          "inputTokens": 305952,
+          "inputTokens": 305531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 3095
+          "outputTokens": 3014
         },
         {
           "cacheCreationTokens": 0,
@@ -986,10 +977,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56492,
+      "outputTokens": 56411,
       "period": "2025-12-29",
       "totalCost": 20.423938249999996,
-      "totalTokens": 2721079
+      "totalTokens": 2720577
     },
     {
       "agent": "all",

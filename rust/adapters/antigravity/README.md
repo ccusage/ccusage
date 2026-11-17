@@ -33,6 +33,10 @@ database with `steps` or `trajectory_metadata_blob` but no `gen_metadata`, and
 unreadable databases, are skipped with a filename warning. A database only contributes usage when its
 full read succeeds. Other readable databases remain available to the report.
 
+Usage rows use generation, step, linked-record, or trajectory timestamps. Rows
+without any of these are skipped with an invalid-timestamp diagnostic; the
+database's modification time does not date individual records.
+
 ## Public surface
 
 - `loader::load_entries_with_warnings`: returns entries and skipped-database

@@ -40,7 +40,6 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
                 cx.window.timezone(),
                 shared.mode,
                 pricing,
-                shared,
                 cx.diagnostics,
             )
         },

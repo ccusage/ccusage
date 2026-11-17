@@ -71,6 +71,9 @@ struct KiloTime {
     created: Option<i64>,
 }
 
+#[derive(Debug)]
+pub(super) struct MissingTimestamp;
+
 pub(super) fn message_value_to_entry(
     value: &KiloMessage,
     row_id: &str,
@@ -79,11 +82,13 @@ pub(super) fn message_value_to_entry(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
-) -> Option<LoadedEntry> {
+) -> std::result::Result<Option<LoadedEntry>, MissingTimestamp> {
     if value.role.as_deref() != Some("assistant") {
-        return None;
+        return Ok(None);
     }
-    let tokens = value.tokens.as_ref()?;
+    let Some(tokens) = value.tokens.as_ref() else {
+        return Ok(None);
+    };
     let cache = tokens.cache.as_ref();
     let usage = TokenUsageRaw {
         input_tokens: tokens.input,
@@ -103,14 +108,17 @@ pub(super) fn message_value_to_entry(
         && usage.cache_read_input_tokens == 0
         && extra_total_tokens == 0
     {
-        return None;
+        return Ok(None);
     }
-    let model = value.model_id.clone()?;
+    let Some(model) = value.model_id.clone() else {
+        return Ok(None);
+    };
     let timestamp = value
         .time
         .as_ref()
         .and_then(|time| time.created)
-        .and_then(normalize_timestamp)?;
+        .and_then(normalize_timestamp)
+        .ok_or(MissingTimestamp)?;
     let timestamp_text = crate::format_rfc3339_millis(timestamp);
     let session_id = value
         .session_id
@@ -155,7 +163,7 @@ pub(super) fn message_value_to_entry(
     let missing_pricing_model =
         missing_kilo_pricing(&cost_data, provider.as_deref(), mode, pricing);
     let stored_cost = stored_cost_for_mode(cost_data.cost_usd, mode);
-    Some(LoadedEntry {
+    Ok(Some(LoadedEntry {
         date: format_date_tz(timestamp, tz),
         timestamp,
         project: Arc::from("kilo"),
@@ -170,7 +178,7 @@ pub(super) fn message_value_to_entry(
         stored_cost,
         message_count: None,
         data,
-    })
+    }))
 }
 
 fn normalize_timestamp(value: i64) -> Option<TimestampMs> {
@@ -292,6 +300,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.data.message.usage.input_tokens, 100);
@@ -321,6 +330,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.data.message.usage.output_tokens, 234);

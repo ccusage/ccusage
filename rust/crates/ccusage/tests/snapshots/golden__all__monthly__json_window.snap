@@ -10,7 +10,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 6111,
       "cacheReadTokens": 183416,
-      "inputTokens": 66194,
+      "inputTokens": 65894,
       "metadata": {
         "agents": [
           "amp",
@@ -182,10 +182,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.0047,
-          "inputTokens": 2300,
+          "cost": 0.00415,
+          "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 350
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -385,10 +385,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19722,
+      "outputTokens": 19672,
       "period": "2025-12",
-      "totalCost": 11.659959255,
-      "totalTokens": 276053
+      "totalCost": 11.659409255,
+      "totalTokens": 275703
     },
     {
       "agent": "all",
@@ -927,10 +927,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 9001,
     "cacheReadTokens": 668744,
-    "inputTokens": 1171563,
-    "outputTokens": 37352,
-    "totalCost": 15.364746700000001,
-    "totalTokens": 1888322,
+    "inputTokens": 1171263,
+    "outputTokens": 37302,
+    "totalCost": 15.3641967,
+    "totalTokens": 1887972,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

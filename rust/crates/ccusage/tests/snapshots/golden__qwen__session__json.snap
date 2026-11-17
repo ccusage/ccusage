@@ -9,31 +9,6 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "firstActivity": "2025-12-31T16:00:00.000Z",
-      "inputTokens": 150,
-      "lastActivity": "2025-12-31T16:00:00.000Z",
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00027499999999999996,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "projectPath": "alpha",
-      "sessionId": "alpha-fallback-c",
-      "totalCost": 0.00027499999999999996,
-      "totalTokens": 175
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
       "firstActivity": "2026-01-02T08:00:00.000Z",
       "inputTokens": 70,
       "lastActivity": "2026-01-02T08:00:00.000Z",
@@ -59,43 +34,18 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "firstActivity": "2025-12-31T16:00:00.000Z",
-      "inputTokens": 150,
-      "lastActivity": "2025-12-31T16:00:00.000Z",
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00027499999999999996,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "projectPath": "beta",
-      "sessionId": "beta-fallback-c",
-      "totalCost": 0.00027499999999999996,
-      "totalTokens": 175
-    },
-    {
-      "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
       "firstActivity": "2025-12-30T09:00:00.000Z",
-      "inputTokens": 4032,
-      "lastActivity": "2026-01-02T12:00:00.000Z",
+      "inputTokens": 3911,
+      "lastActivity": "2026-01-01T11:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
-          "cost": 0.007812,
-          "inputTokens": 3232,
+          "cost": 0.007536000000000001,
+          "inputTokens": 3111,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 675
+          "outputTokens": 644
         },
         {
           "cacheCreationTokens": 0,
@@ -129,11 +79,11 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "qwen-mystery-1"
       ],
-      "outputTokens": 1509,
+      "outputTokens": 1478,
       "projectPath": "alpha",
       "sessionId": "sess-a",
-      "totalCost": 0.011268000000000002,
-      "totalTokens": 7038
+      "totalCost": 0.010992000000000002,
+      "totalTokens": 6886
     },
     {
       "cacheCreationTokens": 0,
@@ -242,10 +192,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 0,
     "cacheReadTokens": 105460,
-    "inputTokens": 308515,
-    "outputTokens": 4335,
-    "totalCost": 0.3460474,
-    "totalTokens": 418627,
+    "inputTokens": 308094,
+    "outputTokens": 4254,
+    "totalCost": 0.3452214,
+    "totalTokens": 418125,
     "unpricedModels": [
       "qwen-mystery-1",
       "unknown"

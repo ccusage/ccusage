@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 use ccusage_adapter_common::units::{UnitError, read_json};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
@@ -38,11 +39,14 @@ struct CodebuffContext {
     session_id: String,
 }
 
-pub(super) fn load_chat_file(path: &Path) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
+pub(super) fn load_chat_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
     let messages = read_json::<Vec<Value>>(path)?;
     let context = derive_context(path);
-    let chat_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id);
-    let file_timestamp = file_modified_timestamp(path).unwrap_or(crate::TimestampMs::UNIX_EPOCH);
+    let fallback_timestamp =
+        parse_codebuff_chat_id_timestamp(&context.chat_id).or_else(|| file_mtime(path));
     let mut entries = Vec::new();
     for (ordinal, message) in messages.iter().enumerate() {
         let Some(message) = message.as_object() else {
@@ -55,9 +59,15 @@ pub(super) fn load_chat_file(path: &Path) -> std::result::Result<Vec<CodebuffEnt
         if !has_signal(&usage) {
             continue;
         }
-        let timestamp = message_timestamp(message)
-            .or(chat_timestamp)
-            .unwrap_or(file_timestamp);
+        let Some(timestamp) = message_timestamp(message).or(fallback_timestamp) else {
+            diagnostics.record(Skip::record(
+                path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Codebuff usage record has no valid message, chat or file modification timestamp",
+            ));
+            continue;
+        };
         let model = usage
             .model
             .clone()
@@ -333,13 +343,15 @@ fn timestamp_from_epoch_secs_or_millis(value: i64) -> Option<crate::TimestampMs>
     }
 }
 
-fn file_modified_timestamp(path: &Path) -> Option<crate::TimestampMs> {
+fn file_mtime(path: &Path) -> Option<crate::TimestampMs> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let millis = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_millis()
-        .min(i64::MAX as u128) as i64;
+    let millis = i64::try_from(
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis(),
+    )
+    .ok()?;
     Some(crate::TimestampMs::from_millis(millis))
 }
 

@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 3360,
-      "inputTokens": 7043,
+      "inputTokens": 6743,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -23,9 +23,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
           "cost": 0.0,
-          "inputTokens": 5300,
+          "inputTokens": 5000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 951
+          "outputTokens": 901
         },
         {
           "cacheCreationTokens": 0,
@@ -60,22 +60,22 @@ exit: 0
         "qwen-2.5-72b-instruct"
       ],
       "month": "2025-12",
-      "outputTokens": 2031,
+      "outputTokens": 1981,
       "totalCost": 0.0,
-      "totalTokens": 12684
+      "totalTokens": 12334
     },
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 102100,
-      "inputTokens": 301472,
+      "inputTokens": 301351,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
           "cost": 0.0,
-          "inputTokens": 300652,
+          "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2144
+          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -100,18 +100,18 @@ exit: 0
         "unknown"
       ],
       "month": "2026-01",
-      "outputTokens": 2304,
+      "outputTokens": 2273,
       "totalCost": 0.0,
-      "totalTokens": 405943
+      "totalTokens": 405791
     }
   ],
   "totals": {
     "cacheCreationTokens": 0,
     "cacheReadTokens": 105460,
-    "inputTokens": 308515,
-    "outputTokens": 4335,
+    "inputTokens": 308094,
+    "outputTokens": 4254,
     "totalCost": 0.0,
-    "totalTokens": 418627
+    "totalTokens": 418125
   }
 }
 

@@ -67,7 +67,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 8583,
+      "inputTokens": 8483,
       "metadata": {
         "agents": [
           "amp",
@@ -176,15 +176,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "missingPricing": true,
           "modelName": "antigravity-model-77",
@@ -228,16 +219,15 @@ exit: 0
         "antigravity-model-77",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
         "kimi-k2-thinking",
         "unknown"
       ],
-      "outputTokens": 1810,
+      "outputTokens": 1760,
       "period": "2025-12-27",
       "totalCost": 3.8313745000000003,
-      "totalTokens": 12780
+      "totalTokens": 12630
     },
     {
       "agent": "all",
@@ -508,7 +498,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 6111,
       "cacheReadTokens": 183116,
-      "inputTokens": 65694,
+      "inputTokens": 65394,
       "metadata": {
         "agents": [
           "amp",
@@ -680,10 +670,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.0047,
-          "inputTokens": 2300,
+          "cost": 0.00415,
+          "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 350
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -883,10 +873,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19602,
+      "outputTokens": 19552,
       "period": "2025-12-31",
-      "totalCost": 11.658096755,
-      "totalTokens": 275133
+      "totalCost": 11.657546755,
+      "totalTokens": 274783
     },
     {
       "agent": "all",
@@ -1425,7 +1415,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1650,
       "cacheReadTokens": 529980,
-      "inputTokens": 127209,
+      "inputTokens": 127088,
       "metadata": {
         "agents": [
           "amp",
@@ -1644,14 +1634,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000276,
-          "inputTokens": 121,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 31
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.00027599999999999993,
           "inputTokens": 500,
@@ -1787,13 +1769,12 @@ exit: 0
         "kimi-k2-thinking",
         "model_placeholder_m499",
         "openai/gpt-5",
-        "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10836,
+      "outputTokens": 10805,
       "period": "2026-01-02",
-      "totalCost": 3.268178,
-      "totalTokens": 670970
+      "totalCost": 3.267902,
+      "totalTokens": 670818
     },
     {
       "agent": "all",
@@ -1886,7 +1867,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 8583,
+      "inputTokens": 8483,
       "metadata": {
         "agents": [
           "amp",
@@ -1995,15 +1976,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "missingPricing": true,
           "modelName": "antigravity-model-77",
@@ -2047,22 +2019,21 @@ exit: 0
         "antigravity-model-77",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
         "kimi-k2-thinking",
         "unknown"
       ],
-      "outputTokens": 1810,
+      "outputTokens": 1760,
       "period": "2025-12-22",
       "totalCost": 3.8313745000000003,
-      "totalTokens": 12780
+      "totalTokens": 12630
     },
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
       "cacheReadTokens": 1307024,
-      "inputTokens": 1337675,
+      "inputTokens": 1337254,
       "metadata": {
         "agents": [
           "amp",
@@ -2220,10 +2191,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
-          "cost": 0.33329200000000003,
-          "inputTokens": 305952,
+          "cost": 0.33246600000000004,
+          "inputTokens": 305531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 3095
+          "outputTokens": 3014
         },
         {
           "cacheCreationTokens": 0,
@@ -2841,10 +2812,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56492,
+      "outputTokens": 56411,
       "period": "2025-12-29",
-      "totalCost": 24.302391725,
-      "totalTokens": 2721079
+      "totalCost": 24.301565724999996,
+      "totalTokens": 2720577
     },
     {
       "agent": "all",
@@ -2919,7 +2890,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 13225,
       "cacheReadTokens": 292809,
-      "inputTokens": 113680,
+      "inputTokens": 113280,
       "metadata": {
         "agents": [
           "amp",
@@ -3130,10 +3101,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
-          "cost": 0.011575000000000002,
-          "inputTokens": 5300,
+          "cost": 0.011025,
+          "inputTokens": 5000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 951
+          "outputTokens": 901
         },
         {
           "cacheCreationTokens": 0,
@@ -3286,15 +3257,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "missingPricing": true,
           "modelName": "antigravity-model-77",
@@ -3404,7 +3366,6 @@ exit: 0
         "gemini-3-flash-preview",
         "gemini-3-pro",
         "gemini-3.5-flash-high",
-        "gemini-internal-model",
         "gemini-mystery-1",
         "gpt-5",
         "gpt-5-codex",
@@ -3423,16 +3384,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29836,
+      "outputTokens": 29736,
       "period": "2025-12",
-      "totalCost": 21.16080077999999,
-      "totalTokens": 450620
+      "totalCost": 21.160250779999995,
+      "totalTokens": 450120
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
       "cacheReadTokens": 1015308,
-      "inputTokens": 1232578,
+      "inputTokens": 1232457,
       "metadata": {
         "agents": [
           "amp",
@@ -3542,10 +3503,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32171700000000003,
-          "inputTokens": 300652,
+          "cost": 0.32144100000000003,
+          "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2144
+          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -4088,10 +4049,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 28466,
+      "outputTokens": 28435,
       "period": "2026-01",
-      "totalCost": 6.972965445,
-      "totalTokens": 2283239
+      "totalCost": 6.972689445,
+      "totalTokens": 2283087
     },
     {
       "agent": "all",
@@ -6425,18 +6386,18 @@ exit: 0
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
-      "inputTokens": 4032,
+      "inputTokens": 3911,
       "metadata": {
-        "lastActivity": "2026-01-02T12:00:00.000Z"
+        "lastActivity": "2026-01-01T11:00:00.000Z"
       },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
-          "cost": 0.007812,
-          "inputTokens": 3232,
+          "cost": 0.007536000000000001,
+          "inputTokens": 3111,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 675
+          "outputTokens": 644
         },
         {
           "cacheCreationTokens": 0,
@@ -6470,10 +6431,10 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "qwen-mystery-1"
       ],
-      "outputTokens": 1509,
+      "outputTokens": 1478,
       "period": "sess-a",
-      "totalCost": 0.011268000000000002,
-      "totalTokens": 7038
+      "totalCost": 0.010992000000000002,
+      "totalTokens": 6886
     },
     {
       "agent": "kilo",
@@ -8367,58 +8328,6 @@ exit: 0
       "totalTokens": 1600
     },
     {
-      "agent": "qwen",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00027499999999999996,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "period": "alpha-fallback-c",
-      "totalCost": 0.00027499999999999996,
-      "totalTokens": 175
-    },
-    {
-      "agent": "qwen",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00027499999999999996,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "period": "beta-fallback-c",
-      "totalCost": 0.00027499999999999996,
-      "totalTokens": 175
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
@@ -9657,20 +9566,11 @@ exit: 0
       "agent": "antigravity",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 110,
+      "inputTokens": 10,
       "metadata": {
         "lastActivity": "2025-12-27T23:30:00.000Z"
       },
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -9682,13 +9582,12 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77"
       ],
-      "outputTokens": 55,
+      "outputTokens": 5,
       "period": "session-delta",
       "totalCost": 0,
-      "totalTokens": 165
+      "totalTokens": 15
     },
     {
       "agent": "copilot",
@@ -9721,10 +9620,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1347980,
-    "outputTokens": 58960,
-    "totalCost": 28.139811175000002,
-    "totalTokens": 2740739,
+    "inputTokens": 1347459,
+    "outputTokens": 58829,
+    "totalCost": 28.138985175000002,
+    "totalTokens": 2740087,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -9741,7 +9640,6 @@ exit: 0
       "copilot-mystery-1",
       "droid-mystery-1",
       "dsh-mystery-1",
-      "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",
       "gpt-unknown",

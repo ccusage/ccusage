@@ -117,7 +117,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 130,
       "cacheReadTokens": 650,
-      "inputTokens": 3171,
+      "inputTokens": 3071,
       "metadata": {
         "agents": [
           "amp",
@@ -206,15 +206,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "missingPricing": true,
           "modelName": "antigravity-model-77",
@@ -246,16 +237,15 @@ exit: 0
         "antigravity-model-77",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
         "kimi-k2-thinking",
         "unknown"
       ],
-      "outputTokens": 1268,
+      "outputTokens": 1218,
       "period": "2025-12-28",
       "totalCost": 0.4541245,
-      "totalTokens": 5249
+      "totalTokens": 5099
     },
     {
       "agent": "all",
@@ -691,7 +681,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 8841,
       "cacheReadTokens": 655914,
-      "inputTokens": 1151872,
+      "inputTokens": 1151572,
       "metadata": {
         "agents": [
           "amp",
@@ -783,10 +773,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.321991,
-          "inputTokens": 300831,
+          "cost": 0.32144100000000003,
+          "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2163
+          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -1316,16 +1306,16 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 33403,
+      "outputTokens": 33353,
       "period": "2026-01-01",
-      "totalCost": 15.125944495,
-      "totalTokens": 1851477
+      "totalCost": 15.125394495,
+      "totalTokens": 1851127
     },
     {
       "agent": "all",
       "cacheCreationTokens": 1650,
       "cacheReadTokens": 527780,
-      "inputTokens": 127309,
+      "inputTokens": 127188,
       "metadata": {
         "agents": [
           "amp",
@@ -1552,14 +1542,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000276,
-          "inputTokens": 121,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 31
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.00027599999999999993,
           "inputTokens": 500,
@@ -1705,13 +1687,12 @@ exit: 0
         "kimi-k2-thinking",
         "model_placeholder_m499",
         "openai/gpt-5",
-        "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 11086,
+      "outputTokens": 11055,
       "period": "2026-01-02",
-      "totalCost": 3.250108,
-      "totalTokens": 669125
+      "totalCost": 3.249832,
+      "totalTokens": 668973
     },
     {
       "agent": "all",
@@ -1784,10 +1765,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1347980,
-    "outputTokens": 58960,
-    "totalCost": 28.139811175000002,
-    "totalTokens": 2740739,
+    "inputTokens": 1347459,
+    "outputTokens": 58829,
+    "totalCost": 28.138985175000002,
+    "totalTokens": 2740087,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -1804,7 +1785,6 @@ exit: 0
       "copilot-mystery-1",
       "droid-mystery-1",
       "dsh-mystery-1",
-      "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",
       "gpt-unknown",

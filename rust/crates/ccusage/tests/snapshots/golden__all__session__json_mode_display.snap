@@ -2730,32 +2730,6 @@ exit: 0
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "period": "alpha-fallback-c",
-      "totalCost": 0,
-      "totalTokens": 175
-    },
-    {
-      "agent": "qwen",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
       "inputTokens": 70,
       "metadata": {
         "lastActivity": "2026-01-02T08:00:00.000Z"
@@ -2841,32 +2815,6 @@ exit: 0
       "period": "bbbb2222-session-jsonl",
       "totalCost": 0,
       "totalTokens": 3160
-    },
-    {
-      "agent": "qwen",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 150,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "qwen3-coder-plus"
-      ],
-      "outputTokens": 25,
-      "period": "beta-fallback-c",
-      "totalCost": 0,
-      "totalTokens": 175
     },
     {
       "agent": "droid",
@@ -4566,18 +4514,18 @@ exit: 0
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
-      "inputTokens": 4032,
+      "inputTokens": 3911,
       "metadata": {
-        "lastActivity": "2026-01-02T12:00:00.000Z"
+        "lastActivity": "2026-01-01T11:00:00.000Z"
       },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
           "cost": 0.0,
-          "inputTokens": 3232,
+          "inputTokens": 3111,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 675
+          "outputTokens": 644
         },
         {
           "cacheCreationTokens": 0,
@@ -4610,10 +4558,10 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "qwen-mystery-1"
       ],
-      "outputTokens": 1509,
+      "outputTokens": 1478,
       "period": "sess-a",
       "totalCost": 0,
-      "totalTokens": 7038
+      "totalTokens": 6886
     },
     {
       "agent": "dsh",
@@ -5065,19 +5013,11 @@ exit: 0
       "agent": "antigravity",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 110,
+      "inputTokens": 10,
       "metadata": {
         "lastActivity": "2025-12-27T23:30:00.000Z"
       },
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -5088,13 +5028,12 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77"
       ],
-      "outputTokens": 55,
+      "outputTokens": 5,
       "period": "session-delta",
       "totalCost": 0,
-      "totalTokens": 165
+      "totalTokens": 15
     },
     {
       "agent": "copilot",
@@ -5494,10 +5433,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 18465,
     "cacheReadTokens": 1323217,
-    "inputTokens": 1349008,
-    "outputTokens": 59882,
+    "inputTokens": 1348487,
+    "outputTokens": 59751,
     "totalCost": 25.027025750000014,
-    "totalTokens": 2754009,
+    "totalTokens": 2753357,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
