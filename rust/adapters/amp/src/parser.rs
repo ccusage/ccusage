@@ -235,17 +235,24 @@ fn parse_thread(
     pricing: Option<&PricingMap>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let thread = decode_json::<AmpThread>(content)?;
+    let messages = &thread.messages;
+    let ledger_events = thread
+        .usage_ledger
+        .as_ref()
+        .and_then(|ledger| ledger.events.as_ref());
     let Some(thread_id) = thread.id else {
-        if thread
-            .messages
-            .iter()
-            .any(|message| message.usage.is_some())
-            || thread
-                .usage_ledger
-                .as_ref()
-                .and_then(|ledger| ledger.events.as_ref())
-                .is_some_and(|events| !events.is_empty())
-        {
+        let counts_usage = match ledger_events {
+            Some(events) => {
+                let cache_tokens = cache_tokens_by_message_id(messages);
+                events
+                    .iter()
+                    .any(|event| ledger_event_usage(event, &cache_tokens).is_some())
+            }
+            None => messages
+                .iter()
+                .any(|message| message_usage(message).is_some()),
+        };
+        if counts_usage {
             return Err(UnitError::new(
                 SkipKind::InvalidData,
                 "Amp usage thread has no id",
@@ -253,11 +260,8 @@ fn parse_thread(
         }
         return Ok(Vec::new());
     };
-    let messages = &thread.messages;
 
-    if let Some(ledger) = thread.usage_ledger.as_ref()
-        && let Some(events) = ledger.events.as_ref()
-    {
+    if let Some(events) = ledger_events {
         let cache_tokens = cache_tokens_by_message_id(messages);
         return Ok(parse_ledger_events(
             events,
@@ -275,6 +279,43 @@ fn parse_thread(
     ))
 }
 
+fn ledger_event_usage(
+    event: &AmpLedgerEvent,
+    cache_tokens: &HashMap<i64, (u64, u64)>,
+) -> Option<(TokenUsageRaw, u64)> {
+    let tokens = event.tokens.as_ref()?;
+    let (cache_creation, cache_read) = event
+        .to_message_id
+        .and_then(|id| cache_tokens.get(&id).copied())
+        .unwrap_or_default();
+    let usage = TokenUsageRaw {
+        input_tokens: tokens.input,
+        output_tokens: tokens.output,
+        cache_creation_input_tokens: cache_creation,
+        cache_read_input_tokens: cache_read,
+        speed: None,
+        cache_creation: None,
+    };
+    counted_usage(usage, tokens.total)
+}
+
+fn message_usage(message: &AmpMessage) -> Option<(&AmpMessageUsage, TokenUsageRaw, u64)> {
+    if !message.from_assistant {
+        return None;
+    }
+    let record = message.usage.as_ref()?;
+    let usage = TokenUsageRaw {
+        input_tokens: record.input_tokens,
+        output_tokens: record.output_tokens,
+        cache_creation_input_tokens: record.cache_creation_input_tokens,
+        cache_read_input_tokens: record.cache_read_input_tokens,
+        speed: None,
+        cache_creation: None,
+    };
+    let (usage, extra_total_tokens) = counted_usage(usage, record.total_tokens)?;
+    Some((record, usage, extra_total_tokens))
+}
+
 fn parse_ledger_events(
     events: &[AmpLedgerEvent],
     cache_tokens: &HashMap<i64, (u64, u64)>,
@@ -286,22 +327,7 @@ fn parse_ledger_events(
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, event) in events.iter().enumerate() {
-        let Some(tokens) = event.tokens.as_ref() else {
-            continue;
-        };
-        let (cache_creation, cache_read) = event
-            .to_message_id
-            .and_then(|id| cache_tokens.get(&id).copied())
-            .unwrap_or_default();
-        let usage = TokenUsageRaw {
-            input_tokens: tokens.input,
-            output_tokens: tokens.output,
-            cache_creation_input_tokens: cache_creation,
-            cache_read_input_tokens: cache_read,
-            speed: None,
-            cache_creation: None,
-        };
-        let Some((usage, extra_total_tokens)) = counted_usage(usage, tokens.total) else {
+        let Some((usage, extra_total_tokens)) = ledger_event_usage(event, cache_tokens) else {
             continue;
         };
         let Some(model) = event.model.clone() else {
@@ -342,21 +368,7 @@ fn parse_message_usage(
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, message) in messages.iter().enumerate() {
-        if !message.from_assistant {
-            continue;
-        }
-        let Some(record) = message.usage.as_ref() else {
-            continue;
-        };
-        let usage = TokenUsageRaw {
-            input_tokens: record.input_tokens,
-            output_tokens: record.output_tokens,
-            cache_creation_input_tokens: record.cache_creation_input_tokens,
-            cache_read_input_tokens: record.cache_read_input_tokens,
-            speed: None,
-            cache_creation: None,
-        };
-        let Some((usage, extra_total_tokens)) = counted_usage(usage, record.total_tokens) else {
+        let Some((record, usage, extra_total_tokens)) = message_usage(message) else {
             continue;
         };
         let Some(model) = record.model.clone().or_else(|| message.model.clone()) else {
@@ -560,6 +572,22 @@ mod tests {
             br#"{"messages":[{"role":"assistant","model":"gpt-5","usage":"SECRET_CANARY"}]}"#;
 
         assert!(parse(content, &diagnostics).unwrap().is_empty());
+    }
+
+    #[test]
+    fn reads_a_thread_without_id_whose_records_hold_no_counted_usage_as_empty() {
+        let diagnostics = Diagnostics::new("amp");
+        for content in [
+            r#"{"usageLedger":{"events":[{}]}}"#,
+            r#"{"usageLedger":{"events":[{"tokens":"SECRET_CANARY"}]}}"#,
+            r#"{"messages":[{"role":"user","usage":{"inputTokens":5}}]}"#,
+            r#"{"messages":[{"role":"assistant","model":"gpt-5","usage":{"inputTokens":0}}]}"#,
+        ] {
+            assert!(
+                parse(content.as_bytes(), &diagnostics).unwrap().is_empty(),
+                "{content}"
+            );
+        }
     }
 
     #[test]
