@@ -9,21 +9,22 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 22,
+      "cacheReadTokens": 2500,
+      "inputTokens": 722,
       "metadata": {
         "agents": [
           "grok",
+          "kilo",
           "zcode"
         ]
       },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 11,
+          "cacheReadTokens": 2500,
+          "inputTokens": 711,
           "modelName": "gpt-5",
-          "outputTokens": 7
+          "outputTokens": 157
         },
         {
           "cacheCreationTokens": 0,
@@ -37,15 +38,15 @@ exit: 0
         "gpt-5",
         "grok-code-fast-1"
       ],
-      "outputTokens": 8,
+      "outputTokens": 158,
       "period": "1970-01",
-      "totalTokens": 30
+      "totalTokens": 3380
     },
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295309,
-      "inputTokens": 114780,
+      "cacheReadTokens": 292809,
+      "inputTokens": 113680,
       "metadata": {
         "agents": [
           "amp",
@@ -96,10 +97,10 @@ exit: 0
         {
           "cacheCreationTokens": 4200,
           "cacheReadTokens": 65960,
-          "inputTokens": 21421,
+          "inputTokens": 21021,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 6255
+          "outputTokens": 6175
         },
         {
           "cacheCreationTokens": 200,
@@ -132,10 +133,10 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 20480,
-          "inputTokens": 10382,
+          "cacheReadTokens": 17980,
+          "inputTokens": 9682,
           "modelName": "gpt-5",
-          "outputTokens": 2300
+          "outputTokens": 2150
         },
         {
           "cacheCreationTokens": 100,
@@ -481,9 +482,9 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 30066,
+      "outputTokens": 29836,
       "period": "2025-12",
-      "totalTokens": 454450
+      "totalTokens": 450620
     },
     {
       "agent": "all",
@@ -1102,9 +1103,9 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1348380,
-    "outputTokens": 59040,
-    "totalTokens": 2741219,
+    "inputTokens": 1347980,
+    "outputTokens": 58960,
+    "totalTokens": 2740739,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

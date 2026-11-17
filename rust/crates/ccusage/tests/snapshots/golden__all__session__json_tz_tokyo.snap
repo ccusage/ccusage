@@ -469,8 +469,8 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
         "gpt-5",
+        "claude-sonnet-4-20250514",
         "kilo-mystery-1"
       ],
       "outputTokens": 847,
@@ -3357,29 +3357,6 @@ exit: 0
       "totalTokens": 1892
     },
     {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 400,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0024000000000000002,
-          "inputTokens": 400,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 80
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514"
-      ],
-      "outputTokens": 80,
-      "period": "b-twin",
-      "totalCost": 0.0024000000000000002,
-      "totalTokens": 480
-    },
-    {
       "agent": "pi",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5627,10 +5604,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 18465,
     "cacheReadTokens": 1323217,
-    "inputTokens": 1350408,
-    "outputTokens": 60062,
-    "totalCost": 29.017382175000026,
-    "totalTokens": 2755589,
+    "inputTokens": 1350008,
+    "outputTokens": 59982,
+    "totalCost": 29.014982175000025,
+    "totalTokens": 2755109,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

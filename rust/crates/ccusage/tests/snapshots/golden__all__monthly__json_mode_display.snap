@@ -9,11 +9,12 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 22,
+      "cacheReadTokens": 2500,
+      "inputTokens": 722,
       "metadata": {
         "agents": [
           "grok",
+          "kilo",
           "zcode"
         ]
       },
@@ -28,27 +29,27 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
+          "cacheReadTokens": 2500,
           "cost": 0.0,
-          "inputTokens": 11,
+          "inputTokens": 711,
           "modelName": "gpt-5",
-          "outputTokens": 7
+          "outputTokens": 157
         }
       ],
       "modelsUsed": [
         "gpt-5",
         "grok-code-fast-1"
       ],
-      "outputTokens": 8,
+      "outputTokens": 158,
       "period": "1970-01",
       "totalCost": 0,
-      "totalTokens": 30
+      "totalTokens": 3380
     },
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295309,
-      "inputTokens": 113780,
+      "cacheReadTokens": 292809,
+      "inputTokens": 112680,
       "metadata": {
         "agents": [
           "amp",
@@ -101,10 +102,10 @@ exit: 0
         {
           "cacheCreationTokens": 4200,
           "cacheReadTokens": 65960,
-          "cost": 2.984463,
-          "inputTokens": 21421,
+          "cost": 2.982063,
+          "inputTokens": 21021,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 6255
+          "outputTokens": 6175
         },
         {
           "cacheCreationTokens": 200,
@@ -141,11 +142,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 20480,
+          "cacheReadTokens": 17980,
           "cost": 0.30967,
-          "inputTokens": 10382,
+          "inputTokens": 9682,
           "modelName": "gpt-5",
-          "outputTokens": 2300
+          "outputTokens": 2150
         },
         {
           "cacheCreationTokens": 100,
@@ -520,10 +521,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29966,
+      "outputTokens": 29736,
       "period": "2025-12",
-      "totalCost": 20.620955999999996,
-      "totalTokens": 453350
+      "totalCost": 20.618555999999995,
+      "totalTokens": 449520
     },
     {
       "agent": "all",
@@ -1195,10 +1196,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1312617,
-    "inputTokens": 1347380,
-    "outputTokens": 58940,
-    "totalCost": 24.245500749999994,
-    "totalTokens": 2740119,
+    "inputTokens": 1346980,
+    "outputTokens": 58860,
+    "totalCost": 24.243100749999993,
+    "totalTokens": 2739639,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

@@ -9,16 +9,16 @@ exit: 0
     {
       "cacheCreationTokens": 820,
       "cacheReadTokens": 18000,
-      "inputTokens": 4350,
-      "messageCount": 45,
+      "inputTokens": 3950,
+      "messageCount": 43,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 8000,
-          "cost": 1.00345,
-          "inputTokens": 2500,
+          "cost": 1.00105,
+          "inputTokens": 2100,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 530,
+          "outputTokens": 450,
           "storedCost": 1.0
         },
         {
@@ -45,9 +45,9 @@ exit: 0
         "gpt-5"
       ],
       "month": "2025-12",
-      "outputTokens": 1120,
-      "totalCost": 1.257825,
-      "totalTokens": 24350
+      "outputTokens": 1040,
+      "totalCost": 1.255425,
+      "totalTokens": 23870
     },
     {
       "cacheCreationTokens": 50,
@@ -114,10 +114,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 870,
     "cacheReadTokens": 28045,
-    "inputTokens": 6670,
-    "outputTokens": 1720,
-    "totalCost": 1.585644125,
-    "totalTokens": 37415,
+    "inputTokens": 6270,
+    "outputTokens": 1640,
+    "totalCost": 1.583244125,
+    "totalTokens": 36935,
     "unpricedModels": [
       "hermes-mystery-1"
     ]

@@ -54,29 +54,6 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 400,
-      "messageCount": 2,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0024000000000000002,
-          "inputTokens": 400,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 80
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514"
-      ],
-      "outputTokens": 80,
-      "sessionId": "b-twin",
-      "totalCost": 0.0024000000000000002,
-      "totalTokens": 480
-    },
-    {
-      "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
       "inputTokens": 700,
       "messageCount": 8,
@@ -173,10 +150,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 270,
     "cacheReadTokens": 13045,
-    "inputTokens": 3270,
-    "outputTokens": 870,
-    "totalCost": 0.27916812500000004,
-    "totalTokens": 17525,
+    "inputTokens": 2870,
+    "outputTokens": 790,
+    "totalCost": 0.27676812500000003,
+    "totalTokens": 17045,
     "unpricedModels": [
       "hermes-mystery-1"
     ]

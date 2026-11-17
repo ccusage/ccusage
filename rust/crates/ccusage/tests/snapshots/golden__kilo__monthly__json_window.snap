@@ -8,8 +8,8 @@ exit: 0
   "monthly": [
     {
       "cacheCreationTokens": 200,
-      "cacheReadTokens": 9500,
-      "inputTokens": 1800,
+      "cacheReadTokens": 7000,
+      "inputTokens": 1100,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -22,11 +22,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0326875,
-          "inputTokens": 900,
+          "cacheReadTokens": 0,
+          "cost": 0.03,
+          "inputTokens": 200,
           "modelName": "gpt-5",
-          "outputTokens": 190,
+          "outputTokens": 40,
           "storedCost": 0.03
         }
       ],
@@ -35,9 +35,9 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "month": "2025-12",
-      "outputTokens": 590,
-      "totalCost": 2.0326875,
-      "totalTokens": 12090
+      "outputTokens": 440,
+      "totalCost": 2.03,
+      "totalTokens": 8740
     },
     {
       "cacheCreationTokens": 0,
@@ -85,11 +85,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 200,
-    "cacheReadTokens": 12500,
-    "inputTokens": 2830,
-    "outputTokens": 1132,
-    "totalCost": 2.2372625000000004,
-    "totalTokens": 16742,
+    "cacheReadTokens": 10000,
+    "inputTokens": 2130,
+    "outputTokens": 982,
+    "totalCost": 2.234575,
+    "totalTokens": 13392,
     "unpricedModels": [
       "kilo-mystery-1"
     ]

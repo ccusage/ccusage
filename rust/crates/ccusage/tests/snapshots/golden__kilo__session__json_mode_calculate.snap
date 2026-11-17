@@ -38,13 +38,13 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
         "gpt-5",
+        "claude-sonnet-4-20250514",
         "kilo-mystery-1"
       ],
       "outputTokens": 847,
       "sessionId": "ses-alpha",
-      "totalCost": 0.0173925,
+      "totalCost": 0.017392499999999998,
       "totalTokens": 10167
     },
     {
