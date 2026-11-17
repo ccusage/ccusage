@@ -1,4 +1,7 @@
 use ./core.nu [
+    REASON_MAX_LENGTH
+    DECISIONS
+    IMPLEMENTATIONS
     CONFIDENCE_LEVELS
     IMPLEMENTATION_PRIORITIES
     ISSUE_KINDS
@@ -20,7 +23,7 @@ def parse-reason [verdict: record]: nothing -> string {
         error make {msg: 'Pullfrog returned an invalid reason'}
     }
     let reason = $reason | str trim
-    if ($reason | is-empty) or ($reason | str length) > 1200 {
+    if ($reason | is-empty) or ($reason | str length) > $REASON_MAX_LENGTH {
         error make {msg: 'Pullfrog returned an invalid reason length'}
     }
     $reason
@@ -62,9 +65,9 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
     let kind = parse-required-enum $raw kind $ISSUE_KINDS
     let maintenance_fit = parse-required-enum $raw maintenance_fit $MAINTENANCE_FITS
     let confidence = parse-required-enum $raw confidence $CONFIDENCE_LEVELS
-    let decision = parse-required-enum $raw decision [keep_open close needs_human]
+    let decision = parse-required-enum $raw decision $DECISIONS
     let priority = parse-required-enum $raw priority $PRIORITY_LABELS
-    let implementation = parse-required-enum $raw implementation [create_pr none]
+    let implementation = parse-required-enum $raw implementation $IMPLEMENTATIONS
     let reason = parse-reason $raw
     let verdict = {
         kind: $kind
@@ -163,7 +166,7 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
 export def pr-verdict-record [result: string, close_allowed: bool]: nothing -> record {
     let raw = parse-result $result
     let verdict = {
-        decision: (parse-required-enum $raw decision [keep_open close needs_human])
+        decision: (parse-required-enum $raw decision $DECISIONS)
         reason: (parse-reason $raw)
     }
     if (not $close_allowed) and $verdict.decision == 'close' {

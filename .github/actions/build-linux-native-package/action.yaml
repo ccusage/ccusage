@@ -25,7 +25,9 @@ runs:
 
     - name: Build Linux static binary
       shell: bash
-      run: nix build .#ccusage-static --print-build-logs
+      env:
+        ARCH: ${{ inputs.arch }}
+      run: nix build ".#ccusage-release-linux-$ARCH"
 
     # The link lives inside the store's own gcroots, so it persists with the
     # sticky disk and protects these artifacts (and, through keep-outputs, their
@@ -33,11 +35,13 @@ runs:
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'
       shell: bash
+      env:
+        ARCH: ${{ inputs.arch }}
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
         user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
         mkdir -p "$user_gcroot"
-        nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
+        nix build ".#packages.$system.ccusage-release-linux-$ARCH.passthru.workspaceArtifacts.cacheRoot" \
           --out-link "$user_gcroot/ccusage-cargo-artifacts"
 
     - name: Stage native package

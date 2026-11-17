@@ -9,15 +9,11 @@ in
   perSystem =
     {
       system,
+      pkgs,
+      craneLib,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       ccusage = import ../default.nix {
         inherit
           craneLib

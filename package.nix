@@ -28,8 +28,11 @@ let
       || lib.hasSuffix "/fast-multiplier-overrides.json" path
       || lib.hasSuffix "/flex-multiplier-overrides.json" path
       || lib.hasSuffix "/ultrafast-multiplier-overrides.json" path
-      || lib.hasSuffix "/models-dev-pricing.json" path
-      || lib.hasSuffix "/models-dev-catalog-rules.json" path;
+      || (
+        dirOf path == toString (root + /rust/crates/ccusage-pricing-snapshots/src)
+        && lib.hasPrefix "models-dev-" (baseNameOf path)
+        && lib.hasSuffix ".json" path
+      );
   };
   # sqlite3-src's build script turns every SQLITE_* environment variable into a -D
   # define for the bundled amalgamation, which is how .cargo/config.toml trims it.
@@ -37,6 +40,9 @@ let
   # no Nix build has that, so the same values are passed through here rather than
   # duplicated.
   cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
+  linkerRustflags =
+    lib.optionalString stdenv.hostPlatform.isLinux "-C link-arg=-fuse-ld=mold"
+    + lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-fuse-ld=lld";
   commonArgs = {
     pname = cliPackageJson.name;
     inherit version src;
@@ -53,18 +59,12 @@ let
     CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
     CCUSAGE_VERSION = version;
     RUSTFLAGS =
-      # Splitting the runtime into per-adapter crates makes each crate
-      # instantiate the shared generic machinery for its own types, and stable
-      # Rust cannot share those instantiations across crates. Many of the copies
-      # are byte-identical, so mold folds them back together; nothing here
-      # depends on two `fn` items having distinct addresses.
-      lib.optionalString stdenv.hostPlatform.isLinux "-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--icf=all"
       # NOTE(2026-11-17, libc 0.2.191, #1251): libc links -liconv on Apple
       # targets; ccusage uses no iconv symbols, and a /nix/store libiconv
       # crashes non-Nix Macs, so dead-strip unused dylibs.
-      # lld is used on Darwin for its identical-code folding, which recovers part of
-      # the duplication the crate split introduces; ld64 has no equivalent.
-      + lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--icf=all";
+      lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs "
+      + linkerRustflags
+      + " -C link-arg=-Wl,--icf=all";
     nativeBuildInputs = [
       pkg-config
     ]
@@ -135,6 +135,7 @@ craneLib.buildPackage (
         dependencyArtifacts
         depsOnlyArgs
         systemDylibsGate
+        linkerRustflags
         version
         workspaceArtifacts
         ;

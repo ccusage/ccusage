@@ -1,20 +1,14 @@
 { inputs, lib, ... }:
-let
-  root = ./..;
-in
 {
   perSystem =
     {
       config,
       system,
+      pkgs,
+      rustToolchain,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       gitWtHook = import ./git-wt.nix { inherit pkgs; };
     in
     {
@@ -23,6 +17,8 @@ in
         # `cargo build` in the dev shell stays offline and does not need the
         # fetch-litellm-pricing feature's rustls stack.
         CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
+
+        RUSTFLAGS = config.packages.ccusage.passthru.linkerRustflags;
 
         buildInputs =
           (with pkgs; [
@@ -83,22 +79,6 @@ in
           ++ config.pre-commit.settings.enabledPackages;
 
         shellHook = ''
-          if [ "$(uname -s)" = "Linux" ]; then
-            case " ''${RUSTFLAGS:-} " in
-              *" -C link-arg=-fuse-ld=mold "*) ;;
-              *) export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold" ;;
-            esac
-          fi
-          # A test run relinks every test binary downstream of an edit, and
-          # lld's Mach-O port links them faster than the cctools ld64 the Nix
-          # clang wrapper defaults to, the same reason Linux uses mold above.
-          if [ "$(uname -s)" = "Darwin" ]; then
-            case " ''${RUSTFLAGS:-} " in
-              *" -C link-arg=-fuse-ld=lld "*) ;;
-              *) export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=lld" ;;
-            esac
-          fi
-
           # Every worktree starts with an empty rust/target, so without a shared
           # cache each one recompiles all dependencies, C build scripts included
           # (cc-rs routes those through sccache too). Cached dependencies cut a

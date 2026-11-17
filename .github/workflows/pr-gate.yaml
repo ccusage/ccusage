@@ -76,23 +76,7 @@ jobs:
           push: disabled
           shell: disabled
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["decision", "reason"],
-              "properties": {
-                "decision": {
-                  "type": "string",
-                  "enum": ["keep_open", "close", "needs_human"]
-                },
-                "reason": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1200
-                }
-              }
-            }
+          output_schema: ${{ steps.request.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
 

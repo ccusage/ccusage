@@ -11,11 +11,15 @@ def main []: nothing -> nothing {
     }
     assert equal (report $expected | from json) $expected
     let fixture = mktemp -d
+    let generated = $fixture | path join generated
+    mkdir ($generated | path join rust/pricing)
+    '{}' | save ($generated | path join rust/pricing/snapshot.json)
     try {
         [
             $"#!($nu.current-exe)"
             'def --wrapped main [...args: string] {'
             '    if "shell" in $args and $env.TEST_FAIL_GENERATION == "true" { exit 73 }'
+            '    if "build" in $args { print $env.TEST_SNAPSHOT_OUTPUT; return }'
             '    print "fixture nix diagnostic"'
             '}'
         ] | str join "\n" | save ($fixture | path join nix)
@@ -31,6 +35,7 @@ def main []: nothing -> nothing {
         for fail in [false true] {
             let result = with-env {
                 PATH: ($env.PATH | prepend $fixture)
+                TEST_SNAPSHOT_OUTPUT: $generated
                 TEST_FAIL_GENERATION: ($fail | into string)
             } {
                 nu ($env.FILE_PWD | path join update-models-dev-lock.nu) | complete
@@ -39,7 +44,7 @@ def main []: nothing -> nothing {
             if not $fail {
                 let parsed = $result.stdout | from json
                 assert equal $parsed.changed false
-                assert ('flake.lock' in $parsed.paths)
+                assert equal $parsed.paths [flake.lock rust/pricing/snapshot.json]
             }
         }
     } catch {|err|

@@ -3,8 +3,9 @@
 
 use ./contribution-gate/coauthor.nu [coauthor-validation is-implementation-pull-request]
 use ./contribution-gate/context.nu [issue-context-record]
-use ./contribution-gate/core.nu [parse-issue-number]
+use ./contribution-gate/core.nu [parse-issue-number ISSUE_KINDS REASON_MAX_LENGTH]
 use ./contribution-gate/access.nu [approved-entries approval-update approval-capability]
+use ./contribution-gate/schemas.nu [issue-schema pr-schema implementation-schema]
 use ./contribution-gate/mutations.nu [is-contribution-gate-comment]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
@@ -16,6 +17,7 @@ use ./contribution-gate/requests.nu [
     coauthor-email
     competing-closing-pull-request
     existing-implementation-pull-request
+    implementation-artifact
     implementation-branch
     implementation-commit-args
     implementation-pull-request-body
@@ -876,6 +878,24 @@ def test-contribution-gate-comment []: nothing -> nothing {
     ) false
 }
 
+def test-gate-contracts []: nothing -> nothing {
+    (expect
+        'issue kinds come from the contract'
+        (issue-schema | get properties.kind.enum)
+        $ISSUE_KINDS
+    )
+    (expect
+        'reason limit comes from the contract'
+        (pr-schema | get properties.reason.maxLength)
+        $REASON_MAX_LENGTH
+    )
+    (expect
+        'implementation declines require empty metadata'
+        (implementation-schema | get oneOf.1.properties.title.maxLength)
+        0
+    )
+}
+
 def test-contributor-approval-records []: nothing -> nothing {
     let content = "# Approvals
 Alice issue
@@ -910,6 +930,56 @@ bad unknown
 malformed
 Bob issue
 "
+}
+
+def test-implementation-artifact []: nothing -> nothing {
+    let fixture = mktemp -d
+    let caller = pwd
+    try {
+        mkdir ($fixture | path join repo)
+        cd ($fixture | path join repo)
+        ^git init --quiet
+        ^git config user.email fixture@example.com
+        ^git config user.name Fixture
+        'base' | save file.txt
+        ^git add file.txt
+        ^git commit --quiet -m base
+        let base = ^git rev-parse HEAD | str trim
+        let output = $fixture | path join output
+        let patch = $fixture | path join implementation.patch
+        let metadata = $fixture | path join implementation.json
+        with-env {
+            RESULT: ('{implementation: none, title: "", body: ""}' | from nuon | to json)
+            BASE_SHA: $base
+            GITHUB_OUTPUT: $output
+            IMPLEMENTATION_PATCH: $patch
+            IMPLEMENTATION_METADATA: $metadata
+        } {
+            implementation-artifact
+            expect 'declined implementation creates no patch' ($patch | path exists) false
+            'changed' | save --force file.txt
+            let declined = try { implementation-artifact; false } catch { true }
+            expect 'declined implementation rejects working changes' $declined true
+        }
+        with-env {
+            RESULT: ({implementation: prepared, title: 'fix: fixture', body: 'A fixture fix'} | to json)
+            BASE_SHA: $base
+            GITHUB_OUTPUT: $output
+            IMPLEMENTATION_PATCH: $patch
+            IMPLEMENTATION_METADATA: $metadata
+        } {
+            implementation-artifact
+            expect 'artifact includes the changed file' (open --raw $patch | str contains '+changed') true
+            expect 'artifact preserves validated metadata' (open --raw $metadata | from json | get title) 'fix: fixture'
+        }
+        rm -f $patch $metadata
+    } catch {|err|
+        cd $caller
+        rm -rf $fixture
+        error make $err
+    }
+    cd $caller
+    rm -rf $fixture
 }
 
 def test-contributor-approval-operation []: nothing -> nothing {
@@ -965,8 +1035,10 @@ def test-contributor-approval-operation []: nothing -> nothing {
 }
 
 def main [] {
+    test-gate-contracts
     test-contributor-approval-records
     test-contributor-approval-operation
+    test-implementation-artifact
     test-coauthor-validation
     test-coauthor-email
     test-implementation-commit-args

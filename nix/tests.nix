@@ -4,7 +4,7 @@
 # test job via `nix build .#ccusage-tests`; the derivation succeeds only when
 # `cargo test --workspace` passes. It runs in the dev profile on a dedicated
 # dependency layer (nix/test-artifacts.nix) rather than recompiling in release.
-{ inputs, lib, ... }:
+{ lib, ... }:
 let
   root = ./..;
 in
@@ -12,20 +12,13 @@ in
   perSystem =
     {
       config,
-      system,
+      pkgs,
+      craneLib,
+      testArtifacts,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
-      inherit (config.packages.ccusage.passthru) commonArgs depsOnlyArgs;
-      testArtifacts = import ./test-artifacts.nix {
-        inherit craneLib depsOnlyArgs;
-      };
+      inherit (config.packages.ccusage.passthru) commonArgs;
       testSrc = import ./rust-src.nix { inherit lib root; };
     in
     {

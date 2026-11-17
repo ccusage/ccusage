@@ -9,12 +9,14 @@ use ./contribution-gate/requests.nu [
     issue-implementation-guard
     issue-implementation-request
     issue-request
+    implementation-artifact
     publish-implementation
     pr-request
 ]
 
 def main [operation: string]: nothing -> nothing {
     match $operation {
+        'implementation-artifact' => implementation-artifact
         'issue-context' => issue-context
         'approve-contributor' => approve-contributor
         'approve-contributor-comment' => approve-contributor-comment

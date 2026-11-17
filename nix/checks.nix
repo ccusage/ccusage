@@ -6,24 +6,16 @@ in
   perSystem =
     {
       config,
-      system,
+      pkgs,
+      craneLib,
+      testArtifacts,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru)
         commonArgs
-        depsOnlyArgs
         version
         ;
-      testArtifacts = import ./test-artifacts.nix {
-        inherit craneLib depsOnlyArgs;
-      };
       inherit (testArtifacts) cargoArtifacts;
       rustSrc = import ./rust-src.nix { inherit lib root; };
       repoSrc = lib.cleanSourceWith {
@@ -102,7 +94,7 @@ in
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
-        infra-scripts = mkRepoCheck "infra-script-tests" [ pkgs.nushell pkgs.just pkgs.jq ] ''
+        infra-scripts = mkRepoCheck "infra-script-tests" [ pkgs.nushell pkgs.just pkgs.jq pkgs.git ] ''
           nu scripts/validate-commit-scope.test.nu
           nu scripts/check-models-dev-dependencies.test.nu
           nu .github/scripts/contribution-gate.test.nu

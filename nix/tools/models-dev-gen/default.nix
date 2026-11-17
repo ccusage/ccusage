@@ -41,8 +41,9 @@ pkgs.runCommand "models-dev-snapshots"
     cp ${./catalog.ts} work/catalog.ts
 
     cd work
-    mkdir -p "$out"
-    OUTFILE="$out/models-dev-pricing.json" \
-      CATALOG_RULES_OUTFILE="$out/models-dev-catalog-rules.json" \
+    snapshots="$out/rust/crates/ccusage-pricing-snapshots/src"
+    mkdir -p "$snapshots"
+    OUTFILE="$snapshots/models-dev-pricing.json" \
+      CATALOG_RULES_OUTFILE="$snapshots/models-dev-catalog-rules.json" \
       bun run gen.ts
   ''

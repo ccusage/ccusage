@@ -1,5 +1,4 @@
 {
-  inputs,
   lib,
   ...
 }:
@@ -10,15 +9,11 @@ in
   perSystem =
     {
       config,
-      system,
+      pkgs,
+      rustToolchain,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       hookCommand =
         name: runtimeInputs: text:
         lib.getExe (

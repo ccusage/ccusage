@@ -1,4 +1,6 @@
 use ./core.nu [
+    TITLE_MAX_LENGTH
+    BODY_MAX_LENGTH
     format-gh-error
     gh-api-complete
     gh-api-body
@@ -9,6 +11,7 @@ use ./core.nu [
     write-output
 ]
 use ./context.nu [require-open-issue]
+use ./schemas.nu [issue-schema pr-schema implementation-schema]
 
 export const CLOSING_PULL_REQUEST_QUERY = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } pageInfo { hasNextPage } } } } }'
 
@@ -239,9 +242,9 @@ export def implementation-result [value: string]: nothing -> record {
     let prepared_metadata_valid = [
         ($title | str trim | is-not-empty)
         (($title | lines | length) == 1)
-        (($title | str length) <= 240)
+        (($title | str length) <= $TITLE_MAX_LENGTH)
         ($body | str trim | is-not-empty)
-        (($body | str length) <= 20000)
+        (($body | str length) <= $BODY_MAX_LENGTH)
     ] | all {|valid| $valid}
 
     match $implementation {
@@ -274,7 +277,7 @@ export def implementation-title [title: string]: nothing -> string {
     let valid = [
         ($sanitized | str trim | is-not-empty)
         (($sanitized | lines | length) == 1)
-        (($sanitized | str length) <= 240)
+        (($sanitized | str length) <= $TITLE_MAX_LENGTH)
     ] | all {|condition| $condition }
     if not $valid {
         error make {
@@ -482,6 +485,7 @@ def setup-git-auth []: nothing -> nothing {
 }
 
 export def issue-request []: nothing -> nothing {
+    write-output schema (issue-schema | to json --raw)
     let number = issue-number
     let repo = repository
     let author_status = required-env AUTHOR_STATUS
@@ -496,6 +500,7 @@ export def issue-request []: nothing -> nothing {
 }
 
 export def pr-request []: nothing -> nothing {
+    write-output schema (pr-schema | to json --raw)
     let number = issue-number
     let repo = repository
     let prompt = render-prompt 'pr-judge.md' {
@@ -553,6 +558,7 @@ export def coauthor-attribution [username: string, user_id: int, user: record]: 
 }
 
 export def issue-implementation-request []: nothing -> nothing {
+    write-output schema (implementation-schema | to json --raw)
     let number = issue-number
     let repo = repository
     require-open-issue | ignore
@@ -713,4 +719,117 @@ export def publish-implementation []: nothing -> nothing {
     print $"Created implementation PR #($pull_number) for issue #($issue.number)."
     write-output pull_request_number ($pull_number | into string)
     write-output skip 'false'
+}
+
+export def implementation-artifact []: nothing -> nothing {
+    let result = implementation-result (required-env RESULT)
+    let head = git-complete [rev-parse HEAD]
+    if $head.exit_code != 0 {
+        error make {msg: $"Could not resolve Pullfrog HEAD: ($head.stderr | str trim)"}
+    }
+    let head_sha = $head.stdout | str trim
+
+    if $result.implementation == 'none' {
+        if $head_sha != (required-env BASE_SHA) {
+            error make {
+                msg: 'Pullfrog declined implementation after creating local commits'
+            }
+        }
+        let status = git-complete [status --porcelain]
+        if $status.exit_code != 0 or ($status.stdout | str trim | is-not-empty) {
+            error make {
+                msg: 'Pullfrog declined implementation after changing the working tree'
+            }
+        }
+    } else if $result.implementation == 'prepared' {
+        let ancestry = git-complete [
+            merge-base
+            --is-ancestor
+            (required-env BASE_SHA)
+            $head_sha
+        ]
+        if $ancestry.exit_code != 0 {
+            error make {msg: 'Pullfrog HEAD must descend from the checked-out base commit'}
+        }
+
+        let untracked_result = git-complete [ls-files --others --exclude-standard '-z']
+        if $untracked_result.exit_code != 0 {
+            error make {
+                msg: $"Could not inspect untracked files: ($untracked_result.stderr | str trim)"
+            }
+        }
+        let untracked = $untracked_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
+        if ($untracked | length) > 100 {
+            error make {
+                msg: 'Pullfrog created too many untracked files for automatic publication'
+            }
+        }
+        if ($untracked | is-not-empty) {
+            git-run [add --intent-to-add -- ...$untracked]
+        }
+
+        let changed_paths_result = git-complete [
+            diff
+            --name-only
+            '-z'
+            (required-env BASE_SHA)
+            --
+        ]
+        if $changed_paths_result.exit_code != 0 {
+            error make {
+                msg: $"Could not inspect changed paths: ($changed_paths_result.stderr | str trim)"
+            }
+        }
+        let changed_paths = $changed_paths_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
+        if ($changed_paths | is-empty) or ($changed_paths | length) > 100 {
+            error make {msg: 'Pullfrog implementation must change between 1 and 100 files'}
+        }
+
+        let changed = git-complete [
+            diff
+            --quiet
+            (required-env BASE_SHA)
+            --
+        ]
+        if $changed.exit_code == 0 {
+            error make {
+                msg: 'Pullfrog reported a prepared implementation without any changes'
+            }
+        }
+        if $changed.exit_code != 1 {
+            error make {
+                msg: $"Could not inspect implementation changes: ($changed.stderr | str trim)"
+            }
+        }
+        git-run [
+            diff
+            --check
+            (required-env BASE_SHA)
+            --
+        ]
+
+        let patch = git-complete [
+            diff
+            --binary
+            --full-index
+            (required-env BASE_SHA)
+            --
+        ]
+        if $patch.exit_code != 0 {
+            error make {
+                msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"
+            }
+        }
+        if ($patch.stdout | encode utf8 | bytes length) > 5000000 {
+            error make {
+                msg: 'Pullfrog implementation patch exceeds the 5 MB publication limit'
+            }
+        }
+        $patch.stdout | save --raw (required-env IMPLEMENTATION_PATCH)
+        $result | to json | save --raw (required-env IMPLEMENTATION_METADATA)
+    } else {
+        error make {msg: 'Pullfrog returned an unknown implementation result'}
+    }
+
+    write-output implementation $result.implementation
 }

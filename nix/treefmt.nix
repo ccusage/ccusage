@@ -11,15 +11,12 @@ in
     {
       config,
       system,
+      pkgs,
+      rustToolchain,
+      craneLib,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru) commonArgs workspaceArtifacts;
       # The generator only needs the config layer, so it starts from the foundation
       # artifacts rather than the adapter ones: this derivation gates the CI
@@ -99,8 +96,7 @@ in
         # comment too if they are spelled out here. Only typos is excluded,
         # because the JSON formatter is what keeps these files reviewable.
         settings.formatter.typos.excludes = [
-          "rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json"
-          "rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json"
+          "rust/crates/ccusage-pricing-snapshots/src/models-dev-*.json"
           # Narrow table snapshots clip cell text mid-word, and typos would
           # "correct" the clipped fragments and so rewrite the expected output.
           "rust/crates/ccusage/tests/snapshots/golden__*table*.snap"

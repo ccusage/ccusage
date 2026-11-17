@@ -16,9 +16,8 @@
 # snapshot crate enables, for one) and hands the layer's crates different
 # fingerprints from the final build's, which then recompiles all of them. With
 # the same command the units match, and the final layer only compiles the
-# binary crate and the leaf crates kept out of the layers (the pricing
-# snapshots, the CLI parser and the config schema). Linking the dummy binary is
-# cheap: its `main` reaches nothing, so fat LTO discards the rest.
+# binary crate and the leaf crates kept out of the layers. Linking the dummy
+# binary is cheap: its `main` reaches nothing, so fat LTO discards the rest.
 #
 # Moving a crate from dummy to real is detected by its fingerprint, not by
 # timestamps (every file in the sandbox carries the store's epoch mtime): Crane
@@ -50,51 +49,20 @@ let
     "ccusage-adapter-common"
     "ccusage-terminal"
   ];
-  agentNames = [
-    "amp"
-    "antigravity"
-    "claude"
-    "cline"
-    "codebuff"
-    "codex"
-    "copilot"
-    "droid"
-    "dsh"
-    "gemini"
-    "goose"
-    "grok"
-    "hermes"
-    "kilo"
-    "kimi"
-    "openclaw"
-    "opencode"
-    "pi"
-    "qwen"
-    "zcode"
-  ];
-  adapterCrates = map (name: "ccusage-adapter-${name}") agentNames ++ [ "ccusage-adapter-all" ];
-
-  # The adapters and the helpers they share live in adapters/<name>; every other
-  # crate is a directory under crates/ named after itself.
-  adapterDirNames = map (agent: "ccusage-adapter-${agent}") agentNames ++ [
-    "ccusage-adapter-common"
-  ];
-  crateDir =
+  workspace = builtins.fromTOML (builtins.readFile (rustRoot + /Cargo.toml));
+  cratePaths = lib.mapAttrs (_: dependency: dependency.path) (
+    lib.filterAttrs (_: dependency: dependency ? path) workspace.workspace.dependencies
+  );
+  adapterCrates = builtins.sort (left: right: cratePaths.${left} < cratePaths.${right}) (
+    builtins.filter (name: lib.hasPrefix "ccusage-adapter-" name && name != "ccusage-adapter-common") (
+      builtins.attrNames cratePaths
+    )
+  );
+  crateSource =
     name:
-    if lib.elem name adapterDirNames then
-      "adapters/${lib.removePrefix "ccusage-adapter-" name}"
-    else
-      "crates/${name}";
-  crateSource = name: craneLib.fileset.commonCargoSources (rustRoot + "/${crateDir name}");
-  extraSourcesFor =
-    names:
-    lib.optionals (lib.elem "ccusage-core" names) [
-      (rustRoot + /crates/ccusage-core/src/fast-multiplier-overrides.json)
-      (rustRoot + /crates/ccusage-core/src/flex-multiplier-overrides.json)
-      (rustRoot + /crates/ccusage-core/src/ultrafast-multiplier-overrides.json)
-    ]
-    ++ lib.optionals (lib.elem "ccusage-adapter-codex" names) [
-    ];
+    lib.fileset.intersection (lib.fileset.fromSource commonArgs.src) (
+      rustRoot + "/${cratePaths.${name}}"
+    );
   realSourceFor =
     names:
     lib.fileset.toSource {
@@ -105,7 +73,6 @@ let
           (rustRoot + /Cargo.lock)
         ]
         ++ map crateSource names
-        ++ extraSourcesFor names
       );
     };
   # Named `source` like the final package's source, so every layer unpacks to the
@@ -116,7 +83,7 @@ let
     pkgs.runCommand "source" { } ''
       cp -R ${dummySrc} "$out"
       chmod -R u+w "$out"
-      ${lib.concatMapStringsSep "\n" (name: ''rm -rf "$out/${crateDir name}"'') names}
+      ${lib.concatMapStringsSep "\n" (name: ''rm -rf "$out/${cratePaths.${name}}"'') names}
       cp -R ${realSourceFor names}/. "$out"
     '';
   artifactCommonArgs =

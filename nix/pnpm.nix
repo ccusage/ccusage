@@ -1,9 +1,7 @@
-{ inputs, ... }:
-{
+_: {
   perSystem =
-    { config, system, ... }:
+    { config, pkgs, ... }:
     let
-      pkgs = inputs.nixpkgs.legacyPackages.${system};
       manifest = builtins.fromJSON (builtins.readFile ../package.json);
       expected = "pnpm@${config.packages.pnpm.version}";
     in
