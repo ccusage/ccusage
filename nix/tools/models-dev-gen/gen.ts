@@ -12,7 +12,7 @@
  * network access.
  * Run via `just gen-models-dev-pricing` (see the sibling `default.nix`).
  */
-import { restoreCatalogIdentifiers } from './catalog.ts';
+import { rejectEscapedFileNames, restoreCatalogIdentifiers } from './catalog.ts';
 import { generateCatalog } from './packages/core/src/generate.ts';
 import {
 	buildModelsDevCatalogIndex,
@@ -56,6 +56,7 @@ type EmbeddedModel = {
 	/** Only a request naming this id exactly may use it; see `compact.ts`. */
 	exactOnly?: true;
 };
+rejectEscapedFileNames(['models', 'providers']);
 const catalog = (await generateCatalog('.')) as {
 	models: Record<string, ModelMetadata>;
 	providers: Record<string, Provider>;
