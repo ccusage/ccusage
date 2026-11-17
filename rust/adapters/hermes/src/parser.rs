@@ -1,13 +1,16 @@
-use std::{collections::HashSet, sync::Arc};
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
+use std::sync::Arc;
 
 use ccusage_adapter_common::sqlite::{read_count, read_f64};
 use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
-    missing_pricing_model_for_candidates, stored_cost_for_mode,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    format_date_tz, format_rfc3339_millis, stored_cost_for_mode,
 };
 
 pub(super) struct HermesEntry {
@@ -152,9 +155,8 @@ pub(super) fn to_loaded_entry(
     mode: CostMode,
     pricing: &PricingMap,
 ) -> LoadedEntry {
-    let cost = calculate_hermes_cost(&entry, pricing);
+    let (cost, missing_pricing_model) = price_hermes(&entry, mode, pricing);
     let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
-    let missing_pricing_model = missing_hermes_pricing(&entry, pricing);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text.clone(),
@@ -187,66 +189,115 @@ pub(super) fn to_loaded_entry(
     }
 }
 
-fn calculate_hermes_cost(entry: &HermesEntry, pricing: &PricingMap) -> f64 {
-    if let Some(cost) = entry.cost_usd.filter(|cost| *cost > 0.0) {
-        return cost;
-    }
-    let usage = TokenUsageRaw {
-        output_tokens: entry.usage.output_tokens + entry.reasoning_tokens,
-        cache_creation: None,
-        ..entry.usage
-    };
-    for candidate in model_candidates(entry, pricing) {
-        let cost = calculate_cost_for_usage_at(
-            Some(&candidate),
-            usage,
-            None,
-            Some(entry.timestamp),
-            CostMode::Calculate,
-            Some(pricing),
-        );
-        if cost.is_finite() && cost > 0.0 {
-            return cost;
-        }
-    }
-    0.0
-}
-
-fn missing_hermes_pricing(entry: &HermesEntry, pricing: &PricingMap) -> Option<String> {
-    if entry.cost_usd.is_some_and(|cost| cost > 0.0) {
-        return None;
-    }
-    let usage = TokenUsageRaw {
-        output_tokens: entry.usage.output_tokens + entry.reasoning_tokens,
-        cache_creation: None,
-        ..entry.usage
-    };
-    missing_pricing_model_for_candidates(
-        &entry.model,
-        model_candidates(entry, pricing),
-        crate::total_usage_tokens(usage),
+fn price_hermes(
+    entry: &HermesEntry,
+    mode: CostMode,
+    pricing: &PricingMap,
+) -> (f64, Option<String>) {
+    let candidates = model_candidates(entry);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|(name, kind)| (name.as_str(), *kind))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage: entry.usage,
+            reasoning_tokens: entry.reasoning_tokens,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
+            mode,
+            timestamp: Some(entry.timestamp),
+        },
         Some(pricing),
+    );
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
     )
 }
 
-fn model_candidates(entry: &HermesEntry, pricing: &PricingMap) -> Vec<String> {
+fn model_candidates(entry: &HermesEntry) -> Vec<(String, MatchKind)> {
     let mut candidates = Vec::new();
     if entry.provider != "hermes" {
-        let qualified = format!("{}/{}", entry.provider, entry.model);
-        if pricing.find_exact_with_fallback(&qualified).is_some() {
-            candidates.push(qualified);
-        }
+        candidates.push((
+            format!("{}/{}", entry.provider, entry.model),
+            MatchKind::Exact,
+        ));
     }
-    candidates.push(entry.model.clone());
-    let mut seen = HashSet::new();
+    candidates.push((entry.model.clone(), MatchKind::Fuzzy));
     candidates
-        .into_iter()
-        .filter(|candidate| seen.insert(candidate.clone()))
-        .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn zero_rates_stop_candidate_fallback() {
+        let entry = HermesEntry {
+            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+            timestamp_text: String::new(),
+            session_id: "s".into(),
+            model: "sample".into(),
+            provider: "vendor".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                ..TokenUsageRaw::default()
+            },
+            reasoning_tokens: 0,
+            message_count: 1,
+            cost_usd: None,
+        };
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"vendor/sample":{"input_cost_per_token":0,"output_cost_per_token":0},"sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        assert_eq!(
+            price_hermes(&entry, CostMode::Calculate, &pricing),
+            (0.0, None)
+        );
+    }
+
+    #[test]
+    fn uniform_cost_modes_use_recorded_cost_only_in_auto_and_display() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+        );
+        for (stored, auto, display) in [
+            (Some(0.42), 0.42, 0.42),
+            (Some(0.0), 0.26, 0.0),
+            (None, 0.26, 0.0),
+        ] {
+            for (mode, expected) in [
+                (CostMode::Auto, auto),
+                (CostMode::Display, display),
+                (CostMode::Calculate, 0.26),
+            ] {
+                let entry = HermesEntry {
+                    timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+                    timestamp_text: "2026-05-19T00:00:00Z".to_string(),
+                    session_id: "s".to_string(),
+                    model: "sample".to_string(),
+                    provider: "hermes".to_string(),
+                    usage: TokenUsageRaw {
+                        input_tokens: 100,
+                        output_tokens: 50,
+                        ..TokenUsageRaw::default()
+                    },
+                    reasoning_tokens: 30,
+                    message_count: 1,
+                    cost_usd: stored,
+                };
+                let loaded = to_loaded_entry(entry, &JiffTimeZone::UTC, mode, &pricing);
+                assert!(
+                    (loaded.cost - expected).abs() < 1e-12,
+                    "{mode:?}: {} vs {expected}",
+                    loaded.cost
+                );
+            }
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -315,7 +366,7 @@ mod tests {
             };
 
             assert!(
-                calculate_hermes_cost(&entry, &pricing) > 0.0,
+                price_hermes(&entry, CostMode::Auto, &pricing).0 > 0.0,
                 "{model} should resolve to embedded pricing"
             );
         }
@@ -345,7 +396,7 @@ mod tests {
         };
 
         assert!(
-            calculate_hermes_cost(&entry, &pricing) > 0.0,
+            price_hermes(&entry, CostMode::Auto, &pricing).0 > 0.0,
             "subscription-included sessions with token usage should still be priced"
         );
     }
@@ -373,7 +424,7 @@ mod tests {
             cost_usd: Some(0.42),
         };
 
-        assert_eq!(calculate_hermes_cost(&entry, &pricing), 0.42);
+        assert_eq!(price_hermes(&entry, CostMode::Auto, &pricing).0, 0.42);
     }
 
     #[test]
@@ -401,7 +452,12 @@ mod tests {
         );
 
         assert_eq!(
-            model_candidates(&entry, &pricing),
+            model_candidates(&entry)
+                .into_iter()
+                .filter(|(name, kind)| *kind == MatchKind::Fuzzy
+                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
             vec!["openai/gpt-5.5".to_string(), "gpt-5.5".to_string()]
         );
     }
@@ -432,9 +488,14 @@ mod tests {
             cost_usd: None,
         };
 
-        assert!((calculate_hermes_cost(&entry, &pricing) - 0.44).abs() < 1e-12);
+        assert!((price_hermes(&entry, CostMode::Auto, &pricing).0 - 0.44).abs() < 1e-12);
         assert_eq!(
-            model_candidates(&entry, &pricing),
+            model_candidates(&entry)
+                .into_iter()
+                .filter(|(name, kind)| *kind == MatchKind::Fuzzy
+                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
             vec!["deepseek-v4-flash"]
         );
     }
@@ -459,7 +520,12 @@ mod tests {
         };
 
         assert_eq!(
-            model_candidates(&entry, &pricing),
+            model_candidates(&entry)
+                .into_iter()
+                .filter(|(name, kind)| *kind == MatchKind::Fuzzy
+                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
             vec![
                 "deepseek/deepseek-v4-flash".to_string(),
                 "deepseek-v4-flash".to_string()
@@ -470,7 +536,7 @@ mod tests {
             .unwrap()
             .input
             * 1_000_000.0;
-        let raw_model_cost = calculate_cost_for_usage_at(
+        let raw_model_cost = ccusage_core::calculate_cost_for_usage_at(
             Some("deepseek-v4-flash"),
             entry.usage,
             None,
@@ -479,7 +545,7 @@ mod tests {
             Some(&pricing),
         );
         assert!((provider_cost - raw_model_cost).abs() > 1e-12);
-        assert!((calculate_hermes_cost(&entry, &pricing) - provider_cost).abs() < 1e-12);
+        assert!((price_hermes(&entry, CostMode::Auto, &pricing).0 - provider_cost).abs() < 1e-12);
     }
 
     #[test]
@@ -509,13 +575,18 @@ mod tests {
         };
 
         assert_eq!(
-            model_candidates(&entry, &pricing),
+            model_candidates(&entry)
+                .into_iter()
+                .filter(|(name, kind)| *kind == MatchKind::Fuzzy
+                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
             vec![
                 "deepseek/deepseek.v4.flash".to_string(),
                 "deepseek.v4.flash".to_string()
             ]
         );
-        assert!((calculate_hermes_cost(&entry, &pricing) - 0.14).abs() < 1e-12);
+        assert!((price_hermes(&entry, CostMode::Auto, &pricing).0 - 0.14).abs() < 1e-12);
 
         let longer_entry = HermesEntry {
             model: "deepseek.v4.flash-preview".to_string(),
@@ -523,8 +594,93 @@ mod tests {
             ..entry
         };
         assert_eq!(
-            model_candidates(&longer_entry, &pricing),
+            model_candidates(&longer_entry)
+                .into_iter()
+                .filter(|(name, kind)| *kind == MatchKind::Fuzzy
+                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
             vec!["deepseek.v4.flash-preview".to_string()]
         );
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let qualified = format!("{provider}/{model}");
+                let old = pricing
+                    .find_exact_with_fallback(&qualified)
+                    .and_then(|_| {
+                        pricing
+                            .find(&qualified)
+                            .map(|rates| (qualified.as_str(), rates))
+                    })
+                    .or_else(|| pricing.find(model).map(|rates| (model, rates)));
+                let new =
+                    pricing.resolve(&[(&qualified, MatchKind::Exact), (model, MatchKind::Fuzzy)]);
+                assert!(
+                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
+                        TokenUsageRaw {
+                            input_tokens: 1,
+                            output_tokens: 1,
+                            cache_creation_input_tokens: 1,
+                            cache_read_input_tokens: 1,
+                            ..TokenUsageRaw::default()
+                        },
+                        rates
+                    ) > 0.0),
+                    "{model} / {provider} must exercise the legacy positive-cost path"
+                );
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
     }
 }

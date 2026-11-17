@@ -15,18 +15,10 @@ exit: 0
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 8000,
-          "cost": 1.00345,
+          "cost": 0.0201,
           "inputTokens": 2500,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 530
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.25,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 220,
@@ -35,6 +27,14 @@ exit: 0
           "inputTokens": 1150,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 440
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0032875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
         }
       ],
       "modelsUsed": [
@@ -44,7 +44,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 1120,
-      "totalCost": 1.257825,
+      "totalCost": 0.027762500000000002,
       "totalTokens": 24350
     },
     {
@@ -53,14 +53,6 @@ exit: 0
       "inputTokens": 2320,
       "messageCount": 18,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 45,
-          "cost": 0.300455625,
-          "inputTokens": 120,
-          "modelName": "gpt-5",
-          "outputTokens": 30
-        },
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 3000,
@@ -76,6 +68,14 @@ exit: 0
           "inputTokens": 800,
           "modelName": "openai/gpt-5",
           "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 45,
+          "cost": 0.00045562500000000003,
+          "inputTokens": 120,
+          "modelName": "gpt-5",
+          "outputTokens": 30
         },
         {
           "cacheCreationTokens": 0,
@@ -104,7 +104,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 600,
-      "totalCost": 0.327819125,
+      "totalCost": 0.027819125000000004,
       "totalTokens": 13065
     }
   ],
@@ -113,7 +113,7 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.585644125,
+    "totalCost": 0.05558162500000001,
     "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"

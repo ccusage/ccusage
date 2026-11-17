@@ -107,7 +107,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.3,
+          "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-5",
           "outputTokens": 0
@@ -118,7 +118,7 @@ exit: 0
       ],
       "outputTokens": 0,
       "sessionId": "p-cost-only",
-      "totalCost": 0.3,
+      "totalCost": 0.0,
       "totalTokens": 0
     },
     {
@@ -130,7 +130,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2500,
-          "cost": 0.25,
+          "cost": 0.0032875,
           "inputTokens": 700,
           "modelName": "gpt-5",
           "outputTokens": 150
@@ -141,7 +141,7 @@ exit: 0
       ],
       "outputTokens": 150,
       "sessionId": "p-gpt5-estimated",
-      "totalCost": 0.25,
+      "totalCost": 0.0032875,
       "totalTokens": 3410
     },
     {
@@ -246,7 +246,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 4000,
-          "cost": 0.5,
+          "cost": 0.008325,
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 200
@@ -257,7 +257,7 @@ exit: 0
       ],
       "outputTokens": 200,
       "sessionId": "p-sonnet-stored",
-      "totalCost": 0.5,
+      "totalCost": 0.008325,
       "totalTokens": 5500
     },
     {
@@ -269,7 +269,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 4000,
-          "cost": 0.5,
+          "cost": 0.008325,
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 200
@@ -280,7 +280,7 @@ exit: 0
       ],
       "outputTokens": 200,
       "sessionId": "p-sonnet-stored-2",
-      "totalCost": 0.5,
+      "totalCost": 0.008325,
       "totalTokens": 5500
     },
     {
@@ -312,7 +312,7 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.5856441250000002,
+    "totalCost": 0.055581625,
     "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"
