@@ -629,6 +629,7 @@ impl<'a, T> TablePart<'a, T> {
     }
 }
 struct Table<'a, T> {
+    prefer_same_id: bool,
     primary: TablePart<'a, T>,
     models_dev: [Option<TablePart<'a, T>>; 2],
 }
@@ -1811,6 +1812,7 @@ impl PricingMap {
 
     fn prices(&self) -> Table<'_, Pricing> {
         Table {
+            prefer_same_id: true,
             primary: TablePart {
                 rows: &self.rows.entries,
                 exact_only: &self.rows.exact_only,
@@ -1829,6 +1831,7 @@ impl PricingMap {
     }
     fn limits(&self) -> Table<'_, u64> {
         Table {
+            prefer_same_id: false,
             primary: TablePart {
                 rows: &self.rows.context_limits,
                 exact_only: &self.rows.exact_only,
@@ -1840,7 +1843,7 @@ impl PricingMap {
                     rows: &layer.rows.context_limits,
                     exact_only: &layer.rows.exact_only,
                     excluded: Some(&layer.excluded_limits),
-                    excluded_exact_only: Some(&layer.excluded_prices),
+                    excluded_exact_only: Some(&layer.excluded_limits),
                 })
             }),
         }
@@ -2036,7 +2039,9 @@ impl PricingMap {
                         )
                 })
                 .max_by(|left, right| {
-                    let same_id = |key: &str| normalized_pricing_key(key) == normalized;
+                    let same_id = |key: &str| {
+                        table.prefer_same_id && normalized_pricing_key(key) == normalized
+                    };
                     same_id(left)
                         .cmp(&same_id(right))
                         .then_with(|| left.len().cmp(&right.len()))
@@ -6857,14 +6862,32 @@ mod tests {
     }
 
     #[test]
-    fn superseded_models_dev_prices_do_not_impose_exact_only_limits() {
+    fn context_limits_keep_their_pre_wave_exact_only_boundaries() {
         crate::test_support::install_pricing_snapshots();
         let map = PricingMap::load_embedded();
-        assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), Some(200_000));
+        assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), None);
         assert_eq!(
             map.context_limit("novita/zai-org/glm-5-turbo"),
-            Some(200_000)
+            Some(204_800)
         );
+    }
+
+    #[test]
+    fn live_exact_only_rows_without_limits_keep_embedded_tiers_out_of_fuzzy_limits() {
+        crate::test_support::install_pricing_snapshots();
+        let mut embedded = PricingMap::default();
+        embedded.load_models_dev_json_for_tests(
+            r#"{"sample-fast":{"exactOnly":true,"cost":{"input":1,"output":2},"limit":{"context":123456}}}"#,
+        );
+        let pricing = layered(&PricingMap::default(), Some(&embedded));
+        let mut live = PricingMap::default();
+        live.load_models_dev_json_for_tests(
+            r#"{"sample-fast":{"exactOnly":true,"cost":{"input":3,"output":4}}}"#,
+        );
+        let pricing = pricing.with_live_layer("sample-fast-extra", Lookup::Context, || Some(&live));
+        assert!(pricing.find("sample-fast-extra").is_none());
+        assert_eq!(pricing.context_limit("sample-fast-extra"), None);
+        assert_eq!(pricing.context_limit("sample-fast"), Some(123456));
     }
 
     #[test]
