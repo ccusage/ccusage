@@ -388,13 +388,13 @@ fn loads_saved_codex_exec_json_usage() {
     assert_eq!(events.len(), 3);
     assert_eq!(events[0].session_id, "run");
     assert_eq!(events[0].timestamp, "2026-01-02T03:04:05.000Z");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5.2-codex"));
+    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[0].input_tokens, 120);
     assert_eq!(events[0].cached_input_tokens, 20);
     assert_eq!(events[0].output_tokens, 30);
     assert_eq!(events[0].total_tokens, 150);
     assert_eq!(events[1].timestamp, "2026-01-02T03:05:05.000Z");
-    assert_eq!(events[1].model.as_deref(), Some("gpt-5.2-codex"));
+    assert_eq!(events[1].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[1].input_tokens, 50);
     assert_eq!(events[1].cached_input_tokens, 5);
     assert_eq!(events[1].output_tokens, 12);
@@ -445,7 +445,7 @@ fn loads_session_usage_with_numeric_timestamp() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "session");
     assert_eq!(events[0].timestamp, "2026-01-02T00:00:01.000Z");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+    assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 100);
     assert_eq!(events[0].cached_input_tokens, 10);
     assert_eq!(events[0].output_tokens, 50);
@@ -467,7 +467,7 @@ fn loads_session_usage_with_spaced_type_fields() {
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].timestamp, "2026-01-02T00:00:01.000Z");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+    assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 100);
     assert_eq!(events[0].cached_input_tokens, 10);
     assert_eq!(events[0].output_tokens, 50);
@@ -496,7 +496,7 @@ fn skips_truncated_type_fields_without_losing_valid_usage() {
         let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 1, "{truncated:?}");
-        assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+        assert_eq!(events[0].model.as_str(), "gpt-5");
         assert_eq!(events[0].input_tokens, 100);
         assert_eq!(events[0].cached_input_tokens, 10);
         assert_eq!(events[0].output_tokens, 50);
@@ -583,7 +583,7 @@ fn loads_headless_usage_with_unexpected_noncritical_field_types() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "run");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+    assert_eq!(events[0].model.as_str(), "gpt-5");
     assert!(events[0].is_fallback_model);
     assert_eq!(events[0].input_tokens, 120);
     assert_eq!(events[0].cached_input_tokens, 20);
@@ -658,11 +658,11 @@ fn resolves_codex_auto_review_at_documented_model_boundaries() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 5);
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5.3-codex"));
-    assert_eq!(events[1].model.as_deref(), Some("gpt-5.4"));
-    assert_eq!(events[2].model.as_deref(), Some("gpt-5.4"));
-    assert_eq!(events[3].model.as_deref(), Some("gpt-5.4"));
-    assert_eq!(events[4].model.as_deref(), Some("gpt-5.6-luna"));
+    assert_eq!(events[0].model.as_str(), "gpt-5.3-codex");
+    assert_eq!(events[1].model.as_str(), "gpt-5.4");
+    assert_eq!(events[2].model.as_str(), "gpt-5.4");
+    assert_eq!(events[3].model.as_str(), "gpt-5.4");
+    assert_eq!(events[4].model.as_str(), "gpt-5.6-luna");
     assert!(events.iter().all(|event| event.is_fallback_model));
 }
 
@@ -703,12 +703,7 @@ fn resolves_codex_auto_review_with_invalid_event_date_falls_back_to_file_mtime()
     // File mtime is "now" at fixture creation, which is on or after every
     // entry currently in the fallback table, so resolution lands on the
     // newest known model. The exact value updates when the table grows.
-    assert!(events.iter().all(|event| {
-        event
-            .model
-            .as_deref()
-            .is_some_and(|model| model.starts_with("gpt-5"))
-    }));
+    assert!(events.iter().all(|event| event.model.starts_with("gpt-5")));
     assert!(events.iter().all(|event| event.is_fallback_model));
 }
 
@@ -735,7 +730,7 @@ fn resolves_codex_auto_review_uses_created_at_when_top_level_timestamp_is_malfor
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5.2-codex"));
+    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
     assert!(events[0].is_fallback_model);
 }
 
@@ -803,9 +798,9 @@ fn resolves_codex_auto_review_turn_context_for_each_event_date() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 3);
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5.2-codex"));
-    assert_eq!(events[1].model.as_deref(), Some("gpt-5.4"));
-    assert_eq!(events[2].model.as_deref(), Some("gpt-5.6-luna"));
+    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
+    assert_eq!(events[1].model.as_str(), "gpt-5.4");
+    assert_eq!(events[2].model.as_str(), "gpt-5.6-luna");
     assert!(events.iter().all(|event| event.is_fallback_model));
 }
 
@@ -833,7 +828,7 @@ fn loads_headless_usage_with_token_count_text_content() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "run");
     assert_eq!(events[0].timestamp, "2026-01-02T03:04:05.000Z");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5.2-codex"));
+    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[0].input_tokens, 120);
     assert_eq!(events[0].cached_input_tokens, 20);
     assert_eq!(events[0].output_tokens, 30);
@@ -862,7 +857,7 @@ fn uses_nested_model_name_for_standalone_exec_usage() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "solo");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5.2-codex"));
+    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
     assert_eq!(events[0].input_tokens, 10);
     assert_eq!(events[0].output_tokens, 5);
     assert_eq!(events[0].total_tokens, 15);
@@ -1561,7 +1556,7 @@ fn counts_first_response_when_missing_parent_history_begins_after_fork() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+    assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 1_000);
     assert_eq!(events[0].cached_input_tokens, 400);
     assert_eq!(events[0].output_tokens, 10);
@@ -2686,7 +2681,7 @@ fn loads_codex_token_count_events() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "codex-session");
-    assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+    assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 100);
     assert_eq!(events[0].cached_input_tokens, 10);
     assert_eq!(events[0].output_tokens, 50);

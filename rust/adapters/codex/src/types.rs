@@ -173,7 +173,7 @@ pub struct CodexTokenUsageEvent {
     pub session_id: String,
     pub response_id: Option<String>,
     pub timestamp: String,
-    pub model: Option<String>,
+    pub model: String,
     pub input_tokens: u64,
     pub cached_input_tokens: u64,
     pub cache_creation_tokens: u64,

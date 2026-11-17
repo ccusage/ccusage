@@ -95,7 +95,7 @@ fn loads_compressed_rollouts_with_the_plain_session_id() {
     assert_eq!(events.len(), 1);
     let event = &events[0];
     assert_eq!(event.session_id, "2026/10/14/rollout");
-    assert_eq!(event.model.as_deref(), Some("gpt-5"));
+    assert_eq!(event.model.as_str(), "gpt-5");
     assert_eq!(event.input_tokens, 100);
     assert_eq!(event.cached_input_tokens, 80);
     assert_eq!(event.output_tokens, 20);

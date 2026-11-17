@@ -430,10 +430,7 @@ fn add_event_to_groups(
     groups: &mut BTreeMap<String, CodexGroup>,
     provenance: &mut CodexEventProvenance,
 ) -> Result<()> {
-    let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
-        return Ok(());
-    };
-    let model = crate::model_aliases::resolve_model_name(model);
+    let model = crate::model_aliases::resolve_model_name(&event.model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
     if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, provenance) {
@@ -956,7 +953,7 @@ mod tests {
             session_id: "first-session".into(),
             response_id: Some("response-1".into()),
             timestamp: "2026-09-01T00:00:01Z".into(),
-            model: Some("gpt-5".into()),
+            model: "gpt-5".into(),
             input_tokens: 300,
             cached_input_tokens: 0,
             cache_creation_tokens: 0,
@@ -969,7 +966,7 @@ mod tests {
         let mut copied = first.clone();
         copied.session_id = "copied-session".into();
         copied.timestamp = "2026-09-02T00:00:01Z".into();
-        copied.model = Some("gpt-5-mini".into());
+        copied.model = "gpt-5-mini".into();
         copied.input_tokens = 500;
         copied.total_tokens = 520;
         copied.service_tier = Some(CodexServiceTier::Fast);

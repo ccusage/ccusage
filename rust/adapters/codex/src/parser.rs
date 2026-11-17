@@ -980,43 +980,24 @@ fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
     Some(timestamp)
 }
 
-fn parsed_model_is_missing(
-    model: &Option<String>,
-    current_model: &Option<String>,
-    current_model_is_fallback: bool,
-) -> bool {
-    model.is_some() && current_model.is_some() && current_model_is_fallback
-}
-
 fn resolve_codex_usage_model(
     parsed_model: Option<String>,
     timestamp: &str,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
-) -> (Option<String>, bool) {
-    if let Some(model) = parsed_model.as_ref() {
-        *current_model = Some(model.clone());
+) -> (String, bool) {
+    if let Some(model) = parsed_model {
+        *current_model = Some(model);
         *current_model_is_fallback = false;
     }
-    let mut is_fallback_model = false;
-    let model = parsed_model.or_else(|| current_model.clone()).or_else(|| {
-        is_fallback_model = true;
+    let model = current_model.get_or_insert_with(|| {
         *current_model_is_fallback = true;
-        *current_model = Some("gpt-5".to_string());
-        current_model.clone()
+        "gpt-5".to_string()
     });
-    if parsed_model_is_missing(&model, current_model, *current_model_is_fallback) {
-        is_fallback_model = true;
+    match codex_log_model_fallback(model, timestamp) {
+        Some(fallback) => (fallback.to_string(), true),
+        None => (model.clone(), *current_model_is_fallback),
     }
-    let model = model.map(|model| {
-        codex_log_model_fallback(&model, timestamp)
-            .map(|fallback| {
-                is_fallback_model = true;
-                fallback.to_string()
-            })
-            .unwrap_or(model)
-    });
-    (model, is_fallback_model)
 }
 
 fn codex_log_model_fallback(model: &str, timestamp: &str) -> Option<&'static str> {
@@ -1962,7 +1943,7 @@ mod tests {
         assert_eq!(compacted_usages[0].cached_input_tokens, 280);
         assert_eq!(compacted_usages[0].output_tokens, 20);
         assert_eq!(compacted_usages[0].total_tokens, 320);
-        assert_eq!(compacted_usages[0].model.as_deref(), Some("gpt-reserve"));
+        assert_eq!(compacted_usages[0].model.as_str(), "gpt-reserve");
         assert!(compacted_usages[0].is_fallback_model);
         assert_eq!(compacted_usages[1].input_tokens, 200);
     }
@@ -1982,7 +1963,7 @@ mod tests {
                 ].join("\n"),
             });
             let events = crate::test_support::rollout_events(fixture.root());
-            assert_eq!(events.last().unwrap().model.as_deref(), Some("gpt-5"));
+            assert_eq!(events.last().unwrap().model.as_str(), "gpt-5");
             assert!(!events.last().unwrap().is_fallback_model);
         }
     }
@@ -2108,7 +2089,7 @@ mod tests {
         let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
-        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
+        assert_eq!(events[0].model.as_str(), "gpt-5-mini");
     }
 
     #[test]
@@ -2122,7 +2103,7 @@ mod tests {
         let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
-        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
+        assert_eq!(events[0].model.as_str(), "gpt-5-mini");
     }
     #[test]
     fn counts_compaction_usage_without_changing_cumulative_baseline() {
@@ -2146,7 +2127,7 @@ mod tests {
             [120, 330, 60]
         );
         assert_eq!(events[1].cached_input_tokens, 200);
-        assert_eq!(events[1].model.as_deref(), Some("gpt-5"));
+        assert_eq!(events[1].model.as_str(), "gpt-5");
         assert!(events[1].is_fallback_model);
     }
 }
