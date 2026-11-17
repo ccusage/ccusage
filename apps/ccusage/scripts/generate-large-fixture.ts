@@ -1,13 +1,15 @@
 #!/usr/bin/env nix
 /*
-#! nix shell --inputs-from ../../.. nixpkgs#bun -c bun
+#! nix shell --inputs-from ../../.. nixpkgs#nodejs -c node
 */
 // Writes Claude Code and Codex logs whose line shapes, line-type mix, and
 // per-type byte share follow aggregate statistics of real logs, with every
 // value synthesized. Parser cost depends on those shapes (null-valued fields,
 // nested usage, escaped strings, non-usage lines), so a fixture made of
 // uniform padded usage lines hides regressions that real logs expose.
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { zstdCompressSync } from 'node:zlib';
 
 const MIB = 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -381,7 +383,10 @@ function claudeContentBlock(random: Random, kind: string): Line {
 }
 
 /** One API response, written by Claude Code as one line per content block that all repeat the usage. */
-function claudeAssistantResponse(session: ClaudeSession, messageId?: string): Line[] {
+function claudeAssistantResponse(
+	session: ClaudeSession,
+	messageId?: string,
+): { lines: Line[]; replayableId?: string } {
 	const { random } = session;
 	const model = random.chance(0.01) ? '<synthetic>' : random.pick(CLAUDE_MODELS);
 	const id = messageId ?? `msg_${random.hex(24)}`;
@@ -393,7 +398,7 @@ function claudeAssistantResponse(session: ClaudeSession, messageId?: string): Li
 		blocks.push('tool_use');
 	}
 	const timestamp = session.clock.tick(random);
-	return blocks.map((kind) => {
+	const lines: Line[] = blocks.map((kind) => {
 		const message = {
 			model,
 			id,
@@ -433,6 +438,7 @@ function claudeAssistantResponse(session: ClaudeSession, messageId?: string): Li
 			advisorModel: null,
 		};
 	});
+	return { lines, replayableId: lines[0]?.type === 'assistant' ? id : undefined };
 }
 
 function claudeUser(session: ClaudeSession, withToolResult: boolean): Line {
@@ -561,7 +567,7 @@ function* claudeSessionLines(session: ClaudeSession): Generator<Line> {
 	// A sidechain transcript replays parent messages under new request IDs; the
 	// loaders must drop those copies, so the fixture exercises that path.
 	for (const messageId of session.parentMessageIds.slice(0, 2)) {
-		yield* claudeAssistantResponse(session, messageId);
+		yield* claudeAssistantResponse(session, messageId).lines;
 	}
 	while (true) {
 		yield claudeUser(session, false);
@@ -569,15 +575,14 @@ function* claudeSessionLines(session: ClaudeSession): Generator<Line> {
 		for (let step = 0; step < steps; step += 1) {
 			yield* claudeSideLines(session);
 			const response = claudeAssistantResponse(session);
-			const firstMessage = response[0]?.message as { id?: string } | undefined;
 			if (
 				session.agentId === undefined &&
-				firstMessage?.id &&
+				response.replayableId !== undefined &&
 				session.parentMessageIds.length < 4
 			) {
-				session.parentMessageIds.push(firstMessage.id);
+				session.parentMessageIds.push(response.replayableId);
 			}
-			yield* response;
+			yield* response.lines;
 			yield claudeUser(session, true);
 		}
 	}
@@ -646,8 +651,8 @@ function codexItemCompleted(session: CodexSession, turnId: string): Line {
 	});
 }
 
-function codexUsageRecord(session: CodexSession, turnId: string, usage: Line): Line {
-	return codexLine(session, 'token_usage_record', {
+function codexUsageRecordPayload(session: CodexSession, turnId: string, usage: Line) {
+	return {
 		thread_id: session.sessionId,
 		turn_id: turnId,
 		session_id: session.sessionId,
@@ -656,7 +661,7 @@ function codexUsageRecord(session: CodexSession, turnId: string, usage: Line): L
 		usage,
 		turn_token_usage: usage,
 		thread_token_usage: session.total,
-	});
+	};
 }
 
 function* codexSessionLines(session: CodexSession): Generator<Line> {
@@ -726,7 +731,11 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			// Codex writes the response's usage record before the token_count
 			// that advances the cumulative total, which is what lets the parser
 			// settle each record instead of keeping it pending.
-			yield codexUsageRecord(session, turnId, usage);
+			yield codexLine(
+				session,
+				'token_usage_record',
+				codexUsageRecordPayload(session, turnId, usage),
+			);
 			yield codexLine(session, 'event_msg', {
 				type: 'token_count',
 				info: {
@@ -757,9 +766,8 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 		if (random.chance(CODEX_COMPACTION_CHANCE)) {
 			// A remote compaction's usage is missing from the cumulative total,
 			// so its record stays pending until the marker naming it arrives.
-			const record = codexUsageRecord(session, turnId, codexUsage(random));
-			yield record;
-			const latest = record.payload as Line;
+			const latest = codexUsageRecordPayload(session, turnId, codexUsage(random));
+			yield codexLine(session, 'token_usage_record', latest);
 			yield codexLine(session, 'compacted', {
 				message: '',
 				replacement_history: [
@@ -897,11 +905,11 @@ function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout
 	};
 }
 
-async function writeFile(
+async function writePlannedFile(
 	file: PlannedFile,
 	targetSize: number,
 ): Promise<{ bytes: number; diskBytes: number; lines: number }> {
-	await Bun.$`mkdir -p ${dirname(file.path)}`;
+	await mkdir(dirname(file.path), { recursive: true });
 	const chunks: string[] = [];
 	let bytes = 0;
 	let lines = 0;
@@ -915,12 +923,10 @@ async function writeFile(
 		bytes += Buffer.byteLength(line);
 		lines += 1;
 	}
-	const content = chunks.join('');
-	const diskBytes = await Bun.write(
-		file.path,
-		file.compressed ? Bun.zstdCompressSync(content) : content,
-	);
-	return { bytes, diskBytes, lines };
+	const content = Buffer.from(chunks.join(''));
+	const data = file.compressed ? zstdCompressSync(content) : content;
+	await writeFile(file.path, data);
+	return { bytes, diskBytes: data.byteLength, lines };
 }
 
 async function generateFixture(
@@ -934,7 +940,7 @@ async function generateFixture(
 		format === 'claude' ? '--output-dir' : '--codex-output-dir',
 	);
 	const fileSizeTargets = createFileSizeTargets(sizeMib * MIB);
-	await Bun.$`rm -rf ${directory}`;
+	await rm(directory, { recursive: true, force: true });
 
 	let totalBytes = 0;
 	let diskBytes = 0;
@@ -953,7 +959,7 @@ async function generateFixture(
 		} else {
 			file = planCodexFile(directory, fileIndex, codexLayout);
 		}
-		const written = await writeFile(file, targetSize);
+		const written = await writePlannedFile(file, targetSize);
 		totalBytes += written.bytes;
 		diskBytes += written.diskBytes;
 		lineCount += written.lines;
