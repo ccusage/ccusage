@@ -556,8 +556,8 @@ pub struct BlocksSpecificOptions {
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum ConfigTokenLimit {
-    Text(String),
-    Number(u64),
+    Text(#[schemars(regex(pattern = r"^(max|\+?0*[1-9][0-9]*)$"))] String),
+    Number(std::num::NonZeroU64),
 }
 
 fn deserialize_token_limit<'de, D: Deserializer<'de>>(
@@ -1550,6 +1550,14 @@ mod tests {
             "zcodeDefaults": schema_node(&schema, &["zcode", "defaults"]),
             "clineWeekly": schema_node(&schema, &["cline", "commands", "weekly"]),
         }));
+    }
+
+    #[test]
+    fn token_limit_schema_requires_max_or_positive_integers() {
+        let schema = generated_schema();
+        let token_limit = schema_property(&schema, &["commands", "blocks", "tokenLimit"]).unwrap();
+        assert_eq!(token_limit["anyOf"][1]["minimum"], 1.0);
+        assert!(token_limit["anyOf"][0]["pattern"].as_str().is_some());
     }
 
     fn generated_schema() -> Value {

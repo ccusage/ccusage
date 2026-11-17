@@ -1960,11 +1960,12 @@
 										"tokenLimit": {
 											"anyOf": [
 												{
+													"pattern": "^(max|\\+?0*[1-9][0-9]*)$",
 													"type": "string"
 												},
 												{
 													"format": "uint64",
-													"minimum": 0.0,
+													"minimum": 1.0,
 													"type": "integer"
 												}
 											],
@@ -3072,11 +3073,12 @@
 								"tokenLimit": {
 									"anyOf": [
 										{
+											"pattern": "^(max|\\+?0*[1-9][0-9]*)$",
 											"type": "string"
 										},
 										{
 											"format": "uint64",
-											"minimum": 0.0,
+											"minimum": 1.0,
 											"type": "integer"
 										}
 									],
@@ -5942,11 +5944,12 @@
 								"tokenLimit": {
 									"anyOf": [
 										{
+											"pattern": "^(max|\\+?0*[1-9][0-9]*)$",
 											"type": "string"
 										},
 										{
 											"format": "uint64",
-											"minimum": 0.0,
+											"minimum": 1.0,
 											"type": "integer"
 										}
 									],

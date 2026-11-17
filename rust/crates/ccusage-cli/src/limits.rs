@@ -13,9 +13,10 @@ impl FromStr for TokenLimit {
         if value == "max" {
             return Ok(Self::Max);
         }
-        value.parse().map(Self::Tokens).map_err(|_| {
-            "Invalid value for --token-limit: expected max or a positive whole number".to_string()
-        })
+        value
+            .parse()
+            .map(Self::Tokens)
+            .map_err(|_| "Expected max or a positive whole number".to_string())
     }
 }
 
@@ -44,10 +45,8 @@ impl SessionLength {
     pub const DEFAULT: Self = Self(5 * 3_600_000);
 
     pub fn from_hours(hours: f64) -> Result<Self, String> {
-        let error = || {
-            "Invalid value for --session-length: Session length must be a positive, representable number of hours"
-                .to_string()
-        };
+        let error =
+            || "Session length must be a positive, representable number of hours".to_string();
         if !hours.is_finite() || hours <= 0.0 {
             return Err(error());
         }
@@ -72,7 +71,7 @@ impl FromStr for SessionLength {
         Self::from_hours(
             value
                 .parse()
-                .map_err(|_| "Invalid value for --session-length".to_string())?,
+                .map_err(|_| "Expected a number of hours".to_string())?,
         )
     }
 }

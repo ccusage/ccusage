@@ -226,10 +226,18 @@ fn parse_blocks_command(
             "-a" | "--active" => args.active = true,
             "-r" | "--recent" => args.recent = true,
             "-t" | "--token-limit" => {
-                args.token_limit = Some(parser.value_for("--token-limit")?.parse()?)
+                args.token_limit = Some(
+                    parser
+                        .value_for("--token-limit")?
+                        .parse()
+                        .map_err(|error| format!("Invalid value for --token-limit: {error}"))?,
+                )
             }
             "-n" | "--session-length" => {
-                args.session_length = parser.value_for("--session-length")?.parse()?
+                args.session_length = parser
+                    .value_for("--session-length")?
+                    .parse()
+                    .map_err(|error| format!("Invalid value for --session-length: {error}"))?
             }
             flag => return Err(format!("Unknown blocks option '{flag}'")),
         }

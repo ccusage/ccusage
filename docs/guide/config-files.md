@@ -396,7 +396,7 @@ For a source-focused command, or each source within a unified report, options ar
 }
 ```
 
-The `tokenLimit` value accepts a non-negative integer or a string, including `"max"`.
+The `tokenLimit` value accepts `"max"` or a positive integer, written as a number or a string.
 
 ### Statusline
 
