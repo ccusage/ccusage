@@ -393,36 +393,89 @@ enum Layer {
     ModelsDev,
 }
 
-struct Table<'a, T> {
+struct TablePart<'a, T> {
     rows: &'a FxHashMap<String, T>,
-    models_dev: &'a FxHashSet<String>,
+    exact_only: &'a ExactOnlyKeys,
+    excluded: Option<&'a FxHashSet<String>>,
 }
-
+impl<T> Clone for TablePart<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for TablePart<'_, T> {}
+impl<'a, T> TablePart<'a, T> {
+    fn contains(self, key: &str) -> bool {
+        !self.excluded.is_some_and(|excluded| excluded.contains(key))
+    }
+    fn key(self, model: &str) -> Option<&'a str> {
+        self.rows
+            .get_key_value(model)
+            .map(|(key, _)| key.as_str())
+            .filter(|key| self.contains(key))
+    }
+}
+struct Table<'a, T> {
+    primary: TablePart<'a, T>,
+    models_dev: [Option<TablePart<'a, T>>; 2],
+}
 impl<T> Clone for Table<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
-
 impl<T> Copy for Table<'_, T> {}
-
 impl<'a, T> Table<'a, T> {
-    fn layer_of(self, key: &str) -> Layer {
-        if self.models_dev.contains(key) {
-            Layer::ModelsDev
-        } else {
-            Layer::Primary
+    fn parts(self, layer: Layer) -> impl Iterator<Item = TablePart<'a, T>> {
+        match layer {
+            Layer::Primary => [Some(self.primary), None],
+            Layer::ModelsDev => self.models_dev,
         }
+        .into_iter()
+        .flatten()
     }
-
+    fn all_parts(self) -> impl Iterator<Item = TablePart<'a, T>> {
+        std::iter::once(self.primary).chain(self.models_dev.into_iter().flatten())
+    }
     fn key_in(self, model: &str, layer: Layer) -> Option<&'a str> {
-        self.rows
-            .get_key_value(model)
-            .map(|(key, _)| key.as_str())
-            .filter(|key| self.layer_of(key) == layer)
+        self.parts(layer).find_map(|part| part.key(model))
+    }
+    fn get(self, model: &str) -> Option<&'a T> {
+        self.all_parts()
+            .find_map(|part| part.rows.get(model).filter(|_| part.contains(model)))
+    }
+    fn keys_in(self, layer: Layer) -> impl Iterator<Item = (&'a str, bool)> {
+        self.parts(layer).flat_map(|part| {
+            part.rows
+                .keys()
+                .map(String::as_str)
+                .filter(move |key| part.contains(key))
+                .map(move |key| (key, part.exact_only.contains(key)))
+        })
+    }
+    fn is_exact_only(self, model: &str) -> bool {
+        self.all_parts().any(|part| {
+            part.exact_only.contains_any_spelling(model)
+                && part
+                    .exact_only
+                    .id_spelled_by(model)
+                    .is_none_or(|id| part.contains(id))
+        })
+    }
+    fn exact_only_id(self, model: &str) -> Option<&'a str> {
+        self.all_parts().find_map(|part| {
+            part.exact_only
+                .id_spelled_by(model)
+                .filter(|id| part.contains(id))
+        })
     }
 }
-
+#[derive(Clone, Debug)]
+struct ModelsDevLayer {
+    rows: Arc<PricingRows>,
+    excluded_prices: FxHashSet<String>,
+    excluded_limits: FxHashSet<String>,
+}
 #[derive(Clone, Copy)]
 enum Lookup {
     Pricing,
@@ -436,9 +489,8 @@ type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<Pricing>>>>>;
 
 #[derive(Debug)]
 pub struct PricingMap {
-    /// Shared by every map derived from the same base: a report map takes its
-    /// own copy only when it applies an override or a layer.
     rows: Arc<PricingRows>,
+    models_dev: [Option<ModelsDevLayer>; 2],
     live_merged: OnceLock<Box<PricingMap>>,
     enable_models_dev_fallback: bool,
     find_cache: OnceLock<FindCache>,
@@ -467,8 +519,6 @@ struct PricingRows {
     /// `kimi-k2-7-code` would be billed at the premium tier.
     exact_only: ExactOnlyKeys,
     context_limits: FxHashMap<String, u64>,
-    models_dev_keys: FxHashSet<String>,
-    models_dev_limits: FxHashSet<String>,
 }
 
 /// The ids of [`PricingRows::exact_only`], indexed both as written and under the
@@ -556,6 +606,7 @@ impl Default for PricingMap {
     fn default() -> Self {
         Self {
             rows: Arc::default(),
+            models_dev: [None, None],
             live_merged: OnceLock::new(),
             enable_models_dev_fallback: false,
             find_cache: OnceLock::new(),
@@ -1063,7 +1114,12 @@ impl PricingMap {
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
-        self.merge_models_dev(embedded_models_dev);
+        self.models_dev[1] = Some(ModelsDevLayer {
+            rows: Arc::clone(&embedded_models_dev.rows),
+            excluded_prices: FxHashSet::default(),
+            excluded_limits: FxHashSet::default(),
+        });
+        self.clear_find_cache();
     }
 
     pub fn load_with_overrides<'a, I>(offline: bool, log: bool, overrides: I) -> Self
@@ -1101,6 +1157,7 @@ impl PricingMap {
         let base = self.live_merged.get().map_or(self, |map| map.as_ref());
         let mut map = Self {
             rows: Arc::clone(&base.rows),
+            models_dev: base.models_dev.clone(),
             live_merged: OnceLock::new(),
             enable_models_dev_fallback: self.enable_models_dev_fallback
                 && self.live_merged.get().is_none(),
@@ -1168,19 +1225,6 @@ impl PricingMap {
                     flex: entry.flex,
                 })
                 .unwrap_or_default();
-            let normalized = normalized_pricing_key(&model);
-            let replaced: Vec<_> = self
-                .rows
-                .models_dev_keys
-                .iter()
-                .filter(|key| normalized_pricing_key(key) == normalized)
-                .cloned()
-                .collect();
-            for key in replaced {
-                self.rows_mut().entries.remove(&key);
-                self.rows_mut().exact_only.remove(&key);
-                self.rows_mut().models_dev_keys.remove(&key);
-            }
             self.rows_mut().entries.insert(
                 model.clone(),
                 provider_specific
@@ -1207,7 +1251,6 @@ impl PricingMap {
                     }),
             );
             if let Some(context_limit) = context_limit {
-                self.rows_mut().models_dev_limits.remove(&model);
                 self.rows_mut().context_limits.insert(model, context_limit);
             }
             loaded_count += 1;
@@ -1463,63 +1506,80 @@ impl PricingMap {
 
     fn prices(&self) -> Table<'_, Pricing> {
         Table {
-            rows: &self.rows.entries,
-            models_dev: &self.rows.models_dev_keys,
+            primary: TablePart {
+                rows: &self.rows.entries,
+                exact_only: &self.rows.exact_only,
+                excluded: None,
+            },
+            models_dev: self.models_dev.each_ref().map(|layer| {
+                layer.as_ref().map(|layer| TablePart {
+                    rows: &layer.rows.entries,
+                    exact_only: &layer.rows.exact_only,
+                    excluded: Some(&layer.excluded_prices),
+                })
+            }),
         }
     }
-
     fn limits(&self) -> Table<'_, u64> {
         Table {
-            rows: &self.rows.context_limits,
-            models_dev: &self.rows.models_dev_limits,
+            primary: TablePart {
+                rows: &self.rows.context_limits,
+                exact_only: &self.rows.exact_only,
+                excluded: None,
+            },
+            models_dev: self.models_dev.each_ref().map(|layer| {
+                layer.as_ref().map(|layer| TablePart {
+                    rows: &layer.rows.context_limits,
+                    exact_only: &layer.rows.exact_only,
+                    excluded: Some(&layer.excluded_limits),
+                })
+            }),
         }
     }
-
     fn merge_models_dev(&mut self, source: &Self) {
-        let mut primary = FxHashSet::default();
-        let mut replaceable: FxHashMap<String, Vec<String>> = FxHashMap::default();
-        for key in self.rows.entries.keys() {
-            let normalized = normalized_pricing_key(key).into_owned();
-            if self.rows.models_dev_keys.contains(key) {
-                replaceable.entry(normalized).or_default().push(key.clone());
-            } else {
-                primary.insert(normalized);
-            }
-        }
-        for (model, pricing) in &source.rows.entries {
-            let normalized = normalized_pricing_key(model);
-            if primary.contains(normalized.as_ref()) {
-                continue;
-            }
-            for key in replaceable
-                .remove(normalized.as_ref())
-                .into_iter()
-                .flatten()
-            {
-                self.rows_mut().entries.remove(&key);
-                self.rows_mut().exact_only.remove(&key);
-                self.rows_mut().models_dev_keys.remove(&key);
-            }
-            self.rows_mut().entries.insert(model.clone(), *pricing);
-            self.rows_mut().models_dev_keys.insert(model.clone());
-            if source.rows.exact_only.contains(model) {
-                self.rows_mut().exact_only.insert(model.clone());
-            } else {
-                self.rows_mut().exact_only.remove(model);
-            }
-        }
-        for (model, limit) in &source.rows.context_limits {
-            if self.rows.context_limits.contains_key(model)
-                && !self.rows.models_dev_limits.contains(model)
-            {
-                continue;
-            }
-            self.rows_mut().context_limits.insert(model.clone(), *limit);
-            self.rows_mut().models_dev_limits.insert(model.clone());
-        }
+        self.models_dev[0] = Some(ModelsDevLayer {
+            rows: Arc::clone(&source.rows),
+            excluded_prices: FxHashSet::default(),
+            excluded_limits: FxHashSet::default(),
+        });
         self.clear_find_cache();
     }
-
+    fn refresh_layer_exclusions(&mut self) {
+        let mut prices: FxHashSet<_> = self
+            .rows
+            .entries
+            .keys()
+            .map(|key| normalized_pricing_key(key).into_owned())
+            .collect();
+        let mut limits: FxHashSet<_> = self.rows.context_limits.keys().cloned().collect();
+        for (index, layer) in self.models_dev.iter_mut().enumerate() {
+            let Some(layer) = layer else { continue };
+            layer.excluded_prices = layer
+                .rows
+                .entries
+                .keys()
+                .filter(|key| prices.contains(normalized_pricing_key(key).as_ref()))
+                .cloned()
+                .collect();
+            layer.excluded_limits = layer
+                .rows
+                .context_limits
+                .keys()
+                .filter(|key| limits.contains(*key))
+                .cloned()
+                .collect();
+            if index == 0 {
+                prices.extend(
+                    layer
+                        .rows
+                        .entries
+                        .keys()
+                        .map(|key| normalized_pricing_key(key).into_owned()),
+                );
+                limits.extend(layer.rows.context_limits.keys().cloned());
+            }
+        }
+    }
     fn for_lookup(&self, model: &str, lookup: Lookup) -> &Self {
         self.with_live_layer(model, lookup, models_dev_pricing)
     }
@@ -1541,7 +1601,7 @@ impl PricingMap {
             Lookup::Pricing => self.primary_key(self.prices(), model).is_some(),
             Lookup::Exact => self
                 .exact_normalized_key(model)
-                .is_some_and(|key| self.prices().layer_of(key) == Layer::Primary),
+                .is_some_and(|key| self.rows.entries.contains_key(key)),
         };
         if primary_hit {
             return self;
@@ -1563,8 +1623,11 @@ impl PricingMap {
     }
 
     fn lookup<T: Copy>(&self, table: Table<'_, T>, model: &str, fuzzy: Fuzzy) -> Option<T> {
+        if let Some(value) = table.primary.rows.get(model) {
+            return Some(*value);
+        }
         self.resolve_key(table, model, fuzzy)
-            .and_then(|key| table.rows.get(key).copied())
+            .and_then(|key| table.get(key).copied())
     }
 
     fn primary_key<'a, T>(&self, table: Table<'a, T>, model: &str) -> Option<&'a str> {
@@ -1582,9 +1645,8 @@ impl PricingMap {
         let resolved = alias.as_ref();
         let fuzzy = if fuzzy == Fuzzy::Allowed
             && ![model, resolved].into_iter().any(|candidate| {
-                self.rows.exact_only.contains_any_spelling(candidate)
-                    || pricing_alias(candidate)
-                        .is_some_and(|alias| self.rows.exact_only.contains_any_spelling(alias))
+                table.is_exact_only(candidate)
+                    || pricing_alias(candidate).is_some_and(|alias| table.is_exact_only(alias))
             }) {
             Fuzzy::Allowed
         } else {
@@ -1641,19 +1703,17 @@ impl PricingMap {
         fuzzy: Fuzzy,
     ) -> Option<&'a str> {
         table.key_in(model, layer).or_else(|| {
-            if let Some(id) = self.rows.exact_only.id_spelled_by(model) {
+            if let Some(id) = table.exact_only_id(model) {
                 return table.key_in(id, layer);
             }
-            if fuzzy == Fuzzy::Denied || self.rows.exact_only.contains_any_spelling(model) {
+            if fuzzy == Fuzzy::Denied || table.is_exact_only(model) {
                 return None;
             }
             let normalized = normalized_pricing_key(model);
             table
-                .rows
-                .keys()
-                .map(String::as_str)
-                .filter(|key| table.layer_of(key) == layer)
-                .filter(|key| !self.rows.exact_only.contains(key))
+                .keys_in(layer)
+                .filter(|(_, exact_only)| !exact_only)
+                .map(|(key, _)| key)
                 .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
                 .max_by(|left, right| left.len().cmp(&right.len()).then_with(|| right.cmp(left)))
         })
@@ -1689,7 +1749,7 @@ impl PricingMap {
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
-        self.rows.entries.get(model).copied()
+        self.prices().get(model).copied()
     }
 
     /// Whether a user supplied pricing for this model id or its configured alias.
@@ -1716,35 +1776,31 @@ impl PricingMap {
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
         self.exact_normalized_key(model)
-            .and_then(|key| self.rows.entries.get(key).copied())
+            .and_then(|key| self.prices().get(key).copied())
     }
 
     fn exact_normalized_key(&self, model: &str) -> Option<&str> {
-        if let Some((key, _)) = self.rows.entries.get_key_value(model) {
-            return Some(key);
+        let table = self.prices();
+        for layer in [Layer::Primary, Layer::ModelsDev] {
+            if let Some(key) = table.key_in(model, layer) {
+                return Some(key);
+            }
         }
-        if self.rows.exact_only.contains_any_spelling(model) {
-            return self
-                .rows
-                .exact_only
-                .id_spelled_by(model)
-                .and_then(|id| self.rows.entries.get_key_value(id))
-                .map(|(key, _)| key.as_str());
+        if table.is_exact_only(model) {
+            return table.exact_only_id(model);
         }
-        let key = self
-            .normalized_keys()
+        self.normalized_keys()
             .get(normalized_pricing_key(model).as_ref())?
-            .as_deref()?;
-        self.rows
-            .entries
-            .get_key_value(key)
-            .map(|(key, _)| key.as_str())
+            .as_deref()
     }
-
     fn normalized_keys(&self) -> &FxHashMap<String, Option<String>> {
         self.normalized_keys.get_or_init(|| {
             let mut index = FxHashMap::default();
-            for key in self.rows.entries.keys() {
+            for key in self
+                .prices()
+                .all_parts()
+                .flat_map(|part| part.rows.keys().filter(move |key| part.contains(key)))
+            {
                 index
                     .entry(normalized_pricing_key(key).into_owned())
                     // A second key with the same spelling makes it name
@@ -1769,12 +1825,21 @@ impl PricingMap {
             .into_iter()
             .map(|(model, override_value)| (model.as_str(), override_value))
             .collect();
+        if overrides.is_empty() {
+            return;
+        }
         let mut resolved = FxHashMap::default();
         for model in overrides.keys() {
             self.resolve_override(model, &overrides, &mut resolved);
         }
         for (model, pricing) in resolved {
-            self.rows_mut().models_dev_keys.remove(model);
+            if self
+                .prices()
+                .all_parts()
+                .any(|part| part.exact_only.contains(model) && part.contains(model))
+            {
+                self.rows_mut().exact_only.insert(model.to_string());
+            }
             self.rows_mut().entries.insert(model.to_string(), pricing);
         }
         for (model, override_value) in overrides {
@@ -1782,7 +1847,6 @@ impl PricingMap {
                 .user_overrides
                 .insert(model.to_string(), override_value.clone());
             if let Some(limit) = override_value.max_input_tokens {
-                self.rows_mut().models_dev_limits.remove(model);
                 self.rows_mut()
                     .context_limits
                     .insert(model.to_string(), limit);
@@ -1832,7 +1896,7 @@ impl PricingMap {
             {
                 return OverrideBase::Override(dependency);
             }
-            if let Some(pricing) = self.rows.entries.get(candidate) {
+            if let Some(pricing) = self.prices().get(candidate) {
                 return OverrideBase::Pricing(*pricing);
             }
         }
@@ -1862,6 +1926,9 @@ impl PricingMap {
     }
 
     fn clear_find_cache(&mut self) {
+        if self.models_dev.iter().any(Option::is_some) {
+            self.refresh_layer_exclusions();
+        }
         self.live_merged.take();
         if let Some(cache) = self.find_cache.get_mut() {
             cache
@@ -1874,7 +1941,10 @@ impl PricingMap {
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.rows.entries.len()
+        self.prices()
+            .all_parts()
+            .map(|part| part.rows.keys().filter(|key| part.contains(key)).count())
+            .sum()
     }
 
     #[cfg(test)]
@@ -1904,14 +1974,7 @@ impl PricingMap {
             // Only exact ids are consulted (after date-suffix and alias
             // resolution): a fuzzy match here could graft one model's tier onto
             // another's base rates.
-            let base = model_without_date_suffix(model);
-            let resolved = pricing_alias(base).unwrap_or(base);
-            let Some(source) = tiers
-                .rows
-                .entries
-                .get(resolved)
-                .or_else(|| tiers.rows.entries.get(base))
-            else {
+            let Some(source) = tiers.long_context_pricing(model) else {
                 continue;
             };
             if source.long_context_threshold.is_none() {
@@ -1924,6 +1987,13 @@ impl PricingMap {
             pricing.long_context_threshold = source.long_context_threshold;
         }
         self.clear_find_cache();
+    }
+
+    fn long_context_pricing(&self, model: &str) -> Option<Pricing> {
+        let base = model_without_date_suffix(model);
+        let resolved = pricing_alias(base).unwrap_or(base);
+        self.lookup(self.prices(), resolved, Fuzzy::Denied)
+            .or_else(|| self.lookup(self.prices(), base, Fuzzy::Denied))
     }
 
     fn supplement_pricing(&mut self, model: &str, pricing: Pricing) {
@@ -2126,14 +2196,8 @@ struct LongContextRates {
 /// `Pricing::long_context_threshold` - and falls back to the default 200K
 /// boundary used for LiteLLM `*_above_200k_tokens` data.
 pub fn long_context_split_threshold(model: &str) -> u64 {
-    let tiers = embedded_models_dev_pricing();
-    let base = model_without_date_suffix(model);
-    let resolved = pricing_alias(base).unwrap_or(base);
-    tiers
-        .rows
-        .entries
-        .get(resolved)
-        .or_else(|| tiers.rows.entries.get(base))
+    embedded_models_dev_pricing()
+        .long_context_pricing(model)
         .and_then(|pricing| pricing.long_context_threshold)
         .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
 }
@@ -2663,6 +2727,56 @@ mod tests {
                 .unwrap()
                 .input,
             1.0
+        );
+    }
+
+    #[test]
+    fn overrides_retain_the_models_dev_exact_only_boundary() {
+        crate::test_support::install_pricing_snapshots();
+        let mut primary = PricingMap::default();
+        primary.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
+        let mut embedded = PricingMap::default();
+        embedded.load_models_dev_json_for_tests(
+            r#"{"sample-premium": {"exactOnly": true, "cost": {"input": 3000000, "output": 4000000}}}"#,
+        );
+        let mut pricing = layered(&primary, Some(&embedded));
+        pricing.enable_models_dev_fallback = false;
+        let model = "sample-premium".to_string();
+        let override_value = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(5.0),
+            ..Default::default()
+        };
+        let overridden = pricing.with_user_overrides([(&model, &override_value)]);
+        assert_eq!(overridden.find("sample-premium").unwrap().input, 5.0);
+        assert_eq!(overridden.find("sample-premium-extra").unwrap().input, 1.0);
+    }
+
+    #[test]
+    fn models_dev_layers_share_rows_without_copying_them_into_primary() {
+        crate::test_support::install_pricing_snapshots();
+        let mut embedded = PricingMap::default();
+        embedded.load_models_dev_json_for_tests(
+            r#"{"md-only-1": {"cost": {"input": 1000000, "output": 2000000}}}"#,
+        );
+        let pricing = layered(&PricingMap::default(), Some(&embedded));
+        assert!(!pricing.rows.entries.contains_key("md-only-1"));
+        assert!(std::sync::Arc::ptr_eq(
+            &pricing.models_dev[1].as_ref().unwrap().rows,
+            &embedded.rows,
+        ));
+        let mut live = PricingMap::default();
+        live.load_models_dev_json_for_tests(
+            r#"{"md-only-1": {"cost": {"input": 3000000, "output": 4000000}}}"#,
+        );
+        let merged = pricing.with_live_layer("md-only-1", Lookup::Exact, || Some(&live));
+        assert!(std::sync::Arc::ptr_eq(&merged.rows, &pricing.rows));
+        assert!(std::sync::Arc::ptr_eq(
+            &merged.models_dev[0].as_ref().unwrap().rows,
+            &live.rows,
+        ));
+        assert_eq!(
+            merged.find_exact_with_fallback("md-only-1").unwrap().input,
+            3.0
         );
     }
 
