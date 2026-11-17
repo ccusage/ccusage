@@ -106,46 +106,38 @@ See [Cost Source Options](#cost-source-options) section for all available modes.
 
 ## Output Format
 
-The statusline displays a compact, single-line summary:
+The statusline displays a compact, single-line summary. For the hook payload in the test fixtures, `ccusage statusline` prints:
 
 ```text
-🤖 Fable 5 (high) | 💰 $0.23 session / $1.23 today / $0.45 block (2h 45m left) | 🔥 $0.12/hr | 🧠 25,000 (12%)
+🤖 Sonnet 4 (high) | 💰 $1.23 session / $0.06 today / $0.06 block (1h 0m left) | 🔥 $0.02/hr | 🧠 50,000 (25%)
 ```
 
 When using `--cost-source both`, the session cost shows both Claude Code and ccusage calculations:
 
 ```text
-🤖 Fable 5 (high) | 💰 ($0.25 cc / $0.23 ccusage) session / $1.23 today / $0.45 block (2h 45m left) | 🔥 $0.12/hr | 🧠 25,000 (12%)
+🤖 Sonnet 4 (high) | 💰 ($1.23 cc / $0.28 ccusage) session / $0.06 today / $0.06 block (1h 0m left) | 🔥 $0.02/hr | 🧠 50,000 (25%)
 ```
 
-The reasoning effort level next to the model name comes from Claude Code (2.1.119+). All current Claude models report it; for older Claude Code versions or models without the effort parameter, the statusline shows just the model name:
-
-```text
-🤖 Opus 4.1 | 💰 $0.23 session / $1.23 today / $0.45 block (2h 45m left) | 🔥 $0.12/hr | 🧠 25,000 (12%)
-```
+The reasoning effort level next to the model name comes from Claude Code (2.1.119+). All current Claude models report it; for older Claude Code versions or models without the effort parameter, the model segment is just the model name, such as `🤖 Opus 4.1`.
 
 ### Components Explained
 
-- **Model** (`🤖 Fable 5 (high)`): Currently active Claude model, followed by the reasoning effort level in parentheses (`low`, `medium`, `high`, `xhigh`, or `max`) when Claude Code provides it
-- **Session Cost** (`💰 $0.23 session`): Cost for the current conversation session (see [Cost Source Options](#cost-source-options) for different calculation modes)
-- **Today's Cost** (`$1.23 today`): Total cost for the current day across all sessions
-- **Session Block** (`$0.45 block (2h 45m left)`): Current 5-hour block cost with remaining time
-- **Burn Rate** (`🔥 $0.12/hr`): Cost burn rate per hour with color-coded indicators:
+- **Model** (`🤖 Sonnet 4 (high)`): Currently active Claude model, followed by the reasoning effort level in parentheses (`low`, `medium`, `high`, `xhigh`, or `max`) when Claude Code provides it
+- **Session Cost** (`💰 $1.23 session`): Cost for the current conversation session (see [Cost Source Options](#cost-source-options) for different calculation modes)
+- **Today's Cost** (`$0.06 today`): Total cost for the current day across all sessions
+- **Session Block** (`$0.06 block (1h 0m left)`): Current 5-hour block cost with remaining time
+- **Burn Rate** (`🔥 $0.02/hr`): Cost burn rate per hour with color-coded indicators:
   - Green text: Normal (< 2,000 tokens/min)
   - Yellow text: Moderate (2,000-5,000 tokens/min)
   - Red text: High (> 5,000 tokens/min)
   - Optional visual status indicators (see [Visual Burn Rate](#visual-burn-rate))
-- **Context Usage** (`🧠 25,000 (12%)`): Shows input tokens with percentage of context limit:
+- **Context Usage** (`🧠 50,000 (25%)`): Shows input tokens with percentage of context limit:
   - Green text: Low usage (< 50% by default)
   - Yellow text: Medium usage (50-80% by default)
   - Red text: High usage (> 80% by default)
   - Uses Claude Code's [`context_window` data](https://code.claude.com/docs/en/statusline) when available for accurate token counts
 
-When no active block exists:
-
-```text
-🤖 Fable 5 (high) | 💰 $0.00 session / $0.00 today / No active block
-```
+When no block is active, the block segment reads `No active block` and the burn rate segment is left out; the context segment is still printed, as `🧠 N/A` when no context size is known.
 
 ## Technical Details
 
@@ -215,8 +207,8 @@ bun x ccusage statusline --cost-source both
 
 **Output differences:**
 
-- **Single cost modes** (`auto`, `ccusage`, `cc`): `💰 $0.23 session`
-- **Both mode**: `💰 ($0.25 cc / $0.23 ccusage) session`
+- **Single cost modes** (`auto`, `ccusage`, `cc`): `💰 $1.23 session`
+- **Both mode**: `💰 ($1.23 cc / $0.28 ccusage) session`
 
 ## Configuration
 
