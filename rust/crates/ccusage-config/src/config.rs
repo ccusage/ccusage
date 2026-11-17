@@ -522,30 +522,6 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
     }
 }
 
-fn apply_config_to_agent_args(
-    codex_speed: &mut CodexSpeed,
-    mut pi_path: Option<&mut Option<String>>,
-    mut open_claw_path: Option<&mut Option<String>>,
-    config: &ConfigContext,
-) {
-    for options in config.option_maps() {
-        let codex_options = options.codex.clone();
-        if let Some(speed) = codex_options.speed {
-            *codex_speed = speed.into();
-        }
-        if let Some(pi_path) = pi_path.as_deref_mut()
-            && let Some(path) = options.pi.clone().pi_path
-        {
-            *pi_path = Some(path);
-        }
-        if let Some(open_claw_path) = open_claw_path.as_deref_mut()
-            && let Some(path) = options.openclaw.clone().open_claw_path
-        {
-            *open_claw_path = Some(path);
-        }
-    }
-}
-
 impl ccusage_cli::CliConfig for ConfigContext {
     fn agent_options(&self, agent: &str) -> AgentOptions {
         let mut resolved = AgentOptions::default();
@@ -599,15 +575,6 @@ impl ccusage_cli::CliConfig for ConfigContext {
 
     fn apply_statusline_args(&self, args: &mut StatuslineArgs) {
         apply_config_to_statusline_args(args, self);
-    }
-
-    fn apply_agent_args(
-        &self,
-        codex_speed: &mut CodexSpeed,
-        pi_path: Option<&mut Option<String>>,
-        open_claw_path: Option<&mut Option<String>>,
-    ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
     }
 }
 
@@ -1099,70 +1066,33 @@ mod tests {
 
         assert_eq!(weekly.start_of_week, WeekDay::Monday);
 
-        let mut speed = CodexSpeed::Auto;
-        apply_config_to_agent_args(
-            &mut speed,
-            None,
-            None,
-            &context(
-                json!({
-                    "codex": {
-                        "defaults": {
-                            "speed": "fast"
-                        }
-                    }
-                }),
-                "codex daily",
-                Some("codex"),
-                "daily",
-            ),
+        let codex = context(
+            json!({"codex":{"defaults":{"speed":"fast"}}}),
+            "codex daily",
+            Some("codex"),
+            "daily",
         );
-
-        assert_eq!(speed, CodexSpeed::Fast);
-
-        let mut speed = CodexSpeed::Auto;
-        let mut pi_path = None;
-        apply_config_to_agent_args(
-            &mut speed,
-            Some(&mut pi_path),
-            None,
-            &context(
-                json!({
-                    "pi": {
-                        "defaults": {
-                            "piPath": "/tmp/pi-sessions"
-                        }
-                    }
-                }),
-                "pi daily",
-                Some("pi"),
-                "daily",
-            ),
+        assert_eq!(codex.agent_options("codex").codex_speed, CodexSpeed::Fast);
+        let pi = context(
+            json!({"pi":{"defaults":{"piPath":"/tmp/pi-sessions"}}}),
+            "pi daily",
+            Some("pi"),
+            "daily",
         );
-
-        assert_eq!(pi_path.as_deref(), Some("/tmp/pi-sessions"));
-
-        let mut speed = CodexSpeed::Auto;
-        let mut open_claw_path = None;
-        apply_config_to_agent_args(
-            &mut speed,
-            None,
-            Some(&mut open_claw_path),
-            &context(
-                json!({
-                    "openclaw": {
-                        "defaults": {
-                            "openClawPath": "/tmp/openclaw"
-                        }
-                    }
-                }),
-                "openclaw daily",
-                Some("openclaw"),
-                "daily",
-            ),
+        assert_eq!(
+            pi.agent_options("pi").pi_path.as_deref(),
+            Some("/tmp/pi-sessions")
         );
-
-        assert_eq!(open_claw_path.as_deref(), Some("/tmp/openclaw"));
+        let openclaw = context(
+            json!({"openclaw":{"defaults":{"openClawPath":"/tmp/openclaw"}}}),
+            "openclaw daily",
+            Some("openclaw"),
+            "daily",
+        );
+        assert_eq!(
+            openclaw.agent_options("openclaw").open_claw_path.as_deref(),
+            Some("/tmp/openclaw")
+        );
     }
 
     #[test]
@@ -1300,8 +1230,7 @@ mod tests {
         let codex = config.for_source("codex").expect("codex sections");
         let mut shared = SharedArgs::with_defaults();
         codex.apply_shared(&mut shared);
-        let mut speed = CodexSpeed::Auto;
-        codex.apply_agent_args(&mut speed, None, None);
+        let speed = codex.agent_options("codex").codex_speed;
 
         assert_eq!(shared.since.as_deref(), Some("20260301"));
         assert_eq!(shared.mode, CostMode::Calculate);

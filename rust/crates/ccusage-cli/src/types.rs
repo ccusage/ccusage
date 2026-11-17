@@ -216,6 +216,13 @@ pub struct AgentCommandArgs {
 }
 
 impl AgentCommandArgs {
+    pub fn with_options(mut self, options: AgentOptions) -> Self {
+        self.codex_speed = options.codex_speed;
+        self.pi_path = options.pi_path;
+        self.open_claw_path = options.open_claw_path;
+        self
+    }
+
     pub fn period(&self) -> Option<(PeriodUnit, WeekDay)> {
         let unit = match self.kind {
             AgentReportKind::Daily => PeriodUnit::Day,
@@ -398,25 +405,8 @@ pub trait CliConfig {
 
     fn apply_statusline_args(&self, _args: &mut StatuslineArgs) {}
 
-    fn agent_options(&self, agent: &str) -> AgentOptions {
-        let mut options = AgentOptions::default();
-        self.apply_agent_args(
-            &mut options.codex_speed,
-            (agent == "pi").then_some(&mut options.pi_path),
-            (agent == "openclaw").then_some(&mut options.open_claw_path),
-        );
-        if agent != "codex" {
-            options.codex_speed = CodexSpeed::Auto;
-        }
-        options
-    }
-
-    fn apply_agent_args(
-        &self,
-        _codex_speed: &mut CodexSpeed,
-        _pi_path: Option<&mut Option<String>>,
-        _open_claw_path: Option<&mut Option<String>>,
-    ) {
+    fn agent_options(&self, _agent: &str) -> AgentOptions {
+        AgentOptions::default()
     }
 }
 

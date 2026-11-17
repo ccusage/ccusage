@@ -102,20 +102,21 @@ impl CliConfig for TestConfig {
         }
     }
 
-    fn apply_agent_args(
-        &self,
-        codex_speed: &mut CodexSpeed,
-        pi_path: Option<&mut Option<String>>,
-        open_claw_path: Option<&mut Option<String>>,
-    ) {
-        if let Some(speed) = self.codex_speed {
-            *codex_speed = speed;
-        }
-        if let (Some(path), Some(pi_path)) = (self.pi_path, pi_path) {
-            *pi_path = Some(path.to_string());
-        }
-        if let (Some(path), Some(open_claw_path)) = (self.open_claw_path, open_claw_path) {
-            *open_claw_path = Some(path.to_string());
+    fn agent_options(&self, agent: &str) -> AgentOptions {
+        match agent {
+            "codex" => AgentOptions {
+                codex_speed: self.codex_speed.unwrap_or_default(),
+                ..AgentOptions::default()
+            },
+            "pi" => AgentOptions {
+                pi_path: self.pi_path.map(str::to_string),
+                ..AgentOptions::default()
+            },
+            "openclaw" => AgentOptions {
+                open_claw_path: self.open_claw_path.map(str::to_string),
+                ..AgentOptions::default()
+            },
+            _ => AgentOptions::default(),
         }
     }
 }
@@ -2007,6 +2008,42 @@ fn every_registered_weekly_agent_accepts_a_week_start() {
         assert_eq!(
             command.period(),
             Some((PeriodUnit::Week, WeekDay::Friday)),
+            "{}",
+            agent.name
+        );
+    }
+}
+
+#[test]
+fn focused_week_starts_resolve_config_before_flags_for_every_weekly_agent() {
+    for agent in AGENTS
+        .iter()
+        .filter(|agent| agent.reports.contains(&AgentReportKind::Weekly))
+    {
+        let config = TestConfig {
+            weekly_start: Some(WeekDay::Tuesday),
+            ..TestConfig::default()
+        };
+        let configured = parse_with_config(&["ccusage", agent.name, "weekly"], &config);
+        assert_eq!(
+            configured.period(),
+            Some((PeriodUnit::Week, WeekDay::Tuesday)),
+            "{}",
+            agent.name
+        );
+        let flagged = parse_with_config(
+            &[
+                "ccusage",
+                agent.name,
+                "weekly",
+                "--start-of-week",
+                "saturday",
+            ],
+            &config,
+        );
+        assert_eq!(
+            flagged.period(),
+            Some((PeriodUnit::Week, WeekDay::Saturday)),
             "{}",
             agent.name
         );

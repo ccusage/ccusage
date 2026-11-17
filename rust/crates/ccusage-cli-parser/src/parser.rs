@@ -618,14 +618,14 @@ fn parse_codex_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::Codex)?;
-    let mut codex_speed = config.agent_options("codex").codex_speed;
+    let mut options = config.agent_options("codex");
     let mut session_id = None;
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
-            "--speed" => codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?,
+            "--speed" => options.codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?,
             "-i" | "--id" if kind == AgentReportKind::Session => {
                 session_id = Some(parser.value_for("--id")?)
             }
@@ -636,8 +636,7 @@ fn parse_codex_command(
         StandardAgent::Codex,
         AgentCommandArgs {
             session_id,
-            codex_speed,
-            ..agent_command_args(shared, kind)
+            ..agent_command_args(shared, kind).with_options(options)
         },
     ))
 }
@@ -648,22 +647,19 @@ fn parse_pi_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::Pi)?;
-    let mut pi_path = config.agent_options("pi").pi_path;
+    let mut options = config.agent_options("pi");
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
-            "--pi-path" => pi_path = Some(parser.value_for("--pi-path")?),
+            "--pi-path" => options.pi_path = Some(parser.value_for("--pi-path")?),
             flag => return Err(format!("Unknown pi option '{flag}'")),
         }
     }
     Ok(Command::Agent(
         StandardAgent::Pi,
-        AgentCommandArgs {
-            pi_path,
-            ..agent_command_args(shared, kind)
-        },
+        agent_command_args(shared, kind).with_options(options),
     ))
 }
 
@@ -673,22 +669,21 @@ fn parse_openclaw_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::OpenClaw)?;
-    let mut open_claw_path = config.agent_options("openclaw").open_claw_path;
+    let mut options = config.agent_options("openclaw");
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
-            "--open-claw-path" => open_claw_path = Some(parser.value_for("--open-claw-path")?),
+            "--open-claw-path" => {
+                options.open_claw_path = Some(parser.value_for("--open-claw-path")?)
+            }
             flag => return Err(format!("Unknown openclaw option '{flag}'")),
         }
     }
     Ok(Command::Agent(
         StandardAgent::OpenClaw,
-        AgentCommandArgs {
-            open_claw_path,
-            ..agent_command_args(shared, kind)
-        },
+        agent_command_args(shared, kind).with_options(options),
     ))
 }
 
