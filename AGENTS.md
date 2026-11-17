@@ -6,7 +6,7 @@ skills below and loads when the task triggers them.
 ## Skill Routing
 
 - `development` - monorepo layout, `just` recipes, dev-shell environment, dependency and tooling policy, validation, releases.
-- `rust` - `rust/crates` and `rust/adapters` implementation: crate roles, module layout, visibility and `just hawk`, embedded pricing, behavior parity.
+- `rust` - `rust/crates` and `rust/adapters` implementation: crate roles, module layout, visibility, embedded pricing, behavior parity.
 - `typescript` - `.ts`, `.tsx`, `.js`, and `.jsx` package and tooling code, typed literals, launchers, schema tooling.
 - `agent-sources` - agent log locations, raw record shapes, token mappings, cost modes, source-specific CLI behavior.
 - `testing` - cargo and Node tests, CLI snapshots, fixtures, pricing and model tests.

@@ -33,4 +33,4 @@ at runtime.
 
 ## Build layer
 
-Outside the Crane artifact layers: they build only the shipped binary's dependency graph, and this crate is a dev-dependency only, so it never reaches that binary. The test, clippy and hawk derivations compile it themselves.
+Outside the Crane artifact layers: they build only the shipped binary's dependency graph, and this crate is a dev-dependency only, so it never reaches that binary. The test and clippy derivations compile it themselves.
