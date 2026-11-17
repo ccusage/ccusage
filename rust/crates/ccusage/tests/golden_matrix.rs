@@ -129,6 +129,56 @@ agent_matrix! {
 }
 
 #[test]
+fn codebuff_fixture_keeps_distinct_messages_at_the_same_instant() {
+    let fixture = Fixture::new();
+    let seeded = golden::codebuff::seed(fixture.root());
+    let messages = |store: &str| {
+        let path = fixture.root().join(format!(
+            "codebuff/{store}/manicode/projects/alpha/chats/2025-12-31T23-50-00.000Z/chat-messages.json"
+        ));
+        serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap()
+    };
+    let original = messages(".");
+    let backup = messages("backup");
+    assert_eq!(original[1]["timestamp"], backup[1]["timestamp"]);
+    assert_ne!(original[1]["id"], backup[1]["id"]);
+    for flags in [vec![], vec!["--single-thread"]] {
+        let mut case = Case::new("daily", "", &["codebuff", "daily", "--offline", "--json"]);
+        case.args.extend(flags.into_iter().map(str::to_string));
+        let output = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(output.exit, "0", "{}", output.stderr);
+        let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+        let days = report["daily"].as_array().unwrap();
+        let day = |date: &str| days.iter().find(|day| day["date"] == date).unwrap();
+        assert_eq!(day("2025-12-31")["credits"], 2.75);
+        assert_eq!(day("2026-01-01")["inputTokens"], 1500);
+        assert_eq!(day("2026-01-01")["totalCost"], 0.01185);
+    }
+}
+
+#[test]
+fn pi_tied_fork_keeps_the_first_path_in_both_read_modes() {
+    for parent_first in [true, false] {
+        let fixture = Fixture::new();
+        let root = fixture.root();
+        let seeded = golden::pi::seed_tied_fork(root, parent_first);
+        for flags in [vec![], vec!["--single-thread"]] {
+            let mut case = Case::new("session", "", &["pi", "session", "--offline", "--json"]);
+            case.args.extend(flags.into_iter().map(str::to_string));
+            let output = run_case(root, &seeded, &case);
+            assert_eq!(output.exit, "0", "{}", output.stderr);
+            let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+            let rows = report["sessions"].as_array().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0]["sessionId"], "shared");
+            assert_eq!(rows[0]["inputTokens"], 1000);
+            assert_eq!(rows[0]["totalCost"], 0.003);
+            assert!(rows[0]["modelBreakdowns"][0].get("storedCost").is_none());
+        }
+    }
+}
+
+#[test]
 fn all_agents_unified() {
     golden::all::run(AGENTS);
 }

@@ -70,6 +70,39 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     )]
 }
 
+pub fn seed_tied_fork(root: &Path, parent_first: bool) -> Vec<(&'static str, Vec<OsString>)> {
+    let sessions = root.join("pi/sessions/project");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let timestamp = "2025-12-27T05:00:00.000Z";
+    let usage = tokens(1000, 0, 0, 0);
+    let parent = [
+        header("shared", Some("2025-12-27T00:00:00.000Z"), None),
+        message(timestamp, SONNET, &with_cost(&usage, "0.003")),
+    ];
+    let child = [
+        header(
+            "shared",
+            Some("2025-12-27T04:00:00.000Z"),
+            Some(r#""z_shared.jsonl""#),
+        ),
+        message(timestamp, SONNET, &usage),
+    ];
+    let mut files = [
+        ("z_shared.jsonl", parent.join("\n")),
+        ("a_shared.jsonl", child.join("\n")),
+    ];
+    if !parent_first {
+        files.reverse();
+    }
+    for (name, contents) in files {
+        std::fs::write(sessions.join(name), contents).unwrap();
+    }
+    vec![(
+        "PI_AGENT_DIR",
+        vec![root.join("pi/sessions").into_os_string()],
+    )]
+}
+
 fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
     // Tree-format session. `a2` is an abandoned sibling branch: it stays
     // counted here but is not part of the path a fork copies.

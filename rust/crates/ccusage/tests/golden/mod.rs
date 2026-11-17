@@ -61,20 +61,16 @@ pub const ALL_REPORT_KINDS: [&str; 6] = [
     "statusline",
 ];
 
-/// Mirror of the report sets in the agent table,
-/// `rust/crates/ccusage-cli/src/agents.rs`. The matrix also snapshots
-/// the rejection of every kind left out here, so a drift between this table
-/// and the parser shows up as a snapshot change.
-pub fn report_kinds(agent: &str) -> &'static [&'static str] {
-    match agent {
-        "claude" => &ALL_REPORT_KINDS,
-        "opencode" | "cline" | "dsh" => &["daily", "weekly", "monthly", "session"],
-        "codex" | "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
-            &["daily", "monthly", "session"]
-        }
-        _ => panic!("unknown agent '{agent}'"),
-    }
+pub fn report_kinds(agent: &str) -> Vec<&'static str> {
+    let spec = ccusage_cli::AGENTS
+        .iter()
+        .find(|spec| spec.name == agent)
+        .expect("matrix agent is registered");
+    spec.reports
+        .iter()
+        .map(|kind| kind.name())
+        .chain(spec.extra_commands.iter().copied())
+        .collect()
 }
 
 /// One agent's entry in the matrix.

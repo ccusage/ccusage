@@ -79,16 +79,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
   {"role":"assistant","timestamp":"2026-01-01T09:10:00+09:00","metadata":{"model":"claude-sonnet-4-20250514","usage":{"promptTokens":600,"completionTokens":100,"promptTokensDetails":{"cachedTokens":3000}}}}
 ]"#,
     );
-    // The first message has the same key as its `manicode` twin (credits are
-    // not part of the key) and is dropped; the second differs from its twin
-    // only by one second and counts.
     write_chat(
         &backup,
         "alpha",
         "2025-12-31T23-50-00.000Z",
         r#"[
   {"role":"assistant","metadata":{"model":"claude-haiku-4-5-20251001","usage":{"inputTokens":900,"outputTokens":400,"cachedTokensCreated":200,"cacheReadInputTokens":7000}},"credits":9.0},
-  {"role":"assistant","timestamp":"2026-01-01T09:10:01+09:00","metadata":{"model":"claude-sonnet-4-20250514","usage":{"promptTokens":600,"completionTokens":100,"promptTokensDetails":{"cachedTokens":3000}}}}
+  {"id":"same-time","role":"assistant","timestamp":"2026-01-01T09:10:00+09:00","metadata":{"model":"claude-sonnet-4-20250514","usage":{"promptTokens":600,"completionTokens":100,"promptTokensDetails":{"cachedTokens":3000}}}}
 ]"#,
     );
 
