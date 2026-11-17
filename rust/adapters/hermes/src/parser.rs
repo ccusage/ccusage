@@ -247,19 +247,19 @@ fn model_candidates(entry: &HermesEntry, pricing: &PricingMap) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn hermes_start_time_is_always_seconds() {
         assert_eq!(
-            super::timestamp_from_number(10_000_000_000.125)
+            timestamp_from_number(10_000_000_000.125)
                 .unwrap()
                 .as_millis(),
             10_000_000_000_125
         );
-        assert_eq!(super::timestamp_from_number(1_000_000_000_001.0), None);
-        assert_eq!(super::timestamp_from_number(f64::MAX), None);
+        assert_eq!(timestamp_from_number(1_000_000_000_001.0), None);
+        assert_eq!(timestamp_from_number(f64::MAX), None);
     }
-
-    use super::*;
 
     #[test]
     fn a_null_actual_cost_leaves_the_estimated_cost() {

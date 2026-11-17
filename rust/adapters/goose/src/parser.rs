@@ -253,7 +253,7 @@ fn missing_goose_pricing(
 }
 
 #[cfg(test)]
-mod timestamp_tests {
+mod tests {
     #[test]
     fn mixed_epoch_units_use_one_boundary() {
         for (raw, millis) in [
