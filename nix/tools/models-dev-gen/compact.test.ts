@@ -193,13 +193,7 @@ void it('marks a tier the author prices itself as exact-only too', () => {
 	// lists it (12 USD/Mtok against Anthropic's own fast rate of 10). Keeping it
 	// reachable by the fuzzy lookup is the hazard, because it would then answer a
 	// lookup for plain claude-opus-5.
-	assert.equal(
-		isTierVariantOfAuthoredModel('claude-opus-5-fast', index, { includeAuthorPricedModes: true }),
-		true,
-	);
-	// Without that flag it is not treated as a reseller-invented tier, because the
-	// author publishes the mode itself.
-	assert.equal(isTierVariantOfAuthoredModel('claude-opus-5-fast', index), false);
+	assert.equal(isTierVariantOfAuthoredModel('claude-opus-5-fast', index), true);
 });
 
 void it('recognizes ids that name no particular model', () => {

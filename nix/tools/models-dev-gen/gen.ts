@@ -111,10 +111,7 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 		// the fuzzy lookup it outranks the base model, which prefers the longest
 		// matching key. An id with no version in it is the mirror image: it is
 		// short enough to be a substring of unrelated ids.
-		if (
-			isTierVariantOfAuthoredModel(modelId, catalogIndex, { includeAuthorPricedModes: true }) ||
-			isUnversionedModelId(pricingKey)
-		) {
+		if (isTierVariantOfAuthoredModel(modelId, catalogIndex) || isUnversionedModelId(pricingKey)) {
 			entry.exactOnly = true;
 		}
 		const candidate: ModelsDevPricingCandidate = {

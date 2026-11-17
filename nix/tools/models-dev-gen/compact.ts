@@ -238,30 +238,16 @@ export function isUnversionedModelId(sourceModelId: string): boolean {
  * Only bare ids qualify. An id carrying a provider path is that gateway's
  * addressing of a model, and it has to stay fuzzy-reachable so the gateway's own
  * tier spellings still resolve to a tier.
- *
- * @param includeAuthorPricedModes - count tiers the author prices itself. The
- * shadowing hazard does not care who set the rate, but the embedding decision
- * once did, so the two callers want different answers.
  */
 export function isTierVariantOfAuthoredModel(
 	sourceModelId: string,
 	index: ModelsDevCatalogIndex,
-	{ includeAuthorPricedModes = false }: { includeAuthorPricedModes?: boolean } = {},
 ): boolean {
 	if (sourceModelId.includes('/')) {
 		return false;
 	}
 	const normalized = normalizeModelId(sourceModelId);
-	return index.normalizedAuthoredModelIds.some((authored) => {
-		if (!normalized.startsWith(`${authored}-`)) {
-			return false;
-		}
-		if (includeAuthorPricedModes) {
-			return true;
-		}
-		const tier = normalized.slice(authored.length + 1);
-		return !index.authoredModes.get(authored)?.has(tier);
-	});
+	return index.normalizedAuthoredModelIds.some((authored) => normalized.startsWith(`${authored}-`));
 }
 
 /**
