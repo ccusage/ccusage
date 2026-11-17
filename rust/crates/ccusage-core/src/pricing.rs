@@ -1899,9 +1899,14 @@ impl PricingMap {
             .entries
             .iter()
             .filter(|(_, pricing)| !pricing.overridden)
-            .map(|(key, _)| normalized_pricing_key(key).into_owned())
+            .map(|(key, _)| normalized_pricing_key(key))
             .collect();
-        let mut limits: FxHashSet<_> = self.rows.context_limits.keys().cloned().collect();
+        let mut limits: FxHashSet<_> = self
+            .rows
+            .context_limits
+            .keys()
+            .map(String::as_str)
+            .collect();
         for (index, layer) in self.models_dev.iter_mut().enumerate() {
             let Some(layer) = layer else { continue };
             layer.excluded_prices = Arc::new(
@@ -1921,7 +1926,7 @@ impl PricingMap {
                     .rows
                     .context_limits
                     .keys()
-                    .filter(|key| limits.contains(*key))
+                    .filter(|key| limits.contains(key.as_str()))
                     .cloned()
                     .collect(),
             );
@@ -1931,9 +1936,9 @@ impl PricingMap {
                         .rows
                         .entries
                         .keys()
-                        .map(|key| normalized_pricing_key(key).into_owned()),
+                        .map(|key| normalized_pricing_key(key)),
                 );
-                limits.extend(layer.rows.context_limits.keys().cloned());
+                limits.extend(layer.rows.context_limits.keys().map(String::as_str));
             }
         }
     }
