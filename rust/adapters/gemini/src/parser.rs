@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
+    apply_total_token_fallback, cli::CostMode, format_date_tz,
     missing_pricing_model_for_candidates,
 };
 
@@ -628,24 +628,24 @@ fn calculate_gemini_cost(
     mode: CostMode,
     pricing: &PricingMap,
 ) -> f64 {
-    match mode {
-        CostMode::Display => 0.0,
-        CostMode::Auto | CostMode::Calculate => {
-            for candidate in model_candidates(model) {
-                if pricing.find(&candidate).is_some() {
-                    return calculate_cost_for_usage_at(
-                        Some(&candidate),
-                        usage,
-                        None,
-                        Some(timestamp),
-                        CostMode::Calculate,
-                        Some(pricing),
-                    );
-                }
-            }
-            0.0
-        }
-    }
+    let names = model_candidates(model);
+    let candidates: Vec<_> = names
+        .iter()
+        .map(|name| (name.as_str(), ccusage_core::pricing::MatchKind::Fuzzy))
+        .collect();
+    ccusage_core::cost::price_entry(
+        ccusage_core::cost::EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(timestamp),
+        },
+        Some(pricing),
+    )
+    .cost
 }
 
 fn missing_gemini_pricing(
