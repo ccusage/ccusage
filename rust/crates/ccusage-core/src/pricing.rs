@@ -3667,6 +3667,32 @@ mod tests {
     }
 
     #[test]
+    fn respelled_adapter_ids_use_their_own_list_rates() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, input, output) in [
+            ("gpt-5-1", 1.25, 10.0),
+            ("gpt-5-1-codex", 1.25, 10.0),
+            ("gpt-5-2", 1.75, 14.0),
+            ("gpt-5-4", 2.5, 15.0),
+            ("gpt-5-5", 5.0, 30.0),
+            ("gpt-5-6", 4.0, 20.0),
+            ("gpt-4-1", 2.0, 8.0),
+            ("gemini-2-5-flash", 0.3, 2.5),
+            ("gemini-3-5-flash", 1.5, 9.0),
+            ("glm-4-7", 0.6, 2.2),
+            ("deepseek/deepseek.v4.flash", 0.3, 1.2),
+        ] {
+            let rates = pricing
+                .resolve(&[(model, super::MatchKind::Fuzzy)])
+                .unwrap()
+                .1;
+            assert!((rates.input * 1e6 - input).abs() < 1e-9, "{model}");
+            assert!((rates.output * 1e6 - output).abs() < 1e-9, "{model}");
+        }
+    }
+
+    #[test]
     fn exact_candidate_kinds_keep_the_same_model_and_respelled_overrides() {
         crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::load_embedded();
