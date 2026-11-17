@@ -3,6 +3,9 @@ use std::io::{self, Read};
 use memchr::{memchr, memchr_iter, memmem::Finder};
 use smallvec::SmallVec;
 
+#[cfg(test)]
+mod reference;
+
 pub type FxHashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type FxHashSet<T> = rustc_hash::FxHashSet<T>;
 
@@ -727,17 +730,91 @@ mod tests {
         for markers in marker_sets {
             let all = LinePrefilter::all(markers);
             let any = LinePrefilter::any(markers);
+            let old_all = super::reference::LinePrefilter::all(markers);
+            let old_any = super::reference::LinePrefilter::any(markers);
             for _ in 0..5_000 {
                 let line = (0..next(16))
                     .flat_map(|_| fragments[next(fragments.len())].clone())
                     .collect::<Vec<_>>();
                 let text = String::from_utf8_lossy(&line);
+                assert_eq!(all.matches(&line), old_all.matches(&line), "old all {text}");
+                assert_eq!(any.matches(&line), old_any.matches(&line), "old any {text}");
+                assert_eq!(
+                    any.matches_escaped(&line),
+                    old_any.matches_escaped(&line),
+                    "old escaped {text}"
+                );
                 let spelled = markers.iter().map(|marker| spells(marker, &line, false));
                 assert_eq!(all.matches(&line), spelled.clone().all(|s| s), "all {text}");
                 assert_eq!(any.matches(&line), spelled.clone().any(|s| s), "any {text}");
                 assert_eq!(
                     any.matches_escaped(&line),
                     markers.iter().any(|marker| spells(marker, &line, true)),
+                    "escaped {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn line_prefilter_matches_the_previous_implementation_on_mutated_markers() {
+        let marker_sets: &[&[&[u8]]] = &[
+            &[],
+            &[b""],
+            &[br#""usage":{"#],
+            &[br#""usage":{"#, br#""type""#],
+            &[br#""x":{"a/e"#, b"us_e"],
+            &[br#""a":[]"#],
+            &[br#"]"x/a""#, b"a/e"],
+            &[br#"{"a":["#],
+            &[br#"{"#, br#""a_x""#],
+        ];
+        let mut state = 0x6a09_e667_f3bc_c909_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        for &markers in marker_sets {
+            let all = LinePrefilter::all(markers);
+            let any = LinePrefilter::any(markers);
+            let old_all = super::reference::LinePrefilter::all(markers);
+            let old_any = super::reference::LinePrefilter::any(markers);
+            for _ in 0..5_000 {
+                let mut line = br#"{"decoy":"\\u0061 \u00e9 \"usage\":{","value":"#.to_vec();
+                line.extend(std::iter::repeat_n(b'\\', next(8)));
+                for &marker in markers {
+                    let mut in_string = marker.first() != Some(&b'"');
+                    for &byte in marker {
+                        in_string ^= byte == b'"';
+                        match (byte != b'"' && in_string, next(8)) {
+                            (true, 0) => {
+                                line.extend(unicode_escape(&format!("{byte:04x}")).bytes())
+                            }
+                            (true, 1) => {
+                                line.extend(unicode_escape(&format!("{byte:04X}")).bytes())
+                            }
+                            (true, 2) => {
+                                line.extend(unicode_escape(&format!("{byte:04x}")[..3]).bytes())
+                            }
+                            (true, 3) => {
+                                line.extend_from_slice(b"\\\\");
+                                line.extend(unicode_escape(&format!("{byte:04x}")).bytes());
+                            }
+                            (_, 4) => line.push(b'x'),
+                            (true, 5) if byte == b'/' => line.extend_from_slice(br"\/"),
+                            _ => line.push(byte),
+                        }
+                    }
+                    line.extend_from_slice(br#", "x":{},"#);
+                }
+                let text = String::from_utf8_lossy(&line);
+                assert_eq!(all.matches(&line), old_all.matches(&line), "all {text}");
+                assert_eq!(any.matches(&line), old_any.matches(&line), "any {text}");
+                assert_eq!(
+                    any.matches_escaped(&line),
+                    old_any.matches_escaped(&line),
                     "escaped {text}"
                 );
             }
