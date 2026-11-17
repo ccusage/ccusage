@@ -1082,7 +1082,8 @@ impl PricingMap {
             models_dev_keys: base.models_dev_keys.clone(),
             models_dev_limits: base.models_dev_limits.clone(),
             live_merged: OnceLock::new(),
-            enable_models_dev_fallback: self.enable_models_dev_fallback,
+            enable_models_dev_fallback: self.enable_models_dev_fallback
+                && self.live_merged.get().is_none(),
             find_cache: OnceLock::new(),
             normalized_keys: OnceLock::new(),
         };
@@ -2332,6 +2333,32 @@ mod tests {
         assert_eq!(pricing.find("other-model").unwrap().input, 5.0);
         pricing.with_live_layer("trigger-again", super::Lookup::Pricing, fetch);
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_map_derived_after_the_live_merge_does_not_merge_it_again() {
+        let mut live = PricingMap::default();
+        live.load_models_dev_json_for_tests(
+            r#"{"md-only-1": { "cost": { "input": 3000000, "output": 4000000 } }}"#,
+        );
+        let base = layered(&PricingMap::default(), None);
+        assert_eq!(
+            base.find_with_live("md-only-1", || Some(&live))
+                .unwrap()
+                .input,
+            3.0
+        );
+        let derived = base.with_user_overrides(std::iter::empty());
+        let lookups = AtomicUsize::new(0);
+        let fetch = || {
+            lookups.fetch_add(1, Ordering::Relaxed);
+            Some(&live)
+        };
+        assert_eq!(
+            derived.find_with_live("md-only-1", fetch).unwrap().input,
+            3.0
+        );
+        assert_eq!(lookups.load(Ordering::Relaxed), 0);
     }
 
     #[test]
