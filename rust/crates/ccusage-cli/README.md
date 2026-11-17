@@ -27,6 +27,8 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `home::claude_config_dirs`
 - `home::expand_home_path`
 - `home::home_dir`
+- `is_shared_flag`
+- `option_takes_value`
 - `types::AgentCommandArgs`
 - `types::AgentOptions`
 - `types::AgentReportKind`

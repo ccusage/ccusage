@@ -8,6 +8,7 @@ use ccusage_cli::{
     DEFAULT_SESSION_DURATION_HOURS, DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder,
     StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
+use ccusage_cli::{is_shared_flag, option_takes_value};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlArg {
@@ -873,81 +874,6 @@ pub(crate) fn command_tokens(args: &[String]) -> Vec<String> {
         index += 1;
     }
     tokens
-}
-
-fn option_takes_value(arg: &str) -> bool {
-    matches!(
-        arg,
-        "-s" | "--since"
-            | "-u"
-            | "--until"
-            | "--last"
-            | "-m"
-            | "--mode"
-            | "--debug-samples"
-            | "-o"
-            | "--order"
-            | "-z"
-            | "--timezone"
-            | "-q"
-            | "--jq"
-            | "--config"
-            | "-p"
-            | "--project"
-            | "--project-aliases"
-            | "-w"
-            | "--start-of-week"
-            | "-i"
-            | "--id"
-            | "-t"
-            | "--token-limit"
-            | "-n"
-            | "--session-length"
-            | "-B"
-            | "--visual-burn-rate"
-            | "--cost-source"
-            | "--refresh-interval"
-            | "--context-low-threshold"
-            | "--context-medium-threshold"
-            | "--speed"
-            | "--pi-path"
-            | "--open-claw-path"
-            | "--sections"
-    )
-}
-
-fn is_shared_flag(arg: &str) -> bool {
-    matches!(
-        arg.split_once('=').map_or(arg, |(name, _)| name),
-        "-s" | "--since"
-            | "-u"
-            | "--until"
-            | "--last"
-            | "-j"
-            | "--json"
-            | "-m"
-            | "--mode"
-            | "-d"
-            | "--debug"
-            | "--debug-samples"
-            | "-o"
-            | "--order"
-            | "-b"
-            | "--breakdown"
-            | "-O"
-            | "--offline"
-            | "--no-offline"
-            | "--color"
-            | "--no-color"
-            | "-z"
-            | "--timezone"
-            | "-q"
-            | "--jq"
-            | "--config"
-            | "--compact"
-            | "--single-thread"
-            | "--no-cost"
-    )
 }
 
 fn parse_date_bound(flag: &str, value: &str) -> Result<String, String> {

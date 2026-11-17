@@ -6,6 +6,7 @@ use std::{
 
 use serde_json::Value;
 
+use ccusage_cli::option_takes_value;
 use ccusage_cli::{
     AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, ContextThresholds, CostMode, CostSource,
     DailyArgs, NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs,
@@ -402,44 +403,6 @@ fn command_tokens(args: &[String]) -> Vec<String> {
         index += 1;
     }
     tokens
-}
-
-fn option_takes_value(arg: &str) -> bool {
-    matches!(
-        arg.split_once('=').map_or(arg, |(name, _)| name),
-        "-s" | "--since"
-            | "-u"
-            | "--until"
-            | "--last"
-            | "-m"
-            | "--mode"
-            | "--debug-samples"
-            | "-o"
-            | "--order"
-            | "-z"
-            | "--timezone"
-            | "-q"
-            | "--jq"
-            | "--config"
-            | "-t"
-            | "--token-limit"
-            | "-n"
-            | "--session-length"
-            | "-w"
-            | "--start-of-week"
-            | "-p"
-            | "--project"
-            | "--project-aliases"
-            | "--pi-path"
-            | "--speed"
-            | "-B"
-            | "--visual-burn-rate"
-            | "--cost-source"
-            | "--refresh-interval"
-            | "--context-low-threshold"
-            | "--context-medium-threshold"
-            | "--sections"
-    )
 }
 
 fn is_agent_command(command: &str) -> bool {
