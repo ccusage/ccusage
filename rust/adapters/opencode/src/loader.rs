@@ -851,15 +851,25 @@ fn prepare_session_message_query<'a>(
         schema.column_or("time_created", "NULL"),
         schema.column_or("seq", "NULL"),
     );
-    let sql = match (window.start, window.end) {
-        (Some(_), Some(_)) => format!("{select} WHERE time_created >= ?1 AND time_created < ?2"),
-        (Some(_), None) => format!("{select} WHERE time_created >= ?1"),
-        (None, Some(_)) => format!("{select} WHERE time_created < ?1"),
-        (None, None) => select,
+    let sql = match pushdown_condition(window) {
+        Some(condition) => format!("{select} WHERE {condition}"),
+        None => select,
     };
     let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
     bind_window(&mut statement, window)?;
     Ok(statement)
+}
+
+fn pushdown_condition(window: DateWindow) -> Option<String> {
+    let range = match (window.start, window.end) {
+        (Some(_), Some(_)) => "time_created >= ?1 AND time_created < ?2",
+        (Some(_), None) => "time_created >= ?1",
+        (None, Some(_)) => "time_created < ?1",
+        (None, None) => return None,
+    };
+    Some(format!(
+        "(time_created IS NULL OR time_created <= 0 OR ({range}))"
+    ))
 }
 
 fn bind_window(
@@ -940,19 +950,15 @@ fn load_session_aggregate_entries(
                 cost: read_f64(statement, 2),
             }))
         },
-        |unit, row, aggregate| {
-            if !context.window.is_unbounded()
-                && aggregate
-                    .created
-                    .is_none_or(|created| !context.window.contains(created))
-            {
-                return;
-            }
-            match session_value_to_entry(aggregate, context.tz, context.mode, context.pricing) {
-                Ok(Some(entry)) => entries.push(entry),
-                Ok(None) => {}
-                Err(MissingTimestamp) => record_missing_timestamp(context, unit, row),
-            }
+        |unit, row, aggregate| match session_value_to_entry(
+            aggregate,
+            context.tz,
+            context.mode,
+            context.pricing,
+        ) {
+            Ok(Some(entry)) => entries.push(entry),
+            Ok(None) => {}
+            Err(MissingTimestamp) => record_missing_timestamp(context, unit, row),
         },
     );
     entries
@@ -1015,7 +1021,10 @@ fn extract_message_timestamp(data: &str) -> Option<i64> {
     let end = after_key
         .find(|character: char| !character.is_ascii_digit())
         .unwrap_or(after_key.len());
-    after_key[..end].parse::<i64>().ok()
+    after_key[..end]
+        .parse::<i64>()
+        .ok()
+        .filter(|millis| *millis > 0)
 }
 
 /// Half-open millisecond window derived from `--since`/`--until`, used to skip
@@ -1086,20 +1095,12 @@ fn prepare_message_query(
     connection: &sqlite::Connection,
     window: DateWindow,
 ) -> std::result::Result<sqlite::Statement<'_>, UnitError> {
-    let sql = match (window.start, window.end) {
-        (Some(_), Some(_)) => {
-            "SELECT id, session_id, data FROM message WHERE id IN \
-             (SELECT id FROM message WHERE time_created >= ?1 AND time_created < ?2)"
+    let select = "SELECT id, session_id, data FROM message";
+    let sql = match pushdown_condition(window) {
+        Some(condition) => {
+            format!("{select} WHERE id IN (SELECT id FROM message WHERE {condition})")
         }
-        (Some(_), None) => {
-            "SELECT id, session_id, data FROM message WHERE id IN \
-             (SELECT id FROM message WHERE time_created >= ?1)"
-        }
-        (None, Some(_)) => {
-            "SELECT id, session_id, data FROM message WHERE id IN \
-             (SELECT id FROM message WHERE time_created < ?1)"
-        }
-        (None, None) => "SELECT id, session_id, data FROM message",
+        None => select.to_string(),
     };
     let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
     bind_window(&mut statement, window)?;
@@ -1437,7 +1438,16 @@ mod tests {
             ),
         );
         create_db_message_with_time(&db, "db-untimed", "db-session", 0, UNTIMED);
-        create_db_session_message_table(&db, false);
+        create_db_session_message_table(&db, true);
+        insert_db_session_message(
+            &db,
+            "v2-timed",
+            "v2-session",
+            "assistant",
+            1_767_312_000_000,
+            assistant_payload(10, 1, 0.01).as_str(),
+            true,
+        );
         insert_db_session_message(
             &db,
             "v2-untimed",
@@ -1463,29 +1473,35 @@ mod tests {
                 reasoning_tokens: 0,
             },
         );
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-        let diagnostics = Diagnostics::new("opencode");
+        for (since, until, undatable) in [(None, None, 4), (Some("20260102"), Some("20260102"), 3)]
+        {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                since: since.map(str::to_string),
+                until: until.map(str::to_string),
+                ..SharedArgs::default()
+            };
+            let diagnostics = Diagnostics::new("opencode");
 
-        let entries = load_directories(
-            &[fixture.root().to_path_buf()],
-            &shared,
-            AgentReportKind::Session,
-            &diagnostics,
-        );
+            let entries = load_directories(
+                &[fixture.root().to_path_buf()],
+                &shared,
+                AgentReportKind::Session,
+                &diagnostics,
+            );
 
-        let ids = entries
-            .iter()
-            .map(|(entry, _)| entry.data.message.id.as_deref())
-            .collect::<Vec<_>>();
-        assert_eq!(ids, [Some("timed")]);
-        assert_eq!(
-            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
-            4
-        );
+            let ids = entries
+                .iter()
+                .map(|(entry, _)| entry.data.message.id.as_deref())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, [Some("timed"), Some("v2-timed")], "{since:?}");
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+                undatable,
+                "{since:?}"
+            );
+        }
     }
 
     #[test]
