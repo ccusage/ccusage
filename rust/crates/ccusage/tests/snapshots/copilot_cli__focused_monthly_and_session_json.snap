@@ -46,7 +46,7 @@ Monthly JSON
         {
           "cacheCreationTokens": 15,
           "cacheReadTokens": 10,
-          "cost": 0.030799375,
+          "cost": 0.030789999999999998,
           "inputTokens": 112,
           "modelName": "gpt-5.4",
           "outputTokens": 48,
@@ -59,7 +59,7 @@ Monthly JSON
       ],
       "month": "2026-02",
       "outputTokens": 48,
-      "totalCost": 0.110799375,
+      "totalCost": 0.11079,
       "totalTokens": 185
     }
   ],
@@ -68,7 +68,7 @@ Monthly JSON
     "cacheReadTokens": 30,
     "inputTokens": 275,
     "outputTokens": 142,
-    "totalCost": 0.11416187500000001,
+    "totalCost": 0.1141525,
     "totalTokens": 492
   }
 }
@@ -112,7 +112,7 @@ Session JSON
         {
           "cacheCreationTokens": 15,
           "cacheReadTokens": 10,
-          "cost": 0.000661875,
+          "cost": 0.0006525,
           "inputTokens": 65,
           "modelName": "gpt-5.4",
           "outputTokens": 30
@@ -124,7 +124,7 @@ Session JSON
       "outputTokens": 30,
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "session-b",
-      "totalCost": 0.000661875,
+      "totalCost": 0.0006525,
       "totalTokens": 120
     },
     {
@@ -196,7 +196,7 @@ Session JSON
     "cacheReadTokens": 30,
     "inputTokens": 275,
     "outputTokens": 142,
-    "totalCost": 0.114161875,
+    "totalCost": 0.1141525,
     "totalTokens": 492
   }
 }
