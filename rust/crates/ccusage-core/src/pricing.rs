@@ -429,7 +429,6 @@ pub struct PricingMap {
     /// `kimi-k2-7-code` would be billed at the premium tier.
     exact_only: ExactOnlyKeys,
     context_limits: FxHashMap<String, u64>,
-    context_defaults: FxHashSet<String>,
     models_dev_keys: FxHashSet<String>,
     models_dev_limits: FxHashSet<String>,
     live_merged: OnceLock<Box<PricingMap>>,
@@ -534,7 +533,6 @@ impl Default for PricingMap {
             user_overrides: FxHashMap::default(),
             exact_only: ExactOnlyKeys::default(),
             context_limits: FxHashMap::default(),
-            context_defaults: FxHashSet::default(),
             models_dev_keys: FxHashSet::default(),
             models_dev_limits: FxHashSet::default(),
             live_merged: OnceLock::new(),
@@ -1081,7 +1079,6 @@ impl PricingMap {
             user_overrides: base.user_overrides.clone(),
             exact_only: base.exact_only.clone(),
             context_limits: base.context_limits.clone(),
-            context_defaults: base.context_defaults.clone(),
             models_dev_keys: base.models_dev_keys.clone(),
             models_dev_limits: base.models_dev_limits.clone(),
             live_merged: OnceLock::new(),
@@ -1187,7 +1184,6 @@ impl PricingMap {
                     }),
             );
             if let Some(context_limit) = context_limit {
-                self.context_defaults.remove(&model);
                 self.models_dev_limits.remove(&model);
                 self.context_limits.insert(model, context_limit);
             }
@@ -1384,7 +1380,6 @@ impl PricingMap {
             }
             match context_limit {
                 Some(context_limit) => {
-                    self.context_defaults.remove(&model_id);
                     self.context_limits.insert(model_id.clone(), context_limit);
                 }
                 // A replacement that publishes no limit must not keep the limit of
@@ -1488,10 +1483,7 @@ impl PricingMap {
             }
         }
         for (model, limit) in &source.context_limits {
-            if self.context_limits.contains_key(model)
-                && !self.models_dev_limits.contains(model)
-                && !self.context_defaults.remove(model)
-            {
+            if self.context_limits.contains_key(model) && !self.models_dev_limits.contains(model) {
                 continue;
             }
             self.context_limits.insert(model.clone(), *limit);
@@ -1517,9 +1509,7 @@ impl PricingMap {
             return self;
         }
         let primary_hit = match lookup {
-            Lookup::Context => self
-                .primary_key(self.limits(), model)
-                .is_some_and(|key| !self.context_defaults.contains(key)),
+            Lookup::Context => self.primary_key(self.limits(), model).is_some(),
             Lookup::Pricing => self.primary_key(self.prices(), model).is_some(),
             Lookup::Exact => self
                 .exact_normalized_key(model)
@@ -1754,7 +1744,6 @@ impl PricingMap {
             self.user_overrides
                 .insert(model.to_string(), override_value.clone());
             if let Some(limit) = override_value.max_input_tokens {
-                self.context_defaults.remove(model);
                 self.models_dev_limits.remove(model);
                 self.context_limits.insert(model.to_string(), limit);
             }
@@ -1896,10 +1885,10 @@ impl PricingMap {
         self.clear_find_cache();
     }
 
-    fn supplement_pricing(&mut self, model: &str, pricing: Pricing, cache_fields: bool) {
+    fn supplement_pricing(&mut self, model: &str, pricing: Pricing) {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
         match self.entries.entry(model.to_string()) {
-            std::collections::hash_map::Entry::Occupied(mut existing) if cache_fields => {
+            std::collections::hash_map::Entry::Occupied(mut existing) => {
                 let existing = existing.get_mut();
                 existing.cache_read = existing.cache_read.or(pricing.cache_read);
                 existing.cache_create = existing.cache_create.or(pricing.cache_create);
@@ -1907,26 +1896,18 @@ impl PricingMap {
             std::collections::hash_map::Entry::Vacant(slot) => {
                 slot.insert(pricing);
             }
-            std::collections::hash_map::Entry::Occupied(_) => {}
         }
         self.clear_find_cache();
     }
 
     fn put_builtin_pricing(&mut self) {
         for supplement in BUILTIN_PRICING {
-            self.supplement_pricing(
-                supplement.model,
-                supplement.pricing,
-                supplement.cache_fields,
-            );
+            self.supplement_pricing(supplement.model, supplement.pricing);
             if let Some(limit) = supplement.context_limit
                 && let std::collections::hash_map::Entry::Vacant(entry) =
                     self.context_limits.entry(supplement.model.to_string())
             {
                 entry.insert(limit);
-                if supplement.context_fallback {
-                    self.context_defaults.insert(supplement.model.to_string());
-                }
             }
         }
     }
@@ -1936,8 +1917,6 @@ struct Supplement {
     model: &'static str,
     pricing: Pricing,
     context_limit: Option<u64>,
-    cache_fields: bool,
-    context_fallback: bool,
 }
 
 const fn rates(input: f64, output: f64, cache_create: f64, cache_read: f64) -> Pricing {
@@ -2278,14 +2257,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     impl PricingMap {
-        fn put_builtin_entry(&mut self, model: &str, pricing: Pricing) {
-            self.supplement_pricing(model, pricing, false);
-        }
-
-        fn supplement_cache_rates(&mut self, model: &str, pricing: Pricing) {
-            self.supplement_pricing(model, pricing, true);
-        }
-
         fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
             self.lookup(self.prices(), model, fuzzy)
         }
@@ -2364,16 +2335,53 @@ mod tests {
     }
 
     #[test]
-    fn live_context_metadata_replaces_a_curated_default() {
+    fn every_curated_row_fills_only_the_rates_a_loaded_row_leaves_out() {
         let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "glm-5": {"input_cost_per_token": 9, "output_cost_per_token": 10},
+            "zai/glm-4.5": {"input_cost_per_token": 9, "output_cost_per_token": 10, "cache_read_input_token_cost": 7}
+        }"#,
+        );
         pricing.put_builtin_pricing();
-        pricing.enable_models_dev_fallback = true;
+        let glm_5 = pricing.find_exact("glm-5").unwrap();
+        assert_eq!((glm_5.input, glm_5.output), (9.0, 10.0));
+        assert_eq!(
+            (glm_5.cache_create, glm_5.cache_read),
+            (Some(0.0), Some(0.2e-6))
+        );
+        let glm_45 = pricing.find_exact("zai/glm-4.5").unwrap();
+        assert_eq!(
+            (glm_45.cache_create, glm_45.cache_read),
+            (Some(0.0), Some(7.0))
+        );
+    }
+
+    #[test]
+    fn curated_context_limits_fill_litellm_gaps_ahead_of_models_dev() {
         let mut live = PricingMap::default();
         live.context_limits
             .insert("gpt-5.6-sol".to_string(), 654_321);
-        let merged = pricing.with_live_layer("gpt-5.6-sol", super::Lookup::Context, || Some(&live));
-        assert_eq!(merged.context_limit("gpt-5.6-sol"), Some(654_321));
-        assert_eq!(pricing.context_limit("gpt-5.6-sol"), Some(654_321));
+        let lookups = AtomicUsize::new(0);
+        let fetch = || {
+            lookups.fetch_add(1, Ordering::Relaxed);
+            Some(&live)
+        };
+        let curated = layered(&PricingMap::default(), None);
+        assert_eq!(
+            curated.context_limit_with_live("gpt-5.6-sol", fetch),
+            Some(1_050_000)
+        );
+        assert_eq!(lookups.load(Ordering::Relaxed), 0);
+
+        let mut litellm = PricingMap::default();
+        litellm.load_json(
+            r#"{"gpt-5.6-sol": {"input_cost_per_token": 1, "output_cost_per_token": 2, "max_input_tokens": 922000}}"#,
+        );
+        assert_eq!(
+            layered(&litellm, None).context_limit_with_live("gpt-5.6-sol", fetch),
+            Some(922_000)
+        );
     }
 
     #[test]
@@ -3255,7 +3263,7 @@ mod tests {
     #[test]
     fn exact_fallback_lookup_sees_a_colliding_entry_added_after_a_lookup() {
         let mut pricing = PricingMap::default();
-        pricing.put_builtin_entry(
+        pricing.supplement_pricing(
             "acme-alpha-1.5",
             Pricing {
                 input: 1e-6,
@@ -3267,7 +3275,7 @@ mod tests {
             .expect("a single normalized match should resolve");
         assert_eq!(resolved.input, 1e-6);
 
-        pricing.put_builtin_entry(
+        pricing.supplement_pricing(
             "acme.alpha@1.5",
             Pricing {
                 input: 2e-6,
@@ -3294,7 +3302,7 @@ mod tests {
             .expect("the normalized entry should resolve");
         assert!(before.cache_read.is_none());
 
-        pricing.supplement_cache_rates(
+        pricing.supplement_pricing(
             "zai/glm-test.5",
             Pricing {
                 cache_read: Some(0.03),
@@ -3453,7 +3461,7 @@ mod tests {
             ..Pricing::empty()
         };
 
-        pricing.supplement_cache_rates("zai/glm-test-model", zeroed);
+        pricing.supplement_pricing("zai/glm-test-model", zeroed);
 
         let entry = pricing.find_exact("zai/glm-test-model").unwrap();
         assert_eq!(entry.cache_create, Some(0.25));
@@ -4721,25 +4729,14 @@ mod tests {
         live_models_dev
             .context_limits
             .insert("gpt-5.6-sol".to_string(), 888_888);
-        let empty_models_dev = PricingMap::default();
         assert_eq!(
             layered(&pricing, Some(&embedded_models_dev))
                 .context_limit_with_live("gpt-5.6-sol", || Some(&live_models_dev)),
             Some(654_321)
         );
         assert_eq!(
-            layered(&builtin, Some(&embedded_models_dev))
+            layered(&PricingMap::default(), Some(&embedded_models_dev))
                 .context_limit_with_live("gpt-5.6-sol", || Some(&live_models_dev)),
-            Some(888_888)
-        );
-        assert_eq!(
-            layered(&builtin, Some(&embedded_models_dev))
-                .context_limit_with_live("gpt-5.6-sol", || None),
-            Some(777_777)
-        );
-        assert_eq!(
-            layered(&builtin, Some(&empty_models_dev))
-                .context_limit_with_live("gpt-5.6-sol", || None),
             Some(1_050_000)
         );
     }
