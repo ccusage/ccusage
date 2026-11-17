@@ -199,6 +199,10 @@ jobs:
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-guard
 
+      - name: Keep the gate scripts out of Pullfrog's reach
+        if: steps.implementation_guard.outputs.skip != 'true'
+        run: cp -R .github/scripts "$RUNNER_TEMP/contribution-gate-scripts"
+
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
         if: steps.implementation_guard.outputs.skip != 'true'
@@ -217,13 +221,12 @@ jobs:
       - name: Prepare the implementation artifact
         id: artifact
         if: steps.pullfrog.outcome == 'success'
-        shell: nu {0}
         env:
           RESULT: ${{ steps.pullfrog.outputs.result }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation.patch
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation.json
-        run: nu .github/scripts/contribution-gate.nu implementation-artifact
+        run: nu "$RUNNER_TEMP/contribution-gate-scripts/contribution-gate.nu" implementation-artifact
 
       - name: Upload the implementation artifact
         if: steps.artifact.outputs.implementation == 'prepared'

@@ -968,7 +968,10 @@ def test-implementation-artifact []: nothing -> nothing {
             IMPLEMENTATION_PATCH: $patch
             IMPLEMENTATION_METADATA: $metadata
         } {
-            implementation-artifact
+            let trusted_scripts = $fixture | path join contribution-gate-scripts
+            cp -r $env.FILE_PWD $trusted_scripts
+            let result = nu ($trusted_scripts | path join contribution-gate.nu) implementation-artifact | complete
+            expect 'artifact runs from a copy of the gate scripts' $result.exit_code 0
             expect 'artifact includes the changed file' (open --raw $patch | str contains '+changed') true
             expect 'artifact preserves validated metadata' (open --raw $metadata | from json | get title) 'fix: fixture'
         }
@@ -980,6 +983,27 @@ def test-implementation-artifact []: nothing -> nothing {
     }
     cd $caller
     rm -rf $fixture
+}
+
+def test-post-agent-steps-run-trusted-code []: nothing -> nothing {
+    glob ($env.FILE_PWD | path join ../workflows/*.y*ml) | each {|file|
+        open $file | get jobs | transpose name job | each {|job|
+            let steps = $job.job | get --optional steps | default []
+            let agent = $steps | enumerate | where {|step|
+                (
+                    ($step.item | get --optional uses | default '' | str starts-with 'pullfrog/pullfrog@')
+                    and ($step.item | get --optional with.shell | default disabled) != disabled
+                )
+            }
+            if ($agent | is-not-empty) {
+                $steps | skip (($agent | first).index + 1) | each {|step|
+                    let name = $"($file | path basename) ($job.name) '($step | get --optional name | default '')'"
+                    expect $"($name) does not run a local action edited by the agent" ($step | get --optional uses | default '' | str starts-with './') false
+                    expect $"($name) does not run workspace scripts edited by the agent" ($step | get --optional run | default '' | str contains '.github/scripts') false
+                } | ignore
+            }
+        } | ignore
+    } | ignore
 }
 
 def test-contributor-approval-operation []: nothing -> nothing {
@@ -1039,6 +1063,7 @@ def main [] {
     test-contributor-approval-records
     test-contributor-approval-operation
     test-implementation-artifact
+    test-post-agent-steps-run-trusted-code
     test-coauthor-validation
     test-coauthor-email
     test-implementation-commit-args
