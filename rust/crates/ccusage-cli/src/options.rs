@@ -1,225 +1,59 @@
 struct OptionSpec {
-    names: &'static [&'static str],
     takes_value: bool,
     shared: bool,
 }
 
-const OPTIONS: &[OptionSpec] = &[
-    OptionSpec {
-        names: &["-s", "--since"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-u", "--until"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--last"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-m", "--mode"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--debug-samples"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-o", "--order"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-z", "--timezone"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-q", "--jq"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--config"],
-        takes_value: true,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-j", "--json"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-d", "--debug"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-b", "--breakdown"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-O", "--offline"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--no-offline"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--color"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--no-color"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--compact"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--single-thread"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["--no-cost"],
-        takes_value: false,
-        shared: true,
-    },
-    OptionSpec {
-        names: &["-p", "--project"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--project-aliases"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-w", "--start-of-week"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-i", "--id"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-t", "--token-limit"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-n", "--session-length"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-B", "--visual-burn-rate"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--cost-source"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--refresh-interval"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--context-low-threshold"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--context-medium-threshold"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--speed"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--pi-path"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--open-claw-path"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--sections"],
-        takes_value: true,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-a", "--active"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["-r", "--recent"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--instances"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--all"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--by-agent"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--include-claude-agent"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--cache"],
-        takes_value: false,
-        shared: false,
-    },
-    OptionSpec {
-        names: &["--no-cache"],
-        takes_value: false,
-        shared: false,
-    },
-];
-
-fn option(arg: &str) -> Option<&'static OptionSpec> {
+fn option(arg: &str) -> Option<OptionSpec> {
     let name = arg.split_once('=').map_or(arg, |(name, _)| name);
-    OPTIONS.iter().find(|option| option.names.contains(&name))
+    let (takes_value, shared) = match name {
+        "-s" | "--since" => (true, true),
+        "-u" | "--until" => (true, true),
+        "--last" => (true, true),
+        "-m" | "--mode" => (true, true),
+        "--debug-samples" => (true, true),
+        "-o" | "--order" => (true, true),
+        "-z" | "--timezone" => (true, true),
+        "-q" | "--jq" => (true, true),
+        "--config" => (true, true),
+        "-j" | "--json" => (false, true),
+        "-d" | "--debug" => (false, true),
+        "-b" | "--breakdown" => (false, true),
+        "-O" | "--offline" => (false, true),
+        "--no-offline" => (false, true),
+        "--color" => (false, true),
+        "--no-color" => (false, true),
+        "--compact" => (false, true),
+        "--single-thread" => (false, true),
+        "--no-cost" => (false, true),
+        "-p" | "--project" => (true, false),
+        "--project-aliases" => (true, false),
+        "-w" | "--start-of-week" => (true, false),
+        "-i" | "--id" => (true, false),
+        "-t" | "--token-limit" => (true, false),
+        "-n" | "--session-length" => (true, false),
+        "-B" | "--visual-burn-rate" => (true, false),
+        "--cost-source" => (true, false),
+        "--refresh-interval" => (true, false),
+        "--context-low-threshold" => (true, false),
+        "--context-medium-threshold" => (true, false),
+        "--speed" => (true, false),
+        "--pi-path" => (true, false),
+        "--open-claw-path" => (true, false),
+        "--sections" => (true, false),
+        "-a" | "--active" => (false, false),
+        "-r" | "--recent" => (false, false),
+        "--instances" => (false, false),
+        "--all" => (false, false),
+        "--by-agent" => (false, false),
+        "--include-claude-agent" => (false, false),
+        "--cache" => (false, false),
+        "--no-cache" => (false, false),
+        _ => return None,
+    };
+    Some(OptionSpec {
+        takes_value,
+        shared,
+    })
 }
 
 pub fn option_takes_value(arg: &str) -> bool {
