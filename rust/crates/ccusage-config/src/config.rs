@@ -292,6 +292,11 @@ fn load_config_paths(
             });
         match file {
             Ok(mut file) => {
+                for layer in file.layers.values_mut() {
+                    if let Some(error) = &mut layer.date_error {
+                        *error = config_error(format!("{}: {error}", path.display()));
+                    }
+                }
                 match parse_named_pi_stores(&file.value) {
                     Ok(stores) => file.pi_stores = stores,
                     Err(error) => {
@@ -536,7 +541,15 @@ impl ccusage_cli::CliConfig for ConfigContext {
     }
 
     fn config_error(&self) -> Option<&str> {
-        self.error.as_deref()
+        self.error.as_deref().or_else(|| {
+            (self.command.report != "statusline")
+                .then(|| {
+                    self.option_maps()
+                        .into_iter()
+                        .find_map(|layer| layer.date_error.as_deref())
+                })
+                .flatten()
+        })
     }
 
     fn apply_shared(&self, shared: &mut SharedArgs) {
@@ -768,6 +781,49 @@ impl From<ConfigCostSource> for CostSource {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn discovered_date_errors_only_affect_commands_reading_the_layer() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "ccusage.json": r#"{"defaults":{"mode":"a.since:","json":true},"commands":{"weekly":{"since":"nope"}}}"#,
+        });
+        let _guard = ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        for command in [
+            vec!["daily"],
+            vec!["monthly"],
+            vec!["session"],
+            vec!["claude", "session"],
+            vec!["codex", "daily"],
+            vec!["statusline"],
+        ] {
+            let args = command
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>();
+            let context = ConfigContext::from_args(&args);
+            assert!(
+                context.config_error().is_none(),
+                "{command:?}: {:?}",
+                context.config_error()
+            );
+            let mut shared = SharedArgs::default();
+            context.apply_shared(&mut shared);
+            assert!(shared.json);
+        }
+        for command in [vec!["weekly"], vec!["codex", "weekly"]] {
+            let args = command
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>();
+            let context = ConfigContext::from_args(&args);
+            assert!(
+                context
+                    .config_error()
+                    .unwrap()
+                    .contains("commands.weekly.since")
+            );
+        }
+    }
+
+    #[test]
     fn invalid_discovered_block_limits_drop_only_the_field() {
         for (field, value) in [
             ("tokenLimit", json!(0)),
@@ -959,10 +1015,8 @@ mod tests {
     }
 
     #[test]
-    fn discovered_invalid_bounds_and_pi_stores_stay_fatal() {
+    fn discovered_invalid_pi_stores_stay_fatal() {
         for raw in [
-            r#"{"defaults":{"since":"2026-13-45"}}"#,
-            r#"{"defaults":{"until":"no"}}"#,
             r#"{"pi":{"stores":[{"name":"claude","path":"/tmp/store"}]}}"#,
             r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
         ] {
@@ -970,6 +1024,26 @@ mod tests {
             let (file, error, _) = load_config_paths(false, vec![fixture.path("selected.json")]);
             assert!(file.is_none());
             assert!(error.is_some(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn discovered_default_date_errors_are_fatal_except_for_statusline() {
+        for field in ["since", "until"] {
+            let fixture =
+                fs_fixture!({"ccusage.json": json!({"defaults": {field: "nope"}}).to_string()});
+            let _guard =
+                ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            assert!(
+                ConfigContext::from_args(&["daily".into()])
+                    .config_error()
+                    .is_some()
+            );
+            assert!(
+                ConfigContext::from_args(&["statusline".into()])
+                    .config_error()
+                    .is_none()
+            );
         }
     }
 

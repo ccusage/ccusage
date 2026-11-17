@@ -11,6 +11,7 @@ use crate::config_schema::{
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Layer {
+    pub(crate) date_error: Option<String>,
     pub(crate) shared: SharedOptions,
     pub(crate) daily: DailySpecificOptions,
     pub(crate) weekly: WeeklySpecificOptions,
@@ -166,7 +167,27 @@ fn layer(
         return Ok(Layer::default());
     }
     let mut retained = value.clone();
+    let mut date_error = None;
+    if !strict {
+        for field in ["since", "until"] {
+            if let Some(value) = retained.get(field)
+                && let Err(error) = decode::<Option<crate::config_schema::ConfigDateBound>>(
+                    value,
+                    &format!("{path}.{field}"),
+                )
+            {
+                if date_error.is_none() {
+                    date_error = Some(error.clone());
+                }
+                warnings.push(format!("Invalid ccusage config field: {error}"));
+                if let Some(fields) = retained.as_object_mut() {
+                    fields.remove(field);
+                }
+            }
+        }
+    }
     let layer = Layer {
+        date_error,
         shared: decode_options(&mut retained, path, strict, warnings)?,
         daily: decode_options(&mut retained, path, strict, warnings)?,
         weekly: decode_options(&mut retained, path, strict, warnings)?,
@@ -206,7 +227,7 @@ fn decode_options<T: DeserializeOwned>(
         match decode(retained, path) {
             Ok(options) => return Ok(options),
             Err(error) => {
-                if strict || error.contains(".since:") || error.contains(".until:") {
+                if strict {
                     return Err(error);
                 }
                 if !prune_invalid(retained, &|candidate| {
