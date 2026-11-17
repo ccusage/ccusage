@@ -1,4 +1,4 @@
-use ccusage_core::{TimestampMs, UtcParts, format_date_tz, resolve_tz};
+use ccusage_core::{Result, TimestampMs, cli_error, format_date_tz, resolve_tz};
 use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
 
 /// `--timezone` and a config `timezone` are checked with this before use, so an
@@ -13,28 +13,27 @@ pub fn format_date(timestamp: TimestampMs, timezone: Option<&str>) -> String {
     format_date_tz(timestamp, &resolve_tz(timezone))
 }
 
-pub fn format_utc_second(timestamp: TimestampMs) -> String {
-    let parts = timestamp.utc_parts();
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second
-    )
+pub struct DateTimeParts {
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
+    pub second: u32,
 }
 
-pub fn local_parts(timestamp: TimestampMs) -> UtcParts {
-    let Ok(timestamp) = JiffTimestamp::from_millisecond(timestamp.as_millis()) else {
-        return timestamp.utc_parts();
-    };
-    let zoned = timestamp.to_zoned(JiffTimeZone::system());
-    UtcParts {
-        year: i32::from(zoned.year()),
-        month: u32::from(zoned.month() as u8),
-        day: u32::from(zoned.day() as u8),
-        hour: u32::from(zoned.hour() as u8),
-        minute: u32::from(zoned.minute() as u8),
-        second: u32::from(zoned.second() as u8),
-        millisecond: 0,
-    }
+pub fn zoned_parts(timestamp: TimestampMs, zone: &JiffTimeZone) -> Result<DateTimeParts> {
+    let timestamp = JiffTimestamp::from_millisecond(timestamp.as_millis())
+        .map_err(|error| cli_error(format!("Invalid block timestamp: {error}")))?;
+    let parts = zone.to_datetime(timestamp);
+    Ok(DateTimeParts {
+        year: i32::from(parts.year()),
+        month: u32::from(parts.month().unsigned_abs()),
+        day: u32::from(parts.day().unsigned_abs()),
+        hour: u32::from(parts.hour().unsigned_abs()),
+        minute: u32::from(parts.minute().unsigned_abs()),
+        second: u32::from(parts.second().unsigned_abs()),
+    })
 }
 
 pub fn hour_12(hour: u32) -> u32 {
@@ -50,7 +49,7 @@ pub fn am_pm(hour: u32) -> &'static str {
 mod tests {
     use ccusage_core::{format_rfc3339_millis, parse_ts_timestamp};
 
-    use super::{format_date, format_utc_second, is_valid_timezone};
+    use super::{format_date, is_valid_timezone};
 
     #[test]
     fn formats_dates_with_timezone() {
@@ -58,7 +57,6 @@ mod tests {
 
         assert_eq!(format_date(timestamp, Some("UTC")), "2024-08-04");
         assert_eq!(format_date(timestamp, Some("Asia/Tokyo")), "2024-08-05");
-        assert_eq!(format_utc_second(timestamp), "2024-08-04 23:30:00");
         assert_eq!(format_rfc3339_millis(timestamp), "2024-08-04T23:30:00.000Z");
     }
 

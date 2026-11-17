@@ -2,15 +2,15 @@ use std::io::IsTerminal;
 
 use ccusage_core::{
     Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow, Result,
-    SimpleTable, TimestampMs, TokenCounts, UtcParts,
+    SimpleTable, TimestampMs, TokenCounts,
     cli::{SharedArgs, SortOrder},
     cli_error, color,
     fast::FxHashSet,
     format_currency, format_models_multiline, format_number, format_rfc3339_millis, json_float,
     model_aliases, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
 };
-use ccusage_report::{am_pm, hour_12};
-use jiff::{Timestamp, tz::TimeZone};
+use ccusage_report::{am_pm, hour_12, zoned_parts};
+use jiff::tz::TimeZone;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -320,23 +320,8 @@ fn format_block_time(
     })
 }
 
-fn block_parts(timestamp: TimestampMs, zone: &TimeZone) -> Result<UtcParts> {
-    let timestamp = Timestamp::from_millisecond(timestamp.as_millis())
-        .map_err(|error| cli_error(format!("Invalid block timestamp: {error}")))?;
-    let parts = zone.to_datetime(timestamp);
-    Ok(UtcParts {
-        year: i32::from(parts.year()),
-        month: u32::from(parts.month().unsigned_abs()),
-        day: u32::from(parts.day().unsigned_abs()),
-        hour: u32::from(parts.hour().unsigned_abs()),
-        minute: u32::from(parts.minute().unsigned_abs()),
-        second: u32::from(parts.second().unsigned_abs()),
-        millisecond: 0,
-    })
-}
-
 fn format_block_start(timestamp: TimestampMs, compact: bool, zone: &TimeZone) -> Result<String> {
-    let parts = block_parts(timestamp, zone)?;
+    let parts = zoned_parts(timestamp, zone)?;
     Ok(if compact {
         format!(
             "{:02}/{:02}, {:02}:{:02} {}",
@@ -362,7 +347,7 @@ fn format_block_start(timestamp: TimestampMs, compact: bool, zone: &TimeZone) ->
 
 fn format_block_end(timestamp: TimestampMs, compact: bool, zone: &TimeZone) -> Result<String> {
     if compact {
-        let parts = block_parts(timestamp, zone)?;
+        let parts = zoned_parts(timestamp, zone)?;
         Ok(format!(
             "{:02}:{:02} {}",
             hour_12(parts.hour),
@@ -375,7 +360,7 @@ fn format_block_end(timestamp: TimestampMs, compact: bool, zone: &TimeZone) -> R
 }
 
 fn format_block_started(timestamp: TimestampMs, zone: &TimeZone) -> Result<String> {
-    let parts = block_parts(timestamp, zone)?;
+    let parts = zoned_parts(timestamp, zone)?;
     Ok(format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
         parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second

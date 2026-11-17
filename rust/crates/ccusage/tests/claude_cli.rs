@@ -1370,6 +1370,43 @@ fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> s
 const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
 
 #[test]
+fn block_table_and_active_detail_follow_the_report_timezone() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/p/session-a.jsonl",
+        usage_line(
+            "2026-01-02T23:00:00Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    for (flags, expected) in [
+        (vec![], "1/3/2026, 8:00:00 AM"),
+        (vec!["--active"], "2026-01-03 08:00:00"),
+    ] {
+        let output = claude_command(&fixture)
+            .env("COLUMNS", "200")
+            .env("CCUSAGE_TEST_NOW", "2026-01-03T00:00:00Z")
+            .args(["claude", "blocks", "--offline", "--timezone", "Asia/Tokyo"])
+            .args(flags)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(expected),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+}
+
+#[test]
 fn blocks_reject_unrepresentable_session_lengths() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);

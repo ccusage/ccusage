@@ -1025,7 +1025,7 @@ fn extract_message_timestamp(data: &str) -> Option<i64> {
 ///
 /// A `None` bound is not narrowed, either because the option was absent or
 /// because it is not a full date. The window is deliberately equivalent to the
-/// authoritative `date_within_range` check applied to loaded entries: both
+/// authoritative ReportWindow check applied to loaded entries: both
 /// resolve the bounds in the reporting timezone, so pre-filtering can never drop
 /// an entry the report would have kept.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -3586,11 +3586,7 @@ mod tests {
             1,
             "a bound with no instant must not pre-filter; the report's string filter decides"
         );
-        assert!(!crate::date_within_range(
-            &entries[0].date,
-            shared.since.as_deref(),
-            None
-        ));
+        assert!(!ccusage_core::ReportWindow::from_shared(&shared).contains_date(&entries[0].date));
     }
 
     #[test]

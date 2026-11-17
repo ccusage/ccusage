@@ -7,7 +7,7 @@ use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, 
 /// Build it once per source from the options that source loads with, after the
 /// binary has rewritten `--last` into `since`, and ask it instead of comparing
 /// bounds by hand: every place that decides whether a day is in the report then
-/// agrees with [`date_within_range`](crate::date_within_range).
+/// uses the same resolved bounds.
 #[derive(Clone, Debug)]
 pub struct ReportWindow {
     since: Option<Box<str>>,
@@ -76,10 +76,7 @@ impl ReportWindow {
 #[cfg(test)]
 mod tests {
     use super::ReportWindow;
-    use crate::{
-        MILLIS_PER_HOUR, TimestampMs, cli::SharedArgs, date_range_bounds_ms, date_within_range,
-        resolve_tz,
-    };
+    use crate::{MILLIS_PER_HOUR, TimestampMs, cli::SharedArgs, date_range_bounds_ms, resolve_tz};
 
     const BOUNDS: [Option<&str>; 12] = [
         None,
@@ -122,14 +119,18 @@ mod tests {
     }
 
     #[test]
-    fn contains_date_agrees_with_date_within_range_for_every_bound_shape() {
+    fn contains_date_preserves_compact_lexicographic_bounds() {
         for since in BOUNDS {
             for until in BOUNDS {
                 let window = window(since, until, None);
                 for date in DATES {
                     assert_eq!(
                         window.contains_date(date),
-                        date_within_range(date, since, until),
+                        {
+                            let compact = date.replace('-', "");
+                            since.is_none_or(|bound| compact.as_str() >= bound)
+                                && until.is_none_or(|bound| compact.as_str() <= bound)
+                        },
                         "date {date:?} since {since:?} until {until:?}"
                     );
                 }

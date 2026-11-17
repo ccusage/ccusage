@@ -250,27 +250,12 @@ fn parse_compact_date(value: &str) -> Option<IsoDate> {
     IsoDate::from_ymd(year, month, day)
 }
 
-/// Reports whether a `YYYY-MM-DD` date falls inside the `--since`/`--until`
-/// window.
-///
-/// Both bounds are inclusive and compared as compact `YYYYMMDD` text, so
-/// partial bounds such as `2026` keep working. This is the authoritative window
-/// check shared by every report and loader.
-pub fn date_within_range(date: &str, since: Option<&str>, until: Option<&str>) -> bool {
-    if since.is_none() && until.is_none() {
-        return true;
-    }
-    let compact = date.replace('-', "");
-    since.is_none_or(|since| compact.as_str() >= since)
-        && until.is_none_or(|until| compact.as_str() <= until)
-}
-
 /// Resolves the `--since`/`--until` window to half-open Unix millisecond bounds
 /// `[since 00:00, the day after until 00:00)` in `timezone`.
 ///
 /// A `None` bound means that side must not be narrowed: either the option was
 /// absent, or it is not a full `YYYYMMDD` date and therefore has no instant to
-/// compare against. Callers pair these bounds with [`date_within_range`], which
+/// compare against. Callers pair these bounds with [`ReportWindow::contains_date`](crate::ReportWindow::contains_date), which
 /// stays authoritative for the exact per-entry decision.
 pub fn date_range_bounds_ms(
     since: Option<&str>,
@@ -406,8 +391,8 @@ pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, TimestampMs, date_range_bounds_ms, date_within_range, parse_compact_date,
-        parse_test_now, resolve_tz,
+        MILLIS_PER_HOUR, TimestampMs, date_range_bounds_ms, parse_compact_date, parse_test_now,
+        resolve_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
@@ -537,29 +522,5 @@ mod tests {
             (None, None)
         );
         assert_eq!(date_range_bounds_ms(None, None, &utc), (None, None));
-    }
-
-    #[test]
-    fn treats_both_window_ends_as_inclusive() {
-        assert!(date_within_range("2026-01-02", Some("20260102"), None));
-        assert!(date_within_range("2026-01-02", None, Some("20260102")));
-        assert!(date_within_range(
-            "2026-01-02",
-            Some("20260101"),
-            Some("20260103")
-        ));
-        assert!(!date_within_range("2026-01-02", Some("20260103"), None));
-        assert!(!date_within_range("2026-01-02", None, Some("20260101")));
-        assert!(date_within_range("2026-01-02", None, None));
-    }
-
-    #[test]
-    fn compares_partial_bounds_lexicographically() {
-        assert!(date_within_range(
-            "2026-01-02",
-            Some("2026"),
-            Some("202602")
-        ));
-        assert!(!date_within_range("2025-12-31", Some("2026"), None));
     }
 }

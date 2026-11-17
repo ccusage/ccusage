@@ -4,7 +4,6 @@ use ccusage_core::{
     DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, ReportWindow, Result, SessionAccumulator, TimestampMs,
     UsageSummary,
     cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder},
-    cli_error,
     fast::FxHashMap,
     print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key_target,
     summary::{Bucket, KeyTarget, summarize_bucket},
