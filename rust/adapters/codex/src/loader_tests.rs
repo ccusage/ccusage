@@ -2945,7 +2945,7 @@ fn replay_input_tokens_by_session(dir: &Path) -> Vec<(String, u64)> {
 }
 
 #[test]
-fn auto_review_keeps_the_recorded_calendar_date_across_utc_boundaries() {
+fn auto_review_is_dated_by_the_utc_day_of_the_event_instant() {
     let fixture = fs_fixture!({
         "headless.jsonl": json!({
             "type": "turn.completed",
@@ -2961,12 +2961,12 @@ fn auto_review_keeps_the_recorded_calendar_date_across_utc_boundaries() {
         crate::parse_ts_timestamp("2026-07-29T23:30:00Z").unwrap()
     );
     assert_eq!(events[0].last_activity, "2026-07-29T23:30:00.000Z");
-    assert_eq!(events[0].model, "gpt-5.6-luna");
+    assert_eq!(events[0].model, "gpt-5.4");
     assert!(events[0].is_fallback_model);
 }
 
 #[test]
-fn auto_review_keeps_a_valid_date_prefix_when_another_field_dates_usage() {
+fn auto_review_is_dated_by_the_field_that_dates_the_event() {
     let fixture = fs_fixture!({
         "headless.jsonl": json!({
             "type": "turn.completed",
@@ -2983,7 +2983,7 @@ fn auto_review_keeps_a_valid_date_prefix_when_another_field_dates_usage() {
         crate::parse_ts_timestamp("2026-03-05T00:00:00Z").unwrap()
     );
     assert_eq!(events[0].last_activity, "2026-03-05T00:00:00.000Z");
-    assert_eq!(events[0].model, "gpt-5.6-luna");
+    assert_eq!(events[0].model, "gpt-5.4");
     assert!(events[0].is_fallback_model);
 }
 

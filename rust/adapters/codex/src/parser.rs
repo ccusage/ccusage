@@ -45,22 +45,22 @@ const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_DEFAULT_MODEL: &str = "gpt-5";
 // NOTE(2026-09-17, #1753): auto-review routing changes independently of public model releases, so a new entry needs evidence of the routing change, not just a catalog release.
 const CODEX_AUTO_REVIEW_FALLBACKS: &[CodexAutoReviewFallback] = &[
-    CodexAutoReviewFallback::new("2026-07-30", "gpt-5.6-luna"),
-    CodexAutoReviewFallback::new("2026-03-05", "gpt-5.4"),
-    CodexAutoReviewFallback::new("2026-02-05", "gpt-5.3-codex"),
-    CodexAutoReviewFallback::new("2025-12-11", "gpt-5.2-codex"),
-    CodexAutoReviewFallback::new("2025-11-13", "gpt-5.1-codex"),
-    CodexAutoReviewFallback::new("2025-09-15", "gpt-5-codex"),
-    CodexAutoReviewFallback::new("2025-08-07", CODEX_AUTO_REVIEW_DEFAULT_MODEL),
+    CodexAutoReviewFallback::new((2026, 7, 30), "gpt-5.6-luna"),
+    CodexAutoReviewFallback::new((2026, 3, 5), "gpt-5.4"),
+    CodexAutoReviewFallback::new((2026, 2, 5), "gpt-5.3-codex"),
+    CodexAutoReviewFallback::new((2025, 12, 11), "gpt-5.2-codex"),
+    CodexAutoReviewFallback::new((2025, 11, 13), "gpt-5.1-codex"),
+    CodexAutoReviewFallback::new((2025, 9, 15), "gpt-5-codex"),
+    CodexAutoReviewFallback::new((2025, 8, 7), CODEX_AUTO_REVIEW_DEFAULT_MODEL),
 ];
 
 struct CodexAutoReviewFallback {
-    released_on: &'static str,
+    released_on: (i32, u32, u32),
     model: &'static str,
 }
 
 impl CodexAutoReviewFallback {
-    const fn new(released_on: &'static str, model: &'static str) -> Self {
+    const fn new(released_on: (i32, u32, u32), model: &'static str) -> Self {
         Self { released_on, model }
     }
 }
@@ -70,11 +70,6 @@ enum CodexLineKind {
     Session,
     Headless,
     Escaped,
-}
-
-struct CodexExecTimestamps {
-    event: TimestampMs,
-    model: String,
 }
 
 #[derive(Default)]
@@ -609,7 +604,7 @@ fn visit_codex_session_entry(
         let mut request_model_is_fallback = *current_model_is_fallback;
         let (model, is_fallback_model) = resolve_codex_usage_model(
             parsed_model,
-            &last_activity,
+            timestamp,
             &mut request_model,
             &mut request_model_is_fallback,
         );
@@ -736,7 +731,7 @@ fn visit_codex_session_entry(
         codex_model_from_payload(payload).or_else(|| info.and_then(codex_model_from_info));
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
-        &last_activity,
+        timestamp,
         current_model,
         current_model_is_fallback,
     );
@@ -779,16 +774,11 @@ fn add_codex_exec_event(
         }
     };
     let parsed_model = codex_model_from_result(value);
-    let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result(value).unwrap_or(fallback_timestamp),
-        model: codex_model_timestamp_from_result(value)
-            .unwrap_or_else(|| crate::format_rfc3339_millis(fallback_timestamp)),
-    };
     visit_codex_exec_usage_event(
         session_id,
         raw_usage,
         parsed_model,
-        timestamps,
+        codex_timestamp_from_result(value).unwrap_or(fallback_timestamp),
         current_model,
         current_model_is_fallback,
         visit,
@@ -799,7 +789,7 @@ fn visit_codex_exec_usage_event(
     session_id: &str,
     raw_usage: CodexRawUsage,
     parsed_model: Option<String>,
-    timestamps: CodexExecTimestamps,
+    timestamp: TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent),
@@ -807,15 +797,15 @@ fn visit_codex_exec_usage_event(
     let raw_usage = normalize_codex_raw_usage(raw_usage);
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
-        &timestamps.model,
+        timestamp,
         current_model,
         current_model_is_fallback,
     );
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
         response_id: None,
-        timestamp: timestamps.event,
-        last_activity: crate::format_rfc3339_millis(timestamps.event),
+        timestamp,
+        last_activity: crate::format_rfc3339_millis(timestamp),
         model,
         input_tokens: raw_usage.input_tokens,
         cached_input_tokens: raw_usage.cached_input_tokens,
@@ -956,7 +946,7 @@ fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<(Timestam
 
 fn resolve_codex_usage_model(
     parsed_model: Option<String>,
-    timestamp: &str,
+    timestamp: TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
 ) -> (String, bool) {
@@ -974,57 +964,17 @@ fn resolve_codex_usage_model(
     }
 }
 
-fn codex_log_model_fallback(model: &str, timestamp: &str) -> Option<&'static str> {
+fn codex_log_model_fallback(model: &str, timestamp: TimestampMs) -> Option<&'static str> {
     if model != CODEX_AUTO_REVIEW_MODEL {
         return None;
     }
-    let routed = codex_timestamp_date(timestamp).and_then(|date| {
-        CODEX_AUTO_REVIEW_FALLBACKS
-            .iter()
-            .filter(|fallback| fallback.released_on <= date)
-            .max_by_key(|fallback| fallback.released_on)
-    });
+    let parts = timestamp.utc_parts();
+    let date = (parts.year, parts.month, parts.day);
+    let routed = CODEX_AUTO_REVIEW_FALLBACKS
+        .iter()
+        .filter(|fallback| fallback.released_on <= date)
+        .max_by_key(|fallback| fallback.released_on);
     Some(routed.map_or(CODEX_AUTO_REVIEW_DEFAULT_MODEL, |fallback| fallback.model))
-}
-
-fn codex_timestamp_date(timestamp: &str) -> Option<&str> {
-    let date = timestamp.get(..10)?;
-    let bytes = date.as_bytes();
-    if !(bytes.len() == 10
-        && bytes[0..4].iter().all(u8::is_ascii_digit)
-        && bytes[4] == b'-'
-        && bytes[5..7].iter().all(u8::is_ascii_digit)
-        && bytes[7] == b'-'
-        && bytes[8..10].iter().all(u8::is_ascii_digit))
-    {
-        return None;
-    }
-    let year = codex_date_part(&bytes[0..4])?;
-    let month = codex_date_part(&bytes[5..7])?;
-    let day = codex_date_part(&bytes[8..10])?;
-    let max_day = codex_days_in_month(year, month)?;
-    (day >= 1 && day <= max_day).then_some(date)
-}
-
-fn codex_date_part(bytes: &[u8]) -> Option<u16> {
-    bytes.iter().try_fold(0u16, |value, byte| {
-        let digit = byte.checked_sub(b'0')?;
-        (digit <= 9).then_some(value * 10 + u16::from(digit))
-    })
-}
-
-fn codex_days_in_month(year: u16, month: u16) -> Option<u16> {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => Some(31),
-        4 | 6 | 9 | 11 => Some(30),
-        2 if codex_is_leap_year(year) => Some(29),
-        2 => Some(28),
-        _ => None,
-    }
-}
-
-fn codex_is_leap_year(year: u16) -> bool {
-    year.is_multiple_of(4) && !year.is_multiple_of(100) || year.is_multiple_of(400)
 }
 
 fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
@@ -1167,57 +1117,10 @@ fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<TimestampMs>
         })
 }
 
-fn codex_model_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
-    raw_or_normalized_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at_camel.as_ref()))
-        .or_else(|| {
-            value
-                .data
-                .as_ref()
-                .and_then(raw_or_normalized_result_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .result
-                .as_ref()
-                .and_then(raw_or_normalized_result_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .response
-                .as_ref()
-                .and_then(raw_or_normalized_result_fields_timestamp)
-        })
-}
-
 fn normalize_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<TimestampMs> {
     codex_timestamp_instant(value.timestamp.as_ref())
         .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
         .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
-}
-
-fn raw_or_normalized_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<String> {
-    raw_or_normalized_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at_camel.as_ref()))
-}
-
-fn raw_or_normalized_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
-    match value? {
-        CodexTimestamp::String(text) => {
-            let text = text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            if codex_timestamp_date(text).is_some() {
-                return Some(text.to_string());
-            }
-            normalize_codex_timestamp(value)
-        }
-        CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
-        CodexTimestamp::Invalid => None,
-    }
 }
 
 fn normalize_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
@@ -1641,10 +1544,13 @@ mod tests {
             ("2025-09-15T00:00:00Z", "gpt-5-codex"),
             ("2026-07-29T23:59:59Z", "gpt-5.4"),
             ("2026-07-30T00:00:00Z", "gpt-5.6-luna"),
-            ("not a date", "gpt-5"),
+            ("2026-07-30T00:30:00+01:00", "gpt-5.4"),
         ] {
             assert_eq!(
-                codex_log_model_fallback(CODEX_AUTO_REVIEW_MODEL, timestamp),
+                codex_log_model_fallback(
+                    CODEX_AUTO_REVIEW_MODEL,
+                    parse_ts_timestamp(timestamp).unwrap()
+                ),
                 Some(expected),
                 "{timestamp}"
             );
