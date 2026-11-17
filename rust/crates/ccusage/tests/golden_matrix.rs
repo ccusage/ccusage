@@ -157,6 +157,76 @@ fn codebuff_fixture_keeps_distinct_messages_at_the_same_instant() {
 }
 
 #[test]
+fn focused_week_start_controls_buckets_and_last_together() {
+    for (agent, seed) in [
+        ("cline", golden::cline::seed as golden::Seed),
+        ("dsh", golden::dsh::seed),
+        ("opencode", golden::opencode::seed),
+    ] {
+        let fixture = Fixture::new();
+        let seeded = seed(fixture.root());
+        let config = fixture.write_file(
+            "week.json",
+            r#"{"commands":{"weekly":{"startOfWeek":"wednesday"}}}"#,
+        );
+        let daily = Case::new(
+            "daily",
+            "",
+            &[
+                agent,
+                "daily",
+                "--offline",
+                "--json",
+                "--timezone",
+                "UTC",
+                "--since",
+                "20251231",
+            ],
+        );
+        let expected: serde_json::Value =
+            serde_json::from_str(&run_case(fixture.root(), &seeded, &daily).stdout).unwrap();
+        for flags in [
+            vec!["-w".to_string(), "wednesday".to_string()],
+            vec!["--config".to_string(), config.display().to_string()],
+        ] {
+            let mut weekly = Case::new(
+                "weekly",
+                "",
+                &[
+                    agent,
+                    "weekly",
+                    "--offline",
+                    "--json",
+                    "--timezone",
+                    "UTC",
+                    "--last",
+                    "1",
+                ],
+            )
+            .env("CCUSAGE_TEST_NOW", "2026-01-01T12:00:00Z");
+            weekly.args.extend(flags);
+            let output = run_case(fixture.root(), &seeded, &weekly);
+            assert_eq!(output.exit, "0", "{}", output.stderr);
+            let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+            assert_eq!(
+                report["weekly"].as_array().unwrap().len(),
+                1,
+                "{agent}: {report}"
+            );
+            assert_eq!(report["weekly"][0]["week"], "2025-12-31", "{agent}");
+            assert_eq!(
+                report["totals"]["totalTokens"], expected["totals"]["totalTokens"],
+                "{agent}"
+            );
+            assert_eq!(
+                report["totals"]["totalCost"], expected["totals"]["totalCost"],
+                "{agent}"
+            );
+        }
+    }
+}
+
+#[test]
 fn pi_tied_fork_keeps_the_first_path_in_both_read_modes() {
     for parent_first in [true, false] {
         let fixture = Fixture::new();
