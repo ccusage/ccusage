@@ -21,6 +21,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `agents::AgentId`
 - `agents::AgentSpec`
 - `agents::BUILT_IN_AGENT_NAMES`
+- `agents::StandardAgent`
 - `DEFAULT_SESSION_DURATION_HOURS`
 - `home::ClaudeConfigDirs`
 - `home::claude_config_dirs`
@@ -31,6 +32,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::BlocksArgs`
 - `types::CliConfig`
 - `types::CodexSpeed`
+- `types::ColorChoice`
 - `types::Command`
 - `types::CostMode`
 - `types::CostSource`
@@ -38,6 +40,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::DailyArgs`
 - `types::NamedPiStore`
 - `types::NoConfig`
+- `types::PeriodUnit`
 - `types::PricingOverride`
 - `types::SessionArgs`
 - `types::SharedArgs`
