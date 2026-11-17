@@ -470,8 +470,9 @@ fn seed_gamma(path: &Path) {
     );
 }
 
-/// Counted: 165 tokens in two events. Only `gen_metadata` exists, and no row
-/// names a model.
+/// Counted: 15 tokens in one event. Only `gen_metadata` exists, and no row
+/// names a model. The first generation has no timestamp and no trajectory to
+/// fall back on, so it is skipped as an invalid timestamp.
 fn seed_delta(path: &Path) {
     let generations = [
         Generation {
