@@ -1,10 +1,14 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{collections::BTreeMap, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at,
+    apply_total_token_fallback,
     cli::{CostMode, PricingOverride},
     format_date_tz, format_rfc3339_millis, total_usage_tokens,
 };
@@ -69,12 +73,8 @@ pub(super) fn row_to_entry(
     };
 
     let raw_model = raw_model.trim().to_string();
-    let cost_model = pricing_model(
-        &raw_model,
-        row.provider_id.as_deref(),
-        pricing,
-        pricing_overrides,
-    );
+    let candidates =
+        ordered_pricing_candidates(&raw_model, row.provider_id.as_deref(), pricing_overrides);
     let timestamp = TimestampMs::from_millis(started_at);
     let project_path = row
         .directory
@@ -99,24 +99,27 @@ pub(super) fn row_to_entry(
             ..usage
         }
     };
-    let cost = if mode == CostMode::Display {
-        0.0
-    } else {
-        calculate_cost_for_usage_at(
-            cost_model.as_deref(),
-            cost_usage,
-            None,
-            Some(timestamp),
-            CostMode::Calculate,
-            Some(pricing),
-        )
-    };
-    let missing_pricing_model = if mode == CostMode::Display || cost_model.is_some() {
-        None
-    } else {
-        (total_usage_tokens(usage).saturating_add(extra_total_tokens) > 0)
-            .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned())
-    };
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage: cost_usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(timestamp),
+        },
+        Some(pricing),
+    );
+    let cost = priced.cost;
+    let missing_pricing_model = (mode != CostMode::Display
+        && priced.matched.is_none()
+        && total_usage_tokens(usage).saturating_add(extra_total_tokens) > 0)
+        .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned());
 
     Ok(Some((
         id.clone(),
@@ -169,35 +172,32 @@ fn pricing_candidates(raw_model: &str, provider_id: Option<&str>) -> Vec<String>
     candidates
 }
 
-fn pricing_model(
+fn ordered_pricing_candidates(
     raw_model: &str,
     provider_id: Option<&str>,
-    pricing: &PricingMap,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
-) -> Option<String> {
+) -> Vec<String> {
     let candidates = pricing_candidates(raw_model, provider_id);
-    if let Some(candidate) = candidates
+    let mut ordered: Vec<_> = candidates
         .iter()
-        .find(|candidate| pricing_overrides.contains_key(*candidate))
-    {
-        return Some(candidate.clone());
-    }
-    if provider_id.is_some_and(|provider| !is_zai_provider(Some(provider))) {
-        return None;
-    }
-
-    if let Some(candidate) = candidates
-        .iter()
-        .filter(|candidate| candidate.starts_with("zai/"))
-        .find(|candidate| pricing.find(candidate).is_some())
-    {
-        return Some(candidate.clone());
-    }
-    candidates
-        .iter()
-        .filter(|candidate| !candidate.starts_with("zai/"))
-        .find(|candidate| pricing.find(candidate).is_some())
+        .filter(|name| pricing_overrides.contains_key(*name))
         .cloned()
+        .collect();
+    if provider_id.is_none_or(|provider| is_zai_provider(Some(provider))) {
+        ordered.extend(
+            candidates
+                .iter()
+                .filter(|name| name.starts_with("zai/"))
+                .cloned(),
+        );
+        ordered.extend(
+            candidates
+                .iter()
+                .filter(|name| !name.starts_with("zai/"))
+                .cloned(),
+        );
+    }
+    ordered
 }
 
 fn is_zai_provider(provider_id: Option<&str>) -> bool {
@@ -465,5 +465,94 @@ mod tests {
         assert_eq!(reject(blank_id), Some(RowRejection::InvalidIdentity));
         assert_eq!(reject(null_model), Some(RowRejection::InvalidIdentity));
         assert_eq!(reject(zero_timestamp), Some(RowRejection::InvalidTimestamp));
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let overrides: BTreeMap<String, PricingOverride> = BTreeMap::new();
+                let legacy = pricing_candidates(model, Some(provider));
+                let old_name = legacy
+                    .iter()
+                    .find(|name| overrides.contains_key(*name))
+                    .cloned()
+                    .or_else(|| {
+                        is_zai_provider(Some(provider))
+                            .then(|| {
+                                legacy
+                                    .iter()
+                                    .filter(|name| name.starts_with("zai/"))
+                                    .chain(legacy.iter().filter(|name| !name.starts_with("zai/")))
+                                    .find(|name| pricing.find(name).is_some())
+                                    .cloned()
+                            })
+                            .flatten()
+                    });
+                let old = old_name
+                    .as_deref()
+                    .and_then(|name| pricing.find(name).map(|rates| (name, rates)));
+                let candidates = pricing_candidates(model, Some(provider));
+                let ordered: Vec<_> = if is_zai_provider(Some(provider)) {
+                    candidates
+                        .iter()
+                        .filter(|name| name.starts_with("zai/"))
+                        .chain(candidates.iter().filter(|name| !name.starts_with("zai/")))
+                        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let new = pricing.resolve(&ordered);
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
     }
 }

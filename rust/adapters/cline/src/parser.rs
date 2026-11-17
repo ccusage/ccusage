@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use ccusage_adapter_common::{UnitError, units::read_json};
@@ -5,9 +9,8 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
-    missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    format_date_tz, format_rfc3339_millis, stored_cost_for_mode,
 };
 
 use super::paths::{SourceFile, SourceKind};
@@ -199,36 +202,26 @@ fn loaded_entry(
         .as_deref()
         .filter(|_| !model.contains('/'))
         .map(|provider| format!("{provider}/{model}"));
-    let model_for_pricing = if pricing.find(&model).is_some() {
-        model.as_str()
-    } else {
-        provider_model
-            .as_deref()
-            .filter(|model| pricing.find(model).is_some())
-            .unwrap_or(model.as_str())
-    };
-    let cost = calculate_cost_for_usage_at(
-        Some(model_for_pricing),
-        usage,
-        reported_cost,
-        Some(timestamp),
-        mode,
+    let candidates: Vec<_> = std::iter::once(model.as_str())
+        .chain(provider_model.as_deref())
+        .map(|name| (name, MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: reported_cost,
+            mode,
+            timestamp: Some(timestamp),
+        },
         Some(pricing),
     );
-    let missing_pricing_model = if mode == CostMode::Display
-        || (mode == CostMode::Auto && reported_cost.is_some())
-        || total_usage_tokens(usage) == 0
-    {
-        None
-    } else {
-        let candidates = std::iter::once(model.clone()).chain(provider_model);
-        missing_pricing_model_for_candidates(
-            &model,
-            candidates,
-            total_usage_tokens(usage),
-            Some(pricing),
-        )
-    };
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
     let data = UsageEntry {
         session_id: Some(session_id.clone()),
         timestamp: timestamp_text,
@@ -1041,5 +1034,70 @@ mod tests {
             cli_timestamp(&json!({"timestamp": "1970-01-01T00:00:00Z"})),
             Some(crate::TimestampMs::UNIX_EPOCH)
         );
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let candidates = [model.to_string(), format!("{provider}/{model}")];
+                let old = candidates
+                    .iter()
+                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                let typed: Vec<_> = candidates
+                    .iter()
+                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                    .collect();
+                let new = pricing.resolve(&typed);
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
     }
 }

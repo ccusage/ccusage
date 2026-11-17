@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -6,8 +10,8 @@ use ccusage_adapter_common::{SqliteStage, UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use crate::{
-    LoadedEntry, Pricing, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, calculate_cost_from_pricing, cli::CostMode, format_date_tz,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    format_date_tz,
 };
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
@@ -1051,7 +1055,7 @@ pub(super) fn event_to_loaded(
     let extra_total_tokens = event
         .total_output_tokens
         .saturating_sub(event.output_tokens);
-    let cost = calculate_antigravity_cost(
+    let (cost, missing_pricing_model) = price_antigravity(
         &event.model,
         event.provider,
         cost_usage,
@@ -1059,8 +1063,6 @@ pub(super) fn event_to_loaded(
         mode,
         pricing,
     );
-    let missing_pricing_model =
-        missing_antigravity_pricing(&event.model, event.provider, cost_usage, mode, pricing);
     let data = UsageEntry {
         session_id: Some(event.session_id.clone()),
         timestamp: event.timestamp_text,
@@ -1093,83 +1095,53 @@ pub(super) fn event_to_loaded(
     }
 }
 
-fn calculate_antigravity_cost(
+fn price_antigravity(
     model: &str,
     provider: Option<u64>,
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
     mode: CostMode,
     pricing: &PricingMap,
-) -> f64 {
-    match mode {
-        CostMode::Display => 0.0,
-        CostMode::Auto | CostMode::Calculate => {
-            let exact_lookup = gemini_flash_pricing_alias(model).is_some();
-            if exact_lookup {
-                model_candidates(model, provider)
-                    .into_iter()
-                    .find_map(|candidate| find_exact_pricing_with_alias(pricing, &candidate))
-                    .map(|pricing| calculate_cost_from_pricing(usage, pricing))
-                    .unwrap_or(0.0)
-            } else {
-                model_candidates(model, provider)
-                    .into_iter()
-                    .find_map(|candidate| {
-                        pricing.find(&candidate).map(|_| {
-                            calculate_cost_for_usage_at(
-                                Some(&candidate),
-                                usage,
-                                None,
-                                Some(timestamp),
-                                CostMode::Calculate,
-                                Some(pricing),
-                            )
-                        })
-                    })
-                    .unwrap_or(0.0)
-            }
-        }
-    }
-}
-
-fn missing_antigravity_pricing(
-    model: &str,
-    provider: Option<u64>,
-    usage: TokenUsageRaw,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> Option<String> {
-    if mode == CostMode::Display {
-        return None;
-    }
-    let total_tokens = usage
-        .input_tokens
-        .saturating_add(usage.output_tokens)
-        .saturating_add(usage.cache_creation_token_count())
-        .saturating_add(usage.cache_read_input_tokens);
-    if total_tokens == 0 {
-        return None;
-    }
-    let exact_lookup = gemini_flash_pricing_alias(model).is_some();
-    model_candidates(model, provider)
+) -> (f64, Option<String>) {
+    let exact = gemini_flash_pricing_alias(model).is_some();
+    let candidates: Vec<_> = model_candidates(model, provider)
         .into_iter()
-        .all(|candidate| {
-            if exact_lookup {
-                find_exact_pricing_with_alias(pricing, &candidate).is_none()
-            } else {
-                pricing.find(&candidate).is_none()
-            }
+        .flat_map(|name| {
+            let alias = crate::model_aliases::resolve_model_name(&name).into_owned();
+            let extra = (exact && alias != name).then_some((alias, MatchKind::Exact));
+            std::iter::once((
+                name,
+                if exact {
+                    MatchKind::Exact
+                } else {
+                    MatchKind::Fuzzy
+                },
+            ))
+            .chain(extra)
         })
-        .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
-}
-
-fn find_exact_pricing_with_alias(pricing: &PricingMap, model: &str) -> Option<Pricing> {
-    pricing.find_exact_with_fallback(model).or_else(|| {
-        let alias = crate::model_aliases::resolve_model_name(model);
-        (alias.as_ref() != model)
-            .then(|| pricing.find_exact_with_fallback(alias.as_ref()))
-            .flatten()
-    })
+        .collect();
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|(name, kind)| (name.as_str(), *kind))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(timestamp),
+        },
+        Some(pricing),
+    );
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(model).into_owned()),
+    )
 }
 
 const GEMINI_FLASH_EFFORT_FAMILIES: [&str; 3] =
@@ -1454,9 +1426,9 @@ mod tests {
     use super::test_support::{UsageFixture, metadata_blob_with_steps, step_metadata_blob};
     use super::{
         API_PROVIDER_GOOGLE_GEMINI, DEFAULT_MODEL, EventContext, ModelUsage, ProtoField,
-        ProtoValue, append_usage_event, calculate_antigravity_cost, field_bytes, field_bytes_all,
-        field_text, field_varint, merge_usage_event, missing_antigravity_pricing, model_candidates,
-        model_from_id, normalize_antigravity_model, parse_generator_metadata, parse_step_metadata,
+        ProtoValue, append_usage_event, field_bytes, field_bytes_all, field_text, field_varint,
+        merge_usage_event, model_candidates, model_from_id, normalize_antigravity_model,
+        parse_generator_metadata, parse_step_metadata, price_antigravity,
     };
     use crate::{PricingMap, TimestampMs, TokenUsageRaw, cli::CostMode, parse_ts_timestamp};
 
@@ -1665,7 +1637,7 @@ mod tests {
     fn missing_pricing_token_total_saturates() {
         let pricing = PricingMap::default();
         let result = std::panic::catch_unwind(|| {
-            missing_antigravity_pricing(
+            price_antigravity(
                 "antigravity-unpriced",
                 None,
                 TokenUsageRaw {
@@ -1676,9 +1648,11 @@ mod tests {
                     speed: None,
                     cache_creation: None,
                 },
+                TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
                 &pricing,
             )
+            .1
         });
 
         assert!(result.is_ok());
@@ -1807,23 +1781,26 @@ mod tests {
             output_tokens: 1_000_000,
             ..TokenUsageRaw::default()
         };
-        let cost = calculate_antigravity_cost(
+        let cost = price_antigravity(
             "claude-opus-5-5",
             None,
             usage,
             TimestampMs::UNIX_EPOCH,
             CostMode::Calculate,
             &pricing,
-        );
+        )
+        .0;
         assert!(cost > 0.0);
         assert!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "claude-opus-5-5",
                 None,
                 usage,
+                TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
+                &pricing
             )
+            .1
             .is_none()
         );
     }
@@ -1873,7 +1850,7 @@ mod tests {
             2
         );
 
-        let cost = calculate_antigravity_cost(
+        let cost = price_antigravity(
             "gemini-3.7-flash-medium",
             Some(API_PROVIDER_GOOGLE_GEMINI),
             TokenUsageRaw {
@@ -1887,7 +1864,8 @@ mod tests {
             TimestampMs::UNIX_EPOCH,
             CostMode::Calculate,
             &pricing,
-        );
+        )
+        .0;
 
         assert_eq!(cost, 2.0);
     }
@@ -1916,24 +1894,27 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_antigravity_cost(
+            price_antigravity(
                 "gemini-3.8-flash-medium",
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
-            ),
+                &pricing
+            )
+            .0,
             0.0
         );
         assert_eq!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "gemini-3.8-flash-medium",
                 None,
                 usage,
+                TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
+                &pricing
             )
+            .1
             .as_deref(),
             Some("gemini-3.8-flash-medium")
         );
@@ -1967,34 +1948,39 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_antigravity_cost(
+            price_antigravity(
                 "gemini-3.6-flash-medium",
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
-            ),
+                &pricing
+            )
+            .0,
             3.0
         );
         assert!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "gemini-3.6-flash-medium",
                 None,
                 usage,
+                TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
+                &pricing
             )
+            .1
             .is_none()
         );
         assert_eq!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "gemini-3.8-flash-low",
                 None,
                 usage,
+                TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
+                &pricing
             )
+            .1
             .as_deref(),
             Some("custom-unpriced-flash-low")
         );
@@ -2009,7 +1995,7 @@ mod tests {
             ..TokenUsageRaw::default()
         };
         let cost_at = |timestamp| {
-            calculate_antigravity_cost(
+            price_antigravity(
                 "deepseek-v4-flash",
                 None,
                 usage,
@@ -2017,9 +2003,95 @@ mod tests {
                 CostMode::Calculate,
                 &pricing,
             )
+            .0
         };
 
         assert!((cost_at("2026-08-17T01:00:00Z") - 0.44).abs() < 1e-12);
         assert!((cost_at("2026-08-17T12:00:00Z") - 0.22).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let candidates = model_candidates(model, Some(API_PROVIDER_GOOGLE_GEMINI));
+                let exact = gemini_flash_pricing_alias(model).is_some();
+                let old = candidates.iter().find_map(|name| {
+                    let rates = if exact {
+                        pricing.find_exact_with_fallback(name).or_else(|| {
+                            let alias = crate::model_aliases::resolve_model_name(name);
+                            (alias.as_ref() != name)
+                                .then(|| pricing.find_exact_with_fallback(alias.as_ref()))
+                                .flatten()
+                        })
+                    } else {
+                        pricing.find(name)
+                    };
+                    rates.map(|rates| (name.as_str(), rates))
+                });
+                let typed: Vec<_> = candidates
+                    .iter()
+                    .map(|name| {
+                        (
+                            name.as_str(),
+                            if exact {
+                                MatchKind::Exact
+                            } else {
+                                MatchKind::Fuzzy
+                            },
+                        )
+                    })
+                    .collect();
+                let new = pricing.resolve(&typed);
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
     }
 }

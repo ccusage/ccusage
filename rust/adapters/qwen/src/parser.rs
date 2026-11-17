@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{fs, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -9,8 +13,8 @@ use ccusage_adapter_common::{jsonl, units::UnitError};
 use super::paths;
 use crate::{
     Diagnostics, LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, missing_pricing_model_for_candidates, parse_ts_timestamp,
+    apply_total_token_fallback, cli::CostMode, fast::LinePrefilter, format_date_tz,
+    parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -145,8 +149,8 @@ fn parse_line(
         cache_creation: None,
         ..display_usage
     };
-    let cost = calculate_qwen_cost(&model, billable_usage, timestamp, mode, pricing);
-    let missing_pricing_model = missing_qwen_pricing(&model, billable_usage, mode, pricing);
+    let (cost, missing_pricing_model) =
+        price_qwen(&model, billable_usage, timestamp, mode, pricing);
     let data = UsageEntry {
         session_id: Some(session_id.clone()),
         timestamp: timestamp_text.clone(),
@@ -179,44 +183,35 @@ fn parse_line(
     }))
 }
 
-fn calculate_qwen_cost(
+fn price_qwen(
     model: &str,
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> f64 {
-    for candidate in qwen_model_candidates(model) {
-        if mode == CostMode::Display
-            || pricing.is_some_and(|pricing| pricing.find(&candidate).is_some())
-        {
-            return calculate_cost_for_usage_at(
-                Some(&candidate),
-                usage,
-                None,
-                Some(timestamp),
-                mode,
-                pricing,
-            );
-        }
-    }
-    0.0
-}
-
-fn missing_qwen_pricing(
-    model: &str,
-    usage: TokenUsageRaw,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if mode == CostMode::Display {
-        return None;
-    }
-    missing_pricing_model_for_candidates(
-        model,
-        qwen_model_candidates(model),
-        crate::total_usage_tokens(usage),
+) -> (f64, Option<String>) {
+    let candidates = qwen_model_candidates(model);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(timestamp),
+        },
         pricing,
+    );
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(model).into_owned()),
     )
 }
 
@@ -286,7 +281,7 @@ mod tests {
             }"#,
         );
 
-        let cost = calculate_qwen_cost(
+        let (cost, _) = price_qwen(
             "free-model",
             TokenUsageRaw {
                 input_tokens: 100,
@@ -373,5 +368,70 @@ mod tests {
             entry_id(&entry),
             r#"["session:1","2026-01-02T00:00:00.000Z","model:1",1,2,3,4]"#
         );
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let candidates = qwen_model_candidates(model);
+                let old = candidates
+                    .iter()
+                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                let typed: Vec<_> = candidates
+                    .iter()
+                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                    .collect();
+                let new = pricing.resolve(&typed);
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
     }
 }
