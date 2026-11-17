@@ -159,10 +159,15 @@ fn render_statusline(
     let today_shared = statusline_today_shared(args, shared, now);
     let today_cost = if let Some(entries) = history.as_ref() {
         let window = ReportWindow::from_shared(&today_shared);
+        let (since, until) = window.bounds_ms();
         sum_costs(
             entries
                 .iter()
-                .filter(|entry| window.contains_timestamp(entry.timestamp))
+                .filter(|entry| {
+                    let timestamp = entry.timestamp.as_millis();
+                    since.is_none_or(|since| timestamp >= since)
+                        && until.is_none_or(|until| timestamp < until)
+                })
                 .map(|entry| entry.cost),
         )
     } else {
