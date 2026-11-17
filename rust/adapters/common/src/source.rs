@@ -147,7 +147,7 @@ impl<'a> LoaderPricing<'a> {
                 ReportPricing::for_load(shared, supplied).map(Self::Pipeline)
             }
             (PricingSupply::Source, Some(pricing)) => {
-                Ok(Self::Pipeline(ReportPricing::Supplied(pricing)))
+                ReportPricing::for_load(shared, Some(pricing)).map(Self::Pipeline)
             }
             (PricingSupply::Source, None) => Ok(Self::Source),
         }
@@ -466,6 +466,10 @@ mod pricing_tests {
         assert!(matches!(pricing, ReportPricing::Display));
         let loader = super::LoaderPricing::Pipeline(pricing);
         assert!(loader.as_map().unwrap().is_none());
+        let source_owned =
+            super::LoaderPricing::for_load(super::PricingSupply::Source, &shared, Some(&supplied))
+                .unwrap();
+        assert!(source_owned.as_map().unwrap().is_none());
     }
 
     #[test]
