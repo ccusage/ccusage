@@ -577,11 +577,16 @@ mod tests {
     }
 
     #[test]
-    fn charges_cached_input_at_input_rate_when_codex_pricing_omits_cache_read_rate() {
+    fn absent_cache_read_rates_follow_the_shared_provider_family_default() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
                 "gpt-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000010,
+                    "litellm_provider": "openai"
+                },
+                "other-test": {
                     "input_cost_per_token": 0.000001,
                     "output_cost_per_token": 0.000010
                 }
@@ -595,15 +600,17 @@ mod tests {
             total_tokens: 105,
             ..CodexModelUsage::default()
         };
+        let cost = |model| {
+            calculate_codex_model_cost(
+                model,
+                &usage,
+                &pricing,
+                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            )
+        };
 
-        let cost = calculate_codex_model_cost(
-            "gpt-test",
-            &usage,
-            &pricing,
-            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-        );
-
-        assert!((cost - 0.00015).abs() < f64::EPSILON);
+        assert!((cost("gpt-test") - 0.00015).abs() < 1e-15);
+        assert!((cost("other-test") - (60e-6 + 40e-6 * 0.1 + 50e-6)).abs() < 1e-15);
     }
 
     #[test]
