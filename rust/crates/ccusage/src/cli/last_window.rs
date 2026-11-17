@@ -1,16 +1,17 @@
-use ccusage_cli::{SharedArgs, WeekDay};
+use ccusage_cli::Command;
 use ccusage_core::utc_now;
 use ccusage_report::{PeriodUnit, format_date, last_periods_since};
-
-use super::Cli;
 
 /// Turns `--last N` into the `--since` bound every loader already understands.
 ///
 /// The count means "the most recent N periods of the report's own unit", so it
 /// can only be resolved once the command is known: `daily --last 1` is today,
 /// `weekly --last 1` is the current week, `monthly --last 1` is this month.
-pub(crate) fn resolve(cli: &mut Cli) -> Result<(), String> {
-    let Some((shared, unit, start_of_week)) = window_target(cli) else {
+pub(crate) fn resolve(command: &mut Command) -> Result<(), String> {
+    let Some((unit, start_of_week)) = command.period() else {
+        return Ok(());
+    };
+    let Some(shared) = command.shared_mut() else {
         return Ok(());
     };
     let Some(last) = shared.last else {
@@ -24,22 +25,12 @@ pub(crate) fn resolve(cli: &mut Cli) -> Result<(), String> {
     Ok(())
 }
 
-fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)> {
-    match cli.command.as_mut() {
-        None => Some((&mut cli.shared, PeriodUnit::Day, WeekDay::Monday)),
-        Some(command) => {
-            let (unit, start_of_week) = command.period()?;
-            Some((command.shared_mut()?, unit, start_of_week))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use ccusage_cli::{
-        AgentCommandArgs, AgentReportKind, CodexSpeed, Command, SortOrder, WeeklyArgs,
+        AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
     };
 
     use super::*;
@@ -69,19 +60,9 @@ mod tests {
     }
 
     fn resolved_since(command: Command) -> Option<String> {
-        let mut cli = Cli {
-            command: Some(command),
-            shared: SharedArgs::with_defaults(),
-        };
-        resolve(&mut cli).unwrap();
-        match cli.command {
-            Some(Command::All(args))
-            | Some(Command::Agent(ccusage_cli::AgentId::Codex, args))
-            | Some(Command::Agent(ccusage_cli::AgentId::Cline, args)) => args.shared.since,
-            Some(Command::Weekly(args)) => args.shared.since,
-            Some(Command::Monthly(shared)) => shared.since,
-            _ => panic!("unexpected command"),
-        }
+        let mut command = command;
+        resolve(&mut command).unwrap();
+        command.shared().and_then(|shared| shared.since.clone())
     }
 
     #[test]
@@ -153,34 +134,30 @@ mod tests {
 
     #[test]
     fn leaves_commands_without_last_untouched() {
-        let mut cli = Cli {
-            command: Some(Command::Monthly(SharedArgs {
-                order: SortOrder::Desc,
-                ..SharedArgs::with_defaults()
-            })),
-            shared: SharedArgs::with_defaults(),
-        };
-
-        resolve(&mut cli).unwrap();
-
-        let Some(Command::Monthly(shared)) = cli.command else {
-            panic!("expected monthly command");
-        };
-        assert!(shared.since.is_none());
+        let mut command = Command::Monthly(SharedArgs {
+            order: SortOrder::Desc,
+            ..SharedArgs::with_defaults()
+        });
+        resolve(&mut command).unwrap();
+        assert!(command.shared().unwrap().since.is_none());
     }
 
     #[test]
     fn resolves_the_bare_command_as_a_daily_window() {
-        let mut cli = Cli {
-            command: None,
-            shared: shared_with_last(2),
-        };
-
-        resolve(&mut cli).unwrap();
-
+        let mut command = ccusage_cli_parser::parse_from_with_config(
+            ["ccusage", "--last", "2", "--timezone", "UTC"]
+                .into_iter()
+                .map(std::ffi::OsString::from),
+            &ccusage_cli::NoConfig,
+            5.0,
+            "test",
+            None,
+        )
+        .unwrap();
+        resolve(&mut command).unwrap();
         let today = format_date(utc_now(), Some("UTC"));
         assert_eq!(
-            cli.shared.since,
+            command.shared().unwrap().since,
             last_periods_since(PeriodUnit::Day, 2, &today, WeekDay::Monday)
         );
     }

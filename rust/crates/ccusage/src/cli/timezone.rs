@@ -1,14 +1,12 @@
 use ccusage_cli::Command;
 use ccusage_report::is_valid_timezone;
 
-use super::Cli;
-
 /// A timezone can arrive from `--timezone` or from a config file, and both
 /// land on the parsed args before this runs. Checking here, once, rejects an
 /// unknown name instead of letting `resolve_tz` fall back to the local zone,
 /// which can group usage under the wrong date.
-pub(crate) fn validate(cli: &Cli) -> Result<(), String> {
-    match effective_timezone(cli) {
+pub(crate) fn validate(command: &Command) -> Result<(), String> {
+    match effective_timezone(command) {
         Some(timezone) if !is_valid_timezone(timezone) => Err(format!(
             "Invalid value for --timezone '{timezone}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
         )),
@@ -16,13 +14,10 @@ pub(crate) fn validate(cli: &Cli) -> Result<(), String> {
     }
 }
 
-/// The parser clones the root options into the command before command flags
-/// apply, so only the command's copy is current once a command is present.
-fn effective_timezone(cli: &Cli) -> Option<&str> {
-    match cli.command.as_ref() {
-        None => cli.shared.timezone.as_deref(),
-        Some(Command::Statusline(args)) => args.timezone.as_deref(),
-        Some(command) => command
+fn effective_timezone(command: &Command) -> Option<&str> {
+    match command {
+        Command::Statusline(args) => args.timezone.as_deref(),
+        command => command
             .shared()
             .and_then(|shared| shared.timezone.as_deref()),
     }
@@ -40,12 +35,13 @@ mod tests {
     fn validated(args: &[&str]) -> Result<(), String> {
         let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
         let config = ConfigContext::from_args(&args);
-        let cli = Cli::parse_from_with_config(
+        let cli = ccusage_cli_parser::parse_from_with_config(
             std::iter::once(OsString::from("ccusage"))
                 .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
             &config,
             5.0,
             "test",
+            None,
         )
         .unwrap();
         validate(&cli)

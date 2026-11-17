@@ -1,7 +1,7 @@
 # ccusage-cli-parser
 
 Argument parsing and `--help` rendering: it turns a command line, plus any
-`ccusage.json` defaults, into the `Cli` value the binary runs.
+`ccusage.json` defaults, into the resolved `Command` the binary runs.
 
 ## Owns
 

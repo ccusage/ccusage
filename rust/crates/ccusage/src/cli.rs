@@ -2,12 +2,10 @@ mod last_window;
 mod sources;
 mod timezone;
 
-use std::{collections::BTreeMap, env, ffi::OsString, process};
+use std::{env, ffi::OsString, process};
 
-use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, CodexSpeed, Command, DEFAULT_SESSION_DURATION_HOURS, WeekDay,
-};
-use ccusage_cli_parser::Cli;
+use ccusage_cli::{Command, DEFAULT_SESSION_DURATION_HOURS, WeekDay};
+use ccusage_cli_parser::parse_from_with_config;
 use ccusage_config::ConfigContext;
 
 pub(crate) fn parse() -> Command {
@@ -16,10 +14,8 @@ pub(crate) fn parse() -> Command {
         exit_with_usage(&message);
     });
     let config = ConfigContext::from_args(&arg_strings);
-    let mut command = unified_or_command(
-        try_parse_with(args.clone(), &config, None)
-            .unwrap_or_else(|message| exit_with_usage(&message)),
-    );
+    let mut command = try_parse_with(args.clone(), &config, None)
+        .unwrap_or_else(|message| exit_with_usage(&message));
     if let Command::All(unified) = &mut command
         && let Err(message) = sources::resolve(unified, &args, &config)
     {
@@ -34,40 +30,17 @@ fn try_parse_with(
     args: Vec<OsString>,
     config: &ConfigContext,
     unified_week_start: Option<WeekDay>,
-) -> Result<Cli, String> {
-    let mut cli = Cli::parse_from_with_config(
+) -> Result<Command, String> {
+    let mut command = parse_from_with_config(
         args,
         config,
         DEFAULT_SESSION_DURATION_HOURS,
         env!("CCUSAGE_VERSION"),
+        unified_week_start,
     )?;
-    if let (Some(start_of_week), Some(Command::All(args))) = (unified_week_start, &mut cli.command)
-    {
-        args.start_of_week = start_of_week;
-    }
-    timezone::validate(&cli)?;
-    last_window::resolve(&mut cli)?;
-    Ok(cli)
-}
-
-/// A bare `ccusage` is the unified daily report over the root options.
-fn unified_or_command(cli: Cli) -> Command {
-    let Cli { command, shared } = cli;
-    command.unwrap_or_else(|| {
-        Command::All(AgentCommandArgs {
-            shared,
-            kind: AgentReportKind::Daily,
-            session_id: None,
-            sections: None,
-            by_agent: false,
-            pi_path: None,
-            open_claw_path: None,
-            codex_speed: CodexSpeed::Auto,
-            include_claude_agent: false,
-            start_of_week: WeekDay::Monday,
-            sources: BTreeMap::new(),
-        })
-    })
+    timezone::validate(&command)?;
+    last_window::resolve(&mut command)?;
+    Ok(command)
 }
 
 fn exit_with_usage(message: &str) -> ! {

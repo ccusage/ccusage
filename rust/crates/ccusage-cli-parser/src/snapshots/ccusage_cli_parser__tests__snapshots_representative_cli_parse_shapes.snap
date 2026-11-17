@@ -6,24 +6,32 @@ expression: cases
   {
     "case": "default all-agent daily",
     "cli": {
-      "command": null,
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
+      "command": {
+        "byAgent": false,
+        "codexSpeed": "Auto",
+        "kind": "Daily",
+        "openClawPath": null,
+        "piPath": null,
+        "sections": null,
+        "shared": {
+          "breakdown": false,
+          "color": false,
+          "compact": false,
+          "debug": false,
+          "debugSamples": 5,
+          "jq": null,
+          "json": false,
+          "mode": "Auto",
+          "noColor": false,
+          "noOffline": false,
+          "offline": false,
+          "order": "Asc",
+          "since": null,
+          "singleThread": false,
+          "timezone": null,
+          "until": null
+        },
+        "type": "all"
       }
     }
   },
@@ -56,24 +64,6 @@ expression: cases
           "until": "20260110"
         },
         "type": "all"
-      },
-      "shared": {
-        "breakdown": true,
-        "color": true,
-        "compact": true,
-        "debug": true,
-        "debugSamples": 9,
-        "jq": ".totals",
-        "json": true,
-        "mode": "Calculate",
-        "noColor": true,
-        "noOffline": true,
-        "offline": true,
-        "order": "Desc",
-        "since": "20260102",
-        "singleThread": true,
-        "timezone": "Asia/Tokyo",
-        "until": "20260110"
       }
     }
   },
@@ -101,24 +91,6 @@ expression: cases
         },
         "startOfWeek": "Monday",
         "type": "weekly"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -148,24 +120,6 @@ expression: cases
           "until": null
         },
         "type": "daily"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -198,24 +152,6 @@ expression: cases
           "until": null
         },
         "type": "codex"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -248,24 +184,6 @@ expression: cases
           "until": null
         },
         "type": "opencode"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -298,24 +216,6 @@ expression: cases
           "until": null
         },
         "type": "pi"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -348,24 +248,6 @@ expression: cases
           "until": null
         },
         "type": "openclaw"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -398,24 +280,6 @@ expression: cases
           "until": null
         },
         "type": "grok"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -448,24 +312,6 @@ expression: cases
           "until": null
         },
         "type": "antigravity"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -498,24 +344,6 @@ expression: cases
           "until": null
         },
         "type": "zcode"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -548,24 +376,6 @@ expression: cases
           "until": null
         },
         "type": "cline"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -598,24 +408,6 @@ expression: cases
           "until": null
         },
         "type": "dsh"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -646,24 +438,6 @@ expression: cases
         },
         "tokenLimit": "max",
         "type": "blocks"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   },
@@ -682,24 +456,6 @@ expression: cases
         "refreshInterval": 3,
         "type": "statusline",
         "visualBurnRate": "EmojiText"
-      },
-      "shared": {
-        "breakdown": false,
-        "color": false,
-        "compact": false,
-        "debug": false,
-        "debugSamples": 5,
-        "jq": null,
-        "json": false,
-        "mode": "Auto",
-        "noColor": false,
-        "noOffline": false,
-        "offline": false,
-        "order": "Asc",
-        "since": null,
-        "singleThread": false,
-        "timezone": null,
-        "until": null
       }
     }
   }

@@ -38,32 +38,14 @@ impl RootAllOptions {
 
     fn into_agent_args(self, shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
         AgentCommandArgs {
-            shared,
-            kind,
-            session_id: None,
             sections: self.sections,
             by_agent: self.by_agent,
-            pi_path: None,
-            open_claw_path: None,
-            codex_speed: CodexSpeed::Auto,
-            include_claude_agent: false,
-            start_of_week: WeekDay::Monday,
-            sources: BTreeMap::new(),
+            ..agent_command_args(shared, kind)
         }
     }
 }
 
 impl Cli {
-    // The binary parses through parse_from_with_config, since it has to hand the
-    // parser a config context; this shorthand exists for the tests.
-    #[cfg(test)]
-    pub(crate) fn parse_from<I>(args: I) -> Result<Self, String>
-    where
-        I: IntoIterator<Item = OsString>,
-    {
-        Self::parse_from_with_config(args, &ccusage_cli::NoConfig, 5.0, env!("CARGO_PKG_VERSION"))
-    }
-
     pub fn parse_from_with_config<I>(
         args: I,
         config: &dyn CliConfig,
@@ -73,64 +55,83 @@ impl Cli {
     where
         I: IntoIterator<Item = OsString>,
     {
-        let mut parser = ArgParser::new(args.into_iter().skip(1).collect())?;
-        normalize_legacy_agent_command_args(&mut parser.args);
-        match control_arg(&parser.args) {
-            Some(ControlArg::Version) => print_version_and_exit(version),
-            Some(ControlArg::Help) => print_help_and_exit(&parser.args),
-            None => {}
-        }
-        if let Some(message) = report_flag_alias_error(&parser.args) {
-            return Err(message);
-        }
-        if let Some(message) = agent_filter_option_error(&parser.args) {
-            return Err(message);
-        }
-        if let Some(message) = unsupported_agent_report_error(&parser.args) {
-            return Err(message);
-        }
-        if let Some(message) = config.config_error() {
-            return Err(message.to_string());
-        }
-        let mut shared = SharedArgs::with_defaults();
-        config.apply_shared(&mut shared);
-        let mut root_all_options = RootAllOptions::default();
-        while let Some(arg) = parser.peek() {
-            if is_command(arg) {
-                break;
-            }
-            if !arg.starts_with('-') {
-                return Err(format!("Unknown command '{arg}'"));
-            }
-            if parse_root_all_arg(&mut parser, &mut root_all_options)? {
-                continue;
-            }
-            parse_shared_arg(&mut parser, &mut shared)?;
-        }
-
-        let command = match parser.next() {
-            None if root_all_options.is_used() => Some(Command::All(
-                root_all_options.into_agent_args(shared.clone(), AgentReportKind::Daily),
-            )),
-            None => None,
-            Some(command) => Some(parse_command(
-                &command,
-                &mut parser,
-                shared.clone(),
-                config,
-                default_session_duration_hours,
-                root_all_options,
-            )?),
-        };
-        parser.finish()?;
-        if let Some(message) = last_option_error(command.as_ref(), &shared) {
-            return Err(message);
-        }
-        if let Some(message) = date_window_error(command.as_ref(), &shared) {
-            return Err(message);
-        }
-        Ok(Self { command, shared })
+        parse_from_with_config(args, config, default_session_duration_hours, version, None).map(
+            |command| Self {
+                command: Some(command),
+            },
+        )
     }
+}
+
+pub fn parse_from_with_config<I>(
+    args: I,
+    config: &dyn CliConfig,
+    default_session_duration_hours: f64,
+    version: &'static str,
+    week_start_override: Option<WeekDay>,
+) -> Result<Command, String>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut parser = ArgParser::new(args.into_iter().skip(1).collect())?;
+    normalize_legacy_agent_command_args(&mut parser.args);
+    match control_arg(&parser.args) {
+        Some(ControlArg::Version) => print_version_and_exit(version),
+        Some(ControlArg::Help) => print_help_and_exit(&parser.args),
+        None => {}
+    }
+    if let Some(message) = report_flag_alias_error(&parser.args) {
+        return Err(message);
+    }
+    if let Some(message) = agent_filter_option_error(&parser.args) {
+        return Err(message);
+    }
+    if let Some(message) = unsupported_agent_report_error(&parser.args) {
+        return Err(message);
+    }
+    if let Some(message) = config.config_error() {
+        return Err(message.to_string());
+    }
+    let mut shared = SharedArgs::with_defaults();
+    config.apply_shared(&mut shared);
+    let mut root_all_options = RootAllOptions::default();
+    while let Some(arg) = parser.peek() {
+        if is_command(arg) {
+            break;
+        }
+        if !arg.starts_with('-') {
+            return Err(format!("Unknown command '{arg}'"));
+        }
+        if parse_root_all_arg(&mut parser, &mut root_all_options)? {
+            continue;
+        }
+        parse_shared_arg(&mut parser, &mut shared)?;
+    }
+
+    let mut command = match parser.next() {
+        None => {
+            Command::All(root_all_options.into_agent_args(shared.clone(), AgentReportKind::Daily))
+        }
+        Some(command) => parse_command(
+            &command,
+            &mut parser,
+            shared.clone(),
+            config,
+            default_session_duration_hours,
+            root_all_options,
+        )?,
+    };
+    if let (Some(start_of_week), Command::All(args)) = (week_start_override, &mut command) {
+        args.start_of_week = start_of_week;
+    }
+    parser.finish()?;
+    if let Some(message) = last_option_error(&command, &shared) {
+        return Err(message);
+    }
+    if let Some(message) = date_window_error(&command) {
+        return Err(message);
+    }
+    Ok(command)
 }
 
 fn control_arg(args: &[String]) -> Option<ControlArg> {
@@ -375,17 +376,10 @@ fn parse_all_command(
         parse_shared_arg(parser, &mut shared)?;
     }
     Ok(Command::All(AgentCommandArgs {
-        shared,
-        kind,
-        session_id: None,
         sections,
         by_agent,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed: CodexSpeed::Auto,
-        include_claude_agent: false,
         start_of_week,
-        sources: BTreeMap::new(),
+        ..agent_command_args(shared, kind)
     }))
 }
 
@@ -422,17 +416,9 @@ fn parse_top_level_session_command(
     }
 
     Ok(Command::All(AgentCommandArgs {
-        shared: args.shared,
-        kind: AgentReportKind::Session,
-        session_id: None,
         sections,
         by_agent,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed: CodexSpeed::Auto,
-        include_claude_agent: false,
-        start_of_week: WeekDay::Monday,
-        sources: BTreeMap::new(),
+        ..agent_command_args(args.shared, AgentReportKind::Session)
     }))
 }
 
@@ -602,17 +588,9 @@ fn parse_codex_command(
     Ok(Command::Agent(
         AgentId::Codex,
         AgentCommandArgs {
-            shared,
-            kind,
             session_id,
-            sections: None,
-            by_agent: false,
-            pi_path: None,
-            open_claw_path: None,
             codex_speed,
-            include_claude_agent: false,
-            start_of_week: WeekDay::Monday,
-            sources: BTreeMap::new(),
+            ..agent_command_args(shared, kind)
         },
     ))
 }
@@ -638,17 +616,9 @@ fn parse_pi_command(
     Ok(Command::Agent(
         AgentId::Pi,
         AgentCommandArgs {
-            shared,
-            kind,
-            session_id: None,
-            sections: None,
-            by_agent: false,
             pi_path,
-            open_claw_path: None,
             codex_speed,
-            include_claude_agent: false,
-            start_of_week: WeekDay::Monday,
-            sources: BTreeMap::new(),
+            ..agent_command_args(shared, kind)
         },
     ))
 }
@@ -674,17 +644,9 @@ fn parse_openclaw_command(
     Ok(Command::Agent(
         AgentId::OpenClaw,
         AgentCommandArgs {
-            shared,
-            kind,
-            session_id: None,
-            sections: None,
-            by_agent: false,
-            pi_path: None,
             open_claw_path,
             codex_speed,
-            include_claude_agent: false,
-            start_of_week: WeekDay::Monday,
-            sources: BTreeMap::new(),
+            ..agent_command_args(shared, kind)
         },
     ))
 }
@@ -975,28 +937,10 @@ fn parse_last_periods(value: &str) -> Result<u32, String> {
     }
 }
 
-/// The shared options that apply to a command (statusline falls back to the root
-/// options), plus whether that command groups rows by a calendar period (day,
-/// week, or month).
-fn report_shared<'a>(
-    command: Option<&'a Command>,
-    root_shared: &'a SharedArgs,
-) -> (&'a SharedArgs, bool) {
-    match command {
-        None => (root_shared, true),
-        Some(command) => (
-            command.shared().unwrap_or(root_shared),
-            command.period().is_some(),
-        ),
-    }
-}
-
-/// `--last` counts the report's own calendar periods, so it only makes sense on
-/// the reports that group rows by day, week, or month.
-fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
-    let (shared, supported) = report_shared(command, root_shared);
+fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {
+    let shared = command.shared().unwrap_or(root_shared);
     shared.last?;
-    if !supported {
+    if command.period().is_none() {
         return Some(
             "The --last option is only available for the daily, weekly, and monthly reports."
                 .to_string(),
@@ -1005,20 +949,14 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
     if shared.since.is_some() || shared.until.is_some() {
         return Some("The --last option cannot be combined with --since or --until.".to_string());
     }
-    if matches!(command, Some(Command::All(args)) if args.sections.is_some()) {
+    if matches!(command, Command::All(args) if args.sections.is_some()) {
         return Some("The --last option cannot be used with --sections.".to_string());
     }
     None
 }
 
-/// Both bounds are already normalized to `YYYYMMDD`, so a plain string comparison
-/// orders them. A reversed window would otherwise load everything and print an
-/// empty report that looks like missing data.
-fn date_window_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
-    if matches!(command, Some(Command::Statusline(_))) {
-        return None;
-    }
-    let (shared, _) = report_shared(command, root_shared);
+fn date_window_error(command: &Command) -> Option<String> {
+    let shared = command.shared()?;
     let since = shared.since.as_deref()?;
     let until = shared.until.as_deref()?;
     (since > until)

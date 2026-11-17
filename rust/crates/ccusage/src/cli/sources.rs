@@ -7,8 +7,6 @@ use ccusage_cli::{
 use ccusage_config::ConfigContext;
 use ccusage_core::BUILT_IN_AGENT_NAMES;
 
-use super::Cli;
-
 /// A unified report loads every source, and the config can address one source
 /// at a time through `<source>.defaults`, `<source>.commands.<report>`,
 /// `commands."<source> <report>"` and `commands.<source>:<report>`. Those
@@ -81,7 +79,10 @@ pub(crate) fn resolve(
         let cli = super::try_parse_with(args.to_vec(), &view, Some(start_of_week))
             .map_err(|message| format!("{message} (in {agent} config)"))?;
         let mut source = SourceArgs {
-            shared: unified_shared(cli),
+            shared: match cli {
+                Command::All(args) => args.shared,
+                _ => return Err("Expected a unified source report".to_string()),
+            },
             ..SourceArgs::default()
         };
         view.apply_agent_args(
@@ -108,15 +109,6 @@ fn project_from_config(config: &dyn CliConfig, shared: SharedArgs) -> Option<Str
     daily.project
 }
 
-/// The shared options the unified command parsed to, whether it was spelled
-/// out or left as the bare `ccusage`.
-fn unified_shared(cli: Cli) -> SharedArgs {
-    match cli.command {
-        Some(Command::All(args)) => args.shared,
-        _ => cli.shared,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use ccusage_cli::{AgentReportKind, CodexSpeed, CostMode, WeekDay};
@@ -125,7 +117,7 @@ mod tests {
     use ccusage_test_support::fs_fixture;
 
     use super::*;
-    use crate::cli::{try_parse_with, unified_or_command};
+    use crate::cli::try_parse_with;
 
     const CONFIG: &str = r#"{
         "defaults": { "mode": "display", "since": "20260101" },
@@ -191,7 +183,7 @@ mod tests {
             .chain(args.iter().map(OsString::from))
             .collect::<Vec<_>>();
         let cli = try_parse_with(argv.clone(), &config, None)?;
-        let Command::All(mut unified) = unified_or_command(cli) else {
+        let Command::All(mut unified) = cli else {
             return Err("expected a unified report".to_string());
         };
         resolve(&mut unified, &argv, &config)?;
