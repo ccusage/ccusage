@@ -210,7 +210,7 @@ fn run_sources<'a>(
         .collect::<Vec<_>>();
     let pi_path = sources
         .get("pi")
-        .and_then(|source| source.pi_path.as_deref());
+        .and_then(|source| source.options.pi_path.as_deref());
     for store in resolve_named_pi_store_paths(&shared.pi_stores, pi_path)? {
         let name = Box::leak(store.name.into_boxed_str());
         run_sources.push(RunSource {
@@ -523,7 +523,7 @@ pub(super) fn load_opencode_entries(
     }
     let diagnostics = Diagnostics::new("claude");
     let claude_shared = claude_source.map_or(shared, |source| &source.shared);
-    let project = claude_source.and_then(|source| source.claude_project.as_deref());
+    let project = claude_source.and_then(|source| source.options.claude_project.as_deref());
     let counted = claude::SOURCE.counted(claude_shared, project, &diagnostics)?;
     Ok((counted.retain_uncounted(entries), Some(diagnostics)))
 }
@@ -790,8 +790,12 @@ mod tests {
         let sources = BTreeMap::from([(
             "claude".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    claude_project: Some("project-a".to_string()),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                claude_project: Some("project-a".to_string()),
+
                 ..SourceArgs::default()
             },
         )]);
@@ -1782,8 +1786,12 @@ mod tests {
         let sources = BTreeMap::from([(
             "pi".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+
                 ..SourceArgs::default()
             },
         )]);
@@ -1895,13 +1903,17 @@ mod tests {
             (
                 "codex".to_string(),
                 SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        codex_speed: CodexSpeed::Fast,
+                        ..Default::default()
+                    },
                     shared: SharedArgs {
                         since: Some("20260722".to_string()),
                         until: Some("20260722".to_string()),
                         pricing_overrides,
                         ..shared.clone()
                     },
-                    codex_speed: CodexSpeed::Fast,
+
                     ..SourceArgs::default()
                 },
             ),
@@ -1958,6 +1970,10 @@ mod tests {
         let sources = BTreeMap::from([(
             "codex".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    codex_speed: CodexSpeed::Fast,
+                    ..Default::default()
+                },
                 shared: SharedArgs {
                     pricing_overrides: BTreeMap::from([(
                         "gpt-source-config".to_string(),
@@ -1970,7 +1986,7 @@ mod tests {
                     )]),
                     ..shared.clone()
                 },
-                codex_speed: CodexSpeed::Fast,
+
                 ..SourceArgs::default()
             },
         )]);
@@ -1999,13 +2015,17 @@ mod tests {
         let sources = BTreeMap::from([(
             "openclaw".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    open_claw_path: Some(
+                        fixture
+                            .path("custom-openclaw")
+                            .to_string_lossy()
+                            .into_owned(),
+                    ),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                open_claw_path: Some(
-                    fixture
-                        .path("custom-openclaw")
-                        .to_string_lossy()
-                        .into_owned(),
-                ),
+
                 ..SourceArgs::default()
             },
         )]);
@@ -2040,8 +2060,12 @@ mod tests {
         let sources = BTreeMap::from([(
             "pi".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    pi_path: Some(custom_pi_path),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                pi_path: Some(custom_pi_path),
+
                 ..SourceArgs::default()
             },
         )]);

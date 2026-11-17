@@ -142,13 +142,16 @@ mod tests {
         let codex = &unified.sources["codex"];
         assert_eq!(codex.shared.since.as_deref(), Some("20260301"));
         assert_eq!(codex.shared.mode, CostMode::Calculate);
-        assert_eq!(codex.codex_speed, CodexSpeed::Fast);
+        assert_eq!(codex.options.codex_speed, CodexSpeed::Fast);
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/data/pi/sessions")
         );
         assert_eq!(
-            unified.sources["openclaw"].open_claw_path.as_deref(),
+            unified.sources["openclaw"]
+                .options
+                .open_claw_path
+                .as_deref(),
             Some("/data/openclaw")
         );
         assert_eq!(unified.sources["amp"].shared.since, unified.shared.since);
@@ -180,7 +183,7 @@ mod tests {
         let claude = &focused.sources["claude"];
         assert_eq!(claude.shared.timezone.as_deref(), Some("Asia/Tokyo"));
         assert_eq!(claude.shared.since.as_deref(), Some("20990102"));
-        assert_eq!(claude.claude_project.as_deref(), Some("selected"));
+        assert_eq!(claude.options.claude_project.as_deref(), Some("selected"));
     }
 
     #[test]
@@ -199,23 +202,27 @@ mod tests {
             assert_eq!(unified.kind, kind, "{name}");
 
             let codex = &unified.sources["codex"];
-            assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
-            assert!(codex.pi_path.is_none(), "{name}");
-            assert!(codex.open_claw_path.is_none(), "{name}");
+            assert_eq!(codex.options.codex_speed, CodexSpeed::Fast, "{name}");
+            assert!(codex.options.pi_path.is_none(), "{name}");
+            assert!(codex.options.open_claw_path.is_none(), "{name}");
 
             let pi = &unified.sources["pi"];
-            assert_eq!(pi.pi_path.as_deref(), Some("/global/pi/sessions"), "{name}");
-            assert_eq!(pi.codex_speed, CodexSpeed::Auto, "{name}");
-            assert!(pi.open_claw_path.is_none(), "{name}");
+            assert_eq!(
+                pi.options.pi_path.as_deref(),
+                Some("/global/pi/sessions"),
+                "{name}"
+            );
+            assert_eq!(pi.options.codex_speed, CodexSpeed::Auto, "{name}");
+            assert!(pi.options.open_claw_path.is_none(), "{name}");
 
             let openclaw = &unified.sources["openclaw"];
             assert_eq!(
-                openclaw.open_claw_path.as_deref(),
+                openclaw.options.open_claw_path.as_deref(),
                 Some("/global/openclaw"),
                 "{name}"
             );
-            assert_eq!(openclaw.codex_speed, CodexSpeed::Auto, "{name}");
-            assert!(openclaw.pi_path.is_none(), "{name}");
+            assert_eq!(openclaw.options.codex_speed, CodexSpeed::Auto, "{name}");
+            assert!(openclaw.options.pi_path.is_none(), "{name}");
         }
     }
 
@@ -247,13 +254,19 @@ mod tests {
             assert_eq!(source.shared.since.as_deref(), Some("20260401"));
             assert!(source.shared.offline);
         }
-        assert_eq!(unified.sources["codex"].codex_speed, CodexSpeed::Flex);
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["codex"].options.codex_speed,
+            CodexSpeed::Flex
+        );
+        assert_eq!(
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/source/pi/sessions")
         );
         assert_eq!(
-            unified.sources["openclaw"].open_claw_path.as_deref(),
+            unified.sources["openclaw"]
+                .options
+                .open_claw_path
+                .as_deref(),
             Some("/source/openclaw")
         );
     }
@@ -270,13 +283,19 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily"], config);
 
-        assert_eq!(unified.sources["codex"].codex_speed, CodexSpeed::Flex);
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["codex"].options.codex_speed,
+            CodexSpeed::Flex
+        );
+        assert_eq!(
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/global/pi/sessions")
         );
         assert_eq!(
-            unified.sources["openclaw"].open_claw_path.as_deref(),
+            unified.sources["openclaw"]
+                .options
+                .open_claw_path
+                .as_deref(),
             Some("/global/openclaw")
         );
     }
@@ -302,7 +321,7 @@ mod tests {
         assert_eq!(codex.shared.mode, CostMode::Auto);
         assert_eq!(codex.shared.timezone.as_deref(), Some("Pacific/Auckland"));
         assert!(codex.shared.offline);
-        assert_eq!(codex.codex_speed, CodexSpeed::Fast);
+        assert_eq!(codex.options.codex_speed, CodexSpeed::Fast);
     }
 
     #[test]
@@ -358,7 +377,7 @@ mod tests {
                 "{name}"
             );
             assert!(!codex.shared.offline, "{name}");
-            assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
+            assert_eq!(codex.options.codex_speed, CodexSpeed::Fast, "{name}");
         }
     }
 
@@ -420,7 +439,7 @@ mod tests {
             Some("20260301")
         );
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/data/pi/sessions")
         );
     }
@@ -431,7 +450,7 @@ mod tests {
 
         assert_eq!(unified.kind, AgentReportKind::Session);
         assert_eq!(unified.sources["codex"].shared.mode, CostMode::Display);
-        assert!(unified.sources["openclaw"].open_claw_path.is_none());
+        assert!(unified.sources["openclaw"].options.open_claw_path.is_none());
     }
 
     #[test]
@@ -532,7 +551,7 @@ mod tests {
         let unified = unified_with_config(&["daily"], config);
 
         assert_eq!(
-            unified.sources["claude"].claude_project.as_deref(),
+            unified.sources["claude"].options.claude_project.as_deref(),
             Some("repo")
         );
     }
@@ -567,7 +586,7 @@ mod tests {
                 unified
                     .sources
                     .get("claude")
-                    .and_then(|source| source.claude_project.as_deref()),
+                    .and_then(|source| source.options.claude_project.as_deref()),
                 Some(project),
                 "{config}"
             );

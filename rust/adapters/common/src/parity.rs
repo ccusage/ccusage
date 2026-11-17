@@ -8,9 +8,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use ccusage_core::cli::{
-    AgentCommandArgs, AgentId, AgentReportKind, CodexSpeed, SharedArgs, WeekDay,
-};
+use ccusage_core::cli::{AgentCommandArgs, AgentId, AgentReportKind, SharedArgs, WeekDay};
 
 use crate::{
     pipeline,
@@ -97,14 +95,13 @@ fn focused_totals<S: EntrySource>(
     shared: &SharedArgs,
 ) -> Totals {
     let args = AgentCommandArgs {
+        options: Default::default(),
         shared: shared.clone(),
         kind,
         session_id: None,
         sections: None,
         by_agent: false,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed: CodexSpeed::default(),
+
         include_claude_agent: false,
         start_of_week: WeekDay::Sunday,
         sources: BTreeMap::new(),

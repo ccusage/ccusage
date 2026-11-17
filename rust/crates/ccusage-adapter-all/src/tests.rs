@@ -1033,8 +1033,12 @@ fn focused_opencode_claims_use_claude_source_window_and_project() {
             ..Default::default()
         },
         SourceArgs {
+            options: ccusage_core::cli::AgentOptions {
+                claude_project: Some("another-project".to_string()),
+                ..Default::default()
+            },
             shared: shared.clone(),
-            claude_project: Some("another-project".to_string()),
+
             ..Default::default()
         },
     ] {
@@ -1779,6 +1783,10 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     let sources = std::collections::BTreeMap::from([(
         "pi".to_string(),
         SourceArgs {
+            options: ccusage_core::cli::AgentOptions {
+                pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                ..Default::default()
+            },
             shared: SharedArgs {
                 since: Some("20990102".to_string()),
                 until: Some("20990102".to_string()),
@@ -1792,7 +1800,7 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
                 )]),
                 ..shared.clone()
             },
-            pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+
             ..SourceArgs::default()
         },
     )]);

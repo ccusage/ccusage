@@ -37,7 +37,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ccusage_cli::{
-        AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
+        AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
     };
 
     use super::*;
@@ -56,14 +56,13 @@ mod tests {
 
     fn agent_command(kind: AgentReportKind, last: u32) -> AgentCommandArgs {
         AgentCommandArgs {
+            options: Default::default(),
             shared: shared_with_last(last),
             kind,
             session_id: None,
             sections: None,
             by_agent: false,
-            pi_path: None,
-            open_claw_path: None,
-            codex_speed: CodexSpeed::Auto,
+
             include_claude_agent: false,
             start_of_week: WeekDay::Monday,
             sources: BTreeMap::new(),

@@ -202,9 +202,9 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
             .map(|section| format!("{section:?}"))
             .collect::<Vec<_>>()),
         "byAgent": args.by_agent,
-        "piPath": args.pi_path,
-        "openClawPath": args.open_claw_path,
-        "codexSpeed": format!("{:?}", args.codex_speed),
+        "piPath": args.options.pi_path,
+        "openClawPath": args.options.open_claw_path,
+        "codexSpeed": format!("{:?}", args.options.codex_speed),
     })
 }
 
@@ -924,7 +924,7 @@ fn applies_agent_namespace_config_to_codex_speed() {
     let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Fast);
 }
 
 #[test]
@@ -954,7 +954,7 @@ fn applies_config_file_passed_after_agent_command() {
     assert!(args.shared.json);
     assert_eq!(args.shared.timezone.as_deref(), Some("Asia/Tokyo"));
     assert_eq!(args.shared.since.as_deref(), Some("20260101"));
-    assert_eq!(args.codex_speed, CodexSpeed::Standard);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Standard);
 }
 
 #[test]
@@ -1002,13 +1002,16 @@ fn applies_schema_documented_config_file_options() {
     let Command::Agent(StandardAgent::Pi, args) = cli else {
         panic!("expected pi command");
     };
-    assert_eq!(args.pi_path.as_deref(), Some("/tmp/pi-sessions"));
+    assert_eq!(args.options.pi_path.as_deref(), Some("/tmp/pi-sessions"));
 
     let cli = parse_with_config(&["ccusage", "openclaw", "daily"], &config);
     let Command::Agent(StandardAgent::OpenClaw, args) = cli else {
         panic!("expected openclaw command");
     };
-    assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+    assert_eq!(
+        args.options.open_claw_path.as_deref(),
+        Some("/tmp/openclaw")
+    );
 }
 
 #[test]
@@ -1486,7 +1489,7 @@ fn parses_codex_speed_option() {
     let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Fast);
 }
 
 #[test]
@@ -1495,7 +1498,7 @@ fn parses_codex_flex_speed_option() {
     let Command::Agent(StandardAgent::Codex, args) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.codex_speed, CodexSpeed::Flex);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Flex);
 }
 
 #[test]
@@ -1716,7 +1719,7 @@ fn parses_pi_session_options() {
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
-    assert_eq!(args.pi_path.as_deref(), Some("/tmp/pi-sessions"));
+    assert_eq!(args.options.pi_path.as_deref(), Some("/tmp/pi-sessions"));
 }
 
 #[test]
@@ -1784,7 +1787,10 @@ fn parses_openclaw_session_options() {
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
-    assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+    assert_eq!(
+        args.options.open_claw_path.as_deref(),
+        Some("/tmp/openclaw")
+    );
 }
 
 #[test]

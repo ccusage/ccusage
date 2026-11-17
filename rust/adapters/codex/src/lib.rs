@@ -51,7 +51,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         log_level() != Some(0),
         shared.pricing_overrides.iter(),
     );
-    let speed = resolve_codex_speed(args.codex_speed);
+    let speed = resolve_codex_speed(args.options.codex_speed);
     if let Some(requested_id) = args.session_id {
         let session_id = resolve_session_id(&groups, &requested_id)?.to_string();
         if wants_json(&shared) {

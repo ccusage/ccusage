@@ -709,14 +709,13 @@ fn parse_agent_report_kind(
 
 fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
     AgentCommandArgs {
+        options: Default::default(),
         shared,
         kind,
         session_id: None,
         sections: None,
         by_agent: false,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed: CodexSpeed::Auto,
+
         include_claude_agent: false,
         start_of_week: WeekDay::Monday,
         sources: BTreeMap::new(),

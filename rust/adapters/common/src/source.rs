@@ -116,10 +116,10 @@ impl<'a> SourceOptions<'a> {
     /// The options of `ccusage <agent> <kind>`.
     pub fn from_command(args: &'a AgentCommandArgs) -> Self {
         Self {
-            claude_project: None,
-            pi_path: args.pi_path.as_deref(),
-            open_claw_path: args.open_claw_path.as_deref(),
-            codex_speed: args.codex_speed,
+            claude_project: args.options.claude_project.as_deref(),
+            pi_path: args.options.pi_path.as_deref(),
+            open_claw_path: args.options.open_claw_path.as_deref(),
+            codex_speed: args.options.codex_speed,
         }
     }
 
@@ -127,10 +127,10 @@ impl<'a> SourceOptions<'a> {
     /// report, or the defaults for a source it does not address.
     pub fn from_source(source: Option<&'a SourceArgs>) -> Self {
         source.map_or_else(Self::default, |source| Self {
-            claude_project: source.claude_project.as_deref(),
-            pi_path: source.pi_path.as_deref(),
-            open_claw_path: source.open_claw_path.as_deref(),
-            codex_speed: source.codex_speed,
+            claude_project: source.options.claude_project.as_deref(),
+            pi_path: source.options.pi_path.as_deref(),
+            open_claw_path: source.options.open_claw_path.as_deref(),
+            codex_speed: source.options.codex_speed,
         })
     }
 }

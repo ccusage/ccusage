@@ -201,9 +201,7 @@ pub struct AgentCommandArgs {
     pub session_id: Option<String>,
     pub sections: Option<Vec<AgentReportKind>>,
     pub by_agent: bool,
-    pub pi_path: Option<String>,
-    pub open_claw_path: Option<String>,
-    pub codex_speed: CodexSpeed,
+    pub options: AgentOptions,
     /// Keeps OpenCode `claude-agent` turns that the Claude source also counts.
     pub include_claude_agent: bool,
     pub start_of_week: WeekDay,
@@ -214,9 +212,7 @@ pub struct AgentCommandArgs {
 
 impl AgentCommandArgs {
     pub fn with_options(mut self, options: AgentOptions) -> Self {
-        self.codex_speed = options.codex_speed;
-        self.pi_path = options.pi_path;
-        self.open_claw_path = options.open_claw_path;
+        self.options = options;
         self
     }
 
@@ -245,21 +241,12 @@ pub struct AgentOptions {
 #[derive(Clone, Debug, Default)]
 pub struct SourceArgs {
     pub shared: SharedArgs,
-    pub claude_project: Option<String>,
-    pub pi_path: Option<String>,
-    pub open_claw_path: Option<String>,
-    pub codex_speed: CodexSpeed,
+    pub options: AgentOptions,
 }
 
 impl SourceArgs {
     pub fn from_options(shared: SharedArgs, options: AgentOptions) -> Self {
-        Self {
-            shared,
-            claude_project: options.claude_project,
-            codex_speed: options.codex_speed,
-            pi_path: options.pi_path,
-            open_claw_path: options.open_claw_path,
-        }
+        Self { shared, options }
     }
 }
 
