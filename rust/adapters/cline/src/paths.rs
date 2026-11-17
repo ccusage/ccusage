@@ -158,6 +158,12 @@ fn is_cli_session_file(session_id: &str, filename: &str) -> bool {
     !session_id.is_empty() && filename == format!("{session_id}.messages.json")
 }
 
+impl AsRef<Path> for SourceFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,11 +339,5 @@ mod tests {
                     .join(CLINE_EXTENSION_ID)
             )
         );
-    }
-}
-
-impl AsRef<Path> for SourceFile {
-    fn as_ref(&self) -> &Path {
-        &self.path
     }
 }

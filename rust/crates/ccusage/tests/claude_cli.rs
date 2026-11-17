@@ -1431,7 +1431,7 @@ fn blocks_reject_unrepresentable_session_lengths() {
 fn config_warnings_follow_log_level() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);
-    fixture.write_file("ccusage.json", r#"{"defaults":{"json":true,"jsoon":true}}"#);
+    let _ = fixture.write_file("ccusage.json", r#"{"defaults":{"json":true,"jsoon":true}}"#);
     for (level, expected) in [("0", false), ("1", true)] {
         let output = claude_command(&fixture)
             .env("LOG_LEVEL", level)

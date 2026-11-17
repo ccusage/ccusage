@@ -95,6 +95,12 @@ fn copilot_exporter_path() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+impl AsRef<std::path::Path> for CopilotSourceFile {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
@@ -217,11 +223,5 @@ mod tests {
                 },
             ]
         );
-    }
-}
-
-impl AsRef<std::path::Path> for CopilotSourceFile {
-    fn as_ref(&self) -> &std::path::Path {
-        &self.path
     }
 }
