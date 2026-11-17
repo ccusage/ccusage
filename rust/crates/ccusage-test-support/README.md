@@ -14,11 +14,10 @@ Test-only helpers: filesystem fixtures and environment-variable guards.
 - `install_pricing_snapshots` — hand the embedded pricing snapshots to
   `ccusage-core`, as the binary does at startup; a test that loads pricing calls
   it first.
-- `instant` and `Instant` — parse fixture dates as RFC 3339 and convert them
-  explicitly to epoch seconds or milliseconds, including fractional wire values.
+- `instant` and `Instant` — parse fixture dates as RFC 3339, step them by
+  durations, and convert them explicitly to epoch seconds or milliseconds
+  (including fractional wire values) or RFC 3339 text.
 - `set_modified` — give a fixture file the mtime of a typed `Instant`.
-- `zcode::create_fixture` — create the representative ZCode SQLite schema and
-  usage rows shared by adapter and unified report tests.
 
 Every crate that has tests uses this as a dev-dependency; nothing depends on it
 at runtime.
@@ -32,7 +31,6 @@ at runtime.
 - `instant` and `Instant`
 - `set_modified`
 - `mutation::assert_parser_survives_mutations`
-- `zcode::create_fixture`
 
 ## Depends on
 
@@ -40,7 +38,6 @@ at runtime.
 - `ccusage-core`
 - `ccusage-pricing-snapshots`
 - `jiff`
-- `sqlite`
 
 ## Build layer
 
