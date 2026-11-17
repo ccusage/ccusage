@@ -13,6 +13,3 @@ pub use types::{
     NoConfig, PeriodUnit, PricingOverride, SessionArgs, SharedArgs, SortOrder, SourceArgs,
     StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
-
-/// Default length, in hours, of one billing block.
-pub const DEFAULT_SESSION_DURATION_HOURS: f64 = 5.0;

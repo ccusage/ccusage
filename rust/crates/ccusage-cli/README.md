@@ -3,7 +3,7 @@
 The plain argument types the runtime shares: `SharedArgs`, the per-command
 argument structs (including an optional requested sort order), the enums the reports switch on, the built-in agent table
 (`AGENTS`: each agent's name, label and reports), and the few constants and
-helpers (`DEFAULT_SESSION_DURATION_HOURS`,
+helpers (`SessionLength::DEFAULT`,
 `home::home_dir`, `home::expand_home_path`, `home::claude_config_dirs`) that
 `ccusage-config` and `ccusage-cli-parser` need without depending on
 `ccusage-core`. `home::claude_config_dirs` is the one place the Claude Code
@@ -22,7 +22,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `agents::AgentSpec`
 - `agents::BUILT_IN_AGENT_NAMES`
 - `agents::StandardAgent`
-- `DEFAULT_SESSION_DURATION_HOURS`
+- `SessionLength::DEFAULT`
 - `home::ClaudeConfigDirs`
 - `home::claude_config_dirs`
 - `home::expand_home_path`

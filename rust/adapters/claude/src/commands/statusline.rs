@@ -673,7 +673,6 @@ struct HookContext {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_core::DEFAULT_SESSION_DURATION_HOURS;
     use std::assert_matches;
     use std::ffi::OsString;
 
@@ -738,7 +737,6 @@ mod tests {
             .into_iter()
             .map(OsString::from),
             &config,
-            DEFAULT_SESSION_DURATION_HOURS,
             env!("CARGO_PKG_VERSION"),
         )
         .unwrap();

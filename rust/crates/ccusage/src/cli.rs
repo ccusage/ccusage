@@ -4,7 +4,7 @@ mod timezone;
 
 use std::{env, ffi::OsString, process};
 
-use ccusage_cli::{AgentCommandArgs, Command, DEFAULT_SESSION_DURATION_HOURS, WeekDay};
+use ccusage_cli::{AgentCommandArgs, Command, WeekDay};
 use ccusage_cli_parser::{parse_from_with_config, parse_report_args_with_config};
 use ccusage_config::ConfigContext;
 
@@ -37,12 +37,7 @@ pub(crate) fn parse() -> Command {
 /// Parses one command line against one view of the config, with the checks
 /// and resolutions that need the parsed command.
 fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
-    let mut command = parse_from_with_config(
-        args,
-        config,
-        DEFAULT_SESSION_DURATION_HOURS,
-        env!("CCUSAGE_VERSION"),
-    )?;
+    let mut command = parse_from_with_config(args, config, env!("CCUSAGE_VERSION"))?;
     timezone::validate(timezone::of_command(&command))?;
     last_window::resolve(&mut command)?;
     Ok(command)

@@ -15,7 +15,6 @@ fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Command {
     parse_from_with_config(
         args.iter().map(OsString::from),
         config,
-        5.0,
         env!("CARGO_PKG_VERSION"),
     )
     .unwrap()
@@ -25,7 +24,6 @@ fn parse_error(args: &[&str]) -> String {
     match parse_from_with_config(
         args.iter().map(OsString::from),
         &NoConfig,
-        5.0,
         env!("CARGO_PKG_VERSION"),
     ) {
         Ok(_) => panic!("expected parse error"),
@@ -686,7 +684,6 @@ fn rejects_a_config_since_date_later_than_the_until_flag() {
             .iter()
             .map(OsString::from),
         &config,
-        5.0,
         env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
@@ -716,7 +713,6 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
             std::iter::once(OsString::from("ccusage"))
                 .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
             &config,
-            ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
             env!("CARGO_PKG_VERSION"),
         )
     };
@@ -753,7 +749,6 @@ fn statusline_ignores_reversed_default_date_window() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
 
@@ -1507,7 +1502,6 @@ fn rejects_removed_locale_option() {
             .into_iter()
             .map(OsString::from),
         &NoConfig,
-        5.0,
         env!("CARGO_PKG_VERSION"),
     );
     assert!(result.is_err());
@@ -1961,7 +1955,6 @@ fn invalid_explicit_named_stores_fail_statusline() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
 
@@ -1993,7 +1986,6 @@ fn assert_invalid_discovered_stores_allow(args: &[&str]) {
         std::iter::once(std::ffi::OsString::from("ccusage"))
             .chain(args.iter().map(std::ffi::OsString::from)),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
     assert!(parsed.is_ok(), "{:?}", parsed.err());
@@ -2018,7 +2010,6 @@ fn invalid_explicit_named_stores_fail_agent_commands() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
 
@@ -2047,7 +2038,6 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {

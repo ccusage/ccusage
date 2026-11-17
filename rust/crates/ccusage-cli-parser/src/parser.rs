@@ -4,9 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, ColorChoice,
-    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DEFAULT_SESSION_DURATION_HOURS, DailyArgs,
-    SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent, StatuslineArgs,
-    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SessionLength,
+    SharedArgs, SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
+    normalize_date_bound,
 };
 use ccusage_cli::{is_shared_flag, option_takes_value};
 
@@ -49,7 +49,6 @@ impl RootOptions {
 pub fn parse_from_with_config<I>(
     args: I,
     config: &dyn CliConfig,
-    default_session_duration_hours: f64,
     version: &'static str,
 ) -> Result<Command, String>
 where
@@ -100,14 +99,9 @@ where
 
     let command = match parser.next() {
         None => Command::All(root_options.into_agent_args(shared.clone(), AgentReportKind::Daily)),
-        Some(command) => parse_command(
-            &command,
-            &mut parser,
-            shared.clone(),
-            config,
-            default_session_duration_hours,
-            root_options,
-        )?,
+        Some(command) => {
+            parse_command(&command, &mut parser, shared.clone(), config, root_options)?
+        }
     };
     parser.finish()?;
     if let Some(message) = last_option_error(&command, &shared) {
@@ -128,7 +122,7 @@ pub fn parse_report_args_with_config<I>(
 where
     I: IntoIterator<Item = OsString>,
 {
-    match parse_from_with_config(args, config, DEFAULT_SESSION_DURATION_HOURS, version)? {
+    match parse_from_with_config(args, config, version)? {
         Command::All(args) | Command::Agent(_, args) => Ok(AgentCommandArgs {
             start_of_week,
             ..args
@@ -158,7 +152,6 @@ fn parse_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     config: &dyn CliConfig,
-    default_session_duration_hours: f64,
     root_options: RootOptions,
 ) -> Result<Command, String> {
     let statusline =
@@ -184,17 +177,10 @@ fn parse_command(
             root_options,
         ),
         "session" => parse_top_level_session_command(parser, shared, config, root_options),
-        "blocks" => parse_blocks_command(parser, shared, config, default_session_duration_hours),
+        "blocks" => parse_blocks_command(parser, shared, config),
         "statusline" => parse_statusline_command(parser, &shared, config, offline_override),
         _ => match AgentId::from_name(command) {
-            Some(agent) => parse_agent_command(
-                agent,
-                parser,
-                shared,
-                config,
-                default_session_duration_hours,
-                offline_override,
-            ),
+            Some(agent) => parse_agent_command(agent, parser, shared, config, offline_override),
             None => Err(format!("Unknown command '{command}'")),
         },
     }
@@ -205,17 +191,10 @@ fn parse_agent_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     config: &dyn CliConfig,
-    default_session_duration_hours: f64,
     offline_override: Option<bool>,
 ) -> Result<Command, String> {
     let Some(agent) = agent.standard() else {
-        return parse_claude_command(
-            parser,
-            shared,
-            config,
-            default_session_duration_hours,
-            offline_override,
-        );
+        return parse_claude_command(parser, shared, config, offline_override);
     };
     match agent {
         StandardAgent::Codex => parse_codex_command(parser, shared, config),
@@ -230,14 +209,13 @@ fn parse_blocks_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     config: &dyn CliConfig,
-    default_session_duration_hours: f64,
 ) -> Result<Command, String> {
     let mut args = BlocksArgs {
         shared,
         active: false,
         recent: false,
         token_limit: None,
-        session_length: SessionLength::from_hours(default_session_duration_hours)?,
+        session_length: SessionLength::DEFAULT,
     };
     config.apply_blocks_args(&mut args);
     while parser.peek().is_some() {
@@ -523,7 +501,6 @@ fn parse_claude_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     config: &dyn CliConfig,
-    default_session_duration_hours: f64,
     offline_override: Option<bool>,
 ) -> Result<Command, String> {
     let command = match parser.peek() {
@@ -539,7 +516,7 @@ fn parse_claude_command(
         "monthly" => parse_claude_monthly_command(parser, shared, config),
         "weekly" => parse_claude_weekly_command(parser, shared, config),
         "session" => parse_claude_session_command(parser, shared, config),
-        "blocks" => parse_blocks_command(parser, shared, config, default_session_duration_hours),
+        "blocks" => parse_blocks_command(parser, shared, config),
         "statusline" => parse_statusline_command(parser, &shared, config, offline_override),
         command => Err(format!("Unknown claude command '{command}'")),
     }
