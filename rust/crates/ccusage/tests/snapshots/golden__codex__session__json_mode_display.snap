@@ -270,7 +270,7 @@ exit: 0
     {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 540,
-      "costUSD": 0.003687375,
+      "costUSD": 0.0036405,
       "directory": "exec",
       "inputTokens": 1550,
       "lastActivity": "2026-01-02T05:00:00.000Z",
@@ -352,7 +352,7 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 461150,
-    "costUSD": 0.6769073750000001,
+    "costUSD": 0.6768605000000001,
     "inputTokens": 113370,
     "outputTokens": 4122,
     "reasoningOutputTokens": 149,

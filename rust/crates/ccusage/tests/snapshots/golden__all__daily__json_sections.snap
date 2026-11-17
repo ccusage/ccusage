@@ -909,7 +909,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 12355,
-          "cost": 0.27761375,
+          "cost": 0.277566875,
           "inputTokens": 5160,
           "modelName": "gpt-5",
           "outputTokens": 2206,
@@ -1362,7 +1362,7 @@ exit: 0
       ],
       "outputTokens": 17493,
       "period": "2026-01-01",
-      "totalCost": 3.7021854450000005,
+      "totalCost": 3.7021385700000002,
       "totalTokens": 1608342
     },
     {
@@ -1461,7 +1461,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
-          "cost": 0.00707375,
+          "cost": 0.0070550000000000005,
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
@@ -1709,7 +1709,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 3.26713145,
+      "totalCost": 3.2671126999999998,
       "totalTokens": 670468
     },
     {
@@ -2044,7 +2044,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 30835,
-          "cost": 0.91724875,
+          "cost": 0.9172018749999999,
           "inputTokens": 17730,
           "modelName": "gpt-5",
           "outputTokens": 5093,
@@ -2229,7 +2229,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
-          "cost": 0.00707375,
+          "cost": 0.0070550000000000005,
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
@@ -2713,7 +2713,7 @@ exit: 0
       ],
       "outputTokens": 56144,
       "period": "2025-12-29",
-      "totalCost": 24.297743175,
+      "totalCost": 24.297677550000003,
       "totalTokens": 2716150
     },
     {
@@ -3338,7 +3338,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 12855,
-          "cost": 0.59265625,
+          "cost": 0.592609375,
           "inputTokens": 8148,
           "modelName": "gpt-5",
           "outputTokens": 2993,
@@ -3461,7 +3461,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
-          "cost": 0.00707375,
+          "cost": 0.0070550000000000005,
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
@@ -3931,7 +3931,7 @@ exit: 0
       ],
       "outputTokens": 28198,
       "period": "2026-01",
-      "totalCost": 6.969316895,
+      "totalCost": 6.969251270000001,
       "totalTokens": 2278810
     },
     {
@@ -6420,7 +6420,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 40,
-          "cost": 0.0019237500000000003,
+          "cost": 0.0019050000000000002,
           "inputTokens": 500,
           "modelName": "openai/gpt-5",
           "outputTokens": 120
@@ -6460,7 +6460,7 @@ exit: 0
       ],
       "outputTokens": 490,
       "period": "manicode-dev/beta/2026-01-02T10-00-00.000Z",
-      "totalCost": 0.00864375,
+      "totalCost": 0.008625,
       "totalTokens": 8430
     },
     {
@@ -7014,7 +7014,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 500,
-          "cost": 0.0017343750000000002,
+          "cost": 0.0016875000000000002,
           "inputTokens": 950,
           "modelName": "gpt-5",
           "outputTokens": 175
@@ -7026,7 +7026,7 @@ exit: 0
       ],
       "outputTokens": 239,
       "period": "exec/headless-run",
-      "totalCost": 0.003687375,
+      "totalCost": 0.0036405,
       "totalTokens": 2629
     },
     {
@@ -9484,7 +9484,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346288,
     "outputTokens": 58561,
-    "totalCost": 28.135158925000002,
+    "totalCost": 28.135093299999998,
     "totalTokens": 2735648,
     "unpricedModels": [
       "GLM-5.3",

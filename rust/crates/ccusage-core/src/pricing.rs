@@ -115,14 +115,75 @@ pub struct Pricing {
     pub fast_multiplier: f64,
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
+    pub(crate) family: ProviderFamily,
 }
 
 /// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
 pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderFamily {
+    Anthropic,
+    OpenAi,
+    Unrecorded,
+}
+
+impl ProviderFamily {
+    fn from_litellm_provider(provider: Option<&str>) -> Self {
+        match provider {
+            Some("openai" | "text-completion-openai" | "azure" | "azure_text") => Self::OpenAi,
+            Some("anthropic" | "bedrock" | "bedrock_converse" | "vertex_ai-anthropic_models") => {
+                Self::Anthropic
+            }
+            _ => Self::Unrecorded,
+        }
+    }
+
+    fn absent_cache_write(self, input: f64) -> f64 {
+        match self {
+            Self::OpenAi => input,
+            Self::Anthropic | Self::Unrecorded => input * 1.25,
+        }
+    }
+
+    fn absent_one_hour_cache_write(self, input: f64) -> f64 {
+        match self {
+            Self::OpenAi => input,
+            Self::Anthropic | Self::Unrecorded => input * 2.0,
+        }
+    }
+
+    fn absent_cache_read(self, input: f64) -> f64 {
+        match self {
+            Self::OpenAi => input,
+            Self::Anthropic | Self::Unrecorded => input * 0.1,
+        }
+    }
+}
+
 impl Pricing {
     pub fn cache_creation_rate(self) -> f64 {
-        self.cache_create.unwrap_or(self.input * 1.25)
+        self.cache_create
+            .unwrap_or_else(|| self.family.absent_cache_write(self.input))
+    }
+
+    pub(crate) fn one_hour_cache_creation_rate(self) -> f64 {
+        self.cache_create_1h
+            .unwrap_or_else(|| self.family.absent_one_hour_cache_write(self.input))
+    }
+
+    pub(crate) fn one_hour_cache_creation_rate_above_200k(self) -> Option<f64> {
+        self.cache_create_1h_above_200k.or_else(|| {
+            self.input_above_200k
+                .map(|input| self.family.absent_one_hour_cache_write(input))
+        })
+    }
+
+    /// The cache-read rate for a request billed at `input_rate`: the published
+    /// read rate, or the provider family's default relative to that input rate.
+    pub fn cache_read_rate_at(self, input_rate: f64) -> f64 {
+        self.cache_read
+            .unwrap_or_else(|| self.family.absent_cache_read(input_rate))
     }
 
     const fn empty() -> Self {
@@ -141,6 +202,7 @@ impl Pricing {
             fast_multiplier: 1.0,
             ultrafast_multiplier: 1.0,
             flex_multiplier: 1.0,
+            family: ProviderFamily::Unrecorded,
         }
     }
 }
@@ -496,6 +558,7 @@ struct LiteLlmPricing {
     cache_creation_input_token_cost_above_200k_tokens: Option<f64>,
     cache_read_input_token_cost_above_200k_tokens: Option<f64>,
     max_input_tokens: Option<u64>,
+    litellm_provider: Option<String>,
     provider_specific_entry: Option<ProviderSpecificEntry>,
 }
 
@@ -1117,6 +1180,9 @@ impl PricingMap {
                             .cache_creation_input_token_cost_above_200k_tokens,
                         cache_read_above_200k: pricing
                             .cache_read_input_token_cost_above_200k_tokens,
+                        family: ProviderFamily::from_litellm_provider(
+                            pricing.litellm_provider.as_deref(),
+                        ),
                         ..Pricing::empty()
                     }),
             );

@@ -48,7 +48,7 @@ exit: 0
     {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 458920,
-      "costUSD": 0.608884875,
+      "costUSD": 0.608838,
       "inputTokens": 108850,
       "models": {
         "codex-mystery-1": {
@@ -116,7 +116,7 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 460450,
-    "costUSD": 0.672982375,
+    "costUSD": 0.6729355,
     "inputTokens": 112370,
     "outputTokens": 3952,
     "reasoningOutputTokens": 139,

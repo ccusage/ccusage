@@ -90,7 +90,7 @@ exit: 0
     {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 8620,
-      "costUSD": 0.025314875,
+      "costUSD": 0.025268000000000002,
       "date": "2026-01-01",
       "inputTokens": 6900,
       "models": {
@@ -188,7 +188,7 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 460450,
-    "costUSD": 0.6729823749999999,
+    "costUSD": 0.6729354999999999,
     "inputTokens": 112370,
     "outputTokens": 3952,
     "reasoningOutputTokens": 139,

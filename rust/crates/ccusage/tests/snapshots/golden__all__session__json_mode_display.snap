@@ -1720,7 +1720,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 40,
-          "cost": 0.0019237500000000003,
+          "cost": 0.0019050000000000002,
           "inputTokens": 500,
           "modelName": "openai/gpt-5",
           "outputTokens": 120
@@ -1760,7 +1760,7 @@ exit: 0
       ],
       "outputTokens": 490,
       "period": "manicode-dev/beta/2026-01-02T10-00-00.000Z",
-      "totalCost": 0.00864375,
+      "totalCost": 0.008625,
       "totalTokens": 8430
     },
     {
@@ -1961,7 +1961,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 500,
-          "cost": 0.0017343750000000002,
+          "cost": 0.0016875000000000002,
           "inputTokens": 950,
           "modelName": "gpt-5",
           "outputTokens": 175
@@ -1973,7 +1973,7 @@ exit: 0
       ],
       "outputTokens": 239,
       "period": "exec/headless-run",
-      "totalCost": 0.003687375,
+      "totalCost": 0.0036405,
       "totalTokens": 2629
     },
     {
@@ -5417,7 +5417,7 @@ exit: 0
     "cacheReadTokens": 1311217,
     "inputTokens": 1346849,
     "outputTokens": 58727,
-    "totalCost": 25.027025750000014,
+    "totalCost": 25.026960125000013,
     "totalTokens": 2738095,
     "unpricedModels": [
       "codebuff-mystery-1",

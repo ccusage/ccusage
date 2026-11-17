@@ -1,6 +1,6 @@
 use serde_json::{Map, Value};
 
-const RATE_FIELDS: [&str; 11] = [
+const LOADED_FIELDS: [&str; 12] = [
     "input_cost_per_token",
     "output_cost_per_token",
     "cache_creation_input_token_cost",
@@ -12,6 +12,7 @@ const RATE_FIELDS: [&str; 11] = [
     "cache_creation_input_token_cost_above_200k_tokens",
     "cache_read_input_token_cost_above_200k_tokens",
     "max_input_tokens",
+    "litellm_provider",
 ];
 
 pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
@@ -27,7 +28,7 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
             continue;
         };
         let mut fields = Map::new();
-        for field in RATE_FIELDS {
+        for field in LOADED_FIELDS {
             if let Some(value) = pricing.get(field).filter(|value| !value.is_null()) {
                 fields.insert(field.to_string(), value.clone());
             }
@@ -146,7 +147,8 @@ mod tests {
             serde_json::json!({
                 "claude-test": {
                     "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002
+                    "output_cost_per_token": 0.000002,
+                    "litellm_provider": "anthropic"
                 }
             })
         );

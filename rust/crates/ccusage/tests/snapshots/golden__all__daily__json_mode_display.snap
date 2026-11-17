@@ -857,7 +857,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 12355,
-          "cost": 0.25711375000000003,
+          "cost": 0.25706687500000003,
           "inputTokens": 5160,
           "modelName": "gpt-5",
           "outputTokens": 2206
@@ -1299,7 +1299,7 @@ exit: 0
       ],
       "outputTokens": 17493,
       "period": "2026-01-01",
-      "totalCost": 1.7735550000000002,
+      "totalCost": 1.773508125,
       "totalTokens": 1608342
     },
     {
@@ -1391,7 +1391,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
-          "cost": 0.00707375,
+          "cost": 0.0070550000000000005,
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
@@ -1635,7 +1635,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 1.8509897499999999,
+      "totalCost": 1.850971,
       "totalTokens": 670468
     },
     {
@@ -1672,7 +1672,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1345288,
     "outputTokens": 58461,
-    "totalCost": 24.24310075,
+    "totalCost": 24.243035125,
     "totalTokens": 2734548,
     "unpricedModels": [
       "codebuff-mystery-1",

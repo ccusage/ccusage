@@ -4,8 +4,6 @@ use crate::{
     types::{Speed, UsageEntry},
 };
 
-const CACHE_CREATE_1H_INPUT_MULTIPLIER: f64 = 2.0;
-
 pub fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
     calculate_cost_for_usage_at(
         data.message.model.as_deref(),
@@ -129,16 +127,10 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         } else {
             (usage.cache_creation_input_tokens, 0)
         };
-    let cache_create_1h_cost = pricing
-        .cache_create_1h
-        .unwrap_or(pricing.input * CACHE_CREATE_1H_INPUT_MULTIPLIER);
+    let cache_create_1h_cost = pricing.one_hour_cache_creation_rate();
     let cache_create = pricing.cache_creation_rate();
-    let cache_read = pricing.cache_read.unwrap_or(pricing.input * 0.1);
-    let cache_create_1h_cost_above_200k = pricing.cache_create_1h_above_200k.or_else(|| {
-        pricing
-            .input_above_200k
-            .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER)
-    });
+    let cache_read = pricing.cache_read_rate_at(pricing.input);
+    let cache_create_1h_cost_above_200k = pricing.one_hour_cache_creation_rate_above_200k();
 
     // Two-stage pricing: a per-model `long_context_threshold` means the
     // request's input size selects the tier and every bucket is billed entirely
@@ -316,6 +308,30 @@ mod tests {
             calculate_cost_from_pricing(usage, pricing.find("tier-derived").unwrap()),
             200_000.0 * 6.0 + 100_000.0 * 12.0
         );
+    }
+
+    #[test]
+    fn absent_cache_rates_default_by_provider_family() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "gpt-test": {"input_cost_per_token": 2, "output_cost_per_token": 8, "litellm_provider": "openai"},
+            "claude-test": {"input_cost_per_token": 2, "output_cost_per_token": 8, "litellm_provider": "anthropic"},
+            "other-test": {"input_cost_per_token": 2, "output_cost_per_token": 8}
+        }"#,
+        );
+        let usage = crate::TokenUsageRaw {
+            cache_creation: Some(crate::CacheCreationRaw {
+                ephemeral_5m_input_tokens: 10,
+                ephemeral_1h_input_tokens: 1,
+            }),
+            cache_read_input_tokens: 100,
+            ..Default::default()
+        };
+        let cost = |model| calculate_cost_from_pricing(usage, pricing.find(model).unwrap());
+        assert_eq!(cost("gpt-test"), 10.0 * 2.0 + 2.0 + 100.0 * 2.0);
+        assert_eq!(cost("claude-test"), 10.0 * 2.5 + 4.0 + 100.0 * 0.2);
+        assert_eq!(cost("other-test"), cost("claude-test"));
     }
 
     #[test]
