@@ -86,6 +86,10 @@ pub struct SharedArgs {
 }
 
 impl SharedArgs {
+    pub fn requested_order(&self) -> Option<SortOrder> {
+        self.order_explicit.then_some(self.order)
+    }
+
     pub fn with_defaults() -> Self {
         Self {
             mode: CostMode::Auto,

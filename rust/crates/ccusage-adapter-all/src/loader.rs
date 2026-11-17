@@ -368,7 +368,7 @@ fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<Unifie
         row.metadata_agents = None;
     }
     rows.sort_by(|a, b| {
-        let cost_order = if shared.order_explicit && shared.order == crate::cli::SortOrder::Asc {
+        let cost_order = if shared.requested_order() == Some(crate::cli::SortOrder::Asc) {
             a.total_cost.total_cmp(&b.total_cost)
         } else {
             b.total_cost.total_cmp(&a.total_cost)
