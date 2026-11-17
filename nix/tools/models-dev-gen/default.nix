@@ -46,6 +46,5 @@ pkgs.runCommand "models-dev-snapshots"
     mkdir -p "$out"
     OUTFILE="$out/models-dev-pricing.json" \
       CATALOG_RULES_OUTFILE="$out/models-dev-catalog-rules.json" \
-      CODEX_AUTO_REVIEW_FALLBACKS_OUTFILE="$out/codex-auto-review-fallbacks.json" \
       bun run gen.ts
   ''

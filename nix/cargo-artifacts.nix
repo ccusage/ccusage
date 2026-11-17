@@ -94,7 +94,6 @@ let
       (rustRoot + /crates/ccusage-core/src/ultrafast-multiplier-overrides.json)
     ]
     ++ lib.optionals (lib.elem "ccusage-adapter-codex" names) [
-      (rustRoot + /adapters/codex/src/codex-auto-review-fallbacks.json)
     ];
   realSourceFor =
     names:

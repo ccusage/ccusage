@@ -9,9 +9,7 @@
  * `compact.ts`). The embedded output is a flat map keyed by runtime model id.
  * The output is committed to the repository and embedded at build time, so
  * every platform ships the identical, pinned data without any build-time
- * network access. The same pinned catalog also validates the models referenced
- * by the Codex auto-review fallback metadata used by the Rust parser and the
- * selection rules the Rust runtime loader applies to live models.dev responses.
+ * network access.
  * Run via `just gen-models-dev-pricing` (see the sibling `default.nix`).
  */
 import { generateCatalog } from './packages/core/src/generate.ts';
@@ -57,24 +55,6 @@ type EmbeddedModel = {
 	/** Only a request naming this id exactly may use it; see `compact.ts`. */
 	exactOnly?: true;
 };
-type CodexAutoReviewFallback = {
-	releasedOn: string;
-	model: string;
-};
-
-// Auto-review routing changes independently of public model releases. Pin this
-// timeline so catalog updates cannot invent transitions; new entries require
-// routing evidence, while older entries retain the existing best-effort history.
-const CODEX_AUTO_REVIEW_FALLBACKS = [
-	{ releasedOn: '2026-07-30', model: 'gpt-5.6-luna' },
-	{ releasedOn: '2026-03-05', model: 'gpt-5.4' },
-	{ releasedOn: '2026-02-05', model: 'gpt-5.3-codex' },
-	{ releasedOn: '2025-12-11', model: 'gpt-5.2-codex' },
-	{ releasedOn: '2025-11-13', model: 'gpt-5.1-codex' },
-	{ releasedOn: '2025-09-15', model: 'gpt-5-codex' },
-	{ releasedOn: '2025-08-07', model: 'gpt-5' },
-] as const satisfies readonly CodexAutoReviewFallback[];
-
 const { models, providers } = (await generateCatalog('.')) as {
 	models: Record<string, ModelMetadata>;
 	providers: Record<string, Provider>;
@@ -209,32 +189,4 @@ if (catalogRulesOutfile != null && catalogRulesOutfile.length > 0) {
 		catalogRulesOutfile,
 		`${JSON.stringify(modelsDevCatalogRulesArtifact(catalogIndex), null, 2)}\n`,
 	);
-}
-
-const codexFallbacksOutfile = process.env.CODEX_AUTO_REVIEW_FALLBACKS_OUTFILE;
-if (codexFallbacksOutfile != null && codexFallbacksOutfile.length > 0) {
-	await Bun.write(
-		codexFallbacksOutfile,
-		`${JSON.stringify(generateCodexAutoReviewFallbacks(models), null, 2)}\n`,
-	);
-}
-
-function generateCodexAutoReviewFallbacks(
-	models: Record<string, ModelMetadata>,
-): CodexAutoReviewFallback[] {
-	const knownModels = new Set(
-		Object.entries(models).map(([modelId, model]) =>
-			openAiModelName(selectModelsDevPricingKey(modelId, model.id)),
-		),
-	);
-	for (const fallback of CODEX_AUTO_REVIEW_FALLBACKS) {
-		if (!knownModels.has(fallback.model)) {
-			throw new Error(`Codex auto-review fallback model is missing: ${fallback.model}`);
-		}
-	}
-	return CODEX_AUTO_REVIEW_FALLBACKS.map((fallback) => ({ ...fallback }));
-}
-
-function openAiModelName(modelId: string): string {
-	return modelId.startsWith('openai/') ? modelId.slice('openai/'.length) : modelId;
 }

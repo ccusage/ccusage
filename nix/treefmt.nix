@@ -121,7 +121,6 @@ in
         settings.formatter.typos.excludes = [
           "rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json"
           "rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json"
-          "rust/adapters/codex/src/codex-auto-review-fallbacks.json"
           # Narrow table snapshots clip cell text mid-word, and typos would
           # "correct" the clipped fragments and so rewrite the expected output.
           "rust/crates/ccusage/tests/snapshots/golden__*table*.snap"
