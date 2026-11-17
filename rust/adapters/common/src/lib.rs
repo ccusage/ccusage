@@ -324,6 +324,42 @@ mod tests {
     };
 
     #[test]
+    fn balances_file_chunks_by_size() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "large-a.jsonl": "x".repeat(100),
+            "small-a.jsonl": "x",
+            "small-b.jsonl": "x",
+            "large-b.jsonl": "x".repeat(100),
+        });
+        let files = [
+            "large-a.jsonl",
+            "small-a.jsonl",
+            "small-b.jsonl",
+            "large-b.jsonl",
+        ]
+        .into_iter()
+        .map(|name| fixture.path(name))
+        .collect::<Vec<_>>();
+
+        let chunks = chunk_file_indexes_by_size(&files, 2);
+        assert_eq!(chunks.len(), 2);
+        let mut indexes = chunks.iter().flatten().copied().collect::<Vec<_>>();
+        indexes.sort_unstable();
+        assert_eq!(indexes, vec![0, 1, 2, 3]);
+
+        let chunk_sizes = chunks
+            .iter()
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .map(|index| std::fs::metadata(&files[*index]).unwrap().len())
+                    .sum::<u64>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(chunk_sizes, vec![101, 101]);
+    }
+
+    #[test]
     fn collects_nested_files_accepted_by_the_predicate() {
         let fixture = Fixture::new();
         let kept = fixture.write_file("a/b/kept.jsonl", "");

@@ -10,17 +10,6 @@ pub enum CodexSpeedPolicy {
     Forced(CodexServiceTier),
 }
 
-impl From<CodexSpeed> for CodexSpeedPolicy {
-    fn from(speed: CodexSpeed) -> Self {
-        match speed {
-            CodexSpeed::Auto => Self::Auto(CodexServiceTier::Standard),
-            CodexSpeed::Standard => Self::Forced(CodexServiceTier::Standard),
-            CodexSpeed::Fast => Self::Forced(CodexServiceTier::Fast),
-            CodexSpeed::Flex => Self::Forced(CodexServiceTier::Flex),
-        }
-    }
-}
-
 pub fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
     match requested {
         CodexSpeed::Auto => CodexSpeedPolicy::Auto(detect_codex_service_tier()),

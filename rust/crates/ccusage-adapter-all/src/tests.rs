@@ -2347,7 +2347,7 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
         "2026-01-02",
         &group,
         &PricingMap::default(),
-        CodexSpeed::Standard,
+        adapter::codex::CodexSpeedPolicy::Forced(adapter::codex::CodexServiceTier::Standard),
         CostMode::Calculate,
     );
 
@@ -2406,7 +2406,7 @@ fn includes_codex_model_breakdowns_in_all_rows() {
         "2026-01-02",
         &group,
         &pricing,
-        CodexSpeed::Standard,
+        adapter::codex::CodexSpeedPolicy::Forced(adapter::codex::CodexServiceTier::Standard),
         CostMode::Calculate,
     );
 
@@ -2433,7 +2433,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
         "2026-01-02",
         &group,
         &PricingMap::default(),
-        CodexSpeed::Standard,
+        adapter::codex::CodexSpeedPolicy::Forced(adapter::codex::CodexServiceTier::Standard),
         CostMode::Display,
     );
 

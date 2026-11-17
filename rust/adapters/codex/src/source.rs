@@ -72,17 +72,13 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     })
 }
 
-pub fn unified_row_from_group<S>(
+pub fn unified_row_from_group(
     period: &str,
     group: &CodexGroup,
     pricing: &PricingMap,
-    speed: S,
+    speed: crate::CodexSpeedPolicy,
     mode: CostMode,
-) -> UnifiedRow
-where
-    S: Into<crate::CodexSpeedPolicy> + Copy,
-{
-    let speed = speed.into();
+) -> UnifiedRow {
     let mut model_breakdowns = group
         .models
         .iter()

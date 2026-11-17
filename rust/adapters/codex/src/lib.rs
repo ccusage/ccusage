@@ -22,6 +22,7 @@ mod test_support;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
+#[cfg(test)]
 use aggregate::aggregate_events;
 pub use aggregate::load_groups;
 
@@ -41,8 +42,10 @@ pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
 use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
-use crate::cli::{AgentReportKind, CodexSpeed, CostMode};
+#[cfg(test)]
+use crate::cli::{AgentReportKind, CostMode};
 
+#[cfg(test)]
 use serde_json::Value;
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
@@ -125,24 +128,6 @@ fn is_codex_uuid(value: &str) -> bool {
             8 | 13 | 18 | 23 => byte == b'-',
             _ => byte.is_ascii_hexdigit(),
         })
-}
-
-#[doc(hidden)]
-pub fn report_json(
-    events: &[CodexTokenUsageEvent],
-    kind: AgentReportKind,
-    timezone: Option<&str>,
-    pricing: &PricingMap,
-    speed: CodexSpeed,
-) -> Result<Value> {
-    let groups = aggregate_events(events, kind, timezone)?;
-    Ok(report_from_groups(
-        &groups,
-        kind,
-        pricing,
-        resolve_codex_speed(speed),
-        CostMode::Calculate,
-    ))
 }
 
 #[cfg(test)]

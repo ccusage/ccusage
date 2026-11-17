@@ -928,6 +928,7 @@ fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::C
     target.is_fallback |= source.is_fallback;
 }
 
+#[cfg(test)]
 pub(crate) fn aggregate_events(
     events: &[CodexTokenUsageEvent],
     kind: AgentReportKind,

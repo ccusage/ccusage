@@ -25,17 +25,6 @@ pub fn has_data() -> bool {
     paths::paths().is_ok_and(|paths| paths.iter().any(|path| loader::has_source(path)))
 }
 
-/// Runs the OpenCode report over every row, `claude-agent` turns included.
-/// The CLI goes through `ccusage_adapter_all::run_opencode`, which can drop
-/// the turns the Claude source already counts.
-pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let entries = load_entries_with_native_sessions(&args.shared, args.kind)?
-        .into_iter()
-        .map(|(entry, _)| entry)
-        .collect();
-    print_report(&args, entries)
-}
-
 /// Prints the OpenCode report for already loaded entries.
 pub fn print_report(args: &AgentCommandArgs, mut entries: Vec<LoadedEntry>) -> Result<()> {
     let kind = args.kind;
