@@ -1,4 +1,4 @@
-use ccusage_cli::{AgentCommandArgs, AgentReportKind, Command, SharedArgs, WeekDay};
+use ccusage_cli::{SharedArgs, WeekDay};
 use ccusage_core::utc_now;
 use ccusage_report::{PeriodUnit, format_date, last_periods_since};
 
@@ -26,62 +26,21 @@ pub(crate) fn resolve(cli: &mut Cli) -> Result<(), String> {
 
 fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)> {
     match cli.command.as_mut() {
-        // A bare `ccusage` is the unified daily report.
-        None => Some((&mut cli.shared, PeriodUnit::Day, UNIFIED_WEEK_START)),
-        Some(Command::Daily(args)) => Some((&mut args.shared, PeriodUnit::Day, UNIFIED_WEEK_START)),
-        Some(Command::Monthly(shared)) => Some((shared, PeriodUnit::Month, UNIFIED_WEEK_START)),
-        Some(Command::Weekly(args)) => {
-            let start_of_week = args.start_of_week;
-            Some((&mut args.shared, PeriodUnit::Week, start_of_week))
+        None => Some((&mut cli.shared, PeriodUnit::Day, WeekDay::Monday)),
+        Some(command) => {
+            let (unit, start_of_week) = command.period()?;
+            Some((command.shared_mut()?, unit, start_of_week))
         }
-        Some(
-            Command::All(args)
-            | Command::Codex(args)
-            | Command::OpenCode(args)
-            | Command::Amp(args)
-            | Command::Droid(args)
-            | Command::Codebuff(args)
-            | Command::Hermes(args)
-            | Command::Pi(args)
-            | Command::Goose(args)
-            | Command::Kilo(args)
-            | Command::Copilot(args)
-            | Command::Gemini(args)
-            | Command::Antigravity(args)
-            | Command::Kimi(args)
-            | Command::Qwen(args)
-            | Command::OpenClaw(args)
-            | Command::Grok(args)
-            | Command::ZCode(args)
-            | Command::Cline(args)
-            | Command::Dsh(args),
-        ) => agent_window_target(args),
-        Some(Command::Session(_) | Command::Blocks(_) | Command::Statusline(_)) => None,
     }
-}
-
-/// Weeks start on Monday unless a weekly report sets `--start-of-week`, so the
-/// window has to as well.
-const UNIFIED_WEEK_START: WeekDay = WeekDay::Monday;
-
-fn agent_window_target(
-    args: &mut AgentCommandArgs,
-) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)> {
-    let unit = match args.kind {
-        AgentReportKind::Daily => PeriodUnit::Day,
-        AgentReportKind::Weekly => PeriodUnit::Week,
-        AgentReportKind::Monthly => PeriodUnit::Month,
-        AgentReportKind::Session => return None,
-    };
-    let start_of_week = args.start_of_week;
-    Some((&mut args.shared, unit, start_of_week))
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use ccusage_cli::{CodexSpeed, SortOrder, WeeklyArgs};
+    use ccusage_cli::{
+        AgentCommandArgs, AgentReportKind, CodexSpeed, Command, SortOrder, WeeklyArgs,
+    };
 
     use super::*;
 
@@ -116,9 +75,9 @@ mod tests {
         };
         resolve(&mut cli).unwrap();
         match cli.command {
-            Some(Command::All(args)) | Some(Command::Codex(args)) | Some(Command::Cline(args)) => {
-                args.shared.since
-            }
+            Some(Command::All(args))
+            | Some(Command::Agent(ccusage_cli::AgentId::Codex, args))
+            | Some(Command::Agent(ccusage_cli::AgentId::Cline, args)) => args.shared.since,
             Some(Command::Weekly(args)) => args.shared.since,
             Some(Command::Monthly(shared)) => shared.since,
             _ => panic!("unexpected command"),
@@ -136,10 +95,18 @@ mod tests {
 
     #[test]
     fn resolves_agent_report_kinds_to_their_own_period() {
-        let weekly = resolved_since(Command::Codex(agent_command(AgentReportKind::Weekly, 1)));
-        let cline_weekly =
-            resolved_since(Command::Cline(agent_command(AgentReportKind::Weekly, 1)));
-        let monthly = resolved_since(Command::Codex(agent_command(AgentReportKind::Monthly, 1)));
+        let weekly = resolved_since(Command::Agent(
+            ccusage_cli::AgentId::Codex,
+            agent_command(AgentReportKind::Weekly, 1),
+        ));
+        let cline_weekly = resolved_since(Command::Agent(
+            ccusage_cli::AgentId::Cline,
+            agent_command(AgentReportKind::Weekly, 1),
+        ));
+        let monthly = resolved_since(Command::Agent(
+            ccusage_cli::AgentId::Codex,
+            agent_command(AgentReportKind::Monthly, 1),
+        ));
 
         let today = format_date(utc_now(), Some("UTC"));
         assert_eq!(

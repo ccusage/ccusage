@@ -1,3 +1,5 @@
+use crate::AgentId;
+
 use std::collections::{BTreeMap, HashMap};
 
 pub enum Command {
@@ -8,25 +10,58 @@ pub enum Command {
     Session(SessionArgs),
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
-    Codex(AgentCommandArgs),
-    OpenCode(AgentCommandArgs),
-    Amp(AgentCommandArgs),
-    Droid(AgentCommandArgs),
-    Codebuff(AgentCommandArgs),
-    Hermes(AgentCommandArgs),
-    Pi(AgentCommandArgs),
-    Goose(AgentCommandArgs),
-    Kilo(AgentCommandArgs),
-    Copilot(AgentCommandArgs),
-    Gemini(AgentCommandArgs),
-    Antigravity(AgentCommandArgs),
-    Kimi(AgentCommandArgs),
-    Qwen(AgentCommandArgs),
-    OpenClaw(AgentCommandArgs),
-    Grok(AgentCommandArgs),
-    ZCode(AgentCommandArgs),
-    Cline(AgentCommandArgs),
-    Dsh(AgentCommandArgs),
+    Agent(AgentId, AgentCommandArgs),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PeriodUnit {
+    Day,
+    Week,
+    Month,
+}
+
+impl Command {
+    pub fn shared(&self) -> Option<&SharedArgs> {
+        match self {
+            Self::All(args) | Self::Agent(_, args) => Some(&args.shared),
+            Self::Daily(args) => Some(&args.shared),
+            Self::Monthly(shared) => Some(shared),
+            Self::Weekly(args) => Some(&args.shared),
+            Self::Session(args) => Some(&args.shared),
+            Self::Blocks(args) => Some(&args.shared),
+            Self::Statusline(_) => None,
+        }
+    }
+
+    pub fn shared_mut(&mut self) -> Option<&mut SharedArgs> {
+        match self {
+            Self::All(args) | Self::Agent(_, args) => Some(&mut args.shared),
+            Self::Daily(args) => Some(&mut args.shared),
+            Self::Monthly(shared) => Some(shared),
+            Self::Weekly(args) => Some(&mut args.shared),
+            Self::Session(args) => Some(&mut args.shared),
+            Self::Blocks(args) => Some(&mut args.shared),
+            Self::Statusline(_) => None,
+        }
+    }
+
+    pub fn period(&self) -> Option<(PeriodUnit, WeekDay)> {
+        match self {
+            Self::All(args) | Self::Agent(_, args) => {
+                let unit = match args.kind {
+                    AgentReportKind::Daily => PeriodUnit::Day,
+                    AgentReportKind::Weekly => PeriodUnit::Week,
+                    AgentReportKind::Monthly => PeriodUnit::Month,
+                    AgentReportKind::Session => return None,
+                };
+                Some((unit, args.start_of_week))
+            }
+            Self::Daily(_) => Some((PeriodUnit::Day, WeekDay::Monday)),
+            Self::Monthly(_) => Some((PeriodUnit::Month, WeekDay::Monday)),
+            Self::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
+            Self::Session(_) | Self::Blocks(_) | Self::Statusline(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -344,7 +379,21 @@ impl CliConfig for NoConfig {}
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_date_bound;
+    use super::*;
+
+    #[test]
+    fn command_projections_keep_the_report_options_and_week_start() {
+        let mut command = Command::Weekly(WeeklyArgs {
+            shared: SharedArgs::with_defaults(),
+            start_of_week: WeekDay::Sunday,
+        });
+        assert_eq!(command.period(), Some((PeriodUnit::Week, WeekDay::Sunday)));
+        command.shared_mut().unwrap().offline = true;
+        assert!(command.shared().unwrap().offline);
+        let statusline = Command::Statusline(StatuslineArgs::default());
+        assert!(statusline.shared().is_none());
+        assert!(statusline.period().is_none());
+    }
 
     #[test]
     fn accepts_both_documented_formats() {

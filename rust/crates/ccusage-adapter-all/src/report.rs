@@ -9,8 +9,8 @@ use serde_json::{Value, json};
 use crate::{
     Align, Color, ModelBreakdown, Result, SimpleTable, Totals, TotalsRow, attach_unpriced_models,
     cli::{AgentReportKind, SharedArgs, SortOrder},
-    color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
-    json_float,
+    color, first_column, format_breakdown_model_label, format_currency, format_models_multiline,
+    format_number, json_float,
     output::{strip_cost_json, write_json_or_jq},
     print_box_title, print_missing_pricing_warnings_for_models, should_use_compact_layout,
 };
@@ -445,38 +445,9 @@ pub(super) fn sort_rows(rows: &mut [UnifiedRow], order: &SortOrder) {
     }
 }
 
-fn first_column(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "Date",
-        AgentReportKind::Weekly => "Week",
-        AgentReportKind::Monthly => "Month",
-        AgentReportKind::Session => "Session",
-    }
-}
-
 fn agent_label(agent: &str) -> &str {
-    match agent {
-        "all" => "All",
-        "claude" => "Claude",
-        "codex" => "Codex",
-        "opencode" => "OpenCode",
-        "amp" => "Amp",
-        "droid" => "Droid",
-        "codebuff" => "Codebuff",
-        "hermes" => "Hermes",
-        "pi" => "pi-agent",
-        "goose" => "Goose",
-        "openclaw" => "OpenClaw",
-        "kilo" => "Kilo",
-        "copilot" => "GitHub Copilot CLI",
-        "gemini" => "Gemini CLI",
-        "antigravity" => "Antigravity",
-        "kimi" => "Kimi",
-        "qwen" => "Qwen",
-        "grok" => "Grok",
-        "zcode" => "ZCode",
-        "cline" => "Cline",
-        "dsh" => "DeepSeek Harness",
-        _ => agent,
+    if agent == "all" {
+        return "All";
     }
+    ccusage_cli::AgentId::from_name(agent).map_or(agent, |id| id.spec().report_label)
 }

@@ -208,31 +208,16 @@ fn parse_agent_command(
     config: &dyn CliConfig,
     default_session_duration_hours: f64,
 ) -> Result<Command, String> {
-    let constructor: fn(AgentCommandArgs) -> Command = match agent {
+    match agent {
         AgentId::Claude => {
-            return parse_claude_command(parser, shared, config, default_session_duration_hours);
+            parse_claude_command(parser, shared, config, default_session_duration_hours)
         }
-        AgentId::Codex => return parse_codex_command(parser, shared, config),
-        AgentId::OpenCode => return parse_opencode_command(parser, shared),
-        AgentId::Pi => return parse_pi_command(parser, shared, config),
-        AgentId::OpenClaw => return parse_openclaw_command(parser, shared, config),
-        AgentId::Amp => Command::Amp,
-        AgentId::Droid => Command::Droid,
-        AgentId::Codebuff => Command::Codebuff,
-        AgentId::Hermes => Command::Hermes,
-        AgentId::Goose => Command::Goose,
-        AgentId::Kilo => Command::Kilo,
-        AgentId::Copilot => Command::Copilot,
-        AgentId::Gemini => Command::Gemini,
-        AgentId::Antigravity => Command::Antigravity,
-        AgentId::Kimi => Command::Kimi,
-        AgentId::Qwen => Command::Qwen,
-        AgentId::Grok => Command::Grok,
-        AgentId::ZCode => Command::ZCode,
-        AgentId::Cline => Command::Cline,
-        AgentId::Dsh => Command::Dsh,
-    };
-    parse_basic_agent_command(parser, shared, agent, constructor)
+        AgentId::Codex => parse_codex_command(parser, shared, config),
+        AgentId::OpenCode => parse_opencode_command(parser, shared),
+        AgentId::Pi => parse_pi_command(parser, shared, config),
+        AgentId::OpenClaw => parse_openclaw_command(parser, shared, config),
+        _ => parse_basic_agent_command(parser, shared, agent),
+    }
 }
 
 fn parse_blocks_command(
@@ -561,13 +546,12 @@ fn parse_basic_agent_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
     agent: AgentId,
-    command: fn(AgentCommandArgs) -> Command,
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, agent)?;
     while parser.peek().is_some() {
         parse_shared_arg(parser, &mut shared)?;
     }
-    Ok(command(agent_command_args(shared, kind)))
+    Ok(Command::Agent(agent, agent_command_args(shared, kind)))
 }
 
 fn parse_opencode_command(
@@ -585,10 +569,13 @@ fn parse_opencode_command(
             flag => return Err(format!("Unknown opencode option '{flag}'")),
         }
     }
-    Ok(Command::OpenCode(AgentCommandArgs {
-        include_claude_agent,
-        ..agent_command_args(shared, kind)
-    }))
+    Ok(Command::Agent(
+        AgentId::OpenCode,
+        AgentCommandArgs {
+            include_claude_agent,
+            ..agent_command_args(shared, kind)
+        },
+    ))
 }
 
 fn parse_codex_command(
@@ -612,19 +599,22 @@ fn parse_codex_command(
             flag => return Err(format!("Unknown codex option '{flag}'")),
         }
     }
-    Ok(Command::Codex(AgentCommandArgs {
-        shared,
-        kind,
-        session_id,
-        sections: None,
-        by_agent: false,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed,
-        include_claude_agent: false,
-        start_of_week: WeekDay::Monday,
-        sources: BTreeMap::new(),
-    }))
+    Ok(Command::Agent(
+        AgentId::Codex,
+        AgentCommandArgs {
+            shared,
+            kind,
+            session_id,
+            sections: None,
+            by_agent: false,
+            pi_path: None,
+            open_claw_path: None,
+            codex_speed,
+            include_claude_agent: false,
+            start_of_week: WeekDay::Monday,
+            sources: BTreeMap::new(),
+        },
+    ))
 }
 
 fn parse_pi_command(
@@ -645,19 +635,22 @@ fn parse_pi_command(
             flag => return Err(format!("Unknown pi option '{flag}'")),
         }
     }
-    Ok(Command::Pi(AgentCommandArgs {
-        shared,
-        kind,
-        session_id: None,
-        sections: None,
-        by_agent: false,
-        pi_path,
-        open_claw_path: None,
-        codex_speed,
-        include_claude_agent: false,
-        start_of_week: WeekDay::Monday,
-        sources: BTreeMap::new(),
-    }))
+    Ok(Command::Agent(
+        AgentId::Pi,
+        AgentCommandArgs {
+            shared,
+            kind,
+            session_id: None,
+            sections: None,
+            by_agent: false,
+            pi_path,
+            open_claw_path: None,
+            codex_speed,
+            include_claude_agent: false,
+            start_of_week: WeekDay::Monday,
+            sources: BTreeMap::new(),
+        },
+    ))
 }
 
 fn parse_openclaw_command(
@@ -678,19 +671,22 @@ fn parse_openclaw_command(
             flag => return Err(format!("Unknown openclaw option '{flag}'")),
         }
     }
-    Ok(Command::OpenClaw(AgentCommandArgs {
-        shared,
-        kind,
-        session_id: None,
-        sections: None,
-        by_agent: false,
-        pi_path: None,
-        open_claw_path,
-        codex_speed,
-        include_claude_agent: false,
-        start_of_week: WeekDay::Monday,
-        sources: BTreeMap::new(),
-    }))
+    Ok(Command::Agent(
+        AgentId::OpenClaw,
+        AgentCommandArgs {
+            shared,
+            kind,
+            session_id: None,
+            sections: None,
+            by_agent: false,
+            pi_path: None,
+            open_claw_path,
+            codex_speed,
+            include_claude_agent: false,
+            start_of_week: WeekDay::Monday,
+            sources: BTreeMap::new(),
+        },
+    ))
 }
 
 fn parse_agent_report_kind(
@@ -800,13 +796,10 @@ fn normalize_legacy_agent_command_args(args: &mut Vec<String>) {
     let Some(command) = args.first() else {
         return;
     };
-    let Some((agent, report)) = command.split_once(':') else {
+    let Some((agent, report)) = AgentId::from_colon_command(command) else {
         return;
     };
-    if !AgentId::from_name(agent).is_some_and(|agent| agent.spec().accepts(report)) {
-        return;
-    }
-    args.splice(0..1, [agent.to_string(), report.to_string()]);
+    args.splice(0..1, [agent.spec().name.to_string(), report.to_string()]);
 }
 
 fn report_flag_alias_error(args: &[String]) -> Option<String> {
@@ -991,34 +984,10 @@ fn report_shared<'a>(
 ) -> (&'a SharedArgs, bool) {
     match command {
         None => (root_shared, true),
-        Some(Command::All(args)) => (&args.shared, args.kind != AgentReportKind::Session),
-        Some(Command::Daily(args)) => (&args.shared, true),
-        Some(Command::Monthly(shared)) => (shared, true),
-        Some(Command::Weekly(args)) => (&args.shared, true),
-        Some(Command::Session(args)) => (&args.shared, false),
-        Some(Command::Blocks(args)) => (&args.shared, false),
-        Some(Command::Statusline(_)) => (root_shared, false),
-        Some(
-            Command::Codex(args)
-            | Command::OpenCode(args)
-            | Command::Amp(args)
-            | Command::Droid(args)
-            | Command::Codebuff(args)
-            | Command::Hermes(args)
-            | Command::Pi(args)
-            | Command::Goose(args)
-            | Command::Kilo(args)
-            | Command::Copilot(args)
-            | Command::Gemini(args)
-            | Command::Antigravity(args)
-            | Command::Kimi(args)
-            | Command::Qwen(args)
-            | Command::OpenClaw(args)
-            | Command::Grok(args)
-            | Command::ZCode(args)
-            | Command::Cline(args)
-            | Command::Dsh(args),
-        ) => (&args.shared, args.kind != AgentReportKind::Session),
+        Some(command) => (
+            command.shared().unwrap_or(root_shared),
+            command.period().is_some(),
+        ),
     }
 }
 

@@ -1,4 +1,4 @@
-use ccusage_cli::{Command, SharedArgs};
+use ccusage_cli::Command;
 use ccusage_report::is_valid_timezone;
 
 use super::Cli;
@@ -22,38 +22,9 @@ fn effective_timezone(cli: &Cli) -> Option<&str> {
     match cli.command.as_ref() {
         None => cli.shared.timezone.as_deref(),
         Some(Command::Statusline(args)) => args.timezone.as_deref(),
-        Some(command) => command_shared(command).timezone.as_deref(),
-    }
-}
-
-fn command_shared(command: &Command) -> &SharedArgs {
-    match command {
-        Command::Daily(args) => &args.shared,
-        Command::Monthly(shared) => shared,
-        Command::Weekly(args) => &args.shared,
-        Command::Session(args) => &args.shared,
-        Command::Blocks(args) => &args.shared,
-        Command::All(args)
-        | Command::Codex(args)
-        | Command::OpenCode(args)
-        | Command::Amp(args)
-        | Command::Droid(args)
-        | Command::Codebuff(args)
-        | Command::Hermes(args)
-        | Command::Pi(args)
-        | Command::Goose(args)
-        | Command::Kilo(args)
-        | Command::Copilot(args)
-        | Command::Gemini(args)
-        | Command::Antigravity(args)
-        | Command::Kimi(args)
-        | Command::Qwen(args)
-        | Command::OpenClaw(args)
-        | Command::Grok(args)
-        | Command::ZCode(args)
-        | Command::Cline(args)
-        | Command::Dsh(args) => &args.shared,
-        Command::Statusline(_) => unreachable!("statusline keeps its own timezone field"),
+        Some(command) => command
+            .shared()
+            .and_then(|shared| shared.timezone.as_deref()),
     }
 }
 

@@ -2,14 +2,7 @@ use jiff::{Span, civil::Date as JiffDate};
 
 use ccusage_core::{cli::WeekDay, week_start};
 
-/// The calendar unit a report groups rows by, and therefore the unit `--last`
-/// counts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PeriodUnit {
-    Day,
-    Week,
-    Month,
-}
+pub use ccusage_core::cli::PeriodUnit;
 
 /// Compact `YYYYMMDD` start of the window covering the most recent `count`
 /// periods, the last of which is the one `today` falls in.

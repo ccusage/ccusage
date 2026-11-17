@@ -5,6 +5,7 @@ pub struct AgentSpec {
     pub id: AgentId,
     pub name: &'static str,
     pub label: &'static str,
+    pub report_label: &'static str,
     pub reports: &'static [AgentReportKind],
     pub extra_commands: &'static [&'static str],
 }
@@ -30,7 +31,9 @@ const ALL_REPORTS: &[AgentReportKind] = &[
 ];
 
 macro_rules! agents {
-    ($($id:ident => $name:literal, $label:literal, $reports:expr, $extra:expr;)*) => {
+    (@report_label $label:literal) => { $label };
+    (@report_label $label:literal, $report_label:literal) => { $report_label };
+    ($($id:ident => $name:literal, $label:literal $(/ $report_label:literal)?, $reports:expr, $extra:expr;)*) => {
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum AgentId {
             $($id,)*
@@ -41,6 +44,7 @@ macro_rules! agents {
                 id: AgentId::$id,
                 name: $name,
                 label: $label,
+                report_label: agents!(@report_label $label $(, $report_label)?),
                 reports: $reports,
                 extra_commands: $extra,
             },)*
@@ -52,7 +56,7 @@ macro_rules! agents {
 }
 
 agents! {
-    Claude => "claude", "Claude Code", ALL_REPORTS, &["blocks", "statusline"];
+    Claude => "claude", "Claude Code" / "Claude", ALL_REPORTS, &["blocks", "statusline"];
     Codex => "codex", "Codex", STANDARD_REPORTS, &[];
     OpenCode => "opencode", "OpenCode", ALL_REPORTS, &[];
     Amp => "amp", "Amp", STANDARD_REPORTS, &[];
@@ -75,6 +79,12 @@ agents! {
 }
 
 impl AgentId {
+    pub fn from_colon_command(command: &str) -> Option<(Self, &str)> {
+        let (name, report) = command.split_once(':')?;
+        let agent = Self::from_name(name)?;
+        agent.spec().accepts(report).then_some((agent, report))
+    }
+
     pub const fn spec(self) -> &'static AgentSpec {
         &AGENTS[self as usize]
     }
@@ -109,5 +119,19 @@ mod tests {
         assert!(!codex.accepts("weekly"));
         assert!(!codex.accepts("blocks"));
         assert!(!codex.accepts("yearly"));
+    }
+
+    #[test]
+    fn recognizes_only_supported_colon_commands() {
+        assert_eq!(
+            AgentId::from_colon_command("codex:daily"),
+            Some((AgentId::Codex, "daily"))
+        );
+        assert_eq!(
+            AgentId::from_colon_command("claude:statusline"),
+            Some((AgentId::Claude, "statusline"))
+        );
+        assert_eq!(AgentId::from_colon_command("codex:weekly"), None);
+        assert_eq!(AgentId::from_colon_command("unknown:daily"), None);
     }
 }

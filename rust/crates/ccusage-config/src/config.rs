@@ -324,10 +324,10 @@ fn detect_config_command(args: &[String]) -> ConfigCommand {
             report: "daily".to_string(),
         };
     };
-    if let Some((agent, report)) = first.split_once(':') {
+    if let Some((agent, report)) = ccusage_cli::AgentId::from_colon_command(first) {
         return ConfigCommand {
-            raw: format!("{agent} {report}"),
-            agent: Some(agent.to_string()),
+            raw: format!("{} {report}", agent.spec().name),
+            agent: Some(agent.spec().name.to_string()),
             report: report.to_string(),
         };
     }
@@ -785,6 +785,19 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn colon_commands_select_only_registered_reports() {
+        for (name, agent) in [
+            ("codex:daily", Some("codex")),
+            ("claude:statusline", Some("claude")),
+            ("codex:weekly", None),
+            ("unknown:daily", None),
+        ] {
+            let command = super::detect_config_command(&[name.to_string()]);
+            assert_eq!(command.agent.as_deref(), agent, "{name}");
+        }
+    }
+
     use serde_json::{Value, json};
 
     use super::*;

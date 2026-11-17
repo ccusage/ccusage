@@ -5,7 +5,7 @@ mod types;
 pub use agents::{AGENTS, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES};
 pub use types::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore, NoConfig, PricingOverride,
+    CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore, NoConfig, PeriodUnit, PricingOverride,
     SessionArgs, SharedArgs, SortOrder, SourceArgs, StatuslineArgs, VisualBurnRate, WeekDay,
     WeeklyArgs, normalize_date_bound,
 };

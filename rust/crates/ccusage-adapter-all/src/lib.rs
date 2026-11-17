@@ -34,6 +34,51 @@ use crate::{
     print_json_or_jq, wants_json,
 };
 
+pub fn runner(agent: ccusage_cli::AgentId) -> fn(AgentCommandArgs) -> Result<()> {
+    match agent {
+        ccusage_cli::AgentId::Codex => adapter::codex::run,
+        ccusage_cli::AgentId::Amp => adapter::amp::run,
+        ccusage_cli::AgentId::Droid => adapter::droid::run,
+        ccusage_cli::AgentId::Codebuff => adapter::codebuff::run,
+        ccusage_cli::AgentId::Hermes => adapter::hermes::run,
+        ccusage_cli::AgentId::Pi => adapter::pi::run,
+        ccusage_cli::AgentId::Goose => adapter::goose::run,
+        ccusage_cli::AgentId::Kilo => adapter::kilo::run,
+        ccusage_cli::AgentId::Copilot => adapter::copilot::run,
+        ccusage_cli::AgentId::Gemini => adapter::gemini::run,
+        ccusage_cli::AgentId::Antigravity => adapter::antigravity::run,
+        ccusage_cli::AgentId::Kimi => adapter::kimi::run,
+        ccusage_cli::AgentId::Qwen => adapter::qwen::run,
+        ccusage_cli::AgentId::OpenClaw => adapter::openclaw::run,
+        ccusage_cli::AgentId::Grok => adapter::grok::run,
+        ccusage_cli::AgentId::ZCode => adapter::zcode::run,
+        ccusage_cli::AgentId::Cline => adapter::cline::run,
+        ccusage_cli::AgentId::Dsh => adapter::dsh::run,
+        ccusage_cli::AgentId::OpenCode => run_opencode,
+        ccusage_cli::AgentId::Claude => run_claude,
+    }
+}
+
+fn run_claude(args: AgentCommandArgs) -> Result<()> {
+    match args.kind {
+        AgentReportKind::Daily => adapter::claude::run_daily(cli::DailyArgs {
+            shared: args.shared,
+            instances: false,
+            project: None,
+            project_aliases: None,
+        }),
+        AgentReportKind::Weekly => adapter::claude::run_weekly(cli::WeeklyArgs {
+            shared: args.shared,
+            start_of_week: args.start_of_week,
+        }),
+        AgentReportKind::Monthly => adapter::claude::run_bucket(args.shared, BucketKind::Monthly),
+        AgentReportKind::Session => adapter::claude::run_session(cli::SessionArgs {
+            shared: args.shared,
+            id: args.session_id,
+        }),
+    }
+}
+
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
     let shared = args.shared;
