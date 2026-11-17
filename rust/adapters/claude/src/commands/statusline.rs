@@ -98,6 +98,10 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
 fn statusline_shared(args: &StatuslineArgs) -> SharedArgs {
     SharedArgs {
         offline: args.offline,
+        color: args.color,
+        mode: args.mode,
+        timezone: args.timezone.clone(),
+        debug: args.debug,
         pricing_overrides: args.pricing_overrides.clone(),
         ..SharedArgs::default()
     }

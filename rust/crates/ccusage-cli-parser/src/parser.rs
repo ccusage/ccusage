@@ -21,7 +21,6 @@ struct RootOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
     first_flag: Option<&'static str>,
-    statusline_unsupported: Option<String>,
 }
 
 impl RootOptions {
@@ -92,16 +91,6 @@ where
             Some("--no-offline") => Some(false),
             _ => None,
         };
-        if !matches!(
-            parser.peek_name(),
-            Some(
-                "-O" | "--offline" | "--no-offline" | "-z" | "--timezone" | "--config" | "--debug"
-            )
-        ) {
-            root_options
-                .statusline_unsupported
-                .get_or_insert_with(|| parser.peek_name().unwrap_or_default().to_string());
-        }
         parse_shared_arg(&mut parser, &mut shared)?;
         if offline_override.is_some() {
             root_options.offline_override = offline_override;
@@ -171,13 +160,10 @@ fn parse_command(
     default_session_duration_hours: f64,
     root_options: RootOptions,
 ) -> Result<Command, String> {
-    if root_options.is_used() && !accepts_root_options(command) {
+    let statusline =
+        command == "statusline" || (command == "claude" && parser.peek() == Some("statusline"));
+    if root_options.is_used() && !accepts_root_options(command) && !statusline {
         return Err(format!("Unknown option '{}'", root_options.first_flag()));
-    }
-    if (command == "statusline" || (command == "claude" && parser.peek() == Some("statusline")))
-        && let Some(flag) = &root_options.statusline_unsupported
-    {
-        return Err(format!("Unknown statusline option '{flag}'"));
     }
     let offline_override = root_options.offline_override;
     match command {
@@ -286,6 +272,9 @@ fn parse_statusline_command(
     }
     args.timezone = shared.timezone.clone();
     args.debug = shared.debug;
+    args.color = shared.color;
+    args.mode = shared.mode;
+    args.pricing_overrides = shared.pricing_overrides.clone();
     while parser.peek().is_some() {
         match parser.next_flag()?.as_str() {
             "-O" | "--offline" => args.offline = true,
@@ -971,6 +960,9 @@ fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
 }
 
 fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {
+    if matches!(command, Command::Statusline(_)) {
+        return None;
+    }
     let shared = command.shared().unwrap_or(root_shared);
     shared.last?;
     if command.period().is_none() {

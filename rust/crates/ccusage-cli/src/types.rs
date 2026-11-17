@@ -181,6 +181,8 @@ pub struct BlocksArgs {
 
 #[derive(Clone)]
 pub struct StatuslineArgs {
+    pub color: ColorChoice,
+    pub mode: CostMode,
     pub offline: bool,
     pub visual_burn_rate: VisualBurnRate,
     pub cost_source: CostSource,
@@ -293,6 +295,8 @@ pub enum CodexSpeed {
 impl Default for StatuslineArgs {
     fn default() -> Self {
         Self {
+            color: ColorChoice::Auto,
+            mode: CostMode::Auto,
             offline: true,
             visual_burn_rate: VisualBurnRate::Off,
             cost_source: CostSource::Auto,

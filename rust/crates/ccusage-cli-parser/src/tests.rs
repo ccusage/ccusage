@@ -2058,24 +2058,31 @@ fn focused_week_starts_resolve_config_before_flags_for_every_weekly_agent() {
 }
 
 #[test]
-fn statusline_preserves_root_debug_and_rejects_unused_root_options() {
-    for prefix in [
-        vec!["--debug", "statusline"],
-        vec!["--debug", "claude", "statusline"],
+fn statusline_accepts_valid_root_flags() {
+    for flags in [
+        vec!["--json"],
+        vec!["--no-color"],
+        vec!["--color"],
+        vec!["--compact"],
+        vec!["--mode", "calculate"],
+        vec!["--order", "asc"],
+        vec!["--last", "2"],
+        vec!["--since", "20260101"],
+        vec!["--until", "20260102"],
+        vec!["--breakdown"],
+        vec!["--no-cost"],
+        vec!["--single-thread"],
+        vec!["--sections", "daily,monthly"],
+        vec!["--by-agent"],
     ] {
-        let mut args = vec!["ccusage"];
-        args.extend(prefix);
-        let Command::Statusline(args) = parse(&args) else {
-            panic!("expected statusline")
-        };
-        assert!(args.debug);
+        for namespace in [vec!["statusline"], vec!["claude", "statusline"]] {
+            let mut argv = vec!["ccusage", "--debug"];
+            argv.extend(flags.clone());
+            argv.extend(namespace);
+            let Command::Statusline(args) = parse(&argv) else {
+                panic!("expected statusline");
+            };
+            assert!(args.debug);
+        }
     }
-    assert_eq!(
-        parse_error(&["ccusage", "--json", "statusline"]),
-        "Unknown statusline option '--json'"
-    );
-    assert_eq!(
-        parse_error(&["ccusage", "--order", "asc", "claude", "statusline"]),
-        "Unknown statusline option '--order'"
-    );
 }
