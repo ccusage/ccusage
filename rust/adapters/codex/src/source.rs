@@ -125,6 +125,40 @@ mod diagnostic_tests {
     use ccusage_core::cli::{AgentReportKind, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
 
+    #[test]
+    fn pending_pricing_is_resolved_before_codex_tier_aggregation() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().into())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            mode: CostMode::Calculate,
+            offline: true,
+            timezone: Some("UTC".into()),
+            ..Default::default()
+        };
+        for kind in [
+            ccusage_adapter_common::source::LoadKind::Day,
+            ccusage_adapter_common::source::LoadKind::Session,
+        ] {
+            let loaded = SOURCE
+                .load_rows(&LoadRequest {
+                    kind,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
+            assert_eq!(loaded.rows.len(), 1);
+            assert_eq!(loaded.rows[0].total_tokens, 250010);
+            assert!((loaded.rows[0].total_cost - 1.2503).abs() < 1e-12);
+        }
+    }
+
     fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<UnifiedRow> {
         SOURCE
             .load_rows(&LoadRequest {
