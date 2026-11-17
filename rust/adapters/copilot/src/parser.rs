@@ -477,32 +477,33 @@ pub(super) fn parse_session_state_file(
         diagnostics,
         is_session_state_usage_envelope,
     ) {
-        if event.carries_usage()
-            && event
-                .timestamp
-                .as_deref()
-                .and_then(parse_ts_timestamp)
-                .is_none()
-        {
-            diagnostics.record(ccusage_core::Skip::record(
-                path,
-                number,
-                ccusage_core::SkipKind::InvalidTimestamp,
-                "Copilot usage has no valid timestamp",
-            ));
-            continue;
-        }
+        let timestamp = event.timestamp.as_deref().and_then(parse_ts_timestamp);
+        let skip_undated = |carries_usage: bool| {
+            if carries_usage {
+                diagnostics.record(ccusage_core::Skip::record(
+                    path,
+                    number,
+                    ccusage_core::SkipKind::InvalidTimestamp,
+                    "Copilot usage has no valid timestamp",
+                ));
+            }
+        };
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
             Some(USAGE_RECORD_EVENT) => {
-                let record = usage_record(event);
+                let Some(timestamp) = timestamp else {
+                    skip_undated(event.carries_usage());
+                    continue;
+                };
+                let record = usage_record(event, timestamp);
                 covered_by_records |= record.is_some();
                 records.extend(record);
                 continue;
             }
             _ => continue,
         };
+        let carries_usage = event.carries_usage();
         let data = event.data.unwrap_or_default();
         // Shutdowns and checkpoints written after a usage record, or by a
         // process that reports watermarks, only total calls that usage records
@@ -511,10 +512,8 @@ pub(super) fn parse_session_state_file(
         if covered_by_records {
             continue;
         }
-        let Some(timestamp_text) = event.timestamp.as_deref() else {
-            continue;
-        };
-        let Some(timestamp) = parse_ts_timestamp(timestamp_text) else {
+        let Some(timestamp) = timestamp else {
+            skip_undated(carries_usage);
             continue;
         };
         let session_nano_aiu = nano_aiu(data.total_nano_aiu);
@@ -613,8 +612,10 @@ struct UsageRecordCall {
     nano_aiu: Option<u64>,
 }
 
-fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
-    let timestamp = parse_ts_timestamp(event.timestamp.as_deref()?)?;
+fn usage_record(
+    event: CopilotSessionStateEvent,
+    timestamp: TimestampMs,
+) -> Option<UsageRecordCall> {
     let record = event.data?.usage?;
     let model = normalize_copilot_model(record.model.as_deref()?);
     let usage = record.tokens;
@@ -1227,6 +1228,30 @@ mod session_state_tests {
             1
         );
     }
+
+    #[test]
+    fn undated_watermark_checkpoint_still_marks_later_shutdowns_as_covered() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session/events.jsonl": concat!(
+                r#"{"type":"session.usage_checkpoint","data":{"totalNanoAiu":5,"usageAccountingWatermarks":{"session":1}}}"#,
+                "\n",
+                r#"{"type":"session.shutdown","timestamp":"2026-02-05T09:00:00.000Z","data":{"modelMetrics":{"gpt-5":{"usage":{"inputTokens":10,"outputTokens":2}}}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("copilot");
+
+        let parsed =
+            parse_session_state_file(&fixture.path("session/events.jsonl"), &diagnostics).unwrap();
+
+        assert!(parsed.entries.is_empty());
+        assert!(parsed.credit_snapshots.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            0
+        );
+    }
+
     #[test]
     fn confirms_usage_diagnostics_from_token_or_credit_fields() {
         assert!(is_otel_usage_envelope(&json!({
