@@ -1,10 +1,11 @@
 use serde_json::{Map, Value};
 
-const RATE_FIELDS: [&str; 10] = [
+const RATE_FIELDS: [&str; 11] = [
     "input_cost_per_token",
     "output_cost_per_token",
     "cache_creation_input_token_cost",
     "cache_creation_input_token_cost_above_1hr",
+    "cache_creation_input_token_cost_above_1hr_above_200k_tokens",
     "cache_read_input_token_cost",
     "input_cost_per_token_above_200k_tokens",
     "output_cost_per_token_above_200k_tokens",
@@ -80,11 +81,15 @@ mod tests {
 
     #[test]
     fn retains_published_one_hour_cache_rates() {
-        let filtered = filter_pricing_json(r#"{"claude-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002,"cache_creation_input_token_cost_above_1hr":0.000007}}"#).unwrap();
+        let filtered = filter_pricing_json(r#"{"claude-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002,"cache_creation_input_token_cost_above_1hr":0.000007,"cache_creation_input_token_cost_above_1hr_above_200k_tokens":0.000014}}"#).unwrap();
         let pricing: serde_json::Value = serde_json::from_str(&filtered).unwrap();
         assert_eq!(
             pricing["claude-test"]["cache_creation_input_token_cost_above_1hr"],
             7e-6
+        );
+        assert_eq!(
+            pricing["claude-test"]["cache_creation_input_token_cost_above_1hr_above_200k_tokens"],
+            14e-6
         );
     }
 

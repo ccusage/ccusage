@@ -134,7 +134,7 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         .unwrap_or(pricing.input * CACHE_CREATE_1H_INPUT_MULTIPLIER);
     let cache_create = pricing.cache_creation_rate();
     let cache_read = pricing.cache_read.unwrap_or(pricing.input * 0.1);
-    let cache_create_1h_cost_above_200k = pricing.cache_create_1h.or_else(|| {
+    let cache_create_1h_cost_above_200k = pricing.cache_create_1h_above_200k.or_else(|| {
         pricing
             .input_above_200k
             .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER)
@@ -278,6 +278,43 @@ mod tests {
         assert_eq!(
             calculate_cost_from_pricing(usage, pricing.find("claude-test").unwrap()),
             110.0
+        );
+    }
+
+    #[test]
+    fn a_flat_one_hour_rate_keeps_the_long_context_premium_on_the_tier() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "tier-published": {
+                "input_cost_per_token": 3,
+                "output_cost_per_token": 15,
+                "input_cost_per_token_above_200k_tokens": 6,
+                "cache_creation_input_token_cost_above_1hr": 6,
+                "cache_creation_input_token_cost_above_1hr_above_200k_tokens": 13
+            },
+            "tier-derived": {
+                "input_cost_per_token": 3,
+                "output_cost_per_token": 15,
+                "input_cost_per_token_above_200k_tokens": 6,
+                "cache_creation_input_token_cost_above_1hr": 6
+            }
+        }"#,
+        );
+        let usage = crate::TokenUsageRaw {
+            cache_creation: Some(crate::CacheCreationRaw {
+                ephemeral_5m_input_tokens: 0,
+                ephemeral_1h_input_tokens: 300_000,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            calculate_cost_from_pricing(usage, pricing.find("tier-published").unwrap()),
+            200_000.0 * 6.0 + 100_000.0 * 13.0
+        );
+        assert_eq!(
+            calculate_cost_from_pricing(usage, pricing.find("tier-derived").unwrap()),
+            200_000.0 * 6.0 + 100_000.0 * 12.0
         );
     }
 

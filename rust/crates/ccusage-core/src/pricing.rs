@@ -102,6 +102,7 @@ pub struct Pricing {
     pub(crate) cache_create: Option<f64>,
     pub cache_read: Option<f64>,
     pub(crate) cache_create_1h: Option<f64>,
+    pub(crate) cache_create_1h_above_200k: Option<f64>,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub cache_create_above_200k: Option<f64>,
@@ -131,6 +132,7 @@ impl Pricing {
             cache_create: None,
             cache_read: None,
             cache_create_1h: None,
+            cache_create_1h_above_200k: None,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -487,6 +489,7 @@ struct LiteLlmPricing {
     output_cost_per_token: Option<f64>,
     cache_creation_input_token_cost: Option<f64>,
     cache_creation_input_token_cost_above_1hr: Option<f64>,
+    cache_creation_input_token_cost_above_1hr_above_200k_tokens: Option<f64>,
     cache_read_input_token_cost: Option<f64>,
     input_cost_per_token_above_200k_tokens: Option<f64>,
     output_cost_per_token_above_200k_tokens: Option<f64>,
@@ -1106,6 +1109,8 @@ impl PricingMap {
                         cache_create: pricing.cache_creation_input_token_cost,
                         cache_read: pricing.cache_read_input_token_cost,
                         cache_create_1h: pricing.cache_creation_input_token_cost_above_1hr,
+                        cache_create_1h_above_200k: pricing
+                            .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
                         input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
                         output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
                         cache_create_above_200k: pricing
