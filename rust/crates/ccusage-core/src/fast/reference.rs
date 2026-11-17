@@ -1,5 +1,3 @@
-//! Frozen at ccb35c27 so optimized searches retain the previous decisions.
-
 use memchr::{memchr, memmem::Finder};
 use smallvec::SmallVec;
 

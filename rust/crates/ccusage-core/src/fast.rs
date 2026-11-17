@@ -183,18 +183,11 @@ struct Marker {
     anchor: Option<Anchor>,
 }
 
-/// A bracket outside the marker's strings. JSON cannot escape it, so every
-/// spelling of the marker, verbatim or escaped, holds it verbatim, and lines
-/// hold far fewer brackets than backslashes: one `memchr` pass for it finds
-/// every candidate spelling.
+// NOTE(2026-11-17, RFC 8259): JSON escapes only string content, so a bracket outside the marker's strings appears verbatim in every spelling of it.
 struct Anchor {
     byte: u8,
-    /// Where the bracket sits in the marker.
     index: usize,
-    /// Where the structural bytes before the bracket start in the marker.
     run_start: usize,
-    /// The most line bytes the marker before `run_start` can take, with every
-    /// content byte spelled as a six-byte `\u` escape.
     reach: usize,
 }
 
@@ -253,8 +246,6 @@ impl Marker {
         }
     }
 
-    /// Whether `line` spells the marker, verbatim or with escapes, around an
-    /// occurrence of its anchor.
     fn spelled_at_anchor(&self, line: &[u8], anchor: &Anchor) -> bool {
         let marker = self.finder.needle();
         let run = &marker[anchor.run_start..anchor.index];
@@ -268,7 +259,6 @@ impl Marker {
             let verbatim = run_at
                 .checked_sub(anchor.run_start)
                 .is_some_and(|start| line[start..run_at].iter().eq(&marker[..anchor.run_start]));
-            // Escaping a byte before the run leaves a backslash within reach.
             if verbatim
                 || line[run_at.saturating_sub(anchor.reach)..run_at].contains(&b'\\')
                     && self.spelled_before(line, anchor.run_start, run_at)
@@ -279,9 +269,6 @@ impl Marker {
         false
     }
 
-    /// Whether `line[..end]` ends with a spelling of the marker's first
-    /// `index` bytes. An escape that spells the first byte only counts when
-    /// the backslashes before it pair up.
     fn spelled_before(&self, line: &[u8], index: usize, end: usize) -> bool {
         let Some(index) = index.checked_sub(1) else {
             return true;
@@ -563,8 +550,6 @@ mod tests {
         assert!(!prefilter.matches_escaped(br#"{"t":"a/b","n":"\n"}"#));
     }
 
-    /// A `\u` escape for `hex`, built at runtime so the test source holds no
-    /// escape that an editor or formatter could decode.
     fn unicode_escape(hex: &str) -> String {
         ["\\", "u", hex].concat()
     }
@@ -609,9 +594,6 @@ mod tests {
         assert!(!prefilter.matches(br#"{"k":{ "a/b":1}}"#));
     }
 
-    /// How many escapes each spelling of `marker` that starts at `line[start]`
-    /// takes, with every string byte verbatim or escaped. This brute force is
-    /// the definition the prefilter's searches must agree with.
     fn spellings(marker: &[u8], line: &[u8], start: usize) -> Vec<usize> {
         let mut in_string = marker.first() != Some(&b'"');
         let content = marker

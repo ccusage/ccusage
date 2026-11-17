@@ -7,7 +7,6 @@ use serde::{
 
 use super::CacheCreationRaw;
 
-/// What the entries of `usage.iterations` say about the `usage` around them.
 #[derive(Default)]
 pub(super) struct Iterations {
     /// The cache-write split summed over the `message` entries.
@@ -16,7 +15,6 @@ pub(super) struct Iterations {
     /// a well-formed split, because a partial sum would undercount just like
     /// the top-level split it replaces.
     pub(super) message_cache_creation: Option<CacheCreationRaw>,
-    /// Whether an entry's `type` is `advisor_message`.
     pub(super) has_advisor_message: bool,
 }
 
