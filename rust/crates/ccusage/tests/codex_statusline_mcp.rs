@@ -1,6 +1,7 @@
 use std::{
-    io::{BufRead, BufReader, Write},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    io::{self, BufRead, BufReader, Write},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -289,10 +290,20 @@ fn run_mcp_raw(fixture: &Fixture, requests: &[String], args: &[&str]) -> Vec<Val
         .collect()
 }
 
+#[test]
+#[should_panic(expected = "MCP server did not reply within 5 seconds: Timeout")]
+fn stops_waiting_when_the_provider_sends_no_reply() {
+    let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
+    let mut process = McpProcess::start(&fixture, &[]);
+    process.read_resource_value(json!({
+        "jsonrpc":"2.0","method":"notifications/initialized"
+    }));
+}
+
 struct McpProcess {
     child: Child,
     stdin: Option<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
+    stdout: mpsc::Receiver<io::Result<String>>,
 }
 
 impl McpProcess {
@@ -318,7 +329,15 @@ impl McpProcess {
             .spawn()
             .unwrap();
         let stdin = child.stdin.take().unwrap();
-        let stdout = BufReader::new(child.stdout.take().unwrap());
+        let stream = child.stdout.take().unwrap();
+        let (sender, stdout) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(stream).lines() {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
         Self {
             child,
             stdin: Some(stdin),
@@ -394,9 +413,11 @@ impl McpProcess {
     fn read_resource_value(&mut self, request: Value) -> Value {
         let stdin = self.stdin.as_mut().unwrap();
         writeln!(stdin, "{request}").unwrap();
-        let mut line = String::new();
-        let bytes = self.stdout.read_line(&mut line).unwrap();
-        assert_ne!(bytes, 0, "MCP server closed stdout before replying");
+        let line = self
+            .stdout
+            .recv_timeout(Duration::from_secs(5))
+            .expect("MCP server did not reply within 5 seconds")
+            .expect("MCP stdout could not be read");
         let reply: Value = serde_json::from_str(&line).expect("stdout must contain JSON-RPC");
         assert!(
             reply.get("error").is_none(),
@@ -410,8 +431,18 @@ impl McpProcess {
 
     fn finish(&mut self) {
         self.stdin.take();
-        let status = self.child.wait().unwrap();
-        assert!(status.success(), "MCP server exited with {status}");
+        let started = Instant::now();
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                assert!(status.success(), "MCP server exited with {status}");
+                return;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "MCP server did not exit within 5 seconds"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 
