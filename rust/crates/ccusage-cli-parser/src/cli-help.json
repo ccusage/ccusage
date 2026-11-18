@@ -231,6 +231,10 @@
 	],
 	"codex_statusline_options": [
 		{
+			"flags": "--mcp",
+			"description": "Serve a local stdio MCP provider for Codex's native statusline (always offline)"
+		},
+		{
 			"flags": "-i, --id <id>",
 			"description": "Show one session instead of today's usage"
 		},

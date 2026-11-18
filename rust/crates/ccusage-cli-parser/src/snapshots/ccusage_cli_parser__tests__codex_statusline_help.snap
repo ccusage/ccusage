@@ -2,12 +2,13 @@
 source: crates/ccusage-cli-parser/src/tests.rs
 expression: "help_text_for_args(&[\"ccusage\".into(), \"codex\".into(), \"statusline\".into()])"
 ---
-Show today's Codex usage in one line, or select a session or date range
+Show a Codex usage summary, or serve its native statusline with --mcp
 
 USAGE:
   ccusage codex statusline <OPTIONS>
 
 OPTIONS:
+  --mcp                                Serve a local stdio MCP provider for Codex's native statusline (always offline)
   -i, --id <id>                        Show one session instead of today's usage
   -s, --since <since>                  Filter from date (YYYY-MM-DD or YYYYMMDD)
   -u, --until <until>                  Filter until date (inclusive)

@@ -23,6 +23,8 @@ Most users can start with unified reports such as `ccusage daily`. Add the `code
 
 ## Statusline
 
+`ccusage codex statusline --mcp` provides usage and estimated cost inside Codex's native statusline. Its stdio MCP server is built into the Rust binary and adds no MCP SDK or runtime dependency. See [native statusline setup](/guide/statusline#codex-native-statusline-experimental).
+
 `ccusage codex statusline` prints today's Codex token usage and estimated cost as one plain line, using embedded pricing by default. It reads local Codex session logs and does not need input on stdin.
 
 ```text
@@ -38,7 +40,7 @@ ccusage codex statusline --since 2026-11-01 --until 2026-11-15 --timezone Europe
 ccusage codex statusline --json --jq '.scope'
 ```
 
-The command writes its summary to stdout. Codex's built-in TUI footer is configured separately through [`tui.status_line`](https://developers.openai.com/codex/config-reference/), which selects from Codex's built-in status-line item identifiers.
+`--id` always includes the full session and overrides date filters, including filters in ccusage's config file. The native provider follows the currently displayed thread and uses embedded pricing for every refresh.
 
 ## Data Source
 

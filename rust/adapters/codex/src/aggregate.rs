@@ -144,12 +144,44 @@ fn load_groups_from_sources(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
+    load_selected_groups(sources, shared, kind, None)
+}
+
+pub(super) fn load_session_groups(
+    shared: &SharedArgs,
+    session_id: &str,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    load_selected_groups(
+        &paths::codex_usage_sources()?,
+        shared,
+        AgentReportKind::Session,
+        Some(super::normalize_session_id(session_id)),
+    )
+}
+
+fn load_selected_groups(
+    sources: &[paths::CodexUsageSource],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    session_id: Option<&str>,
+) -> Result<BTreeMap<String, CodexGroup>> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources);
     let files_by_group = file_groups
         .iter()
-        .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
+        .map(|group| {
+            let mut files = paths::filter_codex_usage_files(&group.dir, &group.files, shared);
+            if let Some(session_id) = session_id {
+                files.retain(|path| {
+                    super::session_id_matches(
+                        &parser::codex_session_id(&group.dir, path),
+                        session_id,
+                    )
+                });
+            }
+            files
+        })
         .collect::<Vec<_>>();
-    let replay_plan = if shared.since.is_some() || shared.until.is_some() {
+    let replay_plan = if session_id.is_some() || shared.since.is_some() || shared.until.is_some() {
         CodexReplayPlan::for_bounded_files(
             file_groups
                 .iter()
@@ -1266,7 +1298,7 @@ mod tests {
                     read,
                     replay::ObservedFileRead::MetadataProbe(path) if path == &long_running_path
                 )));
-                assert!(reads.iter().any(|read| matches!(
+                assert!(!reads.iter().any(|read| matches!(
                     read,
                     replay::ObservedFileRead::MetadataProbe(path) if path == &historical_path
                 )));

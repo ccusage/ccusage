@@ -75,6 +75,7 @@ fn observe_parent_usage(path: &Path) {
     }
 }
 
+#[derive(Default)]
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
     usage_by_parent: HashMap<PathBuf, ParentUsage>,
@@ -124,19 +125,16 @@ impl CodexReplayPlan {
         single_thread: bool,
     ) -> Self {
         let children = collect_replay_files(children);
+        let child_metadata = read_session_metadata(&children, single_thread);
+        if child_metadata
+            .iter()
+            .all(|metadata| metadata.parent_id.is_none())
+        {
+            return Self::default();
+        }
         let available_files = collect_replay_files(available_files);
         let available_metadata = read_session_metadata(&available_files, single_thread);
         let files_by_session_id = index_session_paths(&available_files, &available_metadata);
-        let mut metadata_by_path = HashMap::with_capacity(available_files.len());
-        for ((path, _), metadata) in available_files.iter().zip(available_metadata) {
-            metadata_by_path.entry(path.clone()).or_insert(metadata);
-        }
-        let child_metadata = children.iter().map(|(child, _)| {
-            metadata_by_path
-                .get(child)
-                .cloned()
-                .unwrap_or_else(|| read_codex_session_metadata(child))
-        });
         let parent_by_child = build_parent_replays(&children, child_metadata, &files_by_session_id);
         let parent_paths = parent_by_child
             .values()
@@ -436,5 +434,34 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
             .or(spawn_parent_id)
             .map(str::to_string),
         spawned: spawn_parent_id.is_some(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn bounded_regular_sessions_do_not_open_unrelated_rollouts() {
+        let fixture = fs_fixture!({
+            "current.jsonl": r#"{"type":"session_meta","payload":{"id":"current"}}"#,
+            "other.jsonl": r#"{"type":"session_meta","payload":{"id":"other"}}"#,
+        });
+        let selected = [fixture.path("current.jsonl")];
+        let available = [fixture.path("current.jsonl"), fixture.path("other.jsonl")];
+        take_observed_file_read_events();
+
+        let plan = CodexReplayPlan::for_bounded_files(
+            [(fixture.root(), selected.as_slice())],
+            [(fixture.root(), available.as_slice())],
+            true,
+        );
+
+        assert!(plan.parent_by_child.is_empty());
+        assert_eq!(
+            take_observed_file_read_events(),
+            vec![ObservedFileRead::MetadataProbe(selected[0].clone())]
+        );
     }
 }

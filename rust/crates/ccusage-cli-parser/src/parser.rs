@@ -656,6 +656,7 @@ fn parse_codex_command(
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let statusline = parser.peek() == Some("statusline");
+    let mut mcp = false;
     let kind = if statusline {
         parser.next();
         AgentReportKind::Session
@@ -670,6 +671,7 @@ fn parse_codex_command(
             continue;
         }
         match parser.next_flag()?.as_str() {
+            "--mcp" if statusline => mcp = true,
             "--speed" => codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?,
             "-i" | "--id" if kind == AgentReportKind::Session => {
                 session_id = Some(parser.value_for("--id")?)
@@ -682,6 +684,7 @@ fn parse_codex_command(
             shared,
             session_id,
             codex_speed,
+            mcp,
         }));
     }
     Ok(Command::Codex(AgentCommandArgs {

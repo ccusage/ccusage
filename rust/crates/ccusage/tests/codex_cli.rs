@@ -19,7 +19,19 @@ fn codex_statusline_reports_today_without_reading_stdin() {
 
     let output = run_cli(&fixture, &["codex", "statusline"]);
 
-    assert_eq!(output, "Codex | Today: 1,050 tokens | Est. $0.00\n");
+    let after = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
+    // The subprocess can run on either side of midnight.
+    let expected = std::collections::BTreeMap::from([(
+        today.as_str(),
+        "Codex | Today: 1,050 tokens | Est. $0.00\n",
+    )]);
+    let allowed = [today.as_str(), after.as_str()].map(|date| {
+        expected
+            .get(date)
+            .copied()
+            .unwrap_or("Codex | Today: 0 tokens | Est. $0.00\n")
+    });
+    assert!(allowed.contains(&output.as_str()), "{output}");
 }
 
 #[test]
@@ -71,6 +83,57 @@ fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
 }
 
 #[test]
+fn codex_statusline_session_includes_usage_outside_date_filters() {
+    let fixture = codex_fixture();
+    let _ = fixture.write_file(
+        format!("codex/sessions/{SESSION_ID}.jsonl"),
+        [
+            usage("2026-09-19T23:22:40Z", 100, 50),
+            usage("2026-09-20T00:10:00Z", 200, 50),
+        ]
+        .join("\n"),
+    );
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "codex",
+            "statusline",
+            "--id",
+            SESSION_UUID,
+            "--since",
+            "20260920",
+            "--until",
+            "20260920",
+            "--json",
+        ],
+    ))
+    .unwrap();
+
+    assert_eq!(summary["scope"], "session");
+    assert_eq!(summary["totalTokens"], 400);
+}
+
+#[test]
+fn codex_statusline_display_mode_matches_json_pricing_completeness() {
+    let fixture = fs_fixture!({
+        "codex/sessions/unknown.jsonl": usage("2026-09-19T12:00:00Z", 100, 50)
+            .replace("gpt-5", "unknown-statusline-model"),
+    });
+    let args = [
+        "codex",
+        "statusline",
+        "--since",
+        "20260919",
+        "--mode",
+        "display",
+    ];
+    assert!(!run_cli(&fixture, &args).contains("incomplete pricing"));
+    let summary: Value =
+        serde_json::from_str(&run_cli(&fixture, &[&args[..], &["--json"]].concat())).unwrap();
+    assert!(summary.get("unpricedModels").is_none());
+}
+
+#[test]
 fn codex_statusline_date_range_matches_daily_totals() {
     let fixture = codex_fixture();
     let filters = ["--since", "2026-09-19", "--until", "20260919"];
@@ -107,7 +170,13 @@ fn codex_statusline_uses_the_selected_timezone_for_today() {
         "codex/sessions/tomorrow.jsonl": usage(&format!("{today}T23:30:00.000Z"), 9_000, 500),
     });
     let output = Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .args(["codex", "statusline", "--timezone", "Asia/Tokyo"])
+        .args([
+            "codex",
+            "statusline",
+            "--timezone",
+            "Asia/Tokyo",
+            "--no-cost",
+        ])
         .env("CODEX_HOME", fixture.path("codex"))
         .env("HOME", fixture.path("empty-home"))
         .env("XDG_CONFIG_HOME", fixture.path("empty-xdg-config"))
@@ -125,10 +194,17 @@ fn codex_statusline_uses_the_selected_timezone_for_today() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        "Codex | Today: 150 tokens | Est. $0.00\n"
-    );
+    let after = ccusage_report::format_date(ccusage_core::utc_now(), Some("Asia/Tokyo"));
+    let expected =
+        std::collections::BTreeMap::from([(today.as_str(), "Codex | Today: 150 tokens\n")]);
+    let allowed = [today.as_str(), after.as_str()].map(|date| {
+        expected
+            .get(date)
+            .copied()
+            .unwrap_or("Codex | Today: 9,500 tokens\n")
+    });
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(allowed.contains(&stdout.as_str()), "{stdout}");
 }
 
 #[test]

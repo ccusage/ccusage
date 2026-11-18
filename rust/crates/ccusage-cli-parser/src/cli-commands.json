@@ -274,7 +274,7 @@
 		},
 		{
 			"path": ["codex", "statusline"],
-			"description": "Show today's Codex usage in one line, or select a session or date range",
+			"description": "Show a Codex usage summary, or serve its native statusline with --mcp",
 			"usage": "ccusage codex statusline <OPTIONS>",
 			"options": "codex_statusline_options"
 		},

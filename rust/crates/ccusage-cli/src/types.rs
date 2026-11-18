@@ -178,6 +178,7 @@ pub struct CodexStatuslineArgs {
     pub shared: SharedArgs,
     pub session_id: Option<String>,
     pub codex_speed: CodexSpeed,
+    pub mcp: bool,
 }
 
 #[derive(Clone)]

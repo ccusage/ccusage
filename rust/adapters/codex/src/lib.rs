@@ -76,10 +76,7 @@ fn resolve_session_id<'a>(
     requested_id: &str,
 ) -> Result<&'a str> {
     let original_id = requested_id;
-    let requested_id = original_id
-        .trim_prefix("codex://threads/")
-        .trim_suffix(".zst")
-        .trim_suffix(".jsonl");
+    let requested_id = normalize_session_id(original_id);
     let matches = groups
         .keys()
         .filter(|candidate| session_id_matches(candidate, requested_id))
@@ -94,6 +91,13 @@ fn resolve_session_id<'a>(
             matches.len()
         ))),
     }
+}
+
+fn normalize_session_id(value: &str) -> &str {
+    value
+        .trim_prefix("codex://threads/")
+        .trim_suffix(".zst")
+        .trim_suffix(".jsonl")
 }
 
 fn session_id_matches(candidate: &str, requested_id: &str) -> bool {

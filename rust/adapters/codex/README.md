@@ -13,7 +13,7 @@ into the usage entries the reports render.
 - `replay.rs` — detecting history that a forked or subagent session replays.
 - `report.rs` — the JSON and table shapes where they differ from the shared ones.
 - `speed.rs` — resolving the service tier that priced each request.
-- `statusline.rs` — one-line usage summaries.
+- `statusline.rs` — usage summaries and the native Codex stdio MCP statusline provider.
 - `types.rs` — types that stay inside this adapter.
 
 Anything that is not specific to this source belongs in `ccusage-core` or

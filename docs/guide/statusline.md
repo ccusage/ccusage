@@ -1,8 +1,39 @@
 # Statusline Summaries
 
-ccusage provides compact usage summaries for Claude Code and Codex. Claude Code provides hook data on stdin, while the Codex command reads local session logs and prints a one-line usage summary.
+ccusage provides compact usage summaries for Claude Code and Codex. Claude Code provides hook data on stdin. Codex's native statusline reads a UI resource from ccusage's stdio MCP provider.
 
-## Codex statusline
+## Codex native statusline (experimental)
+
+This integration was verified with the public Codex `0.171.0-alpha.13` prerelease. It requires Codex's experimental `tui_extensions_statusline` feature; Codex `0.170.0` stable does not include the native provider reader.
+
+Add the following to your user-level `~/.codex/config.toml`, using an absolute path to the installed `ccusage` binary:
+
+```toml
+[features]
+tui_extensions_statusline = true
+
+[mcp_servers.ccusage]
+command = "/absolute/path/to/ccusage"
+args = ["codex", "statusline", "--mcp"]
+
+[tui]
+status_line_provider = { server = "ccusage", tool = "ccusage_codex_statusline" }
+```
+
+Merge these entries into existing tables, then restart Codex. You can also select **ccusage Codex usage** in `/statusline`. Register the provider in the user config: Codex rejects project-level MCP providers for the statusline.
+
+The provider displays token usage and estimated cost for the currently displayed thread, including usage from previous days. Codex refreshes it approximately once per second. ccusage reads local session logs and reuses its existing model, service-tier, fork and pricing calculations. It uses embedded pricing and `pricingOverrides` without network requests; no MCP SDK or additional runtime is bundled. The read-only provider does not send prompts or logs to an LLM.
+
+For a custom Codex home, set its path explicitly in the MCP server registration, as Codex does not inherit `CODEX_HOME` into MCP servers by default:
+
+```toml
+[mcp_servers.ccusage.env]
+CODEX_HOME = "/absolute/path/to/your/codex-home"
+```
+
+Add `--no-cost` to the server's `args` to hide costs, or `--speed` to override the speed tier. A new thread without token usage shows zero. Before a thread is available, the provider clears its statusline.
+
+### Preview in a terminal
 
 Run `ccusage codex statusline` to print today's Codex usage in the selected timezone with estimated cost:
 
@@ -19,7 +50,7 @@ ccusage codex statusline --since 2026-11-01 --until 2026-11-15 --timezone Europe
 ccusage codex statusline --json --jq '.scope'
 ```
 
-The command writes its summary to stdout. Codex's built-in footer is configured separately with [`tui.status_line`](https://developers.openai.com/codex/config-reference/), which selects from built-in item identifiers.
+`--id` selects the full session and overrides date filters, including those from ccusage's config. `--mcp` always serves native UI resources with embedded pricing; it uses the thread selected by Codex rather than terminal preview filters or JSON formatting options.
 
 ## Claude Code hook statusline (Beta)
 
