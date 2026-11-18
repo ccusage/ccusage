@@ -458,7 +458,9 @@ impl Drop for McpProcess {
 fn native_usage_fixture() -> Fixture {
     let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
     let now = utc_now();
-    let base = TimestampMs::from_millis(now.as_millis().div_euclid(1_000) * 1_000);
+    let base = TimestampMs::from_millis(
+        now.as_millis().div_euclid(MILLIS_PER_DAY) * MILLIS_PER_DAY + 12 * 60 * 60 * 1_000,
+    );
     let yesterday = base
         .checked_add_millis(-MILLIS_PER_DAY)
         .expect("yesterday timestamp is in range");
