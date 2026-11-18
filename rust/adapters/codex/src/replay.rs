@@ -133,7 +133,26 @@ impl CodexReplayPlan {
             return Self::default();
         }
         let available_files = collect_replay_files(available_files);
-        let available_metadata = read_session_metadata(&available_files, single_thread);
+        let mut metadata_by_path = children
+            .iter()
+            .zip(&child_metadata)
+            .map(|((path, _), metadata)| (path.clone(), metadata.clone()))
+            .collect::<HashMap<_, _>>();
+        let missing_files = available_files
+            .iter()
+            .filter(|(path, _)| !metadata_by_path.contains_key(path))
+            .cloned()
+            .collect::<Vec<_>>();
+        metadata_by_path.extend(
+            missing_files
+                .iter()
+                .zip(read_session_metadata(&missing_files, single_thread))
+                .map(|((path, _), metadata)| (path.clone(), metadata)),
+        );
+        let available_metadata = available_files
+            .iter()
+            .map(|(path, _)| metadata_by_path[path].clone())
+            .collect::<Vec<_>>();
         let files_by_session_id = index_session_paths(&available_files, &available_metadata);
         let parent_by_child = build_parent_replays(&children, child_metadata, &files_by_session_id);
         let parent_paths = parent_by_child
@@ -441,6 +460,32 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
 mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn bounded_forks_probe_each_rollout_metadata_once() {
+        let fixture = fs_fixture!({
+            "child.jsonl": r#"{"type":"session_meta","payload":{"id":"child","forked_from_id":"parent"}}"#,
+            "parent.jsonl": r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
+        });
+        let selected = [fixture.path("child.jsonl")];
+        let available = [fixture.path("child.jsonl"), fixture.path("parent.jsonl")];
+        take_observed_file_read_events();
+
+        CodexReplayPlan::for_bounded_files(
+            [(fixture.root(), selected.as_slice())],
+            [(fixture.root(), available.as_slice())],
+            true,
+        );
+
+        let probes = take_observed_file_read_events()
+            .into_iter()
+            .filter_map(|read| match read {
+                ObservedFileRead::MetadataProbe(path) => Some(path),
+                ObservedFileRead::ParentUsage(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(probes, available);
+    }
 
     #[test]
     fn bounded_regular_sessions_do_not_open_unrelated_rollouts() {
