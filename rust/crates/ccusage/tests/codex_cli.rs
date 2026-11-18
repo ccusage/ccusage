@@ -210,10 +210,16 @@ fn codex_statusline_skips_directories_after_the_last_possible_local_date() {
 }
 
 #[test]
-fn codex_reports_choose_in_range_compaction_copies() {
+fn codex_reports_keep_the_original_of_a_known_fork_compaction() {
     let fixture = fs_fixture!({
-        "codex/sessions/2026/09/20/active.jsonl": compaction("2026-09-19T21:00:00Z"),
-        "codex/archived_sessions/2026/09/19/original.jsonl": compaction("2026-09-19T18:00:00Z"),
+        "codex/sessions/2026/09/20/active.jsonl": [
+            json!({"timestamp":"2026-09-19T21:00:00Z","type":"session_meta","payload":{"id":"child","forked_from_id":"parent"}}).to_string(),
+            compaction("2026-09-19T21:00:00Z"),
+        ].join("\n"),
+        "codex/archived_sessions/2026/09/19/original.jsonl": [
+            json!({"timestamp":"2026-09-19T18:00:00Z","type":"session_meta","payload":{"id":"parent"}}).to_string(),
+            compaction("2026-09-19T18:00:00Z"),
+        ].join("\n"),
     });
     for command in ["statusline", "daily", "session"] {
         for extra in [vec![], vec!["--single-thread"]] {
@@ -232,6 +238,44 @@ fn codex_reports_choose_in_range_compaction_copies() {
             let summary: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
             let totals = summary.get("totals").unwrap_or(&summary);
             assert_eq!(totals["totalTokens"], 40, "{command}: {args:?}");
+        }
+    }
+}
+
+#[test]
+fn codex_reports_keep_compaction_attribution_consistent_across_date_bounds() {
+    let fixture = fs_fixture!({
+        "codex/sessions/2026/09/20/active.jsonl": compaction("2026-09-19T21:00:00Z"),
+        "codex/archived_sessions/2026/09/19/copy.jsonl": compaction("2026-09-19T18:00:00Z"),
+    });
+    for command in ["statusline", "daily", "session"] {
+        for extra in [vec![], vec!["--single-thread"]] {
+            let tokens = |since: &str, until: &str| {
+                let mut args = vec![
+                    "codex",
+                    command,
+                    "--since",
+                    since,
+                    "--until",
+                    until,
+                    "--timezone",
+                    "Asia/Dubai",
+                    "--json",
+                ];
+                args.extend_from_slice(&extra);
+                let summary: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
+                summary.get("totals").unwrap_or(&summary)["totalTokens"]
+                    .as_u64()
+                    .unwrap()
+            };
+            let full = tokens("20260919", "20260920");
+            let days = [
+                tokens("20260919", "20260919"),
+                tokens("20260920", "20260920"),
+            ];
+            assert_eq!(full, 40, "{command}: {extra:?}");
+            assert_eq!(days, [0, 40], "{command}: {extra:?}");
+            assert_eq!(days.iter().sum::<u64>(), full);
         }
     }
 }
