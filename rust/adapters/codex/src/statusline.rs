@@ -10,13 +10,16 @@ use serde_json::Value;
 use super::{load_groups, report, resolve_codex_speed, resolve_session_id};
 
 mod mcp;
+mod native;
+
+use native::NativeUsageReader;
 
 pub fn run_statusline(args: CodexStatuslineArgs) -> Result<()> {
     if args.mcp {
         return mcp::serve(args);
     }
     let pricing = load_pricing(&args);
-    let summary = summarize(&args, &pricing, None)?;
+    let summary = summarize(&args, &pricing)?;
     if wants_json(&args.shared) {
         return print_json_or_jq(summary, args.shared.jq.as_deref(), args.shared.no_cost);
     }
@@ -32,13 +35,9 @@ fn load_pricing(args: &CodexStatuslineArgs) -> PricingMap {
     )
 }
 
-fn summarize(
-    args: &CodexStatuslineArgs,
-    pricing: &PricingMap,
-    thread: Option<&str>,
-) -> Result<Value> {
+fn summarize(args: &CodexStatuslineArgs, pricing: &PricingMap) -> Result<Value> {
     let mut shared = args.shared.clone();
-    let requested_session = thread.or(args.session_id.as_deref());
+    let requested_session = args.session_id.as_deref();
     let scope = if requested_session.is_some() {
         shared.since = None;
         shared.until = None;
@@ -63,12 +62,18 @@ fn summarize(
         load_groups(&shared, kind)?
     };
     let session_id = if let Some(requested) = requested_session {
-        let id = if thread.is_some() && groups.is_empty() {
-            requested.to_string()
+        let thread = super::normalize_session_id(requested);
+        let has_replacement = groups.keys().any(|id| {
+            super::rollout_identity(id)
+                .is_some_and(|(owner, rollout)| owner == thread && owner != rollout)
+        });
+        let id = if has_replacement {
+            thread.to_string()
         } else {
-            resolve_session_id(&groups, requested)?.to_string()
+            let id = resolve_session_id(&groups, requested)?.to_string();
+            groups.retain(|candidate, _| candidate == &id);
+            id
         };
-        groups.retain(|candidate, _| candidate == &id);
         Some(id)
     } else {
         None

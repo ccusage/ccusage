@@ -172,20 +172,33 @@ fn load_selected_groups(
             let mut files = paths::filter_codex_usage_files(&group.dir, &group.files, shared);
             if let Some(session_id) = session_id {
                 files.retain(|path| {
-                    super::session_id_matches(
-                        &parser::codex_session_id(&group.dir, path),
-                        session_id,
-                    )
+                    let candidate = parser::codex_session_id(&group.dir, path);
+                    super::session_id_matches(&candidate, session_id)
+                        || super::rollout_identity(&candidate)
+                            .is_some_and(|(thread, _)| thread == session_id)
                 });
             }
             files
         })
         .collect::<Vec<_>>();
-    let replay_plan = if session_id.is_some() || shared.since.is_some() || shared.until.is_some() {
+    load_groups_from_file_selection(&file_groups, &files_by_group, shared, kind)
+}
+
+pub(super) fn load_groups_from_file_selection(
+    file_groups: &[paths::CodexUsageFileGroup],
+    files_by_group: &[Vec<PathBuf>],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    let filtered = file_groups
+        .iter()
+        .zip(files_by_group)
+        .any(|(group, files)| group.files.len() != files.len());
+    let replay_plan = if filtered || shared.since.is_some() || shared.until.is_some() {
         CodexReplayPlan::for_bounded_files(
             file_groups
                 .iter()
-                .zip(&files_by_group)
+                .zip(files_by_group)
                 .map(|(group, files)| (group.dir.as_path(), files.as_slice())),
             file_groups
                 .iter()
@@ -203,7 +216,7 @@ fn load_selected_groups(
     let mut groups = BTreeMap::new();
     let seen = create_dedupe_shards();
     let mut file_offset = 0;
-    for (group, files) in file_groups.iter().zip(&files_by_group) {
+    for (group, files) in file_groups.iter().zip(files_by_group) {
         if files.is_empty() {
             continue;
         }

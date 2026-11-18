@@ -40,7 +40,7 @@ ccusage codex statusline --since 2026-11-01 --until 2026-11-15 --timezone Europe
 ccusage codex statusline --json --jq '.scope'
 ```
 
-`--id` always includes the full session and overrides date filters, including filters in ccusage's config file. The native provider follows the currently displayed thread and uses embedded pricing for every refresh.
+`--id` always includes the full session and overrides date filters, including filters in ccusage's config file. A thread UUID includes replacement rollouts created by backtracking; an explicit log ID selects that log. The native provider follows the displayed thread and shows both session and Today costs, like the Claude Code statusline.
 
 ## Data Source
 

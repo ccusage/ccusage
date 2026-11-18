@@ -1,6 +1,6 @@
 use std::io::{self, BufRead, Read, Write};
 
-use ccusage_core::{PricingMap, Result, cli::CodexStatuslineArgs, cli_error};
+use ccusage_core::{Result, cli::CodexStatuslineArgs, cli_error, sanitize_terminal_text};
 use serde_json::{Value, json};
 
 const RESOURCE_URI: &str = "ui://ccusage/codex-statusline";
@@ -11,7 +11,7 @@ pub(super) fn serve(args: CodexStatuslineArgs) -> Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
     let mut line = Vec::new();
-    let mut pricing = None;
+    let mut reader = None;
     loop {
         line.clear();
         if input
@@ -26,7 +26,7 @@ pub(super) fn serve(args: CodexStatuslineArgs) -> Result<()> {
             return Err(cli_error("MCP message exceeds 1 MiB"));
         }
         let reply = match serde_json::from_slice::<Value>(&line) {
-            Ok(request) => dispatch(&request, &args, &mut pricing),
+            Ok(request) => dispatch(&request, &args, &mut reader),
             Err(_) => Some(error(Value::Null, -32700, "Parse error")),
         };
         if let Some(reply) = reply {
@@ -40,7 +40,7 @@ pub(super) fn serve(args: CodexStatuslineArgs) -> Result<()> {
 fn dispatch(
     request: &Value,
     args: &CodexStatuslineArgs,
-    pricing: &mut Option<PricingMap>,
+    reader: &mut Option<super::NativeUsageReader>,
 ) -> Option<Value> {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let Some(method) = request.get("method").and_then(Value::as_str) else {
@@ -80,13 +80,12 @@ fn dispatch(
             } else if let Some(thread) =
                 thread.as_str().filter(|id| super::super::is_codex_uuid(id))
             {
-                let pricing = pricing.get_or_insert_with(|| super::load_pricing(args));
-                match super::summarize(args, pricing, Some(thread)) {
-                    Ok(summary) => {
-                        Value::String(super::format_summary(&summary, args.shared.no_cost))
-                    }
-                    Err(_) => return Some(error(id, -32603, "Unable to read Codex usage")),
-                }
+                let reader =
+                    reader.get_or_insert_with(|| super::NativeUsageReader::new(args.clone()));
+                Value::String(with_model_label(
+                    reader.read(thread),
+                    &request["params"]["_meta"]["com.openai/codex-statusline-state"]["thread"]["model"],
+                ))
             } else {
                 return Some(error(id, -32602, "Invalid Codex thread ID"));
             };
@@ -105,4 +104,33 @@ fn dispatch(
 
 fn error(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
+fn with_model_label(line: String, model: &Value) -> String {
+    if matches!(
+        line.as_str(),
+        "Codex | Loading usage..." | "Codex | Usage unavailable"
+    ) {
+        return line;
+    }
+    let Some(display_name) = model["display_name"]
+        .as_str()
+        .map(sanitize_terminal_text)
+        .filter(|name| !name.trim().is_empty())
+    else {
+        return line;
+    };
+    let reasoning = model["reasoning_level"]
+        .as_str()
+        .map(sanitize_terminal_text)
+        .filter(|effort| !effort.trim().is_empty());
+    let label = match reasoning {
+        Some(reasoning) => format!("🤖 {display_name} ({reasoning})"),
+        None => format!("🤖 {display_name}"),
+    };
+    if let Some(summary) = line.strip_prefix("Codex") {
+        format!("{label}{summary}")
+    } else {
+        line
+    }
 }

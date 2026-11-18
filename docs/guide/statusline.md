@@ -22,7 +22,13 @@ status_line_provider = { server = "ccusage", tool = "ccusage_codex_statusline" }
 
 Merge these entries into existing tables, then restart Codex. You can also select **ccusage Codex usage** in `/statusline`. Register the provider in the user config: Codex rejects project-level MCP providers for the statusline.
 
-The provider displays token usage and estimated cost for the currently displayed thread, including usage from previous days. Codex refreshes it approximately once per second. ccusage reads local session logs and reuses its existing model, service-tier, fork and pricing calculations. It uses embedded pricing and `pricingOverrides` without network requests; no MCP SDK or additional runtime is bundled. The read-only provider does not send prompts or logs to an LLM.
+Like the Claude Code statusline, the provider shows the current model and reasoning level, **session cost** and **today's cost**. Session usage includes the displayed thread's stored rollouts across days, including consumption before backtracking. Today's cost covers all local Codex threads in the selected timezone. Token counts describe recorded consumption rather than remaining context.
+
+```text
+🤖 GPT-6 Sol (medium) | Est. $0.23 session / $1.23 today | 15,000 tokens
+```
+
+Codex refreshes the resource approximately once per second. Log aggregation runs in the background: the provider shows a loading message initially and keeps the last completed summary while refreshing, so a slow log scan does not block native rendering. Each thread has its own cached display. ccusage reuses its existing model, service-tier, fork and pricing calculations, with embedded pricing and `pricingOverrides` and no network requests. No MCP SDK or additional runtime is bundled, and the app-only tool is excluded from model-facing tool declarations.
 
 For a custom Codex home, set its path explicitly in the MCP server registration, as Codex does not inherit `CODEX_HOME` into MCP servers by default:
 
@@ -31,26 +37,11 @@ For a custom Codex home, set its path explicitly in the MCP server registration,
 CODEX_HOME = "/absolute/path/to/your/codex-home"
 ```
 
-Add `--no-cost` to the server's `args` to hide costs, or `--speed` to override the speed tier. A new thread without token usage shows zero. Before a thread is available, the provider clears its statusline.
+Add `--no-cost` to the server's `args` to show session and Today token totals without prices, or `--speed` to override the speed tier. Native mode ignores preview date filters and always shows the full session and today. A new thread without token usage has zero session usage; its Today total can include other threads. Before a thread is available, the provider clears its statusline.
 
 ### Preview in a terminal
 
-Run `ccusage codex statusline` to print today's Codex usage in the selected timezone with estimated cost:
-
-```text
-Codex | Today: 1,050 tokens | Est. $0.00
-```
-
-It uses embedded pricing by default and does not read stdin. Use `--id <session-id>` for one full session, or `--since` and `--until` for a date range; `--last` is not supported. `--json` and `--jq` provide structured output; the summary includes token totals, `costUSD`, `scope` (`today`, `range`, or `session`), an optional `sessionId`, and `unpricedModels` when applicable. `--speed`, `--no-cost`, `--timezone`, and the [`pricingOverrides` setting](/guide/config-files#pricing-overrides) are also supported. Pass `--no-offline` to fetch current pricing.
-
-```bash
-ccusage codex statusline
-ccusage codex statusline --id <session-id>
-ccusage codex statusline --since 2026-11-01 --until 2026-11-15 --timezone Europe/London
-ccusage codex statusline --json --jq '.scope'
-```
-
-`--id` selects the full session and overrides date filters, including those from ccusage's config. `--mcp` always serves native UI resources with embedded pricing; it uses the thread selected by Codex rather than terminal preview filters or JSON formatting options.
+Run `ccusage codex statusline` for a one-line preview. See [Codex statusline previews](/guide/codex/#statusline) for session selection, date filters, pricing options and JSON output. The native `--mcp` provider always uses embedded pricing and the thread selected by Codex.
 
 ## Claude Code hook statusline (Beta)
 

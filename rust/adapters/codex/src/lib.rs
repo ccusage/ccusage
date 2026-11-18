@@ -100,6 +100,18 @@ fn normalize_session_id(value: &str) -> &str {
         .trim_suffix(".jsonl")
 }
 
+fn rollout_identity(value: &str) -> Option<(&str, &str)> {
+    let value = normalize_session_id(value);
+    let (prefix, rollout_id) = value
+        .rsplit_once('_')
+        .filter(|(_, id)| is_codex_uuid(id))
+        .map_or((value, None), |(prefix, id)| (prefix, Some(id)));
+    let start = prefix.len().checked_sub(36)?;
+    let thread_id = prefix.get(start..)?;
+    (is_codex_uuid(thread_id) && prefix.get(..start)?.ends_with('-'))
+        .then_some((thread_id, rollout_id.unwrap_or(thread_id)))
+}
+
 fn session_id_matches(candidate: &str, requested_id: &str) -> bool {
     let candidate = candidate.trim_suffix(".jsonl");
     if candidate == requested_id

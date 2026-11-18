@@ -83,6 +83,32 @@ fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
 }
 
 #[test]
+fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
+    let fixture = codex_fixture();
+    let replacement = format!(
+        "codex/sessions/2026/09/20/rollout-2026-09-20T12-00-00-{SESSION_UUID}_01a0ddae-e9e2-7852-bfa4-a82da97152b2.jsonl"
+    );
+    let _ = fixture.write_file(replacement, [
+        json!({"timestamp":"2026-09-20T12:00:00Z","type":"session_meta","payload":{"id":SESSION_UUID}}).to_string(),
+        usage("2026-09-20T12:00:01Z", 200, 50),
+    ].join("\n"));
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &["codex", "statusline", "--id", SESSION_UUID, "--json"],
+    ))
+    .unwrap();
+    assert_eq!(summary["scope"], "session");
+    assert_eq!(summary["totalTokens"], 400);
+    assert_eq!(summary["sessionId"], SESSION_UUID);
+    let physical: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &["codex", "statusline", "--id", SESSION_ID, "--json"],
+    ))
+    .unwrap();
+    assert_eq!(physical["totalTokens"], 150);
+}
+
+#[test]
 fn codex_statusline_session_includes_usage_outside_date_filters() {
     let fixture = codex_fixture();
     let _ = fixture.write_file(

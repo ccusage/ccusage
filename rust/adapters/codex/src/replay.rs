@@ -440,7 +440,7 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
         .and_then(|payload| payload.pointer("/source/subagent/thread_spawn/parent_thread_id"))
         .and_then(Value::as_str)
         .filter(|parent_id| !parent_id.is_empty());
-    CodexSessionMetadata {
+    let mut metadata = CodexSessionMetadata {
         timestamp: codex_value_timestamp(value.get("timestamp")),
         session_id: payload
             .and_then(|payload| payload.get("id"))
@@ -453,13 +453,75 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
             .or(spawn_parent_id)
             .map(str::to_string),
         spawned: spawn_parent_id.is_some(),
+    };
+    let referenced_history = payload
+        .and_then(|payload| payload.get("history_base"))
+        .is_some_and(Value::is_object);
+    let replacement = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(super::rollout_identity)
+        .is_some_and(|(thread, rollout)| {
+            thread != rollout && metadata.session_id.as_deref() == Some(thread)
+        });
+    if referenced_history || replacement {
+        // These files reference earlier history without copying its token events.
+        metadata.parent_id = None;
     }
+    metadata
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn referenced_history_and_replacement_rollouts_keep_their_own_usage() {
+        let parent_id = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
+        let child_id = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
+        let replacement_id = "01a0ddae-e9e2-7852-bfa4-a82da97152b2";
+        for (child_file, history_base) in [
+            (
+                "child.jsonl".to_string(),
+                serde_json::json!({"thread_id":parent_id,"end_ordinal_exclusive":2}),
+            ),
+            (
+                format!("rollout-2026-09-19T12-01-00-{child_id}_{replacement_id}.jsonl"),
+                Value::Null,
+            ),
+        ] {
+            let usage = |timestamp: &str| {
+                serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
+                "type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
+            }}).to_string()
+            };
+            let fixture = fs_fixture!({
+                "parent.jsonl": [
+                    serde_json::json!({"timestamp":"2026-09-19T12:00:00Z","type":"session_meta","payload":{"id":parent_id}}).to_string(),
+                    usage("2026-09-19T12:00:01Z"),
+                ].join("\n"),
+            });
+            let _ = fixture.write_file(child_file, [
+                    serde_json::json!({"timestamp":"2026-09-19T12:01:00Z","type":"session_meta","payload":{"id":child_id,"forked_from_id":parent_id,"history_base":history_base}}).to_string(),
+                    usage("2026-09-19T12:02:00Z"),
+                ].join("\n"));
+            let groups = crate::aggregate::load_groups_from_directory(
+                fixture.root(),
+                &crate::cli::SharedArgs {
+                    single_thread: true,
+                    timezone: Some("UTC".to_string()),
+                    ..Default::default()
+                },
+                crate::cli::AgentReportKind::Daily,
+            )
+            .unwrap();
+            assert_eq!(
+                groups.values().map(|group| group.total_tokens).sum::<u64>(),
+                300
+            );
+        }
+    }
 
     #[test]
     fn bounded_forks_probe_each_rollout_metadata_once() {
