@@ -9,6 +9,7 @@ mod reader;
 mod replay;
 mod report;
 mod speed;
+mod statusline;
 mod types;
 
 #[cfg(test)]
@@ -27,6 +28,7 @@ pub use report::{
     non_cached_input_tokens,
 };
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
+pub use statusline::run_statusline;
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,
     CodexUsageBucket,
@@ -74,10 +76,7 @@ fn resolve_session_id<'a>(
     requested_id: &str,
 ) -> Result<&'a str> {
     let original_id = requested_id;
-    let requested_id = original_id
-        .trim_prefix("codex://threads/")
-        .trim_suffix(".zst")
-        .trim_suffix(".jsonl");
+    let requested_id = normalize_session_id(original_id);
     let matches = groups
         .keys()
         .filter(|candidate| session_id_matches(candidate, requested_id))
@@ -92,6 +91,34 @@ fn resolve_session_id<'a>(
             matches.len()
         ))),
     }
+}
+
+fn normalize_session_id(value: &str) -> &str {
+    value
+        .trim_prefix("codex://threads/")
+        .trim_suffix(".zst")
+        .trim_suffix(".jsonl")
+}
+
+fn rollout_identity(value: &str) -> Option<(&str, &str)> {
+    let name = normalize_session_id(value)
+        .rsplit('/')
+        .next()?
+        .strip_prefix("rollout-")?;
+    let (timestamp, ids) = name.split_at_checked(20)?;
+    if !timestamp
+        .bytes()
+        .enumerate()
+        .all(|(index, byte)| match index {
+            4 | 7 | 13 | 16 | 19 => byte == b'-',
+            10 => byte == b'T',
+            _ => byte.is_ascii_digit(),
+        })
+    {
+        return None;
+    }
+    let (thread_id, rollout_id) = ids.split_once('_').unwrap_or((ids, ids));
+    (is_codex_uuid(thread_id) && is_codex_uuid(rollout_id)).then_some((thread_id, rollout_id))
 }
 
 fn session_id_matches(candidate: &str, requested_id: &str) -> bool {

@@ -80,9 +80,9 @@ pub(super) struct CopilotUsageEntry {
 #[derive(Debug, Clone, Default)]
 pub(super) struct CallIds {
     /// Record `apiCallId`, OTel `gen_ai.response.id`: the provider completion ID.
-    pub(super) response_id: Option<String>,
+    response_id: Option<String>,
     /// Record `serviceRequestId`, OTel `github.copilot.service_request_id`.
-    pub(super) service_request_id: Option<String>,
+    service_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

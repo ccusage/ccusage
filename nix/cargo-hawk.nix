@@ -65,9 +65,8 @@ stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/bin"
-    # cargo-hawk execs cargo-hawk-driver from its own directory, so both have to
-    # land together.
-    install -m555 cargo-hawk cargo-hawk-driver "$out/bin/"
+    # cargo-hawk invokes both helpers from its own directory.
+    install -m555 cargo-hawk cargo-hawk-driver cargo-hawk-rustdoc "$out/bin/"
     runHook postInstall
   '';
 

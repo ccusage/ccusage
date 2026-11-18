@@ -111,6 +111,7 @@ bunx ccusage monthly  # All detected sources by month
 bunx ccusage session  # All detected sources by session
 bunx ccusage blocks   # Claude Code 5-hour billing windows
 bunx ccusage statusline  # Claude Code status line for hooks (Beta)
+bunx ccusage codex statusline  # Preview Codex usage; --mcp serves its native statusline
 
 # Source-focused reports and options
 bunx ccusage claude daily --mode display
@@ -166,7 +167,7 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 💬 **Session Report**: View usage grouped by conversation sessions
 - 🤖 **Unified CLI Reports**: View Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness usage from one CLI
 - ⏰ **5-Hour Blocks Report**: Track usage within Claude's billing windows with active block monitoring
-- 🚀 **Statusline Integration**: Compact usage display for Claude Code status bar hooks (Beta)
+- 🚀 **Statusline Summaries**: Claude Code hook integration (Beta) and a Codex native statusline provider (experimental)
 - 🤖 **Model Tracking**: See which models are used across supported sources
 - 📊 **Model Breakdown**: View per-model cost breakdown with `--breakdown` flag
 - 📅 **Date Filtering**: Filter reports by date range using `--since` and `--until`
