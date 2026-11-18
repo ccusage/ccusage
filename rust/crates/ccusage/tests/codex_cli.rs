@@ -187,6 +187,29 @@ fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
 }
 
 #[test]
+fn codex_statusline_skips_directories_after_the_last_possible_local_date() {
+    let fixture = codex_fixture();
+    let _ = fixture.write_file(
+        "codex/sessions/2026/09/21/future.jsonl",
+        usage("invalid", 100, 50),
+    );
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "codex",
+            "statusline",
+            "--since",
+            "20260919",
+            "--until",
+            "20260919",
+            "--json",
+        ],
+    ))
+    .unwrap();
+    assert_eq!(summary["totalTokens"], 150);
+}
+
+#[test]
 fn codex_reports_choose_in_range_compaction_copies() {
     let fixture = fs_fixture!({
         "codex/sessions/2026/09/20/active.jsonl": compaction("2026-09-19T21:00:00Z"),
