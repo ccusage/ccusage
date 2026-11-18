@@ -92,9 +92,12 @@ fn dispatch(
             };
             json!({"contents":[{"uri":RESOURCE_URI,"mimeType":"application/json","text":tree.to_string()}]})
         }
-        "tools/call" if request["params"]["name"] == TOOL_NAME => json!({
-            "content":[{"type":"text","text":"Select ccusage Codex usage in Codex's /statusline picker."}]
-        }),
+        "tools/call" => {
+            if request["params"]["name"] != TOOL_NAME {
+                return Some(error(id, -32602, "Unknown tool name"));
+            }
+            json!({"content":[{"type":"text","text":"Select ccusage Codex usage in Codex's /statusline picker."}]})
+        }
         _ => return Some(error(id, -32601, "Method not found")),
     };
     Some(json!({"jsonrpc":"2.0","id":id,"result":result}))

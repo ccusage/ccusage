@@ -65,6 +65,19 @@ fn reports_protocol_errors_and_keeps_serving_valid_requests() {
 }
 
 #[test]
+fn rejects_unknown_tools_as_invalid_params() {
+    let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
+    let replies = run_mcp(
+        &fixture,
+        &[
+            json!({"jsonrpc":"2.0","id":"bad-tool","method":"tools/call","params":{"name":"unknown"}}),
+        ],
+    );
+    assert_eq!(replies[0]["id"], "bad-tool");
+    assert_eq!(replies[0]["error"]["code"], -32602);
+}
+
+#[test]
 fn renders_the_displayed_thread_instead_of_other_sessions() {
     let fixture = fs_fixture!({
         "codex/sessions/rollout-2026-09-19T12-00-00-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage(100, 50),
