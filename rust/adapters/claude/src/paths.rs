@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    fs,
     io::{BufRead as _, BufReader},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
@@ -15,51 +15,28 @@ use crate::{
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet},
     home, parse_tz,
-    path_utils::expand_home_path,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
 use ccusage_adapter_common::collect_usage_files;
 
 pub fn claude_paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = FxHashSet::default();
-    if let Ok(env_paths) = env::var("CLAUDE_CONFIG_DIR") {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = normalize_claude_config_path(raw);
-            if path.join("projects").is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        if !paths.is_empty() {
-            return Ok(paths);
-        }
+    let (env_value, dirs) = match home::claude_config_dirs() {
+        home::ClaudeConfigDirs::Env { value, dirs } => (Some(value), dirs),
+        home::ClaudeConfigDirs::Default(dirs) => (None, dirs),
+        home::ClaudeConfigDirs::NoHome => return Err(cli_error("home directory is not set")),
+    };
+    let paths: Vec<PathBuf> = dirs
+        .into_iter()
+        .filter(|path| path.join("projects").is_dir())
+        .collect();
+    if let Some(env_paths) = env_value
+        && paths.is_empty()
+    {
         return Err(cli_error(format!(
             "No valid Claude data directories found in CLAUDE_CONFIG_DIR. Expected each path to be a Claude config directory containing 'projects/', or the 'projects/' directory itself: {env_paths}"
         )));
     }
-
-    let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
-    let xdg = env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(&home).join(".config"));
-    for path in [xdg.join("claude"), home.join(".claude")] {
-        if path.join("projects").is_dir() && seen.insert(path.clone()) {
-            paths.push(path);
-        }
-    }
     Ok(paths)
-}
-
-fn normalize_claude_config_path(raw: &str) -> PathBuf {
-    let path = expand_home_path(raw);
-    if path.file_name().is_some_and(|name| name == "projects") && path.is_dir() {
-        return path.parent().map(Path::to_path_buf).unwrap_or(path);
-    }
-    path
 }
 
 pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathBuf> {
@@ -305,9 +282,15 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
     {
         return (session_id.to_string(), relative[0].to_string());
     }
-    if relative.len() >= 4 && relative.get(relative.len() - 2) == Some(&"subagents") {
-        let session_id = relative[relative.len() - 3].to_string();
-        let project_path = relative[..relative.len() - 3].join(std::path::MAIN_SEPARATOR_STR);
+    if let Some(subagents_index) = relative
+        .iter()
+        .enumerate()
+        .take(relative.len().saturating_sub(1))
+        .skip(2)
+        .find_map(|(index, part)| (*part == "subagents").then_some(index))
+    {
+        let session_id = relative[subagents_index - 1].to_string();
+        let project_path = relative[..subagents_index - 1].join(std::path::MAIN_SEPARATOR_STR);
         return (
             session_id,
             if project_path.is_empty() {
@@ -340,7 +323,7 @@ mod tests {
 
     use ccusage_test_support::fs_fixture;
 
-    use super::split_files_before_since;
+    use super::{extract_session_parts, split_files_before_since};
     use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
 
     fn set_file_modified(path: &Path, timestamp: TimestampMs) {
@@ -512,6 +495,16 @@ mod tests {
 
         assert_eq!(split.kept, [live_agent, live, other_root_copy]);
         assert_eq!(split.pruned, [stale_agent]);
+    }
+
+    #[test]
+    fn extracts_parent_session_from_claude_workflow_run_path() {
+        let (session_id, project_path) = extract_session_parts(Path::new(
+            "/home/me/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
+        ));
+
+        assert_eq!(session_id, "session-a");
+        assert_eq!(project_path, "project-a");
     }
 
     #[test]

@@ -30,6 +30,7 @@ pub enum Command {
     Grok(AgentCommandArgs),
     ZCode(AgentCommandArgs),
     Cline(AgentCommandArgs),
+    Dsh(AgentCommandArgs),
 }
 
 #[derive(Clone, Debug, Default)]

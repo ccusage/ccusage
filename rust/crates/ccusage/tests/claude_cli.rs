@@ -504,6 +504,62 @@ fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
 }
 
 #[test]
+fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-11T10:00:00.000Z",
+            "session-a",
+            "msg-main",
+            "req-main",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/subagents/agent-b.jsonl",
+        sidechain_line(
+            "2026-09-11T10:03:00.000Z",
+            "session-a",
+            "msg-subagent",
+            "req-subagent",
+            2.0,
+        ),
+    );
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/subagents/workflows/wf_1/agent-c.jsonl",
+        sidechain_line(
+            "2026-09-11T10:05:00.000Z",
+            "session-a",
+            "msg-workflow",
+            "req-workflow",
+            4.0,
+        ),
+    );
+
+    let output = run_ccusage(
+        &fixture,
+        &[
+            "claude",
+            "session",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ],
+        None,
+    );
+    let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+    let sessions = json["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1, "{output}");
+    assert_eq!(sessions[0]["sessionId"], "session-a", "{output}");
+    assert_eq!(sessions[0]["projectPath"], "project-a", "{output}");
+    assert_eq!(sessions[0]["totalCost"], 7.0, "{output}");
+}
+
+#[test]
 fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     let fixture = Fixture::new();
     let _ = fixture.write_file(
@@ -1158,4 +1214,140 @@ fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
         }
         assert_eq!(costs[0], costs[1], "daily and session cost: {costs:?}");
     }
+}
+
+#[test]
+fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_report() {
+    let fixture = Fixture::new();
+    // The top-level split covers only the first `message` iteration; the
+    // second one's 1,181 5-minute writes appear only in `iterations`.
+    let line = r#"{"isSidechain":false,"message":{"model":"claude-sonnet-4-20250514","id":"msg_advisor","type":"message","role":"assistant","content":[{"type":"text","text":"placeholder"}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":4,"cache_creation_input_tokens":12323,"cache_read_input_tokens":140030,"output_tokens":244,"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":11142,"ephemeral_5m_input_tokens":0},"iterations":[{"input_tokens":2,"output_tokens":58,"cache_read_input_tokens":64444,"cache_creation_input_tokens":11142,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":11142},"type":"message"},{"input_tokens":77025,"output_tokens":3427,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"advisor_message","model":"claude-opus-5"},{"input_tokens":2,"output_tokens":186,"cache_read_input_tokens":75586,"cache_creation_input_tokens":1181,"cache_creation":{"ephemeral_5m_input_tokens":1181,"ephemeral_1h_input_tokens":0},"type":"message"}],"speed":"standard"}},"requestId":"req_advisor","type":"assistant","uuid":"00000000-0000-4000-8000-000000000002","timestamp":"2026-09-15T12:00:00.000Z","cwd":"/tmp/demo","sessionId":"session-a","version":"2.1.323"}"#;
+    let _ = fixture.write_file("projects/project-a/session-a.jsonl", line);
+
+    let mut costs = Vec::new();
+    for (report, pointer) in [
+        ("daily", "/daily/0"),
+        ("weekly", "/weekly/0"),
+        ("monthly", "/monthly/0"),
+        ("session", "/sessions/0"),
+    ] {
+        let args = [
+            "claude",
+            report,
+            "--json",
+            "--offline",
+            "--mode",
+            "calculate",
+            "--timezone",
+            "UTC",
+        ];
+        let json: serde_json::Value =
+            serde_json::from_str(&run_ccusage(&fixture, &args, None)).unwrap();
+        let row = json.pointer(pointer).unwrap();
+        let sonnet = row["modelBreakdowns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["modelName"] == "claude-sonnet-4-20250514")
+            .unwrap_or_else(|| panic!("{args:?}: no main model in {row}"));
+
+        assert_eq!(sonnet["cacheCreationTokens"], 12323, "{args:?}: {row}");
+        assert_eq!(sonnet["cacheCreation1hTokens"], 11142, "{args:?}: {row}");
+        assert_eq!(row["cacheCreationTokens"], 12323, "{args:?}: {row}");
+        costs.push(row["totalCost"].as_f64().unwrap());
+    }
+
+    let blocks: serde_json::Value = serde_json::from_str(&run_ccusage(
+        &fixture,
+        &[
+            "claude",
+            "blocks",
+            "--json",
+            "--offline",
+            "--mode",
+            "calculate",
+            "--timezone",
+            "UTC",
+        ],
+        None,
+    ))
+    .unwrap();
+    let block = blocks.pointer("/blocks/0").unwrap();
+    assert_eq!(
+        block["tokenCounts"]["cacheCreationInputTokens"], 12323,
+        "{block}"
+    );
+    costs.push(block["costUSD"].as_f64().unwrap());
+
+    assert!(
+        costs
+            .windows(2)
+            .all(|pair| (pair[0] - pair[1]).abs() < 1e-9),
+        "report costs differ: {costs:?}"
+    );
+}
+
+fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> serde_json::Value {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"));
+    command
+        .env_clear()
+        .env("HOME", fixture.path("home"))
+        .env("USERPROFILE", fixture.path("home"))
+        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
+        .env("NO_COLOR", "1")
+        .current_dir(fixture.root())
+        .args(["claude", "daily", "--offline", "--mode", "display"]);
+    if let Some(claude_config_dir) = claude_config_dir {
+        command.env("CLAUDE_CONFIG_DIR", claude_config_dir);
+    }
+    let output = command.output().expect("failed to run ccusage");
+    assert!(
+        output.status.success(),
+        "ccusage claude daily failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout)
+        .expect("the user ccusage.json should switch the report to JSON")
+}
+
+const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
+
+#[test]
+fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "xdg-config/claude/projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-15T12:00:00.000Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file("xdg-config/claude/ccusage.json", JSON_USER_CONFIG);
+
+    let json = run_with_user_config(&fixture, None);
+
+    assert_eq!(json["totals"]["totalCost"], 1.0);
+}
+
+#[test]
+fn user_config_in_a_tilde_claude_config_dir_entry_is_loaded() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "home/claude-a/projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-15T12:00:00.000Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file("home/claude-b/ccusage.json", JSON_USER_CONFIG);
+
+    let json = run_with_user_config(&fixture, Some("~/claude-a,~/claude-b"));
+
+    assert_eq!(json["totals"]["totalCost"], 1.0);
 }

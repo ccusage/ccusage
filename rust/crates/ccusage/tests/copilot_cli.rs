@@ -66,6 +66,92 @@ fn snapshots_copilot_unified_monthly_and_session_stdout() {
     );
 }
 
+#[test]
+fn reports_copilot_daily_usage_from_usage_records() {
+    let fixture = fs_fixture!({
+        "copilot/session-state/session-receipts/events.jsonl": include_str!(
+            "../../../adapters/copilot/tests/fixtures/session-state/session-receipts/events.jsonl"
+        ),
+        "copilot/session-state/session-resumed-receipts/events.jsonl": include_str!(
+            "../../../adapters/copilot/tests/fixtures/session-state/session-resumed-receipts/events.jsonl"
+        ),
+    });
+
+    let output: serde_json::Value =
+        serde_json::from_str(&run_cli(&fixture, ["copilot", "daily", "--json"]))
+            .expect("daily JSON should parse");
+    let days = output["daily"]
+        .as_array()
+        .expect("daily rows")
+        .iter()
+        .map(|day| {
+            (
+                day["date"].as_str().unwrap().to_string(),
+                day["inputTokens"].as_u64().unwrap(),
+                day["outputTokens"].as_u64().unwrap(),
+                day["cacheCreationTokens"].as_u64().unwrap(),
+                day["cacheReadTokens"].as_u64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        days,
+        [
+            ("2026-02-05".to_string(), 200, 120, 100, 1200),
+            ("2026-02-06".to_string(), 50, 60, 50, 400),
+            ("2026-02-07".to_string(), 100, 40, 100, 300),
+            ("2026-02-08".to_string(), 50, 30, 0, 200),
+        ]
+    );
+}
+
+#[test]
+fn reports_the_credits_copilot_recorded_for_a_resumed_session() {
+    let fixture = fs_fixture!({
+        "copilot/session-state/session-recorded-credits/events.jsonl": include_str!(
+            "../../../adapters/copilot/tests/fixtures/session-state/session-recorded-credits/events.jsonl"
+        ),
+    });
+    let session = |mode: &str| {
+        let output: serde_json::Value = serde_json::from_str(&run_cli(
+            &fixture,
+            ["copilot", "session", "--json", "--mode", mode],
+        ))
+        .expect("session JSON should parse");
+        let session = output["sessions"][0].clone();
+        (
+            session["totalCost"].as_f64().unwrap(),
+            [
+                session["inputTokens"].as_u64().unwrap(),
+                session["cacheCreationTokens"].as_u64().unwrap(),
+                session["cacheReadTokens"].as_u64().unwrap(),
+                session["outputTokens"].as_u64().unwrap(),
+            ],
+        )
+    };
+    // The two calls recorded 371236500 and 31235400 nano-AIU; one AIU is $0.01.
+    let recorded = 0.004_024_719;
+    let tokens = [6, 16_517, 16_473, 10];
+
+    let (auto_cost, auto_tokens) = session("auto");
+    let (display_cost, display_tokens) = session("display");
+    let (calculated_cost, calculated_tokens) = session("calculate");
+
+    assert!((auto_cost - recorded).abs() < 1e-12, "{auto_cost}");
+    assert!((display_cost - recorded).abs() < 1e-12, "{display_cost}");
+    // Embedded gpt-5.4 rates per token: $2.5e-6 input, $3.125e-6 cache write
+    // (1.25x input), $2.5e-7 cache read, $1.5e-5 output.
+    let token_priced = 6.0 * 2.5e-6 + 16_517.0 * 3.125e-6 + 16_473.0 * 2.5e-7 + 10.0 * 1.5e-5;
+    assert!(
+        (calculated_cost - token_priced).abs() < 1e-12,
+        "{calculated_cost}"
+    );
+    assert_eq!(auto_tokens, tokens);
+    assert_eq!(display_tokens, tokens);
+    assert_eq!(calculated_tokens, tokens);
+}
+
 fn copilot_fixture() -> Fixture {
     fs_fixture!({
         "copilot/session-state/session-a/events.jsonl": include_str!(

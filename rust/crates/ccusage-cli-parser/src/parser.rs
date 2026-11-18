@@ -363,6 +363,7 @@ fn parse_command(
         "cline" => {
             parse_basic_agent_command(parser, shared, "cline", ALL_AGENT_REPORTS, Command::Cline)
         }
+        "dsh" => parse_basic_agent_command(parser, shared, "dsh", ALL_AGENT_REPORTS, Command::Dsh),
         _ => Err(format!("Unknown command '{command}'")),
     }
 }
@@ -878,6 +879,7 @@ fn is_command(arg: &str) -> bool {
             | "grok"
             | "zcode"
             | "cline"
+            | "dsh"
     )
 }
 
@@ -1045,6 +1047,7 @@ fn is_agent_command(command: &str) -> bool {
             | "grok"
             | "zcode"
             | "cline"
+            | "dsh"
     )
 }
 
@@ -1055,7 +1058,9 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
             "daily" | "weekly" | "monthly" | "session" | "blocks" | "statusline"
         ),
         "codex" => matches!(report, "daily" | "monthly" | "session" | "statusline"),
-        "opencode" | "cline" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
+        "opencode" | "cline" | "dsh" => {
+            matches!(report, "daily" | "weekly" | "monthly" | "session")
+        }
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
@@ -1085,6 +1090,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "grok" => "Grok",
         "zcode" => "ZCode",
         "cline" => "Cline",
+        "dsh" => "DeepSeek Harness",
         _ => unreachable!("agent is prevalidated"),
     }
 }
@@ -1173,7 +1179,8 @@ fn report_shared<'a>(
             | Command::OpenClaw(args)
             | Command::Grok(args)
             | Command::ZCode(args)
-            | Command::Cline(args),
+            | Command::Cline(args)
+            | Command::Dsh(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     }
 }

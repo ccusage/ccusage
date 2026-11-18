@@ -15,7 +15,9 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 ## Data source
 
-- `${QWEN_DATA_DIR:-~/.qwen}/projects/**/*.jsonl` and `.../chats/*.jsonl`
+- `${QWEN_DATA_DIR:-~/.qwen}/projects/<project>/chats/*.jsonl`
+- `${QWEN_DATA_DIR:-~/.qwen}/projects/<project>/chats/archive/*.jsonl`, where Qwen Code moves
+  archived sessions. A record present in both locations counts once.
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.

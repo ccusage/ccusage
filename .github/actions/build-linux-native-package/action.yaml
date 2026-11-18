@@ -45,9 +45,10 @@ runs:
       shell: bash
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
-        mkdir -p /nix/var/nix/gcroots/ci
+        user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
+        mkdir -p "$user_gcroot"
         nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
-          --out-link /nix/var/nix/gcroots/ci/ccusage-cargo-artifacts
+          --out-link "$user_gcroot/ccusage-cargo-artifacts"
 
     - name: Verify Linux binary is static
       shell: bash
