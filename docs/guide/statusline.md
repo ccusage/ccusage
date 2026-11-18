@@ -37,7 +37,7 @@ For a custom Codex home, set its path explicitly in the MCP server registration,
 CODEX_HOME = "/absolute/path/to/your/codex-home"
 ```
 
-Add `--no-cost` to the server's `args` to show session and Today token totals without prices, or `--speed` to override the speed tier. Native mode ignores preview date filters and always shows the full session and today. A new thread without token usage has zero session usage; its Today total can include other threads. Before a thread is available, the provider clears its statusline.
+Add `--no-cost` to the server's `args` to show session and Today token totals without prices, or `--speed <auto|standard|flex|fast>` to override the speed tier. Native mode ignores preview date filters and always shows the full session and today. A new thread without token usage has zero session usage; its Today total can include other threads. Before a thread is available, the provider clears its statusline.
 
 ### Preview in a terminal
 
