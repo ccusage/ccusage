@@ -477,6 +477,7 @@ fn visit_codex_session_entry(
         let event = CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: Some(response_id.clone()),
+            linked_response_id: None,
             timestamp,
             model,
             input_tokens: raw_usage.input_tokens,
@@ -556,10 +557,17 @@ fn visit_codex_session_entry(
         return Ok(());
     }
 
+    // A `token_count` describes the same request its neighbouring
+    // `token_usage_record` names, but it does not carry the response ID.
+    // Without that identity, two spawned siblings with identical usage
+    // collide in the cross-file usage dedupe and only one is counted.
+    // Link each `token_count` to its record so siblings keep distinct
+    // response IDs while true copies (same response ID) still dedupe.
     // Local compaction emits an advancing token_count between the response
     // record and its marker. Remote v2 compaction omits that advance, so only
     // the latter needs an extra event. Matching the latest response keeps an
     // unrelated request with identical token counts from consuming it.
+    let mut linked_response_id: Option<String> = None;
     if cumulative_advanced
         && let Some(response_id) = compaction_usage.latest_usage_response_id.as_ref()
         && compaction_usage
@@ -572,10 +580,31 @@ fn visit_codex_session_entry(
                     )
             })
     {
-        compaction_usage.pending_usage.remove(response_id);
-        compaction_usage
-            .emitted_response_ids
-            .insert(response_id.clone());
+        linked_response_id = Some(response_id.clone());
+    }
+    if linked_response_id.is_none() {
+        if let Some(latest) = compaction_usage.latest_usage_response_id.clone()
+            && compaction_usage
+                .pending_usage
+                .get(&latest)
+                .is_some_and(|pending| pending.event.raw_usage() == raw_usage)
+        {
+            linked_response_id = Some(latest);
+        } else {
+            // `FxHashMap` iteration is deterministic for a given set of keys,
+            // but pick the smallest matching ID anyway so the link does not
+            // depend on hash order when several records share the same usage.
+            linked_response_id = compaction_usage
+                .pending_usage
+                .iter()
+                .filter(|(_, pending)| pending.event.raw_usage() == raw_usage)
+                .map(|(response_id, _)| response_id.clone())
+                .min();
+        }
+    }
+    if let Some(response_id) = linked_response_id.clone() {
+        compaction_usage.pending_usage.remove(&response_id);
+        compaction_usage.emitted_response_ids.insert(response_id);
     }
 
     let parsed_model =
@@ -590,6 +619,7 @@ fn visit_codex_session_entry(
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
         response_id: None,
+        linked_response_id,
         timestamp,
         model,
         input_tokens: raw_usage.input_tokens,
@@ -682,6 +712,7 @@ fn visit_codex_exec_usage_event(
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
         response_id: None,
+        linked_response_id: None,
         timestamp: timestamps.event,
         model,
         input_tokens: raw_usage.input_tokens,

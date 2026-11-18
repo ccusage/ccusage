@@ -856,16 +856,20 @@ fn insert_dedupe_record(
             model: CompactString::new(model),
             session_id: (kind == AgentReportKind::Session)
                 .then(|| CompactString::new(&event.session_id)),
-            compaction: event.response_id.as_ref().map(|_| {
-                Box::new(CodexCompactionEvent {
-                    file_index,
-                    timestamp,
-                    event: event.clone(),
-                })
-            }),
+            compaction: event
+                .response_id
+                .as_ref()
+                .or(event.linked_response_id.as_ref())
+                .map(|_| {
+                    Box::new(CodexCompactionEvent {
+                        file_index,
+                        timestamp,
+                        event: event.clone(),
+                    })
+                }),
         },
     );
-    event.response_id.is_none()
+    event.response_id.is_none() && event.linked_response_id.is_none()
 }
 
 fn codex_event_key(
@@ -874,7 +878,11 @@ fn codex_event_key(
     model: &str,
     kind: AgentReportKind,
 ) -> CodexEventKey {
-    if let Some(response_id) = &event.response_id {
+    if let Some(response_id) = event
+        .response_id
+        .as_deref()
+        .or(event.linked_response_id.as_deref())
+    {
         return CodexEventKey::Response(CompactString::new(response_id));
     }
     let (session_hash, session_len) = if kind == AgentReportKind::Session {
@@ -1067,6 +1075,7 @@ mod tests {
         let first = CodexTokenUsageEvent {
             session_id: "first-session".into(),
             response_id: Some("response-1".into()),
+            linked_response_id: None,
             timestamp: "2026-09-01T00:00:01Z".into(),
             model: Some("gpt-5".into()),
             input_tokens: 300,
@@ -1146,6 +1155,7 @@ mod tests {
         let event = |model: &str| CodexTokenUsageEvent {
             session_id: "session-1".to_string(),
             response_id: None,
+            linked_response_id: None,
             timestamp: "2026-08-17T01:00:00.000Z".to_string(),
             model: Some(model.to_string()),
             input_tokens: 1_000_000,
@@ -1184,6 +1194,7 @@ mod tests {
             is_fallback_model: false,
             service_tier: Some(CodexServiceTier::Flex),
             response_id: None,
+            linked_response_id: None,
         };
 
         let groups = aggregate_events(&[event], AgentReportKind::Daily, Some("UTC")).unwrap();
@@ -2100,6 +2111,42 @@ mod tests {
                     "{name}, single_thread={single_thread}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn counts_distinct_spawned_siblings_with_identical_usage() {
+        let second = IDENTICAL_REQUESTS_ROLLOUT
+            .replace("00000000000a", "00000000000b")
+            .replace("resp_child_1", "resp_child_3")
+            .replace("resp_child_2", "resp_child_4");
+        let fixture = fs_fixture!({
+            "sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000a.jsonl":
+                IDENTICAL_REQUESTS_ROLLOUT,
+            "sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000b.jsonl":
+                &second,
+        });
+        let sessions = fixture.path("sessions");
+
+        for single_thread in [true, false] {
+            let events = crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+            assert_eq!(events.len(), 4, "single_thread={single_thread}");
+
+            let shared = SharedArgs {
+                single_thread,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            };
+            let groups =
+                load_groups_from_directory(&sessions, &shared, AgentReportKind::Daily).unwrap();
+            let group = &groups["2026-11-01"];
+            assert_eq!(group.input_tokens, 40_000, "single_thread={single_thread}");
+            assert_eq!(
+                group.cached_input_tokens, 8_000,
+                "single_thread={single_thread}"
+            );
+            assert_eq!(group.output_tokens, 400, "single_thread={single_thread}");
+            assert_eq!(group.total_tokens, 40_400, "single_thread={single_thread}");
         }
     }
 }

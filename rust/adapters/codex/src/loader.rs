@@ -253,7 +253,11 @@ fn dedupe_codex_events(
     for events in events_by_file {
         let mut occurrences = CodexFileOccurrences::default();
         for event in events {
-            let key = match event.response_id.as_deref() {
+            let key = match event
+                .response_id
+                .as_deref()
+                .or(event.linked_response_id.as_deref())
+            {
                 Some(response_id) => {
                     CodexEventDeduplicationKey::Response(CompactString::new(response_id))
                 }
@@ -316,6 +320,7 @@ mod tests {
         CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: None,
+            linked_response_id: None,
             timestamp: "2026-01-02T00:00:00.000Z".to_string(),
             model: Some("gpt-5".to_string()),
             input_tokens: 100,

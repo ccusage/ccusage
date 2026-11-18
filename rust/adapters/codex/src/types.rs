@@ -48,6 +48,15 @@ pub const fn merge_codex_service_tiers(
 pub struct CodexTokenUsageEvent {
     pub session_id: String,
     pub response_id: Option<String>,
+    /// The neighbouring `token_usage_record` this `token_count` describes.
+    ///
+    /// `token_count` lines do not carry the response ID, so two spawned
+    /// siblings with identical usage would otherwise share one cross-file
+    /// dedupe key. Linking each `token_count` to its record keeps distinct
+    /// siblings apart while true copies (same response ID) still dedupe.
+    /// Kept separate from `response_id` so replay filtering still sees these
+    /// as usage and skips copied history.
+    pub linked_response_id: Option<String>,
     pub timestamp: String,
     pub model: Option<String>,
     pub input_tokens: u64,
