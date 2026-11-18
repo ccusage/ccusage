@@ -477,7 +477,7 @@ mod tests {
     use ccusage_test_support::fs_fixture;
 
     #[test]
-    fn referenced_history_and_replacement_rollouts_keep_their_own_usage() {
+    fn reference_backed_history_keeps_usage_while_physical_forks_dedupe() {
         let parent_id = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
         let child_id = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
         let replacement_id = "01a0ddae-e9e2-7852-bfa4-a82da97152b2";
