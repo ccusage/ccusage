@@ -149,6 +149,35 @@ fn codex_statusline_session_includes_usage_outside_date_filters() {
 }
 
 #[test]
+fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
+    let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
+    let _ = fixture.write_file(
+        format!("codex/sessions/2026/09/20/rollout-2026-09-20T00-00-00-{SESSION_UUID}.jsonl"),
+        [
+            usage("2026-09-19T18:00:00Z", 100, 50),
+            usage("2026-09-19T21:00:00Z", 200, 50),
+        ]
+        .join("\n"),
+    );
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "codex",
+            "statusline",
+            "--since",
+            "20260919",
+            "--until",
+            "20260919",
+            "--timezone",
+            "Asia/Dubai",
+            "--json",
+        ],
+    ))
+    .unwrap();
+    assert_eq!(summary["totalTokens"], 150);
+}
+
+#[test]
 fn codex_statusline_display_mode_matches_json_pricing_completeness() {
     let fixture = fs_fixture!({
         "codex/sessions/unknown.jsonl": usage("2026-09-19T12:00:00Z", 100, 50)
@@ -627,8 +656,8 @@ fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
 
 fn run_cli_output(fixture: &Fixture, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .args(args)
         .args(["--offline", "--no-color", "--timezone", "UTC"])
+        .args(args)
         .env("CODEX_HOME", fixture.path("codex"))
         .env("HOME", fixture.path("empty-home"))
         .env("USERPROFILE", fixture.path("empty-userprofile"))

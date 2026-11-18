@@ -157,7 +157,10 @@ impl CodexFileEligibility {
         }
         Some(Self {
             since_date,
-            until_path_date: until_millis.and_then(utc_path_date),
+            // Codex's local directory date can be one day ahead of UTC.
+            until_path_date: until_millis
+                .and_then(utc_path_date)
+                .and_then(|date| date.checked_add(jiff::Span::new().days(1)).ok()),
             since_millis,
         })
     }
