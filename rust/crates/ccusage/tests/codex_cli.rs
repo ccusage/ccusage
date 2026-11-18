@@ -85,6 +85,15 @@ fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
 #[test]
 fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     let fixture = codex_fixture();
+    let _ = fixture.write_file(
+        format!("codex/sessions/{SESSION_UUID}.jsonl"),
+        [
+            json!({"type":"session_meta","payload":{"id":"01a0cc9d-d8d1-8741-ae93-971c986041a1"}})
+                .to_string(),
+            usage("2026-09-20T13:00:00Z", 50, 0),
+        ]
+        .join("\n"),
+    );
     let replacement = format!(
         "codex/sessions/2026/09/20/rollout-2026-09-20T12-00-00-{SESSION_UUID}_01a0ddae-e9e2-7852-bfa4-a82da97152b2.jsonl"
     );

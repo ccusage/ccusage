@@ -68,6 +68,9 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &PricingMap) -> Result<Value> 
                 .is_some_and(|(owner, rollout)| owner == thread && owner != rollout)
         });
         let id = if has_replacement {
+            groups.retain(|candidate, _| {
+                super::rollout_identity(candidate).is_some_and(|(owner, _)| owner == thread)
+            });
             thread.to_string()
         } else {
             let id = resolve_session_id(&groups, requested)?.to_string();

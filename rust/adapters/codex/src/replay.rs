@@ -481,14 +481,26 @@ mod tests {
         let parent_id = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
         let child_id = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
         let replacement_id = "01a0ddae-e9e2-7852-bfa4-a82da97152b2";
-        for (child_file, history_base) in [
+        for (child_file, history_base, expected) in [
             (
                 "child.jsonl".to_string(),
                 serde_json::json!({"thread_id":parent_id,"end_ordinal_exclusive":2}),
+                300,
             ),
             (
                 format!("rollout-2026-09-19T12-01-00-{child_id}_{replacement_id}.jsonl"),
                 Value::Null,
+                300,
+            ),
+            (
+                format!("backup-{child_id}_{replacement_id}.jsonl"),
+                Value::Null,
+                150,
+            ),
+            (
+                format!("rollout-backup-{child_id}_{replacement_id}.jsonl"),
+                Value::Null,
+                150,
             ),
         ] {
             let usage = |timestamp: &str| {
@@ -518,7 +530,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 groups.values().map(|group| group.total_tokens).sum::<u64>(),
-                300
+                expected
             );
         }
     }

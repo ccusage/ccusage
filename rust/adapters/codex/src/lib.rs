@@ -101,15 +101,24 @@ fn normalize_session_id(value: &str) -> &str {
 }
 
 fn rollout_identity(value: &str) -> Option<(&str, &str)> {
-    let value = normalize_session_id(value);
-    let (prefix, rollout_id) = value
-        .rsplit_once('_')
-        .filter(|(_, id)| is_codex_uuid(id))
-        .map_or((value, None), |(prefix, id)| (prefix, Some(id)));
-    let start = prefix.len().checked_sub(36)?;
-    let thread_id = prefix.get(start..)?;
-    (is_codex_uuid(thread_id) && prefix.get(..start)?.ends_with('-'))
-        .then_some((thread_id, rollout_id.unwrap_or(thread_id)))
+    let name = normalize_session_id(value)
+        .rsplit('/')
+        .next()?
+        .strip_prefix("rollout-")?;
+    let (timestamp, ids) = name.split_at_checked(20)?;
+    if !timestamp
+        .bytes()
+        .enumerate()
+        .all(|(index, byte)| match index {
+            4 | 7 | 13 | 16 | 19 => byte == b'-',
+            10 => byte == b'T',
+            _ => byte.is_ascii_digit(),
+        })
+    {
+        return None;
+    }
+    let (thread_id, rollout_id) = ids.split_once('_').unwrap_or((ids, ids));
+    (is_codex_uuid(thread_id) && is_codex_uuid(rollout_id)).then_some((thread_id, rollout_id))
 }
 
 fn session_id_matches(candidate: &str, requested_id: &str) -> bool {
