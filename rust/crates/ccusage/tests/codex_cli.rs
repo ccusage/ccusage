@@ -86,11 +86,20 @@ fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
 fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     let fixture = codex_fixture();
     let _ = fixture.write_file(
+        format!("codex/sessions/{SESSION_ID}.jsonl"),
+        [
+            usage("2026-09-19T23:22:40Z", 100, 50),
+            compaction("2026-09-19T23:23:00Z"),
+        ]
+        .join("\n"),
+    );
+    let _ = fixture.write_file(
         format!("codex/sessions/{SESSION_UUID}.jsonl"),
         [
             json!({"type":"session_meta","payload":{"id":"01a0cc9d-d8d1-8741-ae93-971c986041a1"}})
                 .to_string(),
             usage("2026-09-20T13:00:00Z", 50, 0),
+            compaction("2026-09-19T23:23:00Z"),
         ]
         .join("\n"),
     );
@@ -107,14 +116,14 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     ))
     .unwrap();
     assert_eq!(summary["scope"], "session");
-    assert_eq!(summary["totalTokens"], 400);
+    assert_eq!(summary["totalTokens"], 440);
     assert_eq!(summary["sessionId"], SESSION_UUID);
     let physical: Value = serde_json::from_str(&run_cli(
         &fixture,
         &["codex", "statusline", "--id", SESSION_ID, "--json"],
     ))
     .unwrap();
-    assert_eq!(physical["totalTokens"], 150);
+    assert_eq!(physical["totalTokens"], 190);
 }
 
 #[test]
@@ -175,6 +184,33 @@ fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
     ))
     .unwrap();
     assert_eq!(summary["totalTokens"], 150);
+}
+
+#[test]
+fn codex_reports_choose_in_range_compaction_copies() {
+    let fixture = fs_fixture!({
+        "codex/sessions/2026/09/20/active.jsonl": compaction("2026-09-19T21:00:00Z"),
+        "codex/archived_sessions/2026/09/19/original.jsonl": compaction("2026-09-19T18:00:00Z"),
+    });
+    for command in ["statusline", "daily", "session"] {
+        for extra in [vec![], vec!["--single-thread"]] {
+            let mut args = vec![
+                "codex",
+                command,
+                "--since",
+                "20260919",
+                "--until",
+                "20260919",
+                "--timezone",
+                "Asia/Dubai",
+                "--json",
+            ];
+            args.extend(extra);
+            let summary: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
+            let totals = summary.get("totals").unwrap_or(&summary);
+            assert_eq!(totals["totalTokens"], 40, "{command}: {args:?}");
+        }
+    }
 }
 
 #[test]
@@ -621,6 +657,20 @@ fn codex_fixture() -> Fixture {
         "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage("2026-09-19T23:22:40.000Z", 100, 50),
         "codex/sessions/2026/09/20/rollout-2026-09-20T10-00-00-01a0cc9d-d8d1-8741-ae93-971c986041a1.jsonl": usage("2026-09-20T10:00:00.000Z", 900, 100),
     })
+}
+
+fn compaction(timestamp: &str) -> String {
+    [
+        json!({"type":"turn_context","payload":{"model":"gpt-5"}}),
+        json!({"timestamp":timestamp,"type":"token_usage_record","payload":{
+            "response_id":"compaction-response","usage":{"input_tokens":40,"output_tokens":0}
+        }}),
+        json!({"type":"compacted","payload":{"compaction_response_id":"compaction-response"}}),
+    ]
+    .iter()
+    .map(Value::to_string)
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 fn usage(timestamp: &str, input_tokens: u64, output_tokens: u64) -> String {

@@ -166,6 +166,14 @@ fn load_selected_groups(
     session_id: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources);
+    let logical_session = session_id.is_some_and(|requested| {
+        file_groups.iter().any(|group| {
+            group.files.iter().any(|path| {
+                super::rollout_identity(&parser::codex_session_id(&group.dir, path))
+                    .is_some_and(|(thread, rollout)| thread == requested && thread != rollout)
+            })
+        })
+    });
     let files_by_group = file_groups
         .iter()
         .map(|group| {
@@ -173,9 +181,9 @@ fn load_selected_groups(
             if let Some(session_id) = session_id {
                 files.retain(|path| {
                     let candidate = parser::codex_session_id(&group.dir, path);
-                    super::session_id_matches(&candidate, session_id)
-                        || super::rollout_identity(&candidate)
-                            .is_some_and(|(thread, _)| thread == session_id)
+                    let owned = super::rollout_identity(&candidate)
+                        .is_some_and(|(thread, _)| thread == session_id);
+                    owned || (!logical_session && super::session_id_matches(&candidate, session_id))
                 });
             }
             files
@@ -434,18 +442,14 @@ fn add_event_to_groups(
     let model = crate::model_aliases::resolve_model_name(model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
+    let Some(period) = codex_period_for(timestamp, Some(&event.session_id), kind, timezone, shared)
+    else {
+        return Ok(());
+    };
     if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, provenance) {
         return Ok(());
     }
-    add_deduped_event_to_groups(
-        event,
-        model.as_ref(),
-        timestamp,
-        kind,
-        timezone,
-        shared,
-        groups,
-    )
+    add_deduped_event_to_groups(event, model.as_ref(), timestamp, period, groups)
 }
 
 fn add_event_to_groups_local(
@@ -462,6 +466,10 @@ fn add_event_to_groups_local(
     let model = crate::model_aliases::resolve_model_name(model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
+    let Some(period) = codex_period_for(timestamp, Some(&event.session_id), kind, timezone, shared)
+    else {
+        return Ok(());
+    };
     let key = provenance.event_key(event, timestamp, model.as_ref(), kind);
     if !insert_dedupe_record(
         &mut aggregation.seen,
@@ -478,9 +486,7 @@ fn add_event_to_groups_local(
         event,
         model.as_ref(),
         timestamp,
-        kind,
-        timezone,
-        shared,
+        period,
         &mut aggregation.groups,
     )
 }
@@ -489,20 +495,9 @@ fn add_deduped_event_to_groups(
     event: &CodexTokenUsageEvent,
     model: &str,
     timestamp: crate::TimestampMs,
-    kind: AgentReportKind,
-    timezone: Option<&JiffTimeZone>,
-    shared: &SharedArgs,
+    period: String,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
-    let Some(period) = codex_period_for(
-        timestamp,
-        Some(event.session_id.as_str()),
-        kind,
-        timezone,
-        shared,
-    ) else {
-        return Ok(());
-    };
     let group = groups.entry(period).or_default();
     accumulate_codex_event_into_group(group, event, model, timestamp, false);
     Ok(())
