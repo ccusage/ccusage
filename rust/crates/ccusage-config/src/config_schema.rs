@@ -105,7 +105,7 @@ pub struct CodexCommandsConfig {
     pub weekly: Option<CodexOptions>,
     pub monthly: Option<CodexOptions>,
     pub session: Option<CodexOptions>,
-    pub statusline: Option<CodexOptions>,
+    pub statusline: Option<CodexStatuslineOptions>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -569,6 +569,23 @@ pub struct CodexOptions {
     pub shared: SharedOptions,
     /// Codex speed normalization strategy.
     pub speed: Option<ConfigCodexSpeed>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexStatuslineOptions {
+    pub json: Option<bool>,
+    pub jq: Option<String>,
+    pub mode: Option<ConfigCostMode>,
+    pub no_cost: Option<bool>,
+    pub since: Option<String>,
+    pub until: Option<String>,
+    pub timezone: Option<String>,
+    pub offline: Option<bool>,
+    pub no_offline: Option<bool>,
+    pub single_thread: Option<bool>,
+    pub speed: Option<ConfigCodexSpeed>,
+    pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -1624,6 +1641,12 @@ mod tests {
             Some(&json!(true))
         );
         assert!(schema_property(&schema, &["codex", "commands", "statusline", "speed"]).is_some());
+        for option in ["breakdown", "compact", "order", "debug", "all", "color"] {
+            assert!(
+                schema_property(&schema, &["codex", "commands", "statusline", option]).is_none(),
+                "{option}"
+            );
+        }
         for name in ["codex statusline", "codex:statusline"] {
             assert!(schema_property(&schema, &["commands", name]).is_some());
         }
