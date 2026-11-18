@@ -41,7 +41,7 @@ Add `--no-cost` to the server's `args` to show session and Today token totals wi
 
 ### Preview in a terminal
 
-Run `ccusage codex statusline` for a one-line preview. See [Codex statusline previews](/guide/codex/#statusline) for session selection, date filters, pricing options and JSON output. The native `--mcp` provider always uses embedded pricing and the thread selected by Codex.
+Run `ccusage codex statusline` for a one-line preview. See [Codex statusline previews](/guide/codex/#statusline) for session selection, date filters, pricing options and JSON output. The native `--mcp` provider uses offline embedded pricing with your `pricingOverrides` and the thread selected by Codex.
 
 ## Claude Code hook statusline (Beta)
 
