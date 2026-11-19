@@ -7,15 +7,16 @@ def main []: nothing -> nothing {
     let fixture = mktemp -d
     try {
         '[workspace]
-members = ["crates/*", "extras/inline"]
+members = ["crates/*", "extras/git"]
 
 [workspace.dependencies]
 rustix = { version = "1.1.6", features = ["process"] }
 stats_alloc = "0.1.10"
 '
         | save ($fixture | path join Cargo.toml)
-        mkdir ($fixture | path join extras/inline)
+        mkdir ($fixture | path join crates/inline)
         mkdir ($fixture | path join crates/inherited)
+        mkdir ($fixture | path join extras/git)
         mkdir ($fixture | path join adapters/skipped)
         '[dev-dependencies]
 stats_alloc = "0.1.10"
@@ -23,7 +24,7 @@ stats_alloc = "0.1.10"
 [target.unix.dependencies]
 rustix = { version = "1.1.6", features = ["process"] }
 '
-        | save ($fixture | path join extras/inline/Cargo.toml)
+        | save ($fixture | path join crates/inline/Cargo.toml)
         '[dependencies]
 rustix.workspace = true
 
@@ -33,6 +34,10 @@ self = { path = "." }
 '
         | save ($fixture | path join crates/inherited/Cargo.toml)
         '[dependencies]
+rustix = { git = "https://example.invalid/rustix" }
+'
+        | save ($fixture | path join extras/git/Cargo.toml)
+        '[dependencies]
 stats_alloc = "0.1.10"
 '
         | save ($fixture | path join adapters/skipped/Cargo.toml)
@@ -41,11 +46,15 @@ stats_alloc = "0.1.10"
         assert equal $failing.exit_code 1 $failing.stderr
         assert equal (
             $failing.stderr
-            | str contains 'extras/inline/Cargo.toml: stats_alloc must inherit'
+            | str contains 'crates/inline/Cargo.toml: stats_alloc must inherit'
         ) true
         assert equal (
             $failing.stderr
-            | str contains 'extras/inline/Cargo.toml: rustix must inherit'
+            | str contains 'crates/inline/Cargo.toml: rustix must inherit'
+        ) true
+        assert equal (
+            $failing.stderr
+            | str contains 'extras/git/Cargo.toml: rustix must inherit'
         ) true
         assert equal ($failing.stderr | str contains 'crates/inherited') false
         assert equal ($failing.stderr | str contains 'adapters/skipped') false
@@ -55,7 +64,11 @@ stats_alloc.workspace = true
 [target.unix.dependencies]
 rustix.workspace = true
 '
-        | save --force ($fixture | path join extras/inline/Cargo.toml)
+        | save --force ($fixture | path join crates/inline/Cargo.toml)
+        '[dependencies]
+rustix.workspace = true
+'
+        | save --force ($fixture | path join extras/git/Cargo.toml)
         let passing = nu $check $fixture | complete
         assert equal $passing.exit_code 0 $passing.stderr
     } catch {|err|

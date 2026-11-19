@@ -16,6 +16,7 @@ def dependency-tables [manifest: record]: nothing -> list<record> {
 def main [workspace: path]: nothing -> nothing {
     let root = $workspace | path expand
     let manifest = open --raw ($root | path join 'Cargo.toml') | from toml
+    let managed = $manifest.workspace.dependencies | default {} | columns
     let members = $manifest.workspace.members
     | default []
     | each {|member| glob ($root | path join $member 'Cargo.toml') }
@@ -24,13 +25,17 @@ def main [workspace: path]: nothing -> nothing {
         let parsed = open --raw $member | from toml
         dependency-tables $parsed | each {|table|
             $table | transpose name spec | each {|dependency|
-                let pins_version = match $dependency.spec {
+                # `{}` matches any record, so a spec without `version` reaches
+                # the third arm: it only escapes the workspace when the name
+                # has a `[workspace.dependencies]` entry.
+                let finding = match $dependency.spec {
+                    {workspace: true} => false
                     {version: $_} => true
-                    {} => false
+                    {} => ($dependency.name in $managed)
                     _ => true
                 }
-                if $pins_version {
-                    $"($member | path relative-to $root): ($dependency.name) must inherit its version from [workspace.dependencies]"
+                if $finding {
+                    $"($member | path relative-to $root): ($dependency.name) must inherit from [workspace.dependencies] with workspace = true"
                 }
             }
         } | flatten
