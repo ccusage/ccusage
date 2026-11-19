@@ -5,6 +5,8 @@ const bash_rule = path self rules/bash.yml
 const date = '[0-9]{4}-[0-9]{2}-[0-9]{2}'
 const note = '^NOTE\((?<date>' + $date + ')(?:, (?<cli>[^,#]+ v?[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?))?(?:, #[1-9][0-9]*)?\): (?<body>\S.*)$'
 const marker = '^(?://|#|;+) '
+const github_action_sha_pin = r#'^(?:-\s+)?uses:\s+(["']?)[A-Za-z0-9][A-Za-z0-9-]*/[\w.-]+(?:/[\w.-]+)*@[[:xdigit:]]{40}\1$'#
+const renovate_version = '^# v?[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?(?:\s+.*)?$'
 const work_marker = '\b(?:TODO|FIXME|HACK|XXX)\b'
 const nu_def = '^\s*(?:export\s+)?def(?:\s+--[\w-]+)*\s+'
 const fixture_path = '(?:^|/)(?:fixtures|snapshots)/|\.(?:snap|snap\.new|golden)$'
@@ -225,6 +227,10 @@ def violations [
         let line = $comment.line
         let before = prefix ($lines | get $line) $comment.column
         if $line in $licenses or (directive $text $comment.language) or ($lang == 'nu' and $line in $helpers) { return [] }
+        if ($comment.language == 'yaml' and $file =~ '^\.github/.*\.ya?ml$'
+            and $before =~ $github_action_sha_pin and $text =~ $renovate_version) {
+            return []
+        }
         let doc = $rust_locations | where {|item| $item.range.start.line == $line }
         let rules = [
             (if $before != '' { 'trailing-comment' })

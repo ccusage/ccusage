@@ -3,3 +3,5 @@
 literal: |
   # data, not YAML syntax
 thing: "# string" # trailing
+steps:
+  - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v1.2.3

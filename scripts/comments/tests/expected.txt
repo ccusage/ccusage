@@ -1,4 +1,12 @@
 .github/workflows/workflow.yaml:8: note-format: # A shell comment.
+.github/workflows/workflow.yaml:16: note-format: # ordinary trailing comment
+.github/workflows/workflow.yaml:16: trailing-comment: # ordinary trailing comment
+.github/workflows/workflow.yaml:17: note-format: # v1.2.3
+.github/workflows/workflow.yaml:17: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:18: note-format: # v1.2.3
+.github/workflows/workflow.yaml:18: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:19: note-format: # v1.2.3
+.github/workflows/workflow.yaml:19: trailing-comment: # v1.2.3
 config.jsonc:6: note-format: // XXX
 config.jsonc:6: trailing-comment: // XXX
 config.jsonc:6: work-marker: // XXX
@@ -9,6 +17,8 @@ config.toml:8: note-format: # NOTE(2026-02-29): This is impossible. Correct the 
 config.toml:9: note-format: # NOTE(2026-11-19): The reason is missing.
 config.yaml:5: note-format: # trailing
 config.yaml:5: trailing-comment: # trailing
+config.yaml:7: note-format: # v1.2.3
+config.yaml:7: trailing-comment: # v1.2.3
 justfile:1: note-format: # Unattached prose.
 justfile:7: note-format: # Internal recipe note.
 rust/src/config_schema.rs:6: rust-doc-scope: /// Internal operation.

@@ -23,6 +23,7 @@ description: Applies the ccusage comment rule when writing, reviewing, or deleti
 - Exempt shebangs and tool directives such as `#!`, `# shellcheck`, `// biome-ignore`,
   `# yaml-language-server` and Cargo, rustfmt and Clippy configuration syntax.
   Give `@ts-expect-error` a dated reason.
+- Exempt Renovate version tags after 40-hex SHA-pinned `uses:` entries in YAML under `.github/`.
 - Exempt just recipe docs shown by `just --list`, Nushell `def` help and parameter
   comments, licensing headers, generated files, test fixture data and golden
   snapshots.
