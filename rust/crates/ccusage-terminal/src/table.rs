@@ -140,16 +140,12 @@ impl SimpleTable {
             match row {
                 Some(row) => {
                     let cells = self.compact_date_row(&row.cells, &widths);
-                    for (line_index, physical_row) in
-                        expand_multiline_row(&cells, self.headers.len(), &widths)
-                            .into_iter()
-                            .enumerate()
-                    {
+                    for physical_row in expand_multiline_row(&cells, self.headers.len(), &widths) {
                         lines.push(table_line(
                             &physical_row,
                             &self.columns,
                             &widths,
-                            row.first_align.filter(|_| line_index == 0),
+                            row.first_align,
                         ));
                     }
                 }
@@ -713,6 +709,23 @@ mod tests {
         ]);
 
         insta::assert_snapshot!(table.render_lines().join("\n"));
+    }
+
+    #[test]
+    fn right_aligns_every_line_of_a_wrapped_label() {
+        let mut table = SimpleTable::new(
+            vec!["Label"],
+            vec![ColumnKind::Primary],
+            TerminalStyle::default(),
+        )
+        .with_terminal_width(12);
+        table.push_aligned(vec!["longer small tiny".to_string()], Align::Right);
+
+        let rendered = table.render_lines();
+        assert_eq!(
+            &rendered[3..rendered.len() - 1],
+            ["│   longer │", "│    small │", "│     tiny │"]
+        );
     }
 
     #[test]
