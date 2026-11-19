@@ -29,6 +29,7 @@ rustls-webpki.workspace = true
 ureq.workspace = true
 
 [build-dependencies]
+ccusage-environment.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

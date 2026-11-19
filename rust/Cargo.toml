@@ -34,6 +34,7 @@ ccusage-cli = { path = "crates/ccusage-cli" }
 ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
+ccusage-environment = { path = "crates/ccusage-environment" }
 ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
 ccusage-report = { path = "crates/ccusage-report" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }

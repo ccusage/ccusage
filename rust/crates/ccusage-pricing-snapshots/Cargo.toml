@@ -9,6 +9,7 @@ publish.workspace = true
 fetch-litellm-pricing = ["dep:minreq"]
 
 [build-dependencies]
+ccusage-environment.workspace = true
 miniz_oxide.workspace = true
 minreq = { workspace = true, optional = true }
 # NOTE(2026-08-15, #1541): serde_json default float parsing can shift prices by one ULP. Enable float_roundtrip so minification preserves pricing.

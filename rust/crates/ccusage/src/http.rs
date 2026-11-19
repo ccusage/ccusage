@@ -9,6 +9,8 @@ use std::{
     time::Duration,
 };
 
+use ccusage_cli::environment::Environment;
+
 mod tls;
 
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
@@ -23,7 +25,9 @@ pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::R
 
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
-        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
+        Environment::current()
+            .var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from),
         ccusage_core::cli::home::home_dir(),
     )
 }

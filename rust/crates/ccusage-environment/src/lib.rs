@@ -17,6 +17,7 @@ pub struct Environment {
 }
 
 impl Environment {
+    #[inline]
     pub fn current() -> Self {
         Self {
             #[cfg(feature = "test-environment")]
@@ -24,6 +25,15 @@ impl Environment {
         }
     }
 
+    #[inline]
+    pub fn var(&self, name: &str) -> Result<String, env::VarError> {
+        match self.var_os(name) {
+            Some(value) => value.into_string().map_err(env::VarError::NotUnicode),
+            None => Err(env::VarError::NotPresent),
+        }
+    }
+
+    #[inline]
     pub fn var_os(&self, name: &str) -> Option<OsString> {
         #[cfg(feature = "test-environment")]
         if let Some(value) = self.overrides.as_ref().and_then(|vars| vars.get(name)) {
