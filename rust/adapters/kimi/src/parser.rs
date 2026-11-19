@@ -157,9 +157,10 @@ fn read_model_from_config(root: Option<&Path>) -> String {
     let Some(root) = root else {
         return DEFAULT_MODEL.to_string();
     };
-    let Ok(config) =
-        ccusage_adapter_common::units::read_json::<KimiConfig>(&root.join("config.json"))
-    else {
+    let Ok(Some(config)) = ccusage_adapter_common::units::read_filtered_json::<KimiConfig>(
+        &root.join("config.json"),
+        |content| std::str::from_utf8(content).is_ok(),
+    ) else {
         return DEFAULT_MODEL.to_string();
     };
     config.model.unwrap_or_else(|| DEFAULT_MODEL.to_string())
@@ -454,6 +455,18 @@ mod tests {
 
     use super::*;
     use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn invalid_utf8_in_an_ignored_config_field_preserves_the_default_model() {
+        let fixture = ccusage_test_support::Fixture::new();
+        std::fs::write(
+            fixture.path("config.json"),
+            b"{\"model\":\"configured\",\"ignored\":\"\xff\"}",
+        )
+        .unwrap();
+
+        assert_eq!(read_model_from_config(Some(fixture.root())), DEFAULT_MODEL);
+    }
 
     #[test]
     fn shares_the_config_model_per_root_and_loads_it_only_for_legacy_usage() {
