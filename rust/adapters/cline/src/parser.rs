@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -9,7 +10,7 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
     format_date_tz, format_rfc3339_millis, stored_cost_for_mode,
 };
 
@@ -18,7 +19,7 @@ use super::paths::{SourceFile, SourceKind};
 pub(super) fn read_file(
     source: &SourceFile,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
@@ -35,7 +36,7 @@ fn parse_extension_messages(
     root: &Value,
     source: &SourceFile,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
@@ -111,7 +112,7 @@ fn parse_cli_messages(
     root: &Value,
     source: &SourceFile,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
@@ -180,7 +181,7 @@ fn loaded_entry(
     source: &SourceFile,
     input: EntryInput,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
 ) -> LoadedEntry {
     let EntryInput {
@@ -213,7 +214,6 @@ fn loaded_entry(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: reported_cost,
-            mode,
             timestamp: Some(timestamp),
         },
         pricing,
@@ -424,13 +424,13 @@ mod tests {
                 "text": r#"[{"tokensIn":3,"tokensOut":4,"cacheReads":1,"cacheWrites":2}]"#
             }
         ]);
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_extension_messages(
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -477,7 +477,7 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -573,7 +573,7 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -655,7 +655,7 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -729,7 +729,7 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -773,7 +773,7 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -804,13 +804,13 @@ mod tests {
                 {"role": "assistant", "metrics": {"inputTokens": 20}}
             ]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_cli_messages(
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -848,13 +848,13 @@ mod tests {
                 "metrics": {"inputTokens": 1000, "outputTokens": 100, "cacheReadTokens": 0, "cacheWriteTokens": 0, "cost": 0}
             }]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let auto = parse_cli_messages(
             &root,
             &source,
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -862,7 +862,7 @@ mod tests {
             &root,
             &source,
             CostMode::Display,
-            Some(&pricing),
+            PriceTable::Display,
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -870,7 +870,7 @@ mod tests {
             &root,
             &source,
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -895,13 +895,13 @@ mod tests {
                 "metrics": {"inputTokens": 1000, "outputTokens": 100, "cacheReadTokens": 0, "cacheWriteTokens": 0}
             }]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let auto = parse_cli_messages(
             &root,
             &source,
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -909,7 +909,7 @@ mod tests {
             &root,
             &source,
             CostMode::Display,
-            Some(&pricing),
+            PriceTable::Display,
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -917,7 +917,7 @@ mod tests {
             &root,
             &source,
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -940,13 +940,13 @@ mod tests {
                 "metrics": {"inputTokens": 10, "outputTokens": 5, "cacheReadTokens": 0, "cacheWriteTokens": 0}
             }]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_cli_messages(
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -984,7 +984,7 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -998,13 +998,13 @@ mod tests {
     fn skips_invalid_or_incomplete_extension_documents() {
         ccusage_test_support::install_pricing_snapshots();
         let root = json!({"other": []});
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_extension_messages(
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );

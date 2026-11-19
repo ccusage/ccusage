@@ -3,6 +3,7 @@ use ccusage_adapter_common::{
     sqlite::{read_count, read_f64, read_i64},
     units::{UnitError, decode_json},
 };
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::{HashMap, HashSet},
@@ -23,7 +24,7 @@ use super::{
     paths::paths,
 };
 use crate::{
-    LoadedEntry, PricingMap, Result,
+    LoadedEntry, Result,
     cli::{AgentReportKind, CostMode, SharedArgs},
     collect_files_with_extension, date_range_bounds_ms, debug_log,
 };
@@ -80,7 +81,7 @@ fn load_directories(
                     db_path: &db_path,
                     tz,
                     mode: shared.mode,
-                    pricing: context.pricing(),
+                    pricing: context.table(),
                     shared,
                     window,
                     diagnostics,
@@ -108,7 +109,7 @@ fn load_directories(
         // over the results in their original file order so parallelism never changes
         // which duplicate survives.
         let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
-            read_message_file(file, tz, shared.mode, context.pricing(), window)
+            read_message_file(file, tz, shared.mode, context.table(), window)
         });
         for entry in loaded {
             collector.push_message((entry, None));
@@ -226,7 +227,7 @@ fn is_channel_db_name(name: &str) -> bool {
 struct DatabaseLoadContext<'a> {
     tz: &'a JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&'a PricingMap>,
+    pricing: PriceTable<'a>,
     window: DateWindow,
     shared: &'a SharedArgs,
     db_path: &'a Path,
@@ -675,7 +676,7 @@ fn read_message_file(
     path: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     window: DateWindow,
 ) -> std::result::Result<Option<LoadedEntry>, UnitError> {
     let content = fs::read(path)?;
@@ -1404,7 +1405,7 @@ mod tests {
         let context = DatabaseLoadContext {
             tz: &jiff::tz::TimeZone::system(),
             mode: CostMode::Display,
-            pricing: None,
+            pricing: ccusage_core::cost::PriceTable::Display,
             window: DateWindow::UNBOUNDED,
             shared: &shared,
             db_path: &path,

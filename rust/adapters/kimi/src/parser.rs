@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -10,8 +11,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, cli::CostMode, fast::LinePrefilter, format_date_tz,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    fast::LinePrefilter, format_date_tz,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -339,8 +340,7 @@ impl KimiUsageEntry {
 pub(super) fn kimi_entry_to_loaded(
     entry: KimiUsageEntry,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
@@ -350,7 +350,7 @@ pub(super) fn kimi_entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let (cost, missing_pricing_model) = price_kimi_usage(&entry, mode, pricing, usage);
+    let (cost, missing_pricing_model) = price_kimi_usage(&entry, pricing, usage);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text,
@@ -385,8 +385,7 @@ pub(super) fn kimi_entry_to_loaded(
 
 fn price_kimi_usage(
     entry: &KimiUsageEntry,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     usage: TokenUsageRaw,
 ) -> (f64, Option<String>) {
     let names = model_candidates(entry);
@@ -401,7 +400,6 @@ fn price_kimi_usage(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(entry.timestamp),
         },
         pricing,
@@ -555,7 +553,7 @@ mod tests {
     #[test]
     fn prices_default_kimi_model_by_timestamp_without_changing_display_model() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 100,
             output_tokens: 50,
@@ -584,13 +582,12 @@ mod tests {
         };
 
         let before_cost =
-            price_kimi_usage(&before_cutoff, CostMode::Calculate, Some(&pricing), usage).0;
-        let at_cost = price_kimi_usage(&at_cutoff, CostMode::Calculate, Some(&pricing), usage).0;
+            price_kimi_usage(&before_cutoff, PriceTable::Calculate(&pricing), usage).0;
+        let at_cost = price_kimi_usage(&at_cutoff, PriceTable::Calculate(&pricing), usage).0;
         let loaded = kimi_entry_to_loaded(
             at_cutoff,
             &jiff::tz::TimeZone::system(),
-            CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
         );
 
         assert!((before_cost - 0.000226).abs() < f64::EPSILON);

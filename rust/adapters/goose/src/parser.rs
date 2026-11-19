@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -7,9 +8,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
-use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode, format_date_tz,
-};
+use crate::{LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, format_date_tz};
 use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
@@ -49,8 +48,7 @@ impl RowRejection {
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Result<Option<LoadedEntry>, RowRejection> {
     let input_tokens = read_token_value(statement, 8)
         .or_else(|| read_token_value(statement, 5))
@@ -118,7 +116,6 @@ pub(super) fn row_to_entry(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(timestamp),
         },
         pricing,
@@ -219,13 +216,12 @@ mod tests {
         let connection = sqlite::open(fixture.path("row.db")).unwrap();
         let mut row = connection.prepare(r#"SELECT 's', '{"model_name":"sample"}', 'vendor', '2026-05-19 00:00:00', 100, 100, 0, 100, 100, 0"#).unwrap();
         assert_eq!(row.next().unwrap(), sqlite::State::Row);
-        let mut pricing = super::PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         let loaded = super::row_to_entry(
             &row,
             &jiff::tz::TimeZone::UTC,
-            super::CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
         .unwrap()
         .unwrap();

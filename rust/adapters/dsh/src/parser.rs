@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -13,9 +14,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    Diagnostics, LoadedEntry, PricingMap, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageMessage, apply_total_token_fallback,
-    cli::CostMode,
+    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    apply_total_token_fallback,
     fast::{LinePrefilter, byte_lines},
     format_date_tz,
 };
@@ -427,8 +427,7 @@ pub(super) fn dsh_entry_key(entry: &DshUsageEntry) -> String {
 pub(super) fn dsh_entry_to_loaded(
     entry: DshUsageEntry,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let candidates = model_candidates(entry.provider.as_deref(), &entry.model);
     let candidates: Vec<_> = candidates
@@ -442,7 +441,6 @@ pub(super) fn dsh_entry_to_loaded(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(entry.timestamp),
         },
         pricing,
@@ -744,7 +742,7 @@ mod tests {
     #[test]
     fn prices_default_deepseek_models_offline() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         for model in ["deepseek-v4-pro", "deepseek-flash"] {
             let entry = DshUsageEntry {
                 timestamp: TimestampMs::from_millis(1_785_015_045_000),
@@ -763,8 +761,7 @@ mod tests {
                 },
                 extra_total_tokens: 0,
             };
-            let loaded =
-                dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, CostMode::Auto, Some(&pricing));
+            let loaded = dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Auto(&pricing));
             assert!(loaded.cost > 0.0, "{model} should be priced");
             assert_eq!(loaded.missing_pricing_model, None);
         }
@@ -773,7 +770,7 @@ mod tests {
     #[test]
     fn applies_the_deepseek_time_of_day_schedule_to_first_party_routes() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let cost_at = |millis: i64| {
             let entry = DshUsageEntry {
                 timestamp: TimestampMs::from_millis(millis),
@@ -792,7 +789,7 @@ mod tests {
                 },
                 extra_total_tokens: 0,
             };
-            dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, CostMode::Auto, Some(&pricing)).cost
+            dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Auto(&pricing)).cost
         };
         // Tuesday 2026-11-17 02:00Z is a peak window and 12:00Z is off-peak.
         let peak = cost_at(1_794_880_800_000);

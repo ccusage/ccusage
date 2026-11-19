@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -13,8 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    Diagnostics, LoadedEntry, PricingMap, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageMessage, apply_total_token_fallback, cli::CostMode, format_date_tz,
+    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    apply_total_token_fallback, format_date_tz,
 };
 
 /// A single Amp thread file: one JSON object holding the thread id, the chat
@@ -203,18 +204,11 @@ fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
 pub(crate) fn read_thread(
     path: &Path,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let content = fs::read(path)?;
-    parse_thread(
-        &content,
-        &ThreadUnit { path, diagnostics },
-        tz,
-        mode,
-        pricing,
-    )
+    parse_thread(&content, &ThreadUnit { path, diagnostics }, tz, pricing)
 }
 
 /// Fails when the content is not a thread object at all, so the caller skips
@@ -223,8 +217,7 @@ fn parse_thread(
     content: &[u8],
     unit: &ThreadUnit<'_>,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let thread = decode_json::<AmpThread>(content)?;
     let messages = &thread.messages;
@@ -261,14 +254,11 @@ fn parse_thread(
             &thread_id,
             unit,
             tz,
-            mode,
             pricing,
         ));
     }
 
-    Ok(parse_message_usage(
-        messages, &thread_id, unit, tz, mode, pricing,
-    ))
+    Ok(parse_message_usage(messages, &thread_id, unit, tz, pricing))
 }
 
 fn ledger_event_usage(
@@ -314,8 +304,7 @@ fn parse_ledger_events(
     thread_id: &str,
     unit: &ThreadUnit<'_>,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, event) in events.iter().enumerate() {
@@ -343,7 +332,6 @@ fn parse_ledger_events(
             },
             thread_id,
             tz,
-            mode,
             pricing,
         ));
     }
@@ -355,8 +343,7 @@ fn parse_message_usage(
     thread_id: &str,
     unit: &ThreadUnit<'_>,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, message) in messages.iter().enumerate() {
@@ -388,7 +375,6 @@ fn parse_message_usage(
             },
             thread_id,
             tz,
-            mode,
             pricing,
         ));
     }
@@ -399,8 +385,7 @@ fn amp_entry(
     record: AmpUsage,
     thread_id: &str,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let data = UsageEntry {
         session_id: Some(thread_id.to_string()),
@@ -427,7 +412,6 @@ fn amp_entry(
             residual_tokens: record.extra_total_tokens,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(record.timestamp),
         },
         pricing,
@@ -504,8 +488,10 @@ mod tests {
             content,
             &unit,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
         )
     }
 
@@ -619,8 +605,10 @@ mod tests {
                 read_thread(
                     file,
                     &jiff::tz::TimeZone::UTC,
-                    CostMode::Auto,
-                    None,
+                    ccusage_core::cost::PriceTable::for_map(
+                        ccusage_core::cli::CostMode::Auto,
+                        &ccusage_core::PricingMap::default(),
+                    ),
                     &diagnostics,
                 )
             },
@@ -639,8 +627,7 @@ mod tests {
         let entries = read_thread(
             &fixture.path("threads/thread.json"),
             &crate::resolve_tz(Some("UTC")),
-            CostMode::Display,
-            None,
+            ccusage_core::cost::PriceTable::Display,
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -672,8 +659,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -715,8 +704,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -763,8 +754,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -796,8 +789,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -824,8 +819,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -859,8 +856,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -894,8 +893,10 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -916,12 +917,11 @@ mod pricing_identity_tests {
             "thread.json": r#"{"id":"t","messages":[{"role":"assistant","timestamp":"2026-11-17T10:00:00Z","model":"gpt-5.2","usage":{"inputTokens":1000}}]}"#
         });
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let rows = read_thread(
             &fixture.path("thread.json"),
             &JiffTimeZone::UTC,
-            CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &Diagnostics::new("amp"),
         )
         .unwrap();

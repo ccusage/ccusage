@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use ccusage_adapter_common::{
     claims::{ClaudeClaimsTx, ClaudeCounted},
     rows::{summarize_entry_sessions, summary_rows},
-    source::{LoadKind, LoadRequest, LoadedRows, PricingSupply, UsageSource},
+    source::{LoadKind, LoadRequest, LoadedRows, UsageSource},
 };
 use ccusage_core::{Diagnostics, ReportWindow, Result, cli::SharedArgs};
 
@@ -138,8 +138,8 @@ impl UsageSource for Claude {
         "Claude"
     }
 
-    fn pricing_supply(&self) -> PricingSupply {
-        PricingSupply::Source
+    fn uses_shared_pricing(&self) -> bool {
+        false
     }
 
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {

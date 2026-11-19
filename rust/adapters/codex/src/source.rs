@@ -35,9 +35,9 @@ impl UsageSource for Codex {
 fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let diagnostics = Diagnostics::new("codex");
     let shared = request.shared;
-    let pending = request.pricing_or_load()?;
+    let report_pricing = request.pricing_or_load();
     let sources = crate::paths::codex_usage_sources()?;
-    let pricing = pending.get()?;
+    let pricing = report_pricing.get();
     let speed = resolve_codex_speed(request.options.codex_speed);
 
     let (groups, detected) = crate::aggregate::load_groups_from_sources_with_diagnostics(
@@ -133,7 +133,7 @@ mod diagnostic_tests {
     use serde_json::json;
 
     #[test]
-    fn pending_pricing_is_resolved_before_codex_tier_aggregation() {
+    fn supplied_pricing_is_used_for_codex_tier_aggregation() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);

@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -8,8 +9,8 @@ use ccusage_adapter_common::units::{UnitError, read_json};
 use serde_json::Value;
 
 use crate::{
-    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
-    format_rfc3339_millis, json_value_u64, parse_ts_timestamp,
+    Result, TokenUsageRaw, apply_total_token_fallback, format_rfc3339_millis, json_value_u64,
+    parse_ts_timestamp,
 };
 
 #[derive(Clone)]
@@ -138,11 +139,7 @@ fn settings_timestamp(
     Some((timestamp, format_rfc3339_millis(timestamp), None))
 }
 
-pub(super) fn price_droid(
-    entry: &DroidEntry,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> (f64, Option<String>) {
+pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
     let qualified: Vec<_> = provider_prefixes(&entry.provider)
         .into_iter()
         .map(|prefix| format!("{prefix}{}", entry.model))
@@ -165,7 +162,6 @@ pub(super) fn price_droid(
             residual_tokens: entry.reasoning_tokens,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: entry.pricing_timestamp,
         },
         pricing,
@@ -337,10 +333,10 @@ mod tests {
             },
             reasoning_tokens: 0,
         };
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
-            price_droid(&entry, CostMode::Calculate, Some(&pricing)),
+            price_droid(&entry, PriceTable::Calculate(&pricing)),
             (0.0, None)
         );
     }
@@ -371,8 +367,8 @@ mod tests {
         );
     }
 
-    fn deepseek_pricing() -> PricingMap {
-        let mut pricing = PricingMap::default();
+    fn deepseek_pricing() -> ccusage_core::PricingMap {
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
@@ -403,7 +399,7 @@ mod tests {
         };
 
         assert_eq!(
-            price_droid(&entry, CostMode::Auto, Some(&deepseek_pricing())).0,
+            price_droid(&entry, PriceTable::Auto(&deepseek_pricing())).0,
             0.14
         );
     }
@@ -450,14 +446,14 @@ mod pricing_identity_tests {
     #[test]
     fn locked_zai_glm_uses_the_provider_rate_above_32k() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let fixture = ccusage_test_support::fs_fixture!({
             "s.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":150000}}"#
         });
         let entry = load_settings_file(&fixture.path("s.settings.json"))
             .unwrap()
             .unwrap();
-        let (cost, missing) = price_droid(&entry, CostMode::Calculate, Some(&pricing));
+        let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
         assert!((cost - 0.09).abs() < 1e-12, "{cost}");
         assert_eq!(missing, None);
     }
@@ -465,7 +461,7 @@ mod pricing_identity_tests {
     #[test]
     fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         for (raw, normalized, input, output) in [
             ("gpt-5.1", "gpt-5-1", 1.25, 10.0),
             ("gpt-5.1-codex", "gpt-5-1-codex", 1.25, 10.0),
@@ -493,7 +489,7 @@ mod pricing_identity_tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(entry.model, normalized);
-            let (cost, missing) = price_droid(&entry, CostMode::Calculate, Some(&pricing));
+            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!(
                 (cost - (input + output) / 1000.0).abs() < 1e-12,
                 "{raw}: {cost}"

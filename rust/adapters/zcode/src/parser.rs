@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -7,8 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
     cli::{CostMode, PricingOverride},
     format_date_tz, format_rfc3339_millis, total_usage_tokens,
 };
@@ -38,7 +38,7 @@ pub(super) fn row_to_entry(
     row: ZcodeUsageRow,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
 ) -> std::result::Result<Option<(String, LoadedEntry)>, RowRejection> {
     let cache_read = row.cache_read_input_tokens.min(row.input_tokens);
@@ -110,7 +110,6 @@ pub(super) fn row_to_entry(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(timestamp),
         },
         pricing,
@@ -249,7 +248,7 @@ mod tests {
             row(),
             &JiffTimeZone::UTC,
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            ccusage_core::cost::PriceTable::Display,
             &BTreeMap::new(),
         )
         .unwrap()
@@ -271,7 +270,7 @@ mod tests {
     #[test]
     fn prices_current_zai_account_and_builtin_plan_ids() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         for provider in [
             "account:zai-individual-coding-plan",
             "account:zai-start-plan",
@@ -285,7 +284,7 @@ mod tests {
                     row,
                     &JiffTimeZone::UTC,
                     CostMode::Calculate,
-                    Some(&pricing),
+                    ccusage_core::cost::PriceTable::Calculate(&pricing),
                     &BTreeMap::new(),
                 )
                 .unwrap()
@@ -300,12 +299,12 @@ mod tests {
     #[test]
     fn prices_zai_models_but_not_unknown_custom_providers() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let priced = row_to_entry(
             row(),
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -321,7 +320,7 @@ mod tests {
             custom,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -344,7 +343,7 @@ mod tests {
             row,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&PricingMap::load_embedded()),
+            ccusage_core::cost::PriceTable::Calculate(&ccusage_core::PricingMap::load_embedded()),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -358,7 +357,7 @@ mod tests {
     #[test]
     fn prices_zai_cache_creation_at_standard_input_rate_for_glm_52_and_53() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let priced = |model: &str| {
             let mut row = row();
             row.model_id = Some(model.to_string());
@@ -366,7 +365,7 @@ mod tests {
                 row,
                 &JiffTimeZone::UTC,
                 CostMode::Calculate,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
                 &BTreeMap::new(),
             )
             .unwrap()
@@ -401,13 +400,13 @@ mod tests {
                 ..Default::default()
             },
         );
-        let pricing = PricingMap::load_with_overrides(true, false, overrides.iter());
+        let pricing = ccusage_core::PricingMap::load_with_overrides(true, false, overrides.iter());
 
         let entry = row_to_entry(
             row,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &overrides,
         )
         .unwrap()
@@ -427,7 +426,7 @@ mod tests {
             row,
             &JiffTimeZone::UTC,
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            ccusage_core::cost::PriceTable::Display,
             &BTreeMap::new(),
         )
         .unwrap()
@@ -444,7 +443,7 @@ mod tests {
                 row,
                 &JiffTimeZone::UTC,
                 CostMode::Display,
-                Some(&PricingMap::default()),
+                ccusage_core::cost::PriceTable::Display,
                 &BTreeMap::new(),
             )
             .err()

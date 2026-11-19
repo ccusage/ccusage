@@ -32,7 +32,7 @@ fn load_entries_for_context(
     paths: &[PathBuf],
     store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let shared = cx.shared;
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();

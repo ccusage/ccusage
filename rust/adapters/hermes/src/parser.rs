@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -9,7 +10,7 @@ use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
     format_date_tz, format_rfc3339_millis, stored_cost_for_mode,
 };
 
@@ -153,9 +154,9 @@ pub(super) fn to_loaded_entry(
     entry: HermesEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
-    let (cost, missing_pricing_model) = price_hermes(&entry, mode, pricing);
+    let (cost, missing_pricing_model) = price_hermes(&entry, pricing);
     let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
@@ -189,11 +190,7 @@ pub(super) fn to_loaded_entry(
     }
 }
 
-fn price_hermes(
-    entry: &HermesEntry,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> (f64, Option<String>) {
+fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
     let candidates = model_candidates(entry);
     let candidates: Vec<_> = candidates
         .iter()
@@ -206,7 +203,6 @@ fn price_hermes(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
-            mode,
             timestamp: Some(entry.timestamp),
         },
         pricing,
@@ -249,17 +245,17 @@ mod tests {
             message_count: 1,
             cost_usd: None,
         };
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"vendor/sample":{"input_cost_per_token":0,"output_cost_per_token":0},"sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
-            price_hermes(&entry, CostMode::Calculate, Some(&pricing)),
+            price_hermes(&entry, PriceTable::Calculate(&pricing)),
             (0.0, None)
         );
     }
 
     #[test]
     fn uniform_cost_modes_use_recorded_cost_only_in_auto_and_display() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
         );
@@ -288,7 +284,12 @@ mod tests {
                     message_count: 1,
                     cost_usd: stored,
                 };
-                let loaded = to_loaded_entry(entry, &JiffTimeZone::UTC, mode, Some(&pricing));
+                let loaded = to_loaded_entry(
+                    entry,
+                    &JiffTimeZone::UTC,
+                    mode,
+                    PriceTable::for_map(mode, &pricing),
+                );
                 assert!(
                     (loaded.cost - expected).abs() < 1e-12,
                     "{mode:?}: {} vs {expected}",
@@ -344,7 +345,7 @@ mod tests {
     #[test]
     fn calculates_cost_for_hermes_frontier_models_from_embedded_pricing() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         for model in ["gpt-5.5", "grok-4.3"] {
             let entry = HermesEntry {
                 timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
@@ -366,7 +367,7 @@ mod tests {
             };
 
             assert!(
-                price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 > 0.0,
+                price_hermes(&entry, PriceTable::Auto(&pricing)).0 > 0.0,
                 "{model} should resolve to embedded pricing"
             );
         }
@@ -375,7 +376,7 @@ mod tests {
     #[test]
     fn recorded_zero_cost_falls_back_to_pricing_calculation() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
             timestamp_text: "2026-05-19T00:00:00.000Z".to_string(),
@@ -396,7 +397,7 @@ mod tests {
         };
 
         assert!(
-            price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 > 0.0,
+            price_hermes(&entry, PriceTable::Auto(&pricing)).0 > 0.0,
             "subscription-included sessions with token usage should still be priced"
         );
     }
@@ -404,7 +405,7 @@ mod tests {
     #[test]
     fn recorded_positive_cost_is_trusted() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
             timestamp_text: "2026-05-19T00:00:00.000Z".to_string(),
@@ -424,7 +425,7 @@ mod tests {
             cost_usd: Some(0.42),
         };
 
-        assert_eq!(price_hermes(&entry, CostMode::Auto, Some(&pricing)).0, 0.42);
+        assert_eq!(price_hermes(&entry, PriceTable::Auto(&pricing)).0, 0.42);
     }
 
     #[test]
@@ -441,7 +442,7 @@ mod tests {
             cost_usd: None,
         };
 
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "openai/gpt-5.5": {
@@ -464,7 +465,7 @@ mod tests {
 
     #[test]
     fn scheduled_price_is_the_same_for_direct_provider_and_bare_ids() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
@@ -488,7 +489,7 @@ mod tests {
             cost_usd: None,
         };
 
-        assert!((price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - 0.44).abs() < 1e-12);
+        assert!((price_hermes(&entry, PriceTable::Auto(&pricing)).0 - 0.44).abs() < 1e-12);
         assert_eq!(
             model_candidates(&entry)
                 .into_iter()
@@ -503,7 +504,7 @@ mod tests {
     #[test]
     fn applies_the_schedule_to_an_embedded_direct_provider_row() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
             timestamp_text: "2026-08-17T01:00:00.000Z".to_string(),
@@ -541,13 +542,13 @@ mod tests {
         );
         assert!((raw_model_cost - 0.44).abs() < 1e-12);
         assert!(
-            (price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - raw_model_cost).abs() < 1e-12
+            (price_hermes(&entry, PriceTable::Auto(&pricing)).0 - raw_model_cost).abs() < 1e-12
         );
     }
 
     #[test]
     fn accepts_normalized_provider_pricing_and_excludes_longer_fuzzy_matches() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek/deepseek-v4-flash": {
@@ -583,7 +584,7 @@ mod tests {
                 "deepseek.v4.flash".to_string()
             ]
         );
-        assert!((price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - 0.44).abs() < 1e-12);
+        assert!((price_hermes(&entry, PriceTable::Auto(&pricing)).0 - 0.44).abs() < 1e-12);
 
         let longer_entry = HermesEntry {
             model: "deepseek.v4.flash-preview".to_string(),
@@ -609,7 +610,7 @@ mod pricing_identity_tests {
     #[test]
     fn override_on_the_reported_id_beats_provider_pricing() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         for (provider, reported, configured) in [
             ("deepseek", "deepseek.v4.flash", "deepseek-v4-flash"),
             ("zai", "glm-4.7", "glm-4.7"),
@@ -637,7 +638,7 @@ mod pricing_identity_tests {
                 cost_usd: None,
             };
             assert_eq!(
-                price_hermes(&entry, CostMode::Auto, Some(&pricing)),
+                price_hermes(&entry, PriceTable::Auto(&pricing)),
                 (0.1, None)
             );
         }
@@ -646,7 +647,7 @@ mod pricing_identity_tests {
     #[test]
     fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let model = "deepseek.v4.flash";
         let mut entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
@@ -670,9 +671,7 @@ mod pricing_identity_tests {
                 ("deepseek.v4.flash".into(), MatchKind::Fuzzy),
             ]
         );
-        assert!(
-            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.00088).abs() < 1e-12
-        );
+        assert!((price_hermes(&entry, PriceTable::Calculate(&pricing)).0 - 0.00088).abs() < 1e-12);
         entry.model = "deepseek.v4.pro".into();
         assert_eq!(
             model_candidates(&entry),
@@ -681,8 +680,6 @@ mod pricing_identity_tests {
                 ("deepseek.v4.pro".into(), MatchKind::Fuzzy),
             ]
         );
-        assert!(
-            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.00264).abs() < 1e-12
-        );
+        assert!((price_hermes(&entry, PriceTable::Calculate(&pricing)).0 - 0.00264).abs() < 1e-12);
     }
 }

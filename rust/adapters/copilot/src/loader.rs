@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -30,7 +31,7 @@ use crate::{
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
     let sources = super::paths::paths(cx.diagnostics)?;
     let parsed = read_typed_units(&sources, shared.single_thread, cx.diagnostics, |source| {
@@ -535,7 +536,7 @@ fn usage_entry_to_loaded(
     entry: CopilotUsageEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&crate::PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
@@ -568,7 +569,6 @@ fn usage_entry_to_loaded(
             residual_tokens: entry.extra_total_tokens,
             candidates: &candidates,
             stored_cost: cost_usd,
-            mode,
             timestamp: Some(entry.timestamp),
         },
         pricing,
@@ -941,7 +941,7 @@ mod tests {
                             entry,
                             &jiff::tz::TimeZone::system(),
                             CostMode::Auto,
-                            Some(&pricing),
+                            PriceTable::Auto(&pricing),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -1019,7 +1019,7 @@ mod tests {
                             entry,
                             &jiff::tz::TimeZone::system(),
                             CostMode::Auto,
-                            Some(&pricing),
+                            PriceTable::Auto(&pricing),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -3064,9 +3064,7 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: Default::default(),
             diagnostics: &diagnostics,
         };

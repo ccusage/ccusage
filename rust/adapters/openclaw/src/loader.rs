@@ -10,7 +10,7 @@ use super::{
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let mut sqlite_entries = Vec::new();
     let mut jsonl_entries = Vec::new();
     for root in paths(cx.options.open_claw_path) {

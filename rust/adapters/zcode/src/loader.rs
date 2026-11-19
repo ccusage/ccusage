@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use std::{collections::HashSet, path::PathBuf};
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -11,7 +12,7 @@ use ccusage_adapter_common::{
 };
 use ccusage_core::{Diagnostics, SkipKind};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
+use crate::{LoadedEntry, Result, cli::SharedArgs, debug_log};
 
 use super::{
     parser::{RowRejection, ZcodeUsageRow, row_to_entry},
@@ -40,7 +41,7 @@ struct Schema {
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
     let loaded = load_entries_from_databases(&db_paths, tz, shared, pricing, cx.diagnostics);
@@ -56,7 +57,7 @@ fn load_entries_from_databases(
     db_paths: &[PathBuf],
     tz: &JiffTimeZone,
     shared: &SharedArgs,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<(String, LoadedEntry)> {
     sqlite_units(
@@ -218,7 +219,7 @@ mod tests {
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     use super::*;
-    use crate::{PricingMap, cli::CostMode};
+    use crate::cli::CostMode;
 
     fn create_db(path: &Path, legacy: bool) {
         let db = sqlite::open(path).unwrap();
@@ -323,7 +324,7 @@ mod tests {
             &crate::SOURCE,
             &shared,
             Default::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap()
     }
@@ -382,7 +383,7 @@ mod tests {
             &crate::SOURCE,
             &shared,
             ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
 
@@ -401,12 +402,12 @@ mod tests {
             .unwrap();
         let diagnostics = Diagnostics::new("zcode");
         let shared = SharedArgs::default();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let loaded = load_entries_from_databases(
             &[fixture.path("broken.db"), fixture.path("unsupported.db")],
             &jiff::tz::TimeZone::system(),
             &shared,
-            Some(&pricing),
+            PriceTable::for_map(shared.mode, &pricing),
             &diagnostics,
         );
 
@@ -431,7 +432,7 @@ mod tests {
             std::slice::from_ref(&path),
             &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &diagnostics,
         );
 
@@ -468,7 +469,7 @@ mod tests {
             std::slice::from_ref(&path),
             &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &diagnostics,
         );
 
@@ -536,15 +537,13 @@ mod tests {
             ..SharedArgs::default()
         };
         let window = ReportWindow::from_shared(&shared);
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let diagnostics = Diagnostics::new("zcode");
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };
@@ -689,7 +688,7 @@ mod tests {
             &crate::SOURCE,
             &shared,
             Default::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
         assert_eq!(entries.len(), 2);

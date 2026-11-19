@@ -1,5 +1,5 @@
 use ccusage_adapter_common::source::{
-    Detection, EntryDescriptor, EntrySource, LoadContext, PricingSupply, WindowMode,
+    Detection, EntryDescriptor, EntrySource, LoadContext, WindowMode,
 };
 use ccusage_core::{cli::*, *};
 
@@ -17,7 +17,6 @@ impl EntrySource for Qwen {
             session: ccusage_adapter_common::source::SessionShape::WithActivity,
             window: WindowMode::SessionLastActivity,
             detection: Detection::NonEmptyOrHasData(has_data),
-            pricing: PricingSupply::Pipeline,
             ..EntryDescriptor::standard("qwen", "Qwen")
         }
     }

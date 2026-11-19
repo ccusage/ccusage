@@ -13,7 +13,7 @@ use ccusage_core::{
     format_date_tz, parse_ts_timestamp, resolve_tz,
 };
 
-use crate::source::{EntryDescriptor, EntrySource, LoadContext, PricingSupply};
+use crate::source::{EntryDescriptor, EntrySource, LoadContext};
 
 pub(crate) struct Fake {
     pub(crate) descriptor: EntryDescriptor,
@@ -40,7 +40,7 @@ impl EntrySource for Fake {
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         self.saw_pricing
-            .store(cx.pricing.as_map()?.is_some(), Ordering::Relaxed);
+            .store(cx.pricing.get().is_some(), Ordering::Relaxed);
         if self.skips_a_unit {
             cx.diagnostics.record(Skip::unit(
                 Path::new("/data/broken.json"),
@@ -54,7 +54,6 @@ impl EntrySource for Fake {
 
 pub(crate) fn descriptor() -> EntryDescriptor {
     EntryDescriptor {
-        pricing: PricingSupply::Source,
         session: crate::source::SessionShape::WithActivity,
         ..EntryDescriptor::standard("fake", "Fake")
     }
@@ -107,6 +106,7 @@ pub(crate) fn entries() -> Vec<LoadedEntry> {
 }
 
 pub(crate) fn shared(since: Option<&str>, until: Option<&str>) -> SharedArgs {
+    ccusage_test_support::install_pricing_snapshots();
     SharedArgs {
         since: since.map(str::to_string),
         until: until.map(str::to_string),

@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::AgentModel,
@@ -11,9 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, cli::CostMode, fast::LinePrefilter, format_date_tz,
-    stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    cli::CostMode, fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
 };
 
 /// A single parsed OpenClaw session line. Only the fields ccusage consumes are
@@ -263,7 +263,7 @@ pub(super) fn parse_session_file(
     path: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let mut reader = TranscriptReader::jsonl(extract_session_id(path));
@@ -398,7 +398,7 @@ pub(super) fn entry_to_loaded(
     entry: OpenClawEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let identity = AgentModel::new("openclaw", &entry.model);
     let usage = TokenUsageRaw {
@@ -431,7 +431,6 @@ pub(super) fn entry_to_loaded(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: entry.cost,
-            mode,
             timestamp: Some(entry.timestamp),
         },
         pricing,
@@ -566,7 +565,7 @@ mod tests {
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
             CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         )
         .unwrap();
@@ -584,7 +583,7 @@ mod tests {
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
             CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         )
         .unwrap();
@@ -610,7 +609,7 @@ mod tests {
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -645,7 +644,7 @@ mod tests {
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -680,7 +679,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &Diagnostics::new("openclaw"),
         )
         .unwrap();
@@ -707,7 +706,7 @@ mod tests {
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -792,13 +791,13 @@ mod tests {
         let fixture = fs_fixture!({
             "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","usage":{"input":1000000,"output":0,"totalTokens":1000000},"timestamp":"2026-08-17T01:00:00Z"}}"#,
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             &Diagnostics::new("openclaw"),
         )
         .unwrap();
@@ -826,12 +825,12 @@ mod pricing_identity_tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "s.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek.v4.flash","usage":{"input":1000,"output":0,"totalTokens":1000},"timestamp":"2026-11-17T10:00:00Z"}}"#
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let rows = parse_session_file(
             &fixture.path("s.jsonl"),
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             &Diagnostics::new("openclaw"),
         )
         .unwrap();

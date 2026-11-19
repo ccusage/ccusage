@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -13,8 +14,8 @@ use serde::{
 use serde_json::{Map, Value};
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, cli::CostMode, format_date_tz,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    format_date_tz,
 };
 
 const DEFAULT_MODEL: &str = "unknown";
@@ -571,8 +572,7 @@ fn normalize_session_input(tokens: GeminiTokens) -> (u64, u64) {
 pub(super) fn event_to_loaded(
     event: GeminiUsageEvent,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: event.input_tokens,
@@ -597,7 +597,6 @@ pub(super) fn event_to_loaded(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(event.timestamp),
         },
         pricing,

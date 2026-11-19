@@ -1,10 +1,11 @@
+use ccusage_core::cost::PriceTable;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
     cli::CostMode,
     cost::{EntryPricing, price_entry},
     format_date_tz,
@@ -274,7 +275,7 @@ impl OpenCodeUsage {
         self,
         tz: &JiffTimeZone,
         mode: CostMode,
-        pricing: Option<&PricingMap>,
+        pricing: PriceTable<'_>,
     ) -> Result<Option<LoadedEntry>, MissingTimestamp> {
         let cache = self.tokens.cache.as_ref();
         let usage = TokenUsageRaw {
@@ -337,7 +338,6 @@ impl OpenCodeUsage {
                 residual_tokens: extra_total_tokens,
                 candidates: &candidates,
                 stored_cost: recorded_cost,
-                mode,
                 timestamp: pricing_timestamp,
             },
             pricing,
@@ -386,7 +386,7 @@ pub fn message_value_to_entry(
     session_id: Option<String>,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Result<Option<LoadedEntry>, MissingTimestamp> {
     OpenCodeUsage::from_message(value, id, session_id)
         .map_or(Ok(None), |usage| usage.into_entry(tz, mode, pricing))
@@ -404,7 +404,7 @@ pub(crate) fn session_message_value_to_entry_checked(
     row: SessionMessageRow<'_>,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Result<Option<crate::LinkedEntry>, SessionMessageError> {
     let SessionMessageRow {
         kind,
@@ -449,7 +449,7 @@ pub(crate) fn session_value_to_entry(
     aggregate: OpenCodeSessionAggregate,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Result<Option<LoadedEntry>, MissingTimestamp> {
     OpenCodeUsage::from_aggregate(aggregate).into_entry(tz, mode, pricing)
 }
@@ -524,7 +524,7 @@ mod tests {
             },
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            ccusage_core::cost::PriceTable::Display,
         )
         .unwrap()
         .unwrap()
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn calculates_cost_when_opencode_stores_zero_cost() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "gpt-test": {
@@ -659,7 +659,7 @@ mod tests {
             None,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Auto(&pricing),
         )
         .unwrap()
         .unwrap();
@@ -685,7 +685,10 @@ mod tests {
             None,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
         )
         .unwrap()
         .unwrap();
@@ -695,7 +698,7 @@ mod tests {
 
     #[test]
     fn honors_cost_modes_for_recorded_and_unrecorded_costs() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"gpt-test":{"input_cost_per_token":0.001,"output_cost_per_token":0.01}}"#,
         );
@@ -720,7 +723,7 @@ mod tests {
                 None,
                 &jiff::tz::TimeZone::UTC,
                 mode,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::for_map(mode, &pricing),
             )
             .unwrap()
             .unwrap();
@@ -732,7 +735,7 @@ mod tests {
 
     #[test]
     fn keeps_a_free_first_candidate_instead_of_a_paid_provider_candidate() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "gpt-test":{"input_cost_per_token":0,"output_cost_per_token":0},
@@ -749,7 +752,7 @@ mod tests {
             None,
             &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Auto(&pricing),
         )
         .unwrap()
         .unwrap();
@@ -759,7 +762,7 @@ mod tests {
 
     #[test]
     fn reports_missing_calculated_prices_even_with_a_recorded_cost() {
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
         for (mode, expected_cost, missing) in [
             (CostMode::Calculate, 0.0, Some("opencode-unpriced-model")),
             (CostMode::Auto, 9.0, None),
@@ -775,7 +778,7 @@ mod tests {
                 None,
                 &jiff::tz::TimeZone::UTC,
                 mode,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::for_map(mode, &pricing),
             )
             .unwrap()
             .unwrap();
@@ -787,7 +790,7 @@ mod tests {
     #[test]
     fn primary_rates_outrank_models_dev_for_qualified_candidates() {
         ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
+        let mut pricing = ccusage_core::PricingMap::load_embedded();
         pricing.load_json(
             r#"{"claude-sonnet-4":{"input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
         );
@@ -805,7 +808,7 @@ mod tests {
                 None,
                 &jiff::tz::TimeZone::UTC,
                 CostMode::Calculate,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
             )
             .unwrap()
             .unwrap();
@@ -815,7 +818,7 @@ mod tests {
 
     #[test]
     fn preserves_existing_reasoning_and_residual_billing() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"gpt-test":{"input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
         );
@@ -829,7 +832,7 @@ mod tests {
             None,
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
         .unwrap()
         .unwrap();
@@ -858,7 +861,10 @@ mod tests {
             None,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
         )
         .unwrap()
         .unwrap();
@@ -887,7 +893,10 @@ mod tests {
             None,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            ccusage_core::cost::PriceTable::for_map(
+                CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
         )
         .unwrap()
         .unwrap();
@@ -912,7 +921,7 @@ mod tests {
     #[test]
     fn preserves_legacy_prices_for_provider_qualified_models() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let models = [
             ("anthropic", "claude-sonnet-4-20250514"),
             ("anthropic", "claude-sonnet-4.5"),
@@ -983,7 +992,7 @@ mod tests {
                         None,
                         &jiff::tz::TimeZone::UTC,
                         CostMode::Auto,
-                        Some(&pricing),
+                        ccusage_core::cost::PriceTable::Auto(&pricing),
                     )
                     .unwrap()
                     .unwrap();
@@ -1004,7 +1013,7 @@ mod tests {
     #[test]
     fn calculates_cost_for_k2p6_when_opencode_stores_zero_cost() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = message_value_to_entry(
             message(json!({
                 "id": "message-a",
@@ -1023,7 +1032,7 @@ mod tests {
             None,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Auto(&pricing),
         )
         .unwrap()
         .unwrap();
@@ -1041,7 +1050,7 @@ mod tests {
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
         let tz = crate::resolve_tz(Some("UTC"));
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "github_copilot/claude-sonnet-4-5": {
@@ -1070,7 +1079,7 @@ mod tests {
             None,
             &tz,
             CostMode::Auto,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Auto(&pricing),
         )
         .unwrap()
         .unwrap();
@@ -1087,7 +1096,7 @@ mod tests {
             Some("explicit-session".to_string()),
             &tz,
             CostMode::Display,
-            None,
+            ccusage_core::cost::PriceTable::Display,
         )
         .unwrap()
         .unwrap();
@@ -1105,7 +1114,7 @@ mod tests {
     }
 
     fn deepseek_pricing(input: f64) -> PricingMap {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(&format!(
             "{{\"deepseek-v4-flash\":{{\"input_cost_per_token\":{input},\"output_cost_per_token\":0.00000028}}}}"
         ));
@@ -1134,7 +1143,7 @@ mod tests {
                     None,
                     &jiff::tz::TimeZone::system(),
                     CostMode::Display,
-                    None,
+                    ccusage_core::cost::PriceTable::Display,
                 )
                 .map(|entry| entry.is_some()),
                 Err(MissingTimestamp),
@@ -1163,7 +1172,7 @@ mod tests {
                 aggregate,
                 &jiff::tz::TimeZone::system(),
                 CostMode::Display,
-                None
+                ccusage_core::cost::PriceTable::Display
             )
             .map(|entry| entry.is_some()),
             Err(MissingTimestamp)
@@ -1191,7 +1200,7 @@ mod tests {
             },
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
         .unwrap()
         .unwrap();

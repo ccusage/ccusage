@@ -27,7 +27,7 @@ layers.
 - `source` — the contract between a usage source and the reports: `UsageSource`,
   the object-safe trait the unified report holds, and
   `EntrySource`, the hooks of a source whose loader yields `Vec<LoadedEntry>`,
-  with its declared window, detection, pricing, session identity and table policies. Standard aggregation, JSON and table hooks have shared defaults.
+  with its declared window, detection, session identity and table policies. Standard aggregation, JSON and table hooks have shared defaults.
 - `pipeline` — the one order an `EntrySource` report runs in, with focused
   and unified entry points sharing date-window and pricing policies. Detection
   applies to the unified entry point.
@@ -37,9 +37,8 @@ layers.
   without publishing returns an error to its consumer.
 - `source::LoadRequest` and `LoadedRows` carry source-neutral loads at day or
   session granularity. `ProgressOwner::run` controls their progress output.
-- `source::LoadContext` gives entry loaders native `LoaderPricing` supply.
-  `ReportPricing` holds supplied, pending or Display pricing; Display costs
-  do not load a price table. `UsageLoadContext` shares lazy pricing and report
+- `source::LoadContext` gives entry loaders typed `ReportPricing`.
+  `ReportPricing` uses a supplied or locally loaded table. Display costs skip pricing. `UsageLoadContext` shares lazy pricing and report
   windows between format-specific sources.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
 - `jsonl` — the streaming JSONL parsing helpers, including diagnostics for
@@ -52,7 +51,7 @@ layers.
 - `report::print_table_for_agent`
 - `roots::{resolve, RootsEnv}` for normalized list or single directory roots
 - `source::{EntryDescriptor, SummaryKind, SessionScope, SessionShape}`
-- `source::{LoadContext, LoaderPricing, ReportPricing, UsageLoadContext}`
+- `source::{LoadContext, ReportPricing, UsageLoadContext}`
 - `collect_files_with_extension`, `collect_files_matching`,
   `visit_usage_files` and `dir_entries`, which record directories, entries
   and file types they cannot read in a `Diagnostics`

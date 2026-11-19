@@ -43,9 +43,9 @@ use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
-    let pending = ReportPricing::for_load(&shared, None)?;
+    let report_pricing = ReportPricing::for_load(&shared, None);
     let sources = paths::codex_usage_sources()?;
-    let pricing = pending.get()?;
+    let pricing = report_pricing.get();
     let diagnostics = ccusage_core::Diagnostics::new("codex");
     let (mut groups, _) = aggregate::load_groups_from_sources_with_diagnostics(
         &sources,

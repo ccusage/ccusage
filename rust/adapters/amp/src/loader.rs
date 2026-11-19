@@ -7,7 +7,7 @@ use crate::{LoadedEntry, Result};
 use super::{parser, paths};
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let mut entries = Vec::new();
     for path in paths::paths()? {
         let threads_dir = path.join("threads");
@@ -17,15 +17,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             &files,
             cx.shared.single_thread,
             cx.diagnostics,
-            |file| {
-                parser::read_thread(
-                    file,
-                    cx.window.timezone(),
-                    cx.shared.mode,
-                    pricing,
-                    cx.diagnostics,
-                )
-            },
+            |file| parser::read_thread(file, cx.window.timezone(), pricing, cx.diagnostics),
         ));
     }
     entries.sort_by_key(|entry| entry.timestamp);

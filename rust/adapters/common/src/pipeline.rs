@@ -17,7 +17,7 @@ use ccusage_core::{
 use crate::{
     rows::summary_rows,
     source::{
-        Detection, EntrySource, LoadContext, LoadRequest, LoadedRows, LoaderPricing, ProgressOwner,
+        Detection, EntrySource, LoadContext, LoadRequest, LoadedRows, ProgressOwner, ReportPricing,
         SourceOptions, WindowMode,
     },
 };
@@ -44,7 +44,7 @@ pub fn focused_rows(
 ) -> Result<Vec<UsageSummary>> {
     let descriptor = source.descriptor();
     let shared = &args.shared;
-    let pricing = LoaderPricing::for_load(descriptor.pricing, shared, None)?;
+    let pricing = ReportPricing::for_load(shared, None);
     let window = ReportWindow::from_shared(shared);
     let diagnostics = Diagnostics::new(descriptor.id);
     let cx = LoadContext {
@@ -73,7 +73,7 @@ pub fn focused_rows(
 pub fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let descriptor = source.descriptor();
     let shared = request.shared;
-    let pricing = LoaderPricing::for_load(descriptor.pricing, shared, request.pricing)?;
+    let pricing = ReportPricing::for_load(shared, request.pricing);
     let window = ReportWindow::from_shared(shared);
     let diagnostics = Diagnostics::new(descriptor.id);
     let cx = LoadContext {
@@ -342,19 +342,10 @@ mod tests {
     }
 
     #[test]
-    fn pricing_reaches_only_the_loaders_that_ask_the_pipeline_for_it() {
-        ccusage_test_support::install_pricing_snapshots();
+    fn pricing_reaches_focused_and_unified_entry_loaders() {
         let shared = shared(None, None);
-        let prices_itself = Fake::new(descriptor(), entries());
-        let priced_by_pipeline = Fake::new(EntryDescriptor::standard("fake", "Fake"), entries());
+        let priced_by_pipeline = Fake::new(descriptor(), entries());
         let pricing = PricingMap::default();
-
-        focused_rows(
-            &prices_itself,
-            &command(AgentReportKind::Daily, shared.clone()),
-        )
-        .unwrap();
-        assert!(!prices_itself.saw_pricing.load(Ordering::Relaxed));
 
         focused_rows(
             &priced_by_pipeline,

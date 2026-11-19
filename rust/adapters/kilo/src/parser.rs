@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -8,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    cli::CostMode, format_date_tz, stored_cost_for_mode,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -84,7 +85,7 @@ pub(super) fn message_value_to_entry(
     db_path: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> std::result::Result<Option<(String, LoadedEntry)>, MissingTimestamp> {
     if value.role.as_deref() != Some("assistant") {
         return Ok(None);
@@ -158,7 +159,6 @@ pub(super) fn message_value_to_entry(
             residual_tokens: extra_total_tokens,
             candidates: &candidates,
             stored_cost: cost_usd.filter(|cost| mode != CostMode::Auto || *cost > 0.0),
-            mode,
             timestamp: Some(timestamp),
         },
         pricing,
@@ -245,7 +245,7 @@ mod tests {
             Path::new("/tmp/kilo.db"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            ccusage_core::cost::PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap()
         .unwrap();
@@ -275,7 +275,7 @@ mod tests {
             Path::new("/tmp/kilo.db"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&PricingMap::load_embedded()),
+            ccusage_core::cost::PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap()
         .unwrap();
@@ -284,8 +284,8 @@ mod tests {
         assert_eq!(entry.extra_total_tokens, 0);
     }
 
-    fn deepseek_pricing() -> PricingMap {
-        let mut pricing = PricingMap::default();
+    fn deepseek_pricing() -> ccusage_core::PricingMap {
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
@@ -337,10 +337,9 @@ mod tests {
                         residual_tokens: 0,
                         candidates: &candidates,
                         stored_cost: None,
-                        mode: CostMode::Calculate,
                         timestamp: crate::parse_ts_timestamp(&data.timestamp),
                     },
-                    Some(&pricing),
+                    PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
                 .cost
             } - 0.44)
@@ -367,10 +366,9 @@ mod tests {
                         residual_tokens: 0,
                         candidates: &candidates,
                         stored_cost: None,
-                        mode: CostMode::Calculate,
                         timestamp: crate::parse_ts_timestamp(&data.timestamp),
                     },
-                    Some(&pricing),
+                    PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
                 .cost
             },
@@ -406,10 +404,9 @@ mod tests {
                         residual_tokens: 0,
                         candidates: &candidates,
                         stored_cost: None,
-                        mode: CostMode::Calculate,
                         timestamp: crate::parse_ts_timestamp(&data.timestamp),
                     },
-                    Some(&pricing),
+                    PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
                 .cost
             },
@@ -443,7 +440,7 @@ mod cost_mode_warnings {
                 Path::new("kilo.db"),
                 &JiffTimeZone::UTC,
                 mode,
-                Some(&PricingMap::default()),
+                ccusage_core::cost::PriceTable::for_map(mode, &ccusage_core::PricingMap::default()),
             )
             .unwrap()
             .unwrap();

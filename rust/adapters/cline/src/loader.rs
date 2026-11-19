@@ -5,7 +5,7 @@ use super::paths::discover_files;
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let sources = discover_files(cx.diagnostics)?;
     let timezone = cx.window.timezone();
     let mut entries =

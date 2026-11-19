@@ -13,7 +13,7 @@ use super::{
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let mut events = Vec::new();
     for database_path in conversation_db_paths(cx.diagnostics, cx.shared.debug)? {
         match parse_sqlite_file(&database_path, cx.diagnostics) {
@@ -39,7 +39,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     events.sort_by_key(|event| event.timestamp);
     Ok(events
         .into_iter()
-        .map(|event| event_to_loaded(event, cx.window.timezone(), cx.shared.mode, pricing))
+        .map(|event| event_to_loaded(event, cx.window.timezone(), pricing))
         .collect())
 }
 
@@ -1437,9 +1437,7 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

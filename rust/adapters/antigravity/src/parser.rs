@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -9,10 +10,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use ccusage_adapter_common::{SqliteStage, UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
-    format_date_tz,
-};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, format_date_tz};
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -1036,8 +1034,7 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
 pub(super) fn event_to_loaded(
     event: AntigravityUsageEvent,
     timezone: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: event.input_tokens,
@@ -1060,7 +1057,6 @@ pub(super) fn event_to_loaded(
         event.provider,
         cost_usage,
         event.timestamp,
-        mode,
         pricing,
     );
     let data = UsageEntry {
@@ -1100,8 +1096,7 @@ fn price_antigravity(
     provider: Option<u64>,
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> (f64, Option<String>) {
     let exact = gemini_flash_pricing_alias(model).is_some();
     let candidates: Vec<_> = model_candidates(model, provider)
@@ -1131,7 +1126,6 @@ fn price_antigravity(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(timestamp),
         },
         pricing,
@@ -1430,7 +1424,7 @@ mod tests {
         merge_usage_event, model_candidates, model_from_id, normalize_antigravity_model,
         parse_generator_metadata, parse_step_metadata, price_antigravity,
     };
-    use crate::{PricingMap, TimestampMs, TokenUsageRaw, cli::CostMode, parse_ts_timestamp};
+    use crate::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
 
     #[test]
     fn merge_prefers_resolved_then_placeholder_then_default_model() {
@@ -1635,7 +1629,7 @@ mod tests {
 
     #[test]
     fn missing_pricing_token_total_saturates() {
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
         let result = std::panic::catch_unwind(|| {
             price_antigravity(
                 "antigravity-unpriced",
@@ -1649,8 +1643,7 @@ mod tests {
                     cache_creation: None,
                 },
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
             )
             .1
         });
@@ -1775,7 +1768,7 @@ mod tests {
             Some("claude-opus-5-5")
         );
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 1_000_000,
             output_tokens: 1_000_000,
@@ -1786,8 +1779,7 @@ mod tests {
             None,
             usage,
             TimestampMs::UNIX_EPOCH,
-            CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
         .0;
         assert!(cost > 0.0);
@@ -1797,8 +1789,7 @@ mod tests {
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing)
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
             .1
             .is_none()
@@ -1833,7 +1824,7 @@ mod tests {
 
     #[test]
     fn provider_specific_variant_pricing_precedes_base_fallback() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
                 r#"{
@@ -1862,8 +1853,7 @@ mod tests {
                 cache_creation: None,
             },
             TimestampMs::UNIX_EPOCH,
-            CostMode::Calculate,
-            Some(&pricing),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
         .0;
 
@@ -1872,7 +1862,7 @@ mod tests {
 
     #[test]
     fn sibling_effort_variant_does_not_satisfy_base_pricing_fallback() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
                 r#"{
@@ -1899,8 +1889,7 @@ mod tests {
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing)
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
             .0,
             0.0
@@ -1911,8 +1900,7 @@ mod tests {
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing)
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
             .1
             .as_deref(),
@@ -1926,7 +1914,7 @@ mod tests {
             ("gemini-3.6-flash-medium", "custom-flash-medium"),
             ("gemini-3.8-flash-low", "custom-unpriced-flash-low"),
         ]);
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
                 r#"{
@@ -1953,8 +1941,7 @@ mod tests {
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing)
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
             .0,
             3.0
@@ -1965,8 +1952,7 @@ mod tests {
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing)
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
             .1
             .is_none()
@@ -1977,8 +1963,7 @@ mod tests {
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                Some(&pricing)
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
             .1
             .as_deref(),
@@ -1989,7 +1974,7 @@ mod tests {
     #[test]
     fn legacy_models_keep_timestamp_aware_pricing() {
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 1_000_000,
             ..TokenUsageRaw::default()
@@ -2000,8 +1985,7 @@ mod tests {
                 None,
                 usage,
                 parse_ts_timestamp(timestamp).unwrap(),
-                CostMode::Calculate,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
             )
             .0
         };
@@ -2018,7 +2002,7 @@ mod pricing_identity_tests {
     #[test]
     fn adapter_pricing_identity() {
         let model = normalize_antigravity_model("gemini-3.6-flash-high").unwrap();
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"gemini-3.6-flash":{"input_cost_per_token":0.00000075,"output_cost_per_token":0.00000375},"gemini/gemini-3.6-flash-lite":{"input_cost_per_token":0.0000001,"output_cost_per_token":0.0000004}}"#);
         let (cost, missing) = price_antigravity(
             &model,
@@ -2028,8 +2012,7 @@ mod pricing_identity_tests {
                 ..Default::default()
             },
             crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
-            CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
         );
         assert!((cost - 0.00075).abs() < 1e-12);
         assert_eq!(missing, None);

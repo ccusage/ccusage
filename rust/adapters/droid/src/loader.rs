@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -10,10 +11,10 @@ use ccusage_adapter_common::{
     dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
 };
 
-use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
+use crate::{LoadedEntry, Result, UsageEntry, UsageMessage, format_date_tz};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
     let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
@@ -27,17 +28,12 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     Ok(dedupe_last_wins(parsed, |entry| entry.session_id.clone())
         .into_iter()
         .rev()
-        .map(|entry| to_loaded_entry(entry, tz, cx.shared.mode, pricing))
+        .map(|entry| to_loaded_entry(entry, tz, pricing))
         .collect())
 }
 
-fn to_loaded_entry(
-    entry: DroidEntry,
-    tz: &JiffTimeZone,
-    mode: ccusage_core::cli::CostMode,
-    pricing: Option<&PricingMap>,
-) -> LoadedEntry {
-    let (cost, missing_pricing_model) = price_droid(&entry, mode, pricing);
+fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>) -> LoadedEntry {
+    let (cost, missing_pricing_model) = price_droid(&entry, pricing);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text.clone(),
@@ -76,7 +72,7 @@ mod tests {
     fn uniform_cost_modes_do_not_calculate_in_display() {
         let fixture = fs_fixture!({"session.settings.json": r#"{"model":"sample","providerLockTimestamp":"2026-05-01T01:02:03Z","tokenUsage":{"inputTokens":100,"outputTokens":50}}"#});
         let _guard = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
         );
@@ -168,7 +164,7 @@ mod tests {
         });
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
@@ -210,16 +206,14 @@ mod tests {
         });
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
         let diagnostics = Diagnostics::new("droid");
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };
@@ -264,7 +258,7 @@ mod tests {
         });
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &SharedArgs::default(),
@@ -299,7 +293,7 @@ mod tests {
         });
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &SharedArgs::default(),

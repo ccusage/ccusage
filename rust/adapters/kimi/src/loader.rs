@@ -11,13 +11,13 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_wire_files(cx.diagnostics)?;
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
     });
     let mut entries = dedupe_first_wins(loaded, KimiUsageEntry::dedupe_key)
         .into_iter()
-        .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), cx.shared.mode, pricing))
+        .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), pricing))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)

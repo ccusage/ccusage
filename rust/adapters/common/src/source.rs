@@ -26,8 +26,8 @@ pub trait UsageSource: Sync {
     /// The name progress output shows while the source loads, such as `Amp`.
     fn label(&self) -> &'static str;
 
-    fn pricing_supply(&self) -> PricingSupply {
-        PricingSupply::Pipeline
+    fn uses_shared_pricing(&self) -> bool {
+        true
     }
 
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows>;
@@ -96,7 +96,7 @@ pub struct LoadRequest<'a> {
 }
 
 impl LoadRequest<'_> {
-    pub fn pricing_or_load(&self) -> Result<ReportPricing<'_>> {
+    pub fn pricing_or_load(&self) -> ReportPricing<'_> {
         ReportPricing::for_load(self.shared, self.pricing)
     }
 }
@@ -108,55 +108,32 @@ pub enum ReportPricing<'a> {
 }
 
 impl<'a> ReportPricing<'a> {
-    pub fn for_load(shared: &SharedArgs, supplied: Option<&'a PricingMap>) -> Result<Self> {
+    pub fn for_load(shared: &SharedArgs, supplied: Option<&'a PricingMap>) -> Self {
         if shared.mode == ccusage_core::cli::CostMode::Display {
-            return Ok(Self::Display);
+            return Self::Display;
         }
         match supplied {
-            Some(pricing) => Ok(Self::Supplied(pricing)),
-            None => Ok(Self::Loaded(Box::new(PricingMap::load_with_overrides(
+            Some(pricing) => Self::Supplied(pricing),
+            None => Self::Loaded(Box::new(PricingMap::load_with_overrides(
                 shared.offline,
                 ccusage_core::log_level() != Some(0),
                 shared.pricing_overrides.iter(),
-            )))),
+            ))),
         }
     }
 
-    pub fn get(&self) -> Result<Option<&PricingMap>> {
+    pub fn get(&self) -> Option<&PricingMap> {
         match self {
-            Self::Display => Ok(None),
-            Self::Supplied(pricing) => Ok(Some(pricing)),
-            Self::Loaded(pricing) => Ok(Some(pricing)),
+            Self::Display => None,
+            Self::Supplied(pricing) => Some(pricing),
+            Self::Loaded(pricing) => Some(pricing),
         }
     }
-}
-
-pub enum LoaderPricing<'a> {
-    Pipeline(ReportPricing<'a>),
-    Source,
-}
-
-impl<'a> LoaderPricing<'a> {
-    pub(crate) fn for_load(
-        supply: PricingSupply,
-        shared: &SharedArgs,
-        supplied: Option<&'a PricingMap>,
-    ) -> Result<Self> {
-        match (supply, supplied) {
-            (PricingSupply::Pipeline, _) => {
-                ReportPricing::for_load(shared, supplied).map(Self::Pipeline)
-            }
-            (PricingSupply::Source, Some(pricing)) => {
-                ReportPricing::for_load(shared, Some(pricing)).map(Self::Pipeline)
-            }
-            (PricingSupply::Source, None) => Ok(Self::Source),
-        }
-    }
-
-    pub fn as_map(&self) -> Result<Option<&PricingMap>> {
+    pub fn table(&self, mode: ccusage_core::cli::CostMode) -> ccusage_core::cost::PriceTable<'_> {
         match self {
-            Self::Pipeline(pricing) => pricing.get(),
-            Self::Source => Ok(None),
+            Self::Display => ccusage_core::cost::PriceTable::Display,
+            Self::Supplied(pricing) => ccusage_core::cost::PriceTable::for_map(mode, pricing),
+            Self::Loaded(pricing) => ccusage_core::cost::PriceTable::for_map(mode, pricing),
         }
     }
 }
@@ -164,7 +141,7 @@ impl<'a> LoaderPricing<'a> {
 pub struct UsageLoadContext<'a> {
     pub shared: &'a SharedArgs,
     window: OnceLock<ReportWindow>,
-    pricing: OnceLock<Option<PricingMap>>,
+    pricing: OnceLock<PricingMap>,
 }
 
 impl<'a> UsageLoadContext<'a> {
@@ -182,17 +159,25 @@ impl<'a> UsageLoadContext<'a> {
     }
 
     pub fn pricing(&self) -> Option<&PricingMap> {
-        self.pricing
-            .get_or_init(|| {
-                (self.shared.mode != ccusage_core::cli::CostMode::Display).then(|| {
-                    PricingMap::load_with_overrides(
-                        self.shared.offline,
-                        ccusage_core::log_level() != Some(0),
-                        self.shared.pricing_overrides.iter(),
-                    )
-                })
-            })
-            .as_ref()
+        match self.table() {
+            ccusage_core::cost::PriceTable::Display => None,
+            ccusage_core::cost::PriceTable::Auto(map)
+            | ccusage_core::cost::PriceTable::Calculate(map) => Some(map),
+        }
+    }
+
+    pub fn table(&self) -> ccusage_core::cost::PriceTable<'_> {
+        if self.shared.mode == ccusage_core::cli::CostMode::Display {
+            return ccusage_core::cost::PriceTable::Display;
+        }
+        let map = self.pricing.get_or_init(|| {
+            PricingMap::load_with_overrides(
+                self.shared.offline,
+                ccusage_core::log_level() != Some(0),
+                self.shared.pricing_overrides.iter(),
+            )
+        });
+        ccusage_core::cost::PriceTable::for_map(self.shared.mode, map)
     }
 }
 
@@ -260,16 +245,6 @@ pub enum Detection {
     NonEmptyOrHasData(fn() -> bool),
 }
 
-/// Who supplies the pricing a source's loader needs.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PricingSupply {
-    /// The pipeline hands the loader a [`PricingMap`]: the unified report's
-    /// shared one, or one it loads itself.
-    Pipeline,
-    /// The loader loads pricing itself, when and if it needs it.
-    Source,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum SummaryKind {
     Daily,
@@ -322,7 +297,6 @@ pub struct EntryDescriptor {
     pub label: &'static str,
     pub window: WindowMode,
     pub detection: Detection,
-    pub pricing: PricingSupply,
     /// Whether unified session rows carry the session's project path.
     pub unified_project_path: bool,
     pub session: SessionShape,
@@ -340,7 +314,6 @@ impl EntryDescriptor {
             label,
             window: WindowMode::Entries,
             detection: Detection::NonEmpty,
-            pricing: PricingSupply::Pipeline,
             unified_project_path: false,
             session: SessionShape::Plain,
             table: TableStyle::Standard,
@@ -356,8 +329,7 @@ pub struct LoadContext<'a> {
     pub kind: AgentReportKind,
     /// The report window, as a hint for a loader that can skip input early.
     pub window: &'a ReportWindow,
-    /// Present for [`PricingSupply::Pipeline`] sources.
-    pub pricing: LoaderPricing<'a>,
+    pub pricing: ReportPricing<'a>,
     pub options: SourceOptions<'a>,
     /// Where the loader records what it skipped.
     pub diagnostics: &'a Diagnostics,
@@ -419,10 +391,6 @@ impl<S: EntrySource> UsageSource for S {
         self.descriptor().label
     }
 
-    fn pricing_supply(&self) -> PricingSupply {
-        self.descriptor().pricing
-    }
-
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
         pipeline::load_rows(self, request)
     }
@@ -447,9 +415,9 @@ mod pricing_tests {
     fn supplied_pricing_is_borrowed_without_loading_a_base() {
         let shared = SharedArgs::default();
         let supplied = PricingMap::default();
-        let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
+        let pricing = ReportPricing::for_load(&shared, Some(&supplied));
 
-        assert!(std::ptr::eq(pricing.get().unwrap().unwrap(), &supplied));
+        assert!(std::ptr::eq(pricing.get().unwrap(), &supplied));
     }
 
     #[test]
@@ -461,26 +429,21 @@ mod pricing_tests {
         let mut supplied = PricingMap::default();
         supplied.load_json(r#"{"gpt-5":{"input_cost_per_token":1.0,"output_cost_per_token":1.0}}"#);
         assert!(supplied.find("gpt-5").is_some());
-        let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
+        let pricing = ReportPricing::for_load(&shared, Some(&supplied));
 
         assert!(matches!(pricing, ReportPricing::Display));
-        let loader = super::LoaderPricing::Pipeline(pricing);
-        assert!(loader.as_map().unwrap().is_none());
-        let source_owned =
-            super::LoaderPricing::for_load(super::PricingSupply::Source, &shared, Some(&supplied))
-                .unwrap();
-        assert!(source_owned.as_map().unwrap().is_none());
+        assert!(pricing.get().is_none());
     }
 
     #[test]
-    fn display_does_not_start_a_pending_load() {
+    fn display_does_not_load_pricing() {
         let shared = SharedArgs {
             mode: CostMode::Display,
             ..Default::default()
         };
 
         assert!(matches!(
-            ReportPricing::for_load(&shared, None).unwrap(),
+            ReportPricing::for_load(&shared, None),
             ReportPricing::Display
         ));
     }
@@ -508,7 +471,7 @@ mod pricing_tests {
         let cx = UsageLoadContext::new(&shared);
 
         assert!(cx.pricing().is_none());
-        assert!(cx.pricing.get().is_some_and(Option::is_none));
+        assert!(cx.pricing.get().is_none());
         assert!(cx.window.get().is_none());
     }
 }

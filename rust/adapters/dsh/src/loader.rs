@@ -11,7 +11,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_session_files(cx.diagnostics)?;
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_session_file(file, cx.diagnostics)
     });
@@ -20,12 +20,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let mut seen = HashSet::new();
     for entry in loaded.into_iter().flatten().flatten() {
         if seen.insert(dsh_entry_key(&entry)) {
-            entries.push(dsh_entry_to_loaded(
-                entry,
-                cx.window.timezone(),
-                cx.shared.mode,
-                pricing,
-            ));
+            entries.push(dsh_entry_to_loaded(entry, cx.window.timezone(), pricing));
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);

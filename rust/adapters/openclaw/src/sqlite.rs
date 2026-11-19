@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use std::path::Path;
 
 use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl, sqlite::read_i64};
@@ -5,7 +6,7 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded, timestamp_from_millis};
-use crate::{LoadedEntry, PricingMap, cli::CostMode};
+use crate::{LoadedEntry, cli::CostMode};
 
 /// One per-agent SQLite store (`agents/<agentId>/agent/openclaw-agent.sqlite`).
 struct AgentDatabase {
@@ -72,7 +73,7 @@ pub(super) fn collect_sqlite_entries(
     root: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
@@ -99,7 +100,7 @@ fn read_agent_database(
     database: &AgentDatabase,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let prefilter = super::parser::record_prefilter();
@@ -179,7 +180,7 @@ fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sq
 #[cfg(test)]
 mod tests {
     use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
-    use ccusage_core::{PricingMap, ReportWindow, cli::AgentReportKind};
+    use ccusage_core::{ReportWindow, cli::AgentReportKind};
     use ccusage_test_support::{Fixture, fs_fixture};
 
     use super::*;
@@ -236,7 +237,7 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics(),
         );
 
@@ -275,7 +276,7 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         );
 
@@ -320,7 +321,7 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
@@ -368,7 +369,7 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
@@ -402,7 +403,7 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
@@ -441,7 +442,7 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics(),
         );
 
@@ -475,7 +476,7 @@ mod tests {
             },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
@@ -514,15 +515,13 @@ mod tests {
             ..Default::default()
         };
         let window = ReportWindow::from_shared(&shared);
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let diagnostics = diagnostics();
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions {
                 open_claw_path: Some(custom_path),
                 ..SourceOptions::default()

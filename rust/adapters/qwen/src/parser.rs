@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -12,9 +13,8 @@ use ccusage_adapter_common::{jsonl, units::UnitError};
 
 use super::paths;
 use crate::{
-    Diagnostics, LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, cli::CostMode, fast::LinePrefilter, format_date_tz,
-    parse_ts_timestamp,
+    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    apply_total_token_fallback, fast::LinePrefilter, format_date_tz, parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -54,8 +54,7 @@ struct QwenUsageMetadata {
 pub(super) fn read_chat_file(
     file: &Path,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let content = fs::read(file)?;
@@ -70,7 +69,7 @@ pub(super) fn read_chat_file(
         diagnostics,
         is_qwen_usage,
     ) {
-        match parse_line(file, &record, tz, mode, pricing) {
+        match parse_line(file, &record, tz, pricing) {
             Ok(Some(entry)) => entries.push(entry),
             Ok(None) => {}
             Err(MissingTimestamp) => diagnostics.record(ccusage_core::Skip::record(
@@ -96,8 +95,7 @@ fn parse_line(
     file: &Path,
     record: &QwenLine,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> std::result::Result<Option<LoadedEntry>, MissingTimestamp> {
     if record.r#type.as_deref() != Some("assistant") {
         return Ok(None);
@@ -149,8 +147,7 @@ fn parse_line(
         cache_creation: None,
         ..display_usage
     };
-    let (cost, missing_pricing_model) =
-        price_qwen(&model, billable_usage, timestamp, mode, pricing);
+    let (cost, missing_pricing_model) = price_qwen(&model, billable_usage, timestamp, pricing);
     let data = UsageEntry {
         session_id: Some(session_id.clone()),
         timestamp: timestamp_text.clone(),
@@ -187,8 +184,7 @@ fn price_qwen(
     model: &str,
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> (f64, Option<String>) {
     let candidates = qwen_model_candidates(model);
     let candidates: Vec<_> = candidates
@@ -202,7 +198,6 @@ fn price_qwen(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(timestamp),
         },
         pricing,
@@ -250,8 +245,7 @@ mod tests {
         let entries = read_chat_file(
             &fixture.path("chat.jsonl"),
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         )
         .unwrap();
@@ -265,7 +259,7 @@ mod tests {
 
     #[test]
     fn calculate_qwen_cost_returns_explicit_zero_price() {
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "free-model": {
@@ -292,8 +286,7 @@ mod tests {
                 cache_creation: None,
             },
             TimestampMs::UNIX_EPOCH,
-            CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
         );
 
         assert_eq!(cost, 0.0);
@@ -315,8 +308,10 @@ mod tests {
             Path::new("/tmp/project/chat.jsonl"),
             &record,
             &jiff::tz::TimeZone::system(),
-            CostMode::Auto,
-            None,
+            PriceTable::for_map(
+                ccusage_core::cli::CostMode::Auto,
+                &ccusage_core::PricingMap::default(),
+            ),
         )
         .unwrap()
         .unwrap();

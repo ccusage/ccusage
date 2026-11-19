@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -14,7 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
     format_date_tz, format_rfc3339_millis, stored_cost_for_mode, total_usage_tokens,
 };
 
@@ -205,7 +206,7 @@ pub(super) fn parse_session_files_with_diagnostics(
     updates: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<(GrokDedupeKey, LoadedEntry)>, UnitError> {
     let meta = load_session_meta(updates, diagnostics);
@@ -531,7 +532,7 @@ fn price_grok_usage(
     cost_usd: Option<f64>,
     timestamp: Option<TimestampMs>,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> (f64, Option<String>) {
     let names = pricing_candidates(raw_model);
     let candidates: Vec<_> = names
@@ -546,7 +547,6 @@ fn price_grok_usage(
             residual_tokens: 0,
             candidates: &candidates,
             stored_cost: cost_usd,
-            mode,
             timestamp,
         },
         pricing,
@@ -596,7 +596,7 @@ fn from_hex(byte: u8) -> Option<u8> {
 mod tests {
     #[test]
     fn preserves_missing_pricing_for_blank_model_keys_in_each_cost_mode() {
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
         let usage = TokenUsageRaw {
             input_tokens: 1,
             ..Default::default()
@@ -609,12 +609,19 @@ mod tests {
                     None,
                     None,
                     CostMode::Calculate,
-                    Some(&pricing)
+                    PriceTable::Calculate(&pricing)
                 ),
                 (0.0, Some(model.to_string()))
             );
             assert_eq!(
-                price_grok_usage(model, usage, None, None, CostMode::Auto, Some(&pricing)),
+                price_grok_usage(
+                    model,
+                    usage,
+                    None,
+                    None,
+                    CostMode::Auto,
+                    PriceTable::Auto(&pricing)
+                ),
                 (0.0, Some(model.to_string()))
             );
             assert_eq!(
@@ -624,12 +631,19 @@ mod tests {
                     Some(1.0),
                     None,
                     CostMode::Auto,
-                    Some(&pricing)
+                    PriceTable::Auto(&pricing)
                 ),
                 (1.0, None)
             );
             assert_eq!(
-                price_grok_usage(model, usage, None, None, CostMode::Display, Some(&pricing)),
+                price_grok_usage(
+                    model,
+                    usage,
+                    None,
+                    None,
+                    CostMode::Display,
+                    PriceTable::Display
+                ),
                 (0.0, None)
             );
             assert_eq!(
@@ -639,7 +653,7 @@ mod tests {
                     None,
                     None,
                     CostMode::Calculate,
-                    Some(&pricing)
+                    PriceTable::Calculate(&pricing)
                 ),
                 (0.0, None)
             );
@@ -723,7 +737,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Display,
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -771,7 +785,11 @@ mod tests {
             output_cost_per_token: Some(2.0),
             ..crate::cli::PricingOverride::default()
         };
-        let pricing = PricingMap::load_with_overrides(true, false, [(&model, &pricing_override)]);
+        let pricing = ccusage_core::PricingMap::load_with_overrides(
+            true,
+            false,
+            [(&model, &pricing_override)],
+        );
         let usage = TokenUsageRaw {
             input_tokens: 1,
             output_tokens: 1,
@@ -785,7 +803,7 @@ mod tests {
                 None,
                 None,
                 CostMode::Calculate,
-                Some(&pricing)
+                PriceTable::Calculate(&pricing)
             )
             .0,
             3.0
@@ -806,7 +824,8 @@ mod tests {
             ..crate::cli::PricingOverride::default()
         };
         let key = "xai/grok-unreleased-9.9-preview".to_string();
-        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let pricing =
+            ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
         for unpriced in [
             "grok-unreleased-9.9-build",
             "xai/grok-unreleased-9.9-build",
@@ -828,7 +847,7 @@ mod tests {
                 None,
                 None,
                 CostMode::Calculate,
-                Some(&pricing)
+                PriceTable::Calculate(&pricing)
             )
             .0,
             0.02
@@ -848,12 +867,12 @@ mod tests {
             ),
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -891,7 +910,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Display,
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -913,12 +932,12 @@ mod tests {
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"sess-1","cwd":"D:\\work\\proj"},"current_model_id":"grok-4.5"}"#,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1039,7 +1058,7 @@ mod tests {
             &files,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&PricingMap::default()),
+            PriceTable::Calculate(&ccusage_core::PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -1061,7 +1080,7 @@ mod tests {
             &files,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&PricingMap::default()),
+            PriceTable::Calculate(&ccusage_core::PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -1098,7 +1117,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Display,
             &diagnostics,
         )
         .unwrap();
@@ -1145,7 +1164,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Display,
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1195,7 +1214,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            Some(&PricingMap::load_embedded()),
+            PriceTable::Display,
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1291,12 +1310,11 @@ mod tests {
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let pricing = PricingMap::load_embedded();
         let entries = parse_session_files_with_diagnostics(
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            Some(&pricing),
+            PriceTable::Display,
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1337,13 +1355,13 @@ mod tests {
             "sessions/proj/sess-1/updates.jsonl": r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let stored_cost = |mode| {
             parse_session_files_with_diagnostics(
                 &files,
                 &jiff::tz::TimeZone::system(),
                 mode,
-                Some(&pricing),
+                PriceTable::for_map(mode, &pricing),
                 &Diagnostics::new("grok"),
             )
             .map(|entries| {
@@ -1395,7 +1413,8 @@ mod tests {
             output_cost_per_token: Some(1.0),
             ..crate::cli::PricingOverride::default()
         };
-        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let pricing =
+            ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
         let usage = TokenUsageRaw {
             input_tokens: 10,
             output_tokens: 10,
@@ -1409,7 +1428,7 @@ mod tests {
                 Some(0.25),
                 None,
                 CostMode::Auto,
-                Some(&pricing)
+                PriceTable::Auto(&pricing)
             )
             .0,
             0.25
@@ -1421,7 +1440,7 @@ mod tests {
                 Some(0.25),
                 None,
                 CostMode::Calculate,
-                Some(&pricing)
+                PriceTable::Calculate(&pricing)
             )
             .0,
             20.0
@@ -1437,7 +1456,8 @@ mod tests {
             output_cost_per_token: Some(1.0),
             ..crate::cli::PricingOverride::default()
         };
-        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let pricing =
+            ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
         let usage = TokenUsageRaw {
             input_tokens: 10,
             output_tokens: 10,
@@ -1451,7 +1471,7 @@ mod tests {
                 None,
                 None,
                 CostMode::Auto,
-                Some(&pricing)
+                PriceTable::Auto(&pricing)
             )
             .0,
             20.0

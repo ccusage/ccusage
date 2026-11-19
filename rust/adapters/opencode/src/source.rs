@@ -1,7 +1,7 @@
 use ccusage_adapter_common::{
     claims::{ClaudeClaimsRx, ClaudeCounted},
     rows::summary_rows,
-    source::{LoadRequest, LoadedRows, PricingSupply, ProgressOwner, UsageSource},
+    source::{LoadRequest, LoadedRows, ProgressOwner, UsageSource},
 };
 use ccusage_core::Diagnostics;
 use ccusage_core::{ReportWindow, Result, progress::UsageLoadAgent};
@@ -37,8 +37,8 @@ impl UsageSource for OpenCode {
         "OpenCode"
     }
 
-    fn pricing_supply(&self) -> PricingSupply {
-        PricingSupply::Source
+    fn uses_shared_pricing(&self) -> bool {
+        false
     }
 
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {

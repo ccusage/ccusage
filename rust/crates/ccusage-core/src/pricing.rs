@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
-    sync::{Arc, LazyLock, OnceLock, RwLock},
-    thread::{self, JoinHandle},
+    sync::{Arc, OnceLock, RwLock},
 };
 
 use ccusage_cli::PricingOverride;
@@ -1345,45 +1344,6 @@ impl SpeedMultiplierOverrides {
     }
 }
 
-pub struct PendingPricing {
-    state: PricingLoadState,
-}
-
-type PricingLoad = LazyLock<
-    std::result::Result<PricingMap, &'static str>,
-    Box<dyn FnOnce() -> std::result::Result<PricingMap, &'static str> + Send + Sync>,
->;
-
-enum PricingLoadState {
-    Ready(Box<PricingMap>),
-    Running(Box<PricingLoad>),
-}
-
-impl PendingPricing {
-    fn from_worker(worker: JoinHandle<PricingMap>) -> Self {
-        Self {
-            state: PricingLoadState::Running(Box::new(LazyLock::new(Box::new(move || {
-                worker.join().map_err(|_| "pricing load worker failed")
-            })))),
-        }
-    }
-
-    pub fn join(&self) -> crate::Result<&PricingMap> {
-        match &self.state {
-            PricingLoadState::Ready(pricing) => Ok(pricing),
-            PricingLoadState::Running(load) => LazyLock::force(load)
-                .as_ref()
-                .map_err(|error| crate::cli_error(*error)),
-        }
-    }
-}
-
-impl Drop for PendingPricing {
-    fn drop(&mut self) {
-        let _ = self.join();
-    }
-}
-
 /// Every agent of a combined report prices its own rows, so the tables are
 /// parsed, and in online mode fetched, once per process rather than per agent.
 fn base_pricing(offline: bool) -> &'static OnceLock<PricingMap> {
@@ -1395,36 +1355,6 @@ fn base_pricing(offline: bool) -> &'static OnceLock<PricingMap> {
 impl PricingMap {
     pub fn load_embedded() -> Self {
         Self::build_embedded()
-    }
-
-    pub fn spawn_load<'a, I>(
-        offline: bool,
-        log: bool,
-        overrides: I,
-    ) -> crate::Result<PendingPricing>
-    where
-        I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
-    {
-        let overrides = overrides.into_iter();
-        if let Some(base) = base_pricing(offline).get() {
-            return Ok(PendingPricing {
-                state: PricingLoadState::Ready(Box::new(base.with_user_overrides(overrides))),
-            });
-        }
-        let overrides = overrides
-            .map(|(model, value)| (model.clone(), value.clone()))
-            .collect::<Vec<_>>();
-        let worker = thread::Builder::new()
-            .name("pricing".to_string())
-            .spawn(move || {
-                Self::load_with_overrides(
-                    offline,
-                    log,
-                    overrides.iter().map(|(model, value)| (model, value)),
-                )
-            })
-            .map_err(|error| crate::cli_error(format!("could not start pricing load: {error}")))?;
-        Ok(PendingPricing::from_worker(worker))
     }
 
     fn rows_mut(&mut self) -> &mut PricingRows {
@@ -3609,54 +3539,17 @@ mod tests {
     }
 
     #[test]
-    fn pending_pricing_keeps_overrides_local_and_can_be_joined_repeatedly() {
+    fn loading_with_overrides_keeps_the_shared_base_unchanged() {
         crate::test_support::install_pricing_snapshots();
         let model = "gpt-5".to_string();
-        let override_value = ccusage_cli::PricingOverride {
-            input_cost_per_token: Some(0.25),
+        let overrides = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(42e-6),
             ..Default::default()
         };
-        let pending = PricingMap::spawn_load(true, false, [(&model, &override_value)]).unwrap();
-        let pricing = pending.join().unwrap();
-
-        assert_eq!(pricing.find(&model).unwrap().input, 0.25);
-        assert!(std::ptr::eq(pricing, pending.join().unwrap()));
-        assert_ne!(
-            PricingMap::load_embedded().find(&model).unwrap().input,
-            0.25
-        );
-    }
-
-    #[test]
-    fn pending_pricing_reports_worker_failure_without_rebuilding() {
-        let pending =
-            super::PendingPricing::from_worker(std::thread::spawn(|| panic!("failed load")));
-
-        for _ in 0..2 {
-            assert_eq!(
-                pending.join().err().unwrap().to_string(),
-                "pricing load worker failed"
-            );
-        }
-    }
-
-    #[test]
-    fn pending_pricing_reuses_the_loaded_base_without_starting_a_worker() {
-        crate::test_support::install_pricing_snapshots();
-        PricingMap::load_with_overrides(
-            true,
-            false,
-            std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
-        );
-        let pending = PricingMap::spawn_load(
-            true,
-            false,
-            std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
-        )
-        .unwrap();
-
-        assert!(matches!(pending.state, super::PricingLoadState::Ready(_)));
-        assert!(pending.join().unwrap().find("gpt-5").is_some());
+        let pricing = PricingMap::load_with_overrides(true, false, [(&model, &overrides)]);
+        let base = PricingMap::load_with_overrides(true, false, std::iter::empty());
+        assert_eq!(pricing.find(&model).unwrap().input, 42e-6);
+        assert_ne!(base.find(&model).unwrap().input, 42e-6);
     }
 
     #[test]

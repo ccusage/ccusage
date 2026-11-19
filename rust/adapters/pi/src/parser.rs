@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::AgentModel,
@@ -14,7 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
     cli::CostMode, fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
@@ -183,7 +184,7 @@ pub(crate) fn read_session_file_data_for_store_with_diagnostics(
     store_root: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     store_name: &str,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<PiSessionData, UnitError> {
@@ -210,7 +211,7 @@ fn read_session_file_data_with_context(
     path: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     context: PiStoreContext<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<PiSessionData, UnitError> {
@@ -275,7 +276,7 @@ fn read_session_file_data_with_context(
             .map(|model| AgentModel::new(context.name, model));
         let override_candidate = identity
             .as_ref()
-            .and_then(|model| model.overriding_candidate(pricing));
+            .and_then(|model| model.overriding_candidate(pricing.as_map()));
         let candidates: Vec<_> = override_candidate
             .into_iter()
             .chain(identity.iter().flat_map(AgentModel::candidates))
@@ -288,7 +289,6 @@ fn read_session_file_data_with_context(
                 residual_tokens: 0,
                 candidates: &candidates,
                 stored_cost: source_cost,
-                mode,
                 timestamp: Some(timestamp),
             },
             pricing,
@@ -586,7 +586,7 @@ mod tests {
         path: &Path,
         tz: &JiffTimeZone,
         mode: CostMode,
-        pricing: Option<&PricingMap>,
+        pricing: PriceTable<'_>,
     ) -> crate::Result<Vec<LoadedEntry>> {
         read_session_file_data_for_store_with_diagnostics(
             path,
@@ -606,7 +606,7 @@ mod tests {
         store_root: &Path,
         tz: &JiffTimeZone,
         mode: CostMode,
-        pricing: Option<&PricingMap>,
+        pricing: PriceTable<'_>,
         store_name: &str,
     ) -> crate::Result<Vec<LoadedEntry>> {
         read_session_file_data_for_store_with_diagnostics(
@@ -622,8 +622,8 @@ mod tests {
         .map_err(|error| crate::cli_error(error.to_string()))
     }
 
-    fn pricing_for_cost_tests() -> PricingMap {
-        let mut pricing = PricingMap::default();
+    fn pricing_for_cost_tests() -> ccusage_core::PricingMap {
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "[pi] test-model": {
@@ -647,14 +647,14 @@ mod tests {
         }
     }
 
-    fn pricing_with_override(model: &str) -> PricingMap {
+    fn pricing_with_override(model: &str) -> ccusage_core::PricingMap {
         let model = model.to_string();
         let override_value = crate::cli::PricingOverride {
             input_cost_per_token: Some(0.001),
             output_cost_per_token: Some(0.002),
             ..Default::default()
         };
-        PricingMap::load_with_overrides(true, false, [(&model, &override_value)])
+        ccusage_core::PricingMap::load_with_overrides(true, false, [(&model, &override_value)])
     }
 
     #[test]
@@ -670,7 +670,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
         )
         .unwrap();
         assert_eq!(auto[0].cost, 5.0);
@@ -681,7 +681,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            Some(&pricing),
+            PriceTable::Display,
         )
         .unwrap();
         assert_eq!(display[0].cost, 0.0);
@@ -701,7 +701,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             "omp",
         )
         .unwrap();
@@ -714,7 +714,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            Some(&pricing),
+            PriceTable::Display,
             "omp",
         )
         .unwrap();
@@ -734,7 +734,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
         )
         .unwrap();
         assert_eq!(default[0].cost, 5.0);
@@ -745,7 +745,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             "omp",
         )
         .unwrap();
@@ -775,7 +775,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            PriceTable::Display,
             "pi",
             &diagnostics,
         )
@@ -805,7 +805,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            PriceTable::Display,
         )
         .unwrap();
 
@@ -822,12 +822,12 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
         // Use Calculate mode with an empty PricingMap so model won't be found
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
         let entries = read_session_file(
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
         )
         .unwrap();
 
@@ -844,7 +844,7 @@ mod tests {
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"totally-unknown-model","usage":{"input":1000000,"output":1000000}}}"#,
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "o3": {
@@ -859,7 +859,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             "o3",
         )
         .unwrap();
@@ -878,7 +878,7 @@ mod tests {
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"o3","usage":{"input":1000,"output":2000}}}"#,
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "o3": {
@@ -897,7 +897,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             "deepseek-chat",
         )
         .unwrap();
@@ -913,7 +913,7 @@ mod tests {
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5.4","usage":{"input":1000,"output":2000}}}"#,
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "gpt-5.4": {
@@ -932,7 +932,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             "omp",
         )
         .unwrap();
@@ -949,12 +949,11 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        let pricing = PricingMap::default();
         let entries = read_session_file(
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            Some(&pricing),
+            PriceTable::Display,
         )
         .unwrap();
 
@@ -969,12 +968,12 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
         let entries = read_session_file(
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
         )
         .unwrap();
 
@@ -996,7 +995,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            PriceTable::Display,
         )
         .unwrap();
 
@@ -1017,7 +1016,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            PriceTable::Display,
             "omp",
         )
         .unwrap();
@@ -1041,7 +1040,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            PriceTable::Display,
         )
         .unwrap()
         .pop()
@@ -1051,7 +1050,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            None,
+            PriceTable::Display,
             "omp",
         )
         .unwrap()
@@ -1098,7 +1097,7 @@ mod tests {
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
         )
         .unwrap();
         assert_eq!(default_entries.len(), 2);
@@ -1112,7 +1111,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             "omp",
         )
         .unwrap();
@@ -1136,10 +1135,9 @@ mod tests {
                     residual_tokens: 0,
                     candidates: &candidates,
                     stored_cost,
-                    mode,
                     timestamp: None,
                 },
-                Some(&pricing),
+                PriceTable::for_map(mode, &pricing),
             )
             .cost
         };
@@ -1163,13 +1161,13 @@ mod tests {
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"unknown-model","usage":{"input":1000,"output":2000,"cost":{"total":-1.25}}}}"#,
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
 
         let default_entry = read_session_file(
             &file,
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
         )
         .unwrap()
         .pop()
@@ -1185,7 +1183,7 @@ mod tests {
             &fixture.path("sessions"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             "omp",
         )
         .unwrap()
@@ -1209,13 +1207,13 @@ mod pricing_identity_tests {
             "sessions/p/s.jsonl": r#"{"type":"message","timestamp":"2026-11-17T10:00:00Z","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1000,"output":0}}}"#
         });
         ccusage_test_support::install_pricing_snapshots();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let rows = read_session_file_data_for_store_with_diagnostics(
             &fixture.path("sessions/p/s.jsonl"),
             &fixture.path("sessions"),
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
             "pi",
             &Diagnostics::new("pi"),
         )

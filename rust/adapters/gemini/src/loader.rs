@@ -9,7 +9,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_log_files(cx.diagnostics)?;
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let mut events = read_typed_units_flat(
         &files,
         cx.shared.single_thread,
@@ -22,7 +22,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     events.sort_by_key(|event| event.timestamp);
     Ok(events
         .into_iter()
-        .map(|event| event_to_loaded(event, cx.window.timezone(), cx.shared.mode, pricing))
+        .map(|event| event_to_loaded(event, cx.window.timezone(), pricing))
         .collect())
 }
 

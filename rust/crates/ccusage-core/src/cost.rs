@@ -10,7 +10,6 @@ pub struct EntryPricing<'a> {
     pub residual_tokens: u64,
     pub candidates: &'a [(&'a str, crate::pricing::MatchKind)],
     pub stored_cost: Option<f64>,
-    pub mode: CostMode,
     pub timestamp: Option<crate::TimestampMs>,
 }
 
@@ -21,15 +20,39 @@ pub struct EntryPrice<'a> {
     pub missing_pricing: bool,
 }
 
-pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: Option<&PricingMap>) -> EntryPrice<'a> {
-    if entry.mode == CostMode::Display {
+#[derive(Clone, Copy, Debug)]
+pub enum PriceTable<'a> {
+    Display,
+    Auto(&'a PricingMap),
+    Calculate(&'a PricingMap),
+}
+
+impl<'a> PriceTable<'a> {
+    pub fn for_map(mode: CostMode, map: &'a PricingMap) -> Self {
+        match mode {
+            CostMode::Display => Self::Display,
+            CostMode::Auto => Self::Auto(map),
+            CostMode::Calculate => Self::Calculate(map),
+        }
+    }
+
+    pub fn as_map(&self) -> Option<&PricingMap> {
+        match self {
+            Self::Display => None,
+            Self::Auto(map) | Self::Calculate(map) => Some(map),
+        }
+    }
+}
+
+pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> EntryPrice<'a> {
+    let Some(map) = pricing.as_map() else {
         return EntryPrice {
             cost: entry.stored_cost.unwrap_or(0.0),
             matched: None,
             missing_pricing: false,
         };
-    }
-    if entry.mode == CostMode::Auto
+    };
+    if matches!(pricing, PriceTable::Auto(_))
         && let Some(cost) = entry.stored_cost
     {
         return EntryPrice {
@@ -46,7 +69,7 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: Option<&PricingMap>) ->
             .saturating_add(entry.residual_tokens),
         ..entry.usage
     };
-    let resolved = pricing.and_then(|map| map.resolve_at(entry.candidates, entry.timestamp));
+    let resolved = map.resolve_at(entry.candidates, entry.timestamp);
     match resolved {
         Some((model, rates)) => {
             let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
@@ -63,9 +86,7 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: Option<&PricingMap>) ->
         None => EntryPrice {
             cost: 0.0,
             matched: None,
-            missing_pricing: pricing.is_some()
-                && !entry.candidates.is_empty()
-                && crate::total_usage_tokens(usage) != 0,
+            missing_pricing: !entry.candidates.is_empty() && crate::total_usage_tokens(usage) != 0,
         },
     }
 }
@@ -293,10 +314,9 @@ mod tests {
                 residual_tokens: 5,
                 candidates: &candidates,
                 stored_cost: Some(99.0),
-                mode: CostMode::Calculate,
                 timestamp: None,
             },
-            Some(&map),
+            PriceTable::Calculate(&map),
         );
         assert_eq!(priced.cost, 40.0);
         assert_eq!(priced.matched, Some("priced"));
@@ -326,10 +346,9 @@ mod tests {
                     residual_tokens: 0,
                     candidates: &candidates,
                     stored_cost,
-                    mode,
                     timestamp: None,
                 },
-                Some(&map),
+                PriceTable::for_map(mode, &map),
             );
             assert_eq!(result.cost, expected);
             assert_eq!(result.matched, matched);
@@ -359,10 +378,9 @@ mod tests {
                     residual_tokens,
                     candidates: &candidates,
                     stored_cost,
-                    mode,
                     timestamp: None,
                 },
-                Some(&map),
+                PriceTable::for_map(mode, &map),
             );
             assert_eq!(result.cost, 0.0);
             assert_eq!(result.matched, None);
@@ -391,10 +409,9 @@ mod tests {
                 residual_tokens: 0,
                 candidates: &candidates,
                 stored_cost: None,
-                mode: CostMode::Calculate,
                 timestamp: Some(timestamp("2026-08-17T01:00:00Z")),
             },
-            Some(&map),
+            PriceTable::Calculate(&map),
         );
         assert!((result.cost - 1.32).abs() < 1e-12);
         assert_eq!(result.matched, Some("deepseek.v4.flash"));

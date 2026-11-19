@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use std::path::PathBuf;
 
 use ccusage_adapter_common::{
@@ -6,7 +7,7 @@ use ccusage_adapter_common::{
 };
 use ccusage_core::SkipKind;
 
-use crate::{LoadedEntry, PricingMap, Result};
+use crate::{LoadedEntry, Result};
 
 use super::{
     parser::{KiloMessage, MissingTimestamp, message_value_to_entry},
@@ -15,7 +16,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let loaded = load_entries_from_databases(&db_paths, cx, pricing);
     let mut entries = dedupe_first_wins(loaded, |(id, _)| id.clone())
         .into_iter()
@@ -28,7 +29,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 fn load_entries_from_databases(
     db_paths: &[PathBuf],
     cx: &LoadContext<'_>,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> Vec<(String, LoadedEntry)> {
     sqlite_units(
         db_paths,
@@ -91,10 +92,7 @@ fn load_entries_from_databases(
 mod tests {
     use std::path::Path;
 
-    use crate::{
-        PricingMap,
-        cli::{CostMode, SharedArgs},
-    };
+    use crate::cli::{CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
@@ -130,7 +128,7 @@ mod tests {
             &crate::SOURCE,
             &shared,
             Default::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
 
@@ -168,7 +166,7 @@ mod tests {
             &crate::SOURCE,
             &shared,
             ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
 
@@ -203,7 +201,7 @@ mod tests {
             &crate::SOURCE,
             &shared,
             Default::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
 
@@ -235,7 +233,7 @@ mod tests {
             &crate::SOURCE,
             &SharedArgs::default(),
             ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
 
@@ -264,7 +262,7 @@ mod tests {
             .unwrap();
         let shared = SharedArgs::default();
         let window = ReportWindow::from_shared(&shared);
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
 
         for (path, kind) in [
             (wrong_schema, SkipKind::Invariant),
@@ -275,16 +273,14 @@ mod tests {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
                 window: &window,
-                pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                    ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-                ),
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
                 options: SourceOptions::default(),
                 diagnostics: &diagnostics,
             };
             let entries = super::load_entries_from_databases(
                 std::slice::from_ref(&path),
                 &cx,
-                Some(&pricing),
+                ccusage_core::cost::PriceTable::for_map(cx.shared.mode, &pricing),
             );
             assert!(entries.is_empty());
 
@@ -310,7 +306,7 @@ mod tests {
             r#"{"role":,"id":"SECRET_CANARY"}"#,
         );
         let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
             debug: true,
             ..SharedArgs::default()
@@ -321,9 +317,7 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

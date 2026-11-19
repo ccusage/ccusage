@@ -1,9 +1,10 @@
+use ccusage_core::cost::PriceTable;
 use std::path::PathBuf;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use ccusage_adapter_common::{SqliteStage, UnitError, source::LoadContext, sqlite::sqlite_units};
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result};
+use ccusage_core::{Diagnostics, LoadedEntry, Result};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -25,14 +26,13 @@ WHERE model_config_json IS NOT NULL
 "#;
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.as_map()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
     let db_paths = goose_db_paths(cx.shared.debug)?;
     let mut entries = load_entries_from_dbs(
         &db_paths,
         cx.shared.single_thread,
         tz,
-        cx.shared.mode,
         pricing,
         cx.diagnostics,
     );
@@ -44,8 +44,7 @@ fn load_entries_from_dbs(
     db_paths: &[PathBuf],
     single_thread: bool,
     tz: &JiffTimeZone,
-    mode: ccusage_core::cli::CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     sqlite_units(
@@ -58,7 +57,7 @@ fn load_entries_from_dbs(
                 .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
         },
         |statement, _, _| {
-            row_to_entry(statement, tz, mode, pricing)
+            row_to_entry(statement, tz, pricing)
                 .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
         },
     )
@@ -85,7 +84,7 @@ mod tests {
             },
         );
         let _guard = EnvVarGuard::set("GOOSE_PATH_ROOT", fixture.root());
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
         );
@@ -200,14 +199,13 @@ INSERT INTO sessions (
             },
         );
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let diagnostics = Diagnostics::new("goose");
         let entries = load_entries_from_dbs(
             std::slice::from_ref(&db_path),
             true,
             &jiff::tz::TimeZone::UTC,
-            ccusage_core::cli::CostMode::Auto,
-            Some(&pricing),
+            PriceTable::Auto(&pricing),
             &diagnostics,
         );
 
@@ -247,8 +245,7 @@ INSERT INTO sessions (
             std::slice::from_ref(&db_path),
             true,
             &jiff::tz::TimeZone::UTC,
-            ccusage_core::cli::CostMode::Auto,
-            Some(&PricingMap::default()),
+            PriceTable::Auto(&ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
@@ -279,8 +276,7 @@ INSERT INTO sessions (
             std::slice::from_ref(&db_path),
             true,
             &jiff::tz::TimeZone::UTC,
-            ccusage_core::cli::CostMode::Auto,
-            Some(&PricingMap::default()),
+            PriceTable::Auto(&ccusage_core::PricingMap::default()),
             &diagnostics,
         );
         assert!(entries.is_empty());
@@ -314,16 +310,14 @@ INSERT INTO sessions (
             ("GOOSE_PATH_ROOT", Some(std::ffi::OsString::new())),
         ]);
         let shared = SharedArgs::default();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
         let diagnostics = Diagnostics::new("goose");
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: ccusage_adapter_common::source::LoaderPricing::Pipeline(
-                ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            ),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

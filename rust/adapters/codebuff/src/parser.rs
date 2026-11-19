@@ -1,3 +1,4 @@
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
@@ -8,10 +9,7 @@ use ccusage_adapter_common::units::{UnitError, read_json};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
-use crate::{
-    PricingMap, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, format_rfc3339_millis,
-    parse_ts_timestamp,
-};
+use crate::{TokenUsageRaw, apply_total_token_fallback, format_rfc3339_millis, parse_ts_timestamp};
 
 const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
 
@@ -386,8 +384,7 @@ fn infer_provider(model: &str) -> &'static str {
 
 pub(super) fn price_codebuff(
     entry: &CodebuffEntry,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> (f64, Option<String>) {
     let candidates = codebuff_model_candidates(entry);
     let candidates: Vec<_> = candidates
@@ -401,7 +398,6 @@ pub(super) fn price_codebuff(
             residual_tokens: entry.extra_total_tokens,
             candidates: &candidates,
             stored_cost: None,
-            mode,
             timestamp: Some(entry.timestamp),
         },
         pricing,

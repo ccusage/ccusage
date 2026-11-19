@@ -8,7 +8,7 @@ use std::{
 use ccusage_adapter_common::{
     claims,
     rows::SourceRow,
-    source::{LoadKind, LoadRequest, PricingSupply, ProgressOwner, SourceOptions, UsageSource},
+    source::{LoadKind, LoadRequest, ProgressOwner, SourceOptions, UsageSource},
 };
 
 use crate::{
@@ -33,7 +33,7 @@ pub(super) fn load_rows(
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
     let run_sources = run_sources(shared, sources)?;
-    let pricing = load_pricing(&run_sources)?;
+    let pricing = load_pricing(&run_sources);
     match Bucket::for_report(kind, start_of_week) {
         Some(bucket) => {
             let loaded = load_day_rows(shared, &run_sources, &pricing)?;
@@ -61,7 +61,7 @@ pub(super) fn load_sections(
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
     let run_sources = run_sources(shared, sources)?;
-    let pricing = load_pricing(&run_sources)?;
+    let pricing = load_pricing(&run_sources);
     let mut daily_base = needs_daily_family(kinds)
         .then(|| load_day_rows(shared, &run_sources, &pricing))
         .transpose()?;
@@ -214,30 +214,22 @@ fn run_sources<'a>(
     Ok(run_sources)
 }
 
-fn load_pricing(sources: &[RunSource<'_>]) -> Result<BTreeMap<&'static str, Arc<PricingMap>>> {
+fn load_pricing(sources: &[RunSource<'_>]) -> BTreeMap<&'static str, Arc<PricingMap>> {
     let needs_pricing = |source: &&RunSource<'_>| {
-        source.source().pricing_supply() == PricingSupply::Pipeline
-            && source.shared.mode != crate::cli::CostMode::Display
+        source.source().uses_shared_pricing() && source.shared.mode != crate::cli::CostMode::Display
     };
     let modes = sources
         .iter()
         .filter(needs_pricing)
         .map(|source| source.shared.offline)
         .collect::<BTreeSet<_>>();
-    let pending = modes
-        .into_iter()
-        .map(|offline| {
-            PricingMap::spawn_load(
-                offline,
-                crate::log_level() != Some(0),
-                std::iter::empty::<(&String, &crate::cli::PricingOverride)>(),
-            )
-            .map(|pricing| (offline, pricing))
-        })
-        .collect::<Result<Vec<_>>>()?;
     let mut result = BTreeMap::new();
-    for (offline, pending) in pending {
-        let base = Arc::new(pending.join()?.with_user_overrides(std::iter::empty()));
+    for offline in modes {
+        let base = Arc::new(PricingMap::load_with_overrides(
+            offline,
+            crate::log_level() != Some(0),
+            std::iter::empty(),
+        ));
         let mut cached = Vec::new();
         for source in sources
             .iter()
@@ -250,7 +242,7 @@ fn load_pricing(sources: &[RunSource<'_>]) -> Result<BTreeMap<&'static str, Arc<
             );
         }
     }
-    Ok(result)
+    result
 }
 
 struct BaseRows<R> {
@@ -688,7 +680,7 @@ mod tests {
         };
         let sources = BTreeMap::new();
         let run_sources = run_sources(&shared, &sources).unwrap();
-        let pricing_by_source = load_pricing(&run_sources).unwrap();
+        let pricing_by_source = load_pricing(&run_sources);
 
         for agent in ["claude", "opencode"] {
             assert!(
@@ -715,7 +707,7 @@ mod tests {
             ..SharedArgs::default()
         };
         let sources = run_sources(&shared, &NO_SOURCES).unwrap();
-        assert!(load_pricing(&sources).unwrap().is_empty());
+        assert!(load_pricing(&sources).is_empty());
     }
 
     #[test]
@@ -733,7 +725,7 @@ mod tests {
         };
         let source_args = BTreeMap::new();
         let sources = run_sources(&shared, &source_args).unwrap();
-        let pricing = load_pricing(&sources).unwrap();
+        let pricing = load_pricing(&sources);
         assert_eq!(sources.len(), SOURCES.len() + 1);
         assert!(Arc::ptr_eq(&pricing["work"], &pricing["amp"]));
     }
