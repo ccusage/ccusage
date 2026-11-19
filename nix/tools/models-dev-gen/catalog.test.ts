@@ -30,6 +30,13 @@ void it('preserves identifiers without filesystem escapes and optional IDs', () 
 	});
 });
 
+void it('preserves __proto__ as an own catalog identifier', () => {
+	const restored = restoreCatalogIdentifiers({
+		['__proto__']: { cost: 3 },
+	});
+	assert.deepEqual(Object.entries(restored), [['__proto__', { cost: 3 }]]);
+});
+
 void it('rejects identifiers that collide after restoring filesystem escapes', () => {
 	assert.throws(
 		() =>
