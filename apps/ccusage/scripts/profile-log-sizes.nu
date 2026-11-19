@@ -44,7 +44,7 @@ def uncompressed-size [file: string]: nothing -> int {
         # The pipeline below cannot see zstd's exit status, so a corrupt
         # archive would otherwise count as a short file.
         ^zstd --test --quiet $file
-        ^zstd --decompress --stdout --quiet $file | ^wc -c | str trim | into int
+        ^zstd --decompress --stdout --quiet $file | length
     } else {
         ls $file | get 0.size | into int
     }
@@ -78,7 +78,7 @@ def profile [files: list<string>]: nothing -> record {
 def codex-rollouts [roots: list<string>]: nothing -> list<string> {
     $roots
     | each {|root|
-        let subdirs = ['sessions' 'archived_sessions'] | where {|sub| $root | path join $sub | path exists }
+        let subdirs = ['sessions' 'archived_sessions'] | where {|sub| ($root | path join $sub | path type) == 'dir' }
         # A home without either directory is scanned directly, as ccusage does.
         $subdirs | default --empty ['.'] | each {|sub|
             let dir = $root | path join $sub | path expand
