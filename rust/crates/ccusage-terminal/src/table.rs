@@ -4,7 +4,7 @@ use crate::{
     style::{Color, TerminalStyle, color},
     terminal::DEFAULT_TERMINAL_WIDTH,
     width::{
-        ansi_continuation, ensure_ansi_reset, truncate_to_width, visible_width,
+        ansi_continuation, ensure_ansi_reset, trim_ansi_start, truncate_to_width, visible_width,
         visible_width_max_line,
     },
 };
@@ -491,7 +491,7 @@ fn table_line(cells: &[String], aligns: &[Align], widths: &[usize]) -> String {
     let mut line = String::from("│");
     for (index, width) in widths.iter().enumerate() {
         let cell = cells.get(index).map(String::as_str).unwrap_or("");
-        let align = if index == 0 && cell.starts_with("(assuming ") {
+        let align = if index == 0 && trim_ansi_start(cell).starts_with("(assuming ") {
             Align::Right
         } else {
             aligns.get(index).copied().unwrap_or(Align::Left)

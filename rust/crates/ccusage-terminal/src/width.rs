@@ -30,6 +30,15 @@ pub(crate) fn visible_width(value: &str) -> usize {
     width
 }
 
+pub(crate) fn trim_ansi_start(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    let mut start = 0;
+    while bytes.get(start) == Some(&0x1b) {
+        start = skip_ansi_escape(bytes, start);
+    }
+    &value[start..]
+}
+
 fn contains_ansi(value: &str) -> bool {
     value.as_bytes().contains(&0x1b)
 }

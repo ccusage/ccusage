@@ -1486,6 +1486,68 @@ fn block_table_and_active_detail_follow_the_report_timezone() {
 }
 
 #[test]
+fn colored_blocks_right_align_assumptions_like_plain_blocks() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/p/session-a.jsonl",
+        [
+            usage_line(
+                "2026-01-02T23:00:00Z",
+                "session-a",
+                "message-a",
+                "request-a",
+                1.0,
+            ),
+            usage_line(
+                "2026-01-02T23:30:00Z",
+                "session-a",
+                "message-b",
+                "request-b",
+                1.0,
+            ),
+        ]
+        .join("\n"),
+    );
+    let assumptions = |flag| {
+        let output = claude_command(&fixture)
+            .env_remove("NO_COLOR")
+            .env("COLUMNS", "200")
+            .env("CCUSAGE_TEST_NOW", "2026-01-03T00:00:00Z")
+            .args([
+                "claude",
+                "blocks",
+                "--offline",
+                "--timezone",
+                "UTC",
+                "--token-limit",
+                "100",
+                flag,
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .filter(|line| line.contains("(assuming "))
+            .map(|line| line.split('│').nth(1).unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let plain = assumptions("--no-color");
+    let colored = assumptions("--color");
+    assert_eq!(plain.len(), 2);
+    assert!(plain[0].starts_with("  "));
+    assert!(colored.iter().all(|cell| cell.contains("\x1b[90m")));
+    assert_eq!(
+        colored
+            .iter()
+            .map(|cell| cell.replace("\x1b[90m", "").replace("\x1b[0m", ""))
+            .collect::<Vec<_>>(),
+        plain
+    );
+}
+
+#[test]
 fn blocks_reject_unrepresentable_session_lengths() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);
