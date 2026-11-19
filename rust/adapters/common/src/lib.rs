@@ -65,7 +65,7 @@ pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics
 
 /// Like [`collect_files_matching`], but hands each file to `visit` as the walk
 /// finds it, so reading can start before the walk ends.
-pub(crate) fn visit_files_matching(
+fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     visit: &mut dyn FnMut(PathBuf),
