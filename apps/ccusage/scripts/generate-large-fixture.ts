@@ -33,32 +33,38 @@ type SizeProfile = {
 // fixture size is the profiled total so a benchmark reads a real-sized history.
 const SIZE_PROFILES = {
 	claude: {
-		files: 10_719,
-		totalBytes: 11_075_827_327,
+		files: 10_723,
+		totalBytes: 11_084_634_346,
 		quantiles: [
 			{ percentile: 0, size: 20 },
 			{ percentile: 0.1, size: 12_650 },
-			{ percentile: 0.25, size: 165_342 },
-			{ percentile: 0.5, size: 456_508 },
-			{ percentile: 0.75, size: 982_083 },
-			{ percentile: 0.9, size: 1_985_720 },
+			{ percentile: 0.25, size: 165_359 },
+			{ percentile: 0.5, size: 456_592 },
+			{ percentile: 0.75, size: 982_483 },
+			{ percentile: 0.9, size: 1_986_849 },
 			{ percentile: 0.95, size: 3_239_049 },
+			{ percentile: 0.98, size: 6_636_290 },
 			{ percentile: 0.99, size: 10_975_928 },
+			{ percentile: 0.995, size: 16_288_675 },
+			{ percentile: 0.999, size: 38_777_640 },
 			{ percentile: 1, size: 129_659_313 },
 		],
 	},
 	codex: {
-		files: 7304,
-		totalBytes: 15_284_112_549,
+		files: 7312,
+		totalBytes: 15_293_400_760,
 		quantiles: [
 			{ percentile: 0, size: 20_070 },
-			{ percentile: 0.1, size: 163_114 },
-			{ percentile: 0.25, size: 355_821 },
-			{ percentile: 0.5, size: 797_766 },
+			{ percentile: 0.1, size: 163_312 },
+			{ percentile: 0.25, size: 356_202 },
+			{ percentile: 0.5, size: 797_068 },
 			{ percentile: 0.75, size: 1_610_200 },
 			{ percentile: 0.9, size: 3_762_690 },
-			{ percentile: 0.95, size: 6_457_016 },
+			{ percentile: 0.95, size: 6_397_926 },
+			{ percentile: 0.98, size: 12_601_686 },
 			{ percentile: 0.99, size: 23_663_548 },
+			{ percentile: 0.995, size: 39_980_016 },
+			{ percentile: 0.999, size: 99_553_853 },
 			{ percentile: 1, size: 221_490_002 },
 		],
 	},
@@ -73,7 +79,10 @@ const SIZE_PROFILES = {
 			{ percentile: 0.75, size: 153_184 },
 			{ percentile: 0.9, size: 1_012_536 },
 			{ percentile: 0.95, size: 1_301_281 },
+			{ percentile: 0.98, size: 2_281_428 },
 			{ percentile: 0.99, size: 2_906_443 },
+			{ percentile: 0.995, size: 4_749_250 },
+			{ percentile: 0.999, size: 5_332_993 },
 			{ percentile: 1, size: 5_332_993 },
 		],
 	},
@@ -220,8 +229,12 @@ function interpolateFileSize(profile: SizeProfile, percentile: number): number {
 		if (!previous || !current || percentile > current.percentile) {
 			continue;
 		}
+		// Sizes span six orders of magnitude, so a straight line between two
+		// tail quantiles would overstate the bytes inside that interval.
 		const ratio = (percentile - previous.percentile) / (current.percentile - previous.percentile);
-		return previous.size + (current.size - previous.size) * ratio;
+		return Math.exp(
+			Math.log(previous.size) + (Math.log(current.size) - Math.log(previous.size)) * ratio,
+		);
 	}
 	return quantiles.at(-1)?.size ?? 0;
 }

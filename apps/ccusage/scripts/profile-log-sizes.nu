@@ -5,6 +5,8 @@
 # generate-large-fixture.ts reads its profiles from. Only file counts and
 # size quantiles leave this script; no log content, path, or name does.
 
+# The upper tail is sampled finely: a few huge files hold much of the
+# bytes, and coarse points there would skew every generated size.
 const percentiles = [
     0
     0.1
@@ -13,7 +15,10 @@ const percentiles = [
     0.75
     0.9
     0.95
+    0.98
     0.99
+    0.995
+    0.999
     1
 ]
 
@@ -36,10 +41,7 @@ def files-under [roots: list<string>, patterns: list<string>]: nothing -> list<s
 # decompressed bytes, so that is the size the profile records.
 def uncompressed-size [file: string]: nothing -> int {
     if ($file | str ends-with '.zst') {
-        (^zstd --list -v $file | complete).stdout
-        | parse --regex 'Decompressed Size: .*\((?<bytes>\d+) B\)'
-        | get 0.bytes
-        | into int
+        ^zstd --decompress --stdout --quiet $file | ^wc -c | str trim | into int
     } else {
         ls $file | get 0.size | into int
     }
