@@ -2196,16 +2196,6 @@ impl PricingMap {
         pricing.at(schedule, timestamp, explicit)
     }
 
-    pub fn has_base_rate_override_with_long_context(&self, model: &str) -> bool {
-        !self.rows.override_keys.is_empty()
-            && self.overridden(model).is_some_and(|pricing| {
-                pricing.long_context.is_some()
-                    && pricing.explicit_fields != 0
-                    && pricing.explicit_fields & !(OverrideFields::INPUT | OverrideFields::OUTPUT)
-                        == 0
-            })
-    }
-
     pub fn has_primary_price(&self, model: &str) -> bool {
         self.prices().primary.same_id(model).is_some()
     }
