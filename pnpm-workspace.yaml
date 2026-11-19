@@ -14,6 +14,15 @@ catalogs:
   types:
     '@types/node': ^26.6.6
     '@types/react': ^19.3.0
+  lint:
+    # Exact pins: oxlint 1.94.0 is the version evaluated with tsrs2, and the
+    # two must stay paired. Renovate still proposes updates. Revisit once tsrs
+    # goes stable.
+    oxlint: 1.94.0
+    # Exact pin: tsrs is still beta and revs every day or two. Revisit once it
+    # goes stable. tsrs2 (not tsrs3) is pinned because the 48h minimumReleaseAge
+    # policy above rejects anything published more recently.
+    tsrs: 7.1.0-beta.tsrs2
 
 enablePrePostScripts: true
 
@@ -29,6 +38,13 @@ strictDepBuilds: true
 blockExoticSubdeps: true
 
 trustPolicy: no-downgrade
+
+# tsrs is a brand-new package name (first releases Nov 2026) from the Oxc team
+# (publisher: boshen, repo: github.com/oxc-project/tsrs, provenance attested),
+# which trips the no-downgrade heuristic. Pinned to the exact beta evaluated
+# with Oxlint 1.94; drop this once tsrs goes stable. See issue #2201.
+trustPolicyExclude:
+  - tsrs@7.1.0-beta.tsrs2
 
 # Explicitly allow build scripts for packages that require them
 # (replaces onlyBuiltDependencies)
