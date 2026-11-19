@@ -642,6 +642,11 @@ enum Layer {
     ModelsDev,
 }
 
+struct MatchedRow<'a, T> {
+    key: &'a str,
+    value: &'a T,
+}
+
 struct TablePart<'a, T> {
     rows: &'a FxHashMap<String, T>,
     exact_only: &'a ExactOnlyKeys,
@@ -659,11 +664,12 @@ impl<'a, T> TablePart<'a, T> {
     fn contains(self, key: &str) -> bool {
         !self.excluded.is_some_and(|excluded| excluded.contains(key))
     }
+    fn row(self, model: &str) -> Option<MatchedRow<'a, T>> {
+        let (key, value) = self.rows.get_key_value(model)?;
+        self.contains(key).then_some(MatchedRow { key, value })
+    }
     fn key(self, model: &str) -> Option<&'a str> {
-        self.rows
-            .get_key_value(model)
-            .map(|(key, _)| key.as_str())
-            .filter(|key| self.contains(key))
+        self.row(model).map(|row| row.key)
     }
 }
 impl<'a, T> TablePart<'a, T> {
@@ -672,7 +678,7 @@ impl<'a, T> TablePart<'a, T> {
             return Some(key);
         }
         let rows = self.pricing_rows?;
-        let id = pricing_identity(model);
+        let id = normalized_models_dev_model_id(model);
         (id.as_ref() != model)
             .then(|| self.key(id.as_ref()))
             .flatten()
@@ -687,7 +693,7 @@ impl<'a, T> TablePart<'a, T> {
                             .keys()
                             .filter(|key| !rows.literal_pricing_keys.contains(*key))
                         {
-                            let id = pricing_identity(key);
+                            let id = normalized_models_dev_model_id(key);
                             if id != key.as_str() {
                                 keys.entry(id.into_owned())
                                     .and_modify(|current| *current = None)
@@ -724,22 +730,22 @@ impl<'a, T> Table<'a, T> {
     fn all_parts(self) -> impl Iterator<Item = TablePart<'a, T>> {
         std::iter::once(self.primary).chain(self.models_dev.into_iter().flatten())
     }
-    fn key_in(self, model: &str, layer: Layer) -> Option<&'a str> {
-        self.parts(layer).find_map(|part| part.key(model))
+    fn row_in(self, model: &str, layer: Layer) -> Option<MatchedRow<'a, T>> {
+        self.parts(layer).find_map(|part| part.row(model))
     }
     fn get(self, model: &str) -> Option<&'a T> {
         self.all_parts()
             .find_map(|part| part.rows.get(model).filter(|_| part.contains(model)))
     }
-    fn keys_in(self, layer: Layer) -> impl Iterator<Item = (&'a str, bool)> {
+    fn rows_in(self, layer: Layer) -> impl Iterator<Item = (MatchedRow<'a, T>, bool)> {
         self.parts(layer).flat_map(|part| {
             part.rows
-                .keys()
-                .map(String::as_str)
-                .filter(move |key| part.contains(key))
-                .map(move |key| {
+                .iter()
+                .filter(move |(key, _)| part.contains(key))
+                .map(move |(key, value)| {
+                    let key = key.as_str();
                     (
-                        key,
+                        MatchedRow { key, value },
                         part.exact_only.contains(key)
                             && !part
                                 .excluded_exact_only
@@ -1379,7 +1385,12 @@ impl PricingMap {
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
-        if let Some(&rates) = embedded_models_dev.rows.entries.get("deepseek-v3.2") {
+        if let Some(&rates) = embedded_models_dev
+            .rows
+            .entries
+            .get("deepseek-v3.2")
+            .filter(|rates| rates.input != 0.0 || rates.output != 0.0)
+        {
             let rows = self.rows_mut();
             rows.entries.insert("deepseek-v3.2".to_string(), rates);
             rows.entries
@@ -1485,7 +1496,7 @@ impl PricingMap {
             let Some(output) = pricing.output_cost_per_token else {
                 continue;
             };
-            if input == 0.0 && output == 0.0 && model.starts_with("deepseek-") {
+            if input == 0.0 && output == 0.0 && is_direct_deepseek_model(&model) {
                 continue;
             }
             if matches!(
@@ -1908,7 +1919,9 @@ impl PricingMap {
             .entries
             .iter()
             .filter(|(key, pricing)| {
-                !pricing.overridden && !self.rows.literal_pricing_keys.contains(key.as_str())
+                !pricing.overridden
+                    && !self.rows.literal_pricing_keys.contains(key.as_str())
+                    && !requires_full_vendor_id(key)
             })
             .map(|(key, _)| normalized_pricing_key(key))
             .collect();
@@ -1926,7 +1939,8 @@ impl PricingMap {
                     .entries
                     .keys()
                     .filter(|key| {
-                        self.rows.entries.contains_key(key.as_str())
+                        (self.rows.entries.contains_key(key.as_str())
+                            && !requires_full_vendor_id(key))
                             || prices.contains(normalized_pricing_key(key).as_ref())
                     })
                     .cloned()
@@ -2005,27 +2019,28 @@ impl PricingMap {
         if let Some(value) = table.primary.rows.get(model) {
             return Some(*value);
         }
-        self.resolve_key(table, model, fuzzy)
-            .and_then(|key| table.get(key).copied())
+        self.resolve_row(table, model, fuzzy).map(|row| *row.value)
     }
 
     fn primary_key<'a, T>(&self, table: Table<'a, T>, model: &str) -> Option<&'a str> {
         let alias = crate::model_aliases::resolve_model_name(model);
-        self.layer_key(table, model, alias.as_ref(), Layer::Primary, Fuzzy::Denied)
+        self.layer_row(table, model, alias.as_ref(), Layer::Primary, Fuzzy::Denied)
+            .map(|row| row.key)
     }
 
-    fn resolve_key<'a, T>(
+    fn resolve_row<'a, T>(
         &self,
         table: Table<'a, T>,
         model: &str,
         fuzzy: Fuzzy,
-    ) -> Option<&'a str> {
+    ) -> Option<MatchedRow<'a, T>> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved = alias.as_ref();
         let same_id = |part: TablePart<'a, T>| {
             [model, resolved].into_iter().find_map(|candidate| {
                 part.same_id(candidate)
                     .or_else(|| pricing_alias(candidate).and_then(|id| part.same_id(id)))
+                    .and_then(|key| part.row(key))
             })
         };
         if let Some(key) = same_id(table.primary) {
@@ -2049,10 +2064,14 @@ impl PricingMap {
                             .match_indices(['/', '-'])
                             .find_map(|(separator, _)| {
                                 let suffix = &resolved[separator + 1..];
-                                table.primary.same_id(suffix).filter(|key| {
-                                    !table.primary.exact_only.contains(key)
-                                        && !self.rows.literal_pricing_keys.contains(*key)
-                                })
+                                table
+                                    .primary
+                                    .same_id(suffix)
+                                    .filter(|key| {
+                                        !table.primary.exact_only.contains(key)
+                                            && !self.rows.literal_pricing_keys.contains(*key)
+                                    })
+                                    .and_then(|key| table.primary.row(key))
                             })
                     })
                     .flatten();
@@ -2060,84 +2079,89 @@ impl PricingMap {
             }
             return [Layer::Primary, Layer::ModelsDev]
                 .into_iter()
-                .find_map(|layer| self.layer_key(table, model, resolved, layer, fuzzy));
+                .find_map(|layer| self.layer_row(table, model, resolved, layer, fuzzy));
         }
         [Layer::Primary, Layer::ModelsDev]
             .into_iter()
             .find_map(|layer| {
-                self.layer_key(table, model, resolved, layer, Fuzzy::Denied)
-                    .or_else(|| self.layer_key(table, model, resolved, layer, fuzzy))
+                self.layer_row(table, model, resolved, layer, Fuzzy::Denied)
+                    .or_else(|| self.layer_row(table, model, resolved, layer, fuzzy))
             })
     }
 
-    fn layer_key<'a, T>(
+    fn layer_row<'a, T>(
         &self,
         table: Table<'a, T>,
         model: &str,
         resolved: &str,
         layer: Layer,
         fuzzy: Fuzzy,
-    ) -> Option<&'a str> {
-        self.entry_or_alias_key(table, model, layer, fuzzy)
+    ) -> Option<MatchedRow<'a, T>> {
+        self.entry_or_alias_row(table, model, layer, fuzzy)
             .or_else(|| {
                 (resolved != model)
-                    .then(|| self.entry_or_alias_key(table, resolved, layer, fuzzy))
+                    .then(|| self.entry_or_alias_row(table, resolved, layer, fuzzy))
                     .flatten()
             })
     }
 
-    fn entry_or_alias_key<'a, T>(
+    fn entry_or_alias_row<'a, T>(
         &self,
         table: Table<'a, T>,
         model: &str,
         layer: Layer,
         fuzzy: Fuzzy,
-    ) -> Option<&'a str> {
+    ) -> Option<MatchedRow<'a, T>> {
         table
-            .key_in(model, layer)
+            .row_in(model, layer)
             .or_else(|| {
-                pricing_alias(model).and_then(|alias| self.entry_key(table, alias, layer, fuzzy))
+                pricing_alias(model).and_then(|alias| self.entry_row(table, alias, layer, fuzzy))
             })
-            .or_else(|| self.entry_key(table, model, layer, fuzzy))
+            .or_else(|| self.entry_row(table, model, layer, fuzzy))
     }
 
-    fn entry_key<'a, T>(
+    fn entry_row<'a, T>(
         &self,
         table: Table<'a, T>,
         model: &str,
         layer: Layer,
         fuzzy: Fuzzy,
-    ) -> Option<&'a str> {
-        table.key_in(model, layer).or_else(|| {
+    ) -> Option<MatchedRow<'a, T>> {
+        table.row_in(model, layer).or_else(|| {
             if let Some(id) = table.exact_only_id(model) {
-                return table.key_in(id, layer);
+                return table.row_in(id, layer);
             }
             if fuzzy == Fuzzy::Denied || table.is_exact_only(model) {
                 return None;
             }
             let normalized = normalized_pricing_key(model);
             table
-                .keys_in(layer)
+                .rows_in(layer)
                 .filter(|(_, exact_only)| !exact_only)
-                .map(|(key, _)| key)
-                .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
-                .filter(|key| {
+                .map(|(row, _)| row)
+                .filter(|row| pricing_key_matches(row.key, model, normalized.as_ref()))
+                .filter(|row| {
                     if table.primary.pricing_rows.is_none() {
                         return true;
                     }
-                    matches_service_plan(key, model)
+                    matches_service_plan(row.key, model)
                         && (layer != Layer::Primary
-                            || !is_direct_deepseek_model(key)
-                            || qualified_vendor_id_matches(key, normalized.as_ref()))
+                            || !requires_full_vendor_id(row.key)
+                            || qualified_vendor_id_matches(row.key, normalized.as_ref()))
                 })
-                .filter(|key| {
+                .filter(|row| {
                     fuzzy != Fuzzy::ShorterKeys
                         || contains_pricing_key(
                             normalized.as_ref(),
-                            normalized_pricing_key(key).as_ref(),
+                            normalized_pricing_key(row.key).as_ref(),
                         )
                 })
-                .max_by(|left, right| left.len().cmp(&right.len()).then_with(|| right.cmp(left)))
+                .max_by(|left, right| {
+                    left.key
+                        .len()
+                        .cmp(&right.key.len())
+                        .then_with(|| right.key.cmp(left.key))
+                })
         })
     }
 
@@ -2549,25 +2573,26 @@ fn models_dev_entry_has_required_cost(value: &Value) -> bool {
 }
 
 fn matches_service_plan(candidate: &str, request: &str) -> bool {
-    fn qualified_parts(id: &str) -> impl Iterator<Item = &str> {
+    const PLANS: [&str; 10] = [
+        "batch",
+        "flex",
+        "priority",
+        "fast",
+        "ultrafast",
+        "nitro",
+        "highspeed",
+        "free",
+        "lightning",
+        "economy",
+    ];
+
+    fn segments(id: &str) -> impl Iterator<Item = &str> {
         id.split(['-', '.', '@', '/', ':', '_'])
     }
 
-    qualified_parts(candidate)
-        .filter(|part| {
-            matches!(
-                *part,
-                "batch"
-                    | "flex"
-                    | "priority"
-                    | "fast"
-                    | "ultrafast"
-                    | "nitro"
-                    | "highspeed"
-                    | "free"
-            )
-        })
-        .all(|plan| qualified_parts(request).any(|part| part == plan))
+    segments(candidate)
+        .filter(|part| PLANS.iter().any(|plan| part.eq_ignore_ascii_case(plan)))
+        .all(|plan| segments(request).any(|part| part.eq_ignore_ascii_case(plan)))
 }
 
 /// Matches pricing keys across provider/model aliases while preserving version boundaries.
@@ -2657,14 +2682,15 @@ fn is_direct_deepseek_model(key: &str) -> bool {
     key.starts_with("deepseek-") || direct_deepseek_id(key).is_some()
 }
 
-fn qualified_vendor_id_matches(vendor_key: &str, normalized_request: &str) -> bool {
-    normalized_request
-        .strip_suffix(pricing_identity(vendor_key).as_ref())
-        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with(['/', '-']))
+fn requires_full_vendor_id(key: &str) -> bool {
+    is_direct_deepseek_model(key) || matches!(key, "gemini-2.5-flash" | "gemini-2.5-flash-lite")
 }
 
-fn pricing_identity(value: &str) -> Cow<'_, str> {
-    normalized_pricing_key(direct_deepseek_id(value).unwrap_or(value))
+fn qualified_vendor_id_matches(vendor_key: &str, normalized_request: &str) -> bool {
+    let vendor_id = direct_deepseek_id(vendor_key).unwrap_or(vendor_key);
+    normalized_request
+        .strip_suffix(normalized_pricing_key(vendor_id).as_ref())
+        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with(['/', '-']))
 }
 
 /// Long-context tier rates (per token) for a base model, parsed from a
@@ -2950,6 +2976,45 @@ mod tests {
                 .input,
             8.0
         );
+    }
+
+    #[test]
+    fn direct_pricing_keeps_the_fallback_row_for_distinct_variants() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "deepseek-v4-flash": {"input_cost_per_token": 1, "output_cost_per_token": 2}
+        }"#,
+        );
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{
+            "deepseek-v4-flash": {"input_cost_per_token": 8, "output_cost_per_token": 9}
+        }"#,
+        );
+        pricing.complete_layers(&embedded);
+        assert_eq!(pricing.find("deepseek-v4-flash").unwrap().input, 1.0);
+        assert_eq!(
+            pricing
+                .find("reseller/deepseek-v4-flash-0731")
+                .unwrap()
+                .input,
+            8.0
+        );
+    }
+
+    #[test]
+    fn normalized_model_id_keeps_provider_qualification() {
+        let mut pricing = PricingMap::default();
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{
+            "deepseek-v3-1": {"input_cost_per_token": 1, "output_cost_per_token": 2},
+            "deepseek/deepseek-v3.1": {"input_cost_per_token": 8, "output_cost_per_token": 9}
+        }"#,
+        );
+        pricing.complete_layers(&embedded);
+        assert_eq!(pricing.find("deepseek/deepseek-v3-1").unwrap().input, 8.0);
     }
 
     #[test]
@@ -6880,6 +6945,7 @@ mod tests {
             "vendor/model-2.5-flex": {"input_cost_per_token": 1, "output_cost_per_token": 2},
             "priority/vendor/model-2.5": {"input_cost_per_token": 7, "output_cost_per_token": 8},
             "vendor/model-2.5-batch": {"input_cost_per_token": 9, "output_cost_per_token": 10},
+            "other/vendor/model-2.5-FAST": {"input_cost_per_token": 11, "output_cost_per_token": 12},
             "model-2.5": {"input_cost_per_token": 3, "output_cost_per_token": 4}
         }"#,
         );
