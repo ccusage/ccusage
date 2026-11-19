@@ -430,6 +430,35 @@ fn codex_statusline_recovers_reversed_discovered_windows_as_a_pair() {
 }
 
 #[test]
+fn invalid_discovered_statusline_bounds_are_fatal_only_when_used() {
+    for field in ["since", "until"] {
+        let fixture = codex_fixture();
+        let _ = fixture.write_file(
+            "cwd/.ccusage/ccusage.json",
+            json!({"codex":{"commands":{"statusline":{field:"invalid-date"}}}}).to_string(),
+        );
+        let output = run_cli_output(&fixture, &["codex", "statusline"]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+            "codex.commands.statusline.{field}: not a valid date"
+        )));
+        let output = run_cli_output(
+            &fixture,
+            &["codex", "statusline", "--id", SESSION_UUID, "--json"],
+        );
+        assert!(output.status.success());
+        let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(summary["totalTokens"], 150);
+
+        let output = run_cli_output(&fixture, &["codex", "statusline", "--mcp"]);
+        assert!(output.status.success());
+
+        let output = run_cli_output(&fixture, &["codex", "daily", "--json"]);
+        assert!(output.status.success());
+    }
+}
+
+#[test]
 fn codex_statusline_uses_the_selected_timezone_for_today() {
     let fixture = fs_fixture!({
         "codex/sessions/today.jsonl": usage("2026-11-19T00:30:00Z", 100, 50),

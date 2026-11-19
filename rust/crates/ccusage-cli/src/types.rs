@@ -415,6 +415,10 @@ pub trait CliConfig {
         None
     }
 
+    fn date_config_error(&self) -> Option<&str> {
+        None
+    }
+
     fn recover_statusline_timezone(
         &self,
         _timezone: &mut Option<String>,

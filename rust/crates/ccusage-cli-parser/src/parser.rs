@@ -1009,6 +1009,13 @@ fn validate_date_window(
     parser: &ArgParser,
     config: &dyn CliConfig,
 ) -> Result<(), String> {
+    if let Command::Agent(_, AgentCommand::Statusline(args)) = command
+        && !args.mcp
+        && args.session_id.is_none()
+        && let Some(message) = config.date_config_error()
+    {
+        return Err(message.to_string());
+    }
     let Some((since, until)) = command
         .shared()
         .and_then(|shared| shared.since.as_deref().zip(shared.until.as_deref()))

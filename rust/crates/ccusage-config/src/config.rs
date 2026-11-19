@@ -594,13 +594,15 @@ impl ccusage_cli::CliConfig for ConfigContext {
             })
             .or_else(|| {
                 (self.command.report != "statusline")
-                    .then(|| {
-                        self.option_maps()
-                            .into_iter()
-                            .find_map(|layer| layer.date_error.as_deref())
-                    })
+                    .then(|| self.date_config_error())
                     .flatten()
             })
+    }
+
+    fn date_config_error(&self) -> Option<&str> {
+        self.option_maps()
+            .into_iter()
+            .find_map(|layer| layer.date_error.as_deref())
     }
 
     fn recover_statusline_timezone(
