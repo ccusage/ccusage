@@ -100,7 +100,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn does_not_follow_symlinked_session_directories() {
+    fn follows_symlinked_session_directories() {
         use std::os::unix::fs::symlink;
 
         let fixture = fs_fixture!({
@@ -113,6 +113,12 @@ mod tests {
 
         let files = collect_session_files(&fixture.path("sessions"), &Diagnostics::new("openclaw"));
 
-        assert_eq!(files, [fixture.path("sessions/real/session.jsonl")]);
+        assert_eq!(
+            files,
+            [
+                fixture.path("sessions/linked/linked.jsonl"),
+                fixture.path("sessions/real/session.jsonl"),
+            ]
+        );
     }
 }

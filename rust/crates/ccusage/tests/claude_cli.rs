@@ -331,6 +331,33 @@ fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress
     assert_eq!(json["totals"]["totalCost"], 3.0);
 }
 
+#[cfg(unix)]
+#[test]
+fn claude_daily_counts_a_symlinked_project_directory() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "transcripts/session-a.jsonl",
+        usage_line(
+            "2026-09-11T12:00:00Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    fixture.create_dir_all("projects");
+    std::os::unix::fs::symlink(
+        fixture.path("transcripts"),
+        fixture.path("projects/project-a"),
+    )
+    .unwrap();
+
+    let output = run_ccusage(&fixture, &["claude", "daily", "--offline", "--json"], None);
+    let report: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(report["totals"]["totalTokens"], 12);
+}
+
 fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String {
     run_command(claude_command(fixture), args, stdin)
 }
