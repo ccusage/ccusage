@@ -23,7 +23,7 @@ pub fn parse_paths(
     home: Option<&Path>,
 ) -> Option<Vec<PathBuf>> {
     let Some(raw) = raw.to_str() else {
-        return Some(vec![PathBuf::from(raw)]);
+        return separator.is_none().then(|| vec![PathBuf::from(raw)]);
     };
     let entries = raw
         .split(|ch| separator == Some(ch))
@@ -142,6 +142,15 @@ fn non_empty_path(path: Option<OsString>) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_path_lists_allow_default_discovery() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let raw = OsStr::from_bytes(b" ~/one , ~/two\xff , /absolute ");
+        assert_eq!(parse_paths(raw, Some(','), None), None);
+    }
 
     #[test]
     fn unresolved_canonical_identity_keeps_the_given_path() {
