@@ -1,0 +1,18 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex statusline --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "cacheCreationTokens": 0,
+  "cacheReadTokens": 450300,
+  "costUSD": 0.5835699999999999,
+  "inputTokens": 101950,
+  "outputTokens": 1725,
+  "reasoningOutputTokens": 0,
+  "scope": "today",
+  "totalTokens": 553975
+}
+
+--- stderr ---

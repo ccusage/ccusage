@@ -710,6 +710,21 @@ service_tier = "fast"
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
     let thread_url = format!("codex://threads/{SUBAGENT}");
     vec![
+        Case::new("statusline", "today_json", &["codex", "statusline", "--offline", "--json"]),
+        Case::new("statusline", "today_table", &["codex", "statusline", "--offline"]),
+        Case::new("statusline", "today_no_cost", &["codex", "statusline", "--offline", "--no-cost"]),
+        Case::new("statusline", "today_tokyo", &["codex", "statusline", "--offline", "--json", "--timezone", "Asia/Tokyo"]),
+        Case::new("statusline", "range_json", &["codex", "statusline", "--offline", "--json", "--since", "20251231", "--until", "20260101"]),
+        Case::new("statusline", "session_json", &["codex", "statusline", "--offline", "--json", "--id", MAIN]),
+        Case::new("statusline", "session_outside_window", &["codex", "statusline", "--offline", "--json", "--id", MAIN, "--since", "20990101", "--until", "20990101"]),
+        Case::new("statusline", "session_missing", &["codex", "statusline", "--offline", "--json", "--id", "missing"]),
+        Case::new("statusline", "native_provider", &["codex", "statusline", "--offline", "--mcp"])
+            .stdin(concat!(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"resources/list\"}\n",
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"resources/read\",\"params\":{\"uri\":\"ui://ccusage/codex-statusline\"}}\n",
+                "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"ccusage_codex_statusline\"}}\n"
+            )),
         Case::new(
             "daily",
             "json_speed_standard",
