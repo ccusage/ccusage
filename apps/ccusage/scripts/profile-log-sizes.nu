@@ -33,8 +33,6 @@ def files-under [roots: list<string>, patterns: list<string>]: nothing -> list<s
 
 def uncompressed-size [file: string]: nothing -> int {
     if ($file | str ends-with '.zst') {
-        # The pipeline below cannot see zstd's exit status, so a corrupt
-        # archive would otherwise count as a short file.
         ^zstd --test --quiet $file
         ^zstd --decompress --stdout --quiet $file | length
     } else {
@@ -68,7 +66,6 @@ def codex-rollouts [roots: list<string>]: nothing -> list<string> {
     $roots
     | each {|root|
         let subdirs = ['sessions' 'archived_sessions'] | where {|sub| ($root | path join $sub | path expand | path type) == 'dir' }
-        # A home without either directory is scanned directly, as ccusage does.
         $subdirs | default --empty ['.'] | each {|sub|
             let dir = $root | path join $sub | path expand
             files-under [$dir] ['**/*.jsonl' '**/*.jsonl.zst']
@@ -93,7 +90,6 @@ def main []: nothing -> nothing {
     } else {
         $xdg_config_home
     }
-    # Like ccusage, accept a root that names its projects/ directory.
     let claude_roots = env-roots 'CLAUDE_CONFIG_DIR' [
         ($config_home | path join 'claude')
         ($home | path join '.claude')
