@@ -31,10 +31,8 @@ use ccusage_adapter_common::{
     filter_loaded_entries_by_date,
     rows::{RowUsage, SourceRow},
 };
-use ccusage_test_support::{EnvVarsGuard, fs_fixture, instant, set_modified};
+use ccusage_test_support::{EnvGuard, fs_fixture, instant, set_modified};
 
-/// No per-source options, which is how the tests that do not exercise them
-/// call the loader.
 pub(crate) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
 
 pub(crate) fn aggregate_periods(rows: Vec<SourceRow>, bucket: Bucket) -> Option<Vec<ReportRow>> {
@@ -70,7 +68,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
 fn statusline_dispatch_rejects_a_non_codex_agent() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({"sessions/.keep": ""});
-    let _env = EnvVarsGuard::set_many([(
+    let _env = EnvGuard::set_many([(
         "CODEX_HOME",
         Some(fixture.root().as_os_str().to_os_string()),
     )]);
@@ -755,7 +753,7 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     for (id, cost) in [("a-cheap", 1.0), ("m-medium", 3.0), ("z-expensive", 20.0)] {
-        let _ = fixture.write_file(
+        fixture.write_file(
             format!("projects/project-a/{id}.jsonl"),
             json!({
                 "timestamp": "2099-01-02T00:00:00.000Z",
@@ -876,7 +874,6 @@ fn api_row(created: i64, input: u64) -> String {
     )
 }
 
-/// Writes OpenCode v2 assistant rows as `(id, session, created, data)`.
 fn write_opencode_rows(db_path: &Path, rows: &[(&str, &str, i64, String)]) {
     let db = sqlite::open(db_path).unwrap();
     db.execute(
@@ -898,7 +895,7 @@ fn write_opencode_rows(db_path: &Path, rows: &[(&str, &str, i64, String)]) {
 fn claude_opencode_env(
     fixture: &ccusage_test_support::Fixture,
     claude_config_dir: OsString,
-) -> EnvVarsGuard {
+) -> EnvGuard {
     isolated_agents_env(
         fixture,
         [
@@ -931,7 +928,7 @@ fn unified_totals(
 fn an_undatable_daily_row_is_skipped_with_a_diagnostic_naming_its_source() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -968,7 +965,7 @@ fn an_undatable_daily_row_is_skipped_with_a_diagnostic_naming_its_source() {
 fn unified_reports_count_claude_agent_sessions_once() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -1023,7 +1020,7 @@ fn focused_opencode_input(
 }
 
 fn write_claude_agent_fixture(fixture: &ccusage_test_support::Fixture) {
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -1068,7 +1065,6 @@ fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
     ] {
         assert_eq!(focused_opencode_input(&shared, kind, false), 27, "{kind:?}");
         assert_eq!(focused_opencode_input(&shared, kind, true), 127, "{kind:?}");
-        // The 100 Claude input tokens plus the focused OpenCode rows add up to the unified report.
         assert_eq!(
             unified_totals(kind, &shared, &NO_SOURCES)["inputTokens"],
             100 + focused_opencode_input(&shared, kind, false),
@@ -1113,9 +1109,7 @@ fn focused_opencode_claims_use_claude_source_window_and_project() {
 fn focused_opencode_reports_what_the_claude_cross_check_skipped() {
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
-    // The transcript of `claude-native-missing` is unreadable, so OpenCode
-    // keeps its copy of that session's turns and must say why.
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-missing.jsonl",
         r#"{"timestamp":"2099-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#,
     );
@@ -1140,7 +1134,7 @@ fn focused_opencode_reports_what_the_claude_cross_check_skipped() {
 #[test]
 fn focused_opencode_session_skips_turns_of_a_claude_session_active_past_until() {
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         [
             claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
@@ -1170,7 +1164,6 @@ fn focused_opencode_session_skips_turns_of_a_claude_session_active_past_until() 
     let mut claude_entries = adapter::claude::load_entries(&shared, None).unwrap();
     filter_loaded_entries_by_date(&mut claude_entries, &shared);
 
-    // `ccusage claude session` counts the in-window day of the session, so OpenCode drops it.
     assert_eq!(claude_entries.len(), 1);
     for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         assert_eq!(focused_opencode_input(&shared, kind, false), 0, "{kind:?}");
@@ -1286,7 +1279,7 @@ fn unified_reports_keep_claude_agent_rows_whose_transcript_holds_only_subagent_u
 fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -1322,7 +1315,7 @@ fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
 fn unified_daily_keeps_turns_when_native_usage_is_before_since() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -1359,7 +1352,7 @@ fn unified_daily_keeps_turns_when_native_usage_is_before_since() {
 fn unified_reports_keep_api_turns_when_the_native_session_is_claimed() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -1405,11 +1398,11 @@ fn unified_reports_keep_api_turns_when_the_native_session_is_claimed() {
 fn unified_reports_match_claude_agent_rows_against_every_claude_config_root() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude-a/projects/project-a/other-session.jsonl",
         claude_usage_line("other-session", "2099-01-02T00:00:00.000Z", "msg-other", 10),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude-b/projects/project-b/claude-native-b.jsonl",
         claude_usage_line("claude-native-b", "2099-01-02T00:00:00.000Z", "msg-b", 100),
     );
@@ -1447,7 +1440,7 @@ fn unified_daily_dates_claude_agent_rows_in_the_claude_source_timezone() {
     let tokyo_day_three = CLAUDE_AGENT_DAY_ONE + 20 * 3_600_000;
     let tokyo_day_four = CLAUDE_AGENT_DAY_TWO + 16 * 3_600_000;
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T20:00:00.000Z", "msg-a", 100),
     );
@@ -1491,7 +1484,7 @@ fn unified_daily_dates_claude_agent_rows_in_the_claude_source_timezone() {
 fn unified_reports_count_a_claude_agent_turn_once_when_claude_logs_it_after_midnight() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-03T00:00:05.000Z", "msg-a", 100),
     );
@@ -1526,7 +1519,7 @@ fn unified_reports_count_a_claude_agent_turn_once_when_claude_logs_it_after_midn
 fn a_claude_agent_turn_before_until_does_not_borrow_next_days_usage() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-03T00:00:05.000Z", "msg-a", 100),
     );
@@ -1578,7 +1571,7 @@ fn native_claims_widen_by_calendar_days_across_months_and_clock_changes() {
         ),
     ] {
         let fixture = fs_fixture!({});
-        let _ = fixture.write_file(
+        fixture.write_file(
             "claude/projects/p/native.jsonl",
             claude_usage_line("native", call, "m", 100),
         );
@@ -1613,7 +1606,7 @@ fn native_claims_widen_by_calendar_days_across_months_and_clock_changes() {
 fn native_claims_keep_turns_when_claude_usage_is_beyond_the_one_day_margin() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/p/native.jsonl",
         claude_usage_line("native", "2099-01-02T00:00:05Z", "m", 100),
     );
@@ -1646,7 +1639,7 @@ fn native_claims_keep_turns_when_claude_usage_is_beyond_the_one_day_margin() {
 fn unified_daily_drops_a_claude_agent_turn_whose_later_calls_fall_after_until() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         [
             claude_usage_line("claude-native-a", "2099-01-02T23:59:55.000Z", "msg-a", 100),
@@ -1680,7 +1673,7 @@ fn unified_daily_drops_a_claude_agent_turn_whose_later_calls_fall_after_until() 
 fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         [
             claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
@@ -1700,9 +1693,6 @@ fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
     let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
     let shared = claude_agent_shared("20990101", "20990102");
 
-    // The session runs past `--until`: Claude counts its day-one turn and OpenCode skips its copy.
-    // Totals alone cannot tell which source kept the turn, so check where each row comes from.
-    // Daily rows merge sources and list them in metadata; session rows carry one agent each.
     for (kind, period) in [
         (AgentReportKind::Daily, "2099-01-02"),
         (AgentReportKind::Session, "claude-native-a"),
@@ -1727,7 +1717,7 @@ fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
 fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claude_window() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         [
             claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
@@ -1767,11 +1757,11 @@ fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claud
 fn unified_reports_match_claude_agent_rows_against_sessions_holding_deduplicated_copies() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-fork.jsonl",
         claude_usage_line(
             "claude-native-fork",
@@ -1813,11 +1803,11 @@ fn unified_reports_match_claude_agent_rows_against_sessions_holding_deduplicated
 fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_out() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-b.jsonl",
         [
             claude_usage_line("claude-native-b", "2099-01-02T00:00:00.000Z", "msg-a", 100),
@@ -1848,9 +1838,6 @@ fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_
         },
     )]);
 
-    // The session report leaves out claude-native-b, whose activity runs past
-    // the Claude window, so the OpenCode copy of its own turn is the only count.
-    // The daily report counts that turn under Claude on 01-03 instead.
     for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         assert_eq!(
             unified_totals(kind, &shared, &sources)["inputTokens"],
@@ -1864,11 +1851,11 @@ fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_
 fn unified_reports_skip_claude_agent_rows_of_a_fork_counted_without_its_parent() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/claude-native-b.jsonl",
         [
             claude_usage_line("claude-native-b", "2099-01-02T00:00:00.000Z", "msg-a", 100),
@@ -1898,8 +1885,6 @@ fn unified_reports_skip_claude_agent_rows_of_a_fork_counted_without_its_parent()
         },
     )]);
 
-    // Dedup keeps the parent's copy of msg-a, and the Claude window leaves the
-    // parent out; the fork's own turn still counts under the fork, once.
     for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         assert_eq!(
             unified_totals(kind, &shared, &sources)["inputTokens"],
@@ -1913,7 +1898,7 @@ fn unified_reports_skip_claude_agent_rows_of_a_fork_counted_without_its_parent()
 fn unified_reports_match_claude_agent_rows_by_the_recorded_claude_session_id() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.write_file(
+    fixture.write_file(
         "claude/projects/project-a/renamed-transcript.jsonl",
         claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
     );
@@ -2017,12 +2002,12 @@ fn bounded_codex_reports_deduplicate_per_bucket_after_unified_bucketing() {
     let usage = |timestamp: &str| {
         json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
     };
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/sessions/original.jsonl",
         usage("2026-01-02T00:00:00.000Z"),
     );
-    let _ = fixture.write_file("codex/sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
-    let _ = fixture.write_file(
+    fixture.write_file("codex/sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
+    fixture.write_file(
         "codex/sessions/later.jsonl",
         usage("2026-01-03T00:00:00.000Z"),
     );
@@ -2091,7 +2076,7 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
 fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ = fixture.create_dir_all("zcode/cli/db");
+    fixture.create_dir_all("zcode/cli/db");
     let db_path = fixture.path("zcode/cli/db/db.sqlite");
     #[derive(Clone, Copy)]
     struct FixtureUsage<'a> {
@@ -2167,7 +2152,6 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
         },
     );
 
-    /// Inserts one completed usage row into a ZCode fixture database.
     fn insert_usage(db: &sqlite::Connection, usage: FixtureUsage<'_>) {
         let mut statement = db
             .prepare(
@@ -2318,7 +2302,7 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
             "../../../adapters/cline/tests/fixtures/cli/session.messages.json"
         ),
     });
-    let _ = fixture.write_file(
+    fixture.write_file(
         "cline/data/sessions/rejected-cache/rejected-cache.messages.json",
         r#"{"version":1,"sessionId":"rejected-cache","messages":[{"role":"assistant","ts":1793491260000,"id":"cache-exceeds-input-session","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}]}"#,
     );
@@ -2563,16 +2547,16 @@ fn isolated_agent_env(
     fixture: &ccusage_test_support::Fixture,
     source_key: &'static str,
     source_value: OsString,
-) -> EnvVarsGuard {
+) -> EnvGuard {
     isolated_agents_env(fixture, [(source_key, source_value)])
 }
 
 fn isolated_agents_env(
     fixture: &ccusage_test_support::Fixture,
     sources: impl IntoIterator<Item = (&'static str, OsString)>,
-) -> EnvVarsGuard {
-    let _ = fixture.create_dir_all("empty-xdg-config");
-    let _ = fixture.create_dir_all("empty-xdg-data");
+) -> EnvGuard {
+    fixture.create_dir_all("empty-xdg-config");
+    fixture.create_dir_all("empty-xdg-data");
     let home = fixture.path("empty-home").into_os_string();
     let xdg_config = fixture.path("empty-xdg-config").into_os_string();
     let xdg_data = fixture.path("empty-xdg-data").into_os_string();
@@ -2612,7 +2596,7 @@ fn isolated_agents_env(
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
     vars.push(("XDG_DATA_HOME", Some(xdg_data)));
     vars.extend(sources.into_iter().map(|(key, value)| (key, Some(value))));
-    EnvVarsGuard::set_many(vars)
+    EnvGuard::set_many(vars)
 }
 
 fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {

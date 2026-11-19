@@ -108,7 +108,6 @@ impl Bucket {
 pub(super) struct AllLoadResult {
     pub(super) rows: Vec<ReportRow>,
     pub(super) detected_agents: Vec<&'static str>,
-    /// One per source, in source order.
     pub(super) diagnostics: Vec<Diagnostics>,
 }
 
@@ -116,7 +115,6 @@ pub(super) struct AllSectionsLoadResult {
     pub(super) sections: Vec<(AgentReportKind, Vec<ReportRow>)>,
     pub(super) daily_detected_agents: Vec<&'static str>,
     pub(super) session_detected_agents: Vec<&'static str>,
-    /// One per source, in source order, each covering both loads.
     pub(super) diagnostics: Vec<Diagnostics>,
 }
 

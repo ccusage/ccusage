@@ -77,8 +77,6 @@ pub(super) fn load_sections(
         .as_ref()
         .map(|base| base.detected_agents.clone())
         .unwrap_or_default();
-    // The two loads read different files for one source, so their skips are
-    // merged per source rather than listed twice.
     let mut diagnostics = Vec::new();
     let loaded_diagnostics = daily_base
         .iter_mut()
@@ -334,6 +332,7 @@ fn load_specs<'a>(
 ) -> Vec<AgentLoadSpec<'a>> {
     let runs =
         |wanted: fn(&RunSourceKind) -> bool| sources.iter().any(|source| wanted(&source.source));
+    // NOTE(2026-11-01, #2007): OpenCode's claude-agent provider records the same main-thread turns that Claude Code writes to its transcript. Cross-source claims keep matching turns from being counted twice.
     let (mut claims_tx, mut claims_rx) = if runs(|kind| matches!(kind, RunSourceKind::Claude))
         && runs(|kind| matches!(kind, RunSourceKind::OpenCode))
     {
@@ -503,20 +502,10 @@ fn path_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Session files are collected recursively, so a store rooted at an ancestor
-/// of another store (or of the default pi store) would ingest the same files
-/// twice under different dedupe identities. Treat equal and nested paths as
-/// overlapping.
 fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
 }
 
-/// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
-/// source counts are left to it unless `include_claude_agent` is set, so the
-/// focused reports add up to the unified one.
-///
-/// Also returns what the Claude load skipped, if it ran: a skipped transcript
-/// leaves its turns to OpenCode, so the skip changes these totals too.
 pub(super) fn load_opencode_entries(
     shared: &SharedArgs,
     kind: AgentReportKind,
@@ -535,11 +524,15 @@ pub(super) fn load_opencode_entries(
 }
 
 fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
-    kinds.iter().any(|kind| *kind != AgentReportKind::Session)
+    kinds
+        .iter()
+        .any(|&kind| LoadKind::for_report(kind) == LoadKind::Day)
 }
 
 fn needs_session(kinds: &[AgentReportKind]) -> bool {
-    kinds.contains(&AgentReportKind::Session)
+    kinds
+        .iter()
+        .any(|&kind| LoadKind::for_report(kind) == LoadKind::Session)
 }
 
 pub(super) fn aggregate_rows(rows: Vec<DayRow>, bucket: Bucket) -> Vec<ReportRow> {
@@ -570,7 +563,7 @@ mod tests {
     use ccusage_adapter_common::source::LoadRequest;
     use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn load_pi_format_agent_rows(
         custom_path: Option<&str>,
@@ -754,7 +747,7 @@ mod tests {
         statement.bind((1, created)).unwrap();
         statement.bind((2, data.as_str())).unwrap();
         statement.next().unwrap();
-        let _environment = EnvVarsGuard::set_many([
+        let _environment = EnvGuard::set_many([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             (
                 "CLAUDE_CONFIG_DIR",
@@ -851,19 +844,19 @@ mod tests {
         );
     }
 
-    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvVarsGuard {
+    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvGuard {
         isolated_source_environment_with_pi_agent_dir(fixture, "pi/sessions")
     }
 
     fn isolated_source_environment_with_pi_agent_dir(
         fixture: &ccusage_test_support::Fixture,
         pi_agent_dir: &str,
-    ) -> EnvVarsGuard {
-        let _ = fixture.create_dir_all("claude-config/projects");
-        let _ = fixture.create_dir_all("pi/sessions");
-        let _ = fixture.create_dir_all("empty-xdg-config");
-        let _ = fixture.create_dir_all("empty-xdg-data");
-        EnvVarsGuard::set_many([
+    ) -> EnvGuard {
+        fixture.create_dir_all("claude-config/projects");
+        fixture.create_dir_all("pi/sessions");
+        fixture.create_dir_all("empty-xdg-config");
+        fixture.create_dir_all("empty-xdg-data");
+        EnvGuard::set_many([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             (
                 "USERPROFILE",

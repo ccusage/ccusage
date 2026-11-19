@@ -110,8 +110,6 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     report::print_table(&result.rows, kind, &shared, &result.detected_agents)
 }
 
-/// Runs `ccusage opencode`, leaving Claude Agent turns to the Claude source
-/// unless `--include-claude-agent` keeps them.
 fn run_opencode(args: AgentCommandArgs) -> Result<()> {
     let (entries, claude_diagnostics) = loader::load_opencode_entries(
         &args.shared,
@@ -129,7 +127,6 @@ fn run_opencode(args: AgentCommandArgs) -> Result<()> {
     adapter::opencode::print_report(&args, entries)
 }
 
-/// Prints each source's skips with the options that source loaded with.
 fn emit_diagnostics(
     diagnostics: &[Diagnostics],
     shared: &cli::SharedArgs,
