@@ -321,6 +321,11 @@ pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
     serde_json::from_slice(bytes)
 }
 
+#[inline(never)]
+fn next_line(lines: &mut LineReader<Input>) -> io::Result<Option<&[u8]>> {
+    lines.next_line()
+}
+
 fn fold<B>(
     lines: &mut LineReader<Input>,
     keep_interrupted_tail: fn(io::ErrorKind) -> bool,
@@ -328,7 +333,7 @@ fn fold<B>(
 ) -> (Option<B>, Option<ReadFailure>) {
     let mut index = 0;
     loop {
-        match lines.next_line() {
+        match next_line(lines) {
             Ok(Some(raw)) => {
                 if let ControlFlow::Break(value) = visit(Line { index, raw }) {
                     return (Some(value), None);
