@@ -48,5 +48,4 @@ SQLITE_OMIT_UTF16 = "1"
 SQLITE_OMIT_XFER_OPT = "1"
 
 [registry]
-# Mirrors pnpm's minimumReleaseAge in pnpm-workspace.yaml.
 global-min-publish-age = "2 days"

@@ -1,5 +1,3 @@
-# Recipes for the published `ccusage` npm package. Run from the repo root as
-# `just ccusage::<recipe>`, or from this directory as `just <recipe>`.
 
 [private]
 default:
