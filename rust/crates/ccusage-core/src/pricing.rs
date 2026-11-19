@@ -4667,23 +4667,24 @@ mod tests {
     }
 
     #[test]
-    fn exact_fallback_lookup_rejects_a_spelling_shared_by_two_entries() {
-        // `acme-alpha-1.5` and `acme.alpha@1.5` both normalize to
-        // `acme-alpha-1-5`, so that spelling names neither entry.
+    fn exact_fallback_prefers_literal_keys_then_the_smallest_spelling() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
-        pricing.load_json(
-            r#"{
-                "acme-alpha-1.5": { "input_cost_per_token": 0.000001 },
-                "acme.alpha@1.5": { "input_cost_per_token": 0.000002 }
-            }"#,
-        );
-
-        assert!(
-            pricing
-                .resolve_at(None, &[("acme-alpha-1-5", MatchKind::Exact)], None)
-                .map(|(_, pricing)| pricing)
-                .is_none()
-        );
+        assert_eq!(pricing.load_json(r#"{
+            "acme-alpha-1.5": {"litellm_provider":"openai","input_cost_per_token":1e-6,"output_cost_per_token":1e-6},
+            "acme.alpha@1.5": {"litellm_provider":"openai","input_cost_per_token":2e-6,"output_cost_per_token":2e-6}
+        }"#), 2);
+        for (request, key, rate) in [
+            ("acme-alpha-1.5", "acme-alpha-1.5", 1e-6),
+            ("acme.alpha@1.5", "acme.alpha@1.5", 2e-6),
+            ("acme-alpha-1-5", "acme-alpha-1.5", 1e-6),
+        ] {
+            let candidates = [(request, MatchKind::Exact)];
+            let found = pricing.explain(None, &candidates).unwrap();
+            assert_eq!(found.row_key, key, "{request}");
+            let (_, price) = pricing.resolve_at(None, &candidates, None).unwrap();
+            assert_eq!((price.input, price.output), (rate, rate), "{request}");
+        }
     }
 
     #[test]
