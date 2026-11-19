@@ -354,7 +354,7 @@ impl<'a> CodexDedupe<'a> {
                     request.attribution.merge(attribution);
                 } else {
                     requests.push(CodexRecordedUsage {
-                        id: std::sync::Arc::clone(id),
+                        id: Arc::clone(id),
                         attribution,
                     });
                 }
