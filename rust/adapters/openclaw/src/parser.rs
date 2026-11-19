@@ -3,7 +3,7 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::AgentModel,
 };
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -254,20 +254,22 @@ pub(super) fn parse_session_file(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let mut reader = TranscriptReader::jsonl(extract_session_id(path));
-    let content = fs::read(path).map_err(UnitError::from)?;
     let prefilter = record_prefilter();
-    Ok(
-        jsonl::numbered_records_with_usage_diagnostics::<OpenClawLine>(
-            &content,
-            Some(&prefilter),
-            path,
-            diagnostics,
-            is_usage_envelope,
-        )
-        .filter_map(|(number, record)| reader.read(&record, path, number, None, diagnostics))
-        .map(|entry| entry_to_loaded(entry, tz, mode, pricing))
-        .collect(),
-    )
+    let mut entries = Vec::new();
+    jsonl::read_records::<OpenClawLine>(
+        path,
+        Some(&prefilter),
+        diagnostics,
+        is_usage_envelope,
+        |number, record, diagnostics| {
+            entries.extend(
+                reader
+                    .read(&record, path, number, None, diagnostics)
+                    .map(|entry| entry_to_loaded(entry, tz, mode, pricing)),
+            );
+        },
+    )?;
+    Ok(entries)
 }
 
 pub(super) fn record_prefilter() -> LinePrefilter {
