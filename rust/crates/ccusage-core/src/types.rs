@@ -55,9 +55,7 @@ struct TokenUsageRawJson {
     iterations: Lenient<Iterations>,
 }
 
-/// A `usage` object read together with whether its `iterations` hold an
-/// `advisor_message` entry, so a caller that reports advisor turns knows
-/// from this parse whether to look for them.
+/// Usage parsed with its advisor-iteration flag for the Claude adapter.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(from = "TokenUsageRawJson")]
 pub struct IteratedTokenUsage {
@@ -82,9 +80,7 @@ impl From<TokenUsageRawJson> for TokenUsageRaw {
             cache_creation_input_tokens: json.cache_creation_input_tokens,
             cache_read_input_tokens: json.cache_read_input_tokens,
             speed: json.speed,
-            // Claude Code advisor turns report one `usage` object whose
-            // top-level `cache_creation` split covers only the first `message`
-            // iteration, while `cache_creation_input_tokens` sums them all.
+            // NOTE(2026-11-16, #2085): In Claude Code advisor turns, the top-level `cache_creation` split covers the first `message` iteration while the total covers them all. Sum the per-message splits when complete.
             cache_creation: json
                 .iterations
                 .0
@@ -104,7 +100,6 @@ impl TokenUsageRaw {
         }
     }
 
-    /// `None` when the source did not report the cache-write TTL split.
     fn cache_creation_1h_token_count(&self) -> Option<u64> {
         self.cache_creation.map(|b| b.ephemeral_1h_input_tokens)
     }
@@ -164,18 +159,16 @@ pub struct ModelBreakdown {
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
-    /// Part of `cache_creation_tokens` written with the 1-hour cache TTL; the
-    /// rest was billed at the 5-minute rate. Absent when no entry reported the
-    /// split.
+    /// Subset of `cache_creation_tokens` written with the 1-hour TTL. The rest used the 5-minute TTL.
+    /// `None` means that no entry reported a TTL split.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_creation_1h_tokens: Option<u64>,
     #[serde(skip_serializing)]
     pub extra_total_tokens: u64,
     pub cost: f64,
-    /// Present in JSON only when true, so priced breakdowns keep their shape.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_pricing: bool,
-    /// Part of `cost` taken from stored `costUSD` values in `auto` mode.
+    /// Subset of `cost` taken from stored `costUSD` values in `auto` mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stored_cost: Option<f64>,
 }
@@ -193,7 +186,6 @@ impl ModelBreakdown {
         self.add_cache_creation_1h_tokens(usage.cache_creation_1h_token_count());
     }
 
-    /// Folds another breakdown of the same model into this one.
     pub fn merge(&mut self, other: &Self) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);

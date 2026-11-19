@@ -192,6 +192,7 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         pricing: rates(1e-6, 6e-6, 1.25e-6, 0.1e-6),
         context_limit: Some(1050000),
     },
+    // NOTE(2026-08-15, #1541): Z.AI lists separate GLM cache-read rates and free cache storage at https://docs.z.ai/guides/overview/pricing. Keep explicit zero write rates so absent catalogue fields do not incur a surcharge.
     Supplement {
         provider: "zai",
         model: "glm-4.5",

@@ -10,7 +10,6 @@ const MODEL_ALIASES_ENV: &str = "CCUSAGE_MODEL_ALIASES";
 static MODEL_ALIASES: OnceLock<RwLock<BTreeMap<String, String>>> = OnceLock::new();
 static TEST_MODEL_ALIASES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Resolves a model name through `CCUSAGE_MODEL_ALIASES`, including `-fast` variants.
 pub fn resolve_model_name(model: &str) -> Cow<'_, str> {
     let aliases = model_aliases();
     let aliases = aliases.read().unwrap_or_else(|error| error.into_inner());

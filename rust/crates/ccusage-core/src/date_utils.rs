@@ -234,11 +234,6 @@ pub(crate) fn parse_iso_date(value: &str) -> Option<IsoDate> {
     IsoDate::from_ymd(year, month, day)
 }
 
-/// Parses a compact `YYYYMMDD` date, the normalized form of the `--since` and
-/// `--until` bounds.
-///
-/// Returns `None` for anything that is not a full valid date, including partial
-/// bounds such as `202601` that callers still compare lexicographically.
 fn parse_compact_date(value: &str) -> Option<IsoDate> {
     let bytes = value.as_bytes();
     if bytes.len() != 8 {
@@ -250,13 +245,8 @@ fn parse_compact_date(value: &str) -> Option<IsoDate> {
     IsoDate::from_ymd(year, month, day)
 }
 
-/// Resolves the `--since`/`--until` window to half-open Unix millisecond bounds
-/// `[since 00:00, the day after until 00:00)` in `timezone`.
-///
-/// A `None` bound means that side must not be narrowed: either the option was
-/// absent, or it is not a full `YYYYMMDD` date and therefore has no instant to
-/// compare against. Callers pair these bounds with [`ReportWindow::contains_date`](crate::ReportWindow::contains_date), which
-/// stays authoritative for the exact per-entry decision.
+/// Returns `[since 00:00, the day after until 00:00)` in the report timezone.
+/// An absent or partial date leaves that side unbounded.
 pub fn date_range_bounds_ms(
     since: Option<&str>,
     until: Option<&str>,
@@ -272,11 +262,6 @@ pub fn date_range_bounds_ms(
     (start, end)
 }
 
-/// First instant of `date` in `timezone`, as Unix milliseconds.
-///
-/// Days whose midnight does not exist because of a spring-forward transition
-/// resolve to the first instant that does, so a bound never lands in the
-/// neighboring day.
 fn start_of_day_ms(date: IsoDate, timezone: &JiffTimeZone) -> Option<i64> {
     let civil = JiffDate::new(
         i16::try_from(date.year).ok()?,
@@ -343,8 +328,7 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
-/// Resolves a `--timezone` value once per report. `local`, an absent value and
-/// a name the zone database does not know all mean the system zone.
+/// `local`, an absent value and an unknown name resolve to the system timezone.
 pub fn resolve_tz(timezone: Option<&str>) -> JiffTimeZone {
     match timezone {
         Some("UTC") => JiffTimeZone::UTC,
@@ -395,7 +379,6 @@ mod tests {
         resolve_tz,
     };
 
-    // 2026-01-02 00:00:00 UTC
     const JAN_2_UTC: i64 = 1_767_312_000_000;
 
     #[test]
@@ -479,8 +462,6 @@ mod tests {
 
     #[test]
     fn parses_multi_byte_bounds_without_panicking() {
-        // Eight bytes, but the character boundaries do not line up with the
-        // year/month/day fields.
         assert!(parse_compact_date("abあcde").is_none());
         assert!(parse_compact_date("ああ").is_none());
         assert!(parse_compact_date("２０２６０１０２").is_none());
@@ -497,7 +478,6 @@ mod tests {
             "until is inclusive, so the bound is the start of the next day"
         );
 
-        // UTC+14 reaches a given local date fourteen hours before UTC does.
         let kiritimati = resolve_tz(Some("Pacific/Kiritimati"));
         let (start, _) = date_range_bounds_ms(Some("20260102"), None, &kiritimati);
         assert_eq!(start, Some(JAN_2_UTC - 14 * MILLIS_PER_HOUR));

@@ -213,8 +213,7 @@ pub fn tiered_cost(tokens: u64, base: f64, above: Option<f64>, threshold: u64) -
     tokens as f64 * base
 }
 
-/// Adds up costs starting from `+0.0`. `Iterator::sum` for `f64` starts from
-/// `-0.0`, so an empty selection would print as `$-0.00` and `-0.0` in JSON.
+/// Sums from `+0.0` so an empty total renders as `$0.00` and `0.0` in JSON.
 pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
     costs.into_iter().fold(0.0, |total, cost| total + cost)
 }
@@ -700,8 +699,6 @@ mod tests {
             Some(1)
         );
 
-        // Keep cache reads non-zero so tier selection covers the whole context
-        // rather than only freshly processed input.
         let short = TokenUsageRaw {
             input_tokens: 59,
             output_tokens: 3,
@@ -757,14 +754,8 @@ mod tests {
     #[test]
     fn cached_context_selects_the_long_context_tier() {
         crate::test_support::install_pricing_snapshots();
-        // The tier is chosen by the whole context the request carried, and on
-        // agents with aggressive prompt caching almost all of it is cache
-        // reads: a Grok turn re-reading megabytes of cached context with a few
-        // thousand fresh tokens is a long-context request. Judging by uncached
-        // input alone billed such turns at the short-context rate.
         let pricing = PricingMap::load_embedded();
 
-        // grok-4.5: base $2/$6, cache read $0.3; above 200K context $4/$12/$0.6.
         let cached_heavy = TokenUsageRaw {
             input_tokens: 10_000,
             output_tokens: 1_000,
@@ -778,10 +769,8 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
-        // 0.01M * 4 + 0.001M * 12 + 0.5M * 0.6
         assert!((cost - 0.352).abs() < 1e-9, "cached-heavy cost was {cost}");
 
-        // The same shape below the boundary stays on the base rates.
         let short = TokenUsageRaw {
             input_tokens: 10_000,
             output_tokens: 1_000,
@@ -795,7 +784,6 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
-        // 0.01M * 2 + 0.001M * 6 + 0.1M * 0.3
         assert!((cost - 0.056).abs() < 1e-9, "short-context cost was {cost}");
     }
 

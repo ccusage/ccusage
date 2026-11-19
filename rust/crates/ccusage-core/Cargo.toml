@@ -5,9 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-# NOTE(2026-11-19): Binary tests and diff-refs replays pin `utc_now` with `CCUSAGE_TEST_NOW`.
 test-clock = []
-# NOTE(2026-11-19): Resolver verification uses the selected row and step; replay binaries only need the clock.
 resolver-trace = []
 
 [dependencies]

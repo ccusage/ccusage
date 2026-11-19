@@ -30,42 +30,18 @@ const FLEX_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("flex-multiplier-overr
 const ULTRAFAST_MULTIPLIER_OVERRIDES_JSON: &str =
     include_str!("ultrafast-multiplier-overrides.json");
 
-/// The pricing snapshots the binary embeds, minified and deflated - the
-/// models.dev one alone would otherwise add a quarter megabyte of JSON - and
-/// inflated once, on first use, by the accessors below.
-///
-/// They are compiled by `ccusage-pricing-snapshots`, which only the binary
-/// depends on, and handed over through [`set_embedded_snapshots`]. Embedding
-/// them here instead would make every routine snapshot refresh recompile this
-/// crate and every adapter built on it.
+/// Compressed pricing snapshots supplied by the binary at startup.
 #[derive(Clone, Copy, Debug)]
 pub struct EmbeddedSnapshots {
     pub litellm_sources: &'static [u8],
     pub litellm_pricing: &'static [u8],
-    /// The committed models.dev pricing snapshot.
     pub models_dev_pricing: &'static [u8],
-    /// The committed models.dev catalog rules.
     pub models_dev_catalog_rules: &'static [u8],
 }
 
 static EMBEDDED_SNAPSHOTS: OnceLock<EmbeddedSnapshots> = OnceLock::new();
 
-/// Installs the embedded pricing snapshots.
-///
-/// The binary calls this at startup, before anything loads pricing; later calls
-/// are ignored. Tests install them through
-/// `ccusage_test_support::install_pricing_snapshots`.
-///
-/// # Example
-///
-/// ```ignore
-/// ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
-///     litellm_sources: ccusage_pricing_snapshots::LITELLM_SOURCES,
-///     litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
-///     models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
-///     models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
-/// });
-/// ```
+/// Installs the snapshots before the first pricing lookup. Later calls are ignored.
 pub fn set_embedded_snapshots(snapshots: EmbeddedSnapshots) {
     let _ = EMBEDDED_SNAPSHOTS.set(snapshots);
 }
@@ -76,9 +52,6 @@ fn embedded_snapshots() -> &'static EmbeddedSnapshots {
         .expect("embedded pricing snapshots must be installed with set_embedded_snapshots")
 }
 
-/// Inflate one of the embedded snapshots. Infallible by construction: the
-/// snapshot crate's build script produced the bytes from JSON it had just
-/// serialized.
 fn inflate_snapshot(cell: &'static OnceLock<String>, deflated: &[u8]) -> &'static str {
     cell.get_or_init(|| {
         let bytes = miniz_oxide::inflate::decompress_to_vec(deflated)
@@ -127,8 +100,6 @@ fn litellm_sources() -> Option<&'static LiteLlmSources> {
 const LITELLM_PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
-// Anthropic date-suffixed model aliases use YYYYMMDD, while other numeric
-// suffixes are treated as distinct model versions.
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -146,7 +117,6 @@ pub struct Pricing {
     explicit_fields: u16,
 }
 
-/// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
 pub const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,8 +253,6 @@ impl Pricing {
         })
     }
 
-    /// The cache-read rate for a request billed at `input_rate`: the published
-    /// read rate, or the existing fallback relative to that input rate.
     pub fn cache_read_rate_at(self, input_rate: f64) -> f64 {
         self.cache_read
             .unwrap_or(input_rate * self.cache_defaults.read_x)
@@ -821,55 +789,23 @@ struct ProviderSpecificEntry {
 
 #[derive(Debug, Deserialize)]
 struct ModelsDevProvider {
-    /// models.dev sets this to the catalog's directory name, which is also the
-    /// key it is filed under. The generator reads `provider.id ?? providerId`, so
-    /// prefer it here too rather than relying on the two agreeing.
     id: Option<String>,
     models: FxHashMap<String, ModelsDevModel>,
 }
 
-/// The selection rules for reading a live models.dev response, generated from
-/// the pinned catalog by `just gen-models-dev-pricing`.
-///
-/// models.dev repeats every model once per catalog that serves it, and reseller
-/// catalogs carry their own promotions, markups, and looser descriptions. The
-/// live `api.json` records neither who authored a model nor the authored
-/// modalities, so both have to be carried in from generation time; without them
-/// the online path would make different decisions than the embedded snapshot.
-///
-/// The artifact also carries the tiers each author prices itself, which the
-/// generator's own rules use; the loader has no decision left that distinguishes
-/// them, so the field is simply not read here.
+// NOTE(2026-08-15, #1541): The live models.dev API lists each model under each serving catalogue and omits authorship and authored modalities. The source catalogue supplies this information for rate selection.
 #[derive(Debug, Deserialize)]
 struct ModelsDevCatalogRules {
-    /// Catalogs of the providers that author models.
     owners: FxHashSet<String>,
-    /// Cloud platforms that resell at list price plus a published regional
-    /// premium, and the only source of platform-specific model ids.
     platforms: FxHashSet<String>,
-    /// Every model the authored catalog lists. One that is absent from
-    /// `asset_priced_model_ids` is authored as token-priced, which settles it
-    /// whatever the catalog serving it claims.
     #[serde(rename = "authoredModelIds")]
     authored_model_ids: FxHashSet<String>,
-    /// Models the authored catalog prices per asset - per second of audio, per
-    /// generated image - rather than per token.
     #[serde(rename = "assetPricedModelIds")]
     asset_priced_model_ids: FxHashSet<String>,
-    /// `authored_model_ids` normalized the way `normalizeModelId` normalizes them,
-    /// for the prefix comparison the tier check makes. Derived after parsing
-    /// rather than carried, because it is the same data spelled differently.
     #[serde(skip)]
     normalized_authored_model_ids: Vec<String>,
 }
 
-/// How strong one catalog's claim on a model id is.
-///
-/// Ordered exactly as `shouldReplaceModelsDevPricingCandidate` compares
-/// candidates at generation time - trust first, then a long-context band, then
-/// cache-read, cache-write and context-limit presence - so the online path
-/// resolves the same catalog the committed snapshot did. `derive(PartialOrd)`
-/// compares the fields in declaration order, which is that order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct ModelsDevClaim {
     trust: u8,
@@ -879,20 +815,14 @@ struct ModelsDevClaim {
     has_context_limit: bool,
 }
 
-/// The spelling and strength under which a model id was claimed this pass.
 #[derive(Debug, Clone)]
 struct ModelsDevClaimSlot {
     claim: ModelsDevClaim,
     stored_id: String,
-    /// The declared id of the catalog that claimed it, and the source key it
-    /// claimed under: generation breaks exact-strength ties by
-    /// `(sourceProviderId, sourceModelId)`, and two catalogs can declare the
-    /// same provider id.
     provider_id: String,
     source_key: String,
 }
 
-/// Trust tiers, matching the generator's.
 const MODELS_DEV_TRUST_OWNER: u8 = 3;
 const MODELS_DEV_TRUST_PLATFORM: u8 = 2;
 const MODELS_DEV_TRUST_RESELLER: u8 = 1;
@@ -908,30 +838,11 @@ impl ModelsDevCatalogRules {
         MODELS_DEV_TRUST_RESELLER
     }
 
-    /// Whether only a request naming this id exactly may use its rates, the
-    /// verdict the generator records as `exactOnly` on the embedded snapshot.
-    ///
-    /// A live models.dev response carries no such field, so the online refresh
-    /// has to reach the same verdict from the same rules or the fuzzy lookup
-    /// would resolve a premium tier for the base model it shadows.
-    ///
-    /// The tier check reads the catalog's own key, as generation does, while the
-    /// unversioned check reads the pricing key the entry resolves to, because
-    /// that is the key the fuzzy scan would offer as a candidate.
     fn is_exact_only(&self, source_model_id: &str, pricing_key: &str) -> bool {
         self.is_tier_variant_of_authored_model(source_model_id)
             || is_unversioned_models_dev_model_id(pricing_key)
     }
 
-    /// Whether an id names a separately priced tier of a model the catalog also
-    /// carries under its base id, such as `kimi-k2.6-nitro`, `glm-5.2-flex` or
-    /// `claude-opus-5-fast`, following `isTierVariantOfAuthoredModel` with its
-    /// `includeAuthorPricedModes` option: the shadowing hazard does not care who
-    /// set the rate.
-    ///
-    /// Only bare ids qualify: an id carrying a provider path is that gateway's
-    /// addressing of a model rather than a distinct tier of it, and it has to
-    /// stay fuzzy-reachable so the gateway's own tier spellings still resolve.
     fn is_tier_variant_of_authored_model(&self, source_model_id: &str) -> bool {
         if source_model_id.contains('/') {
             return false;
@@ -944,25 +855,11 @@ impl ModelsDevCatalogRules {
         })
     }
 
-    /// Whether the embedded `input` and `output` rates mean per-token rates.
-    ///
-    /// The authored catalog decides both ways where it knows the model: a
-    /// reseller describing an image model as text-only must not let a per-image
-    /// rate through, and one describing a token-priced model as image-output
-    /// must not drop a model the snapshot carries. Only models the authored
-    /// catalog never listed fall back to the serving catalog's own modalities.
-    ///
-    /// `source_model_id` is the catalog's own key for the model, the same id
-    /// `isTokenPricedModel` is given at generation time, because that is what
-    /// `assetPricedModelIds` records - not the pricing key the entry's `id`
-    /// field may resolve to.
     fn is_token_priced(
         &self,
         source_model_id: &str,
         modalities: Option<&ModelsDevModalities>,
     ) -> bool {
-        // The artifact lists are normalized, so a catalog spelling the model
-        // with different separators or case still gets the authored verdict.
         let normalized = normalized_models_dev_model_id(source_model_id);
         if self.asset_priced_model_ids.contains(normalized.as_ref()) {
             return false;
@@ -973,10 +870,6 @@ impl ModelsDevCatalogRules {
         let Some(modalities) = modalities else {
             return true;
         };
-        // An absent list says nothing about the model, so it reads as plain text
-        // rather than disqualifying the entry. An explicitly empty one is not
-        // text, which is how `isTokenPricedModel` reads it too: it defaults only
-        // a missing list to `['text']`.
         let text_only_output = match modalities.output.as_deref() {
             None => true,
             Some([single]) => single == "text",
@@ -990,10 +883,6 @@ impl ModelsDevCatalogRules {
     }
 }
 
-/// Model ids are spelled with dots, dashes or an `@` regional suffix for the
-/// same model, as `normalizeModelId` reads them. Missing `@` here left Vertex
-/// ids such as `claude-opus-5@eu` unrecognized as tiers of the model they
-/// shadow, which the snapshot marks exact-only.
 fn normalized_models_dev_model_id(model_id: &str) -> Cow<'_, str> {
     if model_id
         .bytes()
@@ -1005,11 +894,6 @@ fn normalized_models_dev_model_id(model_id: &str) -> Cow<'_, str> {
     }
 }
 
-/// Whether an id names no particular model, as `isUnversionedModelId` reads it.
-///
-/// A model id nearly always carries a version, so an id with no digit at all is
-/// a family or a routing label - models.dev publishes one called `auto` - and it
-/// is short enough to be a substring of ids it has nothing to do with.
 fn is_unversioned_models_dev_model_id(model_id: &str) -> bool {
     !model_id.bytes().any(|byte| byte.is_ascii_digit())
 }
@@ -1042,8 +926,6 @@ struct ModelsDevModel {
     cost: Option<ModelsDevCost>,
     limit: Option<ModelsDevLimit>,
     modalities: Option<ModelsDevModalities>,
-    /// Set by the snapshot generator on separately priced tiers, which are only
-    /// the right rate for a request that names them.
     #[serde(rename = "exactOnly")]
     exact_only: Option<bool>,
 }
@@ -1060,8 +942,6 @@ struct ModelsDevCost {
     output: Option<f64>,
     cache_read: Option<f64>,
     cache_write: Option<f64>,
-    /// Above-base rate bands. The embedded snapshot keeps the upstream shape, so
-    /// this reads a live `api.json` response and the snapshot alike.
     tiers: Option<Vec<ModelsDevCostTier>>,
 }
 
@@ -1082,13 +962,6 @@ struct ModelsDevTierBound {
 }
 
 impl ModelsDevCost {
-    /// The band a request crosses first, in per-token rates.
-    ///
-    /// `Pricing` holds one above-base band, so the lowest context threshold wins:
-    /// a handful of models publish a second, higher one, and dropping the lower
-    /// would price everything between the two thresholds at the base rate.
-    /// Bands keyed by anything but context are skipped, because the runtime
-    /// compares the threshold against an input-token count.
     fn long_context_tier(&self) -> Option<ModelsDevLongContextRates> {
         self.tiers
             .as_deref()?
@@ -1111,7 +984,7 @@ impl ModelsDevCost {
     }
 }
 
-/// models.dev publishes rates per million tokens; everything else here is per token.
+// NOTE(2026-08-15, #1541): models.dev publishes prices per million tokens at https://models.dev/api.json. The resolver requires per-token rates.
 fn per_token(per_million: f64) -> f64 {
     per_million / 1_000_000.0
 }
@@ -1201,15 +1074,12 @@ impl SpeedMultiplierOverrides {
         if let Some(multiplier) = self.exact.get(model) {
             return Some(*multiplier);
         }
-        // A default family alias bills at the variant it points to, so it
-        // shares that variant's service-tier multiplier.
         if let Some(multiplier) = pricing_alias(model).and_then(|alias| self.exact.get(alias)) {
             return Some(*multiplier);
         }
         model
             .split(['/', ':'])
             .flat_map(|part| {
-                // Keep decimal model versions intact while trying dotted provider suffixes.
                 std::iter::once(part)
                     .chain(part.match_indices('.').map(|(index, _)| &part[index + 1..]))
             })
@@ -1234,8 +1104,6 @@ impl SpeedMultiplierOverrides {
     }
 }
 
-/// Every agent of a combined report prices its own rows, so the tables are
-/// parsed, and in online mode fetched, once per process rather than per agent.
 fn base_pricing(offline: bool) -> &'static OnceLock<PricingMap> {
     static ONLINE: OnceLock<PricingMap> = OnceLock::new();
     static OFFLINE: OnceLock<PricingMap> = OnceLock::new();
@@ -1296,11 +1164,8 @@ impl PricingMap {
         map
     }
 
-    /// Returns an independent pricing map with additional user overrides.
-    ///
-    /// This lets callers share one fetched or embedded base between reports
-    /// while keeping each report's override cache separate.
-    /// The base map must not already contain user overrides.
+    /// Shares the base prices with a report that supplies its own user overrides.
+    /// Start from a base map without user overrides.
     pub fn with_user_overrides<'a, I>(&self, overrides: I) -> Self
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
@@ -1431,9 +1296,6 @@ impl PricingMap {
             ModelsDevJson::Providers(providers) => {
                 let rules = models_dev_catalog_rules();
                 let mut ranked: Vec<_> = providers.into_iter().collect();
-                // The most trustworthy catalog has to be loaded first, because it
-                // claims the model id. Sorting by id within a tier keeps the
-                // result from depending on hash iteration order.
                 let provider_id = |key: &String, provider: &ModelsDevProvider| {
                     provider.id.clone().unwrap_or_else(|| key.clone())
                 };
@@ -1444,22 +1306,14 @@ impl PricingMap {
                         .rank(&right_id)
                         .cmp(&rules.rank(&left_id))
                         .then_with(|| left_id.cmp(&right_id))
-                        // Two catalogs can declare the same id; the map key is
-                        // unique, so it settles the order the way generation's
-                        // provider-key walk does.
                         .then_with(|| left_key.cmp(right_key))
                 });
-                // Within one tier the generator prefers the entry carrying more
-                // pricing detail, so track what claimed each id to make the same
-                // choice here rather than keeping whichever came first.
                 let mut claims: FxHashMap<String, ModelsDevClaimSlot> = FxHashMap::default();
                 ranked
                     .into_iter()
                     .map(|(provider_key, provider)| {
                         let provider_id = provider.id.unwrap_or(provider_key);
                         let trust = rules.rank(&provider_id);
-                        // A live catalog is the raw upstream shape, so none of
-                        // generation's verdicts are recorded in it.
                         self.load_models_dev_models(
                             provider.models,
                             &provider_id,
@@ -1472,24 +1326,11 @@ impl PricingMap {
             }
             ModelsDevJson::Models(models) => {
                 let mut claims = FxHashMap::default();
-                // A flat map is the generated snapshot, which carries its
-                // verdicts as fields rather than leaving them to be rederived.
-                // The flat snapshot has one implicit source, so any constant id
-                // works: ties inside it are settled by the source keys.
                 self.load_models_dev_models(models, "", MODELS_DEV_TRUST_OWNER, false, &mut claims)
             }
         })
     }
 
-    /// Load the entries of one provider catalog.
-    ///
-    /// `claims` records the claim strength of whichever catalog supplied each
-    /// model id so far in this pass, so a better candidate can replace a weaker
-    /// one. Ids absent from it belong to another pricing source and are left
-    /// alone.
-    ///
-    /// `derive_exact_only` recomputes the generator's `exactOnly` verdict for
-    /// payloads that do not carry it, which is every live models.dev response.
     fn load_models_dev_models(
         &mut self,
         models: FxHashMap<String, ModelsDevModel>,
@@ -1501,40 +1342,22 @@ impl PricingMap {
         let speed = SpeedMultipliers::get();
         let rules = models_dev_catalog_rules();
         let mut loaded_count = 0;
-        // Two source keys in one catalog can resolve to the same model id, and the
-        // generator walks each catalog in key order, so match that instead of
-        // depending on hash iteration order.
         let mut sources: Vec<_> = models.into_iter().collect();
         sources.sort_by(|(left, _), (right, _)| left.cmp(right));
         for (model_key, model) in sources {
-            // Asked of the catalog's source key rather than the pricing key it
-            // resolves to, because generation asks that way: an authored
-            // asset-priced model served under a different `id` would otherwise
-            // slip past and bill per-image or per-second rates as per-token ones.
-            // It is generation's only remaining gate, so the online refresh
-            // carries the same ids the snapshot does.
             let Some(cost) = models_dev_usable_cost(rules, &model_key, &model) else {
                 continue;
             };
-            // Same reason: the tier half of the verdict reads the source key,
-            // before it is resolved away.
             let declared_id = model.id.as_deref().filter(|id| !id.is_empty());
             let exact_only = model.exact_only.unwrap_or_else(|| {
                 derive_exact_only
                     && rules.is_exact_only(&model_key, declared_id.unwrap_or(&model_key))
             });
             let source_key = model_key;
-            // An empty declared id falls back to the source key, exactly as the
-            // generator's `selectModelsDevPricingKey` does: keeping "" would
-            // store the model under a name no lookup ever asks for.
             let model_id = match model.id.as_ref().filter(|id| !id.is_empty()) {
                 Some(id) => id.clone(),
                 None => source_key.clone(),
             };
-            // Dotted, dashed and case spellings name one model, so they contend
-            // for one slot; kept apart, the fuzzy lookup ties between a tiered
-            // spelling and a reseller's flat one and can pick either. Normalized
-            // exactly as the generator normalizes, case folding included.
             let normalized_id = normalized_models_dev_model_id(&model_id).into_owned();
             let claimed = claims.get(&normalized_id).cloned();
             if claimed.is_none() && self.rows.entries.contains_key(&model_id) {
@@ -1556,11 +1379,6 @@ impl PricingMap {
                 has_context_limit: context_limit.is_some(),
             };
             let replaces_equal_claim = |previous: &ModelsDevClaimSlot| {
-                // Generation compares equal-strength candidates by
-                // `(sourceProviderId, sourceModelId)`, smaller first. Providers
-                // load here in ascending declared-id order, so a differing
-                // declared id is already settled by arrival; only a collision
-                // falls through to the source keys.
                 previous.claim == claim
                     && previous.provider_id == provider_id
                     && source_key < previous.source_key
@@ -1570,9 +1388,6 @@ impl PricingMap {
             }) {
                 continue;
             }
-            // A replacement under a different spelling supersedes the losing
-            // spelling's entry entirely, or both would stay findable and the
-            // fuzzy tie would return.
             if let Some(previous) = claimed
                 .as_ref()
                 .filter(|previous| previous.stored_id != model_id)
@@ -1616,8 +1431,6 @@ impl PricingMap {
                     schedule: None,
                 },
             );
-            // Replacing a weaker claim is not a new model, so it must not count
-            // twice: the count is how many models the payload resolved.
             if claims
                 .insert(
                     normalized_id,
@@ -2019,16 +1832,6 @@ impl PricingMap {
         self.override_shadows.take();
     }
 
-    /// Fills in long-context tier rates for models whose upstream pricing
-    /// entries only carry the flat rates, from the embedded models.dev
-    /// snapshot's `cost.tiers`. LiteLLM publishes no long-context rates for
-    /// OpenAI or xAI at all, so without this every request above the boundary
-    /// is billed at the base rate.
-    ///
-    /// Entries that already carry any tier rate are left untouched so upstream
-    /// data wins once it exists. The check is deliberately all-or-nothing
-    /// rather than per field: each source's rates assume that source's own
-    /// boundary, so mixing fields across sources would price both tiers wrong.
     fn fill_long_context_rates_from_models_dev(&mut self, tiers: &Self) {
         for row in &mut self.rows_mut().entries.rows {
             let model = &row.key;
@@ -2198,7 +2001,6 @@ fn last_segment(key: &str) -> &str {
     key.rsplit_once('/').map_or(key, |(_, segment)| segment)
 }
 
-/// Matches pricing keys across provider/model aliases while preserving version boundaries.
 fn pricing_key_matches(
     candidate: &str,
     normalized_candidate: &str,
@@ -2212,7 +2014,6 @@ fn pricing_key_matches(
         || contains_pricing_key(normalized_candidate, normalized_model)
 }
 
-/// Finds a key only when the surrounding bytes are non-alphanumeric boundaries.
 fn contains_pricing_key(value: &str, key: &str) -> bool {
     value.match_indices(key).any(|(index, _)| {
         let before = index
@@ -2224,7 +2025,6 @@ fn contains_pricing_key(value: &str, key: &str) -> bool {
     })
 }
 
-/// Treats punctuation separators as boundaries, but not adjacent version digits.
 fn is_pricing_key_boundary(byte: u8) -> bool {
     !byte.is_ascii_alphanumeric()
 }
@@ -2270,7 +2070,6 @@ fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> String {
         .collect()
 }
 
-/// Normalizes known model separator variants without allocating for canonical keys.
 fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     if value.bytes().any(is_pricing_key_separator) {
         Cow::Owned(dash_pricing_key_separators(value.chars()))
@@ -2288,11 +2087,8 @@ struct ModelsDevLongContextRates {
     cache_read: Option<f64>,
 }
 
-/// Strips a trailing release-date suffix (`-YYYY-MM-DD` or `-YYYYMMDD`) so
-/// date-pinned pricing keys share their base model's long-context rates.
 fn model_without_date_suffix(model: &str) -> &str {
     let bytes = model.as_bytes();
-    // -YYYY-MM-DD (OpenAI style, e.g. gpt-5.5-2026-04-23)
     if model.len() > 11 {
         let suffix = &bytes[model.len() - 11..];
         if suffix[0] == b'-'
@@ -2305,7 +2101,6 @@ fn model_without_date_suffix(model: &str) -> &str {
             return &model[..model.len() - 11];
         }
     }
-    // -YYYYMMDD (Anthropic style, e.g. claude-3-5-haiku-20241022)
     if model.len() > 9 {
         let suffix = &bytes[model.len() - 9..];
         if suffix[0] == b'-' && suffix[1..].iter().all(u8::is_ascii_digit) {
@@ -2315,7 +2110,6 @@ fn model_without_date_suffix(model: &str) -> &str {
     model
 }
 
-/// Maps model aliases to canonical pricing keys before fuzzy matching.
 fn pricing_alias(model: &str) -> Option<&'static str> {
     let fold = |byte| {
         if is_pricing_key_separator(byte) {
@@ -2331,8 +2125,6 @@ fn pricing_alias(model: &str) -> Option<&'static str> {
 }
 
 fn matches_model_suffix(part: &str, base: &str) -> bool {
-    // Model ids are a few dozen bytes, so scanning windows beats building a
-    // substring searcher for each of the thousands of startup lookups.
     let (part, base) = (part.as_bytes(), base.as_bytes());
     if base.is_empty() {
         return true;
@@ -2364,10 +2156,6 @@ where
         .as_ref()
 }
 
-/// Pricing built from the models.dev snapshot embedded at build time. Unlike the
-/// network source this is always available, so it lets offline runs price models
-/// that LiteLLM and the built-in table do not cover (for example newly released
-/// Anthropic models).
 fn embedded_models_dev_pricing() -> &'static PricingMap {
     static EMBEDDED_MODELS_DEV_PRICING: OnceLock<PricingMap> = OnceLock::new();
     EMBEDDED_MODELS_DEV_PRICING.get_or_init(|| {
@@ -2421,12 +2209,7 @@ pub type JsonFetcher = fn(&str, &mut dyn FnMut(&str) -> bool) -> std::io::Result
 
 static JSON_FETCHER: OnceLock<JsonFetcher> = OnceLock::new();
 
-/// Installs the HTTP client used to refresh pricing.
-///
-/// The client lives with the binary rather than here so that its TLS stack is not
-/// a dependency of the crate every adapter builds against. Without one installed,
-/// a refresh reports that it is unavailable and the embedded snapshots are used,
-/// which is what `--offline` already does.
+/// Installs the HTTP client used to refresh pricing. Without it, only the embedded snapshots are available.
 pub fn set_json_fetcher(fetcher: JsonFetcher) {
     let _ = JSON_FETCHER.set(fetcher);
 }
@@ -4494,15 +4277,11 @@ mod tests {
     #[test]
     fn offline_prices_models_outside_the_claude_and_moonshot_families() {
         crate::test_support::install_pricing_snapshots();
-        // The snapshot used to be filtered by a model-name pattern, so families
-        // nobody had added to it were unpriced offline even when models.dev
-        // published them and LiteLLM did not.
         let pricing = PricingMap::load_embedded();
         let grok_build = pricing
             .find("grok-build-0.1")
             .expect("embedded models.dev should include xAI pricing");
 
-        // Compared per million tokens, which is how models.dev publishes rates.
         assert!((grok_build.input * 1e6 - 1.0).abs() < 1e-9);
         assert!((grok_build.output * 1e6 - 2.0).abs() < 1e-9);
         assert_eq!(pricing.context_limit("grok-build-0.1"), Some(256_000));
@@ -4511,9 +4290,6 @@ mod tests {
     #[test]
     fn embedded_models_dev_omits_models_priced_per_asset() {
         crate::test_support::install_pricing_snapshots();
-        // These rates are per second of audio and per generated image. The
-        // runtime divides by a million and multiplies by token counts, so
-        // embedding them reports a wrong cost rather than no cost.
         let embedded = embedded_models_dev_pricing();
 
         for model in [
@@ -4529,8 +4305,6 @@ mod tests {
                 "{model} prices assets rather than text tokens and must stay out of the snapshot"
             );
         }
-        // The guard keys on modalities, not on the name, so text models that
-        // merely accept audio or video input have to survive it.
         assert!(
             embedded
                 .resolve_at(None, &[("kimi-k3", MatchKind::Exact)], None)
@@ -4548,13 +4322,9 @@ mod tests {
     #[test]
     fn embedded_models_dev_prices_resold_models_from_their_author() {
         crate::test_support::install_pricing_snapshots();
-        // models.dev lists kimi-k2.7-code once per catalog that serves it, and
-        // reseller catalogs publish their own promotional rates. Selecting one of
-        // those would undercharge every Kimi report.
         let pricing = PricingMap::load_embedded();
         let kimi_k27_code = pricing.find("kimi-k2.7-code").unwrap();
 
-        // MoonshotAI's list rate. Reseller catalogs publish 0.73 and 0.75.
         assert!((kimi_k27_code.input * 1e6 - 0.95).abs() < 1e-9);
         assert!((kimi_k27_code.output * 1e6 - 4.0).abs() < 1e-9);
     }
@@ -4562,10 +4332,6 @@ mod tests {
     #[test]
     fn exact_only_fallback_beats_a_fuzzy_primary_match() {
         crate::test_support::install_pricing_snapshots();
-        // The snapshot lives in its own map, consulted only after the primary
-        // one misses, so marking `claude-opus-5-fast` exact-only there is not
-        // enough on its own: a primary or live fuzzy scan could answer with the
-        // base `claude-opus-5` entry and bill the tier at list price.
         let (primary, models_dev, embedded_models_dev) = exact_only_fast_fallback_fixture();
         let pricing = layered(&primary, Some(&embedded_models_dev));
 
@@ -4585,9 +4351,6 @@ mod tests {
     #[test]
     fn live_exact_only_fallback_beats_a_fuzzy_primary_match() {
         crate::test_support::install_pricing_snapshots();
-        // The live catalog can add a separately priced tier before the
-        // embedded snapshot is regenerated. Its exact-only verdict must gate
-        // the primary map's fuzzy scan or that scan bills the base model.
         let mut primary = PricingMap::default();
         assert_eq!(
             primary.load_json(
@@ -4685,19 +4448,12 @@ mod tests {
             embedded.context_limit("claude-opus-5-fast")
         );
 
-        // Gating keys the snapshot carries must not cost keys nothing prices
-        // exactly their fuzzy match.
         assert!(pricing.find("claude-opus-5-20260115").is_some());
     }
 
     #[test]
     fn a_separator_spelling_of_an_exact_only_id_is_priced_as_that_id() {
         crate::test_support::install_pricing_snapshots();
-        // `pricing_key_matches` reads `@`, `.` and `-` as one separator, so
-        // `claude-opus-5-eu` fuzzy-matches LiteLLM's base `claude-opus-5` exactly
-        // as `claude-opus-5@eu` would. Gating only the spelling the catalog wrote
-        // would bill the regional premium at list price, and gating the spelling
-        // without answering from the id it names would lose the rate entirely.
         let pricing = PricingMap::load_embedded();
 
         let base = pricing.find("claude-opus-5").unwrap();
@@ -4713,19 +4469,12 @@ mod tests {
             pricing.context_limit("claude-opus-5@eu")
         );
 
-        // Only a spelling of the whole id is that id: a longer name that merely
-        // contains it keeps the fuzzy match it has always had.
         assert!(pricing.find("claude-opus-5-eu-preview").is_some());
     }
 
     #[test]
     fn a_dotted_spelling_of_a_dash_spelled_exact_only_id_is_priced_as_that_id() {
         crate::test_support::install_pricing_snapshots();
-        // The catalog writes most exact-only ids with dashes alone, and those
-        // have to be indexed under their normalized spelling too: a request for
-        // `claude-opus-5.fast` normalizes to the id the snapshot carries, so
-        // leaving it out of the index lets a primary or live fuzzy scan answer
-        // with the base `claude-opus-5` entry and bill the tier at list price.
         let (primary, models_dev, embedded_models_dev) = exact_only_fast_fallback_fixture();
         let pricing = layered(&primary, Some(&embedded_models_dev));
 
@@ -4897,10 +4646,6 @@ mod tests {
     #[test]
     fn configured_alias_of_an_exact_only_tier_beats_a_fuzzy_match_on_the_alias() {
         crate::test_support::install_pricing_snapshots();
-        // The alias target is only tried after this map has answered for the
-        // recorded spelling, and that spelling can fuzzy-match a different model
-        // in the primary or live source - here the base `claude-opus-5` - which
-        // would bill the tier at list price and never reach what the alias names.
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
             "claude-opus-5-turbo",
             "claude-opus-5-fast",
@@ -4943,8 +4688,6 @@ mod tests {
     #[test]
     fn offline_prices_kimi_k3_from_embedded_models_dev() {
         crate::test_support::install_pricing_snapshots();
-        // LiteLLM may lag new Moonshot releases; offline pricing should still
-        // resolve from the embedded models.dev snapshot (see #1462).
         let pricing = PricingMap::load_embedded();
         let kimi_k3 = pricing.find("moonshot/kimi-k3").unwrap_or_else(|| {
             pricing
@@ -5016,9 +4759,6 @@ mod tests {
     #[test]
     fn glm_cache_patch_keeps_an_explicitly_published_cache_write_rate() {
         crate::test_support::install_pricing_snapshots();
-        // A published cache-write rate survives the z.ai patch even when it
-        // happens to equal the derived `input * 1.25` default: explicitness is
-        // tracked, not inferred from the value.
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -5404,11 +5144,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_prefers_the_authoring_catalog_over_resellers() {
         crate::test_support::install_pricing_snapshots();
-        // The same model id appears in every catalog that serves it, and the
-        // first one loaded keeps it. Reseller rates are their own, so loading a
-        // reseller before the author would bill at a promotional price.
-        // `302ai` sorts before `moonshotai`, so an id-only ordering would pick a
-        // reseller here.
         let json = r#"{
                 "302ai": {
                     "models": {
@@ -5434,8 +5169,6 @@ mod tests {
             }"#;
         let mut pricing = PricingMap::default();
 
-        // One entry loaded, not three: the reseller duplicates are skipped
-        // because the authoring catalog claimed the id first.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let kimi = pricing
             .resolve_at(None, &[("kimi-k2.7-code", MatchKind::Exact)], None)
@@ -5448,10 +5181,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_skips_models_priced_per_asset() {
         crate::test_support::install_pricing_snapshots();
-        // The embedded snapshot excludes these, so the online refresh has to as
-        // well or `--offline` and the default path disagree. The authored
-        // catalog's verdict is carried in, so a reseller calling an image model
-        // text-only cannot reintroduce it.
         let json = r#"{
                 "302ai": {
                     "models": {
@@ -5480,8 +5209,6 @@ mod tests {
             }"#;
         let mut pricing = PricingMap::default();
 
-        // Only kimi-k3 loads: audio-only input is rejected from the payload
-        // itself, and the image model is rejected by the authored catalog.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         assert!(
             pricing
@@ -5510,9 +5237,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_keys_asset_pricing_on_the_source_model_id() {
         crate::test_support::install_pricing_snapshots();
-        // `assetPricedModelIds` records the authored source ids generation
-        // matches on, so a catalog serving one under a different `id` must be
-        // rejected on its key, not on the pricing key that key resolves to.
         let json = r#"{
                 "google": {
                     "models": {
@@ -5542,9 +5266,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_rejects_explicitly_empty_modalities() {
         crate::test_support::install_pricing_snapshots();
-        // `isTokenPricedModel` defaults only a *missing* list to `['text']`, so an
-        // empty one has to fail here too or the snapshot and the online refresh
-        // disagree about the same payload.
         let json = r#"{
                 "moonshotai": {
                     "models": {
@@ -5588,10 +5309,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_carries_the_reseller_ids_generation_carries() {
         crate::test_support::install_pricing_snapshots();
-        // Generation prunes no ids any more: every id a catalog publishes is
-        // embedded, and the fuzzy lookup is gated instead. Pruning here would
-        // price a smaller set of ids online than `--offline` carries, and leave
-        // the two maps offering different candidates to the same fuzzy lookup.
         let json = r#"{
                 "fireworks-ai": {
                     "models": {
@@ -5640,8 +5357,6 @@ mod tests {
                 .map(|(_, rates)| rates)
                 .is_some()
         );
-        // Carried, but a tier is the right rate only for a request naming it,
-        // even one the author prices itself.
         assert!(
             pricing
                 .rows
@@ -5661,11 +5376,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_prefers_the_more_detailed_entry_within_a_tier() {
         crate::test_support::install_pricing_snapshots();
-        // Generation breaks same-tier ties by how much pricing detail an entry
-        // carries, so the online path has to as well or the two disagree.
-        // `kimi-k2.6-nitro` is a separately priced tier of a carried model, so it
-        // is one of the ids resellers alone may supply. The ordering tests below
-        // use it for that reason.
         let json = r#"{
                 "302ai": {
                     "models": {
@@ -5685,7 +5395,6 @@ mod tests {
             }"#;
         let mut pricing = PricingMap::default();
 
-        // One model, counted once even though the second entry replaced the first.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing
             .resolve_at(None, &[("kimi-k2.6-nitro", MatchKind::Exact)], None)
@@ -5706,10 +5415,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_keeps_authored_token_models_a_catalog_mislabels() {
         crate::test_support::install_pricing_snapshots();
-        // A catalog serving claude-opus-5 as image-output would drop a model the
-        // snapshot carries. The authored classification settles it both ways, so
-        // only models the authored catalog never listed fall back to the live
-        // modalities.
         let json = r#"{
                 "302ai": {
                     "models": {
@@ -5734,9 +5439,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_ranks_by_the_catalog_s_own_provider_id() {
         crate::test_support::install_pricing_snapshots();
-        // The generator reads `provider.id ?? providerId`, so a catalog filed
-        // under a different key than its id must still rank as its id - here the
-        // authoring catalog, which has to win over the reseller.
         let json = r#"{
                 "aaa-filed-under-another-key": {
                     "id": "moonshotai",
@@ -5767,9 +5469,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_orders_detail_the_way_generation_does() {
         crate::test_support::install_pricing_snapshots();
-        // Generation compares cache-read, then cache-write, then context limit, so
-        // a cache-read-only entry outranks one carrying the other two. Counting
-        // fields instead would pick the other catalog online.
         let json = r#"{
                 "302ai": {
                     "models": {
@@ -5801,8 +5500,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_drops_the_context_limit_of_a_replaced_catalog() {
         crate::test_support::install_pricing_snapshots();
-        // The winning catalog publishes no limit, so keeping the loser's would
-        // report a context window the selected rates do not belong to.
         let json = r#"{
                 "302ai": {
                     "models": {
@@ -5841,9 +5538,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_resolves_duplicate_ids_inside_one_catalog_stably() {
         crate::test_support::install_pricing_snapshots();
-        // Two source keys can carry the same `id`. Generation walks a catalog in
-        // key order and keeps the first of an equal-strength tie, so the lower key
-        // has to win here too rather than whichever the hash map yields first.
         let json = r#"{
                 "moonshotai": {
                     "models": {
@@ -5871,10 +5565,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_merges_spelling_duplicates_onto_one_entry() {
         crate::test_support::install_pricing_snapshots();
-        // The dotted and dashed spellings name one model. Kept apart, the fuzzy
-        // lookup ties between them by length and can return whichever, so the
-        // flat reseller spelling must lose its slot to the tiered owner one
-        // entirely - entry included, not just the claim.
         let json = r#"{
                 "llmgateway": {
                     "models": {
@@ -5916,8 +5606,6 @@ mod tests {
             entry.long_context.map(|context| context.threshold),
             Some(200_000)
         );
-        // The dashed spelling still resolves - through the fuzzy lookup - and
-        // lands on the tiered entry rather than a flat duplicate.
         let via_dash = pricing.find("grok-9-5").unwrap();
         assert_eq!(
             via_dash.long_context.map(|context| context.threshold),
@@ -5928,9 +5616,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_prefers_a_tiered_catalog_within_a_trust_tier() {
         crate::test_support::install_pricing_snapshots();
-        // Within one trust tier, the catalog publishing a long-context band
-        // outranks one with more cache detail: the band is the rate data
-        // hardest to come by.
         let json = r#"{
                 "llmgateway": {
                     "models": {
@@ -5974,9 +5659,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_stores_a_model_with_an_empty_declared_id_by_its_key() {
         crate::test_support::install_pricing_snapshots();
-        // A live catalog can declare `id` as an empty string. The generator's
-        // `selectModelsDevPricingKey` falls back to the source key; keeping ""
-        // would store the model under a name no lookup ever asks for.
         let json = r#"{
                 "moonshotai": {
                     "models": {
@@ -6007,9 +5689,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_orders_same_id_catalogs_by_their_map_key() {
         crate::test_support::install_pricing_snapshots();
-        // Two catalogs can declare the same provider id. The declared id ties,
-        // so the unique map key settles the order - the same order generation's
-        // provider-key walk uses - instead of hash iteration.
         let json = r#"{
                 "zzz-alias": {
                     "id": "some-gateway",
@@ -6045,10 +5724,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_breaks_exact_ties_by_source_key_across_same_id_catalogs() {
         crate::test_support::install_pricing_snapshots();
-        // Two catalogs declaring the same provider id are one provider to
-        // generation, which breaks exact-strength ties by the source model key.
-        // The smaller source key lives in the catalog with the LARGER map key
-        // here, so keeping whichever arrived first would pick the other rate.
         let json = r#"{
                 "aaa-key": {
                     "id": "some-gateway",
@@ -6086,10 +5761,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_skips_flat_fee_catalogs() {
         crate::test_support::install_pricing_snapshots();
-        // `kimi-for-coding` is a subscription plan, so it publishes zero token
-        // costs. Loading it would make the model free for everyone. The rule is
-        // about the rates rather than about who publishes them, so an authoring
-        // catalog listing a zero-cost entry has to be skipped as well.
         let json = r#"{
                 "kimi-for-coding": {
                     "models": {
@@ -6126,10 +5797,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_keeps_a_tier_out_of_the_fuzzy_lookup() {
         crate::test_support::install_pricing_snapshots();
-        // `exactOnly` is a field the generator writes, and a live catalog has no
-        // such field, so the verdict has to be rederived here. Otherwise the
-        // premium tier stays a fuzzy candidate and wins the base model's lookup,
-        // which prefers the longest matching key.
         let json = r#"{
                 "moonshotai": {
                     "models": {
@@ -6154,9 +5821,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_marks_a_regional_alias_of_a_model_exact_only() {
         crate::test_support::install_pricing_snapshots();
-        // Vertex spells its regional entries with `@`, which the tier check has
-        // to fold the way `normalizeModelId` does or `claude-opus-5@eu` stays a
-        // fuzzy candidate online while the snapshot marks it exact-only.
         let json = r#"{
                 "google-vertex-anthropic": {
                     "models": {
@@ -6181,8 +5845,6 @@ mod tests {
     #[test]
     fn live_models_dev_pricing_keeps_an_unversioned_id_out_of_the_fuzzy_lookup() {
         crate::test_support::install_pricing_snapshots();
-        // `auto` names no particular model, so as a fuzzy candidate it answered
-        // `codex-auto-review`, a label the Codex adapter resolves by date.
         let json = r#"{
                 "moonshotai": {
                     "models": {
@@ -6421,9 +6083,6 @@ mod tests {
         litellm_snapshot.load_json(build_time_pricing_json());
         let models_dev_snapshot = embedded_models_dev_pricing();
 
-        // The updater owns the numeric rates, so this regression fence checks
-        // that the merged map preserves its generated sources without freezing
-        // prices or requiring every optional rate bucket to exist.
         for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
             let entry = pricing.find(model).unwrap();
             let litellm_source = litellm_snapshot
@@ -6713,7 +6372,6 @@ mod tests {
             Some(272_000)
         );
 
-        // Models the pricing page lists without a long-context tier stay flat.
         let mini = pricing.find("gpt-5.4-mini").unwrap();
         assert_eq!(
             mini.long_context.and_then(|context| context.rates.input),
@@ -6726,8 +6384,6 @@ mod tests {
     fn long_context_overlay_survives_litellm_refresh_and_defers_to_upstream() {
         crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::load_embedded();
-        // A live LiteLLM refresh replaces whole entries with flat rates and
-        // may add date-pinned keys.
         pricing.load_json(
             r#"{
                 "gpt-5.5": {
@@ -6752,7 +6408,6 @@ mod tests {
             gpt_55.long_context.map(|context| context.threshold),
             Some(272_000)
         );
-        // Date-pinned keys share the base model's long-context rates.
         let dated = pricing
             .resolve_at(None, &[("gpt-5.5-2026-04-23", MatchKind::Exact)], None)
             .map(|(_, rates)| rates)
@@ -6762,7 +6417,6 @@ mod tests {
             Some(10e-6)
         );
 
-        // Tier rates published upstream win over the built-in overlay.
         pricing.load_json(
             r#"{
                 "gpt-5.5": {
@@ -6789,10 +6443,6 @@ mod tests {
     #[test]
     fn embedded_models_dev_carries_grok_long_context_tiers() {
         crate::test_support::install_pricing_snapshots();
-        // xAI bills grok-4.5 and grok-4.6 at double rates above 200K input
-        // tokens. LiteLLM's embed does not carry xai keys at all, so these come
-        // from the models.dev snapshot's `cost.tiers` - without them every
-        // long-context Grok request is billed at the base rate (#1541).
         let pricing = PricingMap::load_embedded();
 
         for model in ["grok-4.5", "grok-4.6"] {
@@ -6838,7 +6488,6 @@ mod tests {
     #[test]
     fn long_context_split_threshold_is_per_model() {
         crate::test_support::install_pricing_snapshots();
-        // OpenAI two-stage models switch tiers above 272K input tokens.
         assert_eq!(
             PricingMap::load_embedded()
                 .find("gpt-5.6-sol")
@@ -6860,7 +6509,6 @@ mod tests {
                 .long_context_split_threshold(),
             272_000
         );
-        // Date-pinned keys share their base model's boundary.
         assert_eq!(
             PricingMap::load_embedded()
                 .find("gpt-5.5-2026-04-23")
@@ -6868,8 +6516,6 @@ mod tests {
                 .long_context_split_threshold(),
             272_000
         );
-        // Models without a built-in tier fall back to the 200K default used for
-        // LiteLLM `*_above_200k_tokens` data.
         assert_eq!(
             PricingMap::load_embedded()
                 .find("gpt-5")
@@ -7132,8 +6778,6 @@ mod tests {
             ("private-sol", "gpt-6.1-sol"),
             ("gpt-6.1-terra", "gpt-6.1-sol"),
         ]);
-        // Whether the embedded LiteLLM snapshot has an exact Terra entry depends
-        // on the build environment, so the test supplies both entries itself.
         let mut pricing = PricingMap::default();
         let json = serde_json::json!({
             "gpt-6.1-sol": {
@@ -7152,7 +6796,6 @@ mod tests {
         assert_eq!(private_sol.ultrafast_multiplier, 6.0);
         assert_eq!(private_sol.input, 2e-6);
 
-        // An exact Terra entry wins over the alias, so its rates and multiplier stay Terra's.
         let terra = pricing.find("gpt-6.1-terra").unwrap();
         assert_eq!(terra.ultrafast_multiplier, 1.0);
         assert_eq!(terra.input, 1e-6);
@@ -7171,7 +6814,6 @@ mod tests {
         };
         let sol = PricingMap::load_embedded().find("gpt-6.1-sol").unwrap();
 
-        // Each map holds one override, so no other override creates an exact entry to inherit from.
         for model in ["gpt-6.1-sol-2026-09-24", "private-dated-sol", "private-sol"] {
             let key = model.to_string();
             let pricing = PricingMap::load_with_overrides(true, false, [(&key, &override_value)]);
@@ -8468,7 +8110,6 @@ mod tests {
                 },
             );
 
-            // Override input to 2e-6 (2/3 of original), don't touch cache
             let overrides = build_overrides("claude-model", |o| {
                 o.input_cost_per_token = Some(2e-6);
             });
@@ -8476,7 +8117,7 @@ mod tests {
 
             let entry = pricing.find("claude-model").unwrap();
             assert_eq!(entry.input, 2e-6);
-            assert_eq!(entry.output, 15e-6); // unchanged
+            assert_eq!(entry.output, 15e-6);
             assert_eq!(entry.cache_create, None);
             assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
             assert_eq!(entry.cache_read, None);
@@ -8498,7 +8139,6 @@ mod tests {
         #[test]
         fn input_override_does_not_scale_zero_cache() {
             let mut pricing = PricingMap::default();
-            // Base has zero cache values
             pricing.insert_test_pricing(
                 "no-cache-model".to_string(),
                 Pricing {
@@ -8532,16 +8172,15 @@ mod tests {
                 },
             );
 
-            // User overrides both input AND cache_read explicitly
             let overrides = build_overrides("model", |o| {
                 o.input_cost_per_token = Some(2e-6);
-                o.cache_read_input_token_cost = Some(5e-7); // explicit, not scaled
+                o.cache_read_input_token_cost = Some(5e-7);
             });
             pricing.apply_overrides(overrides.iter());
 
             let entry = pricing.find("model").unwrap();
             assert_eq!(entry.input, 2e-6);
-            assert_eq!(entry.cache_read, Some(5e-7)); // explicit value, not 2e-7
+            assert_eq!(entry.cache_read, Some(5e-7));
             assert_eq!(entry.cache_create, None);
             assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
         }

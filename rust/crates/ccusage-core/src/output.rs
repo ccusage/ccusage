@@ -49,9 +49,6 @@ impl Totals {
     }
 }
 
-/// Model names with at least one usage entry that had no price. A model can
-/// still show positive cost when other entries carried stored costs. Sorted
-/// and deduplicated so JSON consumers can compare runs.
 pub(crate) fn unpriced_models<'a>(
     breakdowns: impl IntoIterator<Item = &'a ModelBreakdown>,
 ) -> Vec<String> {
@@ -64,9 +61,7 @@ pub(crate) fn unpriced_models<'a>(
         .collect()
 }
 
-/// Adds `unpricedModels` to a totals object when any model had no price. The
-/// key is absent when pricing was complete, so existing consumers see no
-/// change and scripts can test `.totals.unpricedModels // []`.
+/// Adds `unpricedModels` to JSON totals when any model lacked pricing.
 pub fn attach_unpriced_models(totals: &mut Value, models: Vec<String>) {
     if !models.is_empty() {
         totals["unpricedModels"] = json!(models);
@@ -108,10 +103,8 @@ pub fn write_json_or_jq(value: &impl Serialize, jq: Option<&str>) -> Result<()> 
     Ok(())
 }
 
-/// Controls optional metrics in a focused usage table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UsageTableOptions {
-    /// Whether a full-width table includes the cache-creation column.
     pub show_cache_creation: bool,
 }
 
@@ -142,7 +135,6 @@ pub fn print_usage_table(
     )
 }
 
-/// Print a focused usage table with source-specific display options.
 pub fn print_usage_table_with_options(
     title: &str,
     first_column: &str,

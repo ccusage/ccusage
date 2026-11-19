@@ -9,19 +9,10 @@ use super::CacheCreationRaw;
 
 #[derive(Default)]
 pub(super) struct Iterations {
-    /// The cache-write split summed over the `message` entries.
-    ///
-    /// `None` when there is no `message` iteration, or when one of them lacks
-    /// a well-formed split, because a partial sum would undercount just like
-    /// the top-level split it replaces.
     pub(super) message_cache_creation: Option<CacheCreationRaw>,
     pub(super) has_advisor_message: bool,
 }
 
-/// Reads `T` from any JSON shape without allocating. A shape `T` does not
-/// expect becomes `T::default()` instead of an error, so a malformed
-/// `iterations` member never rejects the `usage` object around it, just as
-/// ignoring the member did before it was read.
 #[derive(Default)]
 pub(super) struct Lenient<T>(pub(super) T);
 

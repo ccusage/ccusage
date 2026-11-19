@@ -11,17 +11,12 @@ use ccusage_terminal::{terminal_width, truncate_to_width};
 const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL: Duration = Duration::from_millis(80);
 
-/// Display columns the spinner frame and the space after it take up.
 const SPINNER_PREFIX_WIDTH: usize = 2;
 
 thread_local! {
     static ACTIVE_PROGRESS: RefCell<Option<ProgressController>> = const { RefCell::new(None) };
 }
 
-/// Display label for one agent's load step.
-///
-/// A newtype rather than an enum so the roster lives with the adapters: adding
-/// an agent does not touch this crate, which every adapter depends on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UsageLoadAgent(pub &'static str);
 
@@ -77,13 +72,7 @@ fn format_usage_load_progress_text(
     }
 }
 
-/// Shorten the status text so the spinner line always occupies a single row.
-///
-/// Each frame clears its own line with `\r\x1b[K`, which only erases the row the
-/// cursor sits on. A status wide enough to wrap therefore leaves the overflow
-/// row on screen and the redraw reads as flicker. One column is left free on top
-/// of the spinner prefix so the cursor never ends a frame in the wrap-pending
-/// state some terminals enter at the last column.
+// NOTE(2026-07-27, #1500): \r\x1b[K clears only the cursor row. Leave one column free to avoid terminal wrap-pending and keep the redraw on that row.
 fn fit_status_to_width(text: &str, terminal_width: usize) -> String {
     truncate_to_width(
         text,

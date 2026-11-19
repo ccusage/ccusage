@@ -24,8 +24,6 @@ pub mod cli {
     pub use ccusage_cli::*;
 }
 
-// Defined in ccusage-cli so the config and parser crates can use them without
-// depending on this crate; re-exported so existing callers keep one import path.
 pub use ccusage_cli::{BUILT_IN_AGENT_NAMES, home};
 
 pub use agent_report::{agent_summary_json, first_column, summary_period};

@@ -9,55 +9,26 @@ mod reference;
 pub type FxHashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type FxHashSet<T> = rustc_hash::FxHashSet<T>;
 
-/// Whether a [`LinePrefilter`] requires every marker or just one of them.
 #[derive(Clone, Copy)]
 enum PrefilterMode {
-    /// The line must contain every configured marker.
     All,
-    /// The line must contain at least one configured marker.
     Any,
 }
 
-/// Reusable byte-substring prefilter for newline-delimited JSON logs.
-///
-/// JSONL adapters skip lines that cannot contain a usage record before paying
-/// for a full `serde_json` parse. Building the [`Finder`] needles once and
-/// reusing them across every line keeps that skip check on the SIMD-accelerated
-/// `memmem` path instead of allocating a fresh searcher per `str::contains`
-/// call.
-///
-/// A marker is JSON text read from its first byte: bytes inside double quotes,
-/// or every byte of a marker that does not start with one, are string content,
-/// which JSON lets a writer spell as an escape such as `\/`. A line that holds
-/// a marker only in escaped form is still admitted. A marker with a bracket
-/// outside its strings is found, verbatim or escaped, in one pass over that
-/// bracket. A line that misses any other marker verbatim pays one more scan,
-/// for an escape that can spell a marker byte, and only a line that holds such
-/// an escape pays for more.
+/// Byte-substring prefilter for JSONL records. Markers inside JSON strings
+/// also match their escaped spellings.
 pub struct LinePrefilter {
     markers: SmallVec<[Marker; 4]>,
     escapable: u128,
-    /// Whether a marker byte can be spelled by a two-byte escape such as `\/`,
-    /// not only by a `\u` escape.
     short_escapable: bool,
     mode: PrefilterMode,
 }
 
 impl LinePrefilter {
-    /// Build a prefilter that only admits lines containing *all* `markers`.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let prefilter = LinePrefilter::all(&[b"\"usage\"", b"\"message\""]);
-    /// assert!(prefilter.matches(br#"{"message":{"usage":{}}}"#));
-    /// assert!(!prefilter.matches(br#"{"message":{}}"#));
-    /// ```
     pub fn all(markers: &[&[u8]]) -> Self {
         Self::new(markers, PrefilterMode::All)
     }
 
-    /// Build a prefilter that admits lines containing *any* of `markers`.
     pub fn any(markers: &[&[u8]]) -> Self {
         Self::new(markers, PrefilterMode::Any)
     }
@@ -80,7 +51,6 @@ impl LinePrefilter {
         }
     }
 
-    /// Return `true` when `line` passes the filter and is worth parsing.
     pub fn matches(&self, line: &[u8]) -> bool {
         let mut has_escape = None;
         let mut missing = 0_u64;
@@ -111,8 +81,7 @@ impl LinePrefilter {
         }
     }
 
-    /// Return `true` when `line` spells one of the markers with at least one
-    /// escape, whether or not it also holds one verbatim.
+    /// Matches a marker only when at least one of its bytes is JSON-escaped.
     pub fn matches_escaped(&self, line: &[u8]) -> bool {
         let every = (1_u128 << self.markers.len()) - 1;
         self.spells_escaped(line, every as u64, false)
@@ -138,10 +107,6 @@ impl LinePrefilter {
         false
     }
 
-    /// The start of the next escape at or after `from` that can spell a marker
-    /// byte. Tool output is full of `\n`, `\"` and `\\` escapes, so when only a
-    /// unicode escape can spell a marker byte the search jumps between `\u00`
-    /// escapes instead of stopping at every backslash.
     fn next_escape(&self, line: &[u8], mut from: usize) -> Option<usize> {
         if self.short_escapable {
             return memchr(b'\\', &line[from..]).map(|offset| from + offset);
@@ -156,8 +121,6 @@ impl LinePrefilter {
     }
 }
 
-/// Whether a backslash at `start` begins an escape: the backslashes before it
-/// must themselves be escaped in pairs.
 fn preceded_by_paired_backslashes(line: &[u8], start: usize) -> bool {
     line[..start]
         .iter()
@@ -168,11 +131,8 @@ fn preceded_by_paired_backslashes(line: &[u8], start: usize) -> bool {
         == 0
 }
 
-/// Bytes a two-byte JSON escape decodes to.
 const SHORT_ESCAPE_BYTES: [u8; 8] = [b'"', b'\\', b'/', 0x08, 0x0c, b'\n', b'\r', b'\t'];
 
-/// The start of every `\u` escape that decodes to an ASCII byte, the only ones
-/// that can spell a marker byte.
 static ASCII_UNICODE_ESCAPE: std::sync::LazyLock<Finder<'static>> =
     std::sync::LazyLock::new(|| Finder::new(br"\u00"));
 
@@ -183,7 +143,7 @@ struct Marker {
     anchor: Option<Anchor>,
 }
 
-// NOTE(2026-11-17, RFC 8259): JSON escapes only string content, so a bracket outside the marker's strings appears verbatim in every spelling of it.
+// NOTE(2026-11-17): RFC 8259 §7 limits JSON escapes to strings. A bracket outside a string can therefore anchor every spelling of a marker.
 struct Anchor {
     byte: u8,
     index: usize,
@@ -237,8 +197,6 @@ impl Marker {
             .filter(|(_, is_content)| **is_content)
             .fold(0, |set, (&byte, _)| set | 1_u128 << byte);
         Self {
-            // `Finder::new` borrows the needle, so take an owned copy to outlive
-            // the caller's marker slice and allow the prefilter to be stored freely.
             finder: Finder::new(marker).into_owned(),
             anchor: Anchor::new(marker, &content),
             content,
@@ -377,11 +335,6 @@ pub fn byte_lines(bytes: &[u8]) -> ByteLines<'_> {
     ByteLines::new(bytes)
 }
 
-/// Splits a reader into `\n`-terminated lines through one reusable buffer.
-///
-/// Unlike reading a whole log and running [`byte_lines`] over it, only the
-/// current window of the file is resident, so the bytes a parser touches are
-/// still in cache from the `read` that brought them in.
 pub struct LineReader<R> {
     reader: R,
     buffer: Vec<u8>,
@@ -403,10 +356,8 @@ impl<R: Read> LineReader<R> {
         }
     }
 
-    /// The next line, including its `\n` unless it is the unterminated last line.
-    ///
-    /// A read error leaves the bytes after the last returned line in
-    /// [`Self::rest`].
+    /// Includes the trailing newline unless the final line is unterminated.
+    /// After a read error, [`Self::rest`] holds the bytes after the last returned line.
     pub fn next_line(&mut self) -> io::Result<Option<&[u8]>> {
         let line_end = loop {
             if let Some(newline) = memchr(b'\n', &self.buffer[self.scanned..self.end]) {

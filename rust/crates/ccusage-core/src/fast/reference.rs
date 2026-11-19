@@ -1,53 +1,24 @@
 use memchr::{memchr, memmem::Finder};
 use smallvec::SmallVec;
 
-/// Whether a [`LinePrefilter`] requires every marker or just one of them.
 #[derive(Clone, Copy)]
 enum PrefilterMode {
-    /// The line must contain every configured marker.
     All,
-    /// The line must contain at least one configured marker.
     Any,
 }
 
-/// Reusable byte-substring prefilter for newline-delimited JSON logs.
-///
-/// JSONL adapters skip lines that cannot contain a usage record before paying
-/// for a full `serde_json` parse. Building the [`Finder`] needles once and
-/// reusing them across every line keeps that skip check on the SIMD-accelerated
-/// `memmem` path instead of allocating a fresh searcher per `str::contains`
-/// call.
-///
-/// A marker is JSON text read from its first byte: bytes inside double quotes,
-/// or every byte of a marker that does not start with one, are string content,
-/// which JSON lets a writer spell as an escape such as `\/`. A line that holds
-/// a marker only in escaped form is still admitted. A line that misses a marker
-/// verbatim pays one more scan, for an escape that can spell a marker byte, and
-/// only a line that holds such an escape pays for more.
 pub(super) struct LinePrefilter {
     markers: SmallVec<[Marker; 4]>,
     escapable: u128,
-    /// Whether a marker byte can be spelled by a two-byte escape such as `\/`,
-    /// not only by a `\u` escape.
     short_escapable: bool,
     mode: PrefilterMode,
 }
 
 impl LinePrefilter {
-    /// Build a prefilter that only admits lines containing *all* `markers`.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let prefilter = LinePrefilter::all(&[b"\"usage\"", b"\"message\""]);
-    /// assert!(prefilter.matches(br#"{"message":{"usage":{}}}"#));
-    /// assert!(!prefilter.matches(br#"{"message":{}}"#));
-    /// ```
     pub(super) fn all(markers: &[&[u8]]) -> Self {
         Self::new(markers, PrefilterMode::All)
     }
 
-    /// Build a prefilter that admits lines containing *any* of `markers`.
     pub(super) fn any(markers: &[&[u8]]) -> Self {
         Self::new(markers, PrefilterMode::Any)
     }
@@ -70,7 +41,6 @@ impl LinePrefilter {
         }
     }
 
-    /// Return `true` when `line` passes the filter and is worth parsing.
     pub(super) fn matches(&self, line: &[u8]) -> bool {
         let mut has_escape = None;
         let mut missing = 0_u64;
@@ -93,8 +63,6 @@ impl LinePrefilter {
         }
     }
 
-    /// Return `true` when `line` spells one of the markers with at least one
-    /// escape, whether or not it also holds one verbatim.
     pub(super) fn matches_escaped(&self, line: &[u8]) -> bool {
         let every = (1_u128 << self.markers.len()) - 1;
         self.spells_escaped(line, every as u64, false)
@@ -120,18 +88,12 @@ impl LinePrefilter {
         false
     }
 
-    /// The start of the next escape at or after `from` that can spell a marker
-    /// byte. Tool output is full of `\n`, `\"` and `\\` escapes, so when only a
-    /// unicode escape can spell a marker byte the search jumps between `\u00`
-    /// escapes instead of stopping at every backslash.
     fn next_escape(&self, line: &[u8], mut from: usize) -> Option<usize> {
         if self.short_escapable {
             return memchr(b'\\', &line[from..]).map(|offset| from + offset);
         }
         loop {
             let start = from + ASCII_UNICODE_ESCAPE.find(&line[from..])?;
-            // `\u` starts an escape only when the backslashes before it are
-            // themselves escaped in pairs.
             let preceding = line[..start]
                 .iter()
                 .rev()
@@ -145,11 +107,8 @@ impl LinePrefilter {
     }
 }
 
-/// Bytes a two-byte JSON escape decodes to.
 const SHORT_ESCAPE_BYTES: [u8; 8] = [b'"', b'\\', b'/', 0x08, 0x0c, b'\n', b'\r', b'\t'];
 
-/// The start of every `\u` escape that decodes to an ASCII byte, the only ones
-/// that can spell a marker byte.
 static ASCII_UNICODE_ESCAPE: std::sync::LazyLock<Finder<'static>> =
     std::sync::LazyLock::new(|| Finder::new(br"\u00"));
 
@@ -183,8 +142,6 @@ impl Marker {
             .filter(|(_, is_content)| **is_content)
             .fold(0, |set, (&byte, _)| set | 1_u128 << byte);
         Self {
-            // `Finder::new` borrows the needle, so take an owned copy to outlive
-            // the caller's marker slice and allow the prefilter to be stored freely.
             finder: Finder::new(marker).into_owned(),
             content,
             escapable,

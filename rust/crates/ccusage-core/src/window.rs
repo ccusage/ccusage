@@ -3,12 +3,6 @@ use jiff::{ToSpan, civil::Date};
 
 use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, resolve_tz};
 
-/// The `--since`/`--until` window of one report in its report timezone.
-///
-/// Build it once per source from the options that source loads with, after the
-/// binary has rewritten `--last` into `since`, and ask it instead of comparing
-/// bounds by hand: every place that decides whether a day is in the report then
-/// uses the same resolved bounds.
 #[derive(Clone, Debug)]
 pub struct ReportWindow {
     since: Option<Box<str>>,
@@ -40,7 +34,6 @@ impl ReportWindow {
         }
     }
 
-    /// A window that keeps every day.
     pub fn unbounded() -> Self {
         Self {
             since: None,
@@ -53,7 +46,6 @@ impl ReportWindow {
         self.since.is_none() && self.until.is_none()
     }
 
-    /// The timezone resolved once for this report.
     pub fn timezone(&self) -> &JiffTimeZone {
         &self.timezone
     }
@@ -74,11 +66,8 @@ impl ReportWindow {
         Ok(Some(next.strftime("%Y%m%d").to_string()))
     }
 
-    /// Reports whether a `YYYY-MM-DD` day is inside the window.
-    ///
-    /// The bounds stay compact text and are compared byte by byte against the
-    /// day without its dashes, so a partial bound keeps its meaning: `--since
-    /// 2026` includes all of 2026 and `--until 2026` excludes it.
+    /// Tests a `YYYY-MM-DD` day against the report window.
+    /// Partial bounds compare lexically: `--since 2026` includes 2026 and `--until 2026` excludes it.
     pub fn contains_date(&self, date: &str) -> bool {
         let compact = || date.bytes().filter(|byte| *byte != b'-');
         self.since
@@ -90,16 +79,12 @@ impl ReportWindow {
                 .is_none_or(|until| compact().le(until.text.bytes()))
     }
 
-    /// Reports whether the day `timestamp` falls on in the report timezone is
-    /// inside the window.
     pub fn contains_timestamp(&self, timestamp: TimestampMs) -> bool {
         self.is_unbounded() || self.contains_date(&format_date_tz(timestamp, &self.timezone))
     }
 
-    /// The window as half-open Unix millisecond bounds, for a loader that can
-    /// skip input early. A `None` side must not be narrowed, and
-    /// [`contains_date`](Self::contains_date) still makes the per-day decision;
-    /// see [`date_range_bounds_ms`].
+    /// Half-open Unix millisecond bounds for an early loader filter.
+    /// A `None` side stays open until [`Self::contains_date`] checks the record's day.
     pub fn bounds_ms(&self) -> (Option<i64>, Option<i64>) {
         date_range_bounds_ms(
             self.since.as_deref(),
@@ -191,7 +176,6 @@ mod tests {
 
     #[test]
     fn contains_timestamp_takes_the_day_in_the_report_timezone() {
-        // 2026-01-01T20:00:00Z is already 2026-01-02 in Asia/Tokyo.
         let timestamp = TimestampMs::from_millis(1_767_312_000_000 - 4 * MILLIS_PER_HOUR);
 
         assert!(!window(Some("20260102"), None, Some("UTC")).contains_timestamp(timestamp));

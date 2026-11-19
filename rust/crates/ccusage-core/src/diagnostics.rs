@@ -9,21 +9,16 @@ use crate::{cli::SharedArgs, log_level, output::sanitize_terminal_text};
 
 const SAMPLES_PER_KIND: usize = 5;
 
-/// Why a file, database or record was left out of a report.
+/// Classifies files and records skipped while loading usage.
+/// Use [`Self::UndecodedUsage`] until a record is confirmed to carry usage.
+/// A confirmed usage record that fails to decode is [`Self::InvalidData`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SkipKind {
-    /// The unit could not be opened or read at all.
     Unreadable,
-    /// Reading stopped part-way; what was read before the failure is kept.
     ReadInterrupted,
-    /// A selected record did not decode and was not confirmed to carry usage.
-    /// Such records may be rejected by design, so only `--debug` prints them.
     UndecodedUsage,
-    /// A record carried a timestamp the report cannot place on a day.
     InvalidTimestamp,
-    /// The input broke an assumption the loader relies on.
     Invariant,
-    /// Input was malformed, or a confirmed usage record did not decode.
     InvalidData,
     UnreadableForkParent,
 }
@@ -62,13 +57,9 @@ impl SkipKind {
     }
 }
 
-/// One thing a loader left out, and where.
 #[derive(Clone, Debug)]
 pub struct Skip {
-    /// The file or database the skip happened in.
     unit: PathBuf,
-    /// The 1-based line or row inside the unit; `None` when the whole unit, or
-    /// the rest of it, was skipped.
     line: Option<u32>,
     row_id: Option<Arc<str>>,
     table: Option<&'static str>,
@@ -77,7 +68,6 @@ pub struct Skip {
 }
 
 impl Skip {
-    /// A skip of a whole unit.
     pub fn unit(unit: &Path, kind: SkipKind, detail: impl fmt::Display) -> Self {
         Self {
             unit: unit.to_path_buf(),
@@ -89,7 +79,6 @@ impl Skip {
         }
     }
 
-    /// A skip of one record inside a unit that is otherwise read.
     pub fn record(unit: &Path, line: u32, kind: SkipKind, detail: impl fmt::Display) -> Self {
         Self {
             line: Some(line),
@@ -97,8 +86,6 @@ impl Skip {
         }
     }
 
-    /// The 1-based line number [`Skip::record`] takes for the record at
-    /// 0-based `index`, saturating rather than wrapping on huge units.
     pub fn line_number(index: usize) -> u32 {
         u32::try_from(index.saturating_add(1)).unwrap_or(u32::MAX)
     }
@@ -119,8 +106,6 @@ impl Skip {
     }
 }
 
-/// The skips of one kind. A skip is identified by its unit, table and line, so
-/// recording or merging the same one twice counts it once.
 #[derive(Default)]
 struct Tally {
     units: BTreeMap<PathBuf, UnitSkips>,
@@ -156,8 +141,6 @@ impl Tally {
             .record(table, line);
     }
 
-    /// Keeps the first skips by unit, table, line and detail, so `--debug` lists the
-    /// same ones whatever order parallel readers record them in.
     fn sample(&mut self, skip: Skip) {
         if let Some(sample) = self.samples.iter_mut().find(|sample| {
             sample.unit == skip.unit
@@ -247,13 +230,6 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
         .then_with(|| left.detail.cmp(&right.detail))
 }
 
-/// What one source left out while loading one report.
-///
-/// Loaders record every skip here instead of dropping it silently or logging
-/// it only under `--debug`, so input that could not be counted shows up as a
-/// warning rather than as lower usage. Recording takes a lock, which is fine
-/// because a skip is the cold path; a loader that reads healthy input never
-/// touches it.
 pub struct Diagnostics {
     source: &'static str,
     table: Option<&'static str>,
@@ -262,7 +238,6 @@ pub struct Diagnostics {
 }
 
 impl Diagnostics {
-    /// `source` is the agent id the warnings name, such as `codex`.
     pub fn new(source: &'static str) -> Self {
         Self {
             source,
@@ -272,7 +247,6 @@ impl Diagnostics {
         }
     }
 
-    /// The agent id the warnings name.
     pub fn source(&self) -> &'static str {
         self.source
     }
@@ -306,8 +280,7 @@ impl Diagnostics {
         tally.sample(skip);
     }
 
-    /// Notes something about `unit` that is not a skip, worded by the source
-    /// and printed as-is under `--debug` only.
+    /// Records an observation shown only in debug output without counting a skip.
     pub fn debug_note(&self, unit: &Path, note: impl Into<String>) {
         self.state()
             .notes
@@ -315,8 +288,7 @@ impl Diagnostics {
             .or_insert_with(|| note.into());
     }
 
-    /// Adds what `other` recorded for the same source, as when one report
-    /// loads a source more than once: a skip both recorded counts once.
+    /// Combines diagnostics from the same source, counting duplicate skips once.
     pub fn merge(&self, other: &Self) {
         debug_assert_eq!(self.source, other.source);
         if Arc::ptr_eq(&self.state, &other.state) {
@@ -335,7 +307,6 @@ impl Diagnostics {
         }
     }
 
-    /// How many distinct skips of `kind` were recorded.
     pub fn skipped(&self, kind: SkipKind) -> u64 {
         self.state().tallies[kind as usize].skips()
     }
@@ -346,9 +317,7 @@ impl Diagnostics {
         }
     }
 
-    /// The lines to print on stderr once the load's progress output stopped:
-    /// one aggregated `WARN` per kind, silenced by `LOG_LEVEL=0` like every
-    /// other warning, plus the skipped units themselves under `--debug`.
+    /// Returns aggregated warnings plus per-unit details in debug mode.
     pub fn warnings(&self, shared: &SharedArgs) -> Vec<String> {
         self.render(log_level() != Some(0), shared.debug)
     }
@@ -767,7 +736,6 @@ mod tests {
         .map(|(unit, line, detail)| {
             Skip::record(Path::new(unit), line, SkipKind::InvalidData, detail)
         });
-        // The two skips of a.jsonl:2 are one record; its first detail is listed.
         let expected = [
             "WARN  test: skipped 7 records in 5 inputs (invalid data)",
             "test: invalid data: /logs/a.jsonl:1: a-one",
