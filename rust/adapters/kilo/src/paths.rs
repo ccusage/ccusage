@@ -33,7 +33,7 @@ pub(super) fn db_path(kilo_dir: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -41,13 +41,13 @@ mod tests {
     fn blank_data_dir_uses_the_home_default() {
         let fixture = fs_fixture!({});
         let default = fixture.create_dir_all(".local/share/kilo");
-        let _env = EnvGuard::set_many([
+        let env = Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             (KILO_DATA_DIR_ENV, Some(" , ".into())),
         ]);
         let diagnostics = Diagnostics::new("kilo");
 
-        assert_eq!(paths(&diagnostics, false), [default]);
+        assert_eq!(env.run(|| paths(&diagnostics, false)), [default]);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
     }
 
@@ -55,25 +55,28 @@ mod tests {
     fn configured_root_expands_home() {
         let fixture = fs_fixture!({});
         let custom = fixture.create_dir_all("custom");
-        let _env = EnvGuard::set_many([
+        let env = Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             (KILO_DATA_DIR_ENV, Some("~/custom".into())),
         ]);
 
-        assert_eq!(paths(&Diagnostics::new("kilo"), false), [custom]);
+        assert_eq!(
+            env.run(|| paths(&Diagnostics::new("kilo"), false)),
+            [custom]
+        );
     }
 
     #[test]
     fn invalid_configured_roots_are_reported_without_falling_back() {
         let fixture = fs_fixture!({ "file": "" });
         fixture.create_dir_all(".local/share/kilo");
-        let _env = EnvGuard::set_many([
+        let env = Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             (KILO_DATA_DIR_ENV, Some("~/missing,~/file".into())),
         ]);
         let diagnostics = Diagnostics::new("kilo");
 
-        assert!(paths(&diagnostics, false).is_empty());
+        assert!(env.run(|| paths(&diagnostics, false)).is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 2);
     }
 }
