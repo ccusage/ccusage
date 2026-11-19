@@ -89,8 +89,7 @@ fn add_file(
 
 fn copilot_exporter_path() -> Option<PathBuf> {
     let path = Environment::current()
-        .var_os(COPILOT_OTEL_FILE_EXPORTER_PATH_ENV)?
-        .into_string()
+        .var(COPILOT_OTEL_FILE_EXPORTER_PATH_ENV)
         .ok()?;
     let path = path.trim();
     if path.is_empty() {
