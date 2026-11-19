@@ -233,7 +233,7 @@ Each unified session row carries its `agent`, and `period` holds the session ID.
 		"cacheReadTokens": 1311217,
 		"inputTokens": 1348169,
 		"outputTokens": 58867,
-		"totalCost": 28.924607300000023,
+		"totalCost": 28.924432100000022,
 		"totalTokens": 2739555,
 		"unpricedModels": [
 			"GLM-5.3",
