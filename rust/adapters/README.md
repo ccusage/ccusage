@@ -5,6 +5,14 @@ model mapping, and pricing in that crate. Share discovery, aggregation, dates,
 pricing lifecycle, progress, and rendering through `ccusage-core` or
 `ccusage-adapter-common`. Keep adapters independent of one another.
 
+Use these modules inside each adapter:
+
+- `paths.rs` owns environment variables, default directories, and path discovery.
+- `parser.rs` parses raw records and maps tokens and models.
+- `loader.rs` owns file walking, SQLite reads, deduplication, and date-filtering entry points.
+- `report.rs` shapes JSON and table rows when the source needs its own output.
+- `types.rs` holds types local to the adapter.
+
 When a source normalizes or maps a model ID, pass the logged ID first as an
 `Exact` candidate and use the normalized form for fuzzy matches. Preserve the
 original match kind when the ID is unchanged. Use source provider information
