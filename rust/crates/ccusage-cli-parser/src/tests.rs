@@ -182,7 +182,7 @@ impl CliConfig for TestConfig {
             shared.order = Some(order);
         }
         if let Some(since) = self.shared_since {
-            shared.since = Some(since.to_string());
+            shared.since = Some(since.parse().unwrap());
         }
         if let Some(compact) = self.shared_compact {
             shared.compact = compact;
@@ -240,8 +240,8 @@ impl CliConfig for TestConfig {
 
 fn shared_snapshot(shared: &SharedArgs) -> Value {
     json!({
-        "since": shared.since.as_deref(),
-        "until": shared.until.as_deref(),
+        "since": shared.since.map(|date| date.to_string()).as_deref(),
+        "until": shared.until.map(|date| date.to_string()).as_deref(),
         "json": shared.json,
         "mode": format!("{:?}", shared.mode),
         "debug": shared.debug,
@@ -343,7 +343,10 @@ fn parses_root_daily_as_all_agent_report() {
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
 }
 
 #[test]
@@ -389,7 +392,10 @@ fn report_reparse_carries_focused_agent_options() {
     )
     .unwrap();
     assert_eq!(args.kind, AgentReportKind::Weekly);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
 }
 
 #[test]
@@ -581,8 +587,14 @@ fn accepts_both_documented_date_bound_formats() {
         let Command::All(args) = cli else {
             panic!("expected all-agent command");
         };
-        assert_eq!(args.shared.since.as_deref(), Some(normalized));
-        assert_eq!(args.shared.until.as_deref(), Some(normalized));
+        assert_eq!(
+            args.shared.since.map(|date| date.to_string()).as_deref(),
+            Some(normalized)
+        );
+        assert_eq!(
+            args.shared.until.map(|date| date.to_string()).as_deref(),
+            Some(normalized)
+        );
     }
 }
 
@@ -709,8 +721,14 @@ fn accepts_a_since_date_equal_to_the_until_date() {
     let Command::Daily(args) = cli else {
         panic!("expected claude daily command");
     };
-    assert_eq!(args.shared.since.as_deref(), Some("20260914"));
-    assert_eq!(args.shared.until.as_deref(), Some("20260914"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260914")
+    );
+    assert_eq!(
+        args.shared.until.map(|date| date.to_string()).as_deref(),
+        Some("20260914")
+    );
 }
 
 #[test]
@@ -771,8 +789,14 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
     let Command::All(args) = cli else {
         panic!("expected unified daily command");
     };
-    assert_eq!(args.shared.since.as_deref(), Some("20260914"));
-    assert_eq!(args.shared.until.as_deref(), Some("20260930"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260914")
+    );
+    assert_eq!(
+        args.shared.until.map(|date| date.to_string()).as_deref(),
+        Some("20260930")
+    );
 }
 
 #[test]
@@ -1003,7 +1027,10 @@ fn preserves_shared_config_defaults_with_unified_sections() {
         panic!("expected all-agent command");
     };
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
     assert_eq!(
         args.sections.as_deref(),
         Some(&[AgentReportKind::Daily][..])
@@ -1035,7 +1062,10 @@ fn applies_config_defaults_and_command_options_before_cli_options() {
         panic!("expected all-agent command");
     };
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
     assert_eq!(args.shared.order, Some(SortOrder::Asc));
 }
 
@@ -1085,7 +1115,10 @@ fn applies_config_file_passed_after_agent_command() {
             .map(|timezone| timezone.name()),
         Some("Asia/Tokyo")
     );
-    assert_eq!(args.shared.since.as_deref(), Some("20260101"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260101")
+    );
     assert_eq!(args.options.codex_speed, CodexSpeed::Standard);
 }
 
@@ -1646,7 +1679,10 @@ fn parses_codex_default_daily_options() {
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
 }
 
 #[test]

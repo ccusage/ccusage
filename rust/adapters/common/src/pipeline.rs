@@ -455,8 +455,8 @@ mod tests {
     #[test]
     fn session_window_bounds_are_inclusive_of_the_whole_day() {
         let shared = SharedArgs {
-            since: Some("20260223".to_string()),
-            until: Some("20260223".to_string()),
+            since: Some("20260223".parse().unwrap()),
+            until: Some("20260223".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
@@ -470,8 +470,8 @@ mod tests {
     #[test]
     fn session_window_takes_the_day_in_the_report_timezone() {
         let shared = SharedArgs {
-            since: Some("20260223".to_string()),
-            until: Some("20260223".to_string()),
+            since: Some("20260223".parse().unwrap()),
+            until: Some("20260223".parse().unwrap()),
             timezone: Some("Asia/Tokyo".parse().unwrap()),
             ..SharedArgs::default()
         };
@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn session_window_with_only_until_keeps_everything_through_that_day() {
         let shared = SharedArgs {
-            until: Some("20260223".to_string()),
+            until: Some("20260223".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn session_window_with_only_since_keeps_everything_from_that_day() {
         let shared = SharedArgs {
-            since: Some("20260223".to_string()),
+            since: Some("20260223".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
@@ -516,11 +516,11 @@ mod tests {
         let unparsable = session_summary("unparsable", "2026-02-23");
         for shared in [
             SharedArgs {
-                since: Some("20260101".to_string()),
+                since: Some("20260101".parse().unwrap()),
                 ..SharedArgs::default()
             },
             SharedArgs {
-                until: Some("20991231".to_string()),
+                until: Some("20991231".parse().unwrap()),
                 ..SharedArgs::default()
             },
         ] {

@@ -20,7 +20,7 @@ impl Claude {
         project_filter: Option<&str>,
         diagnostics: &Diagnostics,
     ) -> Result<ClaudeCounted> {
-        let load_shared = claim_load_options(shared)?;
+        let load_shared = claim_load_options(shared);
         let deduped = crate::load_windowed_entries(
             &load_shared,
             project_filter,
@@ -50,7 +50,7 @@ impl Claude {
     ) -> Result<(LoadedRows, ClaudeCounted)> {
         let shared = request.shared;
         let load_shared = if with_claims {
-            claim_load_options(shared)?
+            claim_load_options(shared)
         } else {
             Cow::Borrowed(shared)
         };
@@ -119,14 +119,14 @@ impl Claude {
     }
 }
 
-fn claim_load_options(shared: &SharedArgs) -> Result<Cow<'_, SharedArgs>> {
+fn claim_load_options(shared: &SharedArgs) -> Cow<'_, SharedArgs> {
     if shared.until.is_none() {
-        return Ok(Cow::Borrowed(shared));
+        return Cow::Borrowed(shared);
     }
-    Ok(Cow::Owned(SharedArgs {
-        until: ReportWindow::from_shared(shared).next_day_until()?,
+    Cow::Owned(SharedArgs {
+        until: ReportWindow::from_shared(shared).next_day_until(),
         ..shared.clone()
-    }))
+    })
 }
 
 impl UsageSource for Claude {
@@ -165,8 +165,8 @@ mod diagnostic_tests {
             Some(fixture.root().as_os_str().to_owned()),
         )]);
         let shared = SharedArgs {
-            since: Some("99991231".into()),
-            until: Some("99991231".into()),
+            since: Some("99991231".parse().unwrap()),
+            until: Some("99991231".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
@@ -207,7 +207,7 @@ mod diagnostic_tests {
         )]);
         let shared = SharedArgs {
             mode: CostMode::Calculate,
-            since: Some("20260101".to_owned()),
+            since: Some("20260101".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };

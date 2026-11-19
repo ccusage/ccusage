@@ -11,7 +11,7 @@ use ccusage_adapter_common::{source::ReportPricing, units::UnitError};
 use ccusage_core::{
     Diagnostics, Result,
     cli::{AgentReportKind, CodexStatuslineArgs, SharedArgs},
-    format_currency, format_date_tz, format_number, log_level, resolve_tz, sanitize_terminal_text,
+    date_at, format_currency, format_number, log_level, resolve_tz, sanitize_terminal_text,
     utc_now,
 };
 use serde_json::Value;
@@ -123,7 +123,7 @@ fn refresh_output<'a>(
 #[derive(PartialEq, Eq)]
 struct Fingerprint {
     thread_id: String,
-    today: String,
+    today: ccusage_core::cli::DateBound,
     speed: CodexSpeedPolicy,
     files: Vec<(PathBuf, u64, SystemTime)>,
 }
@@ -145,7 +145,7 @@ fn refresh(
     shared.since = None;
     shared.until = None;
     let timezone = resolve_tz(shared.timezone.as_ref());
-    let today = format_date_tz(utc_now(), &timezone).replace('-', "");
+    let today = date_at(utc_now(), &timezone).into();
     let file_groups =
         paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, diagnostics);
     let speed = resolve_codex_speed(args.codex_speed);
@@ -165,7 +165,7 @@ fn refresh(
         .collect();
     let fingerprint = Fingerprint {
         thread_id: thread_id.to_string(),
-        today: today.clone(),
+        today,
         speed,
         files,
     };
@@ -188,7 +188,7 @@ fn refresh(
         pricing,
         &load_diagnostics,
     )?;
-    shared.since = Some(today.clone());
+    shared.since = Some(today);
     shared.until = Some(today);
     let today_files = file_groups
         .iter()

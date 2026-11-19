@@ -347,7 +347,7 @@ mod tests {
         });
         let sessions_dir = fixture.path("sessions");
         let shared = SharedArgs {
-            since: Some("20260103".to_string()),
+            since: Some("20260103".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };

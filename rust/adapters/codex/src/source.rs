@@ -251,7 +251,7 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260101".to_owned()),
+            since: Some("20260101".parse().unwrap()),
             ..Default::default()
         };
 
@@ -286,8 +286,8 @@ mod diagnostic_tests {
             let shared = SharedArgs {
                 offline: true,
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since: Some("20260102".to_owned()),
-                until: Some("20260102".to_owned()),
+                since: Some("20260102".parse().unwrap()),
+                until: Some("20260102".parse().unwrap()),
                 ..Default::default()
             };
 
@@ -353,7 +353,7 @@ mod diagnostic_tests {
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
-        for since in [None, Some("20260101".to_owned())] {
+        for since in [None, Some("20260101".parse().unwrap())] {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
@@ -415,7 +415,7 @@ mod diagnostic_tests {
                 json!({"timestamp":"2026-01-02T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":115,"output_tokens":23,"total_tokens":138}}}}),
             ].map(|record| record.to_string()).join("\n");
             fixture.write_file("sessions/cumulative.jsonl", &records);
-            for since in [None, Some("20260101".to_owned())] {
+            for since in [None, Some("20260101".parse().unwrap())] {
                 let shared = SharedArgs {
                     offline: true,
                     debug: true,
@@ -465,7 +465,7 @@ mod diagnostic_tests {
                 file,
                 r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
             );
-            for since in [None, Some("20260101".to_owned())] {
+            for since in [None, Some("20260101".parse().unwrap())] {
                 let shared = SharedArgs {
                     offline: true,
                     json: true,
@@ -506,7 +506,7 @@ mod diagnostic_tests {
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
-        for since in [None, Some("20260101".to_owned())] {
+        for since in [None, Some("20260101".parse().unwrap())] {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
@@ -570,7 +570,7 @@ mod diagnostic_tests {
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
-        for since in [None, Some("2026-01-01".to_owned())] {
+        for since in [None, Some("2026-01-01".parse().unwrap())] {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,

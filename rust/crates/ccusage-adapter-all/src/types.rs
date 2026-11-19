@@ -78,7 +78,7 @@ pub(super) enum Bucket {
     Week(WeekDay),
 }
 
-pub(super) use ccusage_core::IsoDate as ReportDay;
+pub(super) use ccusage_core::cli::IsoDate as ReportDay;
 
 #[derive(Clone)]
 pub(super) struct DayRow {

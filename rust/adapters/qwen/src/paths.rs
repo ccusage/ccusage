@@ -171,7 +171,7 @@ mod tests {
         }
 
         let outside_window = SharedArgs {
-            since: Some("20270101".to_string()),
+            since: Some("20270101".parse().unwrap()),
             ..shared
         };
         let report = SOURCE

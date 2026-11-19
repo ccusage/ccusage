@@ -711,10 +711,10 @@ impl ccusage_cli::CliConfig for ConfigContext {
                 compatible_with_flags.then_some((since, until))
             });
         if !since_flag {
-            shared.since = fallback.map(|(since, _)| since.clone());
+            shared.since = fallback.map(|(since, _)| *since);
         }
         if !until_flag {
-            shared.until = fallback.map(|(_, until)| until.clone());
+            shared.until = fallback.map(|(_, until)| *until);
         }
         true
     }
@@ -1430,8 +1430,14 @@ mod tests {
 
         apply_config_to_shared(&mut shared, &config);
 
-        assert_eq!(shared.since.as_deref(), Some("20260101"));
-        assert_eq!(shared.until.as_deref(), Some("20260131"));
+        assert_eq!(
+            shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
+        assert_eq!(
+            shared.until.map(|date| date.to_string()).as_deref(),
+            Some("20260131")
+        );
         assert!(shared.json);
         assert_eq!(shared.mode, CostMode::Calculate);
         assert!(shared.debug);
@@ -1658,7 +1664,11 @@ mod tests {
                 let mut shared = SharedArgs::default();
                 config.apply_shared(&mut shared);
                 assert_eq!(shared.mode, mode, "{name}");
-                assert_eq!(shared.since.as_deref(), Some("20260101"), "{name}");
+                assert_eq!(
+                    shared.since.map(|date| date.to_string()).as_deref(),
+                    Some("20260101"),
+                    "{name}"
+                );
             }
         }
     }
@@ -1676,7 +1686,11 @@ mod tests {
             let mut shared = SharedArgs::default();
             config.apply_shared(&mut shared);
             assert_eq!(shared.mode, CostMode::Calculate, "{command:?}");
-            assert_eq!(shared.since.as_deref(), Some("20260101"), "{command:?}");
+            assert_eq!(
+                shared.since.map(|date| date.to_string()).as_deref(),
+                Some("20260101"),
+                "{command:?}"
+            );
         }
     }
 
@@ -1718,7 +1732,10 @@ mod tests {
         codex.apply_shared(&mut shared);
         let speed = codex.agent_options("codex").codex_speed;
 
-        assert_eq!(shared.since.as_deref(), Some("20260301"));
+        assert_eq!(
+            shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260301")
+        );
         assert_eq!(shared.mode, CostMode::Calculate);
         assert_eq!(codex.timezone(), Some("UTC"));
         assert!(shared.breakdown);
@@ -1783,7 +1800,10 @@ mod tests {
             apply_config_to_shared(&mut shared, config);
 
             assert_eq!(shared.mode, CostMode::Calculate);
-            assert_eq!(shared.since.as_deref(), Some("20260301"));
+            assert_eq!(
+                shared.since.map(|date| date.to_string()).as_deref(),
+                Some("20260301")
+            );
             assert!(shared.offline);
             assert!(shared.json);
             assert_eq!(config.timezone(), Some("UTC"));
@@ -2196,8 +2216,14 @@ mod tests {
         assert_eq!(config.config_error(), None);
         apply_config_to_shared(&mut shared, &config);
 
-        assert_eq!(shared.since.as_deref(), Some("20260101"));
-        assert_eq!(shared.until.as_deref(), Some("20260131"));
+        assert_eq!(
+            shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
+        assert_eq!(
+            shared.until.map(|date| date.to_string()).as_deref(),
+            Some("20260131")
+        );
     }
 
     fn user_config_timezone() -> Option<String> {

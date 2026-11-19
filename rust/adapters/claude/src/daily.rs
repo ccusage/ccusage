@@ -1198,7 +1198,7 @@ mod tests {
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            since: Some("20260101".to_string()),
+            since: Some("20260101".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             ..SharedArgs::default()

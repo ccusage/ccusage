@@ -51,8 +51,8 @@ fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
     });
     let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = SharedArgs {
-        since: Some("20260102".into()),
-        until: Some("20260102".into()),
+        since: Some("20260102".parse().unwrap()),
+        until: Some("20260102".parse().unwrap()),
         ..display_shared_in_utc()
     };
     let entries = crate::load_entries_since(&shared, None).unwrap();
@@ -86,7 +86,7 @@ fn bounded_daily_detection_survives_an_empty_report_window() {
     });
     let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = SharedArgs {
-        until: Some("20260102".into()),
+        until: Some("20260102".parse().unwrap()),
         ..display_shared_in_utc()
     };
     let loaded = crate::load_daily_summaries_with_detection_progress(

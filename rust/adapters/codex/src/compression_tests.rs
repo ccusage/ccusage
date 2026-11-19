@@ -354,7 +354,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
 
     for single_thread in [true, false] {
         let shared = SharedArgs {
-            since: Some("20261014".into()),
+            since: Some("20261014".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()

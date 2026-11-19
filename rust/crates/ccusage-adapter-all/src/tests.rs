@@ -1300,7 +1300,7 @@ fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
         "claude".to_string(),
         SourceArgs {
             shared: SharedArgs {
-                since: Some("20990103".to_string()),
+                since: Some("20990103".parse().unwrap()),
                 ..shared.clone()
             },
             ..SourceArgs::default()
@@ -1742,7 +1742,7 @@ fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claud
         "claude".to_string(),
         SourceArgs {
             shared: SharedArgs {
-                since: Some("20990103".to_string()),
+                since: Some("20990103".parse().unwrap()),
                 ..shared.clone()
             },
             ..SourceArgs::default()
@@ -1833,7 +1833,7 @@ fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_
         "claude".to_string(),
         SourceArgs {
             shared: SharedArgs {
-                until: Some("20990103".to_string()),
+                until: Some("20990103".parse().unwrap()),
                 ..shared.clone()
             },
             ..SourceArgs::default()
@@ -1880,7 +1880,7 @@ fn unified_reports_skip_claude_agent_rows_of_a_fork_counted_without_its_parent()
         "claude".to_string(),
         SourceArgs {
             shared: SharedArgs {
-                since: Some("20990103".to_string()),
+                since: Some("20990103".parse().unwrap()),
                 ..shared.clone()
             },
             ..SourceArgs::default()
@@ -1949,8 +1949,8 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
                 ..Default::default()
             },
             shared: SharedArgs {
-                since: Some("20990102".to_string()),
-                until: Some("20990102".to_string()),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
                 pricing_overrides: std::collections::BTreeMap::from([(
                     "gpt-source-config".to_string(),
                     crate::cli::PricingOverride {
@@ -2484,8 +2484,8 @@ fn unified_report_filters_codex_paths_before_loading_historical_rows() {
 
 fn fixture_shared(since: &str, until: &str) -> SharedArgs {
     SharedArgs {
-        since: Some(since.to_string()),
-        until: Some(until.to_string()),
+        since: Some(since.parse().unwrap()),
+        until: Some(until.parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         offline: true,
         single_thread: true,
@@ -3167,7 +3167,7 @@ fn sections_merge_pruned_session_diagnostics_without_double_counting() {
 
     for (since, expected) in [
         (
-            Some("20100101".to_string()),
+            Some("20100101".parse().unwrap()),
             "WARN  claude: skipped 1 record in 1 input (invalid data)",
         ),
         (

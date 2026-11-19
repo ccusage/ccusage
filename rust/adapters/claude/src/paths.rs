@@ -113,7 +113,7 @@ pub(super) fn usage_files_before_since(
 
 fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
     let timezone = resolve_tz(shared.timezone.as_ref());
-    let (since, _) = date_range_bounds_ms(shared.since.as_deref(), None, &timezone);
+    let (since, _) = date_range_bounds_ms(shared.since, None, &timezone);
     since
         .filter(|since| *since <= now.as_millis())
         .map(|since| since.saturating_sub(MTIME_PRUNE_MARGIN_MS))
@@ -336,7 +336,7 @@ mod tests {
 
     fn shared_since(since: Option<&str>) -> SharedArgs {
         SharedArgs {
-            since: since.map(str::to_string),
+            since: since.map(|date| date.parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         }

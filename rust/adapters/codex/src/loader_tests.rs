@@ -2292,8 +2292,8 @@ fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
         fixture.root().to_path_buf(),
     )];
     let shared = SharedArgs {
-        since: Some("20260315".to_string()),
-        until: Some("20260315".to_string()),
+        since: Some("20260315".parse().unwrap()),
+        until: Some("20260315".parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
@@ -2356,8 +2356,8 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
         fixture.root().to_path_buf(),
     )];
     let shared = SharedArgs {
-        since: Some("20260315".to_string()),
-        until: Some("20260315".to_string()),
+        since: Some("20260315".parse().unwrap()),
+        until: Some("20260315".parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
@@ -2420,8 +2420,8 @@ fn bounded_loading_uses_the_first_duplicate_parent_id() {
         fixture.root().to_path_buf(),
     )];
     let shared = SharedArgs {
-        since: Some("20260315".to_string()),
-        until: Some("20260315".to_string()),
+        since: Some("20260315".parse().unwrap()),
+        until: Some("20260315".parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
@@ -2480,8 +2480,8 @@ fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
         fixture.root().to_path_buf(),
     )];
     let shared = SharedArgs {
-        since: Some("20260315".to_string()),
-        until: Some("20260315".to_string()),
+        since: Some("20260315".parse().unwrap()),
+        until: Some("20260315".parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
@@ -2595,8 +2595,8 @@ fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
         fixture.root().to_path_buf(),
     )];
     let shared = SharedArgs {
-        since: Some("20260315".to_string()),
-        until: Some("20260315".to_string()),
+        since: Some("20260315".parse().unwrap()),
+        until: Some("20260315".parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         single_thread: true,
         ..SharedArgs::default()
@@ -2782,8 +2782,8 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
 
     for (since, parent_tokens) in [("20260315", 0), ("20250101", 100)] {
         let shared = SharedArgs {
-            since: Some(since.to_string()),
-            until: Some("20260315".to_string()),
+            since: Some(since.parse().unwrap()),
+            until: Some("20260315".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             debug: true,

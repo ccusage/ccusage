@@ -10,7 +10,6 @@ use std::{
 };
 
 use compact_str::CompactString;
-use jiff::tz::TimeZone as JiffTimeZone;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
@@ -18,7 +17,7 @@ use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
     fast::FxHashMap,
-    format_date_tz, merge_codex_service_tiers, resolve_tz, week_start,
+    merge_codex_service_tiers,
 };
 
 use super::{
@@ -398,7 +397,7 @@ impl<'a> CodexDedupe<'a> {
             .sessions
             .into_inner()
             .map_err(|_| crate::cli_error("codex interner poisoned"))?;
-        let timezone = resolve_tz(shared.timezone.as_ref());
+        let window = ccusage_core::ReportWindow::from_shared(shared);
         let mut groups = BTreeMap::new();
         for shard in self.shards {
             let records = shard
@@ -411,8 +410,7 @@ impl<'a> CodexDedupe<'a> {
                     .get(key.model.0.get() - 1)
                     .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
                 let session = sessions.values[attribution.session.0.get() - 1].as_str();
-                let Some(period) =
-                    codex_period_for(key.timestamp, Some(session), kind, &timezone, shared)
+                let Some(period) = codex_period_for(key.timestamp, Some(session), kind, &window)
                 else {
                     continue;
                 };
@@ -762,22 +760,16 @@ fn codex_period_for(
     timestamp: crate::TimestampMs,
     session_id: Option<&str>,
     kind: AgentReportKind,
-    timezone: &JiffTimeZone,
-    shared: &SharedArgs,
+    window: &ccusage_core::ReportWindow,
 ) -> Option<String> {
-    let date = format_date_tz(timestamp, timezone);
-    if shared.since.is_some() || shared.until.is_some() {
-        let date_key = date.replace('-', "");
-        if shared.since.as_ref().is_some_and(|since| &date_key < since)
-            || shared.until.as_ref().is_some_and(|until| &date_key > until)
-        {
-            return None;
-        }
+    let date = ccusage_core::date_at(timestamp, window.timezone());
+    if !window.contains_day(date) {
+        return None;
     }
     Some(match kind {
-        AgentReportKind::Daily => date,
-        AgentReportKind::Weekly => week_start(&date, WeekDay::Monday).unwrap_or(date),
-        AgentReportKind::Monthly => date[..7].to_string(),
+        AgentReportKind::Daily => date.to_string(),
+        AgentReportKind::Weekly => date.week_start(WeekDay::Monday).to_string(),
+        AgentReportKind::Monthly => date.format_month(),
         AgentReportKind::Session => session_id?.to_string(),
     })
 }
@@ -1132,8 +1124,10 @@ mod tests {
     #[test]
     fn selects_codex_period_for_each_report_kind() {
         let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
-        let timezone = resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
-        let shared = SharedArgs::default();
+        let shared = SharedArgs {
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
 
         for (kind, expected) in [
             (AgentReportKind::Daily, "2026-05-29"),
@@ -1146,8 +1140,7 @@ mod tests {
                     timestamp,
                     Some("sessions/child.jsonl"),
                     kind,
-                    &timezone,
-                    &shared,
+                    &ccusage_core::ReportWindow::from_shared(&shared),
                 )
                 .as_deref(),
                 Some(expected),
@@ -1221,10 +1214,10 @@ mod tests {
 
     #[test]
     fn omits_codex_period_outside_date_bounds() {
-        let timezone = resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
         let shared = SharedArgs {
-            since: Some("20260528".to_string()),
-            until: Some("20260530".to_string()),
+            since: Some("20260528".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            until: Some("20260530".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -1234,8 +1227,7 @@ mod tests {
                     parse_ts_timestamp(timestamp).unwrap(),
                     Some("sessions/child.jsonl"),
                     AgentReportKind::Daily,
-                    &timezone,
-                    &shared,
+                    &ccusage_core::ReportWindow::from_shared(&shared),
                 ),
                 None,
             );
@@ -1245,15 +1237,13 @@ mod tests {
     #[test]
     fn omits_session_period_without_session_id() {
         let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
-        let timezone = resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
 
         assert_eq!(
             codex_period_for(
                 timestamp,
                 None,
                 AgentReportKind::Session,
-                &timezone,
-                &SharedArgs::default(),
+                &ccusage_core::ReportWindow::from_shared(&SharedArgs::default()),
             ),
             None,
         );
@@ -1318,8 +1308,8 @@ mod tests {
             parse_ts_timestamp("2026-03-15T08:01:00.000Z").unwrap(),
         );
         let shared = SharedArgs {
-            since: Some("20260315".to_string()),
-            until: Some("20260315".to_string()),
+            since: Some("20260315".parse().unwrap()),
+            until: Some("20260315".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
@@ -1396,8 +1386,8 @@ mod tests {
             "sessions/2026/03/16/late-utc.jsonl": &late_utc,
         });
         let shared = SharedArgs {
-            since: Some("20260315".to_string()),
-            until: Some("20260315".to_string()),
+            since: Some("20260315".parse().unwrap()),
+            until: Some("20260315".parse().unwrap()),
             timezone: Some("America/Los_Angeles".parse().unwrap()),
             single_thread: true,
             ..SharedArgs::default()
@@ -2102,7 +2092,7 @@ mod tests {
         ];
 
         for single_thread in [true, false] {
-            for since in [None, Some("20260101".to_string())] {
+            for since in [None, Some("20260101".parse().unwrap())] {
                 let shared = SharedArgs {
                     single_thread,
                     since,
@@ -2466,8 +2456,8 @@ mod tests {
                 let shared = SharedArgs {
                     single_thread,
                     timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                    since: Some("20261101".into()),
-                    until: Some("20261101".into()),
+                    since: Some("20261101".parse().unwrap()),
+                    until: Some("20261101".parse().unwrap()),
                     ..SharedArgs::default()
                 };
                 let (groups, _) = load_groups_from_sources_with_diagnostics(

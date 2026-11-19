@@ -6,8 +6,8 @@ use ccusage_cli::{
     AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
     BlocksOption, ClaudeStatuslineOption, CliConfig, CodexSpeed, CodexStatuslineArgs,
     CodexStatuslineOption, ColorChoice, Command, CostMode, CostSource, DATE_BOUND_FORMATS,
-    DailyArgs, ReportTimezone, SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent,
-    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    DailyArgs, DateBound, ReportTimezone, SessionArgs, SessionLength, SharedArgs, SortOrder,
+    StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
 };
 use ccusage_cli::{command_tokens, is_shared_flag};
 
@@ -813,8 +813,8 @@ fn parse_shared_arg_for_command(
 }
 
 enum SharedFlag {
-    Since(String),
-    Until(String),
+    Since(DateBound),
+    Until(DateBound),
     Last(NonZeroU32),
     Json,
     Mode(CostMode),
@@ -981,8 +981,8 @@ fn unsupported_agent_report_error(agent: AgentId, report: &str) -> String {
     }
 }
 
-fn parse_date_bound(flag: &str, value: &str) -> Result<String, String> {
-    normalize_date_bound(value).ok_or_else(|| {
+fn parse_date_bound(flag: &str, value: &str) -> Result<DateBound, String> {
+    DateBound::parse(value).ok_or_else(|| {
         format!("Invalid value for {flag} '{value}'. Expected {DATE_BOUND_FORMATS}.")
     })
 }
@@ -1020,7 +1020,7 @@ fn validate_date_window(
 ) -> Result<(), String> {
     let Some((since, until)) = command
         .shared()
-        .and_then(|shared| shared.since.as_deref().zip(shared.until.as_deref()))
+        .and_then(|shared| shared.since.zip(shared.until))
     else {
         return Ok(());
     };

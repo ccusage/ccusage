@@ -763,8 +763,8 @@ mod tests {
             json: true,
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".into()),
-            until: Some("20990102".into()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             ..SharedArgs::with_defaults()
         };
         let source = SourceArgs {
@@ -1222,8 +1222,8 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260704".to_string()),
-            until: Some("20260704".to_string()),
+            since: Some("20260704".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: store_path.clone(),
@@ -1307,8 +1307,8 @@ mod tests {
         let shared = SharedArgs {
             mode: crate::cli::CostMode::Display,
             timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260703".to_string()),
-            until: Some("20260704".to_string()),
+            since: Some("20260703".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             ..SharedArgs::default()
         };
         let store_path = fixture.path("omp/sessions").to_string_lossy().into_owned();
@@ -1349,8 +1349,8 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260704".to_string()),
-            until: Some("20260704".to_string()),
+            since: Some("20260704".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -1398,8 +1398,8 @@ mod tests {
             mode: CostMode::Display,
             offline: true,
             timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260704".to_string()),
-            until: Some("20260704".to_string()),
+            since: Some("20260704".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -1635,8 +1635,8 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: fixture
@@ -1676,8 +1676,8 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![
                 NamedPiStore {
                     name: "omp".to_string(),
@@ -1718,8 +1718,8 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: fixture
@@ -1760,8 +1760,8 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![
                 NamedPiStore {
                     name: "omp".to_string(),
@@ -1801,8 +1801,8 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: fixture.path("omp/sessions").to_string_lossy().into_owned(),
@@ -1841,8 +1841,8 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
@@ -1885,16 +1885,16 @@ mod tests {
             mode: crate::cli::CostMode::Display,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990101".to_string()),
-            until: Some("20990103".to_string()),
+            since: Some("20990101".parse().unwrap()),
+            until: Some("20990103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
             "pi".to_string(),
             SourceArgs {
                 shared: SharedArgs {
-                    since: Some("20990105".to_string()),
-                    until: Some("20990106".to_string()),
+                    since: Some("20990105".parse().unwrap()),
+                    until: Some("20990106".parse().unwrap()),
                     ..shared.clone()
                 },
                 ..SourceArgs::default()
@@ -1938,8 +1938,8 @@ mod tests {
             mode: CostMode::Calculate,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260720".to_string()),
-            until: Some("20260723".to_string()),
+            since: Some("20260720".parse().unwrap()),
+            until: Some("20260723".parse().unwrap()),
             ..SharedArgs::default()
         };
         let pricing_overrides = BTreeMap::from([(
@@ -1968,8 +1968,8 @@ mod tests {
                         ..Default::default()
                     },
                     shared: SharedArgs {
-                        since: Some("20260722".to_string()),
-                        until: Some("20260722".to_string()),
+                        since: Some("20260722".parse().unwrap()),
+                        until: Some("20260722".parse().unwrap()),
                         pricing_overrides,
                         ..shared.clone()
                     },
@@ -2106,8 +2106,8 @@ mod tests {
         let custom_pi_path = fixture.path("custom/pi").to_string_lossy().into_owned();
         let shared = SharedArgs {
             offline: true,
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "fork".to_string(),
                 path: custom_pi_path.clone(),
@@ -2147,8 +2147,8 @@ mod tests {
             mode: CostMode::Calculate,
             offline: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "fork".to_string(),
                 path: fixture.path("fork/sessions").to_string_lossy().into_owned(),
@@ -2167,8 +2167,8 @@ mod tests {
             "pi".to_string(),
             SourceArgs {
                 shared: SharedArgs {
-                    since: Some("20990105".to_string()),
-                    until: Some("20990106".to_string()),
+                    since: Some("20990105".parse().unwrap()),
+                    until: Some("20990106".parse().unwrap()),
                     pricing_overrides: BTreeMap::from([(
                         pricing_key,
                         crate::cli::PricingOverride {

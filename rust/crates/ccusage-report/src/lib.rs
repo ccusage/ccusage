@@ -4,7 +4,7 @@ mod date_utils;
 mod last_window;
 mod output;
 
-pub use date_utils::{DateTimeParts, am_pm, format_date, hour_12, zoned_parts};
+pub use date_utils::{DateTimeParts, am_pm, hour_12, zoned_parts};
 pub use last_window::last_periods_since;
 pub use output::{group_project_output, session_summary_json, summary_json};
 

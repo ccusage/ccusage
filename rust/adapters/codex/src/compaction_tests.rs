@@ -119,7 +119,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
     let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
     for single_thread in [true, false] {
         let shared = SharedArgs {
-            since: Some("20260902".into()),
+            since: Some("20260902".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
@@ -165,7 +165,7 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
     let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
     for single_thread in [true, false] {
         let shared = SharedArgs {
-            since: Some("20260902".into()),
+            since: Some("20260902".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()

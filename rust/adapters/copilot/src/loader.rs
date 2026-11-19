@@ -1254,7 +1254,7 @@ mod tests {
         let shared = crate::cli::SharedArgs {
             single_thread: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            until: Some("20260102".to_string()),
+            until: Some("20260102".parse().unwrap()),
             ..crate::cli::SharedArgs::default()
         };
 
@@ -1340,7 +1340,7 @@ mod tests {
         ]);
         let shared = crate::cli::SharedArgs {
             single_thread: true,
-            since: Some("20260103".to_string()),
+            since: Some("20260103".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..crate::cli::SharedArgs::default()
         };
@@ -1894,7 +1894,7 @@ mod tests {
             .join("\n"),
         });
         let shared = crate::cli::SharedArgs {
-            since: Some("20260103".to_string()),
+            since: Some("20260103".parse().unwrap()),
             ..utc_args()
         };
 
@@ -1944,7 +1944,7 @@ mod tests {
             .join("\n"),
         });
         let shared = crate::cli::SharedArgs {
-            until: Some("20260102".to_string()),
+            until: Some("20260102".parse().unwrap()),
             ..utc_args()
         };
 
@@ -2141,11 +2141,11 @@ mod tests {
         let fixture = crashed_process_fixture();
         let full = usage_rows(&load_copilot_home(&fixture, &utc_args()));
         let until = crate::cli::SharedArgs {
-            until: Some("20260102".to_string()),
+            until: Some("20260102".parse().unwrap()),
             ..utc_args()
         };
         let since = crate::cli::SharedArgs {
-            since: Some("20260103".to_string()),
+            since: Some("20260103".parse().unwrap()),
             ..utc_args()
         };
 

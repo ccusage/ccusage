@@ -238,8 +238,8 @@ mod tests {
         let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
-            since: Some("20260131".to_string()),
-            until: Some("20260131".to_string()),
+            since: Some("20260131".parse().unwrap()),
+            until: Some("20260131".parse().unwrap()),
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
@@ -248,7 +248,7 @@ mod tests {
         assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared);
 
         let outside_window = SharedArgs {
-            since: Some("20270101".to_string()),
+            since: Some("20270101".parse().unwrap()),
             ..shared.clone()
         };
         let rows = SOURCE

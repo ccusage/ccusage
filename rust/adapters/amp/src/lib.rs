@@ -55,8 +55,8 @@ mod tests {
 
     fn shared(since: Option<&str>, until: Option<&str>, timezone: &str) -> SharedArgs {
         SharedArgs {
-            since: since.map(str::to_string),
-            until: until.map(str::to_string),
+            since: since.map(|date| date.parse().unwrap()),
+            until: until.map(|date| date.parse().unwrap()),
             timezone: Some(timezone.parse().unwrap()),
             offline: true,
             ..SharedArgs::with_defaults()
@@ -73,7 +73,7 @@ mod tests {
             shared(None, None, "UTC"),
             shared(Some("20260131"), Some("20260201"), "UTC"),
             shared(Some("20260201"), Some("20260201"), "Asia/Tokyo"),
-            shared(Some("2026"), Some("202602"), "UTC"),
+            shared(Some("20260101"), Some("20260131"), "UTC"),
             shared(Some("20270101"), None, "UTC"),
         ] {
             assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared);

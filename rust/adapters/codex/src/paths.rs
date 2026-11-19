@@ -138,10 +138,10 @@ pub(super) struct CodexFileEligibility {
 impl CodexFileEligibility {
     pub(super) fn from_shared(shared: &SharedArgs) -> Option<Self> {
         let timezone = resolve_tz(shared.timezone.as_ref());
-        let since_date = shared.since.as_deref().and_then(parse_compact_date);
-        let until_date = shared.until.as_deref().and_then(parse_compact_date);
+        let since_date = shared.since.and_then(|date| date.day().civil());
+        let until_date = shared.until.and_then(|date| date.day().civil());
         let (since_millis, until_millis) =
-            date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), &timezone);
+            date_range_bounds_ms(shared.since, shared.until, &timezone);
         if since_date.is_none() && until_date.is_none() {
             return None;
         }
@@ -202,16 +202,6 @@ fn codex_file_date(sessions_dir: &Path, file: &Path) -> Option<Date> {
         let day = parse_date_part(parts[2], 2)?;
         Date::new(year as i16, month as i8, day as i8).ok()
     })
-}
-
-fn parse_compact_date(value: &str) -> Option<Date> {
-    if value.len() != 8 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let year = parse_date_part(&value[..4], 4)?;
-    let month = parse_date_part(&value[4..6], 2)?;
-    let day = parse_date_part(&value[6..], 2)?;
-    Date::new(year as i16, month as i8, day as i8).ok()
 }
 
 fn parse_date_part(value: &str, length: usize) -> Option<u16> {
@@ -480,8 +470,8 @@ mod tests {
             crate::parse_ts_timestamp("2026-03-15T12:00:00.000Z").unwrap(),
         );
         let shared = SharedArgs {
-            since: Some("20260315".to_string()),
-            until: Some("20260315".to_string()),
+            since: Some("20260315".parse().unwrap()),
+            until: Some("20260315".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -500,7 +490,7 @@ mod tests {
         let sessions_dir = fixture.create_dir_all("codex/sessions");
         let file = fixture.write_file("codex/sessions/custom.jsonl", "");
         let shared = SharedArgs {
-            since: Some("20260131".to_string()),
+            since: Some("20260131".parse().unwrap()),
             ..SharedArgs::default()
         };
 

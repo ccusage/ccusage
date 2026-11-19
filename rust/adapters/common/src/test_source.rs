@@ -108,8 +108,8 @@ pub(crate) fn entries() -> Vec<LoadedEntry> {
 pub(crate) fn shared(since: Option<&str>, until: Option<&str>) -> SharedArgs {
     ccusage_test_support::install_pricing_snapshots();
     SharedArgs {
-        since: since.map(str::to_string),
-        until: until.map(str::to_string),
+        since: since.map(|date| date.parse().unwrap()),
+        until: until.map(|date| date.parse().unwrap()),
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         offline: true,
         ..SharedArgs::with_defaults()

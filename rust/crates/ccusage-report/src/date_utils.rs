@@ -1,11 +1,5 @@
-use ccusage_core::{
-    Result, TimestampMs, cli::ReportTimezone, cli_error, format_date_tz, resolve_tz,
-};
+use ccusage_core::{Result, TimestampMs, cli_error};
 use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
-
-pub fn format_date(timestamp: TimestampMs, timezone: Option<&ReportTimezone>) -> String {
-    format_date_tz(timestamp, &resolve_tz(timezone))
-}
 
 pub struct DateTimeParts {
     pub year: i32,
@@ -37,26 +31,4 @@ pub fn hour_12(hour: u32) -> u32 {
 
 pub fn am_pm(hour: u32) -> &'static str {
     if hour < 12 { "AM" } else { "PM" }
-}
-
-#[cfg(test)]
-mod tests {
-    use ccusage_core::{format_rfc3339_millis, parse_ts_timestamp};
-
-    use super::format_date;
-
-    #[test]
-    fn formats_dates_with_timezone() {
-        let timestamp = parse_ts_timestamp("2024-08-04T23:30:00.000Z").unwrap();
-
-        assert_eq!(
-            format_date(timestamp, Some(&ccusage_core::cli::ReportTimezone::UTC)),
-            "2024-08-04"
-        );
-        assert_eq!(
-            format_date(timestamp, Some(&"Asia/Tokyo".parse().unwrap())),
-            "2024-08-05"
-        );
-        assert_eq!(format_rfc3339_millis(timestamp), "2024-08-04T23:30:00.000Z");
-    }
 }

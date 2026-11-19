@@ -8,7 +8,7 @@ use crate::{
     cli::{SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
-    format_rfc3339_millis, parse_iso_date,
+    format_rfc3339_millis,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -287,7 +287,7 @@ where
 }
 
 pub fn week_start(date: &str, start: WeekDay) -> Option<String> {
-    let date = parse_iso_date(date)?;
+    let date = ccusage_cli::IsoDate::parse(date)?;
     Some(date.week_start(start).to_string())
 }
 

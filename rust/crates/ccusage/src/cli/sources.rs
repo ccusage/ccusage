@@ -49,8 +49,8 @@ pub(crate) fn resolve_opencode_claims(
 #[cfg(test)]
 mod tests {
     use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, PeriodUnit, WeekDay};
-    use ccusage_core::utc_now;
-    use ccusage_report::{format_date, last_periods_since};
+    use ccusage_core::{date_at, resolve_tz, utc_now};
+    use ccusage_report::last_periods_since;
     use ccusage_test_support::fs_fixture;
 
     use super::*;
@@ -139,10 +139,16 @@ mod tests {
     fn reads_each_source_through_its_own_config_sections() {
         let unified = unified(&["daily"]);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
         assert_eq!(unified.shared.mode, CostMode::Display);
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260301"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260301")
+        );
         assert_eq!(codex.shared.mode, CostMode::Calculate);
         assert_eq!(codex.options.codex_speed, CodexSpeed::Fast);
         assert_eq!(
@@ -200,7 +206,10 @@ mod tests {
                 .map(|timezone| timezone.name()),
             Some("Asia/Tokyo")
         );
-        assert_eq!(claude.shared.since.as_deref(), Some("20990102"));
+        assert_eq!(
+            claude.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20990102")
+        );
         assert_eq!(claude.options.claude_project.as_deref(), Some("selected"));
     }
 
@@ -265,11 +274,17 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily", "--since", "20260401", "--offline"], config);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260401"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260401")
+        );
         assert!(unified.shared.offline);
 
         for source in unified.sources.values() {
-            assert_eq!(source.shared.since.as_deref(), Some("20260401"));
+            assert_eq!(
+                source.shared.since.map(|date| date.to_string()).as_deref(),
+                Some("20260401")
+            );
             assert!(source.shared.offline);
         }
         assert_eq!(
@@ -335,7 +350,10 @@ mod tests {
         );
 
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260601"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260601")
+        );
         assert_eq!(codex.shared.mode, CostMode::Auto);
         assert_eq!(
             codex
@@ -394,7 +412,11 @@ mod tests {
 
             assert_eq!(unified.kind, kind, "{name}");
             let codex = &unified.sources["codex"];
-            assert_eq!(codex.shared.since.as_deref(), Some(since), "{name}");
+            assert_eq!(
+                codex.shared.since.map(|date| date.to_string()).as_deref(),
+                Some(since),
+                "{name}"
+            );
             assert_eq!(codex.shared.mode, mode, "{name}");
             assert_eq!(
                 codex
@@ -420,7 +442,10 @@ mod tests {
         let unified = unified_with_config(&["daily"], config);
 
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260602")
+        );
         assert_eq!(codex.shared.mode, CostMode::Auto);
     }
 
@@ -434,10 +459,16 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily"], config);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
         assert_eq!(unified.shared.mode, CostMode::Display);
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260602")
+        );
         assert_eq!(codex.shared.mode, CostMode::Calculate);
     }
 
@@ -451,10 +482,16 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily"], config);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
         assert_eq!(unified.shared.mode, CostMode::Display);
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260602")
+        );
         assert_eq!(codex.shared.mode, CostMode::Calculate);
     }
 
@@ -464,7 +501,11 @@ mod tests {
 
         assert_eq!(unified.kind, AgentReportKind::Daily);
         assert_eq!(
-            unified.sources["codex"].shared.since.as_deref(),
+            unified.sources["codex"]
+                .shared
+                .since
+                .map(|date| date.to_string())
+                .as_deref(),
             Some("20260301")
         );
         assert_eq!(
@@ -494,7 +535,7 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["weekly", "--last", "1"], config);
         let codex = &unified.sources["codex"];
-        let today = format_date(utc_now(), codex.shared.timezone.as_ref());
+        let today = date_at(utc_now(), &resolve_tz(codex.shared.timezone.as_ref()));
 
         assert_eq!(unified.start_of_week, WeekDay::Wednesday);
         assert_eq!(
@@ -511,7 +552,7 @@ mod tests {
             last_periods_since(
                 PeriodUnit::Week,
                 std::num::NonZeroU32::MIN,
-                &today,
+                today,
                 unified.start_of_week
             )
         );
@@ -529,7 +570,7 @@ mod tests {
             config,
         );
         let codex = &unified.sources["codex"];
-        let today = format_date(utc_now(), codex.shared.timezone.as_ref());
+        let today = date_at(utc_now(), &resolve_tz(codex.shared.timezone.as_ref()));
 
         assert_eq!(unified.start_of_week, WeekDay::Friday);
         assert_eq!(
@@ -537,7 +578,7 @@ mod tests {
             last_periods_since(
                 PeriodUnit::Week,
                 std::num::NonZeroU32::MIN,
-                &today,
+                today,
                 WeekDay::Friday
             )
         );

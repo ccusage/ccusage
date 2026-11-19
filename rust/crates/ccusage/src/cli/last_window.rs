@@ -1,6 +1,6 @@
 use ccusage_cli::{Command, PeriodUnit, SharedArgs, WeekDay};
-use ccusage_core::utc_now;
-use ccusage_report::{format_date, last_periods_since};
+use ccusage_core::{date_at, resolve_tz, utc_now};
+use ccusage_report::last_periods_since;
 
 pub(crate) fn resolve(command: &mut Command) -> Result<(), String> {
     let Some(period) = command.period() else {
@@ -19,8 +19,8 @@ pub(crate) fn resolve_shared(
     let Some(last) = shared.last else {
         return Ok(());
     };
-    let today = format_date(utc_now(), shared.timezone.as_ref());
-    let Some(since) = last_periods_since(unit, last, &today, start_of_week) else {
+    let today = date_at(utc_now(), &resolve_tz(shared.timezone.as_ref()));
+    let Some(since) = last_periods_since(unit, last, today, start_of_week) else {
         return Err(format!("Could not resolve --last {last} from today's date"));
     };
     shared.since = Some(since);
@@ -64,20 +64,19 @@ mod tests {
         }
     }
 
-    fn resolved_since(command: Command) -> Option<String> {
+    fn resolved_since(command: Command) -> Option<ccusage_cli::DateBound> {
         let mut command = command;
         resolve(&mut command).unwrap();
-        command.shared().and_then(|shared| shared.since.clone())
+        command.shared().and_then(|shared| shared.since)
     }
 
     #[test]
     fn resolves_the_unified_daily_window_to_today() {
-        let today =
-            format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC)).replace('-', "");
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
 
         let since = resolved_since(Command::All(agent_command(AgentReportKind::Daily, 1)));
 
-        assert_eq!(since.as_deref(), Some(today.as_str()));
+        assert_eq!(since, Some(today.into()));
     }
 
     #[test]
@@ -95,18 +94,18 @@ mod tests {
             agent_command(AgentReportKind::Monthly, 1),
         ));
 
-        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
             weekly,
-            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Monday)
         );
         assert_eq!(
             cline_weekly,
-            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Monday)
         );
         assert_eq!(
             monthly,
-            last_periods_since(PeriodUnit::Month, periods(1), &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Month, periods(1), today, WeekDay::Monday)
         );
     }
 
@@ -117,10 +116,10 @@ mod tests {
             start_of_week: WeekDay::Sunday,
         }));
 
-        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
             since,
-            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Sunday)
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Sunday)
         );
     }
 
@@ -131,10 +130,10 @@ mod tests {
             ..agent_command(AgentReportKind::Weekly, 1)
         }));
 
-        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
             since,
-            last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Wednesday)
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Wednesday)
         );
     }
 
@@ -159,10 +158,10 @@ mod tests {
         )
         .unwrap();
         resolve(&mut command).unwrap();
-        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
             command.shared().unwrap().since,
-            last_periods_since(PeriodUnit::Day, periods(2), &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Day, periods(2), today, WeekDay::Monday)
         );
     }
 }

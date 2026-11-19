@@ -160,7 +160,7 @@ mod tests {
             debug: true,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
-            since: Some("20270101".to_string()),
+            since: Some("20270101".parse().unwrap()),
             ..crate::cli::SharedArgs::default()
         };
 

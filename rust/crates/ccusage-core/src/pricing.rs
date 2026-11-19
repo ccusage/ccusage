@@ -298,9 +298,8 @@ impl PricingSchedule {
         if timestamp.as_millis() < self.cutoff_ms {
             return self.before;
         }
-        let weekday = crate::date_utils::weekday_from_epoch_days(
-            timestamp.as_millis().div_euclid(MILLIS_PER_DAY),
-        );
+        let weekday =
+            ccusage_cli::weekday_from_epoch_days(timestamp.as_millis().div_euclid(MILLIS_PER_DAY));
         let hour = timestamp.as_millis().rem_euclid(MILLIS_PER_DAY) / MILLIS_PER_HOUR;
         if self.peak_weekdays.contains(&weekday)
             && self.peak_hours.iter().any(|window| window.contains(&hour))

@@ -292,7 +292,7 @@ mod tests {
             .join("\n"),
             SharedArgs {
                 mode: CostMode::Display,
-                since: Some("20260813".to_string()),
+                since: Some("20260813".parse().unwrap()),
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
@@ -311,7 +311,7 @@ mod tests {
             r#"{"timestamp":"2026-08-14T09:38:56.467Z","sessionId":"session-a","requestId":"request-boundary","costUSD":3.75,"message":{"id":"message-boundary","model":"claude-sonnet-4-20250514","usage":{"input_tokens":40,"output_tokens":5}}}"#,
             SharedArgs {
                 mode: CostMode::Display,
-                until: Some("20260814".to_string()),
+                until: Some("20260814".parse().unwrap()),
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
@@ -328,7 +328,7 @@ mod tests {
             r#"{"timestamp":"2026-08-14T23:30:00.000Z","sessionId":"session-a","requestId":"request-timezone","costUSD":4.5,"message":{"id":"message-timezone","model":"claude-sonnet-4-20250514","usage":{"input_tokens":50,"output_tokens":6}}}"#,
             SharedArgs {
                 mode: CostMode::Display,
-                since: Some("20260815".to_string()),
+                since: Some("20260815".parse().unwrap()),
                 timezone: Some("Asia/Tokyo".parse().unwrap()),
                 ..SharedArgs::default()
             },

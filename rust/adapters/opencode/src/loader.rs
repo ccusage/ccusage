@@ -982,8 +982,7 @@ impl DateWindow {
     };
 
     fn from_shared(shared: &SharedArgs, tz: &JiffTimeZone) -> Self {
-        let (start, end) =
-            date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), tz);
+        let (start, end) = date_range_bounds_ms(shared.since, shared.until, tz);
         Self { start, end }
     }
 
@@ -1389,8 +1388,8 @@ mod tests {
             let shared = SharedArgs {
                 mode: CostMode::Display,
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since: since.map(str::to_string),
-                until: until.map(str::to_string),
+                since: since.map(|date| date.parse().unwrap()),
+                until: until.map(|date| date.parse().unwrap()),
                 ..SharedArgs::default()
             };
             let diagnostics = Diagnostics::new("opencode");
@@ -2594,104 +2593,14 @@ mod tests {
             &SharedArgs {
                 mode: CostMode::Display,
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since: Some("20260102".to_string()),
-                until: Some("20260103".to_string()),
+                since: Some("20260102".parse().unwrap()),
+                until: Some("20260103".parse().unwrap()),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
         );
 
         assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn keeps_message_rows_but_excludes_aggregate_for_partial_since_bound() {
-        let fixture = fs_fixture!({});
-        let db_path = fixture.path("opencode.db");
-        create_db_message(
-            &db_path,
-            "partial-since-message",
-            "partial-since-message-session",
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
-        );
-        create_db_session_aggregate_table(&db_path, "session_v2");
-        insert_db_session_aggregate(
-            &db_path,
-            "session_v2",
-            &SessionAggregateFixture {
-                session_id: "partial-since-aggregate-session",
-                time_created: 1_767_312_000_000,
-                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
-                cost: 9.99,
-                input_tokens: 9_999,
-                output_tokens: 9_999,
-                cache_read_tokens: 0,
-                cache_write_tokens: 0,
-                reasoning_tokens: 0,
-            },
-        );
-
-        let entries = load_entries_from_directory_for_report(
-            fixture.root(),
-            &SharedArgs {
-                mode: CostMode::Display,
-                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since: Some("2026".to_string()),
-                ..SharedArgs::default()
-            },
-            AgentReportKind::Session,
-        );
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("partial-since-message")
-        );
-    }
-
-    #[test]
-    fn keeps_message_rows_but_excludes_aggregate_for_partial_until_bound() {
-        let fixture = fs_fixture!({});
-        let db_path = fixture.path("opencode.db");
-        create_db_message(
-            &db_path,
-            "partial-until-message",
-            "partial-until-message-session",
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
-        );
-        create_db_session_aggregate_table(&db_path, "session_v2");
-        insert_db_session_aggregate(
-            &db_path,
-            "session_v2",
-            &SessionAggregateFixture {
-                session_id: "partial-until-aggregate-session",
-                time_created: 1_767_312_000_000,
-                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
-                cost: 9.99,
-                input_tokens: 9_999,
-                output_tokens: 9_999,
-                cache_read_tokens: 0,
-                cache_write_tokens: 0,
-                reasoning_tokens: 0,
-            },
-        );
-
-        let entries = load_entries_from_directory_for_report(
-            fixture.root(),
-            &SharedArgs {
-                mode: CostMode::Display,
-                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                until: Some("2026-02".to_string()),
-                ..SharedArgs::default()
-            },
-            AgentReportKind::Session,
-        );
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("partial-until-message")
-        );
     }
 
     #[test]
@@ -3055,7 +2964,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260103".to_string()),
+            since: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3085,7 +2994,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            until: Some("20260105".to_string()),
+            until: Some("20260105".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3107,8 +3016,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260103".to_string()),
-            until: Some("20260107".to_string()),
+            since: Some("20260103".parse().unwrap()),
+            until: Some("20260107".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3130,8 +3039,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260103".to_string()),
-            until: Some("20260107".to_string()),
+            since: Some("20260103".parse().unwrap()),
+            until: Some("20260107".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3151,7 +3060,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            until: Some("20260101".to_string()),
+            until: Some("20260101".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3170,7 +3079,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260103".to_string()),
+            since: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3189,8 +3098,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260101".to_string()),
-            until: Some("20260103".to_string()),
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3210,7 +3119,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260102".to_string()),
+            since: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3230,7 +3139,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            until: Some("20260102".to_string()),
+            until: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3268,7 +3177,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            until: Some("20260101".to_string()),
+            until: Some("20260101".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3287,8 +3196,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260101".to_string()),
-            until: Some("20260103".to_string()),
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3313,8 +3222,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("Pacific/Kiritimati".parse().unwrap()),
-            since: Some("20260102".to_string()),
-            until: Some("20260102".to_string()),
+            since: Some("20260102".parse().unwrap()),
+            until: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3340,7 +3249,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("Etc/GMT+12".parse().unwrap()),
-            until: Some("20260101".to_string()),
+            until: Some("20260101".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3367,8 +3276,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260102".to_string()),
-            until: Some("20260102".to_string()),
+            since: Some("20260102".parse().unwrap()),
+            until: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3395,8 +3304,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260101".to_string()),
-            until: Some("20260103".to_string()),
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -3407,32 +3316,6 @@ mod tests {
             "an unrecognized time_created scale must fall back to scanning, not drop rows"
         );
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-seconds"));
-    }
-
-    #[test]
-    fn non_ascii_date_bounds_leave_filtering_to_the_report() {
-        let fixture = fs_fixture!({});
-        create_db_message(
-            &fixture.path("opencode.db"),
-            "msg-1",
-            "session-a",
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
-        );
-
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("abあcde".to_string()),
-            ..SharedArgs::default()
-        };
-        let entries = load_entries_from_directory(fixture.root(), &shared);
-
-        assert_eq!(
-            entries.len(),
-            1,
-            "a bound with no instant must not pre-filter; the report's string filter decides"
-        );
-        assert!(!ccusage_core::ReportWindow::from_shared(&shared).contains_date(&entries[0].date));
     }
 
     #[test]
@@ -3457,8 +3340,8 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20200101".to_string()),
-            until: Some("20200102".to_string()),
+            since: Some("20200101".parse().unwrap()),
+            until: Some("20200102".parse().unwrap()),
             ..SharedArgs::default()
         };
         assert!(load_entries_from_directory(db_only.root(), &shared).is_empty());

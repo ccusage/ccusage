@@ -22,12 +22,12 @@ pub struct PiStoreConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConfigDateBound(pub(crate) String);
+pub struct ConfigDateBound(pub(crate) ccusage_cli::DateBound);
 
 impl<'de> Deserialize<'de> for ConfigDateBound {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        ccusage_cli::normalize_date_bound(&value)
+        ccusage_cli::DateBound::parse(&value)
             .map(Self)
             .ok_or_else(|| {
                 serde::de::Error::custom(format!(

@@ -17,7 +17,6 @@ use ccusage_core::{
     pricing::PricingMap,
     sum_costs, utc_now,
 };
-use ccusage_report::format_date;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -256,9 +255,10 @@ fn statusline_today_shared(
     shared: &SharedArgs,
     now: TimestampMs,
 ) -> SharedArgs {
-    let today = format_date(now, args.timezone.as_ref()).replace('-', "");
+    let today =
+        ccusage_core::date_at(now, &ccusage_core::resolve_tz(args.timezone.as_ref())).into();
     SharedArgs {
-        since: Some(today.clone()),
+        since: Some(today),
         until: Some(today),
         offline: shared.offline,
         pricing_overrides: shared.pricing_overrides.clone(),
@@ -345,11 +345,11 @@ fn statusline_block_shared(
 ) -> SharedArgs {
     let lookback =
         ccusage_core::cli::SessionLength::DEFAULT.as_millis() + lookback_days * MILLIS_PER_DAY;
-    let since = format_date(
+    let since = ccusage_core::date_at(
         TimestampMs::from_millis(now.as_millis() - lookback),
-        args.timezone.as_ref(),
+        &ccusage_core::resolve_tz(args.timezone.as_ref()),
     )
-    .replace('-', "");
+    .into();
     SharedArgs {
         since: Some(since),
         timezone: args.timezone.clone(),
@@ -887,8 +887,14 @@ mod tests {
 
         let today_shared = statusline_today_shared(&args, &shared, now);
 
-        assert_eq!(today_shared.since.as_deref(), Some("20260522"));
-        assert_eq!(today_shared.until.as_deref(), Some("20260522"));
+        assert_eq!(
+            today_shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260522")
+        );
+        assert_eq!(
+            today_shared.until.map(|date| date.to_string()).as_deref(),
+            Some("20260522")
+        );
         assert_eq!(
             today_shared
                 .timezone
@@ -917,10 +923,14 @@ mod tests {
 
         let block_shared = statusline_block_shared(&args, &shared, now, 1);
 
-        assert_eq!(block_shared.since.as_deref(), Some("20260520"));
+        assert_eq!(
+            block_shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260520")
+        );
         assert_eq!(
             statusline_block_shared(&args, &shared, now, 7)
                 .since
+                .map(|date| date.to_string())
                 .as_deref(),
             Some("20260514")
         );
