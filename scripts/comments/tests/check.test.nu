@@ -16,6 +16,7 @@ def check [work: path]: nothing -> nothing {
     ^git init --quiet
     ^git add -- ...$files
     '// TODO: untracked content.' | save untracked.js
+    let tracked = ^git write-tree | str trim
     let run = ^nu --no-config-file $checker | complete
     assert equal $run.exit_code 1 $run.stderr
     assert equal $run.stderr ''
@@ -36,6 +37,10 @@ def check [work: path]: nothing -> nothing {
     let clean = ^nu --no-config-file $checker | complete
     assert equal $clean.exit_code 0 $clean.stderr
     assert equal $clean.stdout ''
+    let revision = ^nu --no-config-file $checker --ref $tracked | complete
+    assert equal $revision.exit_code 1 $revision.stderr
+    assert equal $revision.stderr ''
+    assert equal ($revision.stdout | lines) $diagnostics
 }
 
 def main []: nothing -> nothing {

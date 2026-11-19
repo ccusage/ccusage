@@ -175,7 +175,6 @@ fn table_columns(
     connection: &sqlite::Connection,
     table: &str,
 ) -> std::result::Result<HashSet<String>, UnitError> {
-    // NOTE(2026-11-16, #977): The bundled SQLite disables PRAGMA table_info via SQLITE_OMIT_SCHEMA_PRAGMAS. Read column names from a prepared statement instead.
     let statement = connection
         .prepare(format!("SELECT * FROM \"{table}\" LIMIT 0"))
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;

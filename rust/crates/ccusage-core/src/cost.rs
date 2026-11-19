@@ -699,56 +699,35 @@ mod tests {
             Some(1)
         );
 
-        let short = TokenUsageRaw {
-            input_tokens: 59,
-            output_tokens: 3,
-            cache_read_input_tokens: 40,
-            ..TokenUsageRaw::default()
-        };
-        let cost = calculate_cost_for_usage(
-            Some("two-stage-test"),
-            short,
-            None,
-            CostMode::Calculate,
-            Some(&pricing),
-        );
-        assert!(
-            (cost - 93e-6).abs() < 1e-12,
-            "short-context cost was {cost}"
-        );
-
-        let boundary = TokenUsageRaw {
-            input_tokens: 60,
-            output_tokens: 3,
-            cache_read_input_tokens: 40,
-            ..TokenUsageRaw::default()
-        };
-        let cost = calculate_cost_for_usage(
-            Some("two-stage-test"),
-            boundary,
-            None,
-            CostMode::Calculate,
-            Some(&pricing),
-        );
-        assert!((cost - 94e-6).abs() < 1e-12, "boundary cost was {cost}");
-
-        let long = TokenUsageRaw {
-            input_tokens: 61,
-            output_tokens: 3,
-            cache_read_input_tokens: 40,
-            ..TokenUsageRaw::default()
-        };
-        let cost = calculate_cost_for_usage(
-            Some("two-stage-test"),
-            long,
-            None,
-            CostMode::Calculate,
-            Some(&pricing),
-        );
-        assert!(
-            (cost - 190e-6).abs() < 1e-12,
-            "long-context cost was {cost}"
-        );
+        let cache_read_tokens = 40_u32;
+        let output_tokens = 3_u32;
+        let base_rates = (1.0, 10.0, 0.1);
+        let long_context_rates = (2.0, 20.0, 0.2);
+        let cases = [
+            ("below the boundary", 59_u32, base_rates),
+            ("at the boundary", 60_u32, base_rates),
+            ("above the boundary", 61_u32, long_context_rates),
+        ];
+        for (case, input_tokens, (input_rate, output_rate, cache_read_rate)) in cases {
+            let usage = TokenUsageRaw {
+                input_tokens: u64::from(input_tokens),
+                output_tokens: u64::from(output_tokens),
+                cache_read_input_tokens: u64::from(cache_read_tokens),
+                ..TokenUsageRaw::default()
+            };
+            let cost = calculate_cost_for_usage(
+                Some("two-stage-test"),
+                usage,
+                None,
+                CostMode::Calculate,
+                Some(&pricing),
+            );
+            let expected = (f64::from(input_tokens) * input_rate
+                + f64::from(output_tokens) * output_rate
+                + f64::from(cache_read_tokens) * cache_read_rate)
+                / 1_000_000.0;
+            assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
+        }
     }
 
     #[test]
@@ -756,35 +735,32 @@ mod tests {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
-        let cached_heavy = TokenUsageRaw {
-            input_tokens: 10_000,
-            output_tokens: 1_000,
-            cache_read_input_tokens: 500_000,
-            ..TokenUsageRaw::default()
-        };
-        let cost = calculate_cost_for_usage(
-            Some("grok-4.5"),
-            cached_heavy,
-            None,
-            CostMode::Calculate,
-            Some(&pricing),
-        );
-        assert!((cost - 0.352).abs() < 1e-9, "cached-heavy cost was {cost}");
-
-        let short = TokenUsageRaw {
-            input_tokens: 10_000,
-            output_tokens: 1_000,
-            cache_read_input_tokens: 100_000,
-            ..TokenUsageRaw::default()
-        };
-        let cost = calculate_cost_for_usage(
-            Some("grok-4.5"),
-            short,
-            None,
-            CostMode::Calculate,
-            Some(&pricing),
-        );
-        assert!((cost - 0.056).abs() < 1e-9, "short-context cost was {cost}");
+        let uncached_input_tokens = 10_000_u32;
+        let output_tokens = 1_000_u32;
+        let tiers = [
+            ("long context", 500_000_u32, (4.0, 12.0, 0.6)),
+            ("short context", 100_000_u32, (2.0, 6.0, 0.3)),
+        ];
+        for (tier, cache_read_tokens, (input_rate, output_rate, cache_read_rate)) in tiers {
+            let usage = TokenUsageRaw {
+                input_tokens: u64::from(uncached_input_tokens),
+                output_tokens: u64::from(output_tokens),
+                cache_read_input_tokens: u64::from(cache_read_tokens),
+                ..TokenUsageRaw::default()
+            };
+            let cost = calculate_cost_for_usage(
+                Some("grok-4.5"),
+                usage,
+                None,
+                CostMode::Calculate,
+                Some(&pricing),
+            );
+            let expected = (f64::from(uncached_input_tokens) * input_rate
+                + f64::from(output_tokens) * output_rate
+                + f64::from(cache_read_tokens) * cache_read_rate)
+                / 1_000_000.0;
+            assert!((cost - expected).abs() < 1e-9, "{tier} cost was {cost}");
+        }
     }
 
     #[test]

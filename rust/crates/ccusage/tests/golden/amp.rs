@@ -5,13 +5,7 @@ const SONNET: &str = "claude-sonnet-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "amp-mystery-1";
 
-pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
-    let threads = root.join("amp/threads");
-    std::fs::create_dir_all(&threads).expect("failed to create Amp threads directory");
-    let write = |name: &str, contents: &str| {
-        std::fs::write(threads.join(name), contents).expect("failed to write Amp thread file");
-    };
-
+fn seed_ledger_with_cache_split_from_messages(write: &impl Fn(&str, &str)) {
     let replayed_event = r#"{"id":"event-a2","timestamp":"2025-12-31T15:30:00.000Z","model":"gpt-5","tokens":{"input":700,"output":150},"toMessageId":3,"credits":0.75}"#;
     write(
         "T-aaaaaaaa-0000-4000-8000-000000000001.json",
@@ -36,7 +30,9 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 }}"#
         ),
     );
+}
 
+fn seed_assistant_usage_without_ledger(write: &impl Fn(&str, &str)) {
     write(
         "T-bbbbbbbb-0000-4000-8000-000000000002.json",
         &format!(
@@ -56,6 +52,18 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 }}"#
         ),
     );
+}
+
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let threads = root.join("amp/threads");
+    std::fs::create_dir_all(&threads).expect("failed to create Amp threads directory");
+    let write = |name: &str, contents: &str| {
+        std::fs::write(threads.join(name), contents).expect("failed to write Amp thread file");
+    };
+
+    seed_ledger_with_cache_split_from_messages(&write);
+
+    seed_assistant_usage_without_ledger(&write);
 
     write(
         "T-cccccccc-0000-4000-8000-000000000003.json",

@@ -11,7 +11,7 @@ fetch-litellm-pricing = ["dep:minreq"]
 [build-dependencies]
 miniz_oxide.workspace = true
 minreq = { workspace = true, optional = true }
-# NOTE(2026-10-18, #1922): serde_json default float parsing can shift prices by one ULP. Enable float_roundtrip so minification preserves pricing.
+# NOTE(2026-08-15, #1541): serde_json default float parsing can shift prices by one ULP. Enable float_roundtrip so minification preserves pricing.
 serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [dev-dependencies]

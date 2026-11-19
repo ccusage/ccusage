@@ -30,6 +30,7 @@ let
       );
   };
   cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
+  # NOTE(2026-07-27, #1428): Apple ld64 lacks identical-code folding. Link with lld on Darwin to fold duplicate adapter instantiations.
   linkerRustflags =
     lib.optionalString stdenv.hostPlatform.isLinux "-C link-arg=-fuse-ld=mold"
     + lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-fuse-ld=lld";

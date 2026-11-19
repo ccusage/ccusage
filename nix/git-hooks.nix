@@ -113,12 +113,21 @@ in
             ccusage-comments = {
               enable = true;
               name = "comments";
-              entry = hookCommand "comments" [
-                pkgs.nushell
-                pkgs.ast-grep
-                pkgs.just
-                pkgs.git
-              ] "nu --no-config-file scripts/comments/check.nu";
+              entry =
+                hookCommand "comments"
+                  [
+                    pkgs.nushell
+                    pkgs.ast-grep
+                    pkgs.just
+                    pkgs.git
+                    pkgs.gnutar
+                  ]
+                  ''
+                    if [[ -n "''${PRE_COMMIT_TO_REF:-}" ]]; then
+                      exec nu --no-config-file scripts/comments/check.nu --ref "$PRE_COMMIT_TO_REF"
+                    fi
+                    exec nu --no-config-file scripts/comments/check.nu
+                  '';
               pass_filenames = false;
               always_run = true;
               stages = [ "pre-push" ];

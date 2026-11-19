@@ -6,7 +6,7 @@ const date = '[0-9]{4}-[0-9]{2}-[0-9]{2}'
 const note = '^NOTE\((?<date>' + $date + ')(?:, (?<cli>[^,#]+ v?[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?))?(?:, #[1-9][0-9]*)?\): (?<body>\S.*)$'
 const marker = '^(?://|#|;+) '
 const github_action_sha_pin = r#'^(?:-\s+)?uses:\s+(["']?)[A-Za-z0-9][A-Za-z0-9-]*/[\w.-]+(?:/[\w.-]+)*@[[:xdigit:]]{40}\1$'#
-const renovate_version = '^# v?[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?(?:\s+.*)?$'
+const renovate_version = '^# v?[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?$'
 const work_marker = '\b(?:TODO|FIXME|HACK|XXX)\b'
 const nu_def = '^\s*(?:export\s+)?def(?:\s+--[\w-]+)*\s+'
 const fixture_path = '(?:^|/)(?:fixtures|snapshots)/|\.(?:snap|snap\.new|golden)$'
@@ -247,7 +247,7 @@ def violations [
                 if $text !~ '^// SAFETY: \S' or not ($rust_locations | any {|item|
                     $item.ruleId == 'rust-unsafe' and $item.range.start.line == ($line + 1)
                 }) { 'safety-placement' }
-            } else if $lang == 'rust' and $text =~ '^///(?:[^/]|$)|^//!' {
+            } else if $lang == 'rust' and $text =~ '^///(?:[^/]|$)|^//!|^#!?\[\s*doc\s*=' {
                 let kinds = $doc | get ruleId
                 if not ('rust-schema-doc' in $kinds
                     or ('rust-public-doc' in $kinds and $target in ['library-module' 'library-root'])
@@ -280,13 +280,37 @@ export def scan-comments [files: list<string>, --include-fixtures]: nothing -> l
     } | flatten | sort-by path line rule
 }
 
-def main [--report-only, --source-tree]: nothing -> nothing {
-    let files = if $source_tree {
-        glob --no-dir '**/*' | each {|file| $file | path relative-to $env.PWD }
-    } else {
-        ^git ls-files --deduplicate -z | split row (char nul) | where {|file| $file != '' }
+def source-files []: nothing -> list<string> {
+    glob --no-dir '**/*' | each {|file| $file | path relative-to $env.PWD }
+}
+
+def scan-ref [ref: string]: nothing -> list<record> {
+    let work = mktemp -d
+    let archive = $work | path join source.tar
+    let findings = try {
+        ^git archive --format=tar --output $archive $ref
+        ^tar -xf $archive -C $work
+        do {
+            cd $work
+            scan-comments (source-files)
+        }
+    } catch {|err|
+        rm -rf $work
+        error make $err
     }
-    let findings = scan-comments $files
+    rm -rf $work
+    $findings
+}
+
+def main [--report-only, --source-tree, --ref: string]: nothing -> nothing {
+    let findings = if $ref != null {
+        scan-ref $ref
+    } else if $source_tree {
+        scan-comments (source-files)
+    } else {
+        let files = ^git ls-files --deduplicate -z | split row (char nul) | where {|file| $file != '' }
+        scan-comments $files
+    }
     for finding in $findings {
         print $"($finding.path):($finding.line): ($finding.rule): ($finding.text)"
     }

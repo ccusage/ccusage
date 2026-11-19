@@ -7,6 +7,7 @@
         ccusage-release-darwin-arm64 = config.packages.ccusage;
         ccusage-release-darwin-x64 = config.packages.ccusage-darwin-x64;
         ccusage-darwin-x64 = import ./target-package.nix {
+          # NOTE(2026-06-11, #1289): Apple clang and the Apple SDK support both architectures. Use the native toolchain to cross-build the Intel binary.
           package = config.packages.ccusage;
           inherit pkgs;
           root = ./..;

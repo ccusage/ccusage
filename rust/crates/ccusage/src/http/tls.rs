@@ -1,3 +1,7 @@
+// NOTE(2026-10-18, #1927): The rustls ring provider's key loader keeps signing code in the binary. Assemble a provider that only verifies servers.
+// NOTE(2026-10-18, #1927): Both pricing hosts negotiated TLS 1.3 with X25519. Offer those alone to omit unused cipher suites and key exchanges.
+// NOTE(2026-10-18, #1927): The CA/Browser Forum Baseline Requirements exclude Ed25519 keys. Omit Ed25519 verification for publicly trusted chains and their server signatures.
+
 use std::sync::Arc;
 
 use rustls::{

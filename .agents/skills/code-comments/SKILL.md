@@ -12,9 +12,6 @@ description: Applies the ccusage comment rule when writing, reviewing, or deleti
   YAML and just, `;` for Babashka). Date the fact when it was found or verified.
   Name the agent CLI and version used to verify any claim about its log format.
   Include the issue or PR when one exists. The source must be clear.
-- Recover existing provenance with `git log -S'<comment text>' --format='%ad %h %s' --date=short`
-  and `git blame -w -C -C -M`. Take the PR number from the squash-merge subject.
-  Use today's date only for a fact verified today.
 - Allow `// SAFETY:` immediately above a Rust unsafe block. Allow `///` on
   `pub` items that another crate uses as API and on the schema structs and their
   fields in `config_schema.rs`. Allow `//!` at crate roots only.

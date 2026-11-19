@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ccusage_test_support::{instant, set_modified};
 
@@ -8,6 +8,43 @@ const FLASH: &str = "gemini-2.5-flash";
 const FLASH_PREVIEW: &str = "gemini-3-flash-preview";
 const SONNET: &str = "claude-sonnet-4-20250514";
 const UNPRICED: &str = "gemini-mystery-1";
+
+fn seed_headless_stats_variants(write: &impl Fn(&str, &str) -> PathBuf) {
+    write(
+        "tmp/proj-beta/chats/headless-eeee5555.json",
+        &format!(
+            r#"{{
+  "session_id": "eeee5555-headless",
+  "timestamp": "2025-12-31T18:00:00.000Z",
+  "response": "ok",
+  "result": {{"stats": {{"input": 9999, "output": 9999}}}},
+  "stats": {{
+    "models": {{
+      "{PRO}": {{"api": {{"totalRequests": 2}}, "tokens": {{"prompt":1200,"candidates":150,"cached":200,"thoughts":40,"tool":8,"total":1398}}}},
+      "{UNPRICED}": {{"tokens": {{"input":100,"output":20,"cached":500}}}},
+      "gemini-empty": {{"tokens": {{"input":0}}}},
+      "gemini-no-tokens": {{"api": {{"totalRequests": 1}}}}
+    }},
+    "tools": {{"totalCalls": 3}},
+    "input": 9999
+  }}
+}}"#
+        ),
+    );
+    let result = write(
+        "tmp/proj-beta/chats/result-ffff6666.json",
+        &format!(
+            r#"{{"model":"{FLASH_PREVIEW}","result":{{"stats":{{"input_tokens":300,"output_tokens":45,"cached_tokens":100,"reasoning_tokens":5,"total_tokens":350}}}}}}"#
+        ),
+    );
+    set_modified(&result, instant("2026-01-01T15:00:00Z"));
+    write(
+        "tmp/proj-beta/chats/fallback-gggg7777.json",
+        &format!(
+            r#"{{"timestamp":"2025-12-30T20:00:00.000Z","stats":{{"models":{{"{PRO}":{{"tokens":{{}}}}}},"input":33,"output":11}}}}"#
+        ),
+    );
+}
 
 pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("gemini");
@@ -103,40 +140,7 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     );
     set_modified(&stale, instant("2025-12-27T22:00:00Z"));
 
-    write(
-        "tmp/proj-beta/chats/headless-eeee5555.json",
-        &format!(
-            r#"{{
-  "session_id": "eeee5555-headless",
-  "timestamp": "2025-12-31T18:00:00.000Z",
-  "response": "ok",
-  "result": {{"stats": {{"input": 9999, "output": 9999}}}},
-  "stats": {{
-    "models": {{
-      "{PRO}": {{"api": {{"totalRequests": 2}}, "tokens": {{"prompt":1200,"candidates":150,"cached":200,"thoughts":40,"tool":8,"total":1398}}}},
-      "{UNPRICED}": {{"tokens": {{"input":100,"output":20,"cached":500}}}},
-      "gemini-empty": {{"tokens": {{"input":0}}}},
-      "gemini-no-tokens": {{"api": {{"totalRequests": 1}}}}
-    }},
-    "tools": {{"totalCalls": 3}},
-    "input": 9999
-  }}
-}}"#
-        ),
-    );
-    let result = write(
-        "tmp/proj-beta/chats/result-ffff6666.json",
-        &format!(
-            r#"{{"model":"{FLASH_PREVIEW}","result":{{"stats":{{"input_tokens":300,"output_tokens":45,"cached_tokens":100,"reasoning_tokens":5,"total_tokens":350}}}}}}"#
-        ),
-    );
-    set_modified(&result, instant("2026-01-01T15:00:00Z"));
-    write(
-        "tmp/proj-beta/chats/fallback-gggg7777.json",
-        &format!(
-            r#"{{"timestamp":"2025-12-30T20:00:00.000Z","stats":{{"models":{{"{PRO}":{{"tokens":{{}}}}}},"input":33,"output":11}}}}"#
-        ),
-    );
+    seed_headless_stats_variants(&write);
 
     write(
         "settings-backup/shadow.json",

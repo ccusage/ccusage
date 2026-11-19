@@ -1,4 +1,3 @@
-
 mod ccusage 'apps/ccusage'
 mod docs
 mod rust
