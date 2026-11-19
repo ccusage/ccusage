@@ -3,7 +3,7 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use ccusage_adapter_common::units::UnitError;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -121,19 +121,18 @@ pub(super) fn read_wire_file(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<KimiUsageEntry>, UnitError> {
     let path = file.as_ref();
-    let content = fs::read(path).map_err(UnitError::from)?;
     let prefilter = LinePrefilter::any(&[br#""token_usage""#, br#""usage.record""#]);
-    Ok(
-        jsonl::numbered_records_with_usage_diagnostics::<KimiWireLine>(
-            &content,
-            Some(&prefilter),
-            path,
-            diagnostics,
-            is_usage_envelope,
-        )
-        .filter_map(|(number, line)| wire_line_to_entry(&line, file, number, diagnostics))
-        .collect::<Vec<_>>(),
-    )
+    let mut entries = Vec::new();
+    jsonl::read_records::<KimiWireLine>(
+        path,
+        Some(&prefilter),
+        diagnostics,
+        is_usage_envelope,
+        |number, line, diagnostics| {
+            entries.extend(wire_line_to_entry(&line, file, number, diagnostics));
+        },
+    )?;
+    Ok(entries)
 }
 
 fn is_usage_envelope(value: &serde_json::Value) -> bool {
@@ -158,10 +157,9 @@ fn read_model_from_config(root: Option<&Path>) -> String {
     let Some(root) = root else {
         return DEFAULT_MODEL.to_string();
     };
-    let Ok(content) = fs::read_to_string(root.join("config.json")) else {
-        return DEFAULT_MODEL.to_string();
-    };
-    let Ok(config) = serde_json::from_str::<KimiConfig>(&content) else {
+    let Ok(config) =
+        ccusage_adapter_common::units::read_json::<KimiConfig>(&root.join("config.json"))
+    else {
         return DEFAULT_MODEL.to_string();
     };
     config.model.unwrap_or_else(|| DEFAULT_MODEL.to_string())
