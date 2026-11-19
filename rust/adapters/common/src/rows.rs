@@ -168,6 +168,14 @@ pub fn summarize_entries(
     use crate::source::{SessionShape, SummaryKind};
     use ccusage_core::summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target};
 
+    let daily_summaries = || {
+        summarize_by_key_target(
+            entries,
+            |entry| entry.date.clone(),
+            |date| (date.clone(), None),
+            KeyTarget::Date,
+        )
+    };
     let summaries = match kind {
         SummaryKind::Session => match session {
             SessionShape::Plain => summarize_by_key_target(
@@ -181,18 +189,12 @@ pub fn summarize_entries(
                 .map(|(_, group)| group.into_summary())
                 .collect(),
         },
-        SummaryKind::Daily | SummaryKind::Monthly | SummaryKind::Weekly(_) => {
-            let daily = summarize_by_key_target(
-                entries,
-                |entry| entry.date.clone(),
-                |date| (date.clone(), None),
-                KeyTarget::Date,
-            )?;
-            Ok(match kind {
-                SummaryKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
-                SummaryKind::Weekly(start) => summarize_bucket(&daily, Bucket::Weekly(start)),
-                _ => daily,
-            })
+        SummaryKind::Daily => daily_summaries(),
+        SummaryKind::Monthly => {
+            daily_summaries().map(|daily| summarize_bucket(&daily, Bucket::Monthly))
+        }
+        SummaryKind::Weekly(start) => {
+            daily_summaries().map(|daily| summarize_bucket(&daily, Bucket::Weekly(start)))
         }
     };
     summaries.map(nonempty_summaries)

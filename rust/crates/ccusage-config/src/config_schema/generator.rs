@@ -95,7 +95,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
                     option_section(&[&shared, &weekly]),
                     &[("startOfWeek", json!("monday"))],
                 ),
-                _ => shared_defaults.clone(),
+                AgentReportKind::Monthly | AgentReportKind::Session => shared_defaults.clone(),
             };
             (report.name().to_string(), section)
         })
@@ -367,7 +367,7 @@ fn enrich_schema(value: &mut Value) {
                 enrich_schema(child);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
@@ -394,7 +394,7 @@ fn inline_schema_value(value: &mut Value, definitions: &Map<String, Value>) {
                 inline_schema_value(child, definitions);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 

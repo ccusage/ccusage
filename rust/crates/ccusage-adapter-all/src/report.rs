@@ -471,9 +471,10 @@ pub(super) fn all_table_columns(
 }
 
 pub(super) fn sort_rows(rows: &mut [ReportRow], order: &SortOrder) {
-    rows.sort_by(|a, b| match a.period.cmp(&b.period) {
-        std::cmp::Ordering::Equal => a.agent().cmp(b.agent()),
-        order => order,
+    rows.sort_by(|a, b| {
+        a.period
+            .cmp(&b.period)
+            .then_with(|| a.agent().cmp(b.agent()))
     });
     if *order == SortOrder::Desc {
         rows.reverse();

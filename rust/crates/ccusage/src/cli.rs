@@ -42,14 +42,14 @@ pub(crate) fn parse() -> Result<Option<Command>, ExitCode> {
 
 fn resolve_report_clock(command: &mut Command, clock: ReportClock) -> Result<(), String> {
     let now = ReportClock::Fixed(clock.now());
-    match &mut *command {
-        Command::Statusline(args) => args.clock = now,
-        Command::Agent(_, AgentCommand::Statusline(args)) if args.mcp => args.shared.clock = clock,
-        command => {
-            if let Some(shared) = command.shared_mut() {
-                shared.clock = now;
-            }
-        }
+    if let Command::Statusline(args) = command {
+        args.clock = now;
+    } else if let Command::Agent(_, AgentCommand::Statusline(args)) = command
+        && args.mcp
+    {
+        args.shared.clock = clock;
+    } else if let Some(shared) = command.shared_mut() {
+        shared.clock = now;
     }
     last_window::resolve(command)
 }

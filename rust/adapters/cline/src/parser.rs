@@ -347,7 +347,7 @@ fn parse_number(value: &Value) -> Option<f64> {
     let number = match value {
         Value::Number(number) => number.as_f64()?,
         Value::String(number) => number.trim().parse().ok()?,
-        _ => return None,
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => return None,
     };
     (number.is_finite() && number >= 0.0).then_some(number)
 }

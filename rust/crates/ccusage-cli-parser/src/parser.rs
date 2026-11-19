@@ -149,7 +149,15 @@ where
                 ..args
             })
         }
-        _ => Err("Expected a report that loads agent sources".to_string()),
+        Command::Daily(_)
+        | Command::Monthly(_)
+        | Command::Weekly(_)
+        | Command::Session(_)
+        | Command::Blocks(_)
+        | Command::Statusline(_)
+        | Command::Agent(_, AgentCommand::Statusline(_)) => {
+            Err("Expected a report that loads agent sources".to_string())
+        }
     }
 }
 
@@ -228,7 +236,21 @@ fn parse_agent_command(
         StandardAgent::OpenCode => parse_opencode_command(parser, shared, config),
         StandardAgent::Pi => parse_pi_command(parser, shared, config),
         StandardAgent::OpenClaw => parse_openclaw_command(parser, shared, config),
-        _ => parse_basic_agent_command(parser, shared, agent, config),
+        StandardAgent::Amp
+        | StandardAgent::Droid
+        | StandardAgent::Codebuff
+        | StandardAgent::Hermes
+        | StandardAgent::Goose
+        | StandardAgent::Kilo
+        | StandardAgent::Copilot
+        | StandardAgent::Gemini
+        | StandardAgent::Antigravity
+        | StandardAgent::Kimi
+        | StandardAgent::Qwen
+        | StandardAgent::Grok
+        | StandardAgent::ZCode
+        | StandardAgent::Cline
+        | StandardAgent::Dsh => parse_basic_agent_command(parser, shared, agent, config),
     }
 }
 
@@ -1092,13 +1114,10 @@ fn resolve_timezone(
     } else {
         None
     };
-    match command {
-        Command::Statusline(args) => args.timezone = timezone,
-        command => {
-            if let Some(shared) = command.shared_mut() {
-                shared.timezone = timezone;
-            }
-        }
+    if let Command::Statusline(args) = command {
+        args.timezone = timezone;
+    } else if let Some(shared) = command.shared_mut() {
+        shared.timezone = timezone;
     }
     Ok(())
 }

@@ -746,12 +746,12 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
             if !is_guarded_usage_member(key.as_str()) {
                 return key.into_seed(seed).map(Some);
             }
-            match self.map.next_value::<serde_json::Value>()? {
-                serde_json::Value::Null => self.has_null = true,
-                value => {
-                    self.pending = Some(value);
-                    return key.into_seed(seed).map(Some);
-                }
+            let value = self.map.next_value::<serde_json::Value>()?;
+            if value.is_null() {
+                self.has_null = true;
+            } else {
+                self.pending = Some(value);
+                return key.into_seed(seed).map(Some);
             }
         }
     }

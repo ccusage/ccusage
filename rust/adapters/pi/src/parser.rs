@@ -542,7 +542,7 @@ fn source_cost_for_mode(
     match mode {
         CostMode::Auto if has_override => None,
         CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0),
-        _ => display_cost,
+        CostMode::Calculate | CostMode::Display => display_cost,
     }
 }
 

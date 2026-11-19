@@ -469,7 +469,7 @@ pub fn strip_cost_json(value: &mut Value) {
                 strip_cost_json(child);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
