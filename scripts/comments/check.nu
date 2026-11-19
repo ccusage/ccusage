@@ -16,6 +16,9 @@ const format_words = '(?i)\b(?:log|rollout|session|record|event)(?: file)? (?:fo
 const agent_words = '(?i)\b(?:agent|claude|codex|opencode|copilot|openclaw|cursor|gemini|kilo|kimi|pi cli)\b'
 const shell_extensions = ['sh' 'bash' 'zsh']
 
+const nix_interpreter = '^#!(?:\S*/nix|\S*/env[ \t]+(?:-S[ \t]+)?nix)[ \t]*$'
+const nix_shebang_block = '^/\*\n(?:#![ \t]+nix[ \t]+\S[^\n]*\n)+[ \t]*\*/$'
+
 const script_extensions = [
     'js'
     'jsx'
@@ -229,6 +232,10 @@ def violations [
         if $line in $licenses or (directive $text $comment.language) or ($lang == 'nu' and $line in $helpers) { return [] }
         if ($comment.language == 'yaml' and $file =~ '^\.github/.*\.ya?ml$'
             and $before =~ $github_action_sha_pin and $text =~ $renovate_version) {
+            return []
+        }
+        if $lang == 'script' and $line == 1 and $comment.column == 0
+            and $lines.0 =~ $nix_interpreter and $text =~ $nix_shebang_block {
             return []
         }
         let doc = $rust_locations | where {|item| $item.range.start.line == $line }

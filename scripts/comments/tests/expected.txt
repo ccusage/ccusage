@@ -21,6 +21,9 @@ config.yaml:7: note-format: # v1.2.3
 config.yaml:7: trailing-comment: # v1.2.3
 justfile:1: note-format: # Unattached prose.
 justfile:7: note-format: # Internal recipe note.
+nix-shebang-other.ts:2: note-format: /*
+nix-shebang-prose.ts:2: note-format: /*
+nix-shebang.ts:7: note-format: /*
 rust/src/config_schema.rs:6: rust-doc-scope: /// Internal operation.
 rust/src/lib.rs:8: rust-doc-scope: /// Internal documentation.
 rust/src/lib.rs:15: safety-placement: // SAFETY: This is attached to an ordinary statement.
