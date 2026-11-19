@@ -572,6 +572,7 @@ impl<'a> RowMatch<'a> {
 pub struct PricingMap {
     rows: Arc<PricingRows>,
     overrides: Arc<Overrides>,
+    override_shadows: OnceLock<FxHashSet<usize>>,
     models_dev: Option<Arc<PricingRows>>,
     live_models_dev: OnceLock<Option<Arc<PricingRows>>>,
     enable_models_dev_fallback: bool,
@@ -764,6 +765,7 @@ impl Default for PricingMap {
             live_models_dev: OnceLock::new(),
             enable_models_dev_fallback: false,
             find_cache: OnceLock::new(),
+            override_shadows: OnceLock::new(),
         }
     }
 }
@@ -1283,6 +1285,7 @@ impl PricingMap {
             live_models_dev: self.live_models_dev.clone(),
             enable_models_dev_fallback: self.enable_models_dev_fallback,
             find_cache: OnceLock::new(),
+            override_shadows: OnceLock::new(),
         };
         map.apply_overrides(overrides);
         map
@@ -1808,31 +1811,58 @@ impl PricingMap {
         }
         let base = self.rows.normalized_matches();
         let primary = if self.overrides.is_empty() {
-            Self::fuzzy(base, name.raw(), normalized, lookup)
+            Self::fuzzy(
+                base.map(|(found, identity)| (found.key, identity, found)),
+                name.raw(),
+                normalized,
+                lookup,
+            )
         } else {
-            let base = base.filter(|(found, _)| self.overrides.shadow(*found).is_none());
-            let overrides = self
-                .overrides
-                .names()
-                .enumerate()
-                .filter(|(_, (key, identity))| {
-                    pricing_key_matches(key, identity, name.raw(), normalized)
-                })
-                .map(|(id, (_, normalized))| (self.resolve_override(id, models_dev), normalized))
-                .filter(|(found, normalized)| {
-                    !*found.row.exact_only.get_or_init(|| {
-                        secondary.is_some_and(|rows| {
-                            rows.contains_exact_only_identity(found.key, normalized)
-                        })
+            let shadowed = self.override_shadows.get_or_init(|| {
+                self.rows
+                    .matches()
+                    .filter_map(|found| self.overrides.shadow(found))
+                    .collect()
+            });
+            let matches =
+                |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
+            let resolve = |id| {
+                let found = self.resolve_override(id, models_dev);
+                let exact_only = *found.row.exact_only.get_or_init(|| {
+                    secondary.is_some_and(|rows| {
+                        let identity = normalized_pricing_key(found.key);
+                        rows.contains_exact_only_identity(found.key, &identity)
                     })
                 });
+                (!exact_only).then_some(found)
+            };
+            let base = base.filter_map(|(raw, identity)| {
+                let found = match self.overrides.shadow(raw) {
+                    Some(id) if matches(raw.key, identity) => resolve(id)?,
+                    Some(_) => return None,
+                    None => raw,
+                };
+                Some((raw.key, identity, found))
+            });
+            let overrides =
+                self.overrides
+                    .names()
+                    .enumerate()
+                    .filter_map(|(id, (key, identity))| {
+                        if shadowed.contains(&id) || !matches(key, identity) {
+                            return None;
+                        }
+                        Some((key, identity, resolve(id)?))
+                    });
             Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
         };
         primary
             .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeFuzzy))
             .or_else(|| {
                 Self::fuzzy(
-                    secondary?.normalized_matches(),
+                    secondary?
+                        .normalized_matches()
+                        .map(|(found, identity)| (found.key, identity, found)),
                     name.raw(),
                     normalized,
                     lookup,
@@ -1860,24 +1890,24 @@ impl PricingMap {
     }
 
     fn fuzzy<'a>(
-        rows: impl Iterator<Item = (RowMatch<'a>, &'a str)>,
+        rows: impl Iterator<Item = (&'a str, &'a str, RowMatch<'a>)>,
         name: &str,
         normalized: &str,
         lookup: Lookup,
     ) -> Option<RowMatch<'a>> {
         let segment = last_segment(normalized);
-        let pool = rows.filter(|(found, key)| {
+        let pool = rows.filter(|(key, identity, found)| {
             !found.row.is_exact_only()
                 && lookup.includes(found.row)
                 && (matches!(lookup, Lookup::Context) || !found.row.is_free())
-                && pricing_key_matches(found.key, key, name, normalized)
+                && pricing_key_matches(key, identity, name, normalized)
         });
         let mut best = None;
         let mut best_not_longer = None;
         let mut equal_segment_seen = false;
-        for (found, key) in pool {
-            let row_segment = last_segment(key);
-            let rank = (found.key.len(), std::cmp::Reverse(found.key));
+        for (key, identity, found) in pool {
+            let row_segment = last_segment(identity);
+            let rank = (key.len(), std::cmp::Reverse(key));
             if best.is_none_or(|(previous, _)| rank > previous) {
                 best = Some((rank, found));
             }
@@ -1929,6 +1959,7 @@ impl PricingMap {
 
     fn clear_find_cache(&mut self) {
         self.find_cache.take();
+        self.override_shadows.take();
     }
 
     /// Fills in long-context tier rates for models whose upstream pricing
@@ -2751,6 +2782,32 @@ mod tests {
         let spark = pricing.find("gpt-5-3-spark").unwrap();
         assert_eq!((spark.input, spark.output), (1.75e-6, 14e-6));
         assert_eq!(pricing.context_limit("gpt-5-3-spark"), Some(128_000));
+    }
+
+    #[test]
+    fn override_competes_in_the_fuzzy_pool_under_the_shadowed_key() {
+        crate::test_support::install_pricing_snapshots();
+        let mut primary = PricingMap::default();
+        assert_eq!(primary.load_json(r#"{
+            "openai/acme-9": {"litellm_provider":"openai","input_cost_per_token":1e-6,"output_cost_per_token":1e-6},
+            "host/acme-9x": {"litellm_provider":"host","input_cost_per_token":2e-6,"output_cost_per_token":2e-6}
+        }"#), 2);
+        let key = "acme-9".to_owned();
+        let value = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(50e-6),
+            output_cost_per_token: Some(50e-6),
+            ..Default::default()
+        };
+        let pricing = primary.with_user_overrides([(&key, &value)]);
+        let label = "openai/acme-9+host/acme-9x-preview";
+        let candidates = [(label, MatchKind::Fuzzy)];
+        let found = pricing.explain(Some(label), &candidates).unwrap();
+        assert_eq!(
+            (found.step, found.row_key),
+            (super::ResolutionStep::AuthoritativeFuzzy, "acme-9")
+        );
+        let rate = pricing.find(label).unwrap();
+        assert_eq!((rate.input, rate.output), (50e-6, 50e-6));
     }
 
     #[test]
