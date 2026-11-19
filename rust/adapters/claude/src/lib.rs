@@ -842,7 +842,7 @@ mod tests {
         cli::{CostMode, SharedArgs},
         format_rfc3339_millis,
     };
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
     struct LoadedFile {
@@ -888,7 +888,7 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T10:01:00Z","sessionId":"pricing","requestId":"unknown","message":{"id":"unknown","model":"unlisted-fixture-model","usage":{"input_tokens":1000,"output_tokens":1000}}}"#,
             ].join("\n"),
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -934,7 +934,7 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T10:00:01Z","sessionId":"session-a","requestId":"replay","isSidechain":true,"message":{"id":"msg-parent","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
             ].join("\n"),
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -956,7 +956,7 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-progress","message":{"id":"msg-progress","model":"claude-sonnet-4-20250514","usage":{"input_tokens":7,"output_tokens":2}}}}}"#,
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -981,7 +981,7 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","costUSD":1,"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1,"speed":"fast"}}}"#,
             ].join("\n"),
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -1003,7 +1003,7 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","cwd":null,"toolUseResult":{"iterations":[{"model":null,"id":null,"cwd":null,"speed":null}]},"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","content":[{"id":null,"model":null}],"usage":{"input_tokens":10,"output_tokens":1,"metadata":{"cache_read_input_tokens":null}}}}"#,
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -1465,7 +1465,7 @@ mod tests {
             let fixture = fs_fixture!({
                 "projects/project-a/session-a.jsonl": lines.join("\n"),
             });
-            let _env = EnvVarsGuard::set_many([(
+            let _env = EnvGuard::set_many([(
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_os_string()),
             )]);
@@ -1699,7 +1699,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);

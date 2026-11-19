@@ -44,7 +44,7 @@ pub(super) fn has_data() -> bool {
 mod tests {
     use super::*;
     use crate::{PricingMap, cli::SharedArgs};
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use std::ffi::OsString;
 
     fn turn(
@@ -79,8 +79,8 @@ mod tests {
         .to_string()
     }
 
-    fn with_grok_home(fixture_root: &std::path::Path) -> EnvVarsGuard {
-        EnvVarsGuard::set_many([(
+    fn with_grok_home(fixture_root: &std::path::Path) -> EnvGuard {
+        EnvGuard::set_many([(
             super::super::paths::GROK_HOME_ENV,
             Some(OsString::from(fixture_root.as_os_str())),
         )])

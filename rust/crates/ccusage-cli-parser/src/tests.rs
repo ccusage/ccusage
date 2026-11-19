@@ -111,12 +111,12 @@ fn statusline_threshold_overrides_are_validated_together() {
 #[test]
 fn statusline_merges_config_thresholds_before_validation() {
     use ccusage_config::ConfigContext;
-    use ccusage_test_support::EnvVarsGuard;
+    use ccusage_test_support::EnvGuard;
     let fixture = fs_fixture!({
         "home/.claude/ccusage.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
         "explicit.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
     });
-    let _env = EnvVarsGuard::set_many([
+    let _env = EnvGuard::set_many([
         ("HOME", Some(fixture.path("home").into_os_string())),
         (
             "CLAUDE_CONFIG_DIR",
@@ -2016,7 +2016,7 @@ fn assert_invalid_discovered_stores_allow(args: &[&str]) {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/omp"}]}}"#,
     });
-    let _guard = ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
     let config = ccusage_config::ConfigContext::from_args(&args);
     let parsed = parse_from_with_config(

@@ -970,8 +970,7 @@ mod tests {
             r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
         ] {
             let fixture = fs_fixture!({"ccusage.json": raw});
-            let _guard =
-                ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
             for command in [
                 vec!["statusline"],
                 vec!["claude", "blocks"],
@@ -1013,7 +1012,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "ccusage.json": r#"{"defaults":{"mode":"a.since:","json":true},"commands":{"weekly":{"since":"nope"}}}"#,
         });
-        let _guard = ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
         for command in [
             vec!["daily"],
             vec!["monthly"],
@@ -1286,8 +1285,7 @@ mod tests {
         for field in ["since", "until"] {
             let fixture =
                 fs_fixture!({"ccusage.json": json!({"defaults": {field: "nope"}}).to_string()});
-            let _guard =
-                ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
             assert!(
                 ConfigContext::from_args(&["daily".into()])
                     .config_error()
@@ -1394,7 +1392,7 @@ mod tests {
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn applies_schema_backed_shared_options() {
@@ -2210,7 +2208,7 @@ mod tests {
         let fixture = fs_fixture!({
             "xdg/claude/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
         });
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CLAUDE_CONFIG_DIR", None),
             ("HOME", Some(fixture.path("home").into())),
             ("XDG_CONFIG_HOME", Some(fixture.path("xdg").into())),
@@ -2225,7 +2223,7 @@ mod tests {
             "home/claude-a/.keep": "",
             "home/claude-b/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
         });
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("HOME", Some(fixture.path("home").into())),
             ("CLAUDE_CONFIG_DIR", Some("~/claude-a, ~/claude-b".into())),
         ]);
@@ -2239,7 +2237,7 @@ mod tests {
             "archive/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
             "archive/projects/project/session.jsonl": "",
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.path("archive/projects").into()),
         )]);

@@ -39,7 +39,7 @@ fn store_root(path: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn default_store_keeps_a_project_named_sessions() {
@@ -47,7 +47,7 @@ mod tests {
         let store = fixture.create_dir_all(".pi/agent/sessions");
         let _ = fixture.create_dir_all(".pi/agent/sessions/sessions");
         let _ = fixture.create_dir_all(".pi/agent/sessions/another-project");
-        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+        let _guard = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some(fixture.root().into())),
             (PI_AGENT_DIR_ENV, None),
         ]);
@@ -58,7 +58,7 @@ mod tests {
     fn named_store_path_expands_home_directory() {
         let fixture = fs_fixture!({});
         let store = fixture.create_dir_all(".omp/agent/sessions");
-        let _home = EnvVarGuard::set("HOME", fixture.root());
+        let _home = EnvGuard::set("HOME", fixture.root());
 
         let paths = named_store_paths("~/.omp/agent/sessions").unwrap();
 
@@ -102,7 +102,7 @@ mod tests {
         let fixture = fs_fixture!({});
         let store = fixture.create_dir_all(".pi/agent/sessions/project-a");
         let store = store.parent().unwrap().to_path_buf();
-        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+        let _guard = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some(fixture.root().into())),
             (PI_AGENT_DIR_ENV, Some(" ~/.pi/agent ".into())),
         ]);

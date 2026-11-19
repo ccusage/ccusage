@@ -105,7 +105,7 @@ impl AsRef<std::path::Path> for CopilotSourceFile {
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
 
@@ -118,7 +118,7 @@ mod tests {
             "session-state/blocked/events.jsonl": "{}",
             "session-state/healthy/events.jsonl": "{}",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (COPILOT_HOME_ENV, Some(OsString::from(fixture.root()))),
             (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
         ]);
@@ -151,7 +151,7 @@ mod tests {
             "home/.copilot/session-state/nested/session-c/events.jsonl": "{}\n",
             "explicit.jsonl": "{}\n",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -196,7 +196,7 @@ mod tests {
             "home/.copilot/otel/default.jsonl": "{}\n",
             "home/.copilot/session-state/session-2/events.jsonl": "{}\n"
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),

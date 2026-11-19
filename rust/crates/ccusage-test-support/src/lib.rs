@@ -125,9 +125,6 @@ fn set_process_var(_lock: &MutexGuard<'static, ()>, key: &'static str, value: Op
     }
 }
 
-pub use EnvGuard as EnvVarGuard;
-pub use EnvGuard as EnvVarsGuard;
-
 pub struct Fixture {
     dir: TempDir,
 }

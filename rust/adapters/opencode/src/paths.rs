@@ -27,7 +27,7 @@ pub(super) fn paths() -> Result<Vec<PathBuf>> {
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::{OPENCODE_DATA_DIR_ENV, XDG_DATA_HOME_ENV, paths};
 
@@ -35,8 +35,8 @@ mod tests {
         opencode_data_dir: Option<OsString>,
         xdg_data_home: Option<OsString>,
         home: Option<OsString>,
-    ) -> EnvVarsGuard {
-        EnvVarsGuard::set_many([
+    ) -> EnvGuard {
+        EnvGuard::set_many([
             (OPENCODE_DATA_DIR_ENV, opencode_data_dir),
             (XDG_DATA_HOME_ENV, xdg_data_home),
             ("HOME", home),

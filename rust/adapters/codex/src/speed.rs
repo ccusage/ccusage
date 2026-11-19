@@ -56,7 +56,7 @@ fn codex_config_service_tier(content: &str) -> Option<CodexServiceTier> {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use crate::CodexServiceTier;
 
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn configured_ultrafast_leaves_unclassified_usage_at_standard() {
         let fixture = fs_fixture!({ "config.toml": r#"service_tier = "ultrafast""# });
-        let _codex_home = EnvVarGuard::set("CODEX_HOME", fixture.path(""));
+        let _codex_home = EnvGuard::set("CODEX_HOME", fixture.path(""));
 
         assert_eq!(
             codex_config_service_tier(r#"service_tier = "ultrafast""#),
@@ -207,7 +207,7 @@ mod tests {
                 service_tier = "flex"
             "#,
         });
-        let _codex_home = EnvVarGuard::set("CODEX_HOME", fixture.path(""));
+        let _codex_home = EnvGuard::set("CODEX_HOME", fixture.path(""));
         let mut pricing = crate::PricingMap::default();
         pricing.load_json(
             r#"{

@@ -979,7 +979,7 @@ mod tests {
         cli::{CostMode, SharedArgs},
     };
     use ccusage_core::cost::PriceTable;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
     fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
@@ -1125,7 +1125,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -1151,7 +1151,7 @@ mod tests {
             "projects/project-a/session-empty.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-empty","type":"user","message":{"role":"user","content":"hi"}}"#,
             "projects/project-a/session-sub/subagents/agent-1.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-sub","isSidechain":true,"requestId":"req-sub","message":{"id":"msg-sub","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":1}}}"#,
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -1186,7 +1186,7 @@ mod tests {
             .unwrap()
             .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(978_307_200))
             .unwrap();
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
@@ -1455,7 +1455,7 @@ mod tests {
             let fixture = fs_fixture!({
                 "projects/project-a/session-a.jsonl": lines.join("\n"),
             });
-            let _env = EnvVarsGuard::set_many([(
+            let _env = EnvGuard::set_many([(
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_os_string()),
             )]);

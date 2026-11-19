@@ -642,7 +642,7 @@ mod tests {
     use ccusage_cli_parser::parse_from_with_config;
     use ccusage_config::ConfigContext;
     use ccusage_core::cli::{Command, PricingOverride};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
 
@@ -679,7 +679,7 @@ mod tests {
             }"#,
             "projects/project/session.jsonl": r#"{"timestamp":"2020-01-01T00:00:00.000Z","sessionId":"session","message":{"id":"message","model":"third-party-model","usage":{"input_tokens":100000,"output_tokens":100000}}}"#,
         });
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
         let config_path = fixture.path("ccusage.json");
         let config_path = config_path.to_string_lossy().into_owned();
         let config_args = vec![

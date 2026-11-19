@@ -41,10 +41,8 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env_guard = ccusage_test_support::EnvVarGuard::set(
-            crate::paths::GEMINI_DATA_DIR_ENV,
-            fixture.root(),
-        );
+        let _env_guard =
+            ccusage_test_support::EnvGuard::set(crate::paths::GEMINI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()

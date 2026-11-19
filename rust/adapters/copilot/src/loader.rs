@@ -554,7 +554,7 @@ mod tests {
     use std::ffi::OsString;
 
     use ccusage_core::SkipKind;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use serde_json::json;
 
     use super::super::parser::parse_otel_file;
@@ -719,7 +719,7 @@ mod tests {
             })
             .to_string(),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1152,7 +1152,7 @@ mod tests {
                 })
             ),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1240,7 +1240,7 @@ mod tests {
             })
             .to_string(),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1327,7 +1327,7 @@ mod tests {
             })
             .to_string(),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1412,7 +1412,7 @@ mod tests {
                 })
             )
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1550,7 +1550,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1629,7 +1629,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1687,7 +1687,7 @@ mod tests {
                 })
             ),
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1760,7 +1760,7 @@ mod tests {
         shared: &crate::cli::SharedArgs,
         pricing: &crate::PricingMap,
     ) -> Vec<LoadedEntry> {
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -2981,7 +2981,7 @@ mod tests {
         if fs::read(&locked).is_ok() {
             return;
         }
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (
                 super::super::paths::COPILOT_HOME_ENV,
                 Some(OsString::from(fixture.root())),

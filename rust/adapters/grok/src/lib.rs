@@ -62,7 +62,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use std::ffi::OsString;
 
     use super::*;
@@ -114,7 +114,7 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/project-a/session-a/updates.jsonl": line,
         });
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             crate::paths::GROK_HOME_ENV,
             Some(OsString::from(fixture.root().as_os_str())),
         )]);
@@ -151,7 +151,7 @@ mod tests {
                 "{{\"params\":{{\"update\":{{\"sessionUpdate\":\"turn_completed\",\"usage\":{{\"modelUsage\":\"SECRET_CANARY\"}}}}}}}}\n{good}"
             ),
         });
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             crate::paths::GROK_HOME_ENV,
             Some(OsString::from(fixture.root().as_os_str())),
         )]);

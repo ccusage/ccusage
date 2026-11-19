@@ -18,13 +18,13 @@ pub(super) fn paths() -> Result<Vec<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn blank_data_dir_falls_back_to_home() {
         let fixture = fs_fixture!({});
         let root = fixture.create_dir_all(".local/share/amp");
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (AMP_DATA_DIR_ENV, Some(" , ".into())),
             ("HOME", Some(fixture.root().into())),
             ("USERPROFILE", None),
@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn missing_home_returns_no_roots() {
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (AMP_DATA_DIR_ENV, None),
             ("HOME", None),
             ("USERPROFILE", None),

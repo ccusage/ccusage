@@ -238,7 +238,7 @@ mod tests {
         let fixture = Fixture::new();
         let first = fixture.create_dir_all("first");
         let second = fixture.create_dir_all("second");
-        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+        let _guard = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some(fixture.root().into())),
             (
                 "CODEX_HOME",
@@ -252,7 +252,7 @@ mod tests {
     fn blank_codex_list_uses_the_default_home() {
         let fixture = Fixture::new();
         let root = fixture.create_dir_all(".codex");
-        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+        let _guard = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some(fixture.root().into())),
             ("CODEX_HOME", Some(" , , ".into())),
         ]);

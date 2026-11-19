@@ -68,7 +68,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
 
@@ -87,7 +87,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
+        let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
             timezone: Some("UTC".to_string()),
@@ -145,7 +145,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
+        let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
             debug: true,

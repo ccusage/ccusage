@@ -658,7 +658,7 @@ pub(crate) fn format_remaining_time(minutes: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn fractional_session_hours_keep_exact_millisecond_boundaries() {
@@ -668,7 +668,7 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T15:00:00Z","message":{"usage":{"input_tokens":20,"output_tokens":1}}}"#,
             ].join("\n"),
         });
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
         let entries = crate::load_entries(
             &SharedArgs {
                 mode: ccusage_core::cli::CostMode::Display,
@@ -742,7 +742,7 @@ mod tests {
                 "projects/p/s.jsonl": format!(r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}
             {{"timestamp":"{next}","message":{{"usage":{{"input_tokens":20,"output_tokens":1}}}}}}"#),
             });
-            let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
             let entries = crate::load_entries(
                 &SharedArgs {
                     mode: ccusage_core::cli::CostMode::Display,

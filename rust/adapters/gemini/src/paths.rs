@@ -36,7 +36,7 @@ mod tests {
     use std::ffi::OsString;
 
     use super::*;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn discovers_json_and_jsonl_logs() {
@@ -45,10 +45,8 @@ mod tests {
             "chats/b.jsonl": "{}\n",
             "chats/ignore.txt": "no",
         });
-        let _env_guard = ccusage_test_support::EnvVarGuard::set(
-            crate::paths::GEMINI_DATA_DIR_ENV,
-            fixture.root(),
-        );
+        let _env_guard =
+            ccusage_test_support::EnvGuard::set(crate::paths::GEMINI_DATA_DIR_ENV, fixture.root());
         let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
         assert_eq!(
@@ -63,7 +61,7 @@ mod tests {
             "gemini/chats/a.json": "{}",
             "antigravity/conversations/a.db": "not a Gemini log",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (
                 GEMINI_DATA_DIR_ENV,
                 Some(OsString::from(fixture.path("gemini"))),

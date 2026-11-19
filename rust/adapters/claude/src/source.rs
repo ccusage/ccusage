@@ -153,14 +153,14 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::ReportWindow;
     use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
-    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
     use std::sync::Arc;
 
     #[test]
     fn claims_accept_the_last_supported_report_day() {
         let fixture = Fixture::new();
         let _ = fixture.create_dir_all("projects");
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_owned()),
         )]);
@@ -201,7 +201,7 @@ mod diagnostic_tests {
             &stale,
             ccusage_test_support::instant("2025-06-01T00:00:00Z"),
         );
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_owned()),
         )]);
@@ -245,7 +245,7 @@ mod diagnostic_tests {
         let fixture = Fixture::new();
         let _ = fixture.write_file("projects/p/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
         let _ = fixture.write_file("projects/p/bad.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"SECRET_CANARY"}}}"#);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             (
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_owned()),

@@ -133,7 +133,7 @@ mod diagnostic_tests {
     use crate::aggregate::load_groups_with_diagnostics;
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::cli::{AgentReportKind, SharedArgs};
-    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
     use serde_json::json;
 
     #[test]
@@ -141,7 +141,7 @@ mod diagnostic_tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().into())),
             ("LOG_LEVEL", Some("0".into())),
         ]);
@@ -188,7 +188,7 @@ mod diagnostic_tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file("sessions/tiny.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}"#);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
         ]);
@@ -214,7 +214,7 @@ mod diagnostic_tests {
         let fixture = Fixture::new();
         let usage = json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
         let _ = fixture.write_file("sessions/session.jsonl", usage);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
         ]);
@@ -244,7 +244,7 @@ mod diagnostic_tests {
         let usage = json!({"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
         let _ = fixture.write_file("sessions/session-a.jsonl", &usage);
         let _ = fixture.write_file("sessions/session-b.jsonl", &usage);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
         ]);
@@ -276,7 +276,7 @@ mod diagnostic_tests {
         let _ = fixture.write_file("sessions/original.jsonl", usage("2026-01-02T00:00:00.000Z"));
         let _ = fixture.write_file("sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
         let _ = fixture.write_file("sessions/later.jsonl", usage("2026-01-03T00:00:00.000Z"));
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
         ]);
@@ -348,7 +348,7 @@ mod diagnostic_tests {
             .collect::<Vec<_>>()
             .join("\n");
         let _ = fixture.write_file("sessions/compaction.jsonl", &contents);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -399,7 +399,7 @@ mod diagnostic_tests {
     fn rejected_timestamps_advance_cumulative_usage_without_recounting_tokens() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -455,7 +455,7 @@ mod diagnostic_tests {
     fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -501,7 +501,7 @@ mod diagnostic_tests {
             json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
         ].map(|record| record.to_string()).join("\n");
         let _ = fixture.write_file("sessions/timestamps.jsonl", &records);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -565,7 +565,7 @@ mod diagnostic_tests {
             zstd::stream::encode_all([good.as_slice(), b"\n"].concat().as_slice(), 0).unwrap();
         interrupted.extend_from_slice(b"SECRET_CANARY");
         std::fs::write(fixture.path("sessions/interrupted.jsonl.zst"), interrupted).unwrap();
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -680,7 +680,7 @@ mod diagnostic_tests {
         ]
         .join("\n");
         let _ = fixture.write_file("sessions/headless.jsonl", &records);
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);

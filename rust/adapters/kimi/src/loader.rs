@@ -27,7 +27,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 mod tests {
     use super::super::paths::KIMI_DATA_DIR_ENV;
     use ccusage_core::{Diagnostics, PricingMap, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn loads_status_update_token_usage_from_wire_files() {
@@ -41,7 +41,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
@@ -77,7 +77,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
@@ -109,7 +109,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &SharedArgs::default(),

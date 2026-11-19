@@ -1979,7 +1979,7 @@ mod diagnostic_tests {
         assert!(events.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
-        let _log_level = ccusage_test_support::EnvVarGuard::set("LOG_LEVEL", "1");
+        let _log_level = ccusage_test_support::EnvGuard::set("LOG_LEVEL", "1");
         assert!(
             diagnostics
                 .warnings(&crate::cli::SharedArgs::default())

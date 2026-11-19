@@ -1,5 +1,5 @@
 use ccusage_core::summary::KeyTarget;
-use ccusage_test_support::{EnvVarGuard, fs_fixture};
+use ccusage_test_support::{EnvGuard, fs_fixture};
 use serde_json::Value;
 
 use crate::{
@@ -49,7 +49,7 @@ fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
         ].join("\n"),
         "projects/project1/session2/chat.jsonl": r#"{"timestamp":"2026-01-02T23:00:00Z","sessionId":"s2","requestId":"r2","costUSD":2,"message":{"id":"msg_2","usage":{"input_tokens":30,"output_tokens":1}}}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = SharedArgs {
         since: Some("20260102".into()),
         until: Some("20260102".into()),
@@ -84,7 +84,7 @@ fn bounded_daily_detection_survives_an_empty_report_window() {
     let fixture = fs_fixture!({
         "projects/p/s.jsonl": r#"{"timestamp":"2026-01-03T00:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1}}}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = SharedArgs {
         until: Some("20260102".into()),
         ..display_shared_in_utc()
@@ -111,7 +111,7 @@ fn keeps_most_complete_duplicate_usage_entry() {
         ]
         .join("\n"),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -127,7 +127,7 @@ fn keeps_reused_message_id_from_distinct_sessions_at_same_timestamp() {
         "projects/project1/session1/chat.jsonl": r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"costUSD":0.001}"#,
         "projects/project1/session2/chat.jsonl": r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":250,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"speed":"standard"}},"costUSD":0.01}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -150,7 +150,7 @@ fn dedupes_anthropic_message_id_from_same_session_without_request_id() {
         ]
         .join("\n"),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -168,7 +168,7 @@ fn keeps_gateway_message_id_from_same_session_without_request_id() {
         ]
         .join("\n"),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -192,7 +192,7 @@ fn dedupes_repeated_requestless_writes_from_same_session_at_the_same_timestamp()
         ]
         .join("\n"),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -206,7 +206,7 @@ fn accepts_projects_directory_in_claude_config_dir() {
     let fixture = fs_fixture!({
         "projects/project1/session1/chat.jsonl": r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"costUSD":0.001}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.path("projects"));
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.path("projects"));
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -221,7 +221,7 @@ fn loads_advisor_usage_as_a_separate_model_entry() {
     let fixture = fs_fixture!({
         "projects/project1/session1/chat.jsonl": ADVISOR_LINE,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let entries = load_entries(&display_shared(), None).unwrap();
 
@@ -242,7 +242,7 @@ fn includes_advisor_usage_in_daily_summaries() {
     let fixture = fs_fixture!({
         "projects/project1/session1/chat.jsonl": ADVISOR_LINE,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let daily = load_daily_summaries(&display_shared_in_utc(), None, false).unwrap();
 
@@ -264,7 +264,7 @@ fn daily_summaries_match_entry_aggregation_for_requestless_rewrites() {
         ]
         .join("\n"),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = display_shared_in_utc();
 
     let entries = load_entries(&shared, None).unwrap();
@@ -287,7 +287,7 @@ fn loads_daily_summaries_like_loaded_entry_aggregation() {
         .join("\n"),
         "projects/project-b/session-b/chat.jsonl": r#"{"timestamp":"2025-01-10T12:00:00.000Z","version":"1.2.3","sessionId":"session-b","message":{"id":"msg_b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":20,"output_tokens":30,"cache_creation_input_tokens":4,"cache_read_input_tokens":2}},"requestId":"req_b","costUSD":0.04}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = display_shared_in_utc();
 
     let entries = load_entries(&shared, None).unwrap();
@@ -325,7 +325,7 @@ fn keeps_nested_agent_progress_in_daily_model_order() {
         .join("\n"),
         "projects/project-a/session-a/subagents/agent-a.jsonl": r#"{"timestamp":"2026-03-10T06:00:01.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg_haiku","model":"claude-haiku-4-5-20251001","role":"assistant","usage":{"input_tokens":20,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"requestId":"req_haiku","costUSD":0.06}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
 
     let daily = load_daily_summaries(&display_shared_in_utc(), None, false).unwrap();
 
@@ -347,7 +347,7 @@ fn uses_direct_subagent_cost_for_duplicate_daily_agent_progress() {
         "projects/project-a/session-a.jsonl": r#"{"sessionId":"session-a","version":"1.2.3","type":"progress","data":{"message":{"type":"assistant","timestamp":"2026-03-10T06:00:01.000Z","message":{"model":"claude-haiku-4-5-20251001","id":"msg_haiku","type":"message","role":"assistant","content":[],"usage":{"input_tokens":20,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"requestId":"req_haiku","uuid":"nested"}},"timestamp":"2026-03-10T06:00:01.001Z"}"#,
         "projects/project-a/session-a/subagents/agent-a.jsonl": r#"{"timestamp":"2026-03-10T06:00:01.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg_haiku","model":"claude-haiku-4-5-20251001","role":"assistant","usage":{"input_tokens":20,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"requestId":"req_haiku","costUSD":0.06}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = display_shared_in_utc();
 
     let entries = load_entries(&shared, None).unwrap();
@@ -364,7 +364,7 @@ fn wrapped_advisors_share_daily_and_full_parsing_and_dedupe() {
     let fixture = fs_fixture!({
         "projects/p/s.jsonl": [wrapped, wrapped].join("\n"),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     for mode in [CostMode::Auto, CostMode::Calculate, CostMode::Display] {
         let shared = SharedArgs {
             offline: true,
@@ -403,7 +403,7 @@ fn wrapped_advisors_dedupe_with_a_top_level_twin_and_ignore_outer_iterations() {
         "projects/p/s.jsonl": wrapper.to_string(),
         "projects/p/s/subagents/agent-a.jsonl": twin.to_string(),
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     for mode in [CostMode::Auto, CostMode::Calculate, CostMode::Display] {
         let shared = SharedArgs {
             offline: true,
@@ -435,7 +435,7 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
     let fixture = fs_fixture!({
         "projects/p/s.jsonl": r#"{"type":"progress","sessionId":"session-a","data":{"type":"agent_progress","message":{"type":"assistant","timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"invalid"},{"type":"advisor_message","model":"good","input_tokens":10,"output_tokens":2},{"type":"advisor_message","model":"null","input_tokens":5,"cache_read_input_tokens":null}]}}}}}"#,
     });
-    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
     let shared = display_shared_in_utc();
     let diagnostics = crate::Diagnostics::new("claude");
     let entries = crate::load_entries_since_with_diagnostics(&shared, None, &diagnostics).unwrap();

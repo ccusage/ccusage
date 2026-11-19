@@ -116,7 +116,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
-    let _guard = ccusage_test_support::EnvVarGuard::set("CODEX_HOME", fixture.root());
+    let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
     for single_thread in [true, false] {
         let shared = SharedArgs {
             since: Some("20260902".into()),
@@ -162,7 +162,7 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
-    let _guard = ccusage_test_support::EnvVarGuard::set("CODEX_HOME", fixture.root());
+    let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
     for single_thread in [true, false] {
         let shared = SharedArgs {
             since: Some("20260902".into()),

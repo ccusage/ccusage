@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use ccusage_core::Diagnostics;
-use ccusage_test_support::{EnvVarGuard, Fixture};
+use ccusage_test_support::{EnvGuard, Fixture};
 use serde_json::json;
 
 use crate::{
@@ -48,7 +48,7 @@ fn cumulative_count(timestamp: &str, input: u64, cached: u64, output: u64) -> St
 }
 
 fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTreeMap<String, u64> {
-    let _guard = EnvVarGuard::set("CODEX_HOME", fixture.path("codex"));
+    let _guard = EnvGuard::set("CODEX_HOME", fixture.path("codex"));
     let (groups, detected) = load_groups_with_diagnostics(
         &SharedArgs {
             single_thread,
@@ -351,7 +351,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
         ]
         .join("\n"),
     );
-    let _guard = EnvVarGuard::set("CODEX_HOME", fixture.path("codex"));
+    let _guard = EnvGuard::set("CODEX_HOME", fixture.path("codex"));
 
     for single_thread in [true, false] {
         let shared = SharedArgs {

@@ -32,7 +32,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarGuard, Fixture, fs_fixture};
+    use ccusage_test_support::{EnvGuard, Fixture, fs_fixture};
 
     use super::*;
 
@@ -67,7 +67,7 @@ mod tests {
     fn focused_totals_match_the_unified_slice() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
-        let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("AMP_DATA_DIR", fixture.root());
 
         for shared in [
             shared(None, None, "UTC"),
@@ -84,7 +84,7 @@ mod tests {
     fn a_thread_file_cut_mid_write_is_noted_under_debug_and_the_rest_still_counts() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
-        let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("AMP_DATA_DIR", fixture.root());
         let quiet = shared(None, None, "UTC");
         let shared = SharedArgs {
             debug: true,
