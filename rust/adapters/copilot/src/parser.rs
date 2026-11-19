@@ -524,14 +524,14 @@ pub(super) fn parse_session_state_file(
                 )
             };
             if !is_shutdown || receipt_watermark.is_some() {
-                if let Some(total) = session_nano_aiu {
+                if is_shutdown || session_nano_aiu.is_some() {
                     parsed.credit_snapshots.push(CopilotCreditSnapshot {
                         timestamp,
                         session_id: session_id.clone(),
                         is_shutdown,
-                        total_nano_aiu: Some(total),
+                        total_nano_aiu: session_nano_aiu,
                         receipt_watermark,
-                        dedup_key: snapshot_key(Some(total)),
+                        dedup_key: snapshot_key(session_nano_aiu),
                     });
                 }
                 return;
