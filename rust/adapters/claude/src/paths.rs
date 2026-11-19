@@ -16,7 +16,7 @@ use crate::{
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
-    read_discovered_files, visit_usage_files as visit_usage_files_in,
+    visit_usage_files as visit_usage_files_in,
 };
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
@@ -101,19 +101,14 @@ pub(super) fn usage_files_before_since(
     shared: &SharedArgs,
     now: TimestampMs,
 ) -> SinceFiles {
+    let files = usage_files(paths, project_filter, diagnostics);
     let Some(threshold) = prune_threshold(shared, now) else {
         return SinceFiles {
-            kept: usage_files(paths, project_filter, diagnostics),
+            kept: files,
             pruned: Vec::new(),
         };
     };
-    let mut files = read_discovered_files(
-        shared.single_thread,
-        |visit| visit_usage_files(paths, project_filter, visit, diagnostics),
-        |path| first_recorded_session_id(path),
-    );
-    files.sort_by_cached_key(|(path, _)| usage_file_order(path));
-    split_probed_files(files, threshold)
+    split_files(files, threshold)
 }
 
 fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
@@ -124,26 +119,41 @@ fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
         .map(|since| since.saturating_sub(MTIME_PRUNE_MARGIN_MS))
 }
 
-fn split_probed_files(files: Vec<(PathBuf, Option<String>)>, threshold: i64) -> SinceFiles {
+fn split_files(files: Vec<PathBuf>, threshold: i64) -> SinceFiles {
+    let live = files
+        .iter()
+        .map(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
+        .collect::<Vec<_>>();
+    if live.iter().all(|&live| live) {
+        return SinceFiles {
+            kept: files,
+            pruned: Vec::new(),
+        };
+    }
+    if live.iter().all(|&live| !live) {
+        return SinceFiles {
+            kept: Vec::new(),
+            pruned: files,
+        };
+    }
+
     let mut sessions = SessionGroups::default();
     let file_groups = files
         .iter()
-        .map(|(file, recorded)| {
+        .map(|file| {
             let (path_session, _) = extract_session_parts(file);
             let group = sessions.id(&path_session);
-            if let Some(recorded) = recorded {
-                let recorded = sessions.id(recorded);
+            if let Some(recorded) = first_recorded_session_id(file) {
+                let recorded = sessions.id(&recorded);
                 sessions.union(group, recorded);
             }
             group
         })
         .collect::<Vec<_>>();
-    let live_groups = files
-        .iter()
+    let live_groups = live
+        .into_iter()
         .zip(&file_groups)
-        .filter(|((file, _), _)| {
-            file_modified_millis(file).is_none_or(|modified| modified >= threshold)
-        })
+        .filter(|(live, _)| *live)
         .map(|(_, &group)| sessions.root(group))
         .collect::<FxHashSet<_>>();
 
@@ -151,7 +161,7 @@ fn split_probed_files(files: Vec<(PathBuf, Option<String>)>, threshold: i64) -> 
         kept: Vec::new(),
         pruned: Vec::new(),
     };
-    for ((file, _), group) in files.into_iter().zip(file_groups) {
+    for (file, group) in files.into_iter().zip(file_groups) {
         if live_groups.contains(&sessions.root(group)) {
             split.kept.push(file);
         } else {
@@ -321,14 +331,7 @@ mod tests {
                 pruned: Vec::new(),
             };
         };
-        let files = files
-            .into_iter()
-            .map(|file| {
-                let recorded = super::first_recorded_session_id(&file);
-                (file, recorded)
-            })
-            .collect();
-        super::split_probed_files(files, threshold)
+        super::split_files(files, threshold)
     }
 
     fn shared_since(since: Option<&str>) -> SharedArgs {
