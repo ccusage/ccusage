@@ -10,6 +10,7 @@ use ccusage_adapter_common::{
     rows::SourceRow,
     source::{LoadKind, LoadRequest, ProgressOwner, SourceOptions, UsageSource},
 };
+use ccusage_core::parallel::spawn_scoped_worker;
 
 use crate::{
     Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind,
@@ -398,7 +399,6 @@ pub(super) fn load_agent_rows_parallel(
         progress.start(spec.progress_agent);
     }
 
-    let environment = &crate::cli::environment::Environment::current();
     thread::scope(|scope| {
         let (sender, receiver) = mpsc::channel();
         let mut handles = Vec::with_capacity(specs.len());
@@ -407,8 +407,8 @@ pub(super) fn load_agent_rows_parallel(
             handles.push((
                 spec.index,
                 spec.progress_agent,
-                scope.spawn(move || {
-                    let result = environment.run(spec.load);
+                spawn_scoped_worker(scope, move || {
+                    let result = (spec.load)();
                     let _ = sender.send((spec.index, spec.agent, spec.progress_agent, result));
                 }),
             ));

@@ -7,5 +7,7 @@ disallowed-methods = [
 	{ path = "std::env::remove_var", reason = "Remove variables from child commands or inject a missing value." },
 	{ path = "jiff::tz::TimeZone::system", reason = "Use the report timezone resolved by the executable." },
 	{ path = "std::process::exit", reason = "Return an exit status from the entry point so resources are dropped." },
-	{ path = "std::thread::spawn", reason = "Start unscoped workers through the shared parallel helper." },
+	{ path = "std::thread::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
+	{ path = "std::thread::Scope::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
+	{ path = "std::thread::Builder::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
 ]

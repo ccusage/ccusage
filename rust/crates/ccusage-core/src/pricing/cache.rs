@@ -461,7 +461,7 @@ mod tests {
         let (inserted, wait_for_insert) = mpsc::channel();
         thread::scope(|scope| {
             let cache = &cache;
-            scope.spawn(move || {
+            crate::parallel::spawn_scoped_worker(scope, move || {
                 cache.get_or_init("existing", Lookup::Pricing, Pass::S2, |_| {
                     entered.send(()).unwrap();
                     wait_for_release.recv().unwrap();
@@ -469,7 +469,7 @@ mod tests {
                 });
             });
             wait_for_init.recv_timeout(Duration::from_secs(5)).unwrap();
-            scope.spawn(move || {
+            crate::parallel::spawn_scoped_worker(scope, move || {
                 cache.get_or_init("new", Lookup::Pricing, Pass::S2, |_| None);
                 inserted.send(()).unwrap();
             });
