@@ -549,8 +549,7 @@ jobs:
         run: |
           just generate-large-fixture \
             "$RUNNER_TEMP/ccusage-large-fixture" \
-            "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            1024
+            "$RUNNER_TEMP/ccusage-large-codex-fixture"
 
       - name: Compare performance
         run: |

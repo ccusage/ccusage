@@ -19,17 +19,50 @@ const LEGACY_PROGRESS_FILE_EVERY = 6;
 const CODEX_PLAIN_RECENT_DAYS = 14;
 const CODEX_ARCHIVED_FILE_EVERY = 4;
 const CODEX_COMPACTION_CHANCE = 1 / 30;
-const REAL_WORLD_PROFILE_FILES = 3142;
-const REAL_WORLD_PROFILE_TOTAL_MIB = 1238.9718046188354;
-const REAL_WORLD_QUANTILES = [
-	{ percentile: 0, size: 236 },
-	{ percentile: 0.5, size: 105_267 },
-	{ percentile: 0.75, size: 233_572 },
-	{ percentile: 0.9, size: 653_972 },
-	{ percentile: 0.95, size: 1_504_757 },
-	{ percentile: 0.99, size: 5_383_751 },
-	{ percentile: 1, size: 87_033_471 },
-] as const;
+type Format = 'claude' | 'codex';
+
+type SizeProfile = {
+	files: number;
+	totalBytes: number;
+	quantiles: readonly { percentile: number; size: number }[];
+};
+
+// File-size distribution of real logs, uncompressed, from
+// profile-log-sizes.nu. Each agent keeps its own profile because Codex
+// rollouts are fewer and much larger than Claude transcripts, and the default
+// fixture size is the profiled total so a benchmark reads a real-sized history.
+const SIZE_PROFILES = {
+	claude: {
+		files: 10_719,
+		totalBytes: 11_075_827_327,
+		quantiles: [
+			{ percentile: 0, size: 20 },
+			{ percentile: 0.1, size: 12_650 },
+			{ percentile: 0.25, size: 165_342 },
+			{ percentile: 0.5, size: 456_508 },
+			{ percentile: 0.75, size: 982_083 },
+			{ percentile: 0.9, size: 1_985_720 },
+			{ percentile: 0.95, size: 3_239_049 },
+			{ percentile: 0.99, size: 10_975_928 },
+			{ percentile: 1, size: 129_659_313 },
+		],
+	},
+	codex: {
+		files: 7304,
+		totalBytes: 15_284_112_549,
+		quantiles: [
+			{ percentile: 0, size: 20_070 },
+			{ percentile: 0.1, size: 163_114 },
+			{ percentile: 0.25, size: 355_821 },
+			{ percentile: 0.5, size: 797_766 },
+			{ percentile: 0.75, size: 1_610_200 },
+			{ percentile: 0.9, size: 3_762_690 },
+			{ percentile: 0.95, size: 6_457_016 },
+			{ percentile: 0.99, size: 23_663_548 },
+			{ percentile: 1, size: 221_490_002 },
+		],
+	},
+} as const satisfies Record<Format, SizeProfile>;
 
 const CLAUDE_MODELS = [
 	'claude-opus-4-5-20251101',
@@ -103,6 +136,12 @@ function parsePositiveInteger(value: string, flagName: string): number {
 	return parsed;
 }
 
+function parseSizeMib(value: string | undefined, flagName: string, format: Format): number {
+	return value === undefined
+		? Math.round(SIZE_PROFILES[format].totalBytes / MIB)
+		: parsePositiveInteger(value, flagName);
+}
+
 function parseArguments(args: readonly string[]): Options {
 	const values = new Map<string, string>();
 	for (let index = 0; index < args.length; index += 1) {
@@ -141,11 +180,8 @@ function parseArguments(args: readonly string[]): Options {
 	return {
 		outputDir,
 		codexOutputDir: values.get('--codex-output-dir'),
-		sizeMib: parsePositiveInteger(values.get('--size-mib') ?? '1024', '--size-mib'),
-		codexSizeMib: parsePositiveInteger(
-			values.get('--codex-size-mib') ?? '1024',
-			'--codex-size-mib',
-		),
+		sizeMib: parseSizeMib(values.get('--size-mib'), '--size-mib', 'claude'),
+		codexSizeMib: parseSizeMib(values.get('--codex-size-mib'), '--codex-size-mib', 'codex'),
 		codexLayout,
 	};
 }
@@ -154,26 +190,27 @@ function formatBytes(bytes: number): string {
 	return `${(bytes / MIB).toFixed(2)} MiB`;
 }
 
-function interpolateFileSize(percentile: number): number {
-	for (let index = 1; index < REAL_WORLD_QUANTILES.length; index += 1) {
-		const previous = REAL_WORLD_QUANTILES[index - 1];
-		const current = REAL_WORLD_QUANTILES[index];
+function interpolateFileSize(profile: SizeProfile, percentile: number): number {
+	const { quantiles } = profile;
+	for (let index = 1; index < quantiles.length; index += 1) {
+		const previous = quantiles[index - 1];
+		const current = quantiles[index];
 		if (!previous || !current || percentile > current.percentile) {
 			continue;
 		}
 		const ratio = (percentile - previous.percentile) / (current.percentile - previous.percentile);
 		return previous.size + (current.size - previous.size) * ratio;
 	}
-	return REAL_WORLD_QUANTILES.at(-1)?.size ?? 0;
+	return quantiles.at(-1)?.size ?? 0;
 }
 
-function createFileSizeTargets(targetBytes: number): number[] {
+function createFileSizeTargets(profile: SizeProfile, targetBytes: number): number[] {
 	const targetFileCount = Math.max(
 		1,
-		Math.round((targetBytes / MIB / REAL_WORLD_PROFILE_TOTAL_MIB) * REAL_WORLD_PROFILE_FILES),
+		Math.round((targetBytes / profile.totalBytes) * profile.files),
 	);
 	const rawSizes = Array.from({ length: targetFileCount }, (_, index) =>
-		interpolateFileSize((index + 0.5) / targetFileCount),
+		interpolateFileSize(profile, (index + 0.5) / targetFileCount),
 	);
 	const rawTotal = rawSizes.reduce((total, size) => total + size, 0);
 	return rawSizes.map((size) => Math.max(256, Math.round(size * (targetBytes / rawTotal))));
@@ -923,17 +960,19 @@ async function writeFile(
 	return { bytes, diskBytes, lines };
 }
 
+const OUTPUT_DIR_FLAGS = {
+	claude: '--output-dir',
+	codex: '--codex-output-dir',
+} as const satisfies Record<Format, string>;
+
 async function generateFixture(
 	outputDir: string,
 	sizeMib: number,
-	format: 'claude' | 'codex',
+	format: Format,
 	codexLayout: CodexLayout = 'current',
 ): Promise<FixtureResult> {
-	const directory = assertSafeDeletionTarget(
-		outputDir,
-		format === 'claude' ? '--output-dir' : '--codex-output-dir',
-	);
-	const fileSizeTargets = createFileSizeTargets(sizeMib * MIB);
+	const directory = assertSafeDeletionTarget(outputDir, OUTPUT_DIR_FLAGS[format]);
+	const fileSizeTargets = createFileSizeTargets(SIZE_PROFILES[format], sizeMib * MIB);
 	await Bun.$`rm -rf ${directory}`;
 
 	let totalBytes = 0;

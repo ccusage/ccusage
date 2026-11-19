@@ -1,0 +1,97 @@
+#!/usr/bin/env nix
+#! nix shell --inputs-from ../../.. nixpkgs#nushell nixpkgs#zstd --command nu
+
+# Prints the file-size distribution of the local agent logs that
+# generate-large-fixture.ts reads its profiles from. Only file counts and
+# size quantiles leave this script; no log content, path, or name does.
+
+const percentiles = [
+    0
+    0.1
+    0.25
+    0.5
+    0.75
+    0.9
+    0.95
+    0.99
+    1
+]
+
+def env-roots [name: string, defaults: list<string>]: nothing -> list<string> {
+    let value = $env | get --optional $name | default ''
+    if ($value | str trim | is-empty) {
+        $defaults
+    } else {
+        $value | split row ',' | each { str trim } | where { is-not-empty }
+    } | path expand | uniq | where { path exists }
+}
+
+def files-under [roots: list<string>, patterns: list<string>]: nothing -> list<string> {
+    $roots | each {|root|
+        $patterns | each {|pattern| glob ($root | path join $pattern) --no-dir }
+    } | flatten | flatten | uniq
+}
+
+# Codex keeps older rollouts zstd-compressed; the parser cost follows the
+# decompressed bytes, so that is the size the profile records.
+def uncompressed-size [file: string]: nothing -> int {
+    if ($file | str ends-with '.zst') {
+        (^zstd --list -v $file | complete).stdout
+        | parse --regex 'Decompressed Size: .*\((?<bytes>\d+) B\)'
+        | get 0.bytes
+        | into int
+    } else {
+        ls $file | get 0.size | into int
+    }
+}
+
+def profile [files: list<string>]: nothing -> record {
+    let sizes = $files | par-each {|file| uncompressed-size $file } | sort
+    let count = $sizes | length
+    if $count == 0 {
+        return {
+            files: 0
+            totalBytes: 0
+            quantiles: []
+        }
+    }
+    {
+        files: $count
+        totalBytes: ($sizes | math sum)
+        quantiles: (
+            $percentiles | each {|percentile|
+                let index = ($percentile * ($count - 1)) | math round | into int
+                {percentile: $percentile size: ($sizes | get $index)}
+            }
+        )
+    }
+}
+
+# Every root ccusage would read is included, so several CLAUDE_CONFIG_DIR
+# entries add up the way they do in a real report.
+def main []: nothing -> nothing {
+    let home = $env.HOME
+    let claude_roots = env-roots 'CLAUDE_CONFIG_DIR' [
+        ($home | path join '.config/claude')
+        ($home | path join '.claude')
+    ]
+    let codex_roots = env-roots 'CODEX_HOME' [
+        ($home | path join '.codex')
+    ]
+
+    {
+        claude: (profile (files-under $claude_roots ['projects/**/*.jsonl']))
+        codex: (
+            profile (
+                files-under $codex_roots [
+                    'sessions/**/*.jsonl'
+                    'sessions/**/*.jsonl.zst'
+                    'archived_sessions/**/*.jsonl'
+                    'archived_sessions/**/*.jsonl.zst'
+                ]
+            )
+        )
+    }
+    | to json
+    | print
+}

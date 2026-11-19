@@ -53,9 +53,9 @@ test: rust::test test-node
 test-node:
     TZ=UTC node --test apps/ccusage/src/cli.test.ts nix/tools/models-dev-gen/compact.test.ts
 
-# Generate a large benchmark fixture for PR performance comparisons
-generate-large-fixture output_dir codex_output_dir size_mib="1024":
-    apps/ccusage/scripts/generate-large-fixture.ts --output-dir "{{output_dir}}" --codex-output-dir "{{codex_output_dir}}" --size-mib {{size_mib}}
+# Generate real-sized benchmark fixtures for PR performance comparisons; extra args such as `--size-mib N` shrink them
+generate-large-fixture output_dir codex_output_dir *args:
+    apps/ccusage/scripts/generate-large-fixture.ts --output-dir "{{output_dir}}" --codex-output-dir "{{codex_output_dir}}" {{args}}
 
 # Build git refs (or take binary paths) and compare their report performance; `--real` adds local logs
 [positional-arguments]
