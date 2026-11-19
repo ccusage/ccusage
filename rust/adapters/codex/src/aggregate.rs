@@ -209,19 +209,21 @@ struct CodexDedupeRecord {
     service_tier: Option<CodexServiceTier>,
     model: CompactString,
     session_id: Option<CompactString>,
-    compaction: Option<Box<CodexCompactionEvent>>,
+    record_response_id: Option<Arc<str>>,
 }
 
 struct CodexCompactionEvent {
     file_index: usize,
     timestamp: crate::TimestampMs,
     event: CodexTokenUsageEvent,
+    model: CompactString,
 }
 
 #[derive(Default)]
 struct CodexDedupeMap {
-    records: FxHashMap<CodexEventKey, CodexDedupeRecord>,
+    records: FxHashMap<CodexUsageKey, CodexDedupeRecord>,
     named: FxHashMap<CodexUsageKey, CodexNamedUsage>,
+    compactions: FxHashMap<CompactString, CodexCompactionEvent>,
 }
 
 #[derive(Default)]
@@ -237,23 +239,31 @@ impl CodexDedupeMap {
         response_id: Option<&Arc<str>>,
     ) -> Option<CodexCopyTier> {
         let signature = usage.with_occurrence(0);
-        let named = if response_id.is_some() {
-            self.named.entry(signature).or_insert_with(|| {
-                // Before the first ID arrives, each retained slot is its
-                // original recordless ordinal. Move into copy tracking only
-                // when the signature needs it.
+        let named = match self.named.entry(signature) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let first = self.records.get(&signature)?;
+                let first_id = first.record_response_id.as_ref();
+                if (first_id.is_none() && response_id.is_none())
+                    || (usage.occurrence == 0 && first_id == response_id)
+                {
+                    return None;
+                }
+                // The original ordinals suffice until a named request
+                // collides with another candidate for this signature.
                 let mut named = CodexNamedUsage::default();
-                while self.records.contains_key(&CodexEventKey::Usage(
-                    signature.with_occurrence(named.next_slot),
-                )) {
+                while let Some(record) = self
+                    .records
+                    .get(&signature.with_occurrence(named.next_slot))
+                {
                     let slot = named.next_slot;
-                    named.copies.retain(None, slot, slot);
+                    named
+                        .copies
+                        .retain(record.record_response_id.clone(), slot, slot);
                     named.next_slot += 1;
                 }
-                named
-            })
-        } else {
-            self.named.get_mut(&signature)?
+                entry.insert(named)
+            }
         };
         match named
             .copies
@@ -717,7 +727,7 @@ fn aggregate_files_local(
         aggregation = aggregate_files_local_with_seen(&fork_run, Some(aggregation))?.0;
     }
     let CodexAggregation { mut groups, seen } = aggregation;
-    apply_recorded_usage_entries(&mut groups, seen.records.iter(), shared, kind);
+    apply_recorded_usage_entries(&mut groups, &seen, shared, kind);
     Ok(groups)
 }
 
@@ -1036,43 +1046,37 @@ fn apply_recorded_usage_from_shards(
 ) {
     for shard in seen {
         let records = shard.lock().unwrap();
-        apply_recorded_usage_entries(groups, records.records.iter(), shared, kind);
+        apply_recorded_usage_entries(groups, &records, shared, kind);
     }
 }
 
-fn apply_recorded_usage_entries<'a>(
+fn apply_recorded_usage_entries(
     groups: &mut BTreeMap<String, CodexGroup>,
-    records: impl IntoIterator<Item = (&'a CodexEventKey, &'a CodexDedupeRecord)>,
+    seen: &CodexDedupeMap,
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) {
     let timezone = resolve_tz(shared.timezone.as_deref());
-    for (key, record) in records {
-        if let Some(compaction) = &record.compaction {
-            // Workers may encounter a later file first. Compaction usage is
-            // added only after every worker has selected the first file's copy.
-            let mut event = compaction.event.clone();
-            event.service_tier = record.service_tier;
-            if let Some(period) = codex_period_for(
+    // Workers may encounter a later file first. Compaction usage is added
+    // only after every worker has selected the first file's copy.
+    for compaction in seen.compactions.values() {
+        if let Some(period) = codex_period_for(
+            compaction.timestamp,
+            Some(&compaction.event.session_id),
+            kind,
+            &timezone,
+            shared,
+        ) {
+            accumulate_codex_event_into_group(
+                groups.entry(period).or_default(),
+                &compaction.event,
+                &compaction.model,
                 compaction.timestamp,
-                Some(&event.session_id),
-                kind,
-                &timezone,
-                shared,
-            ) {
-                accumulate_codex_event_into_group(
-                    groups.entry(period).or_default(),
-                    &event,
-                    &record.model,
-                    compaction.timestamp,
-                    true,
-                );
-            }
-            continue;
+                true,
+            );
         }
-        let CodexEventKey::Usage(key) = key else {
-            continue;
-        };
+    }
+    for (key, record) in &seen.records {
         let Some(service_tier) = record.service_tier else {
             continue;
         };
@@ -1146,7 +1150,9 @@ fn insert_event_key(
     let mut hasher = FxHasher::default();
     // Every copy of a usage signature, whatever its ordinal, meets in one shard.
     match &key {
-        CodexEventKey::Usage(usage) => usage.with_occurrence(0).hash(&mut hasher),
+        CodexEventKey::Usage(usage) => {
+            CodexEventKey::Usage(usage.with_occurrence(0)).hash(&mut hasher);
+        }
         key => key.hash(&mut hasher),
     }
     let shard_index = hasher.finish() as usize % seen.len();
@@ -1163,36 +1169,49 @@ fn insert_event_key(
 
 fn insert_dedupe_record(
     seen: &mut CodexDedupeMap,
-    mut key: CodexEventKey,
+    key: CodexEventKey,
     event: &CodexTokenUsageEvent,
     model: &str,
     kind: AgentReportKind,
     timestamp: crate::TimestampMs,
     file_index: usize,
 ) -> bool {
-    let tier = match &mut key {
-        CodexEventKey::Usage(usage) => {
-            seen.match_named_usage(usage, event.record_response_id.as_ref())
+    let mut usage = match key {
+        CodexEventKey::Usage(usage) => usage,
+        CodexEventKey::Response(id) => {
+            let make_compaction = || CodexCompactionEvent {
+                file_index,
+                timestamp,
+                event: event.clone(),
+                model: CompactString::new(model),
+            };
+            match seen.compactions.entry(id) {
+                Entry::Vacant(slot) => {
+                    slot.insert(make_compaction());
+                }
+                Entry::Occupied(mut slot) => {
+                    let compaction = slot.get_mut();
+                    let tier = merge_codex_service_tiers(
+                        compaction.event.service_tier,
+                        event.service_tier,
+                    );
+                    if file_index < compaction.file_index {
+                        *compaction = make_compaction();
+                    }
+                    compaction.event.service_tier = tier;
+                }
+            }
+            return false;
         }
-        CodexEventKey::Response(_) => None,
     };
-    let slot = match seen.records.entry(key) {
+    let tier = seen.match_named_usage(&mut usage, event.record_response_id.as_ref());
+    let slot = match seen.records.entry(usage) {
         Entry::Vacant(slot) => slot,
         Entry::Occupied(mut slot) => {
             let record = slot.get_mut();
             record.service_tier = tier
                 .unwrap_or(CodexCopyTier::Merge)
                 .apply(record.service_tier, event.service_tier);
-            if let Some(compaction) = record.compaction.as_mut()
-                && file_index < compaction.file_index
-            {
-                compaction.file_index = file_index;
-                compaction.timestamp = timestamp;
-                compaction.event = event.clone();
-                record.model = CompactString::new(model);
-                record.session_id = (kind == AgentReportKind::Session)
-                    .then(|| CompactString::new(&event.session_id));
-            }
             return false;
         }
     };
@@ -1201,15 +1220,9 @@ fn insert_dedupe_record(
         model: CompactString::new(model),
         session_id: (kind == AgentReportKind::Session)
             .then(|| CompactString::new(&event.session_id)),
-        compaction: event.response_id.as_ref().map(|_| {
-            Box::new(CodexCompactionEvent {
-                file_index,
-                timestamp,
-                event: event.clone(),
-            })
-        }),
+        record_response_id: event.record_response_id.clone(),
     });
-    event.response_id.is_none()
+    true
 }
 
 fn codex_event_key(
