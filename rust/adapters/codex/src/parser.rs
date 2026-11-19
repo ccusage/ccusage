@@ -96,6 +96,8 @@ struct CodexCompactionUsageState {
     pending_usage: HashMap<String, CodexPendingUsage>,
     emitted_response_ids: HashSet<String>,
     latest_usage_response_id: Option<String>,
+    /// Whether no snapshot advanced the totals since the latest record.
+    latest_record_awaits_snapshot: bool,
     recorded_usage_timestamps: Option<HashMap<String, Option<TimestampMs>>>,
 }
 
@@ -569,6 +571,7 @@ fn visit_codex_session_entry(
         let event = CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: Some(response_id.clone()),
+            record_response_id: None,
             timestamp,
             model,
             input_tokens: raw_usage.input_tokens,
@@ -582,6 +585,7 @@ fn visit_codex_session_entry(
         };
 
         compaction_usage.latest_usage_response_id = Some(response_id.clone());
+        compaction_usage.latest_record_awaits_snapshot = true;
 
         if compaction_usage
             .compacted_response_ids
@@ -661,6 +665,11 @@ fn visit_codex_session_entry(
     // record and its marker. Remote v2 compaction omits that advance, so only
     // the latter needs an extra event. Matching the latest response keeps an
     // unrelated request with identical token counts from consuming it.
+    // Codex writes every request's record just before its token_count, so the
+    // consumed record also names the request this token_count reports.
+    let record_awaits_snapshot =
+        cumulative_advanced && std::mem::take(&mut compaction_usage.latest_record_awaits_snapshot);
+    let mut record_response_id = None;
     if cumulative_advanced
         && let Some(response_id) = compaction_usage.latest_usage_response_id.as_ref()
         && compaction_usage
@@ -677,6 +686,7 @@ fn visit_codex_session_entry(
         compaction_usage
             .emitted_response_ids
             .insert(response_id.clone());
+        record_response_id = record_awaits_snapshot.then(|| response_id.clone());
     }
 
     let parsed_model =
@@ -691,6 +701,7 @@ fn visit_codex_session_entry(
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
         response_id: None,
+        record_response_id,
         timestamp,
         model,
         input_tokens: raw_usage.input_tokens,
@@ -806,6 +817,7 @@ fn visit_codex_exec_usage_event(
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
         response_id: None,
+        record_response_id: None,
         timestamp: timestamps.event,
         model,
         input_tokens: raw_usage.input_tokens,

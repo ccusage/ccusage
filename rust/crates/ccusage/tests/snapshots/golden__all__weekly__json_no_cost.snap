@@ -7,10 +7,10 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316867,
-    "inputTokens": 1349871,
-    "outputTokens": 59316,
-    "totalTokens": 2747536,
+    "cacheReadTokens": 1316967,
+    "inputTokens": 1350271,
+    "outputTokens": 59366,
+    "totalTokens": 2748086,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -264,8 +264,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16801,
-      "cacheReadTokens": 1313774,
-      "inputTokens": 1340255,
+      "cacheReadTokens": 1313874,
+      "inputTokens": 1340655,
       "metadata": {
         "agents": [
           "amp",
@@ -461,18 +461,18 @@ exit: 0
           "outputTokens": 300
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5970,
+          "inputTokens": 4100,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 1007
+        },
+        {
           "cacheCreationTokens": 900,
           "cacheReadTokens": 17000,
           "inputTokens": 4651,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 1491
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5870,
-          "inputTokens": 3700,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 957
         },
         {
           "cacheCreationTokens": 0,
@@ -947,9 +947,9 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56997,
+      "outputTokens": 57047,
       "period": "2025-12-29",
-      "totalTokens": 2731214
+      "totalTokens": 2731764
     },
     {
       "agent": "all",

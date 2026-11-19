@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17725,
-    "cacheReadTokens": 1312837,
-    "inputTokens": 1347861,
-    "outputTokens": 58996,
-    "totalCost": 8.790021920000001,
-    "totalTokens": 2740836,
+    "cacheReadTokens": 1312937,
+    "inputTokens": 1348261,
+    "outputTokens": 59046,
+    "totalCost": 8.79103442,
+    "totalTokens": 2741386,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -285,8 +285,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1309774,
-      "inputTokens": 1339255,
+      "cacheReadTokens": 1309874,
+      "inputTokens": 1339655,
       "metadata": {
         "agents": [
           "amp",
@@ -420,20 +420,20 @@ exit: 0
           "outputTokens": 300
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5970,
+          "cost": 0.015941250000000004,
+          "inputTokens": 4100,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 1007
+        },
+        {
           "cacheCreationTokens": 900,
           "cacheReadTokens": 17000,
           "cost": 0.015221619999999998,
           "inputTokens": 4651,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 1491
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5870,
-          "cost": 0.014928750000000001,
-          "inputTokens": 3700,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 957
         },
         {
           "cacheCreationTokens": 200,
@@ -1046,10 +1046,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56797,
+      "outputTokens": 56847,
       "period": "2025-12-29",
-      "totalCost": 8.73744872,
-      "totalTokens": 2725714
+      "totalCost": 8.73846122,
+      "totalTokens": 2726264
     },
     {
       "agent": "all",
