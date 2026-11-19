@@ -69,7 +69,7 @@ Pricing comes from LiteLLM, models.dev, built-in model data, and configured [pri
 
 When ccusage calculates a cost, it first looks for a pricing override on the reported model label, its configured alias, or the model ID behind its provider path. A full-label override takes precedence over overrides on shorter paths. The adapter supplies the model names and any provider information from its logs. Dots, at signs, and dashes are interchangeable in a pricing ID. Case and provider paths remain significant.
 
-ccusage checks LiteLLM and its built-in entries for every candidate's identity. It then tries paid entries for the model ID behind a candidate's provider path, followed by the candidate's own entry in models.dev. A vendor's free listing can answer behind the path when neither catalogue has the requested listing. A free hosted listing with a provider path applies only to its full pricing ID.
+ccusage checks LiteLLM and its built-in entries for every candidate's identity. It then checks each candidate in order for a paid entry behind its provider path and for the candidate's own entry in models.dev. A vendor's free listing can answer behind the path only after every candidate has missed both checks. A free hosted listing with a provider path applies only to its full pricing ID.
 
 If these checks find no price, ccusage uses the longest matching pricing key it can find, checking LiteLLM and built-in entries before models.dev. When the matches include the requested model ID, entries for longer model IDs are removed from consideration. Separately priced models.dev tiers are eligible through exact identity matches. Historical schedules apply to direct model IDs and their pricing overrides when the lookup matches by identity.
 
