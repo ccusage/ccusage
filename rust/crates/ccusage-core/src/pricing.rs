@@ -2122,7 +2122,13 @@ impl PricingMap {
                 .map(|(key, _)| key)
                 .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
                 .filter(|key| {
-                    table.primary.pricing_rows.is_none() || matches_service_plan(key, model)
+                    if table.primary.pricing_rows.is_none() {
+                        return true;
+                    }
+                    matches_service_plan(key, model)
+                        && (layer != Layer::Primary
+                            || !is_direct_deepseek_model(key)
+                            || qualified_vendor_id_matches(key, normalized.as_ref()))
                 })
                 .filter(|key| {
                     fuzzy != Fuzzy::ShorterKeys
@@ -2647,6 +2653,16 @@ fn direct_deepseek_id(value: &str) -> Option<&str> {
         .filter(|model| model.starts_with("deepseek-") || model.starts_with("deepseek."))
 }
 
+fn is_direct_deepseek_model(key: &str) -> bool {
+    key.starts_with("deepseek-") || direct_deepseek_id(key).is_some()
+}
+
+fn qualified_vendor_id_matches(vendor_key: &str, normalized_request: &str) -> bool {
+    normalized_request
+        .strip_suffix(pricing_identity(vendor_key).as_ref())
+        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with(['/', '-']))
+}
+
 fn pricing_identity(value: &str) -> Cow<'_, str> {
     normalized_pricing_key(direct_deepseek_id(value).unwrap_or(value))
 }
@@ -2912,6 +2928,28 @@ mod tests {
         let (matched, rates) = pricing.resolve(&candidates).unwrap();
         assert_eq!(matched, "model-1.5");
         assert_eq!(rates.input, 1.0);
+    }
+
+    #[test]
+    fn direct_deepseek_pricing_does_not_replace_a_different_model() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{
+            "deepseek-v3.2": {"litellm_provider":"deepseek","input_cost_per_token": 1, "output_cost_per_token": 2}
+        }"#);
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{
+            "deepseek-v3.2-speciale": {"input_cost_per_token": 8, "output_cost_per_token": 9}
+        }"#,
+        );
+        pricing.complete_layers(&embedded);
+        assert_eq!(
+            pricing
+                .find("reseller/deepseek-v3.2-speciale")
+                .unwrap()
+                .input,
+            8.0
+        );
     }
 
     #[test]
