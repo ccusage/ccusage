@@ -141,7 +141,7 @@ mod tests {
         writer.execute("CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (7); BEGIN EXCLUSIVE").unwrap();
         let (started_tx, started_rx) = std::sync::mpsc::channel();
         let (done_tx, done_rx) = std::sync::mpsc::channel();
-        let reader = std::thread::spawn(move || {
+        let reader = ccusage_core::parallel::spawn_worker(move || {
             started_tx.send(()).unwrap();
             let connection = super::open_read_only(&path).unwrap();
             let result =

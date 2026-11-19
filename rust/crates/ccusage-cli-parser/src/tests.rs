@@ -12,20 +12,11 @@ fn parse(args: &[&str]) -> Command {
 }
 
 fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Command {
-    parse_from_with_config(
-        args.iter().map(OsString::from),
-        config,
-        env!("CARGO_PKG_VERSION"),
-    )
-    .unwrap()
+    parse_from_with_config(args.iter().map(OsString::from), config).unwrap()
 }
 
 fn parse_error(args: &[&str]) -> String {
-    match parse_from_with_config(
-        args.iter().map(OsString::from),
-        &NoConfig,
-        env!("CARGO_PKG_VERSION"),
-    ) {
+    match parse_from_with_config(args.iter().map(OsString::from), &NoConfig) {
         Ok(_) => panic!("expected parse error"),
         Err(error) => error,
     }
@@ -48,7 +39,6 @@ fn unsupported_agent_report_guidance_precedes_a_config_error() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.map(OsString::from)),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected the unsupported report to be rejected");
@@ -372,7 +362,6 @@ fn source_reparse_keeps_the_unified_week_start() {
             weekly_start: Some(WeekDay::Sunday),
             ..TestConfig::default()
         },
-        "test",
         WeekDay::Wednesday,
         None,
     )
@@ -388,7 +377,6 @@ fn report_reparse_carries_focused_agent_options() {
             .into_iter()
             .map(OsString::from),
         &TestConfig::default(),
-        "test",
         WeekDay::Monday,
         None,
     )
@@ -744,7 +732,6 @@ fn rejects_a_config_since_date_later_than_the_until_flag() {
             .iter()
             .map(OsString::from),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected parse error");
@@ -773,7 +760,6 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
             std::iter::once(OsString::from("ccusage"))
                 .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
             &config,
-            env!("CARGO_PKG_VERSION"),
         )
     };
 
@@ -841,7 +827,6 @@ fn statusline_ignores_reversed_default_date_window() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Ok(cli) = result else {
@@ -1609,7 +1594,6 @@ fn rejects_removed_locale_option() {
             .into_iter()
             .map(OsString::from),
         &NoConfig,
-        env!("CARGO_PKG_VERSION"),
     );
     assert!(result.is_err());
 }
@@ -2068,7 +2052,6 @@ fn invalid_explicit_named_stores_fail_statusline() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Err(error) = parsed else {
@@ -2099,7 +2082,6 @@ fn assert_invalid_discovered_stores_allow(args: &[&str]) {
             std::iter::once(std::ffi::OsString::from("ccusage"))
                 .chain(args.iter().map(std::ffi::OsString::from)),
             &config,
-            env!("CARGO_PKG_VERSION"),
         );
         assert!(parsed.is_ok(), "{:?}", parsed.err());
     })
@@ -2124,7 +2106,6 @@ fn invalid_explicit_named_stores_fail_agent_commands() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Err(error) = parsed else {
@@ -2152,7 +2133,6 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected config error");

@@ -158,7 +158,6 @@ mod tests {
                 .into_iter()
                 .map(std::ffi::OsString::from),
             &ccusage_cli::NoConfig,
-            "test",
         )
         .unwrap();
         resolve(&mut command).unwrap();

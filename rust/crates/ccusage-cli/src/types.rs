@@ -4,9 +4,12 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
     num::NonZeroU32,
+    sync::OnceLock,
 };
 
 use jiff::tz::TimeZone;
+
+static SYSTEM_ZONE: OnceLock<fn() -> TimeZone> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 pub struct ReportTimezone {
@@ -19,6 +22,16 @@ impl ReportTimezone {
         name: Cow::Borrowed("UTC"),
         zone: TimeZone::UTC,
     };
+
+    pub fn install_system_zone(resolve: fn() -> TimeZone) {
+        let _ = SYSTEM_ZONE.set(resolve);
+    }
+
+    pub fn system_zone() -> TimeZone {
+        SYSTEM_ZONE
+            .get()
+            .map_or_else(|| TimeZone::UTC, |resolve| resolve())
+    }
 
     pub fn name(&self) -> &str {
         &self.name
@@ -37,7 +50,7 @@ impl std::str::FromStr for ReportTimezone {
             "UTC" => Ok(Self::UTC),
             "local" => Ok(Self {
                 name: Cow::Borrowed("local"),
-                zone: TimeZone::system(),
+                zone: Self::system_zone(),
             }),
             name => Ok(Self {
                 name: Cow::Owned(name.to_owned()),

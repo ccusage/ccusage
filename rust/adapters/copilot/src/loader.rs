@@ -918,7 +918,7 @@ mod tests {
                     .map(|entry| {
                         usage_entry_to_loaded(
                             entry,
-                            &jiff::tz::TimeZone::system(),
+                            &jiff::tz::TimeZone::UTC,
                             CostMode::Auto,
                             PriceTable::Auto(&pricing),
                         )
@@ -997,7 +997,7 @@ mod tests {
                     .map(|entry| {
                         usage_entry_to_loaded(
                             entry,
-                            &jiff::tz::TimeZone::system(),
+                            &jiff::tz::TimeZone::UTC,
                             CostMode::Auto,
                             PriceTable::Auto(&pricing),
                         )

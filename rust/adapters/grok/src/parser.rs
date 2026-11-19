@@ -826,7 +826,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = parse_session_files_with_diagnostics(
             &files,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             &Diagnostics::new("grok"),
@@ -891,7 +891,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = parse_session_files_with_diagnostics(
             &files,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             &Diagnostics::new("grok"),
@@ -1114,7 +1114,7 @@ mod tests {
             .path("sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl");
         let entries = parse_session_files_with_diagnostics(
             &files,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             &Diagnostics::new("grok"),
@@ -1160,7 +1160,7 @@ mod tests {
         );
         let entries = parse_session_files_with_diagnostics(
             &files,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             &Diagnostics::new("grok"),
@@ -1255,7 +1255,7 @@ mod tests {
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
         let entries = parse_session_files_with_diagnostics(
             &files,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             &Diagnostics::new("grok"),
@@ -1299,7 +1299,7 @@ mod tests {
         let stored_cost = |mode| {
             parse_session_files_with_diagnostics(
                 &files,
-                &jiff::tz::TimeZone::system(),
+                &jiff::tz::TimeZone::UTC,
                 mode,
                 PriceTable::for_map(mode, &pricing),
                 &Diagnostics::new("grok"),

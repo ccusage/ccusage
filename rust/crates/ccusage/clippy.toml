@@ -1,0 +1,11 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+	{ path = "std::env::set_var", reason = "Set environment variables on child commands or inject an environment lookup." },
+	{ path = "std::env::remove_var", reason = "Remove variables from child commands or inject a missing value." },
+	{ path = "std::fs::read_dir", reason = "Use shared discovery for stable ordering and diagnostics." },
+	{ path = "std::process::exit", reason = "Return an exit status from the entry point so resources are dropped." },
+	{ path = "std::thread::spawn", reason = "Start unscoped workers through the shared parallel helper." },
+]

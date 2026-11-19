@@ -743,7 +743,6 @@ mod tests {
                 .into_iter()
                 .map(OsString::from),
                 &config,
-                env!("CARGO_PKG_VERSION"),
             )
             .unwrap();
             let Command::Statusline(args) = command else {

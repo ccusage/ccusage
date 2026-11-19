@@ -512,7 +512,7 @@ mod tests {
                 session_id: "v2-session".to_string(),
                 created: Some(1_767_312_000_000),
             },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             ccusage_core::cost::PriceTable::Display,
         )
@@ -648,7 +648,7 @@ mod tests {
             })),
             None,
             None,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::Auto(&pricing),
         )
@@ -681,7 +681,7 @@ mod tests {
                 })),
                 None,
                 None,
-                &jiff::tz::TimeZone::system(),
+                &jiff::tz::TimeZone::UTC,
                 CostMode::Calculate,
                 ccusage_core::cost::PriceTable::Calculate(&pricing),
             )
@@ -713,7 +713,7 @@ mod tests {
             })),
             None,
             None,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
@@ -739,7 +739,7 @@ mod tests {
             })),
             None,
             None,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::for_map(
                 CostMode::Auto,
@@ -945,7 +945,7 @@ mod tests {
             })),
             None,
             None,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::for_map(
                 CostMode::Auto,
@@ -977,7 +977,7 @@ mod tests {
             })),
             None,
             None,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::for_map(
                 CostMode::Auto,
@@ -1115,7 +1115,7 @@ mod tests {
             })),
             None,
             None,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::Auto(&pricing),
         )
@@ -1225,7 +1225,7 @@ mod tests {
                     })),
                     None,
                     None,
-                    &jiff::tz::TimeZone::system(),
+                    &jiff::tz::TimeZone::UTC,
                     CostMode::Display,
                     ccusage_core::cost::PriceTable::Display,
                 )
@@ -1254,7 +1254,7 @@ mod tests {
         assert_eq!(
             session_value_to_entry(
                 aggregate,
-                &jiff::tz::TimeZone::system(),
+                &jiff::tz::TimeZone::UTC,
                 CostMode::Display,
                 ccusage_core::cost::PriceTable::Display
             )
@@ -1282,7 +1282,7 @@ mod tests {
                 cache_write_tokens: 0,
                 cost: None,
             },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             ccusage_core::cost::PriceTable::Calculate(&pricing),
         )

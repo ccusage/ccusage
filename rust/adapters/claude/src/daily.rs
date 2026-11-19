@@ -1392,12 +1392,8 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(
-                &path,
-                &jiff::tz::TimeZone::system(),
-                CostMode::Display,
-                None,
-            );
+            let loaded =
+                read_daily_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
             for entry in loaded {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1625,12 +1621,8 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(
-                &path,
-                &jiff::tz::TimeZone::system(),
-                CostMode::Display,
-                None,
-            );
+            let loaded =
+                read_daily_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
             for entry in loaded {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1648,7 +1640,7 @@ mod tests {
 
         let loaded = read_daily_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             None,
         );
@@ -1736,12 +1728,8 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(
-                &path,
-                &jiff::tz::TimeZone::system(),
-                CostMode::Display,
-                None,
-            );
+            let loaded =
+                read_daily_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
             for entry in loaded {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1763,15 +1751,11 @@ mod tests {
 
         let discarded = ["a", "b", "c"].map(|session| {
             let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
-            let entry = read_daily_usage_file(
-                &path,
-                &jiff::tz::TimeZone::system(),
-                CostMode::Display,
-                None,
-            )
-            .into_iter()
-            .next()
-            .unwrap();
+            let entry =
+                read_daily_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None)
+                    .into_iter()
+                    .next()
+                    .unwrap();
             push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
                 .map(|(index, discarded)| (index, discarded.key.session_id.to_string()))
         });

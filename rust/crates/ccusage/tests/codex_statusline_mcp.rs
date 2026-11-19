@@ -423,7 +423,7 @@ impl McpProcess {
         let stdin = child.stdin.take().expect("piped MCP stdin");
         let stream = child.stdout.take().expect("piped MCP stdout");
         let (sender, stdout) = mpsc::channel();
-        thread::spawn(move || {
+        ccusage_core::parallel::spawn_worker(move || {
             for line in BufReader::new(stream).lines() {
                 if sender.send(line).is_err() {
                     break;

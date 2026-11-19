@@ -420,7 +420,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             PriceTable::Auto(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -464,7 +464,7 @@ mod tests {
             &source,
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -560,7 +560,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -642,7 +642,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -716,7 +716,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -760,7 +760,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -797,7 +797,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             PriceTable::Auto(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -838,7 +838,7 @@ mod tests {
             &source,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
         let display = parse_cli_messages(
@@ -846,7 +846,7 @@ mod tests {
             &source,
             CostMode::Display,
             PriceTable::Display,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
         let calculate = parse_cli_messages(
@@ -854,7 +854,7 @@ mod tests {
             &source,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -885,7 +885,7 @@ mod tests {
             &source,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
         let display = parse_cli_messages(
@@ -893,7 +893,7 @@ mod tests {
             &source,
             CostMode::Display,
             PriceTable::Display,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
         let calculate = parse_cli_messages(
@@ -901,7 +901,7 @@ mod tests {
             &source,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -930,7 +930,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             PriceTable::Auto(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -968,7 +968,7 @@ mod tests {
             &source,
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 
@@ -988,7 +988,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             PriceTable::Auto(&pricing),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &Diagnostics::new("cline"),
         );
 

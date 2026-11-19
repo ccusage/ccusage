@@ -2,7 +2,9 @@ mod adapter;
 mod cli;
 mod http;
 
-use ccusage_cli::Command;
+use std::process::ExitCode;
+
+use ccusage_cli::{Command, ReportTimezone};
 use ccusage_core::{Result, pricing, summary::Bucket};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
@@ -18,10 +20,16 @@ fn install_embedded_snapshots() {
     });
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
+    ReportTimezone::install_system_zone(jiff::tz::TimeZone::system);
     install_embedded_snapshots();
     pricing::set_json_fetcher(http::fetch_json);
-    match cli::parse() {
+    let command = match cli::parse() {
+        Ok(Some(command)) => command,
+        Ok(None) => return Ok(ExitCode::SUCCESS),
+        Err(status) => return Ok(status),
+    };
+    match command {
         Command::All(args) => adapter::all::run(args),
         Command::Daily(args) => adapter::claude::run_daily(args),
         Command::Monthly(shared) => adapter::claude::run_bucket(shared, Bucket::Monthly),
@@ -32,7 +40,8 @@ fn main() -> Result<()> {
         Command::Blocks(args) => adapter::claude::run_blocks(args),
         Command::Statusline(args) => adapter::claude::run_statusline(args),
         Command::Agent(agent, args) => adapter::all::runner(agent, args),
-    }
+    }?;
+    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]

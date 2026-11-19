@@ -465,7 +465,7 @@ mod tests {
         parse_thread(
             ccusage_adapter_common::units::decode_json(content)?,
             &unit,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -635,7 +635,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -680,7 +680,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -727,7 +727,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -762,7 +762,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -792,7 +792,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -826,7 +826,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
@@ -861,7 +861,7 @@ mod tests {
 
         let entries = read_thread(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             ccusage_core::cost::PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),

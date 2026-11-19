@@ -57,7 +57,7 @@ mod tests {
 
     use super::*;
     fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
-        let mut command = ccusage_cli_parser::parse_from_with_config(args, config, "test")?;
+        let mut command = ccusage_cli_parser::parse_from_with_config(args, config)?;
         super::super::resolve_report_clock(&mut command, ccusage_cli::ReportClock::System)?;
         Ok(command)
     }

@@ -1,5 +1,3 @@
-use std::process;
-
 use ccusage_cli::command_tokens;
 
 struct HelpPage {
@@ -11,16 +9,6 @@ struct HelpPage {
 }
 
 include!(concat!(env!("OUT_DIR"), "/cli-help.rs"));
-
-pub(crate) fn print_version_and_exit(version: &str) -> ! {
-    println!("ccusage {version}");
-    process::exit(0);
-}
-
-pub(crate) fn print_help_and_exit(args: &[String]) -> ! {
-    println!("{}", help_text_for_args(args));
-    process::exit(0);
-}
 
 #[cfg(test)]
 pub(crate) fn help_text() -> String {

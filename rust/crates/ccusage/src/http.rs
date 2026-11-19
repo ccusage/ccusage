@@ -298,7 +298,7 @@ mod tests {
             "http://{}/pricing.json",
             listener.local_addr().expect("test server address")
         );
-        let handle = thread::spawn(move || {
+        let handle = ccusage_core::parallel::spawn_worker(move || {
             let mut requests = Vec::new();
             for response in responses {
                 let mut stream = accept_with_timeout(&listener)?;
@@ -319,7 +319,7 @@ mod tests {
             "http://{}/pricing.json",
             listener.local_addr().expect("test server address")
         );
-        let handle = thread::spawn(move || {
+        let handle = ccusage_core::parallel::spawn_worker(move || {
             let mut stream = accept_with_timeout(&listener)?;
             read_request(&mut stream)
         });
@@ -414,7 +414,9 @@ mod tests {
             .map(|(etag, body)| {
                 let dir = dir.clone();
                 let url = url.to_string();
-                thread::spawn(move || CacheEntry::for_url(&dir, &url).write(&etag, &body))
+                ccusage_core::parallel::spawn_worker(move || {
+                    CacheEntry::for_url(&dir, &url).write(&etag, &body)
+                })
             })
             .collect();
         for handle in handles {
@@ -431,11 +433,13 @@ mod tests {
             (cached.etag, cached.body)
         );
         let cache_path = entry.path.clone();
-        let leftovers: Vec<_> = fs::read_dir(&dir)
-            .expect("cache dir")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path() != cache_path)
+        let diagnostics = ccusage_core::Diagnostics::new("http-cache");
+        let leftovers: Vec<_> = ccusage_adapter_common::dir_entries(&dir, &diagnostics)
+            .into_iter()
+            .filter_map(|(path, _)| (path != cache_path).then_some(path))
             .collect();
+        assert!(dir.is_dir());
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
         assert!(
             leftovers.is_empty(),
             "leftover temporary files: {leftovers:?}"

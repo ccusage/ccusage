@@ -372,7 +372,7 @@ mod tests {
         });
         let blocked = fixture.path("projects/blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::read_dir(&blocked).is_err();
+        let denied = fs::File::open(&blocked).is_err();
         let diagnostics = Diagnostics::new("claude");
         let files = super::usage_files(&[fixture.root().to_path_buf()], None, &diagnostics);
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
@@ -397,7 +397,7 @@ mod tests {
         });
         let blocked = fixture.path("projects/blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::read_dir(&blocked).is_err();
+        let denied = fs::File::open(&blocked).is_err();
         let diagnostics = Diagnostics::new("claude");
         let mut files = Vec::new();
         super::visit_usage_files(

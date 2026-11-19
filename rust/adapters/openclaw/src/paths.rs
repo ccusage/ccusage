@@ -76,7 +76,7 @@ mod tests {
         });
         let blocked = fixture.path("blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let permission_denied = fs::read_dir(&blocked).is_err();
+        let permission_denied = fs::File::open(&blocked).is_err();
 
         let diagnostics = Diagnostics::new("openclaw");
         let files = collect_session_files(fixture.root(), &diagnostics);

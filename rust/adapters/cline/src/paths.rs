@@ -186,7 +186,7 @@ mod tests {
         Environment::with_var(CLINE_DATA_DIR_ENV, fixture.root()).run(|| {
             let blocked = fixture.path("tasks/blocked");
             fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-            let denied = fs::read_dir(&blocked).is_err();
+            let denied = fs::File::open(&blocked).is_err();
             let diagnostics = Diagnostics::new("cline");
             let files = discover_files(&diagnostics);
             fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();

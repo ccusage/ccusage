@@ -411,7 +411,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         let loaded = load_entries_from_databases(
             &[fixture.path("broken.db"), fixture.path("unsupported.db")],
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &shared,
             PriceTable::for_map(shared.mode, &pricing),
             &diagnostics,
@@ -436,7 +436,7 @@ mod tests {
         let diagnostics = Diagnostics::new("zcode");
         load_entries_from_databases(
             std::slice::from_ref(&path),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &SharedArgs::default(),
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &diagnostics,
@@ -473,7 +473,7 @@ mod tests {
         let diagnostics = Diagnostics::new("zcode");
         let entries = load_entries_from_databases(
             std::slice::from_ref(&path),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &SharedArgs::default(),
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &diagnostics,

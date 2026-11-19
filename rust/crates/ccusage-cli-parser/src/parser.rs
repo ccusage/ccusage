@@ -1,7 +1,7 @@
-use std::{collections::BTreeMap, ffi::OsString, num::NonZeroU32};
+use std::{collections::BTreeMap, ffi::OsString, num::NonZeroU32, ops::ControlFlow};
 
 use crate::arg_parser::ArgParser;
-use crate::help::{print_help_and_exit, print_version_and_exit};
+use crate::help::help_text_for_args;
 use ccusage_cli::{
     AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
     BlocksOption, ClaudeStatuslineOption, CliConfig, CodexSpeed, CodexStatuslineArgs,
@@ -57,33 +57,40 @@ impl RootOptions {
     }
 }
 
-pub fn parse_from_with_config<I>(
+pub fn parse_cli<I>(
     args: I,
     config: &dyn CliConfig,
-    version: &'static str,
-) -> Result<Command, String>
+    version: &str,
+) -> Result<ControlFlow<String, Command>, String>
 where
     I: IntoIterator<Item = OsString>,
 {
-    parse_with_timezone(args, config, version, None)
+    let parser = argument_parser(args)?;
+    match control_arg(&parser.args) {
+        Some(ControlArg::Version) => Ok(ControlFlow::Break(format!("ccusage {version}"))),
+        Some(ControlArg::Help) => Ok(ControlFlow::Break(help_text_for_args(&parser.args))),
+        None => parse_with_timezone(parser, config, None).map(ControlFlow::Continue),
+    }
 }
 
-fn parse_with_timezone<I>(
-    args: I,
-    config: &dyn CliConfig,
-    version: &'static str,
-    known_timezone: Option<&ReportTimezone>,
-) -> Result<Command, String>
+pub fn parse_from_with_config<I>(args: I, config: &dyn CliConfig) -> Result<Command, String>
 where
     I: IntoIterator<Item = OsString>,
 {
+    parse_with_timezone(argument_parser(args)?, config, None)
+}
+
+fn argument_parser(args: impl IntoIterator<Item = OsString>) -> Result<ArgParser, String> {
     let mut parser = ArgParser::new(args.into_iter().skip(1).collect())?;
     normalize_legacy_agent_command_args(&mut parser.args);
-    match control_arg(&parser.args) {
-        Some(ControlArg::Version) => print_version_and_exit(version),
-        Some(ControlArg::Help) => print_help_and_exit(&parser.args),
-        None => {}
-    }
+    Ok(parser)
+}
+
+fn parse_with_timezone(
+    mut parser: ArgParser,
+    config: &dyn CliConfig,
+    known_timezone: Option<&ReportTimezone>,
+) -> Result<Command, String> {
     if let Some(message) = report_flag_alias_error(&parser.args) {
         return Err(message);
     }
@@ -129,14 +136,13 @@ fn parse_invocation(
 pub fn parse_report_args_with_config<I>(
     args: I,
     config: &dyn CliConfig,
-    version: &'static str,
     start_of_week: WeekDay,
     known_timezone: Option<&ReportTimezone>,
 ) -> Result<AgentCommandArgs, String>
 where
     I: IntoIterator<Item = OsString>,
 {
-    match parse_with_timezone(args, config, version, known_timezone)? {
+    match parse_with_timezone(argument_parser(args)?, config, known_timezone)? {
         Command::All(args) | Command::Agent(_, AgentCommand::Report(args)) => {
             Ok(AgentCommandArgs {
                 start_of_week,

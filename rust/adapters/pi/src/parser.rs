@@ -669,7 +669,7 @@ mod tests {
 
         let auto = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
         )
@@ -680,7 +680,7 @@ mod tests {
 
         let display = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
         )
@@ -700,7 +700,7 @@ mod tests {
         let auto = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             "omp",
@@ -713,7 +713,7 @@ mod tests {
         let display = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             "omp",
@@ -733,7 +733,7 @@ mod tests {
 
         let default = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
         )
@@ -744,7 +744,7 @@ mod tests {
         let named = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             "omp",
@@ -774,7 +774,7 @@ mod tests {
         let data = read_session_file_data_for_store_with_diagnostics(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             "pi",
@@ -804,7 +804,7 @@ mod tests {
 
         let entries = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
         )
@@ -825,7 +825,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::default();
         let entries = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
         )
@@ -858,7 +858,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             "o3",
@@ -897,7 +897,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             "deepseek-chat",
@@ -933,7 +933,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             "omp",
@@ -954,7 +954,7 @@ mod tests {
 
         let entries = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
         )
@@ -974,7 +974,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::default();
         let entries = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
         )
@@ -993,7 +993,7 @@ mod tests {
 
         let entries = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
         )
@@ -1014,7 +1014,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             "omp",
@@ -1035,7 +1035,7 @@ mod tests {
 
         let pi = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
         )
@@ -1045,7 +1045,7 @@ mod tests {
         let omp = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
             "omp",
@@ -1092,7 +1092,7 @@ mod tests {
 
         let default_entries = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
         )
@@ -1106,7 +1106,7 @@ mod tests {
         let named_entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             "omp",
@@ -1163,7 +1163,7 @@ mod tests {
 
         let default_entry = read_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
         )
@@ -1179,7 +1179,7 @@ mod tests {
         let named_entry = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             "omp",

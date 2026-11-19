@@ -116,6 +116,7 @@ dependencies = [
  "ccusage",
  "ccusage-adapter-all",
  "ccusage-adapter-claude",
+ "ccusage-adapter-common",
  "ccusage-cli",
  "ccusage-cli-parser",
  "ccusage-config",

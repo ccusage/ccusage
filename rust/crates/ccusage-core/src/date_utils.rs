@@ -161,7 +161,9 @@ fn start_of_day_ms(date: IsoDate, timezone: &JiffTimeZone) -> Option<i64> {
 }
 
 pub fn resolve_tz(timezone: Option<&ReportTimezone>) -> JiffTimeZone {
-    timezone.map_or_else(JiffTimeZone::system, |timezone| timezone.zone().clone())
+    timezone.map_or_else(ReportTimezone::system_zone, |timezone| {
+        timezone.zone().clone()
+    })
 }
 
 pub fn date_at(timestamp: TimestampMs, timezone: &JiffTimeZone) -> IsoDate {
@@ -226,7 +228,7 @@ mod tests {
             resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC)).iana_name(),
             Some("UTC")
         );
-        let system = jiff::tz::TimeZone::system();
+        let system = ccusage_cli::ReportTimezone::system_zone();
         for timezone in [Some(&"local".parse().unwrap()), None] {
             assert_eq!(
                 resolve_tz(timezone).iana_name(),

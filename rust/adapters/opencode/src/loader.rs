@@ -1142,7 +1142,7 @@ mod tests {
         });
         let blocked = fixture.path("storage/message/blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::read_dir(&blocked).is_err();
+        let denied = fs::File::open(&blocked).is_err();
         let shared = SharedArgs {
             offline: true,
             mode: CostMode::Display,
@@ -1175,7 +1175,7 @@ mod tests {
         });
         let data = fixture.path("data");
         fs::set_permissions(&data, fs::Permissions::from_mode(0o300)).unwrap();
-        let denied = fs::read_dir(&data).is_err();
+        let denied = fs::File::open(&data).is_err();
         let shared = SharedArgs {
             offline: true,
             mode: CostMode::Display,
@@ -1318,7 +1318,7 @@ mod tests {
         connection.execute("DROP TABLE session_v2").unwrap();
         let shared = SharedArgs::default();
         let context = DatabaseLoadContext {
-            tz: &jiff::tz::TimeZone::system(),
+            tz: &jiff::tz::TimeZone::UTC,
             mode: CostMode::Display,
             pricing: ccusage_core::cost::PriceTable::Display,
             window: DateWindow::UNBOUNDED,

@@ -226,7 +226,7 @@ mod tests {
 
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics(),
@@ -307,7 +307,7 @@ mod tests {
         let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -355,7 +355,7 @@ mod tests {
         let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -389,7 +389,7 @@ mod tests {
         let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -428,7 +428,7 @@ mod tests {
 
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics(),
@@ -462,7 +462,7 @@ mod tests {
             &AgentDatabase {
                 path: db_path.clone(),
             },
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -557,7 +557,7 @@ mod tests {
         });
         let agents = fixture.path("agents");
         fs::set_permissions(&agents, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::read_dir(&agents).is_err();
+        let denied = fs::File::open(&agents).is_err();
         let diagnostics = diagnostics();
         let databases = collect_agent_databases(fixture.root(), &diagnostics);
         fs::set_permissions(&agents, fs::Permissions::from_mode(0o700)).unwrap();
