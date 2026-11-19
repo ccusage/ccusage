@@ -340,7 +340,7 @@ pub(super) fn codex_model_missing_pricing(
     .is_some()
 }
 
-pub fn codex_missing_pricing_models(
+pub(crate) fn codex_missing_pricing_models(
     groups: &BTreeMap<String, CodexGroup>,
     pricing: Option<&PricingMap>,
 ) -> Vec<String> {

@@ -226,7 +226,7 @@ fn string_field(record: &serde_json::Map<String, Value>, key: &str) -> Option<St
     (!value.is_empty()).then(|| value.to_string())
 }
 
-pub fn normalize_droid_model_name(model: &str) -> String {
+pub(crate) fn normalize_droid_model_name(model: &str) -> String {
     let raw = model.trim_prefix("custom:");
     let mut without_brackets = String::new();
     let mut bracket_depth = 0_u32;
