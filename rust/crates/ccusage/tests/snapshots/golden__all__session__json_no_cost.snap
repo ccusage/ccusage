@@ -3173,6 +3173,31 @@ exit: 0
       "totalTokens": 825
     },
     {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150,
+      "inputTokens": 600,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:06:00.000Z",
+        "reasoningOutputTokens": 5
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "inputTokens": 600,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 75
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5-codex"
+      ],
+      "outputTokens": 75,
+      "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "totalTokens": 825
+    },
+    {
       "agent": "goose",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -3465,31 +3490,6 @@ exit: 0
       "outputTokens": 50,
       "period": "task:task-stale",
       "totalTokens": 150
-    },
-    {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 100,
-      "inputTokens": 400,
-      "metadata": {
-        "lastActivity": "2026-01-01T12:05:00.500Z",
-        "reasoningOutputTokens": 0
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100,
-          "inputTokens": 400,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 50
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5-codex"
-      ],
-      "outputTokens": 50,
-      "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
-      "totalTokens": 550
     },
     {
       "agent": "grok",
@@ -5176,10 +5176,10 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 18765,
-    "cacheReadTokens": 1327567,
-    "inputTokens": 1361187,
-    "outputTokens": 69276,
-    "totalTokens": 2780232,
+    "cacheReadTokens": 1327617,
+    "inputTokens": 1361387,
+    "outputTokens": 69301,
+    "totalTokens": 2780507,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

@@ -2094,7 +2094,7 @@ exit: 0
         "gpt-5-codex"
       ],
       "outputTokens": 75,
-      "period": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
+      "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
       "totalCost": 0.0015187500000000001,
       "totalTokens": 825
     },
@@ -2297,7 +2297,7 @@ exit: 0
         "gpt-5-codex"
       ],
       "outputTokens": 50,
-      "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "period": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
       "totalCost": 0.0010125,
       "totalTokens": 550
     },

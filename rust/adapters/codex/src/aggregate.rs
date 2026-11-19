@@ -2743,6 +2743,50 @@ mod tests {
         }
     }
 
+    /// A spawned child replays its parent's request without the record. Whichever
+    /// file is read first, the parent's recorded request owns the usage.
+    #[test]
+    fn credits_a_replaced_stand_in_to_the_recording_session() {
+        let child = recorded_requests(None, &[None]);
+        let parent = recorded_requests(None, &[Some("resp_parent")]);
+        let orders = [
+            [("0-child", &child), ("1-parent", &parent)],
+            [("0-parent", &parent), ("1-child", &child)],
+        ];
+
+        for files in orders {
+            let fixture = ccusage_test_support::Fixture::new();
+            for (name, contents) in files {
+                let _ = fixture.write_file(format!("sessions/{name}.jsonl"), contents);
+            }
+            let sessions = fixture.path("sessions");
+            let parent_session = files
+                .iter()
+                .find(|(name, _)| name.ends_with("-parent"))
+                .unwrap()
+                .0;
+
+            for single_thread in [true, false] {
+                let events =
+                    crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+                assert_eq!(
+                    aggregate_events(&events, AgentReportKind::Session, Some("UTC"))
+                        .unwrap()
+                        .into_iter()
+                        .map(|(session, group)| (session, group.input_tokens))
+                        .collect::<Vec<_>>(),
+                    [(parent_session.to_string(), 1_000)],
+                    "parent={parent_session}, single_thread={single_thread}"
+                );
+                assert_eq!(
+                    daily_input_tokens(&sessions, single_thread),
+                    [("2026-11-01".to_string(), 1_000)],
+                    "parent={parent_session}, single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
     /// A recordless copy cannot say which of several recorded requests it copied,
     /// so it must not lend its tier to whichever one happened to arrive first.
     #[test]
