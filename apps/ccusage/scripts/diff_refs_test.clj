@@ -149,7 +149,7 @@
 (deftest pinned-clock-comparisons
   (testing "refs are built with the test clock where they declare it"
     (let [features-for (:features-for (run-diff-main [{:bin "b" :features []} {:bin "h" :features []}]))]
-      (is (some #{(first (features-for "HEAD"))} diff/test-clock-features)))))
+      (is (some #{(first (features-for "HEAD"))} diff/test-clock-features))))
   (testing "both sides pinned keep the golden clock"
     (let [{:keys [envs]} (run-diff-main [{:bin "b" :features ["ccusage-core/test-clock"]} {:bin "h" :features ["ccusage/test-clock"]}])]
       (is (seq envs))

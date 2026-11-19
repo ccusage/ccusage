@@ -24,7 +24,7 @@ impl TokenUsageRaw {
         }
     }
 
-    pub(crate) fn cache_creation_1h_token_count(&self) -> Option<u64> {
+    fn cache_creation_1h_token_count(&self) -> Option<u64> {
         self.cache_creation.map(CacheCreationRaw::one_hour_tokens)
     }
 }

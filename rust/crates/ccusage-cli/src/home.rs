@@ -17,10 +17,6 @@ pub fn path_identity(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-pub fn expand_home_path(raw: &str) -> PathBuf {
-    expand_home(raw, home_dir().as_deref())
-}
-
 pub fn parse_paths(
     raw: &OsStr,
     separator: Option<char>,
