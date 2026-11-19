@@ -25,6 +25,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   triage:
     runs-on: ubuntu-latest
@@ -52,9 +56,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Nushell
-        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-        with:
-          version: 0.114.1
+        uses: ./.github/actions/setup-nu
 
       - name: Resolve issue context
         id: issue
@@ -93,43 +95,7 @@ jobs:
           push: disabled
           shell: disabled
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["kind", "maintenance_fit", "confidence", "decision", "priority", "implementation", "reason"],
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "enum": ["bug", "documentation", "feature_request", "maintenance", "duplicate", "invalid", "spam", "out_of_scope", "security", "question", "unclear"]
-                },
-                "maintenance_fit": {
-                  "type": "string",
-                  "enum": ["maintainable", "excluded", "needs_review"]
-                },
-                "confidence": {
-                  "type": "string",
-                  "enum": ["high", "medium", "low"]
-                },
-                "decision": {
-                  "type": "string",
-                  "enum": ["keep_open", "close", "needs_human"]
-                },
-                "priority": {
-                  "type": "string",
-                  "enum": ["priority:critical", "priority:high", "priority:medium", "priority:low"]
-                },
-                "implementation": {
-                  "type": "string",
-                  "enum": ["create_pr", "none"]
-                },
-                "reason": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1200
-                }
-              }
-            }
+          output_schema: ${{ steps.request.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -145,6 +111,7 @@ jobs:
       contents: read
       issues: write
     outputs:
+      schema: ${{ steps.implementation_request.outputs.schema }}
       implementation: ${{ steps.implementation_request.outputs.implementation || steps.verdict.outputs.implementation }}
       prompt: ${{ steps.implementation_request.outputs.prompt }}
       implementation_marker: ${{ steps.implementation_request.outputs.implementation_marker }}
@@ -160,9 +127,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Nushell
-        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-        with:
-          version: 0.114.1
+        uses: ./.github/actions/setup-nu
 
       - name: Apply the issue verdict
         id: verdict
@@ -214,9 +179,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Nushell
-        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-        with:
-          version: 0.114.1
+        uses: ./.github/actions/setup-nu
 
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
@@ -239,6 +202,10 @@ jobs:
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-guard
 
+      - name: Keep the gate scripts out of Pullfrog's reach
+        if: steps.implementation_guard.outputs.skip != 'true'
+        run: cp -R .github/scripts "$RUNNER_TEMP/contribution-gate-scripts"
+
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
         if: steps.implementation_guard.outputs.skip != 'true'
@@ -249,42 +216,7 @@ jobs:
           push: disabled
           shell: restricted
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["implementation", "title", "body"],
-              "properties": {
-                "implementation": {
-                  "type": "string",
-                  "enum": ["prepared", "none"]
-                },
-                "title": {
-                  "type": "string",
-                  "maxLength": 240
-                },
-                "body": {
-                  "type": "string",
-                  "maxLength": 20000
-                }
-              },
-              "oneOf": [
-                {
-                  "properties": {
-                    "implementation": {"const": "prepared"},
-                    "title": {"minLength": 1},
-                    "body": {"minLength": 1}
-                  }
-                },
-                {
-                  "properties": {
-                    "implementation": {"const": "none"},
-                    "title": {"maxLength": 0},
-                    "body": {"maxLength": 0}
-                  }
-                }
-              ]
-            }
+          output_schema: ${{ needs.apply.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
           PULLFROG_CONTRIBUTION_GATE: 'true'
@@ -292,109 +224,12 @@ jobs:
       - name: Prepare the implementation artifact
         id: artifact
         if: steps.pullfrog.outcome == 'success'
-        shell: nu {0}
         env:
           RESULT: ${{ steps.pullfrog.outputs.result }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation.patch
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation.json
-        run: |
-          def git-complete [args: list<string>]: nothing -> record {
-              run-external git ...$args | complete
-          }
-
-          def git-run [args: list<string>]: nothing -> nothing {
-              let result = git-complete $args
-              if $result.exit_code != 0 {
-                  error make {
-                      msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
-                  }
-              }
-          }
-
-          let result = try {
-              $env.RESULT | from json
-          } catch {
-              error make {msg: 'Pullfrog returned invalid implementation JSON'}
-          }
-          let expected_fields = [body implementation title]
-          if ($result | describe) !~ '^record' or ($result | columns | sort) != $expected_fields {
-              error make {msg: 'Pullfrog returned unexpected implementation fields'}
-          }
-
-          let head = git-complete [rev-parse HEAD]
-          if $head.exit_code != 0 {
-              error make {msg: $"Could not resolve Pullfrog HEAD: ($head.stderr | str trim)"}
-          }
-          let head_sha = $head.stdout | str trim
-
-          if $result.implementation == 'none' {
-              if $head_sha != $env.BASE_SHA {
-                  error make {msg: 'Pullfrog declined implementation after creating local commits'}
-              }
-              let status = git-complete [status --porcelain]
-              if $status.exit_code != 0 or ($status.stdout | str trim | is-not-empty) {
-                  error make {msg: 'Pullfrog declined implementation after changing the working tree'}
-              }
-          } else if $result.implementation == 'prepared' {
-              let metadata_is_valid = [
-                  (($result.title | str trim | is-not-empty) and (($result.title | lines | length) == 1))
-                  (($result.title | str length) <= 240)
-                  (($result.body | str trim | is-not-empty) and (($result.body | str length) <= 20000))
-              ] | all {|valid| $valid}
-              if not $metadata_is_valid {
-                  error make {msg: 'Pullfrog returned invalid implementation PR metadata'}
-              }
-
-              let ancestry = git-complete [merge-base --is-ancestor $env.BASE_SHA $head_sha]
-              if $ancestry.exit_code != 0 {
-                  error make {msg: 'Pullfrog HEAD must descend from the checked-out base commit'}
-              }
-
-              let untracked_result = git-complete [ls-files --others --exclude-standard '-z']
-              if $untracked_result.exit_code != 0 {
-                  error make {msg: $"Could not inspect untracked files: ($untracked_result.stderr | str trim)"}
-              }
-              let untracked = $untracked_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
-              if ($untracked | length) > 100 {
-                  error make {msg: 'Pullfrog created too many untracked files for automatic publication'}
-              }
-              if ($untracked | is-not-empty) {
-                  git-run [add --intent-to-add -- ...$untracked]
-              }
-
-              let changed_paths_result = git-complete [diff --name-only '-z' $env.BASE_SHA --]
-              if $changed_paths_result.exit_code != 0 {
-                  error make {msg: $"Could not inspect changed paths: ($changed_paths_result.stderr | str trim)"}
-              }
-              let changed_paths = $changed_paths_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
-              if ($changed_paths | is-empty) or ($changed_paths | length) > 100 {
-                  error make {msg: 'Pullfrog implementation must change between 1 and 100 files'}
-              }
-
-              let changed = git-complete [diff --quiet $env.BASE_SHA --]
-              if $changed.exit_code == 0 {
-                  error make {msg: 'Pullfrog reported a prepared implementation without any changes'}
-              }
-              if $changed.exit_code != 1 {
-                  error make {msg: $"Could not inspect implementation changes: ($changed.stderr | str trim)"}
-              }
-              git-run [diff --check $env.BASE_SHA --]
-
-              let patch = git-complete [diff --binary --full-index $env.BASE_SHA --]
-              if $patch.exit_code != 0 {
-                  error make {msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"}
-              }
-              if ($patch.stdout | encode utf8 | bytes length) > 5000000 {
-                  error make {msg: 'Pullfrog implementation patch exceeds the 5 MB publication limit'}
-              }
-              $patch.stdout | save --raw $env.IMPLEMENTATION_PATCH
-              $result | to json | save --raw $env.IMPLEMENTATION_METADATA
-          } else {
-              error make {msg: 'Pullfrog returned an unknown implementation result'}
-          }
-
-          $"implementation=($result.implementation)\n" | save --append $env.GITHUB_OUTPUT
+        run: nu "$RUNNER_TEMP/contribution-gate-scripts/contribution-gate.nu" implementation-artifact
 
       - name: Upload the implementation artifact
         if: steps.artifact.outputs.implementation == 'prepared'
@@ -433,9 +268,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Nushell
-        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-        with:
-          version: 0.114.1
+        uses: ./.github/actions/setup-nu
 
       - name: Download the implementation artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -464,6 +297,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
+          PR_NUMBER: ${{ steps.publish.outputs.pull_request_number }}
           IMPLEMENTATION_BRANCH: ${{ needs.apply.outputs.implementation_branch }}
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}

@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::{ffi::OsString, num::NonZeroU32};
 
 use serde_json::{Value, json};
 
@@ -7,24 +7,146 @@ use crate::*;
 use ccusage_cli::*;
 use ccusage_test_support::fs_fixture;
 
-fn parse(args: &[&str]) -> Cli {
-    Cli::parse_from(args.iter().map(OsString::from)).unwrap()
+fn parse(args: &[&str]) -> Command {
+    parse_with_config(args, &NoConfig)
 }
 
-fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Cli {
-    Cli::parse_from_with_config(
+fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Command {
+    parse_from_with_config(
         args.iter().map(OsString::from),
         config,
-        5.0,
         env!("CARGO_PKG_VERSION"),
     )
     .unwrap()
 }
 
 fn parse_error(args: &[&str]) -> String {
-    match Cli::parse_from(args.iter().map(OsString::from)) {
+    match parse_from_with_config(
+        args.iter().map(OsString::from),
+        &NoConfig,
+        env!("CARGO_PKG_VERSION"),
+    ) {
         Ok(_) => panic!("expected parse error"),
         Err(error) => error,
+    }
+}
+
+#[test]
+fn misplaced_short_active_is_an_unknown_root_option_for_blocks() {
+    assert_eq!(
+        parse_error(&["ccusage", "-a", "blocks"]),
+        "Unknown option '-a'"
+    );
+}
+
+#[test]
+fn unsupported_agent_report_guidance_precedes_a_config_error() {
+    let fixture = fs_fixture!({"cwd/.keep": ""});
+    let path = fixture.path("missing.json");
+    let args = ["codex", "blocks", "--config", path.to_str().unwrap()];
+    let config = ccusage_config::ConfigContext::from_args(&args.map(str::to_string));
+    let result = parse_from_with_config(
+        std::iter::once(OsString::from("ccusage")).chain(args.map(OsString::from)),
+        &config,
+        env!("CARGO_PKG_VERSION"),
+    );
+    let Err(error) = result else {
+        panic!("expected the unsupported report to be rejected");
+    };
+    assert_eq!(
+        error,
+        "The \"blocks\" report is only available for Claude Code usage.\nUse \"ccusage codex daily\" for Codex usage reports."
+    );
+}
+
+#[test]
+fn blocks_reject_invalid_token_limits() {
+    for value in ["abc", "0"] {
+        assert!(
+            parse_error(&["ccusage", "blocks", "--token-limit", value])
+                .contains("Invalid value for --token-limit")
+        );
+    }
+}
+
+#[test]
+fn blocks_reject_invalid_session_lengths() {
+    for value in ["NaN", "inf", "0", "1e300", "0.0000000001"] {
+        assert!(
+            parse_error(&["ccusage", "blocks", "--session-length", value])
+                .contains("Invalid value for --session-length")
+        );
+    }
+}
+
+#[test]
+fn blocks_reject_negative_limits() {
+    for flag in ["--token-limit=-1", "--session-length=-1"] {
+        assert!(parse_error(&["ccusage", "blocks", flag]).contains("Invalid value"));
+    }
+}
+
+#[test]
+fn statusline_rejects_unordered_context_thresholds() {
+    assert!(
+        parse_error(&["ccusage", "statusline", "--context-low-threshold", "80"])
+            .contains("must be less than medium threshold")
+    );
+}
+
+#[test]
+fn statusline_threshold_overrides_are_validated_together() {
+    let Command::Statusline(_) = parse(&[
+        "ccusage",
+        "statusline",
+        "--context-low-threshold",
+        "90",
+        "--context-medium-threshold",
+        "95",
+    ]) else {
+        panic!("expected statusline")
+    };
+}
+
+#[test]
+fn statusline_merges_config_thresholds_before_validation() {
+    use ccusage_config::ConfigContext;
+    use ccusage_test_support::EnvGuard;
+    let fixture = fs_fixture!({
+        "home/.claude/ccusage.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
+        "explicit.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
+    });
+    let _env = EnvGuard::set_many([
+        ("HOME", Some(fixture.path("home").into_os_string())),
+        (
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.path("home/.claude").into_os_string()),
+        ),
+        (
+            "XDG_CONFIG_HOME",
+            Some(fixture.path("home/.config").into_os_string()),
+        ),
+    ]);
+    for explicit in [false, true] {
+        let path = fixture.path("explicit.json").display().to_string();
+        let mut args = vec!["ccusage", "statusline", "--context-medium-threshold", "95"];
+        if explicit {
+            args.extend(["--config", &path]);
+        }
+        let config = ConfigContext::from_args(
+            &args[1..]
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>(),
+        );
+        let Command::Statusline(statusline) = parse_with_config(&args, &config) else {
+            panic!("expected statusline");
+        };
+        assert_eq!(
+            statusline.context_thresholds,
+            ContextThresholds::new(85, 95).unwrap()
+        );
+        assert!(config.warnings().is_empty(), "{:?}", config.warnings());
     }
 }
 
@@ -48,19 +170,19 @@ struct TestConfig {
 }
 
 impl CliConfig for TestConfig {
+    fn timezone(&self) -> Option<&str> {
+        self.shared_timezone
+    }
+
     fn apply_shared(&self, shared: &mut SharedArgs) {
         if let Some(json) = self.shared_json {
             shared.json = json;
         }
         if let Some(order) = self.shared_order {
-            shared.order = order;
-            shared.order_explicit = true;
+            shared.order = Some(order);
         }
         if let Some(since) = self.shared_since {
-            shared.since = Some(since.to_string());
-        }
-        if let Some(timezone) = self.shared_timezone {
-            shared.timezone = Some(timezone.to_string());
+            shared.since = Some(since.parse().unwrap());
         }
         if let Some(compact) = self.shared_compact {
             shared.compact = compact;
@@ -78,10 +200,10 @@ impl CliConfig for TestConfig {
             args.active = active;
         }
         if let Some(token_limit) = self.blocks_token_limit {
-            args.token_limit = Some(token_limit.to_string());
+            args.token_limit = Some(token_limit.parse().unwrap());
         }
         if let Some(session_length) = self.blocks_session_length {
-            args.session_length = session_length;
+            args.session_length = ccusage_cli::SessionLength::from_hours(session_length).unwrap();
         }
     }
 
@@ -97,125 +219,103 @@ impl CliConfig for TestConfig {
         }
     }
 
-    fn apply_agent_args(
-        &self,
-        codex_speed: &mut CodexSpeed,
-        pi_path: Option<&mut Option<String>>,
-        open_claw_path: Option<&mut Option<String>>,
-    ) {
-        if let Some(speed) = self.codex_speed {
-            *codex_speed = speed;
-        }
-        if let (Some(path), Some(pi_path)) = (self.pi_path, pi_path) {
-            *pi_path = Some(path.to_string());
-        }
-        if let (Some(path), Some(open_claw_path)) = (self.open_claw_path, open_claw_path) {
-            *open_claw_path = Some(path.to_string());
+    fn agent_options(&self, agent: &str) -> AgentOptions {
+        match agent {
+            "codex" => AgentOptions {
+                codex_speed: self.codex_speed.unwrap_or_default(),
+                ..AgentOptions::default()
+            },
+            "pi" => AgentOptions {
+                pi_path: self.pi_path.map(str::to_string),
+                ..AgentOptions::default()
+            },
+            "openclaw" => AgentOptions {
+                open_claw_path: self.open_claw_path.map(str::to_string),
+                ..AgentOptions::default()
+            },
+            _ => AgentOptions::default(),
         }
     }
 }
 
 fn shared_snapshot(shared: &SharedArgs) -> Value {
     json!({
-        "since": shared.since.as_deref(),
-        "until": shared.until.as_deref(),
+        "since": shared.since.map(|date| date.to_string()).as_deref(),
+        "until": shared.until.map(|date| date.to_string()).as_deref(),
         "json": shared.json,
         "mode": format!("{:?}", shared.mode),
         "debug": shared.debug,
         "debugSamples": shared.debug_samples,
-        "order": format!("{:?}", shared.order),
+        "order": format!("{:?}", shared.order.unwrap_or_default()),
         "breakdown": shared.breakdown,
         "offline": shared.offline,
-        "noOffline": shared.no_offline,
-        "color": shared.color,
-        "noColor": shared.no_color,
-        "timezone": shared.timezone.as_deref(),
+        "color": format!("{:?}", shared.color),
+        "timezone": shared.timezone.as_ref().map(|timezone| timezone.name()),
         "jq": shared.jq.as_deref(),
-        "config": shared.config.as_ref().map(|path| path.to_string_lossy().to_string()),
         "compact": shared.compact,
         "singleThread": shared.single_thread,
     })
 }
 
-fn cli_snapshot(cli: Cli) -> Value {
+fn cli_snapshot(cli: Command) -> Value {
     json!({
-        "shared": shared_snapshot(&cli.shared),
-        "command": command_snapshot(cli.command),
+        "command": command_snapshot(cli),
     })
 }
 
-fn command_snapshot(command: Option<Command>) -> Value {
+fn command_snapshot(command: Command) -> Value {
     match command {
-        None => Value::Null,
-        Some(Command::All(args)) => agent_command_snapshot("all", args),
-        Some(Command::Daily(args)) => json!({
+        Command::All(args) => agent_command_snapshot("all", args),
+        Command::Daily(args) => json!({
             "type": "daily",
             "shared": shared_snapshot(&args.shared),
             "instances": args.instances,
             "project": args.project,
             "projectAliases": args.project_aliases,
         }),
-        Some(Command::Monthly(shared)) => json!({
+        Command::Monthly(shared) => json!({
             "type": "monthly",
             "shared": shared_snapshot(&shared),
         }),
-        Some(Command::Weekly(args)) => json!({
+        Command::Weekly(args) => json!({
             "type": "weekly",
             "shared": shared_snapshot(&args.shared),
             "startOfWeek": format!("{:?}", args.start_of_week),
         }),
-        Some(Command::Session(args)) => json!({
+        Command::Session(args) => json!({
             "type": "session",
             "shared": shared_snapshot(&args.shared),
             "id": args.id,
         }),
-        Some(Command::Blocks(args)) => json!({
+        Command::Blocks(args) => json!({
             "type": "blocks",
             "shared": shared_snapshot(&args.shared),
             "active": args.active,
             "recent": args.recent,
-            "tokenLimit": args.token_limit,
-            "sessionLength": args.session_length,
+            "tokenLimit": args.token_limit.map(|value| value.to_string()),
+            "sessionLength": args.session_length.as_millis() as f64 / 3_600_000.0,
         }),
-        Some(Command::Statusline(args)) => json!({
+        Command::Statusline(args) => json!({
             "type": "statusline",
             "offline": args.offline,
-            "noOffline": args.no_offline,
             "visualBurnRate": format!("{:?}", args.visual_burn_rate),
             "costSource": format!("{:?}", args.cost_source),
             "cache": args.cache,
-            "noCache": args.no_cache,
             "refreshInterval": args.refresh_interval,
-            "contextLowThreshold": args.context_low_threshold,
-            "contextMediumThreshold": args.context_medium_threshold,
-            "config": args.config.as_ref().map(|path| path.to_string_lossy().to_string()),
+            "contextLowThreshold": args.context_thresholds.low(),
+            "contextMediumThreshold": args.context_thresholds.medium(),
             "debug": args.debug,
         }),
-        Some(Command::Codex(args)) => agent_command_snapshot("codex", args),
-        Some(Command::CodexStatusline(args)) => json!({
+        Command::Agent(_, AgentCommand::Statusline(args)) => json!({
             "type": "codex-statusline",
             "shared": shared_snapshot(&args.shared),
             "sessionId": args.session_id,
             "speed": format!("{:?}", args.codex_speed),
+            "mcp": args.mcp,
         }),
-        Some(Command::OpenCode(args)) => agent_command_snapshot("opencode", args),
-        Some(Command::Amp(args)) => agent_command_snapshot("amp", args),
-        Some(Command::Droid(args)) => agent_command_snapshot("droid", args),
-        Some(Command::Codebuff(args)) => agent_command_snapshot("codebuff", args),
-        Some(Command::Hermes(args)) => agent_command_snapshot("hermes", args),
-        Some(Command::Pi(args)) => agent_command_snapshot("pi", args),
-        Some(Command::Goose(args)) => agent_command_snapshot("goose", args),
-        Some(Command::Kilo(args)) => agent_command_snapshot("kilo", args),
-        Some(Command::Copilot(args)) => agent_command_snapshot("copilot", args),
-        Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
-        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
-        Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
-        Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
-        Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
-        Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
-        Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
-        Some(Command::Cline(args)) => agent_command_snapshot("cline", args),
-        Some(Command::Dsh(args)) => agent_command_snapshot("dsh", args),
+        Command::Agent(agent, AgentCommand::Report(args)) => {
+            agent_command_snapshot(agent.spec().name, args)
+        }
     }
 }
 
@@ -229,28 +329,235 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
             .map(|section| format!("{section:?}"))
             .collect::<Vec<_>>()),
         "byAgent": args.by_agent,
-        "piPath": args.pi_path,
-        "openClawPath": args.open_claw_path,
-        "codexSpeed": format!("{:?}", args.codex_speed),
+        "piPath": args.options.pi_path,
+        "openClawPath": args.options.open_claw_path,
+        "codexSpeed": format!("{:?}", args.options.codex_speed),
     })
 }
 
 #[test]
 fn parses_root_daily_as_all_agent_report() {
     let cli = parse(&["ccusage", "daily", "--json", "--since", "20260102"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
 }
 
 #[test]
-fn commandless_invocation_preserves_default_dispatch() {
+fn commandless_invocation_resolves_the_unified_daily_report() {
     let cli = parse(&["ccusage"]);
 
-    assert!(cli.command.is_none());
+    let Command::All(args) = cli else {
+        panic!("expected the unified daily report");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert_eq!(args.start_of_week, WeekDay::Monday);
+}
+
+#[test]
+fn source_reparse_keeps_the_unified_week_start() {
+    let args = parse_report_args_with_config(
+        ["ccusage", "weekly", "--start-of-week", "friday"]
+            .into_iter()
+            .map(OsString::from),
+        &TestConfig {
+            weekly_start: Some(WeekDay::Sunday),
+            ..TestConfig::default()
+        },
+        "test",
+        WeekDay::Wednesday,
+        None,
+    )
+    .unwrap();
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(args.start_of_week, WeekDay::Wednesday);
+}
+
+#[test]
+fn report_reparse_carries_focused_agent_options() {
+    let args = parse_report_args_with_config(
+        ["ccusage", "opencode", "weekly", "--since", "20260102"]
+            .into_iter()
+            .map(OsString::from),
+        &TestConfig::default(),
+        "test",
+        WeekDay::Monday,
+        None,
+    )
+    .unwrap();
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
+}
+
+#[test]
+fn offline_flags_override_config_in_both_directions_and_positions() {
+    for (config_json, flag, expected) in [
+        (r#"{"defaults":{"offline":true}}"#, "--no-offline", false),
+        (r#"{"defaults":{"noOffline":true}}"#, "--offline", true),
+        (r#"{"defaults":{"offline":false}}"#, "--offline", true),
+    ] {
+        let fixture = fs_fixture!({ "ccusage.json": config_json });
+        let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        for command in ["daily", "statusline"] {
+            for argv in [
+                vec!["ccusage", command, flag, "--config", &path],
+                vec!["ccusage", flag, command, "--config", &path],
+            ] {
+                let config_args = argv[1..]
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                let config = ccusage_config::ConfigContext::from_args(&config_args);
+                let command = parse_with_config(&argv, &config);
+                let offline = match command {
+                    Command::Statusline(args) => args.offline,
+                    command => command.shared().unwrap().offline,
+                };
+                assert_eq!(offline, expected, "{argv:?}, {config_json}");
+            }
+        }
+    }
+}
+
+#[test]
+fn cache_flags_override_config_in_both_directions() {
+    for (config_json, flag, expected) in [
+        (r#"{"defaults":{"cache":true}}"#, "--no-cache", false),
+        (r#"{"defaults":{"noCache":true}}"#, "--cache", true),
+    ] {
+        let fixture = fs_fixture!({ "ccusage.json": config_json });
+        let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        let argv = ["ccusage", "statusline", flag, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        let Command::Statusline(args) = parse_with_config(&argv, &config) else {
+            panic!("expected statusline");
+        };
+        assert_eq!(args.cache, expected, "{config_json}");
+    }
+}
+
+#[test]
+fn color_flags_override_the_opposite_config_value() {
+    for (config_json, flag, expected) in [
+        (
+            r#"{"defaults":{"color":true}}"#,
+            "--no-color",
+            ColorChoice::Never,
+        ),
+        (
+            r#"{"defaults":{"noColor":true}}"#,
+            "--color",
+            ColorChoice::Always,
+        ),
+    ] {
+        let fixture = fs_fixture!({ "ccusage.json": config_json });
+        let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        let argv = ["ccusage", "daily", flag, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        let command = parse_with_config(&argv, &config);
+        let shared = command.shared().unwrap();
+        assert_eq!(shared.color, expected, "{config_json}");
+    }
+}
+
+#[test]
+fn false_negation_and_color_keys_leave_lower_config_layers_in_force() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{
+            "defaults": { "noColor": true, "offline": true, "cache": false },
+            "commands": {
+                "daily": { "color": false, "noOffline": false },
+                "statusline": { "noOffline": false, "noCache": false }
+            }
+        }"#,
+    });
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    for report in ["daily", "statusline"] {
+        let argv = ["ccusage", report, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        match parse_with_config(&argv, &config) {
+            Command::Statusline(args) => {
+                assert!(args.offline);
+                assert!(!args.cache);
+            }
+            command => {
+                let shared = command.shared().unwrap();
+                assert!(shared.offline);
+                assert_eq!(shared.color, ColorChoice::Never);
+            }
+        }
+    }
+}
+
+#[test]
+fn the_last_offline_flag_wins() {
+    for (flags, expected) in [
+        (["--offline", "--no-offline"], false),
+        (["--no-offline", "--offline"], true),
+    ] {
+        let command = parse(&["ccusage", "daily", flags[0], flags[1]]);
+        assert_eq!(command.shared().unwrap().offline, expected);
+        let Command::Statusline(args) = parse(&["ccusage", "statusline", flags[0], flags[1]])
+        else {
+            panic!("expected statusline");
+        };
+        assert_eq!(args.offline, expected);
+    }
+}
+
+#[test]
+fn higher_config_layers_override_negated_defaults() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{
+            "defaults": { "noOffline": true, "noCache": true, "noColor": true },
+            "commands": {
+                "daily": { "offline": true, "color": true },
+                "statusline": { "offline": true, "cache": true }
+            }
+        }"#,
+    });
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    for report in ["daily", "statusline"] {
+        let argv = ["ccusage", report, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        let command = parse_with_config(&argv, &config);
+        match command {
+            Command::Statusline(args) => {
+                assert!(args.offline);
+                assert!(args.cache);
+            }
+            command => {
+                let shared = command.shared().unwrap();
+                assert!(shared.offline);
+                assert_eq!(shared.color, ColorChoice::Always);
+            }
+        }
+    }
 }
 
 #[test]
@@ -277,49 +584,55 @@ fn rejects_date_bounds_that_are_not_real_calendar_dates() {
 fn accepts_both_documented_date_bound_formats() {
     for (value, normalized) in [("2026-07-10", "20260710"), ("20260710", "20260710")] {
         let cli = parse(&["ccusage", "daily", "--since", value, "--until", value]);
-        let Some(Command::All(args)) = cli.command else {
+        let Command::All(args) = cli else {
             panic!("expected all-agent command");
         };
-        assert_eq!(args.shared.since.as_deref(), Some(normalized));
-        assert_eq!(args.shared.until.as_deref(), Some(normalized));
+        assert_eq!(
+            args.shared.since.map(|date| date.to_string()).as_deref(),
+            Some(normalized)
+        );
+        assert_eq!(
+            args.shared.until.map(|date| date.to_string()).as_deref(),
+            Some(normalized)
+        );
     }
 }
 
 #[test]
 fn parses_last_periods_on_period_reports() {
     let cli = parse(&["ccusage", "daily", "--last", "1"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
     let cli = parse(&["ccusage", "claude", "weekly", "--last", "2"]);
-    let Some(Command::Weekly(args)) = cli.command else {
+    let Command::Weekly(args) = cli else {
         panic!("expected weekly command");
     };
-    assert_eq!(args.shared.last, Some(2));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(2));
 
     let cli = parse(&["ccusage", "codex", "monthly", "--last=3"]);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.shared.last, Some(3));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(3));
 }
 
 #[test]
 fn parses_last_periods_before_the_command_name() {
     let cli = parse(&["ccusage", "--last", "1", "weekly"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
-    // The bare command is the unified daily report, which the binary resolves
-    // from the root shared options.
     let cli = parse(&["ccusage", "--last", "1"]);
-    assert!(cli.command.is_none());
-    assert_eq!(cli.shared.last, Some(1));
+    let Command::All(args) = cli else {
+        panic!("expected unified report");
+    };
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 }
 
 #[test]
@@ -405,11 +718,17 @@ fn accepts_a_since_date_equal_to_the_until_date() {
         "--until",
         "20260914",
     ]);
-    let Some(Command::Daily(args)) = cli.command else {
+    let Command::Daily(args) = cli else {
         panic!("expected claude daily command");
     };
-    assert_eq!(args.shared.since.as_deref(), Some("20260914"));
-    assert_eq!(args.shared.until.as_deref(), Some("20260914"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260914")
+    );
+    assert_eq!(
+        args.shared.until.map(|date| date.to_string()).as_deref(),
+        Some("20260914")
+    );
 }
 
 #[test]
@@ -418,12 +737,11 @@ fn rejects_a_config_since_date_later_than_the_until_flag() {
         shared_since: Some("20260914"),
         ..TestConfig::default()
     };
-    let result = Cli::parse_from_with_config(
+    let result = parse_from_with_config(
         ["ccusage", "daily", "--until", "2026-09-01"]
             .iter()
             .map(OsString::from),
         &config,
-        5.0,
         env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
@@ -449,11 +767,10 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
         ];
         args.extend(extra.iter().map(|arg| arg.to_string()));
         let config = ccusage_config::ConfigContext::from_args(&args);
-        Cli::parse_from_with_config(
+        parse_from_with_config(
             std::iter::once(OsString::from("ccusage"))
                 .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
             &config,
-            ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
             env!("CARGO_PKG_VERSION"),
         )
     };
@@ -469,11 +786,43 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
     let Ok(cli) = parse_with_file(&["--until", "2026-09-30"]) else {
         panic!("expected a flag to repair the reversed config window");
     };
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected unified daily command");
     };
-    assert_eq!(args.shared.since.as_deref(), Some("20260914"));
-    assert_eq!(args.shared.until.as_deref(), Some("20260930"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260914")
+    );
+    assert_eq!(
+        args.shared.until.map(|date| date.to_string()).as_deref(),
+        Some("20260930")
+    );
+}
+
+#[test]
+fn invalid_config_timezone_names_the_file_and_effective_field() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "defaults": { "timezone": "UTC" }, "commands": { "daily": { "timezone": "Not/AZone" } } }"#,
+    });
+    let path = fixture.path("ccusage.json");
+    let args = ["daily", "--config", path.to_str().unwrap()].map(str::to_owned);
+    let config = ccusage_config::ConfigContext::from_args(&args);
+    let result = parse_from_with_config(
+        std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
+        &config,
+        env!("CARGO_PKG_VERSION"),
+    );
+
+    let Err(error) = result else {
+        panic!("expected the configured timezone to be rejected");
+    };
+    assert_eq!(
+        error,
+        format!(
+            "Invalid value for ccusage config field {}: commands.daily.timezone 'Not/AZone'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone.",
+            path.display()
+        )
+    );
 }
 
 #[test]
@@ -487,17 +836,16 @@ fn statusline_ignores_reversed_default_date_window() {
         .to_vec();
     let config = ccusage_config::ConfigContext::from_args(&args);
 
-    let result = Cli::parse_from_with_config(
+    let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
 
     let Ok(cli) = result else {
         panic!("expected statusline to ignore the report date window");
     };
-    assert!(matches!(cli.command, Some(Command::Statusline(_))));
+    assert!(matches!(cli, Command::Statusline(_)));
 }
 
 #[test]
@@ -542,7 +890,7 @@ fn parses_unified_sections_and_by_agent_flags() {
         "monthly,session",
         "--by-agent",
     ]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
@@ -562,7 +910,7 @@ fn parses_root_sections_and_by_agent_flags_without_daily_token() {
         "monthly,session",
         "--by-agent",
     ]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
@@ -576,7 +924,7 @@ fn parses_root_sections_and_by_agent_flags_without_daily_token() {
 #[test]
 fn parses_inline_unified_sections_value() {
     let cli = parse(&["ccusage", "daily", "--sections=daily,monthly"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(
@@ -586,9 +934,38 @@ fn parses_inline_unified_sections_value() {
 }
 
 #[test]
+fn rejects_an_inline_value_on_a_switch() {
+    for (args, flag) in [
+        (&["ccusage", "--offline=false"][..], "--offline"),
+        (&["ccusage", "daily", "--json=false"][..], "--json"),
+        (
+            &["ccusage", "daily", "--json=false", "--since", "20260101"][..],
+            "--json",
+        ),
+        (&["ccusage", "--by-agent=no", "daily"][..], "--by-agent"),
+        (&["ccusage", "daily", "--all=yes"][..], "--all"),
+        (
+            &["ccusage", "claude", "blocks", "--active=yes"][..],
+            "--active",
+        ),
+        (&["ccusage", "statusline", "--cache=false"][..], "--cache"),
+        (
+            &["ccusage", "opencode", "--include-claude-agent=1"][..],
+            "--include-claude-agent",
+        ),
+    ] {
+        assert_eq!(
+            parse_error(args),
+            format!("{flag} does not take a value"),
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
 fn ignores_empty_unified_section_tokens() {
     let cli = parse(&["ccusage", "daily", "--sections", "daily,,monthly,"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(
@@ -600,7 +977,7 @@ fn ignores_empty_unified_section_tokens() {
 #[test]
 fn dedupes_unified_section_tokens_preserving_first_occurrence() {
     let cli = parse(&["ccusage", "daily", "--sections", "daily,daily,monthly"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(
@@ -618,7 +995,7 @@ fn parses_top_level_session_sections_as_all_agent_report_without_id() {
         "daily,weekly",
         "--by-agent",
     ]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -672,11 +1049,14 @@ fn preserves_shared_config_defaults_with_unified_sections() {
     };
 
     let cli = parse_with_config(&["ccusage", "monthly", "--sections", "daily"], &config);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
     assert_eq!(
         args.sections.as_deref(),
         Some(&[AgentReportKind::Daily][..])
@@ -686,7 +1066,7 @@ fn preserves_shared_config_defaults_with_unified_sections() {
 #[test]
 fn parses_root_session_as_all_agent_report_without_id() {
     let cli = parse(&["ccusage", "session", "--json"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -704,12 +1084,15 @@ fn applies_config_defaults_and_command_options_before_cli_options() {
     };
 
     let cli = parse_with_config(&["ccusage", "daily", "--order", "asc"], &config);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
-    assert_eq!(args.shared.order, SortOrder::Asc);
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
+    assert_eq!(args.shared.order, Some(SortOrder::Asc));
 }
 
 #[test]
@@ -720,10 +1103,10 @@ fn applies_agent_namespace_config_to_codex_speed() {
     };
 
     let cli = parse_with_config(&["ccusage", "codex", "daily"], &config);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Fast);
 }
 
 #[test]
@@ -746,14 +1129,23 @@ fn applies_config_file_passed_after_agent_command() {
         ],
         &config,
     );
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.kind, AgentReportKind::Monthly);
     assert!(args.shared.json);
-    assert_eq!(args.shared.timezone.as_deref(), Some("Asia/Tokyo"));
-    assert_eq!(args.shared.since.as_deref(), Some("20260101"));
-    assert_eq!(args.codex_speed, CodexSpeed::Standard);
+    assert_eq!(
+        args.shared
+            .timezone
+            .as_ref()
+            .map(|timezone| timezone.name()),
+        Some("Asia/Tokyo")
+    );
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260101")
+    );
+    assert_eq!(args.options.codex_speed, CodexSpeed::Standard);
 }
 
 #[test]
@@ -774,7 +1166,7 @@ fn applies_schema_documented_config_file_options() {
     };
 
     let cli = parse_with_config(&["ccusage", "claude", "weekly"], &config);
-    let Some(Command::Weekly(args)) = cli.command else {
+    let Command::Weekly(args) = cli else {
         panic!("expected weekly command");
     };
     assert!(args.shared.json);
@@ -782,15 +1174,15 @@ fn applies_schema_documented_config_file_options() {
     assert_eq!(args.start_of_week, WeekDay::Monday);
 
     let cli = parse_with_config(&["ccusage", "claude", "blocks"], &config);
-    let Some(Command::Blocks(args)) = cli.command else {
+    let Command::Blocks(args) = cli else {
         panic!("expected blocks command");
     };
     assert!(args.active);
-    assert_eq!(args.token_limit.as_deref(), Some("500000"));
-    assert_eq!(args.session_length, 6.0);
+    assert_eq!(args.token_limit, Some("500000".parse().unwrap()));
+    assert_eq!(args.session_length.as_millis(), 21_600_000);
 
     let cli = parse_with_config(&["ccusage", "claude", "statusline"], &config);
-    let Some(Command::Statusline(args)) = cli.command else {
+    let Command::Statusline(args) = cli else {
         panic!("expected statusline command");
     };
     assert_eq!(args.visual_burn_rate, VisualBurnRate::EmojiText);
@@ -798,16 +1190,19 @@ fn applies_schema_documented_config_file_options() {
     assert_eq!(args.refresh_interval, 3);
 
     let cli = parse_with_config(&["ccusage", "pi", "daily"], &config);
-    let Some(Command::Pi(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Pi, AgentCommand::Report(args)) = cli else {
         panic!("expected pi command");
     };
-    assert_eq!(args.pi_path.as_deref(), Some("/tmp/pi-sessions"));
+    assert_eq!(args.options.pi_path.as_deref(), Some("/tmp/pi-sessions"));
 
     let cli = parse_with_config(&["ccusage", "openclaw", "daily"], &config);
-    let Some(Command::OpenClaw(args)) = cli.command else {
+    let Command::Agent(StandardAgent::OpenClaw, AgentCommand::Report(args)) = cli else {
         panic!("expected openclaw command");
     };
-    assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+    assert_eq!(
+        args.options.open_claw_path.as_deref(),
+        Some("/tmp/openclaw")
+    );
 }
 
 #[test]
@@ -837,7 +1232,6 @@ fn root_help_lists_command_descriptions_and_follow_up_help_commands() {
 #[test]
 fn contextual_codex_help_lists_speed_choices() {
     let help = help_text_for_args(&[
-        "ccusage".to_string(),
         "codex".to_string(),
         "daily".to_string(),
         "--help".to_string(),
@@ -850,40 +1244,14 @@ fn contextual_codex_help_lists_speed_choices() {
 
 #[test]
 fn contextual_codex_session_help_lists_id_option() {
-    let help = help_text_for_args(&[
-        "ccusage".to_string(),
-        "codex".to_string(),
-        "session".to_string(),
-    ]);
+    let help = help_text_for_args(&["codex".to_string(), "session".to_string()]);
 
     assert!(help.contains("-i, --id <id>"));
 }
 
 #[test]
-fn contextual_help_strips_path_like_program_name() {
-    let help = help_text_for_args(&[
-        "/usr/local/bin/ccusage".to_string(),
-        "codex".to_string(),
-        "daily".to_string(),
-    ]);
-
-    assert!(help.contains("USAGE:\n  ccusage codex daily <OPTIONS>"));
-}
-
-#[test]
-fn contextual_help_strips_windows_program_name() {
-    let help = help_text_for_args(&[
-        "C:\\Tools\\ccusage.exe".to_string(),
-        "codex".to_string(),
-        "daily".to_string(),
-    ]);
-
-    assert!(help.contains("USAGE:\n  ccusage codex daily <OPTIONS>"));
-}
-
-#[test]
 fn contextual_agent_help_lists_agent_subcommands() {
-    let help = help_text_for_args(&["ccusage".to_string(), "claude".to_string()]);
+    let help = help_text_for_args(&["claude".to_string()]);
 
     assert!(help.contains("USAGE:\n  ccusage claude <COMMANDS>"));
     assert!(help.contains("daily       Show usage report grouped by date"));
@@ -894,7 +1262,7 @@ fn contextual_agent_help_lists_agent_subcommands() {
 
 #[test]
 fn contextual_all_agent_help_lists_color_options() {
-    let help = help_text_for_args(&["ccusage".to_string(), "daily".to_string()]);
+    let help = help_text_for_args(&["daily".to_string()]);
 
     assert!(help.contains("--color"));
     assert!(help.contains("--no-color"));
@@ -902,19 +1270,19 @@ fn contextual_all_agent_help_lists_color_options() {
 
 #[test]
 fn contextual_root_session_help_lists_id_option() {
-    let help = help_text_for_args(&["ccusage".to_string(), "session".to_string()]);
+    let help = help_text_for_args(&["session".to_string()]);
 
     assert!(help.contains("--id"));
 }
 
 #[test]
 fn contextual_root_weekly_help_lists_start_of_week_option() {
-    let help = help_text_for_args(&["ccusage".to_string(), "weekly".to_string()]);
+    let help = help_text_for_args(&["weekly".to_string()]);
 
     assert!(help.contains("-w, --start-of-week [start-of-week]"));
     assert!(help.contains("default: monday"));
 
-    let daily_help = help_text_for_args(&["ccusage".to_string(), "daily".to_string()]);
+    let daily_help = help_text_for_args(&["daily".to_string()]);
     assert!(!daily_help.contains("--start-of-week"));
 }
 
@@ -930,23 +1298,23 @@ fn parses_top_level_weekly_start_of_week() {
         "-w",
         "wednesday",
     ]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
     assert_eq!(args.start_of_week, WeekDay::Wednesday);
     assert!(args.shared.json);
     assert!(args.shared.offline);
-    assert_eq!(args.shared.last, Some(1));
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
     let cli = parse(&["ccusage", "weekly", "--start-of-week=friday"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.start_of_week, WeekDay::Friday);
 
     let cli = parse(&["ccusage", "weekly"]);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.start_of_week, WeekDay::Monday);
@@ -960,13 +1328,13 @@ fn applies_weekly_config_start_of_week_to_top_level_weekly() {
     };
 
     let cli = parse_with_config(&["ccusage", "weekly"], &config);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.start_of_week, WeekDay::Sunday);
 
     let cli = parse_with_config(&["ccusage", "weekly", "-w", "tuesday"], &config);
-    let Some(Command::All(args)) = cli.command else {
+    let Command::All(args) = cli else {
         panic!("expected all-agent command");
     };
     assert_eq!(args.start_of_week, WeekDay::Tuesday);
@@ -986,7 +1354,7 @@ fn rejects_start_of_week_outside_weekly_reports() {
 
 #[test]
 fn contextual_statusline_help_lists_choice_options() {
-    let help = help_text_for_args(&["ccusage".to_string(), "statusline".to_string()]);
+    let help = help_text_for_args(&["statusline".to_string()]);
 
     assert!(help.contains("choices: off | emoji | text | emoji-text"));
     assert!(help.contains("choices: auto | ccusage | cc | both"));
@@ -994,11 +1362,7 @@ fn contextual_statusline_help_lists_choice_options() {
 
 #[test]
 fn grok_help_does_not_advertise_path_option() {
-    let help = help_text_for_args(&[
-        "ccusage".to_string(),
-        "grok".to_string(),
-        "daily".to_string(),
-    ]);
+    let help = help_text_for_args(&["grok".to_string(), "daily".to_string()]);
 
     assert!(!help.contains("--grok-path"));
 }
@@ -1008,19 +1372,15 @@ fn snapshots_root_and_contextual_help_text() {
     insta::assert_snapshot!("root_help", help_text());
     insta::assert_snapshot!(
         "claude_agent_help",
-        help_text_for_args(&["ccusage".to_string(), "claude".to_string()])
+        help_text_for_args(&["claude".to_string()])
     );
     insta::assert_snapshot!(
         "codex_daily_help",
-        help_text_for_args(&[
-            "ccusage".to_string(),
-            "codex".to_string(),
-            "daily".to_string(),
-        ])
+        help_text_for_args(&["codex".to_string(), "daily".to_string(),])
     );
     insta::assert_snapshot!(
         "statusline_help",
-        help_text_for_args(&["ccusage".to_string(), "statusline".to_string()])
+        help_text_for_args(&["statusline".to_string()])
     );
 }
 
@@ -1231,7 +1591,7 @@ fn parses_claude_daily_options() {
         "--project",
         "repo",
     ]);
-    let Some(Command::Daily(args)) = cli.command else {
+    let Command::Daily(args) = cli else {
         panic!("expected daily command");
     };
     assert!(args.shared.json);
@@ -1242,10 +1602,12 @@ fn parses_claude_daily_options() {
 
 #[test]
 fn rejects_removed_locale_option() {
-    let result = Cli::parse_from(
+    let result = parse_from_with_config(
         ["ccusage", "--locale", "en-CA"]
             .into_iter()
             .map(OsString::from),
+        &NoConfig,
+        env!("CARGO_PKG_VERSION"),
     );
     assert!(result.is_err());
 }
@@ -1260,18 +1622,18 @@ fn parses_blocks_defaults_and_values() {
         "--session-length",
         "6",
     ]);
-    let Some(Command::Blocks(args)) = cli.command else {
+    let Command::Blocks(args) = cli else {
         panic!("expected blocks command");
     };
     assert!(args.active);
-    assert_eq!(args.token_limit.as_deref(), Some("max"));
-    assert_eq!(args.session_length, 6.0);
+    assert_eq!(args.token_limit, Some(TokenLimit::Max));
+    assert_eq!(args.session_length.as_millis(), 21_600_000);
 }
 
 #[test]
 fn parses_claude_blocks_short_active_option() {
     let cli = parse(&["ccusage", "claude", "blocks", "-a"]);
-    let Some(Command::Blocks(args)) = cli.command else {
+    let Command::Blocks(args) = cli else {
         panic!("expected blocks command");
     };
     assert!(args.active);
@@ -1290,43 +1652,81 @@ fn parses_statusline_options() {
         "--cost-source",
         "both",
     ]);
-    let Some(Command::Statusline(args)) = cli.command else {
+    let Command::Statusline(args) = cli else {
         panic!("expected statusline command");
     };
     assert!(args.offline);
-    assert!(args.no_cache);
-    assert_eq!(args.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert!(!args.cache);
+    assert_eq!(
+        args.timezone.as_ref().map(|timezone| timezone.name()),
+        Some("Asia/Tokyo")
+    );
     assert_eq!(args.visual_burn_rate, VisualBurnRate::EmojiText);
     assert_eq!(args.cost_source, CostSource::Both);
 }
 
 #[test]
+fn statusline_keeps_configured_cost_mode_with_each_cost_source() {
+    let fixture = fs_fixture!({"ccusage.json": r#"{"defaults":{"mode":"display"}}"#});
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    for (source, expected) in [
+        ("auto", CostSource::Auto),
+        ("ccusage", CostSource::Ccusage),
+        ("cc", CostSource::Cc),
+        ("both", CostSource::Both),
+    ] {
+        let args = ["statusline", "--config", &path, "--cost-source", source];
+        let config = ccusage_config::ConfigContext::from_args(
+            &args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+        );
+        let Command::Statusline(statusline) = parse_with_config(
+            &[
+                "ccusage",
+                "statusline",
+                "--config",
+                &path,
+                "--cost-source",
+                source,
+            ],
+            &config,
+        ) else {
+            panic!("expected statusline");
+        };
+        assert_eq!(statusline.mode, CostMode::Display);
+        assert_eq!(statusline.cost_source, expected);
+    }
+}
+
+#[test]
 fn parses_codex_default_daily_options() {
     let cli = parse(&["ccusage", "codex", "--json", "--since", "20260102"]);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);
-    assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+    assert_eq!(
+        args.shared.since.map(|date| date.to_string()).as_deref(),
+        Some("20260102")
+    );
 }
 
 #[test]
 fn parses_codex_speed_option() {
     let cli = parse(&["ccusage", "codex", "daily", "--speed", "fast"]);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Fast);
 }
 
 #[test]
 fn parses_codex_flex_speed_option() {
     let cli = parse(&["ccusage", "codex", "daily", "--speed", "flex"]);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
-    assert_eq!(args.codex_speed, CodexSpeed::Flex);
+    assert_eq!(args.options.codex_speed, CodexSpeed::Flex);
 }
 
 #[test]
@@ -1344,7 +1744,7 @@ fn rejects_removed_codex_by_source_option() {
 #[test]
 fn parses_legacy_colon_agent_commands() {
     let cli = parse(&["ccusage", "codex:monthly", "--json"]);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex command");
     };
     assert_eq!(args.kind, AgentReportKind::Monthly);
@@ -1379,87 +1779,9 @@ fn rejects_unsupported_agent_reports_with_guidance() {
 }
 
 #[test]
-fn parses_codex_statusline_with_offline_pricing_by_default() {
-    let cli = parse(&["ccusage", "codex", "statusline"]);
-    let Some(Command::CodexStatusline(args)) = cli.command else {
-        panic!("expected codex statusline command");
-    };
-    assert!(args.shared.offline);
-    assert!(!args.shared.no_offline);
-    assert!(args.session_id.is_none());
-
-    let cli = parse(&[
-        "ccusage",
-        "codex",
-        "statusline",
-        "--id",
-        "thread",
-        "--speed",
-        "fast",
-        "--no-offline",
-    ]);
-    let Some(Command::CodexStatusline(args)) = cli.command else {
-        panic!("expected codex statusline command");
-    };
-    assert_eq!(args.session_id.as_deref(), Some("thread"));
-    assert_eq!(args.codex_speed, CodexSpeed::Fast);
-    assert!(args.shared.no_offline);
-    assert!(
-        parse_error(&["ccusage", "codex", "statusline", "--last", "1"])
-            .contains("only available for the daily")
-    );
-}
-
-#[test]
-fn codex_statusline_config_overrides_defaults_and_flags_override_config() {
-    let fixture = fs_fixture!({
-        "ccusage.json": r#"{ "codex": { "commands": { "statusline": {
-            "offline": false, "speed": "flex", "timezone": "Asia/Tokyo"
-        } } } }"#,
-    });
-    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
-    let args = ["codex", "statusline", "--config", &path];
-    let config = ccusage_config::ConfigContext::from_args(&args.map(str::to_string));
-    let cli = parse_with_config(&[&["ccusage"][..], &args].concat(), &config);
-    let Some(Command::CodexStatusline(args)) = cli.command else {
-        panic!("expected codex statusline command");
-    };
-    assert!(!args.shared.offline);
-    assert_eq!(args.codex_speed, CodexSpeed::Flex);
-    assert_eq!(args.shared.timezone.as_deref(), Some("Asia/Tokyo"));
-
-    let cli = parse_with_config(
-        &[
-            "ccusage",
-            "codex",
-            "statusline",
-            "--offline",
-            "--speed",
-            "standard",
-        ],
-        &config,
-    );
-    let Some(Command::CodexStatusline(args)) = cli.command else {
-        panic!("expected codex statusline command");
-    };
-    assert!(args.shared.offline);
-    assert_eq!(args.codex_speed, CodexSpeed::Standard);
-}
-
-#[test]
-fn codex_statusline_help_describes_standalone_output() {
-    insta::assert_snapshot!(
-        "codex_statusline_help",
-        help_text_for_args(&["ccusage".into(), "codex".into(), "statusline".into()])
-    );
-    let help = help_text_for_args(&["ccusage".into(), "codex".into()]);
-    assert!(help.contains("ccusage codex statusline --help"));
-}
-
-#[test]
 fn parses_claude_namespace_session_options() {
     let cli = parse(&["ccusage", "claude", "session", "--json", "--id", "abc"]);
-    let Some(Command::Session(args)) = cli.command else {
+    let Command::Session(args) = cli else {
         panic!("expected claude session command");
     };
     assert!(args.shared.json);
@@ -1469,7 +1791,7 @@ fn parses_claude_namespace_session_options() {
 #[test]
 fn parses_top_level_session_id_lookup() {
     let cli = parse(&["ccusage", "session", "--json", "--id", "abc"]);
-    let Some(Command::Session(args)) = cli.command else {
+    let Command::Session(args) = cli else {
         panic!("expected session command");
     };
     assert!(args.shared.json);
@@ -1486,7 +1808,7 @@ fn parses_codex_session_id_filter() {
         "--id",
         "01a0bb8c-c7c0-7630-9d82-860b875930f0",
     ]);
-    let Some(Command::Codex(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Report(args)) = cli else {
         panic!("expected codex session command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1507,7 +1829,7 @@ fn rejects_codex_id_filter_outside_session_report() {
 #[test]
 fn parses_opencode_weekly_options() {
     let cli = parse(&["ccusage", "opencode", "weekly", "--json"]);
-    let Some(Command::OpenCode(args)) = cli.command else {
+    let Command::Agent(StandardAgent::OpenCode, AgentCommand::Report(args)) = cli else {
         panic!("expected opencode command");
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
@@ -1522,7 +1844,7 @@ fn parses_opencode_include_claude_agent_on_every_report() {
         argv.extend(report);
         argv.extend(["--include-claude-agent", "--json"]);
         let cli = parse(&argv);
-        let Some(Command::OpenCode(args)) = cli.command else {
+        let Command::Agent(StandardAgent::OpenCode, AgentCommand::Report(args)) = cli else {
             panic!("expected opencode command");
         };
         assert!(args.include_claude_agent, "{report:?}");
@@ -1543,7 +1865,7 @@ fn parses_cline_standard_reports() {
         ("session", AgentReportKind::Session),
     ] {
         let cli = parse(&["ccusage", "cline", report, "--json"]);
-        let Some(Command::Cline(args)) = cli.command else {
+        let Command::Agent(StandardAgent::Cline, AgentCommand::Report(args)) = cli else {
             panic!("expected cline {report} command");
         };
 
@@ -1561,7 +1883,7 @@ fn parses_dsh_standard_reports() {
         ("session", AgentReportKind::Session),
     ] {
         let cli = parse(&["ccusage", "dsh", report, "--json"]);
-        let Some(Command::Dsh(args)) = cli.command else {
+        let Command::Agent(StandardAgent::Dsh, AgentCommand::Report(args)) = cli else {
             panic!("expected dsh {report} command");
         };
 
@@ -1573,7 +1895,7 @@ fn parses_dsh_standard_reports() {
 #[test]
 fn parses_amp_session_options() {
     let cli = parse(&["ccusage", "amp", "session", "--json"]);
-    let Some(Command::Amp(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Amp, AgentCommand::Report(args)) = cli else {
         panic!("expected amp command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1583,7 +1905,7 @@ fn parses_amp_session_options() {
 #[test]
 fn parses_droid_session_options() {
     let cli = parse(&["ccusage", "droid", "session", "--json"]);
-    let Some(Command::Droid(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Droid, AgentCommand::Report(args)) = cli else {
         panic!("expected droid command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1593,7 +1915,7 @@ fn parses_droid_session_options() {
 #[test]
 fn parses_codebuff_session_options() {
     let cli = parse(&["ccusage", "codebuff", "session", "--json"]);
-    let Some(Command::Codebuff(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Codebuff, AgentCommand::Report(args)) = cli else {
         panic!("expected codebuff command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1603,7 +1925,7 @@ fn parses_codebuff_session_options() {
 #[test]
 fn parses_qwen_session_options() {
     let cli = parse(&["ccusage", "qwen", "session", "--json"]);
-    let Some(Command::Qwen(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Qwen, AgentCommand::Report(args)) = cli else {
         panic!("expected qwen command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1620,18 +1942,18 @@ fn parses_pi_session_options() {
         "--pi-path",
         "/tmp/pi-sessions",
     ]);
-    let Some(Command::Pi(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Pi, AgentCommand::Report(args)) = cli else {
         panic!("expected pi command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
-    assert_eq!(args.pi_path.as_deref(), Some("/tmp/pi-sessions"));
+    assert_eq!(args.options.pi_path.as_deref(), Some("/tmp/pi-sessions"));
 }
 
 #[test]
 fn parses_kilo_session_options() {
     let cli = parse(&["ccusage", "kilo", "session", "--json"]);
-    let Some(Command::Kilo(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Kilo, AgentCommand::Report(args)) = cli else {
         panic!("expected kilo command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1641,7 +1963,7 @@ fn parses_kilo_session_options() {
 #[test]
 fn parses_goose_session_options() {
     let cli = parse(&["ccusage", "goose", "session", "--json"]);
-    let Some(Command::Goose(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Goose, AgentCommand::Report(args)) = cli else {
         panic!("expected goose command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1651,7 +1973,7 @@ fn parses_goose_session_options() {
 #[test]
 fn parses_copilot_session_options() {
     let cli = parse(&["ccusage", "copilot", "session", "--json"]);
-    let Some(Command::Copilot(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Copilot, AgentCommand::Report(args)) = cli else {
         panic!("expected copilot command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1661,7 +1983,7 @@ fn parses_copilot_session_options() {
 #[test]
 fn parses_gemini_session_options() {
     let cli = parse(&["ccusage", "gemini", "session", "--json"]);
-    let Some(Command::Gemini(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Gemini, AgentCommand::Report(args)) = cli else {
         panic!("expected gemini command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1671,7 +1993,7 @@ fn parses_gemini_session_options() {
 #[test]
 fn parses_kimi_session_options() {
     let cli = parse(&["ccusage", "kimi", "session", "--json"]);
-    let Some(Command::Kimi(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Kimi, AgentCommand::Report(args)) = cli else {
         panic!("expected kimi command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
@@ -1688,18 +2010,21 @@ fn parses_openclaw_session_options() {
         "--open-claw-path",
         "/tmp/openclaw",
     ]);
-    let Some(Command::OpenClaw(args)) = cli.command else {
+    let Command::Agent(StandardAgent::OpenClaw, AgentCommand::Report(args)) = cli else {
         panic!("expected openclaw command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
-    assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+    assert_eq!(
+        args.options.open_claw_path.as_deref(),
+        Some("/tmp/openclaw")
+    );
 }
 
 #[test]
 fn parses_grok_daily_options() {
     let cli = parse(&["ccusage", "grok", "daily", "--json"]);
-    let Some(Command::Grok(args)) = cli.command else {
+    let Command::Agent(StandardAgent::Grok, AgentCommand::Report(args)) = cli else {
         panic!("expected grok command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
@@ -1709,7 +2034,7 @@ fn parses_grok_daily_options() {
 #[test]
 fn parses_zcode_daily_options() {
     let cli = parse(&["ccusage", "zcode", "daily", "--json"]);
-    let Some(Command::ZCode(args)) = cli.command else {
+    let Command::Agent(StandardAgent::ZCode, AgentCommand::Report(args)) = cli else {
         panic!("expected zcode command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
@@ -1724,7 +2049,7 @@ fn rejects_grok_path_option() {
 }
 
 #[test]
-fn named_pi_store_validation_does_not_break_statusline() {
+fn invalid_explicit_named_stores_fail_statusline() {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
     });
@@ -1735,21 +2060,50 @@ fn named_pi_store_validation_does_not_break_statusline() {
     ];
     let config = ccusage_config::ConfigContext::from_args(&args);
 
-    let parsed = Cli::parse_from_with_config(
+    let parsed = parse_from_with_config(
         std::iter::once(std::ffi::OsString::from("ccusage")).chain(
             args.iter()
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
 
-    assert!(parsed.is_ok());
+    let Err(error) = parsed else {
+        panic!("expected invalid explicit config to fail")
+    };
+    assert!(error.contains("ccusage.json:"));
+    assert!(error.ends_with("pi.stores name 'codex' collides with a built-in agent"));
+}
+
+#[test]
+fn named_pi_store_validation_does_not_break_statusline() {
+    assert_invalid_discovered_stores_allow(&["statusline"]);
 }
 
 #[test]
 fn named_pi_store_validation_does_not_break_agent_commands() {
+    assert_invalid_discovered_stores_allow(&["codex", "daily"]);
+}
+
+fn assert_invalid_discovered_stores_allow(args: &[&str]) {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/omp"}]}}"#,
+    });
+    let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+    let config = ccusage_config::ConfigContext::from_args(&args);
+    let parsed = parse_from_with_config(
+        std::iter::once(std::ffi::OsString::from("ccusage"))
+            .chain(args.iter().map(std::ffi::OsString::from)),
+        &config,
+        env!("CARGO_PKG_VERSION"),
+    );
+    assert!(parsed.is_ok(), "{:?}", parsed.err());
+}
+
+#[test]
+fn invalid_explicit_named_stores_fail_agent_commands() {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
     });
@@ -1761,17 +2115,20 @@ fn named_pi_store_validation_does_not_break_agent_commands() {
     ];
     let config = ccusage_config::ConfigContext::from_args(&args);
 
-    let parsed = Cli::parse_from_with_config(
+    let parsed = parse_from_with_config(
         std::iter::once(std::ffi::OsString::from("ccusage")).chain(
             args.iter()
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
 
-    assert!(parsed.is_ok());
+    let Err(error) = parsed else {
+        panic!("expected invalid explicit config to fail")
+    };
+    assert!(error.contains("ccusage.json:"));
+    assert!(error.ends_with("pi.stores name 'codex' collides with a built-in agent"));
 }
 
 #[test]
@@ -1786,23 +2143,21 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
     ];
     let config = ccusage_config::ConfigContext::from_args(&args);
 
-    let result = Cli::parse_from_with_config(
+    let result = parse_from_with_config(
         std::iter::once(std::ffi::OsString::from("ccusage")).chain(
             args.iter()
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected config error");
     };
 
-    assert_eq!(
-        error,
-        "Invalid ccusage config: pi.stores name 'codex' collides with a built-in agent"
-    );
+    assert!(error.starts_with("Invalid ccusage config: "));
+    assert!(error.contains("ccusage.json:"));
+    assert!(error.ends_with("pi.stores name 'codex' collides with a built-in agent"));
 }
 
 #[test]
@@ -1833,11 +2188,10 @@ fn preserves_whether_report_order_was_supplied() {
             true,
         ),
     ] {
-        let Some(Command::All(report)) = parse(&args).command else {
+        let Command::All(report) = parse(&args) else {
             panic!("expected unified report");
         };
-        assert_eq!(report.shared.order, order);
-        assert_eq!(report.shared.order_explicit, explicit);
+        assert_eq!(report.shared.order, explicit.then_some(order));
     }
 }
 
@@ -1877,7 +2231,7 @@ fn preserves_configured_order_and_cli_precedence() {
         ),
     ] {
         let fixture = fs_fixture!({});
-        let _ = fixture.write_file("ccusage.json", config_json);
+        fixture.write_file("ccusage.json", config_json);
         let config_path = fixture.path("ccusage.json").to_string_lossy().into_owned();
         let mut args = vec![
             "session",
@@ -1891,10 +2245,243 @@ fn preserves_configured_order_and_cli_precedence() {
             &args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
         );
         args.insert(0, "ccusage");
-        let Some(Command::All(report)) = parse_with_config(&args, &config).command else {
+        let Command::All(report) = parse_with_config(&args, &config) else {
             panic!("expected unified report");
         };
-        assert_eq!(report.shared.order, expected, "{config_json}");
-        assert_eq!(report.shared.order_explicit, explicit, "{config_json}");
+        assert_eq!(
+            report.shared.order,
+            explicit.then_some(expected),
+            "{config_json}"
+        );
+    }
+}
+
+#[test]
+fn every_registered_weekly_agent_accepts_a_week_start() {
+    for agent in AGENTS
+        .iter()
+        .filter(|agent| agent.reports.contains(&AgentReportKind::Weekly))
+    {
+        let command = parse(&["ccusage", agent.name, "weekly", "-w", "friday"]);
+        assert_eq!(
+            command.period(),
+            Some((PeriodUnit::Week, WeekDay::Friday)),
+            "{}",
+            agent.name
+        );
+    }
+}
+
+#[test]
+fn focused_week_starts_resolve_config_before_flags_for_every_weekly_agent() {
+    for agent in AGENTS
+        .iter()
+        .filter(|agent| agent.reports.contains(&AgentReportKind::Weekly))
+    {
+        let config = TestConfig {
+            weekly_start: Some(WeekDay::Tuesday),
+            ..TestConfig::default()
+        };
+        let configured = parse_with_config(&["ccusage", agent.name, "weekly"], &config);
+        assert_eq!(
+            configured.period(),
+            Some((PeriodUnit::Week, WeekDay::Tuesday)),
+            "{}",
+            agent.name
+        );
+        let flagged = parse_with_config(
+            &[
+                "ccusage",
+                agent.name,
+                "weekly",
+                "--start-of-week",
+                "saturday",
+            ],
+            &config,
+        );
+        assert_eq!(
+            flagged.period(),
+            Some((PeriodUnit::Week, WeekDay::Saturday)),
+            "{}",
+            agent.name
+        );
+    }
+}
+
+#[test]
+fn statusline_accepts_valid_root_flags() {
+    for flags in [
+        vec!["--json"],
+        vec!["--no-color"],
+        vec!["--color"],
+        vec!["--compact"],
+        vec!["--mode", "calculate"],
+        vec!["--order", "asc"],
+        vec!["--last", "2"],
+        vec!["--since", "20260101"],
+        vec!["--until", "20260102"],
+        vec!["--breakdown"],
+        vec!["--no-cost"],
+        vec!["--single-thread"],
+        vec!["--sections", "daily,monthly"],
+        vec!["--by-agent"],
+    ] {
+        for namespace in [vec!["statusline"], vec!["claude", "statusline"]] {
+            let mut argv = vec!["ccusage", "--debug"];
+            argv.extend(flags.clone());
+            argv.extend(namespace);
+            let Command::Statusline(args) = parse(&argv) else {
+                panic!("expected statusline");
+            };
+            assert!(args.debug);
+        }
+    }
+}
+
+#[test]
+fn option_metadata_matches_every_documented_flag_and_arity() {
+    use ccusage_cli::OptionArity;
+    use std::collections::{BTreeMap, BTreeSet};
+    let help: Value = serde_json::from_str(include_str!("cli-help.json")).unwrap();
+    let mut arities = BTreeMap::<&str, BTreeSet<bool>>::new();
+    for group in help.as_object().unwrap().values() {
+        for spec in group.as_array().unwrap() {
+            let flags = spec["flags"].as_str().unwrap();
+            let takes_value = flags.contains(['<', '[']);
+            for alias in flags.split(',') {
+                arities
+                    .entry(alias.split_whitespace().next().unwrap())
+                    .or_default()
+                    .insert(takes_value);
+            }
+        }
+    }
+    for (flag, arities) in arities {
+        let expected = match arities.into_iter().collect::<Vec<_>>().as_slice() {
+            [false] => OptionArity::Switch,
+            [true] => OptionArity::Value,
+            [false, true] => OptionArity::CommandDependent,
+            _ => panic!("missing arity"),
+        };
+        assert_eq!(ccusage_cli::option_arity(flag), Some(expected), "{flag}");
+    }
+}
+
+#[test]
+fn parses_codex_statusline_with_offline_pricing_by_default() {
+    let cli = parse(&["ccusage", "codex", "statusline"]);
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Statusline(args)) = cli else {
+        panic!("expected codex statusline command");
+    };
+    assert!(args.shared.offline);
+    assert!(args.session_id.is_none());
+
+    let cli = parse(&[
+        "ccusage",
+        "codex",
+        "statusline",
+        "--id",
+        "thread",
+        "--speed",
+        "fast",
+        "--no-offline",
+    ]);
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Statusline(args)) = cli else {
+        panic!("expected codex statusline command");
+    };
+    assert_eq!(args.session_id.as_deref(), Some("thread"));
+    assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert!(!args.shared.offline);
+    assert!(
+        parse_error(&["ccusage", "codex", "statusline", "--last", "1"])
+            .contains("only available for the daily")
+    );
+}
+
+#[test]
+fn codex_statusline_config_overrides_defaults_and_flags_override_config() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "codex": { "commands": { "statusline": {
+            "offline": false, "speed": "flex", "timezone": "Asia/Tokyo"
+        } } } }"#,
+    });
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    let args = ["codex", "statusline", "--config", &path];
+    let config = ccusage_config::ConfigContext::from_args(&args.map(str::to_string));
+    let cli = parse_with_config(&[&["ccusage"][..], &args].concat(), &config);
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Statusline(args)) = cli else {
+        panic!("expected codex statusline command");
+    };
+    assert!(!args.shared.offline);
+    assert_eq!(args.codex_speed, CodexSpeed::Flex);
+    assert_eq!(
+        args.shared
+            .timezone
+            .as_ref()
+            .map(|timezone| timezone.name()),
+        Some("Asia/Tokyo")
+    );
+
+    let cli = parse_with_config(
+        &[
+            "ccusage",
+            "codex",
+            "statusline",
+            "--offline",
+            "--speed",
+            "standard",
+        ],
+        &config,
+    );
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Statusline(args)) = cli else {
+        panic!("expected codex statusline command");
+    };
+    assert!(args.shared.offline);
+    assert_eq!(args.codex_speed, CodexSpeed::Standard);
+}
+
+#[test]
+fn codex_statusline_help_describes_standalone_output() {
+    insta::assert_snapshot!(
+        "codex_statusline_help",
+        help_text_for_args(&["codex".into(), "statusline".into()])
+    );
+    let help = help_text_for_args(&["codex".into()]);
+    assert!(help.contains("ccusage codex statusline --help"));
+}
+
+#[test]
+fn codex_statusline_rejects_explicit_report_flags() {
+    for (flag, value) in [("--last", "1"), ("--sections", "daily")] {
+        for options in [
+            ["ccusage", flag, value, "codex", "statusline"],
+            ["ccusage", "codex", "statusline", flag, value],
+        ] {
+            let error = parse_error(&options);
+            assert!(error.contains(flag), "{error}");
+        }
+    }
+    for flag in ["--all", "--by-agent"] {
+        let error = parse_error(&["ccusage", flag, "codex", "statusline"]);
+        assert!(error.contains(flag), "{error}");
+    }
+}
+
+#[test]
+fn codex_statusline_rejects_explicit_reversed_windows_in_every_scope() {
+    for scope in [&[][..], &["--id", "thread"], &["--mcp"]] {
+        let args = [
+            "ccusage",
+            "-s=20260605",
+            "codex",
+            "statusline",
+            "--until",
+            "20260603",
+        ];
+        let error = parse_error(&[args.as_slice(), scope].concat());
+        assert_eq!(
+            error,
+            "The --since date '20260605' is later than the --until date '20260603'."
+        );
     }
 }

@@ -1,38 +1,24 @@
-use std::collections::HashSet;
-
-use ccusage_adapter_common::{read_units, source::LoadContext};
+use ccusage_adapter_common::{
+    dedupe::dedupe_first_wins, source::LoadContext, units::read_typed_units_flat,
+};
 
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{kimi_entry_key, kimi_entry_to_loaded, read_wire_file},
+    parser::{KimiUsageEntry, kimi_entry_to_loaded, read_wire_file},
     paths::discover_wire_files,
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_wire_files(cx.diagnostics)?;
-    let pricing = cx.pipeline_pricing()?;
-    // Read wire files in parallel, then apply the first-wins dedup sequentially
-    // over the original discovery order so the surviving entry per key matches
-    // the single-threaded read.
-    let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
+    let pricing = cx.pricing.table(cx.shared.mode);
+    let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
     });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for file_entries in loaded.into_iter().flatten() {
-        for entry in file_entries {
-            let key = kimi_entry_key(&entry);
-            if seen.insert(key) {
-                entries.push(kimi_entry_to_loaded(
-                    entry,
-                    cx.window.timezone(),
-                    cx.shared.mode,
-                    pricing,
-                ));
-            }
-        }
-    }
+    let mut entries = dedupe_first_wins(loaded, KimiUsageEntry::dedupe_key)
+        .into_iter()
+        .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), pricing))
+        .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
@@ -41,10 +27,11 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 mod tests {
     use super::super::paths::KIMI_DATA_DIR_ENV;
     use ccusage_core::{Diagnostics, PricingMap, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn loads_status_update_token_usage_from_wire_files() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "config.json": r#"{"model":"kimi-k2"}"#,
             "sessions/group/session-a/wire.jsonl": [
@@ -54,28 +41,32 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-02-13");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("kimi-k2"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
     }
 
     #[test]
     fn loads_kimi_code_usage_record_format() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/workspace/session-b/agents/agent-1/wire.jsonl": [
                 r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":3064,"output":76,"inputCacheRead":14848,"inputCacheCreation":0},"usageScope":"turn","time":1782113184943}"#,
@@ -83,24 +74,31 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
         assert_eq!(entries[0].session_id.as_ref(), "session-b");
         assert_eq!(entries[0].model.as_deref(), Some("kimi-for-coding"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 3064);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 76);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 14848);
-        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entries[0].usage.input_tokens, 3064);
+        assert_eq!(entries[0].usage.output_tokens, 76);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 14848);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 0);
     }
 
     #[test]
     fn skips_malformed_and_zero_token_wire_lines() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/group/session-a/wire.jsonl": [
                 "not json",
@@ -108,9 +106,14 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let entries =
-            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert!(entries.is_empty());
     }
@@ -127,7 +130,10 @@ mod tests {
         let diagnostics = Diagnostics::new("kimi");
 
         let entries = super::super::parser::read_wire_file(
-            &fixture.path("sessions/group/session-a/wire.jsonl"),
+            &crate::paths::WireFile::from_paths(vec![
+                fixture.path("sessions/group/session-a/wire.jsonl"),
+            ])
+            .remove(0),
             &diagnostics,
         )
         .unwrap();

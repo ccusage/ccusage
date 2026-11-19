@@ -1,13 +1,10 @@
-//! Unified reports (`ccusage daily|weekly|monthly|session` without an agent
-//! name) over every agent's seed in one fixture root.
-
 use ccusage_test_support::Fixture;
 
 use crate::golden::{AgentMatrix, Case, NARROW_COLUMNS, assert_case, seed_all, shared_variants};
 
 const UNIFIED_KINDS: [&str; 4] = ["daily", "weekly", "monthly", "session"];
 
-pub fn run(agents: &[AgentMatrix]) {
+pub(crate) fn run(agents: &[AgentMatrix]) {
     let fixture = Fixture::new();
     let root = fixture.root();
     let seeded = seed_all(agents, root);
@@ -63,7 +60,6 @@ fn cases() -> Vec<Case> {
             "json_start_sunday",
             &["weekly", "--offline", "--json", "--start-of-week", "sunday"],
         ),
-        // `session --id` leaves the unified report for the Claude session view.
         Case::new(
             "session",
             "id_json",
@@ -81,7 +77,6 @@ fn cases() -> Vec<Case> {
                 "sess-alpha-1",
             ],
         ),
-        // Top-level `blocks` and `statusline` are the Claude reports.
         Case::new("blocks", "json", &["blocks", "--offline", "--json"]),
         Case::new(
             "statusline",

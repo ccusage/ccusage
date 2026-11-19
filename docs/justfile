@@ -1,6 +1,3 @@
-# Recipes for the VitePress documentation site. Run from the repo root as
-# `just docs::<recipe>`, or from this directory as `just <recipe>`.
-
 [private]
 default:
     @just --list

@@ -1,13 +1,10 @@
-use std::{collections::HashSet, path::Path};
+use ccusage_core::cost::PriceTable;
+use std::path::PathBuf;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::{
-    SqliteStage,
-    source::LoadContext,
-    units::{UnitError, read_units},
-};
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip};
+use ccusage_adapter_common::{SqliteStage, UnitError, source::LoadContext, sqlite::sqlite_units};
+use ccusage_core::{Diagnostics, LoadedEntry, Result};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -29,84 +26,102 @@ WHERE model_config_json IS NOT NULL
 "#;
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
-    let db_paths = goose_db_paths()?;
-    // Load each database in parallel (a fresh read-only connection per DB), then
-    // run the sequential per-db dedup over the original path order so the
-    // surviving session per key matches the single-threaded read.
-    let loaded = read_units(
+    let db_paths = goose_db_paths(cx.shared.debug)?;
+    let mut entries = load_entries_from_dbs(
         &db_paths,
         cx.shared.single_thread,
+        tz,
+        pricing,
         cx.diagnostics,
-        |db_path| load_entries_from_db(db_path, tz, pricing, cx.diagnostics),
     );
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for (db_path, db_entries) in db_paths.iter().zip(loaded) {
-        let Some(db_entries) = db_entries else {
-            continue;
-        };
-        for entry in db_entries {
-            let key = format!("{}:{}", db_path.display(), entry.session_id);
-            if seen.insert(key) {
-                entries.push(entry);
-            }
-        }
-    }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-fn load_entries_from_db(
-    db_path: &Path,
+fn load_entries_from_dbs(
+    db_paths: &[PathBuf],
+    single_thread: bool,
     tz: &JiffTimeZone,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut statement = connection
-        .prepare(GOOSE_SESSION_QUERY)
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                match row_to_entry(&statement, tz, pricing) {
-                    Ok(Some(entry)) => entries.push(entry),
-                    Ok(None) => {}
-                    Err(rejection) => diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        rejection.kind(),
-                        rejection.detail(),
-                    )),
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+) -> Vec<LoadedEntry> {
+    sqlite_units(
+        db_paths,
+        single_thread,
+        diagnostics,
+        |connection, _| {
+            connection
+                .prepare(GOOSE_SESSION_QUERY)
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, _, _| {
+            row_to_entry(statement, tz, pricing)
+                .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_cost_modes_do_not_calculate_in_display() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        let _sessions = fixture.create_dir_all("data/sessions");
+        let db_path = fixture.path("data/sessions/sessions.db");
+        create_goose_db(&db_path);
+        insert_session(
+            &db_path,
+            SessionFixture {
+                id: "s",
+                model_config: r#"{"model_name":"sample"}"#,
+                provider: None,
+                created_at: "2026-05-01 01:02:03",
+                total: 150,
+                input: 100,
+                output: 50,
+            },
+        );
+        let _guard = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+        );
+        for (mode, expected) in [
+            (crate::cli::CostMode::Auto, 0.2),
+            (crate::cli::CostMode::Calculate, 0.2),
+            (crate::cli::CostMode::Display, 0.0),
+        ] {
+            let shared = SharedArgs {
+                mode,
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                (entries[0].cost - expected).abs() < 1e-12,
+                "{mode:?}: {} vs {expected}",
+                entries[0].cost
+            );
+            assert_eq!(entries[0].missing_pricing_model, None);
+        }
+    }
+
     use crate::cli::SharedArgs;
     use std::path::Path;
 
     use super::*;
     use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
     use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
-    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn create_goose_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -168,6 +183,7 @@ INSERT INTO sessions (
 
     #[test]
     fn loads_accumulated_tokens_from_goose_sqlite() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let db_path = fixture.path(super::super::paths::GOOSE_DB_FILE_NAME);
         create_goose_db(&db_path);
@@ -184,17 +200,21 @@ INSERT INTO sessions (
             },
         );
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let diagnostics = Diagnostics::new("goose");
-        let entries =
-            load_entries_from_db(&db_path, &jiff::tz::TimeZone::UTC, &pricing, &diagnostics)
-                .unwrap();
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Auto(&pricing),
+            &diagnostics,
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 30);
     }
 
@@ -222,13 +242,13 @@ INSERT INTO sessions (
         insert_session(&db_path, session("idle", "{}", "SECRET_CANARY", 0));
 
         let diagnostics = Diagnostics::new("goose");
-        let entries = load_entries_from_db(
-            &db_path,
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
             &jiff::tz::TimeZone::UTC,
-            &PricingMap::default(),
+            PriceTable::Auto(&ccusage_core::PricingMap::default()),
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "healthy");
@@ -252,21 +272,22 @@ INSERT INTO sessions (
             .execute("CREATE TABLE sessions (id TEXT)")
             .unwrap();
 
-        let error = load_entries_from_db(
-            &db_path,
-            &jiff::tz::TimeZone::UTC,
-            &PricingMap::default(),
-            &Diagnostics::new("goose"),
-        )
-        .unwrap_err();
         let diagnostics = Diagnostics::new("goose");
-        error.record(&db_path, &diagnostics);
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Auto(&ccusage_core::PricingMap::default()),
+            &diagnostics,
+        );
+        assert!(entries.is_empty());
 
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
     #[test]
     fn a_failed_session_database_does_not_hide_healthy_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             ".local/share/goose/sessions/sessions.db": "",
             ".local/share/Block/goose/sessions/sessions.db": "not a SQLite database",
@@ -285,19 +306,19 @@ INSERT INTO sessions (
                 output: 50,
             },
         );
-        let _environment = EnvVarsGuard::set_many([
+        let _environment = EnvGuard::set_many([
             ("HOME", Some(fixture.root().to_path_buf().into_os_string())),
             ("GOOSE_PATH_ROOT", Some(std::ffi::OsString::new())),
         ]);
         let shared = SharedArgs::default();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
         let diagnostics = Diagnostics::new("goose");
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };
@@ -311,6 +332,7 @@ INSERT INTO sessions (
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"data/sessions/sessions.db": ""});
         let db_path = fixture.path("data/sessions/sessions.db");
         create_goose_db(&db_path);
@@ -326,13 +348,13 @@ INSERT INTO sessions (
                 output: 50,
             },
         );
-        let _cleanup = EnvVarGuard::set("GOOSE_PATH_ROOT", fixture.root());
+        let _cleanup = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Goose, &shared);
     }
 }

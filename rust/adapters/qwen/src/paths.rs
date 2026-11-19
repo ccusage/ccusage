@@ -1,8 +1,6 @@
-use std::{
-    collections::HashSet,
-    env,
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use crate::Result;
 use ccusage_adapter_common::collect_files_with_extension;
@@ -11,24 +9,12 @@ use ccusage_core::Diagnostics;
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
 
 fn paths() -> Result<Vec<PathBuf>> {
-    let candidates = if let Ok(paths) = env::var(QWEN_DATA_DIR_ENV) {
-        paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect::<Vec<_>>()
-    } else {
-        crate::home::home_dir()
-            .map(|home| vec![home.join(".qwen")])
-            .unwrap_or_default()
-    };
-    let mut seen = HashSet::new();
-    Ok(candidates
-        .into_iter()
-        .filter(|path| path.is_dir())
-        .filter(|path| seen.insert(path.clone()))
-        .collect())
+    Ok(roots::resolve(RootsEnv::List(QWEN_DATA_DIR_ENV), || {
+        crate::cli::home::home_dir()
+            .into_iter()
+            .flat_map(|home| [".qwen"].map(|path| home.join(path)))
+            .collect()
+    }))
 }
 
 pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
@@ -65,8 +51,7 @@ fn is_chat_file(projects: &Path, file: &Path) -> bool {
     }
     let file = match rest {
         [Component::Normal(file)] => file,
-        // Qwen Code archives finished sessions into the flat `chats/archive/`
-        // directory without changing their contents.
+        // NOTE(2026-11-15, #2090): Qwen Code moves finished sessions into the flat chats/archive/ directory without rewriting them. Discover that directory to include archived usage.
         [Component::Normal(archive), Component::Normal(file)]
             if archive.to_str() == Some("archive") =>
         {
@@ -98,9 +83,9 @@ pub(super) fn project_from_file(file: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use ccusage_adapter_common::source::{
-        ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
+        EntrySource, LoadRequest, ProgressOwner, SourceOptions, UsageSource,
     };
-    use ccusage_test_support::{EnvVarGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
 
     use super::{discover_chat_files, project_from_file};
     use crate::{
@@ -114,12 +99,12 @@ mod tests {
         let direct = fixture.write_file("qwen/projects/project-a/chats/live.jsonl", "");
         let archived =
             fixture.write_file("qwen/projects/project-a/chats/archive/archived.jsonl", "");
-        let _ = fixture.write_file(
+        fixture.write_file(
             "qwen/projects/project-a/chats/archive/nested/ignored.jsonl",
             "",
         );
-        let _ = fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
+        fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
 
         assert_eq!(
             discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
@@ -131,23 +116,29 @@ mod tests {
     #[test]
     fn archived_chats_keep_session_ids_and_remain_detected_outside_the_window() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "qwen/projects/project-a/chats/archive/arch-0002.jsonl",
             r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"arch-0002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "qwen/projects/project-a/chats/archive/file-stem.jsonl",
             r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
         );
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
 
-        let entries = crate::load_entries(&shared).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].session_id.as_ref(), "arch-0002");
@@ -155,31 +146,41 @@ mod tests {
         assert_eq!(entries[1].session_id.as_ref(), "project-a-file-stem");
         assert_eq!(entries[1].project_path.as_ref(), "project-a");
 
-        ccusage_adapter_common::parity::assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        ccusage_adapter_common::parity::assert_focused_matches_unified(
+            &SOURCE,
+            ccusage_core::cli::AgentId::Qwen,
+            &shared,
+        );
         for kind in [
             AgentReportKind::Daily,
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let rows = crate::report::summarize_entries(&entries, kind).unwrap();
-            let report = crate::report::report_from_rows(&rows, kind);
+            let rows = ccusage_adapter_common::source::EntrySource::summarize(
+                &crate::SOURCE,
+                &entries,
+                ccusage_adapter_common::source::SummaryKind::for_report(
+                    kind,
+                    ccusage_core::cli::WeekDay::Monday,
+                ),
+            )
+            .unwrap();
+            let report = crate::SOURCE.report_json(&rows, kind);
             assert_eq!(report["totals"]["inputTokens"], 20);
             assert_eq!(report["totals"]["outputTokens"], 10);
         }
 
         let outside_window = SharedArgs {
-            since: Some("20270101".to_string()),
+            since: Some("20270101".parse().unwrap()),
             ..shared
         };
         let report = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &outside_window,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
 

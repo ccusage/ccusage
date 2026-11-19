@@ -17,7 +17,7 @@ ccusage gemini monthly
 ccusage gemini session
 ```
 
-Most users can start with unified reports such as `ccusage daily`. Add the `gemini` namespace only when you want to focus the same report shape on Gemini CLI usage.
+Most users can start with unified reports such as `ccusage daily`. Add the `gemini` namespace only when you want to focus a report on Gemini CLI usage.
 
 ## Data Source
 
@@ -49,15 +49,15 @@ These views support `--json`, `--compact`, and `--offline`.
 
 - **Token usage** - Gemini token records provide input, output, cached, thought, tool, and total token counts when available.
 - **Cache tokens** - Gemini `input` values can include cached prompt tokens. ccusage separates those cached tokens into cache read so input and cache read are not double-counted.
-- **Reasoning tokens** - Gemini `thoughts` tokens are included in total tokens and exposed as `reasoningTokens` in JSON output. They are priced with output tokens.
+- **Reasoning tokens** - Gemini `thoughts` tokens are included in total tokens as additional tokens beyond the input, output, and cache counts. They are priced with output tokens.
 - **Pricing** - Costs are calculated from LiteLLM pricing data for Gemini, Google, Vertex AI, and OpenRouter Gemini model names.
 
 ## Environment Variables
 
-| Variable          | Description                                                                              |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| `GEMINI_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Gemini data |
-| `LOG_LEVEL`       | Adjust verbosity (0 silent ... 5 trace)                                                  |
+| Variable          | Description                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `GEMINI_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Gemini data                      |
+| `LOG_LEVEL`       | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 
@@ -66,5 +66,5 @@ Ensure Gemini CLI has written chat logs under `~/.gemini/tmp/*/chats/`. Set `GEM
 :::
 
 ::: details Costs showing as $0.00
-If a model is not in LiteLLM's database, the cost will be $0.00. Use `--offline=false` to fetch the latest pricing data, or [open an issue](https://github.com/ccusage/ccusage/issues/new) to request alias support.
+If ccusage cannot resolve a model price, the calculated cost is $0.00. Use `--no-offline` to fetch the latest pricing data, or [open an issue](https://github.com/ccusage/ccusage/issues/new) to request alias support.
 :::

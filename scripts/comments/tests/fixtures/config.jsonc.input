@@ -1,0 +1,7 @@
+// Copyright 2026 ccusage contributors
+// Licensed under the MIT License.
+{
+  "example": "// text",
+  // NOTE(2026-11-19): The key appears in external payloads. Preserve its spelling.
+  "wire": true // XXX
+}

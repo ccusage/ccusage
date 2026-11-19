@@ -5,17 +5,15 @@ description: Runs the full PR lifecycle. Use when creating a branch, committing,
 
 # Create PR
 
-This skill owns PR work in this repository: branch setup, opening the PR, AI review requests, reviewer thread replies, follow-up pushes, CI inspection, and merge.
-
-A PR is one reviewable responsibility and may hold several atomic commits. A branch is not a PR boundary — split independent work into separate PRs and stack only dependent work.
+Split independent work into separate PRs and stack dependent work.
 
 ## Workflow
 
 1. Branch. Pushing to `main` needs explicit permission from the user; everything else goes through a feature branch named after the change (existing branches read `<type>/<description>`). Commits come from the `commit` skill, so they stay atomic and independently revertable. Leave unrelated formatter churn, generated files, and user edits outside the task unstaged.
-2. Push and open the PR — `references/open-pr.md`. A squash merge writes the PR title as the commit subject on `main`, so CI holds the title to the same Conventional Commit scope rules the `commit` skill describes.
+2. Push and open the PR — `references/open-pr.md`. Use the Conventional Commit scope rules in the `commit` skill.
 3. Request and handle AI review — `references/ai-review.md`, with the `gh` reply and thread-state calls in `references/gh-review.md`.
 4. Watch CI after opening and after every push with `gh pr checks`. Read the failing step logs and annotations rather than the summary, then use the `fix-ci` skill for the fix, and ask the bots for another pass if they do not rerun on their own.
-5. Merge only when the user explicitly asks and the conditions below hold: `gh pr merge <pr> --squash`, without `--delete-branch` or `--body-file`. On a base branch with a merge queue this adds the PR to the queue instead. When the PR fixes an issue someone else reported, credit that reporter with a `Co-authored-by` trailer on one of the PR's commits before merging, using their noreply address `<id>+<login>@users.noreply.github.com` (`gh api users/<login> --jq .id`): the squash body is built from the commit messages.
+5. Merge only when the user explicitly asks and the conditions below hold: `gh pr merge <pr> --squash`, without `--delete-branch` or `--body-file`. When the PR fixes an issue someone else reported, credit that reporter with a `Co-authored-by` trailer on one of the PR's commits before merging, using their noreply address `<id>+<login>@users.noreply.github.com` (`gh api users/<login> --jq .id`): the squash body is built from the commit messages.
 6. After merging, reply on each linked issue and on any original contributor PR it superseded. For a branch offered without a PR, reply where it was offered. Say what landed and in which PR, and, when it changes the published package, the release that shipped it or that it ships with the next one. Do this in particular when someone pinged or offered a branch and got no answer.
 
 ## Ready means

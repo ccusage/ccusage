@@ -84,6 +84,15 @@ exit: 0
       "messageCount": 24,
       "modelBreakdowns": [
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2545,
+          "cost": 0.250455625,
+          "inputTokens": 820,
+          "modelName": "gpt-5",
+          "outputTokens": 180,
+          "storedCost": 0.25
+        },
+        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 3000,
           "cost": 0.021937500000000002,
@@ -98,14 +107,6 @@ exit: 0
           "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 400
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2545,
-          "cost": 0.003743125,
-          "inputTokens": 820,
-          "modelName": "gpt-5",
-          "outputTokens": 180
         },
         {
           "cacheCreationTokens": 0,
@@ -133,7 +134,7 @@ exit: 0
         "hermes-mystery-1"
       ],
       "outputTokens": 830,
-      "totalCost": 0.031930625000000004,
+      "totalCost": 0.27864312500000005,
       "totalTokens": 16715
     },
     {
@@ -163,7 +164,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
+          "cost": 0.00010080000000000001,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
@@ -175,7 +176,7 @@ exit: 0
         "openai/gpt-5"
       ],
       "outputTokens": 400,
-      "totalCost": 0.305426,
+      "totalCost": 0.3052508,
       "totalTokens": 8740
     }
   ],
@@ -184,7 +185,7 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.338931625,
+    "totalCost": 1.5854689250000003,
     "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"

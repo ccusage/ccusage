@@ -72,8 +72,8 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 200,
-      "inputTokens": 1650,
-      "messageCount": 6,
+      "inputTokens": 1580,
+      "messageCount": 5,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -103,14 +103,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000315,
-          "inputTokens": 70,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 600,
           "missingPricing": true,
@@ -120,24 +112,23 @@ exit: 0
       ],
       "modelsUsed": [
         "unknown",
-        "claude-sonnet-4-20250514",
         "claude-haiku-4-5-20251001",
         "copilot-mystery-1",
         "gpt-5"
       ],
       "month": "2026-01",
-      "outputTokens": 204,
-      "totalCost": 0.27240499999999995,
-      "totalTokens": 2054
+      "outputTokens": 197,
+      "totalCost": 0.27208999999999994,
+      "totalTokens": 1977
     }
   ],
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 2900,
-    "inputTokens": 6620,
-    "outputTokens": 1489,
-    "totalCost": 0.5619749999999999,
-    "totalTokens": 11309,
+    "inputTokens": 6550,
+    "outputTokens": 1482,
+    "totalCost": 0.5616599999999999,
+    "totalTokens": 11232,
     "unpricedModels": [
       "copilot-mystery-1",
       "unknown"

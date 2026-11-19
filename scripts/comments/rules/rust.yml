@@ -1,0 +1,84 @@
+id: rust-comment
+language: Rust
+message: Collect Rust comments.
+rule:
+  any:
+    - kind: line_comment
+    - kind: block_comment
+    - kind: attribute_item
+      regex: '^#\[\s*doc\s*='
+    - kind: inner_attribute_item
+      regex: '^#!\[\s*doc\s*='
+---
+id: rust-public-doc
+language: Rust
+message: Collect documentation on public declarations.
+rule:
+  any:
+    - kind: line_comment
+      regex: '^///(?:[^/]|$)'
+    - kind: attribute_item
+      regex: '^#\[\s*doc\s*='
+  precedes:
+    stopBy:
+      not:
+        any:
+          - kind: attribute_item
+          - kind: line_comment
+          - kind: block_comment
+    has:
+      kind: visibility_modifier
+      regex: '^pub$'
+  not:
+    inside:
+      kind: mod_item
+      stopBy: end
+      not:
+        has:
+          kind: visibility_modifier
+          regex: '^pub$'
+---
+id: rust-schema-doc
+language: Rust
+message: Collect line doc comments on schema structs and fields.
+files:
+  - '**/config_schema.rs'
+rule:
+  any:
+    - kind: line_comment
+      regex: '^///(?:[^/]|$)'
+    - kind: attribute_item
+      regex: '^#\[\s*doc\s*='
+  precedes:
+    stopBy:
+      not:
+        any:
+          - kind: attribute_item
+          - kind: line_comment
+          - kind: block_comment
+    any:
+      - kind: struct_item
+      - all:
+          - kind: field_declaration
+          - inside:
+              kind: field_declaration_list
+              inside:
+                kind: struct_item
+---
+id: rust-unsafe
+language: Rust
+message: Collect unsafe blocks.
+rule:
+  kind: unsafe_block
+---
+id: rust-inner-doc
+language: Rust
+message: Collect top-level crate documentation.
+rule:
+  any:
+    - kind: line_comment
+      regex: '^//!'
+    - kind: inner_attribute_item
+      regex: '^#!\[\s*doc\s*='
+  inside:
+    kind: source_file

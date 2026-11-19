@@ -1,0 +1,323 @@
+#!/usr/bin/env nix
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped --command bb
+
+(ns compare-pr-performance-test
+  (:require [babashka.classpath :as cp]
+            [babashka.fs :as fs]
+            [babashka.process]
+            [cheshire.core]
+            [clojure.string]
+            [clojure.test :refer [deftest is run-tests testing]]))
+
+(def script-dir (fs/parent (fs/absolutize *file*)))
+(cp/add-classpath (str script-dir))
+
+(require '[compare-pr-performance.benchmark :as benchmark]
+         '[compare-pr-performance.data :as data]
+         '[compare-pr-performance.history :as history]
+         '[compare-pr-performance.main :as main]
+         '[compare-pr-performance.report :as report]
+         '[compare-pr-performance.system :as system])
+
+(def required-args ["--base-bin" "base" "--head-bin" "head" "--fixture-dir" "claude" "--codex-fixture-dir" "codex"])
+
+(deftest entrypoints-from-another-directory
+  (let [dir (fs/create-temp-dir {:prefix "ccusage-entrypoints."})
+        bb (str (fs/which "bb"))]
+    (try
+      (doseq [entry ["compare-pr-performance" "bench-history" "diff-refs"]]
+        (let [result (system/run-process [bb (system/path script-dir (str entry ".bb")) "--help"] {:dir dir})]
+          (is (zero? (:exit result)) (:err result))
+          (is (clojure.string/starts-with? (:out result) (str "Usage: " entry ".bb ")))))
+      (finally (fs/delete-tree dir)))))
+
+(deftest cli-parsing
+  (testing "defaults"
+    (is (= {:runs 11 :warmup 2 :threshold 0.1}
+           (select-keys (data/parse-cli required-args) [:runs :warmup :threshold]))))
+  (testing "too few rounds to judge a regression"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
+                          (data/parse-cli (conj required-args "--runs" "2")))))
+  (testing "missing binary"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--head-bin is required"
+                          (data/parse-cli ["--base-bin" "base" "--fixture-dir" "claude" "--codex-fixture-dir" "codex"]))))
+  (testing "history takes refs as positional arguments"
+    (is (= ["v20.0.20" "main"] (:refs (history/parse-history-cli ["--real" "v20.0.20" "main"]))))
+    (is (true? (:real (history/parse-history-cli ["--real" "main"]))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at least one git ref"
+                          (history/parse-history-cli []))))
+  (testing "history labels stay unique"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"may appear once: main"
+                          (history/parse-history-cli ["main" "v20.0.20" "main"])))
+    (is (= ["/a/ccusage" "/b/ccusage"] (:refs (history/parse-history-cli ["/a/ccusage" "/b/ccusage"])))))
+  (testing "a custom Claude fixture needs its Codex fixture"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fixture-dir and --codex-fixture-dir together"
+                          (history/parse-history-cli ["--fixture-dir" "c" "main"])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fixture-dir and --codex-fixture-dir together"
+                          (history/parse-history-cli ["--codex-fixture-dir" "x" "main"]))))
+  (testing "a custom Grok fixture joins a custom Claude and Codex pair"
+    (is (= "g" (:grok-fixture-dir (history/parse-history-cli ["--fixture-dir" "c" "--codex-fixture-dir" "x" "--grok-fixture-dir" "g" "main"]))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--grok-fixture-dir with --fixture-dir"
+                          (history/parse-history-cli ["--grok-fixture-dir" "g" "main"]))))
+  (testing "history rejects too few rounds instead of measuring them"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
+                          (history/parse-history-cli ["--runs" "2" "main"])))
+    (is (= 3 (:runs (history/parse-history-cli ["--runs" "3" "main"]))))))
+
+(deftest formatting
+  (is (= "999ms" (data/format-duration 999)))
+  (is (= "1.00s" (data/format-duration 1000)))
+  (is (= "1.50 KiB" (data/format-size 1536)))
+  (is (= "0123456789ab" (data/format-sha "0123456789abcdef")))
+  (is (= "1.00 (0.90–1.20)" (report/format-ratio-spread {:median 1.0 :min 0.9 :max 1.2}))))
+
+(deftest command-rendering
+  (is (= "env CLAUDE_CONFIG_DIR=/tmp/a \"CODEX_HOME=/tmp/codex data\" /tmp/ccusage claude daily --offline --json"
+         (data/benchmark-command-text
+          {:vars {"CLAUDE_CONFIG_DIR" "/tmp/a" "CODEX_HOME" "/tmp/codex data"}}
+          (benchmark/command-argv "/tmp/ccusage" "claude daily"))))
+  (testing "fixture runs start from an empty environment"
+    (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
+           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" nil "/e") (benchmark/command-argv "/b" "daily")))))
+  (testing "a Grok fixture is pointed at through GROK_HOME"
+    (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x GROK_HOME=/f/g HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
+           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" "/f/g" "/e") (benchmark/command-argv "/b" "daily"))))))
+
+(deftest statistics
+  (is (= 4 (data/median [9 1 2 4 7])))
+  (is (= 3.0 (data/median [9 1 2 4])))
+  (is (= {:median 3.0 :min 1 :max 9 :samples 4} (data/summarize [9 1 2 4])))
+  (is (= ["b" "c" "a"] (benchmark/rotate ["a" "b" "c"] 1)))
+  (is (= ["a" "b" "c"] (benchmark/rotate ["a" "b" "c"] 3))))
+
+(deftest regression-classification
+  (testing "a consistent slowdown past the threshold"
+    (is (= :regression (data/classify-ratios [1.5 1.6 1.4 1.55 1.5 1.45 1.6 1.5 1.52 1.48 1.5] 0.1))))
+  (testing "a consistent speedup"
+    (is (= :improvement (data/classify-ratios [0.6 0.62 0.58 0.61 0.6] 0.1))))
+  (testing "noise around 1.0 stays unchanged"
+    (is (= :unchanged (data/classify-ratios [1.03 0.97 1.05 0.99 1.02 0.98 1.04 1.01 0.96 1.0 1.02] 0.1))))
+  (testing "one outlier round cannot flag a regression"
+    (is (= :unchanged (data/classify-ratios [1.0 1.02 0.98 1.01 2.5 0.99 1.0 1.03 0.97 1.0 1.01] 0.1))))
+  (testing "a large median without agreement across rounds stays unchanged"
+    (is (= :unchanged (data/classify-ratios [1.3 1.3 1.3 0.9 0.9 1.3 0.9] 0.1)))))
+
+(defn round [base-cpu head-cpu]
+  {"base" {:wall (* 0.2 base-cpu) :cpu base-cpu :rss 100 :instructions nil}
+   "PR" {:wall (* 0.2 head-cpu) :cpu head-cpu :rss 100 :instructions nil}})
+
+(deftest paired-comparison
+  (let [rounds [(round 1000 1500) (round 1100 1600) (round 900 1400) (round 1000 1550) (round 1050 1500)]
+        comparison (benchmark/compare-variants rounds "base" "PR" 0.1)]
+    (is (= :regression (get-in comparison [:cpu :verdict])))
+    (is (= :unchanged (get-in comparison [:rss :verdict])))
+    (is (nil? (:instructions comparison)))
+    (is (= "⚠️ slower" (report/comparison-verdict comparison)))
+    (is (= 1000 (get-in (benchmark/variant-summary rounds "base") [:cpu :median])))))
+
+(defn with-hyperfine-export [content f]
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-hyperfine-test."})
+        output (system/path dir "hyperfine.json")]
+    (try
+      (spit output content)
+      (f output)
+      (finally
+        (babashka.fs/delete-tree dir)))))
+
+(defn hyperfine-result [name wall]
+  {:name name :command "x"
+   :measurements [{:time_wall_clock {:value wall :unit "second"} :time_cpu {:value (* 4 wall) :unit "second"}
+                   :memory_peak_resident {:value 1048576.0 :unit "byte"} :exit_code 0}]})
+
+(defn hyperfine-export [results]
+  (cheshire.core/generate-string {:schema_version 2 :results results}))
+
+(deftest hyperfine-runs
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "PR" 0.2) (hyperfine-result "base" 0.1)])
+    (fn [output]
+      (is (= {"base" {:wall 100.0 :cpu 400.0 :rss 1048576.0 :instructions nil}
+              "PR" {:wall 200.0 :cpu 800.0 :rss 1048576.0 :instructions nil}}
+             (benchmark/read-hyperfine-runs output ["base" "PR"])))))
+  (with-hyperfine-export
+    "not json"
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed hyperfine output"
+                            (benchmark/read-hyperfine-runs output ["base"])))))
+  (with-hyperfine-export
+    (cheshire.core/generate-string {:results []})
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema version"
+                            (benchmark/read-hyperfine-runs output ["base"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "base" 0.1)])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"0 results named PR"
+                            (benchmark/read-hyperfine-runs output ["base" "PR"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "base" 0.1) (hyperfine-result "base" 0.2)])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 results named base"
+                            (benchmark/read-hyperfine-runs output ["base"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(assoc-in (hyperfine-result "base" 0.1) [:measurements 0 :time_cpu :unit] "millisecond")])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unexpected hyperfine time unit"
+                            (benchmark/read-hyperfine-runs output ["base"]))))))
+
+(deftest report-rendering
+  (let [rounds [(round 1000 600) (round 1000 620) (round 1000 610)]
+        result {:command "claude daily" :base (benchmark/variant-summary rounds "base") :head (benchmark/variant-summary rounds "PR")
+                :comparison (benchmark/compare-variants rounds "base" "PR" 0.1)}
+        context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :runs 3 :warmup 1
+                 :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
+        markdown (report/render-report context [result] {:base 2048 :head 1024})
+        header (slurp (system/path (.getParent (babashka.fs/file *file*)) "testdata" "perf-comment-header.txt"))]
+    (testing "the PR comment upsert reads its marker from this header"
+      (is (.startsWith markdown header)))
+    (testing "a report without a head commit carries no comment marker"
+      (is (.startsWith (report/render-report (dissoc context :head-sha) [result] {:base 2048 :head 1024})
+                       "## ccusage performance comparison\n")))
+    (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
+    (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
+    (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))
+    (is (.contains markdown "Claude logs (1.00 GiB on disk, 10 files) and Codex logs"))
+    (is (.contains (report/fixture-line (assoc context :grok-fixture-stats {:bytes 2097152 :files 3}))
+                   "Claude logs (1.00 GiB on disk, 10 files), Codex logs (1.00 MiB on disk, 2 files, mostly zstd-compressed), and Grok logs (2.00 MiB on disk, 3 files) shaped"))))
+
+(deftest overall-verdicts
+  (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]
+    (is (:regression? (report/overall-verdict [(result :unchanged :regression)] 0.1)))
+    (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged)] 0.1)) "no significant change"))
+    (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] 0.1))))
+    (testing "a memory-only improvement is reported"
+      (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond 10%."
+             (:text (report/overall-verdict [(result :unchanged :improvement)] 0.1)))))))
+
+(deftest history-instruction-columns
+  (let [with-instructions (fn [r n] (-> r (assoc-in ["base" :instructions] 100) (assoc-in ["PR" :instructions] n)))
+        variants [{:label "base"} {:label "PR"}]
+        rounds [(round 1000 1000) (round 1000 1000) (round 1000 1000)]]
+    (is (not (.contains (history/render-history-table {:command "daily" :rounds rounds} variants 0.1) "Instructions")))
+    (is (.contains (history/render-history-table {:command "daily" :rounds (mapv #(with-instructions % 50) rounds)} variants 0.1)
+                   "| Instructions vs prev |"))))
+
+(deftest github-warning-goes-to-stdout
+  (let [err (java.io.StringWriter.)
+        regression {:regression? true :text "**Verdict: ⚠️ possible regression** in `daily`"}
+        out (binding [*err* err] (with-out-str (main/github-warning! regression true)))]
+    (is (= "::warning title=ccusage performance::Verdict: ⚠️ possible regression in `daily`\n" out))
+    (is (= "" (str err))))
+  (is (= "" (with-out-str (main/github-warning! {:regression? true :text "x"} false))))
+  (is (= "" (with-out-str (main/github-warning! {:text "x"} true)))))
+
+(deftest file-lock-serializes-processes
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-lock-test."})
+        log (system/path dir "events.log")
+        script (str "(require '[compare-pr-performance.history :as history])"
+                    " (let [id (first *command-line-args*)]"
+                    "  (history/with-file-lock " (pr-str (system/path dir "build.lock"))
+                    "   #(do (spit " (pr-str log) " (str \"in \" id \"\\n\") :append true) (Thread/sleep 300)"
+                    "        (spit " (pr-str log) " (str \"out \" id \"\\n\") :append true))))")
+        bb (str (babashka.fs/which "bb"))
+        run (fn [id] (babashka.process/process [bb "--classpath" (str script-dir) "-e" script id]))]
+    (try
+      (run! deref (mapv run ["1" "2" "3"]))
+      (let [events (map #(clojure.string/split % #" ") (clojure.string/split-lines (slurp log)))]
+        (is (= 6 (count events)))
+        (is (every? (fn [[[a x] [b y]]] (and (= "in" a) (= "out" b) (= x y))) (partition 2 events))))
+      (finally (babashka.fs/delete-tree dir)))))
+
+(deftest codex-fixture-compatibility
+  (let [archived-pr "#1230" zstd-pr "#1890"
+        support {"v20.0.5" #{} "v20.0.30" #{archived-pr} "main" #{archived-pr zstd-pr}}
+        reads? (fn [variant input-class] (contains? (get support (:label variant) #{}) (:pr input-class)))
+        v5 {:label "v20.0.5"} v30 {:label "v20.0.30"} main {:label "main"} binary {:label "/bin/ccusage"}
+        with-fixture (fn [files f]
+                       (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-codex-fixture."})]
+                         (try
+                           (doseq [file files]
+                             (babashka.fs/create-dirs (babashka.fs/parent (system/path dir file)))
+                             (spit (system/path dir file) ""))
+                           (f (str dir))
+                           (finally (babashka.fs/delete-tree dir)))))]
+    (testing "compressed coverage stays when every ref reads every input"
+      (is (= {:layout "current" :skipped []} (history/codex-compatibility reads? [main main] nil))))
+    (testing "a ref that skips any input switches the generated fixture to the legacy layout"
+      (let [result (history/codex-compatibility reads? [v30 main] nil)]
+        (is (= "legacy" (:layout result)))
+        (is (= [{:pr zstd-pr :refs [v30]}] (mapv #(select-keys % [:pr :refs]) (:skipped result))))
+        (is (.contains (:note result) "`v20.0.30` cannot read zstd-compressed rollouts"))
+        (is (not (.contains (:note result) "archived sessions"))))
+      (is (.contains (:note (history/codex-compatibility reads? [v5 main] nil)) "`v20.0.5` cannot read archived sessions"))
+      (is (= "legacy" (:layout (history/codex-compatibility reads? [binary main] nil)))))
+    (testing "a custom fixture warns for each input class it contains that a ref skips"
+      (with-fixture ["sessions/2026/06/01/rollout-a.jsonl"]
+        #(is (nil? (:warning (history/codex-compatibility reads? [v5 main] %)))))
+      (with-fixture ["archived_sessions/rollout-a.jsonl"]
+        (fn [dir]
+          (let [warning (:warning (history/codex-compatibility reads? [v5 main] dir))]
+            (is (.contains warning "`v20.0.5` cannot read archived sessions"))
+            (is (not (.contains warning "zstd"))))
+          (is (nil? (:warning (history/codex-compatibility reads? [v30 main] dir))))))
+      (with-fixture ["sessions/2026/06/01/rollout-a.jsonl.zst"]
+        #(is (.contains (:warning (history/codex-compatibility reads? [v30 main] %)) "`v20.0.30` cannot read zstd-compressed rollouts")))
+      (with-fixture ["archived_sessions/rollout-a.jsonl.zst"]
+        #(is (= {:layout "current" :skipped []} (history/codex-compatibility reads? [main] %)))))
+    (testing "only files the Codex loader reads as rollouts count"
+      (with-fixture ["sessions/2026/06/01/cache.bin.zst" "sessions/notes.json.zst" "other/rollout-a.jsonl.zst"
+                     "archived_sessions/README.md" "sessions/2026/06/01/rollout-a.jsonl"]
+        #(is (nil? (:warning (history/codex-compatibility reads? [v5 main] %)))))
+      (let [parent (babashka.fs/create-temp-dir {:prefix "ccusage-codex-fixture."})
+            dir (system/path parent "archived_sessions" "codex")]
+        (try
+          (babashka.fs/create-dirs (system/path dir "sessions"))
+          (spit (system/path dir "sessions" "rollout-a.jsonl") "")
+          (is (nil? (:warning (history/codex-compatibility reads? [v5 main] dir))))
+          (finally (babashka.fs/delete-tree parent)))))))
+
+(deftest history-reuses-input-compatibility
+  (let [dir (fs/create-temp-dir {:prefix "ccusage-history-compatibility."})
+        cache (system/path dir "cache")
+        claude (system/path dir "claude")
+        codex (system/path dir "codex")
+        checks (atom [])
+        old-commit (apply str (repeat 40 "1"))
+        new-commit (apply str (repeat 40 "2"))]
+    (try
+      (doseq [directory [claude codex]] (fs/create-dirs directory))
+      (doseq [commit [old-commit new-commit]]
+        (let [bin (system/path cache "bin" commit "ccusage")]
+          (fs/create-dirs (fs/parent bin))
+          (spit bin "cached binary")))
+      (let [output
+            (with-redefs [system/run-process
+                          (fn [argv & _]
+                            (case (first argv)
+                              "git"
+                              (case (second argv)
+                                "rev-parse" {:exit 0 :out (case (last argv)
+                                                          "--show-toplevel" (str dir)
+                                                          "old^{commit}" old-commit
+                                                          "new^{commit}" new-commit)
+                                             :err ""}
+                                "merge-base" (do (swap! checks conj (vec (take-last 2 argv)))
+                                                 {:exit (if (= old-commit (last argv)) 1 0) :out "" :err ""}))
+                              "hyperfine"
+                              (let [export (second (drop-while #(not= "--export-json" %) argv))]
+                                (spit export (hyperfine-export [(hyperfine-result "old" 0.1) (hyperfine-result "new" 0.1)]))
+                                {:exit 0 :out "" :err ""})))]
+              (with-out-str
+                (history/history-main "--real" "--runs" "3" "--warmup" "0" "--commands" "daily"
+                                      "--fixture-dir" claude "--codex-fixture-dir" codex
+                                      "--cache-dir" cache "old" "new")))]
+        (is (= 4 (count @checks)))
+        (is (every? #(= 1 %) (vals (frequencies @checks))))
+        (is (.contains output
+                       "⚠️ **Warning:** in local logs, `old` skip archived sessions (`archived_sessions/`); `old` skip zstd-compressed rollouts (`.jsonl.zst`), so Codex and unified rows across those changes compare different input."))
+        (is (not (.contains output "the custom Codex fixture contains input some refs skip"))))
+      (finally (fs/delete-tree dir)))))
+
+(let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
+  (when (pos? (+ fail error))
+    (System/exit 1)))

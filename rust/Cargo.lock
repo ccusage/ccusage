@@ -113,28 +113,9 @@ dependencies = [
 name = "ccusage"
 version = "0.0.0"
 dependencies = [
+ "ccusage",
  "ccusage-adapter-all",
- "ccusage-adapter-amp",
- "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
- "ccusage-adapter-cline",
- "ccusage-adapter-codebuff",
- "ccusage-adapter-codex",
- "ccusage-adapter-common",
- "ccusage-adapter-copilot",
- "ccusage-adapter-droid",
- "ccusage-adapter-dsh",
- "ccusage-adapter-gemini",
- "ccusage-adapter-goose",
- "ccusage-adapter-grok",
- "ccusage-adapter-hermes",
- "ccusage-adapter-kilo",
- "ccusage-adapter-kimi",
- "ccusage-adapter-openclaw",
- "ccusage-adapter-opencode",
- "ccusage-adapter-pi",
- "ccusage-adapter-qwen",
- "ccusage-adapter-zcode",
  "ccusage-cli",
  "ccusage-cli-parser",
  "ccusage-config",
@@ -143,11 +124,11 @@ dependencies = [
  "ccusage-report",
  "ccusage-test-support",
  "insta",
+ "jiff",
  "mimalloc",
  "ring",
  "rustls",
  "rustls-webpki",
- "serde",
  "serde_json",
  "sqlite",
  "ureq",
@@ -181,6 +162,7 @@ dependencies = [
  "ccusage-adapter-zcode",
  "ccusage-cli",
  "ccusage-core",
+ "ccusage-report",
  "ccusage-test-support",
  "insta",
  "serde",
@@ -218,11 +200,15 @@ name = "ccusage-adapter-claude"
 version = "0.0.0"
 dependencies = [
  "ccusage-adapter-common",
+ "ccusage-cli-parser",
+ "ccusage-config",
  "ccusage-core",
+ "ccusage-report",
  "ccusage-test-support",
  "jiff",
  "memchr",
  "rustc-hash",
+ "rustix",
  "serde",
  "serde_json",
  "smallvec",
@@ -278,6 +264,8 @@ dependencies = [
  "ccusage-test-support",
  "serde",
  "serde_json",
+ "sqlite",
+ "zstd",
 ]
 
 [[package]]
@@ -459,6 +447,9 @@ dependencies = [
 [[package]]
 name = "ccusage-cli"
 version = "0.0.0"
+dependencies = [
+ "jiff",
+]
 
 [[package]]
 name = "ccusage-cli-parser"
@@ -499,6 +490,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "stats_alloc",
 ]
 
 [[package]]
@@ -535,8 +527,9 @@ name = "ccusage-test-support"
 version = "0.0.0"
 dependencies = [
  "assert_fs",
+ "ccusage-core",
+ "ccusage-pricing-snapshots",
  "jiff",
- "sqlite",
 ]
 
 [[package]]
@@ -1249,6 +1242,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stats_alloc"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c0e04424e733e69714ca1bbb9204c1a57f09f5493439520f9f68c132ad25eec"
 
 [[package]]
 name = "subtle"

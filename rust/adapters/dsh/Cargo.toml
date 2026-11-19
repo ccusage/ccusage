@@ -10,11 +10,10 @@ ccusage-core.workspace = true
 jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-zstd.workspace = true
 
 [dev-dependencies]
+zstd.workspace = true
 ccusage-adapter-common = { workspace = true, features = ["testing"] }
-ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
 

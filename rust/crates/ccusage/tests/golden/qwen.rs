@@ -1,22 +1,13 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::golden::set_modified;
+use ccusage_test_support::{Instant, instant, set_modified};
 
 const CODER: &str = "qwen3-coder-plus";
 const SONNET: &str = "claude-sonnet-4-20250514";
 const UNPRICED: &str = "qwen-mystery-1";
-// These models require the respective `qwen/<model>` and `alibaba/<model>`
-// lookup candidates in the embedded pricing tables.
 const QWEN_PREFIXED: &str = "qwen-2.5-72b-instruct";
 const ALIBABA_PREFIXED: &str = "qwen-3-30b";
-
-// 2025-12-27T22:00:00Z, 2025-12-31T16:00:00Z, 2026-01-01T09:00:00Z,
-// 2026-01-02T12:00:00Z, 2026-01-02T23:30:00Z
-const STALE_MTIME: u64 = 1_766_872_800;
-const FALLBACK_MTIME: u64 = 1_767_196_800;
-const SECONDARY_MTIME: u64 = 1_767_258_000;
-const SESSION_A_MTIME: u64 = 1_767_355_200;
-const SESSION_B_MTIME: u64 = 1_767_396_600;
 
 fn assistant(session: &str, timestamp: &str, model: &str, usage: &str) -> String {
     format!(
@@ -24,11 +15,11 @@ fn assistant(session: &str, timestamp: &str, model: &str, usage: &str) -> String
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("qwen");
     let primary = store.join("primary");
     let secondary = store.join("secondary");
-    let write = |path: PathBuf, contents: &str, mtime: u64| {
+    let write = |path: PathBuf, contents: &str, mtime: Instant| {
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
             .expect("failed to create Qwen fixture directory");
         std::fs::write(&path, contents).expect("failed to write Qwen fixture file");
@@ -42,17 +33,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     let a2 = assistant("sess-a", "2025-12-31T15:30:00.000Z", SONNET, a2_usage);
     let a4_usage = r#""promptTokenCount":100,"candidatesTokenCount":40,"totalTokenCount":200"#;
 
-    // Records are deduplicated on (session, timestamp text, model, tokens),
-    // first one wins. Records without a parseable timestamp take the file
-    // mtime, and string fields are trimmed before any of this.
     write(
         primary.join("projects/alpha/chats/session-a.jsonl"),
         &[
             r#"{"type":"user","sessionId":"sess-a","timestamp":"2025-12-30T08:59:00.000Z","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":9999,"candidatesTokenCount":9999}}"#.to_string(),
             a1.clone(),
             a1.clone(),
-            // Near-misses of `a1`: the same instant spelt differently, and one
-            // token more.
             assistant("sess-a", "2025-12-30T09:00:00Z", CODER, a1_usage),
             assistant(
                 "sess-a",
@@ -93,14 +79,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{"type":"assistant","timestamp":"2026-01-02T08:00:00.000Z","usageMetadata":{"promptTokenCount":70,"candidatesTokenCount":30}}"#.to_string(),
             assistant("sess-a", "yesterday", CODER, r#""promptTokenCount":60,"candidatesTokenCount":15"#),
             r#"{"type":"assistant","sessionId":"sess-a","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":61,"candidatesTokenCount":16}}"#.to_string(),
-            r#"{"type":"assistant","sessionId":"sess-a","timestamp":1767225600000,"model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":61,"candidatesTokenCount":16}}"#.to_string(),
+            format!(r#"{{"type":"assistant","sessionId":"sess-a","timestamp":{timestamp},"model":"qwen3-coder-plus","usageMetadata":{{"promptTokenCount":61,"candidatesTokenCount":16}}}}"#, timestamp = instant("2026-01-01T00:00:00Z").millis()),
         ]
         .join("\n"),
-        SESSION_A_MTIME,
+        instant("2026-01-02T12:00:00Z"),
     );
 
-    // Second project. Dedupe spans files: the copy of `a2` under the same
-    // session id is dropped, the copy under this file's session id is kept.
     write(
         primary.join("projects/beta/chats/session-b.jsonl"),
         &[
@@ -144,33 +128,27 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
         ]
         .join("\n"),
-        SESSION_B_MTIME,
+        instant("2026-01-02T23:30:00Z"),
     );
 
-    // No session id and no timestamp: the session becomes `<project>-<stem>`
-    // and the time is the file mtime, so the same line under two projects is
-    // two records.
     let fallback = format!(
         r#"{{"type":"assistant","model":"{CODER}","usageMetadata":{{"promptTokenCount":150,"candidatesTokenCount":25}}}}"#
     );
     write(
         primary.join("projects/alpha/chats/fallback-c.jsonl"),
         &fallback,
-        FALLBACK_MTIME,
+        instant("2025-12-31T16:00:00Z"),
     );
     write(
         primary.join("projects/beta/chats/fallback-c.jsonl"),
         &fallback,
-        FALLBACK_MTIME,
+        instant("2025-12-31T16:00:00Z"),
     );
 
-    // Qwen Code moves a finished session into the flat `chats/archive/`
-    // directory unchanged: the archived copy of the fallback file names the
-    // same session and dedupes against it, and an archived-only session counts.
     write(
         primary.join("projects/beta/chats/archive/fallback-c.jsonl"),
         &fallback,
-        FALLBACK_MTIME,
+        instant("2025-12-31T16:00:00Z"),
     );
     write(
         primary.join("projects/alpha/chats/archive/session-e.jsonl"),
@@ -180,11 +158,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             CODER,
             r#""promptTokenCount":420,"candidatesTokenCount":70,"cachedContentTokenCount":100"#,
         ),
-        SECONDARY_MTIME,
+        instant("2026-01-01T09:00:00Z"),
     );
 
-    // Second data root with CRLF line endings; its copy of `a1` is a replay of
-    // the first root's.
     write(
         secondary.join("projects/alpha/chats/session-a.jsonl"),
         &[
@@ -198,11 +174,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             String::new(),
         ]
         .join("\r\n"),
-        SECONDARY_MTIME,
+        instant("2026-01-01T09:00:00Z"),
     );
 
-    // Only `projects/<project>/chats/<file>.jsonl` and
-    // `projects/<project>/chats/archive/<file>.jsonl` are chat files.
     let ignored = assistant(
         "sess-ignored",
         "2025-12-31T12:00:00.000Z",
@@ -221,28 +195,30 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "projects/alpha/chats/wrong-extension.json",
         "projects/alpha/chats/wrong-extension.jsonl.bak",
     ] {
-        write(primary.join(relative), &ignored, STALE_MTIME);
+        write(
+            primary.join(relative),
+            &ignored,
+            instant("2025-12-27T22:00:00Z"),
+        );
     }
     write(
         primary.join("projects/alpha/chats/empty.jsonl"),
         "",
-        STALE_MTIME,
+        instant("2025-12-27T22:00:00Z"),
     );
     write(
         primary.join("projects/beta/chats/truncated.jsonl"),
         r#"{"type":"assistant","sessionId":"sess-truncated","timestamp":"2025-12-31T12:00:00.000Z","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":9999,"candi"#,
-        STALE_MTIME,
+        instant("2025-12-27T22:00:00Z"),
     );
 
-    // `QWEN_DATA_DIR` is a comma-separated list: a repeated root and a missing
-    // one are both dropped.
     let roots = [
         primary.clone(),
         secondary,
         primary,
         store.join("missing-root"),
     ]
-    .map(|path| path.to_string_lossy().into_owned())
-    .join(",");
-    vec![("QWEN_DATA_DIR", PathBuf::from(roots))]
+    .map(PathBuf::into_os_string)
+    .to_vec();
+    vec![("QWEN_DATA_DIR", roots)]
 }

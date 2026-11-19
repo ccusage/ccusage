@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 8000,
-          "cost": 1.00345,
+          "cost": 0.0201,
           "inputTokens": 2500,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 530
@@ -44,7 +44,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 1120,
-      "totalCost": 1.0111125,
+      "totalCost": 0.027762500000000002,
       "totalTokens": 24350
     },
     {
@@ -53,14 +53,6 @@ exit: 0
       "inputTokens": 2320,
       "messageCount": 18,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 45,
-          "cost": 0.300455625,
-          "inputTokens": 120,
-          "modelName": "gpt-5",
-          "outputTokens": 30
-        },
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 3000,
@@ -79,8 +71,16 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 45,
+          "cost": 0.00045562500000000003,
+          "inputTokens": 120,
+          "modelName": "gpt-5",
+          "outputTokens": 30
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
+          "cost": 0.00010080000000000001,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
@@ -104,7 +104,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 600,
-      "totalCost": 0.327819125,
+      "totalCost": 0.027643925000000003,
       "totalTokens": 13065
     }
   ],
@@ -113,7 +113,7 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.338931625,
+    "totalCost": 0.05540642500000001,
     "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"

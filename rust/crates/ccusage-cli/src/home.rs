@@ -1,6 +1,6 @@
 use std::{
     env,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
 };
 
@@ -13,26 +13,77 @@ pub fn home_dir() -> Option<PathBuf> {
     )
 }
 
-pub fn expand_home_path(raw: &str) -> PathBuf {
-    expand_home(raw, home_dir().as_deref())
+pub fn path_identity(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn expand_home(raw: &str, home: Option<&Path>) -> PathBuf {
-    match (raw.strip_prefix('~'), home) {
-        (Some(""), Some(home)) => home.to_path_buf(),
-        (Some(rest), Some(home)) if rest.starts_with('/') => home.join(&rest[1..]),
-        _ => PathBuf::from(raw),
+pub fn parse_paths(
+    raw: &OsStr,
+    separator: Option<char>,
+    home: Option<&Path>,
+) -> Option<Vec<PathBuf>> {
+    let entries = path_entries(raw, separator);
+    if entries.is_empty() {
+        return None;
     }
+    Some(
+        entries
+            .into_iter()
+            .filter_map(|entry| expand_home(entry, home))
+            .collect(),
+    )
+}
+
+fn path_entries(raw: &OsStr, separator: Option<char>) -> Vec<&OsStr> {
+    let Some(raw) = raw.to_str() else {
+        return native_path_entries(raw, separator);
+    };
+    raw.split(|ch| separator == Some(ch))
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(OsStr::new)
+        .collect()
+}
+
+#[cfg(unix)]
+fn native_path_entries(raw: &OsStr, separator: Option<char>) -> Vec<&OsStr> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let separator = separator.and_then(|ch| u8::try_from(ch).ok());
+    raw.as_bytes()
+        .split(|byte| separator == Some(*byte))
+        .map(<[u8]>::trim_ascii)
+        .filter(|entry| !entry.is_empty())
+        .map(OsStr::from_bytes)
+        .collect()
+}
+
+#[cfg(not(unix))]
+fn native_path_entries(raw: &OsStr, separator: Option<char>) -> Vec<&OsStr> {
+    if separator.is_some() {
+        Vec::new()
+    } else {
+        vec![raw]
+    }
+}
+
+fn expand_home(entry: &OsStr, home: Option<&Path>) -> Option<PathBuf> {
+    let bytes = entry.as_encoded_bytes();
+    if bytes == b"~" {
+        return home.map(Path::to_path_buf);
+    }
+    if !bytes.starts_with(b"~/") {
+        return Some(PathBuf::from(entry));
+    }
+    let rest = Path::new(entry).strip_prefix("~").unwrap_or(Path::new(""));
+    home.map(|home| home.join(rest))
 }
 
 /// The Claude Code directories that hold both the usage logs and the user's
 /// `ccusage.json`, in priority order.
 pub enum ClaudeConfigDirs {
-    /// The entries of `CLAUDE_CONFIG_DIR`, which replace the defaults.
     Env { value: String, dirs: Vec<PathBuf> },
-    /// `$XDG_CONFIG_HOME/claude` (or `~/.config/claude`), then `~/.claude`.
     Default(Vec<PathBuf>),
-    /// `CLAUDE_CONFIG_DIR` is unset and there is no home directory.
     NoHome,
 }
 
@@ -58,15 +109,15 @@ fn claude_config_dirs_from(
     xdg_config_home: Option<OsString>,
     home: Option<PathBuf>,
 ) -> ClaudeConfigDirs {
-    if let Some(value) = claude_config_dir {
+    if let Some(value) = claude_config_dir
+        && let Some(paths) = parse_paths(value.as_ref(), Some(','), home.as_deref())
+    {
         let mut dirs = Vec::new();
-        for raw in value
-            .split(',')
-            .map(str::trim)
-            .filter(|raw| !raw.is_empty())
-        {
-            let dir = normalize_claude_config_dir(expand_home(raw, home.as_deref()));
-            if !dirs.contains(&dir) {
+        let mut seen = std::collections::HashSet::new();
+        for path in paths {
+            let dir = normalize_claude_config_dir(path);
+            let identity = path_identity(&dir);
+            if seen.insert(identity) {
                 dirs.push(dir);
             }
         }
@@ -79,7 +130,7 @@ fn claude_config_dirs_from(
     ClaudeConfigDirs::Default(vec![config_home.join("claude"), home.join(".claude")])
 }
 
-/// `CLAUDE_CONFIG_DIR` may name the `projects/` directory itself.
+// NOTE(2026-11-16, #2107): Users can point CLAUDE_CONFIG_DIR at the projects directory itself. Resolve its parent before searching for ccusage.json.
 fn normalize_claude_config_dir(path: PathBuf) -> PathBuf {
     if path.file_name().is_some_and(|name| name == "projects") && path.is_dir() {
         return path.parent().map(Path::to_path_buf).unwrap_or(path);
@@ -116,6 +167,40 @@ fn non_empty_path(path: Option<OsString>) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_path_lists_split_into_native_paths() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let raw = OsStr::from_bytes(b" ~/one , ~/two\xff , /absolute ");
+        assert_eq!(
+            parse_paths(raw, Some(','), Some(Path::new("/home/user"))),
+            Some(vec![
+                PathBuf::from("/home/user/one"),
+                PathBuf::from("/home/user").join(OsStr::from_bytes(b"two\xff")),
+                PathBuf::from("/absolute"),
+            ])
+        );
+        assert_eq!(
+            parse_paths(raw, Some(','), None),
+            Some(vec![PathBuf::from("/absolute")])
+        );
+        assert_eq!(
+            parse_paths(OsStr::from_bytes(b"opencode-\xff"), Some(','), None),
+            Some(vec![PathBuf::from(OsStr::from_bytes(b"opencode-\xff"))])
+        );
+        assert_eq!(
+            parse_paths(OsStr::from_bytes(b" , "), Some(','), None),
+            None
+        );
+    }
+
+    #[test]
+    fn unresolved_canonical_identity_keeps_the_given_path() {
+        let path = Path::new("/ccusage-missing-canonical-root/./store");
+        assert_eq!(path_identity(path), path);
+    }
 
     #[test]
     fn prefers_home_when_available() {
@@ -184,6 +269,24 @@ mod tests {
     fn claude_dirs_without_home_or_env_are_reported_as_no_home() {
         let resolved = claude_config_dirs_from(None, Some(OsString::from("/custom/xdg")), None);
         assert!(matches!(resolved, ClaudeConfigDirs::NoHome));
+    }
+
+    #[test]
+    fn blank_claude_directories_use_defaults() {
+        for value in ["", "  ", " , , "] {
+            let resolved = claude_config_dirs_from(
+                Some(value.to_string()),
+                None,
+                Some(PathBuf::from("/home/user")),
+            );
+            assert_eq!(
+                dirs(resolved),
+                [
+                    PathBuf::from("/home/user/.config/claude"),
+                    PathBuf::from("/home/user/.claude"),
+                ]
+            );
+        }
     }
 
     #[test]

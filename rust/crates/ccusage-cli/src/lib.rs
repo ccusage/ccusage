@@ -1,37 +1,21 @@
+mod agents;
+mod date;
 pub mod home;
+mod limits;
+mod options;
 mod types;
 
-pub use types::{
-    ALL_AGENT_REPORTS, AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed,
-    CodexStatuslineArgs, Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs,
-    NamedPiStore, NoConfig, PricingOverride, STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs,
-    SortOrder, SourceArgs, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+pub use agents::{
+    AGENTS, AgentCommandKind, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES, BlocksOption,
+    ClaudeStatuslineOption, CodexStatuslineOption, StandardAgent,
 };
-
-/// Default length, in hours, of one billing block.
-pub const DEFAULT_SESSION_DURATION_HOURS: f64 = 5.0;
-
-/// Agent subcommands that ship in the binary, in report load order.
-pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
-    "claude",
-    "codex",
-    "opencode",
-    "amp",
-    "droid",
-    "codebuff",
-    "hermes",
-    "pi",
-    "goose",
-    "openclaw",
-    "kilo",
-    "copilot",
-    "gemini",
-    "antigravity",
-    "kimi",
-    "qwen",
-    "grok",
-    "zcode",
-    "cline",
-    "dsh",
-];
+pub use date::{DateBound, IsoDate, parse_digits, weekday_from_epoch_days};
+pub use limits::{ContextThresholds, SessionLength, TokenLimit};
+pub use options::{OptionArity, command_tokens, is_shared_flag, option_arity};
+pub use types::{
+    AgentCommand, AgentCommandArgs, AgentOptions, AgentReportKind, BlocksArgs, CliConfig,
+    CodexSpeed, CodexStatuslineArgs, ColorChoice, Command, CostMode, CostSource,
+    DATE_BOUND_FORMATS, DailyArgs, NamedPiStore, NoConfig, PeriodUnit, PricingOverride,
+    ReportClock, ReportTimezone, SessionArgs, SharedArgs, SortOrder, SourceArgs, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs,
+};

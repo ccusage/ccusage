@@ -1,12 +1,9 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::cli::{AgentCommandArgs, AgentReportKind, SharedArgs};
-use ccusage_core::*;
-use serde_json::Value;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
 pub struct Droid;
 
@@ -19,38 +16,6 @@ impl EntrySource for Droid {
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_with_context(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn sort_key<'a>(&self, row: &'a UsageSummary) -> &'a str {
-        summary_period(row)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report::report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        crate::print_usage_table(
-            "Droid Token Usage Report",
-            first_column(kind),
-            rows,
-            shared,
-            false,
-            None,
-        )
     }
 }
 

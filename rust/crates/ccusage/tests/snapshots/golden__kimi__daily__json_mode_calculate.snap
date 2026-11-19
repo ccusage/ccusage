@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000172,
+          "cost": 0.000165,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -25,7 +25,7 @@ exit: 0
         "kimi-k2-thinking"
       ],
       "outputTokens": 50,
-      "totalCost": 0.000172,
+      "totalCost": 0.000165,
       "totalTokens": 150
     },
     {
@@ -37,7 +37,7 @@ exit: 0
         {
           "cacheCreationTokens": 900,
           "cacheReadTokens": 12000,
-          "cost": 0.009754249999999999,
+          "cost": 0.007975,
           "inputTokens": 3000,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 610
@@ -56,7 +56,7 @@ exit: 0
         "kimi-for-coding"
       ],
       "outputTokens": 690,
-      "totalCost": 0.01319425,
+      "totalCost": 0.011415,
       "totalTokens": 33590
     },
     {
@@ -76,7 +76,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.00408397,
+          "cost": 0.0034119,
           "inputTokens": 1411,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 339
@@ -96,27 +96,27 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 2189,
-      "totalCost": 0.041988969999999994,
+      "totalCost": 0.0413169,
       "totalTokens": 37570
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 3000,
+      "cacheReadTokens": 0,
       "date": "2026-01-01",
-      "inputTokens": 1820,
+      "inputTokens": 1100,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037500000000000003,
-          "inputTokens": 1100,
+          "cacheReadTokens": 0,
+          "cost": 0.0016250000000000001,
+          "inputTokens": 500,
           "modelName": "gpt-5",
-          "outputTokens": 200
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0011656000000000001,
+          "cost": 0.001245,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 482
@@ -132,14 +132,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000162,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
@@ -149,20 +141,19 @@ exit: 0
       ],
       "modelsUsed": [
         "gpt-5",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "kimi-k2-thinking",
         "kimi-for-coding"
       ],
-      "outputTokens": 827,
-      "totalCost": 0.005332600000000001,
-      "totalTokens": 5897
+      "outputTokens": 697,
+      "totalCost": 0.003125,
+      "totalTokens": 2047
     },
     {
       "cacheCreationTokens": 50,
       "cacheReadTokens": 6000,
       "date": "2026-01-02",
-      "inputTokens": 940,
+      "inputTokens": 800,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 50,
@@ -171,23 +162,14 @@ exit: 0
           "inputTokens": 800,
           "modelName": "kimi-for-coding",
           "outputTokens": 300
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0002178,
-          "inputTokens": 140,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 60
         }
       ],
       "modelsUsed": [
-        "kimi-k2-thinking",
         "kimi-for-coding"
       ],
-      "outputTokens": 360,
-      "totalCost": 0.0022353,
-      "totalTokens": 7350
+      "outputTokens": 300,
+      "totalCost": 0.0020174999999999998,
+      "totalTokens": 7150
     },
     {
       "cacheCreationTokens": 0,
@@ -214,11 +196,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 1570,
-    "cacheReadTokens": 66000,
-    "inputTokens": 15621,
-    "outputTokens": 4616,
-    "totalCost": 0.06619312,
-    "totalTokens": 88057,
+    "cacheReadTokens": 63000,
+    "inputTokens": 14761,
+    "outputTokens": 4426,
+    "totalCost": 0.0613094,
+    "totalTokens": 84007,
     "unpricedModels": [
       "kimi-mystery-1"
     ]

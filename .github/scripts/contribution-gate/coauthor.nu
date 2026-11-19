@@ -1,22 +1,19 @@
 use ./core.nu [gh-api-json repository required-env]
 
-def implementation-pull-requests [repo: string, branch: string, marker: string]: nothing -> any {
-    gh-api-json [
-        '--paginate'
-        '--slurp'
-        $"repos/($repo)/pulls?state=open&sort=created&direction=desc&per_page=100"
-    ]
-    | flatten
-    | where {|pull_request|
-        let body = $pull_request | get --optional body | default ''
-        [
-            (($pull_request | get --optional user.login) == 'github-actions[bot]')
-            (($pull_request | get --optional head.repo.full_name) == $repo)
-            (($pull_request | get --optional head.ref) == $branch)
-            (($body | describe) == 'string' and ($body | str contains $marker))
-        ]
-        | all {|valid| $valid}
-    }
+export def is-implementation-pull-request [
+    pull_request: record
+    repo: string
+    branch: string
+    marker: string
+]: nothing -> bool {
+    let body = $pull_request | get --optional body | default ''
+    [
+        (($pull_request | get --optional state) == 'open')
+        (($pull_request | get --optional user.login) == 'github-actions[bot]')
+        (($pull_request | get --optional head.repo.full_name) == $repo)
+        (($pull_request | get --optional head.ref) == $branch)
+        (($body | describe) == 'string' and ($body | str contains $marker))
+    ] | all {|valid| $valid}
 }
 
 def pull-request-commits [repo: string, number: int]: nothing -> any {
@@ -26,27 +23,6 @@ def pull-request-commits [repo: string, number: int]: nothing -> any {
         $"repos/($repo)/pulls/($number)/commits?per_page=100"
     ]
     | flatten
-}
-
-def find-implementation-pull-request [repo: string, branch: string, marker: string]: nothing -> any {
-    let max_attempts = 12
-    for attempt in 0..($max_attempts - 1) {
-        let pull_requests = implementation-pull-requests $repo $branch $marker
-        if ($pull_requests | length) > 1 {
-            error make {
-                msg: 'Found multiple implementation pull requests for this issue-gate run'
-            }
-        }
-        if ($pull_requests | length) == 1 {
-            return ($pull_requests | get 0)
-        }
-        if $attempt < ($max_attempts - 1) {
-            sleep 5sec
-        }
-    }
-    error make {
-        msg: 'Could not find the implementation pull request for this issue-gate run after retrying the GitHub API'
-    }
 }
 
 def commit-attributions [repo: string, sha: string]: nothing -> list<record> {
@@ -110,8 +86,6 @@ def validate-commit [
     expected_email: string
     issue_author_id: int
 ]: nothing -> record {
-
-    # Match the expected trailer email to GitHub's resolved author identity so a primary author cannot satisfy a co-author check.
     let attributions = commit-attributions $repo $commit.sha
     let validation = (coauthor-validation
         $commit.commit.message
@@ -134,7 +108,11 @@ export def verify-coauthor []: nothing -> nothing {
     let expected_trailer = required-env COAUTHOR_TRAILER
     let expected_email = required-env COAUTHOR_EMAIL
     let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
-    let pull_request = find-implementation-pull-request $repo $branch $marker
+    let number = required-env PR_NUMBER | into int
+    let pull_request = gh-api-json [$"repos/($repo)/pulls/($number)"]
+    if not (is-implementation-pull-request $pull_request $repo $branch $marker) {
+        error make {msg: $"PR #($number) does not match this issue-gate publication"}
+    }
     let commits = pull-request-commits $repo $pull_request.number
     if ($commits | is-empty) {
         error make {

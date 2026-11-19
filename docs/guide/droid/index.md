@@ -49,14 +49,14 @@ These views support `--json` for structured output, `--compact` for narrow termi
 
 - **Token usage** - Droid settings files provide input, output, cache creation, cache read, and thinking token counts.
 - **Reasoning tokens** - Thinking tokens are included in total tokens and output-side cost estimation.
-- **Pricing** - Costs are calculated from LiteLLM pricing data for the recorded model and provider.
+- **Pricing** - Auto and Calculate price tokens for the recorded model and provider. The logs have no recorded USD cost, so Display reports $0 while retaining tokens. See [Cost Modes](/guide/cost-modes).
 
 ## Environment Variables
 
-| Variable             | Description                                                                                     |
-| -------------------- | ----------------------------------------------------------------------------------------------- |
-| `DROID_SESSIONS_DIR` | Override the sessions directory, or comma-separated sessions directories, containing Droid data |
-| `LOG_LEVEL`          | Adjust verbosity (0 silent ... 5 trace)                                                         |
+| Variable             | Description                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `DROID_SESSIONS_DIR` | Override the sessions directory, or comma-separated sessions directories, containing Droid data               |
+| `LOG_LEVEL`          | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

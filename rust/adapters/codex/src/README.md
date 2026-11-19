@@ -49,21 +49,14 @@ Unclassified usage uses the top-level `service_tier` in each Codex home's
 affect pricing. Profile selections made through CLI flags or separate profile
 files require an explicit `--speed` override for unclassified usage.
 
-Relevant MultiAgent V2 subagent replay markers:
-
-- A subagent rollout replays its parent's history before the child's own turn, so the prefix must not be counted again.
-- `type === "event_msg"` with `payload.type === "task_started"` ends the replayed prefix.
-- `type === "inter_agent_communication_metadata"` with `payload.trigger_turn === true` starts the child turn. The event was named `inter_agent_communication` before Codex CLI 0.143.0-alpha.15; both spellings are matched. `trigger_turn` is also emitted as `false`, so the value must be checked.
-- Usage between those two markers belongs to the child; usage before them is inherited history.
-- Which replay boundary a rollout uses is decided by scanning it for the marker, never from `session_meta` version fields. Resuming a session re-records the original session's `cli_version`, so that field cannot be used to gate behavior.
-
-Forked rollouts without those markers:
+Forked rollouts:
 
 - `session_meta.payload.forked_from_id` or `payload.source.subagent.thread_spawn.parent_thread_id` names the parent. This identifies how the rollout was forked, which resuming does not change, unlike `cli_version`.
 - A spawned subagent (`thread_spawn`) never inherits the parent's `token_usage_record` lines, so a record ends any skip of replayed history: everything from it on is the child's own, even when every line carries the fork timestamp. A record never starts a skip. A child created by a Codex release without records and resumed by a later one holds its own record-less turns before the first record.
 - A user fork (`forked_from_id` only) copies the parent's records, so they mark nothing there. Its replayed prefix is matched against the parent's usage stream, or, when the parent log is unavailable, skipped as the dense burst Codex writes at the fork instant.
 - Usage without a response ID is deduplicated across files on timestamp, model, token counts, and its ordinal among identical events in its own file. A copy repeats the original's ordinals, while identical requests within one rollout stay distinct.
-- A `token_count` that accounts for the `token_usage_record` just before it reports that request, so the record's response ID joins its dedupe key. Spawned siblings that sent different requests with equal usage at the same instant then stay distinct, while a copy carrying the same records still collapses. A copy without records, such as the parent counts a spawned child replays, collapses into one recorded request with the same usage, whichever file is read first. A record ID matches its request at any position among equal-usage events, and a recordless copy does not lend its service tier to a recorded request it cannot name. The event remains normal usage, so replay filtering still skips it.
+- A `token_count` that accounts for the `token_usage_record` just before it reports that request, so the record's response ID joins its dedupe key. Spawned siblings that sent different requests with equal usage at the same instant then stay distinct, while a copy carrying the same records still collapses. A copy without records, such as a spawned child’s request replayed in its parent rollout, collapses into one recorded request with the same usage, whichever file is read first. A record ID matches its request at any position among equal-usage events. If one rollout contains more requests than the distinct records can account for, the extra recordless requests are retained. A recordless copy does not lend its service tier to a recorded request it cannot name. The event remains normal usage, so replay filtering still skips it.
+- Reports match recorded requests across sessions before grouping. When a record replaces a recordless copy, session reports credit the session that carries the record. For usage with only recordless matches, session reports retain one attribution per session and date-based reports merge the matches.
 
 Token mapping:
 

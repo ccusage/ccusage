@@ -1,14 +1,14 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+
+use ccusage_test_support::{instant, set_modified};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "droid-mystery-1";
 
-/// 2026-01-02T12:00:00Z, for the session whose only usable time is its mtime.
-const MTIME_FALLBACK_SECONDS: u64 = 1_767_355_200;
-
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let sessions = root.join("droid/sessions");
     let archive = root.join("droid/archive");
     let alpha = sessions.join("-Users-dev-alpha");
@@ -22,8 +22,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         path
     };
 
-    // The session id is the file stem, and one settings file is one cumulative
-    // snapshot of the whole session.
     write(
         &alpha,
         "stale-0001.settings.json",
@@ -48,8 +46,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         ),
     );
 
-    // Same session id in two roots: only the snapshot with the latest
-    // timestamp is kept.
     write(
         &archive,
         "gpt-0003.settings.json",
@@ -60,7 +56,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "gpt-0003.settings.json",
         r#"{"model":"gpt-5","providerLock":"openai","providerLockTimestamp":"2025-12-31T15:30:00Z","tokenUsage":{"inputTokens":700,"outputTokens":150,"cacheReadTokens":2500}}"#,
     );
-    // Near miss: a different file stem is a different session.
     write(
         &beta,
         "gpt-0003-fork.settings.json",
@@ -74,15 +69,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{{"model":"{UNPRICED}","providerLockTimestamp":"2025-12-31T10:00:00.000Z","tokenUsage":{{"inputTokens":300,"outputTokens":70,"cacheCreationTokens":20,"cacheReadTokens":500,"thinkingTokens":10}}}}"#
         ),
     );
-    // 2025-12-31T23:30Z written with a numeric offset.
     write(
         &beta,
         "offset-0005.settings.json",
         r#"{"model":"gemini-2.5-pro","providerLock":"vertex-ai","providerLockTimestamp":"2026-01-01T08:30:00+09:00","tokenUsage":{"inputTokens":400,"outputTokens":90}}"#,
     );
 
-    // No model and no provider: the model comes from the first `Model:` marker
-    // in the transcript beside the settings file.
     write(
         &alpha,
         "sidecar-0006.settings.json",
@@ -100,7 +92,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         ),
     );
 
-    // No model anywhere: a placeholder derived from the provider.
     write(
         &beta,
         "default-0007.settings.json",
@@ -112,7 +103,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         r#"{"model":"[Anthropic]","providerLock":"grok","providerLockTimestamp":"2026-01-01T13:00:00.000Z","tokenUsage":{"inputTokens":40,"outputTokens":10,"totalTokens":80}}"#,
     );
 
-    // Two snapshots of one session with the same timestamp.
     write(
         &alpha,
         "tie-0009.settings.json",
@@ -128,7 +118,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         ),
     );
 
-    // The older snapshot is inside the shared window and the kept one is after it.
     write(
         &archive,
         "late-0010.settings.json",
@@ -151,9 +140,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#"{{"model":"{SONNET}","providerLock":"anthropic","providerLockTimestamp":"2026-01-02 11:00:00","tokenUsage":{{"inputTokens":500,"outputTokens":120}}}}"#
         ),
     );
-    crate::golden::set_modified(&mtime_only, MTIME_FALLBACK_SECONDS);
+    set_modified(&mtime_only, instant("2026-01-02T12:00:00Z"));
 
-    // Everything below must stay out of the reports.
     write(
         &alpha,
         "zero-0012.settings.json",
@@ -185,7 +173,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         r#"{"model":"gpt-5","providerLockTimestamp":"2025-12-31T12:00:00.000Z","tokenUsage":{"inputTokens":9999,"outp"#,
     );
     write(&beta, "empty-0018.settings.json", "");
-    // Not `<session>.settings.json`.
     write(
         &beta,
         "settings.json",
@@ -202,13 +189,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "{\"type\":\"message\",\"message\":{\"content\":\"Model: gpt-5\"}}\n",
     );
 
-    // The variable is a comma-separated list: a repeated root must not double
-    // the usage and a missing one must not fail.
-    let roots = format!(
-        "{sessions}, {archive},{sessions},{missing}",
-        sessions = sessions.display(),
-        archive = archive.display(),
-        missing = root.join("droid/missing").display(),
-    );
-    vec![("DROID_SESSIONS_DIR", PathBuf::from(roots))]
+    let mut padded = OsString::from(" ");
+    padded.push(archive);
+    let roots = vec![
+        sessions.clone().into_os_string(),
+        padded,
+        sessions.into_os_string(),
+        root.join("droid/missing").into_os_string(),
+    ];
+    vec![("DROID_SESSIONS_DIR", roots)]
 }

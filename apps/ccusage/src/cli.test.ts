@@ -1,23 +1,30 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { createRequire } from 'node:module';
 import { describe, it, mock } from 'node:test';
 import {
 	createNativeSpawner,
 	ensureNativeBinaryExecutable,
 	isMainModule,
 	resolveCliRuntime,
-	resolveNativeBinary,
 } from './cli.js';
+import packageJson from '../package.json' with { type: 'json' };
 
-const require = createRequire(import.meta.url);
-/** @type {{ version: string }} */
-const packageJson = require('../package.json');
+function throwing(code: string, message: string) {
+	return () => {
+		throw Object.assign(new Error(message), { code });
+	};
+}
+
+function stubChild() {
+	const kill = mock.fn(() => true);
+	return { child: Object.assign(new EventEmitter(), { kill }), kill };
+}
 
 void describe(resolveCliRuntime.name, () => {
 	void it('resolves the native package binary for the current supported platform', () => {
-		const actual = resolveNativeBinary({
+		const actual = resolveCliRuntime({
 			arch: 'arm64',
+			argv: [],
 			platform: 'darwin',
 			resolvePath: (id) => {
 				assert.equal(id, '@ccusage/ccusage-darwin-arm64/bin/ccusage');
@@ -25,12 +32,13 @@ void describe(resolveCliRuntime.name, () => {
 			},
 		});
 
-		assert.equal(actual, '/native/bin/ccusage');
+		assert.deepEqual(actual, { args: [], command: '/native/bin/ccusage' });
 	});
 
 	void it('resolves the Windows native package binary with the exe suffix', () => {
-		const actual = resolveNativeBinary({
+		const actual = resolveCliRuntime({
 			arch: 'arm64',
+			argv: [],
 			platform: 'win32',
 			resolvePath: (id) => {
 				assert.equal(id, '@ccusage/ccusage-win32-arm64/bin/ccusage.exe');
@@ -38,14 +46,16 @@ void describe(resolveCliRuntime.name, () => {
 			},
 		});
 
-		assert.equal(actual, 'C:\\native\\bin\\ccusage.exe');
+		assert.deepEqual(actual, { args: [], command: 'C:\\native\\bin\\ccusage.exe' });
 	});
 
 	void it('prefers the matching native package binary when it is available', () => {
 		assert.deepEqual(
 			resolveCliRuntime({
+				arch: 'arm64',
 				argv: ['daily'],
-				nativeBinaryPath: '/app/node_modules/@ccusage/ccusage-darwin-arm64/bin/ccusage',
+				platform: 'darwin',
+				resolvePath: () => '/app/node_modules/@ccusage/ccusage-darwin-arm64/bin/ccusage',
 			}),
 			{
 				args: ['daily'],
@@ -59,11 +69,51 @@ void describe(resolveCliRuntime.name, () => {
 			resolveCliRuntime({
 				arch: 'arm64',
 				argv: ['daily'],
-				nativeBinaryPath: null,
 				platform: 'darwin',
+				resolvePath: throwing(
+					'MODULE_NOT_FOUND',
+					"Cannot find module '@ccusage/ccusage-darwin-arm64'",
+				),
 			}),
 			{
 				errorMessage: `Missing optional native package "@ccusage/ccusage-darwin-arm64@${packageJson.version}" for darwin-arm64. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
+			},
+		);
+	});
+
+	void it('reports an installed native package whose binary is missing', () => {
+		assert.deepEqual(
+			resolveCliRuntime({
+				arch: 'arm64',
+				argv: ['daily'],
+				platform: 'darwin',
+				resolvePath: (id) => {
+					if (id === '@ccusage/ccusage-darwin-arm64/package.json') {
+						return '/native/package.json';
+					}
+					return throwing('MODULE_NOT_FOUND', `Cannot find module '${id}'`)();
+				},
+			}),
+			{
+				errorMessage:
+					'Native package "@ccusage/ccusage-darwin-arm64" for darwin-arm64 is installed, but its bin/ccusage is missing. Reinstall ccusage.\n',
+			},
+		);
+	});
+
+	void it('reports why an installed native package cannot be resolved', () => {
+		assert.deepEqual(
+			resolveCliRuntime({
+				arch: 'arm64',
+				argv: ['daily'],
+				platform: 'darwin',
+				resolvePath: throwing(
+					'ERR_PACKAGE_PATH_NOT_EXPORTED',
+					'Package subpath \'./bin/ccusage\' is not defined by "exports"',
+				),
+			}),
+			{
+				errorMessage: `Cannot resolve native package "@ccusage/ccusage-darwin-arm64" for darwin-arm64: Package subpath './bin/ccusage' is not defined by "exports"\n`,
 			},
 		);
 	});
@@ -73,8 +123,8 @@ void describe(resolveCliRuntime.name, () => {
 			resolveCliRuntime({
 				arch: 'riscv64',
 				argv: [],
-				nativeBinaryPath: null,
 				platform: 'freebsd',
+				resolvePath: () => assert.fail('an unsupported target has no package to resolve'),
 			}),
 			{
 				errorMessage: 'ccusage does not provide a native binary for freebsd-riscv64.\n',
@@ -147,10 +197,7 @@ void describe(resolveCliRuntime.name, () => {
 void describe(createNativeSpawner.name, () => {
 	void it('forwards every supported launcher signal delivery', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnProcess = mock.fn(() => child);
 		const spawnNative = createNativeSpawner({
 			platform: 'linux',
@@ -190,10 +237,7 @@ void describe(createNativeSpawner.name, () => {
 
 	void it('forwards the supported Windows console signals', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnNative = createNativeSpawner({
 			platform: 'win32',
 			signalSource,
@@ -225,10 +269,7 @@ void describe(createNativeSpawner.name, () => {
 
 	void it('removes signal listeners after the child exits', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnNative = createNativeSpawner({
 			platform: 'linux',
 			signalSource,
@@ -251,10 +292,7 @@ void describe(createNativeSpawner.name, () => {
 
 	void it('removes signal listeners after a child error', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnNative = createNativeSpawner({
 			platform: 'linux',
 			signalSource,

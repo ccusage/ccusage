@@ -1,193 +1,222 @@
-use ccusage_core::Diagnostics;
+use ccusage_adapter_common::jsonl::{self, Interruption, ReadPolicy};
+use ccusage_core::{Diagnostics, SkipKind};
 use std::{
     collections::BTreeMap,
+    ops::ControlFlow,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    IteratedTokenUsage, ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts,
-    TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
-    cli::{CostMode, SharedArgs},
+    IteratedTokenUsage, ModelBreakdown, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
+    UsageSummary,
+    cli::SharedArgs,
+    cost::{PriceTable, price_resolved_usage},
     fast::{FxHashMap, LinePrefilter, suffix_string},
-    format_date_tz, missing_pricing_model_for_usage, parse_ts_timestamp, stored_cost_for_mode,
-    utc_now,
+    format_date_tz, parse_ts_timestamp,
+    pricing::PricingHandle,
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, Rejection, SessionDays, UsageLoadContext,
-    advisor_usages_from_line, carries_more_usage_detail, deserialize_usage_line,
-    is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
+    DedupeIndexVec, GuardedUsage, MainThreadSessions, Nullable, Rejection, UsageLoadContext,
+    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
+    main_thread_sessions, non_null,
     paths::{
-        claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
+        claude_paths, extract_project, usage_file_order, usage_files_before_since,
         visit_usage_files,
     },
-    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_files,
-    sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
+    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_paths,
+    reports_more_of_the_request, sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash,
+    usage_dedupe_hash,
 };
 
-pub(super) fn load_daily_summaries_inner(
+pub(super) struct DailyEntries {
+    deduped: DedupedDailyEntries,
+    pub(super) detected: bool,
+}
+
+impl DailyEntries {
+    pub(super) fn summaries(&self, group_by_project: bool) -> Vec<UsageSummary> {
+        summarize_daily_entries(&self.deduped.entries, group_by_project)
+    }
+
+    pub(super) fn sessions(&self) -> MainThreadSessions {
+        sessions(&self.deduped)
+    }
+}
+
+pub(super) fn load_daily_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    group_by_project: bool,
-    session_days: impl FnOnce(&DedupedDailyEntries) -> SessionDays,
     diagnostics: &Diagnostics,
-) -> Result<DailySummaries> {
+) -> Result<DailyEntries> {
     let paths = claude_paths()?;
     let context = UsageLoadContext::new(shared);
     let mut pruned = Vec::new();
     let deduped = if shared.since.is_some() {
-        let since_files = split_files_before_since(
-            usage_files(&paths, project_filter, diagnostics),
+        let since_files = usage_files_before_since(
+            &paths,
+            project_filter,
+            diagnostics,
             shared,
-            utc_now(),
+            shared.clock.now().into(),
         );
         pruned = since_files.pruned;
-        let kept = since_files.kept;
+        let mut kept = since_files.kept;
         load_deduped_daily_entries(
-            |visit| kept.into_iter().for_each(visit),
+            |visit| std::mem::take(&mut kept).into_iter().for_each(visit),
             &context,
-            project_filter,
             diagnostics,
         )
     } else {
         load_deduped_daily_entries(
             |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
             &context,
-            project_filter,
             diagnostics,
         )
     };
-    let deduped = match deduped {
-        Some(deduped) => deduped,
-        None if pruned.is_empty() => {
-            return Ok(DailySummaries {
-                summaries: Vec::new(),
-                detected: false,
-                session_days: SessionDays::default(),
-            });
+    let mut deduped = deduped.unwrap_or(DedupedDailyEntries {
+        entries: Vec::new(),
+        copies: Vec::new(),
+    });
+    let detected = !deduped.entries.is_empty() || pruned.iter().any(|file| has_usage(file));
+    deduped.retain_entries_in(&ccusage_core::ReportWindow::from_shared(shared));
+    Ok(DailyEntries { deduped, detected })
+}
+
+const READ_POLICY: ReadPolicy = ReadPolicy {
+    capacity: 256 * 1024,
+    keep_interrupted_tail: |_| true,
+    open_failure: Some("file open failed"),
+    interrupted: |_| Interruption::KeepRecords(SkipKind::ReadInterrupted, "file read failed"),
+    ..ReadPolicy::PLAIN
+};
+
+pub(super) fn has_usage(path: &Path) -> bool {
+    jsonl::read(path, None, READ_POLICY, |line, _, _| {
+        if admit(line.bytes()).is_ok() {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
-        None => DedupedDailyEntries {
-            entries: Vec::new(),
-            copies: Vec::new(),
+    })
+    .is_ok_and(|found| found.is_some())
+}
+
+enum Refusal {
+    NotUsage,
+    Rejected(Rejection),
+    InvalidTimestamp,
+}
+
+struct Admitted {
+    record: ClaudeUsageRecord,
+    timestamp: TimestampMs,
+    advisors: super::AdvisorUsages,
+}
+
+fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
+    static USAGE_MARKER: LazyLock<LinePrefilter> =
+        LazyLock::new(|| LinePrefilter::all(&[br#""usage":{"#]));
+    if !USAGE_MARKER.matches(line) {
+        return Err(Refusal::NotUsage);
+    }
+    let (record, advisor_lookup) = parse_usage_line(line).map_err(Refusal::Rejected)?;
+    let timestamp = parse_ts_timestamp(&record.timestamp).ok_or(Refusal::InvalidTimestamp)?;
+    if !is_valid_usage_record(&record) {
+        return Err(Refusal::Rejected(Rejection::Malformed));
+    }
+    let advisors = match advisor_lookup.usages(line) {
+        Ok(advisors) => advisors,
+        Err(Rejection::Malformed) => super::AdvisorUsages {
+            malformed: 1,
+            ..super::AdvisorUsages::default()
         },
+        Err(Rejection::NullContract) => super::AdvisorUsages::default(),
     };
-    let session_days = session_days(&deduped);
-    let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
-    // Skipped sessions still hold Claude usage, so they keep Claude detected
-    // exactly as an unbounded load would. The first file with an entry settles it.
-    // Those files are not part of the report, so what this probe skips is not
-    // reported either.
-    let detected = !summaries.is_empty()
-        || pruned.iter().any(|file| {
-            read_daily_usage_file_with_diagnostics(
-                file,
-                context.timezone(),
-                shared.mode,
-                context.pricing(),
-                &Diagnostics::new("claude"),
-            )
-            .entries
-            .iter()
-            .any(|entry| project_filter.is_none_or(|filter| entry.project.as_ref() == filter))
-        });
-    Ok(DailySummaries {
-        summaries,
-        detected,
-        session_days,
+    Ok(Admitted {
+        record,
+        timestamp,
+        advisors,
     })
 }
 
-/// Deduplicated daily entries plus the sessions of main-thread copies dedup
-/// merged into them from other sessions, such as a resumed or forked
-/// transcript repeating a turn, as `(survivor index, copy session)` pairs.
 pub(super) struct DedupedDailyEntries {
-    entries: Vec<DailyLoadedEntry>,
+    entries: Vec<ClaudeEntry>,
     copies: Vec<(usize, Arc<str>)>,
 }
 
-/// Counts a copy's session on the day its survivor is counted: a tool wrapping
-/// Claude Code can link its row to the session it ran in even when dedup kept
-/// another session's copy.
-pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
-    main_thread_session_days(
+impl DedupedDailyEntries {
+    fn retain_entries_in(&mut self, window: &ccusage_core::ReportWindow) {
+        super::retain_copied_entries(&mut self.entries, &mut self.copies, window, |entry| {
+            &entry.date
+        });
+    }
+}
+
+fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
+    main_thread_sessions(
         deduped
             .entries
             .iter()
-            .map(|entry| (&entry.session_id, entry))
+            .map(|entry| (&entry.key.session_id, entry))
             .chain(
                 deduped
                     .copies
                     .iter()
                     .map(|(index, session_id)| (session_id, &deduped.entries[*index])),
             )
-            .map(|(session_id, survivor)| {
-                (session_id, survivor.date.as_str(), survivor.is_sidechain)
-            }),
+            .map(|(session_id, survivor)| (session_id.as_ref(), survivor.is_sidechain())),
     )
 }
 
-/// Loads and deduplicates the files `discover` yields, or `None` when it
-/// yields none.
 fn load_deduped_daily_entries(
-    discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
+    discover: impl FnMut(&mut dyn FnMut(PathBuf)),
     context: &UsageLoadContext<'_>,
-    project_filter: Option<&str>,
     diagnostics: &Diagnostics,
 ) -> Option<DedupedDailyEntries> {
-    let mode = context.shared.mode;
-    let mut loaded_files = read_discovered_files(context.shared.single_thread, discover, |file| {
+    let loaded_files = read_discovered_paths(context.shared.single_thread, discover, |file| {
         read_daily_usage_file_with_diagnostics(
             file,
-            context.timezone(),
-            mode,
-            context.pricing(),
+            context.window().timezone(),
+            context.table(),
             diagnostics,
         )
     });
     if loaded_files.is_empty() {
         return None;
     }
-    // Dedup keeps the first copy it meets, so files are folded in listing order.
-    loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
+    let (entries, copies) = dedupe_files(loaded_files);
+    Some(DedupedDailyEntries { entries, copies })
+}
 
-    let entry_count = loaded_files
-        .iter()
-        .map(|(_, file)| file.entries.len())
-        .sum();
+pub(super) fn dedupe_files<E: DedupEntry>(
+    mut files: Vec<(PathBuf, Vec<E>)>,
+) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
+    files.sort_by_cached_key(|(path, _)| usage_file_order(path));
+    let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
         FxHashMap::with_capacity_and_hasher(entry_count, Default::default());
     let mut deduped = Vec::with_capacity(entry_count);
     let mut copies = Vec::new();
-    for (_, loaded_file) in loaded_files {
-        for entry in loaded_file.entries {
-            if let Some(filter) = project_filter
-                && entry.project.as_ref() != filter
-            {
-                continue;
-            }
+    for (_, entries) in files {
+        for entry in entries {
             if let Some((index, discarded)) =
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
-                && discarded.session_id != deduped[index].session_id
-                && !is_sidechain_daily_entry(&discarded)
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+                && discarded.session_id() != deduped[index].session_id()
+                && !discarded.is_sidechain()
             {
-                copies.push((index, discarded.session_id));
+                copies.push((index, discarded.owned_session_id()));
             }
         }
     }
-    Some(DedupedDailyEntries {
-        entries: deduped,
-        copies,
-    })
+    (deduped, copies)
 }
 
-fn summarize_daily_entries(
-    deduped: &[DailyLoadedEntry],
-    group_by_project: bool,
-) -> Vec<UsageSummary> {
+fn summarize_daily_entries(deduped: &[ClaudeEntry], group_by_project: bool) -> Vec<UsageSummary> {
     if group_by_project {
         let mut groups = BTreeMap::<(String, Arc<str>), DailyAccumulator>::new();
         for entry in deduped {
@@ -229,182 +258,117 @@ fn summarize_daily_entries(
 }
 
 #[derive(Debug)]
-struct DailyLoadedFile {
-    timestamp: Option<TimestampMs>,
-    entries: Vec<DailyLoadedEntry>,
+pub(super) struct DedupKey {
+    pub(super) timestamp: TimestampMs,
+    session_id: Arc<str>,
+    pub(super) message_id: Option<String>,
+    pub(super) request_id: Option<String>,
+    pub(super) is_sidechain: Option<bool>,
+}
+
+pub(super) trait DedupEntry {
+    fn timestamp(&self) -> TimestampMs;
+    fn session_id(&self) -> &str;
+    fn owned_session_id(&self) -> Arc<str>;
+    fn message_id(&self) -> Option<&str>;
+    fn request_id(&self) -> Option<&str>;
+    fn is_sidechain(&self) -> bool;
+    fn usage(&self) -> &TokenUsageRaw;
+    fn records_cost(&self) -> bool;
 }
 
 #[derive(Debug)]
-pub(super) struct DailyLoadedEntry {
-    timestamp: TimestampMs,
+pub(super) struct ClaudeEntry {
+    key: DedupKey,
     date: String,
     project: Arc<str>,
-    session_id: Arc<str>,
     usage: TokenUsageRaw,
     cost: f64,
     model: Option<String>,
     missing_pricing_model: Option<String>,
-    stored_cost: Option<f64>,
-    message_id: Option<String>,
-    request_id: Option<String>,
-    is_sidechain: Option<bool>,
+    recorded_cost: RecordedCost,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DailyUsageEntry {
-    timestamp: String,
-    message: DailyUsageMessage,
-    version: Option<String>,
-    session_id: Option<String>,
-    #[serde(rename = "costUSD")]
-    cost_usd: Option<f64>,
-    request_id: Option<String>,
-    is_sidechain: Option<bool>,
+#[derive(Clone, Copy, Debug)]
+pub(super) enum RecordedCost {
+    Absent,
+    Unbilled,
+    Billed(f64),
 }
 
-/// Parses a direct assistant line, falling back to the AgentProgress wrapper.
-///
-/// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
-/// use; the derive would first buffer every line, message content included, into an
-/// intermediate tree.
-fn deserialize_daily_usage_line(
-    line: &[u8],
-) -> std::result::Result<(DailyUsageEntry, AdvisorLookup), Rejection> {
-    match deserialize_usage_line::<DailyUsageEntry>(line) {
-        Ok(entry) => {
-            let lookup = if entry.message.usage.has_advisor_iteration {
-                AdvisorLookup::AskLine
-            } else {
-                AdvisorLookup::RuledOut
-            };
-            Ok((entry, lookup))
+impl RecordedCost {
+    fn new(cost_usd: Option<f64>, billed: Option<f64>) -> Self {
+        match (cost_usd, billed) {
+            (None, _) => Self::Absent,
+            (Some(_), None) => Self::Unbilled,
+            (Some(_), Some(cost)) => Self::Billed(cost),
         }
-        Err(Rejection::Malformed) => deserialize_usage_line::<DailyAgentProgressEntry>(line)
-            .map(|entry| (entry.into_entry(), AdvisorLookup::AskLine)),
-        Err(rejection) => Err(rejection),
     }
-}
 
-#[derive(Debug, Clone, Copy)]
-enum AdvisorLookup {
-    RuledOut,
-    AskLine,
-}
-
-#[derive(Debug, Deserialize)]
-struct DailyAgentProgressEntry {
-    #[serde(rename = "sessionId")]
-    session_id: Option<String>,
-    data: DailyAgentProgressData,
-}
-
-impl DailyAgentProgressEntry {
-    fn into_entry(self) -> DailyUsageEntry {
-        DailyUsageEntry {
-            timestamp: self.data.message.timestamp,
-            message: self.data.message.message,
-            version: None,
-            session_id: self.session_id,
-            cost_usd: self.data.message.cost_usd,
-            request_id: self.data.message.request_id,
-            is_sidechain: self.data.message.is_sidechain,
+    fn billed(self) -> Option<f64> {
+        match self {
+            Self::Billed(cost) => Some(cost),
+            Self::Absent | Self::Unbilled => None,
         }
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct DailyAgentProgressData {
-    message: DailyAgentProgressMessage,
+impl DedupEntry for ClaudeEntry {
+    fn timestamp(&self) -> TimestampMs {
+        self.key.timestamp
+    }
+
+    fn session_id(&self) -> &str {
+        &self.key.session_id
+    }
+
+    fn owned_session_id(&self) -> Arc<str> {
+        Arc::clone(&self.key.session_id)
+    }
+
+    fn message_id(&self) -> Option<&str> {
+        self.key.message_id.as_deref()
+    }
+
+    fn request_id(&self) -> Option<&str> {
+        self.key.request_id.as_deref()
+    }
+
+    fn is_sidechain(&self) -> bool {
+        self.key.is_sidechain == Some(true)
+    }
+
+    fn usage(&self) -> &TokenUsageRaw {
+        &self.usage
+    }
+
+    fn records_cost(&self) -> bool {
+        !matches!(self.recorded_cost, RecordedCost::Absent)
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DailyAgentProgressMessage {
-    timestamp: String,
-    message: DailyUsageMessage,
-    #[serde(rename = "costUSD")]
-    cost_usd: Option<f64>,
-    request_id: Option<String>,
-    is_sidechain: Option<bool>,
+pub(super) struct ParsedUsage {
+    pub(super) key: DedupKey,
+    pub(super) date: String,
+    pub(super) project: Arc<str>,
+    pub(super) usage: TokenUsageRaw,
+    pub(super) cost: f64,
+    pub(super) missing_pricing_model: Option<String>,
+    pub(super) stored_cost: Option<f64>,
+    pub(super) raw_model: Option<String>,
+    pub(super) timestamp_text: String,
+    pub(super) version: Option<String>,
+    pub(super) recorded_session_id: Option<String>,
+    pub(super) cost_usd: Option<f64>,
+    pub(super) is_api_error_message: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
-struct DailyUsageMessage {
-    usage: IteratedTokenUsage,
-    model: Option<String>,
-    id: Option<String>,
-}
-
-#[cfg(test)]
-fn read_daily_usage_file(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> DailyLoadedFile {
-    read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
-}
-
-fn read_daily_usage_file_with_diagnostics(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    diagnostics: &Diagnostics,
-) -> DailyLoadedFile {
-    let project: Arc<str> = Arc::from(extract_project(path));
-    let (path_session_id, _) = super::paths::extract_session_parts(path);
-    let path_session_id: Arc<str> = Arc::from(path_session_id);
-    let mut recorded_session_id = Arc::clone(&path_session_id);
-    let mut loaded_file = DailyLoadedFile {
-        timestamp: None,
-        entries: Vec::new(),
-    };
-    let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
-    super::diagnostics::for_each_line(path, diagnostics, |current| {
-        let (index, line) = (current.index, current.bytes);
-        if !usage_marker.matches(line) {
-            return;
-        }
-        let (data, advisor_lookup) = match deserialize_daily_usage_line(line) {
-            Ok(parsed) => parsed,
-            Err(Rejection::NullContract) => return,
-            Err(Rejection::Malformed) => {
-                super::diagnostics::rejected(path, current, diagnostics, true);
-                return;
-            }
-        };
-        let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
-            super::diagnostics::invalid_timestamp(path, index, diagnostics);
-            return;
-        };
-        loaded_file.timestamp = Some(
-            loaded_file
-                .timestamp
-                .map_or(timestamp, |current| current.min(timestamp)),
-        );
-        if !is_valid_daily_usage_entry(&data) {
-            super::diagnostics::rejected(path, current, diagnostics, true);
-            return;
-        }
-        let IteratedTokenUsage { usage, .. } = data.message.usage;
-        let cost = calculate_cost_for_usage_at(
-            data.message.model.as_deref(),
-            usage,
-            data.cost_usd,
-            Some(timestamp),
-            mode,
-            pricing,
-        );
-        let missing_pricing_model = missing_pricing_model_for_usage(
-            data.message.model.as_deref(),
-            usage,
-            data.cost_usd,
-            mode,
-            pricing,
-        );
-        let model = data.message.model.and_then(|model| {
+impl ParsedUsage {
+    pub(super) fn display_model(
+        raw_model: Option<String>,
+        usage: &TokenUsageRaw,
+    ) -> Option<String> {
+        raw_model.and_then(|model| {
             if model == "<synthetic>" {
                 None
             } else if matches!(usage.speed, Some(Speed::Fast)) {
@@ -412,7 +376,278 @@ fn read_daily_usage_file_with_diagnostics(
             } else {
                 Some(model)
             }
-        });
+        })
+    }
+
+    fn into_daily(self) -> ClaudeEntry {
+        ClaudeEntry {
+            model: Self::display_model(self.raw_model, &self.usage),
+            key: self.key,
+            date: self.date,
+            project: self.project,
+            usage: self.usage,
+            cost: self.cost,
+            missing_pricing_model: self.missing_pricing_model,
+            recorded_cost: RecordedCost::new(self.cost_usd, self.stored_cost),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct ClaudeUsageRecord {
+    timestamp: String,
+    pub(super) message: ClaudeUsageMessage,
+    version: Option<String>,
+    session_id: Option<String>,
+    cost_usd: Option<f64>,
+    request_id: Option<String>,
+    is_sidechain: Option<bool>,
+    is_api_error_message: Option<bool>,
+}
+
+#[derive(Debug)]
+pub(super) struct ClaudeUsageMessage {
+    pub(super) usage: IteratedTokenUsage,
+    model: Option<String>,
+    id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawUsageRecord {
+    timestamp: String,
+    message: RawUsageMessage,
+    #[serde(default, deserialize_with = "super::nullable")]
+    version: Nullable<String>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    session_id: Nullable<String>,
+    #[serde(rename = "costUSD")]
+    #[serde(default, deserialize_with = "super::nullable")]
+    cost_usd: Nullable<f64>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    request_id: Nullable<String>,
+    is_sidechain: Option<bool>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    is_api_error_message: Nullable<bool>,
+}
+
+impl RawUsageRecord {
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord, Rejection> {
+        Ok(ClaudeUsageRecord {
+            timestamp: self.timestamp,
+            message: self.message.decode()?,
+            version: non_null(self.version)?,
+            session_id: non_null(self.session_id)?,
+            cost_usd: non_null(self.cost_usd)?,
+            request_id: non_null(self.request_id)?,
+            is_sidechain: self.is_sidechain,
+            is_api_error_message: non_null(self.is_api_error_message)?,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RawUsageMessage {
+    usage: GuardedUsage,
+    #[serde(default, deserialize_with = "super::nullable")]
+    model: Nullable<String>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    id: Nullable<String>,
+}
+
+impl RawUsageMessage {
+    fn decode(self) -> std::result::Result<ClaudeUsageMessage, Rejection> {
+        if self.usage.has_null {
+            return Err(Rejection::NullContract);
+        }
+        Ok(ClaudeUsageMessage {
+            usage: self.usage.usage,
+            model: non_null(self.model)?,
+            id: non_null(self.id)?,
+        })
+    }
+}
+
+pub(super) fn parse_usage_line(
+    line: &[u8],
+) -> std::result::Result<(ClaudeUsageRecord, AdvisorLookup), Rejection> {
+    match deserialize_usage_line::<RawUsageRecord>(line) {
+        Ok(raw) => {
+            let entry = raw.decode()?;
+            let lookup = if entry.message.usage.has_advisor_iteration {
+                AdvisorLookup::AskLine
+            } else {
+                AdvisorLookup::RuledOut
+            };
+            Ok((entry, lookup))
+        }
+        Err(_) => deserialize_usage_line::<AgentProgressEntry>(line)
+            .and_then(AgentProgressEntry::decode)
+            .map(|entry| {
+                let lookup = if entry.message.usage.has_advisor_iteration {
+                    AdvisorLookup::AskProgress
+                } else {
+                    AdvisorLookup::RuledOut
+                };
+                (entry, lookup)
+            }),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum AdvisorLookup {
+    RuledOut,
+    AskLine,
+    AskProgress,
+}
+
+impl AdvisorLookup {
+    fn usages(self, line: &[u8]) -> std::result::Result<super::AdvisorUsages, Rejection> {
+        match self {
+            Self::RuledOut => Ok(super::AdvisorUsages::default()),
+            Self::AskLine => advisor_usages_from_line(line),
+            Self::AskProgress => super::advisor_usages_from_progress_line(line),
+        }
+    }
+}
+
+// NOTE(2026-05-19, #977): Claude Code also writes assistant usage under `data.message.message` in AgentProgress records. Read that envelope for subagent usage.
+#[derive(Debug, Deserialize)]
+struct AgentProgressEntry {
+    #[serde(rename = "sessionId")]
+    #[serde(default, deserialize_with = "super::nullable")]
+    session_id: Nullable<String>,
+    data: AgentProgressData,
+}
+
+impl AgentProgressEntry {
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord, Rejection> {
+        let message = self.data.message;
+        Ok(ClaudeUsageRecord {
+            timestamp: message.timestamp,
+            message: message.message.decode()?,
+            version: None,
+            is_api_error_message: non_null(message.is_api_error_message)?,
+            session_id: non_null(self.session_id)?,
+            cost_usd: non_null(message.cost_usd)?,
+            request_id: non_null(message.request_id)?,
+            is_sidechain: message.is_sidechain,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentProgressData {
+    message: AgentProgressMessage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentProgressMessage {
+    #[serde(default, deserialize_with = "super::nullable")]
+    is_api_error_message: Nullable<bool>,
+    timestamp: String,
+    message: RawUsageMessage,
+    #[serde(rename = "costUSD")]
+    #[serde(default, deserialize_with = "super::nullable")]
+    cost_usd: Nullable<f64>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    request_id: Nullable<String>,
+    is_sidechain: Option<bool>,
+}
+
+fn read_daily_usage_file_with_diagnostics(
+    path: &Path,
+    tz: &JiffTimeZone,
+    pricing: PriceTable<'_>,
+    diagnostics: &Diagnostics,
+) -> Vec<ClaudeEntry> {
+    read_usage_file(path, tz, pricing, diagnostics, |parsed, _| {
+        parsed.into_daily()
+    })
+}
+
+struct FilePricing<'a> {
+    table: PriceTable<'a>,
+    models: smallvec::SmallVec<[(Box<str>, Option<PricingHandle>); 1]>,
+}
+
+impl FilePricing<'_> {
+    fn price(
+        &mut self,
+        model: Option<&str>,
+        usage: TokenUsageRaw,
+        stored_cost: Option<f64>,
+        timestamp: TimestampMs,
+    ) -> (f64, Option<String>) {
+        let table = match self.table {
+            PriceTable::Display => return (stored_cost.unwrap_or_default(), None),
+            PriceTable::Auto(_) if stored_cost.is_some() => {
+                return (stored_cost.unwrap_or_default(), None);
+            }
+            PriceTable::Auto(table) | PriceTable::Calculate(table) => table,
+        };
+        let Some(model) = model else {
+            return (0.0, None);
+        };
+        if let Some((_, handle)) = self.models.iter().find(|(name, _)| name.as_ref() == model) {
+            return price_resolved_usage(model, usage, timestamp, handle.as_ref());
+        }
+        let handle = table.find_handle(model);
+        let price = price_resolved_usage(model, usage, timestamp, handle.as_ref());
+        self.models.push((model.into(), handle));
+        price
+    }
+}
+
+pub(super) fn read_usage_file<E>(
+    path: &Path,
+    tz: &JiffTimeZone,
+    pricing: PriceTable<'_>,
+    diagnostics: &Diagnostics,
+    build: impl Fn(ParsedUsage, &[u8]) -> E,
+) -> Vec<E> {
+    let project: Arc<str> = Arc::from(extract_project(path));
+    let (path_session_id, _) = super::paths::extract_session_parts(path);
+    let path_session_id: Arc<str> = Arc::from(path_session_id);
+    let mut recorded_session_id = Arc::clone(&path_session_id);
+    let mut entries = Vec::new();
+    let mut file_pricing = FilePricing {
+        table: pricing,
+        models: smallvec::SmallVec::new(),
+    };
+    let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |current, _, _| {
+        let line = current.bytes();
+        let Admitted {
+            record: data,
+            timestamp,
+            advisors,
+        } = match admit(line) {
+            Ok(admitted) => admitted,
+            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::NullContract)) => {
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::Rejected(Rejection::Malformed)) => {
+                super::diagnostics::rejected(path, current, diagnostics);
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::InvalidTimestamp) => {
+                super::diagnostics::invalid_timestamp(path, current.index, diagnostics);
+                return ControlFlow::Continue(());
+            }
+        };
+        for _ in 0..advisors.malformed {
+            diagnostics.record(ccusage_core::Skip::record(
+                path,
+                ccusage_core::Skip::line_number(current.index),
+                ccusage_core::SkipKind::InvalidData,
+                "invalid advisor usage",
+            ));
+        }
+        let IteratedTokenUsage { usage, .. } = data.message.usage;
+        let raw_model = data.message.model;
+        let (cost, missing_pricing_model) =
+            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let session_id = if let Some(session_id) = data.session_id.as_deref() {
             if recorded_session_id.as_ref() != session_id {
                 recorded_session_id = Arc::from(session_id);
@@ -421,63 +656,71 @@ fn read_daily_usage_file_with_diagnostics(
         } else {
             Arc::clone(&path_session_id)
         };
-        let parent_index = loaded_file.entries.len();
-        loaded_file.entries.push(DailyLoadedEntry {
-            timestamp,
+        let parent = ParsedUsage {
+            key: DedupKey {
+                timestamp,
+                session_id,
+                message_id: data.message.id,
+                request_id: data.request_id,
+                is_sidechain: data.is_sidechain,
+            },
             date: format_date_tz(timestamp, tz),
             project: Arc::clone(&project),
-            session_id,
             usage,
             cost,
-            model,
             missing_pricing_model,
-            stored_cost: stored_cost_for_mode(data.cost_usd, mode),
-            message_id: data.message.id,
-            request_id: data.request_id,
-            is_sidechain: data.is_sidechain,
-        });
-        if matches!(advisor_lookup, AdvisorLookup::RuledOut) {
-            return;
-        }
-        for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
-            let parent = &loaded_file.entries[parent_index];
-            let missing_pricing_model = missing_pricing_model_for_usage(
-                Some(&advisor.model),
-                advisor.usage,
-                None,
-                mode,
-                pricing,
-            );
-            loaded_file.entries.push(DailyLoadedEntry {
-                timestamp,
-                date: parent.date.clone(),
-                project: Arc::clone(&project),
-                session_id: Arc::clone(&parent.session_id),
-                usage: advisor.usage,
-                cost: calculate_cost_for_usage_at(
-                    Some(&advisor.model),
-                    advisor.usage,
-                    None,
-                    Some(timestamp),
-                    mode,
-                    pricing,
-                ),
-                model: Some(advisor.model),
-                missing_pricing_model,
-                stored_cost: None,
-                message_id: parent
-                    .message_id
-                    .as_ref()
-                    .map(|message_id| format!("{message_id}:advisor:{index}")),
-                request_id: parent.request_id.clone(),
-                is_sidechain: data.is_sidechain,
-            });
-        }
+            stored_cost: data
+                .cost_usd
+                .filter(|_| matches!(pricing, PriceTable::Auto(_))),
+            raw_model,
+            timestamp_text: data.timestamp,
+            version: data.version,
+            recorded_session_id: data.session_id,
+            cost_usd: data.cost_usd,
+            is_api_error_message: data.is_api_error_message,
+        };
+        let advisors = advisors
+            .usages
+            .into_iter()
+            .enumerate()
+            .map(|(index, advisor)| {
+                let (cost, missing_pricing_model) =
+                    file_pricing.price(Some(&advisor.model), advisor.usage, None, timestamp);
+                ParsedUsage {
+                    key: DedupKey {
+                        timestamp,
+                        session_id: Arc::clone(&parent.key.session_id),
+                        message_id: parent
+                            .key
+                            .message_id
+                            .as_ref()
+                            .map(|id| format!("{id}:advisor:{index}")),
+                        request_id: parent.key.request_id.clone(),
+                        is_sidechain: parent.key.is_sidechain,
+                    },
+                    date: parent.date.clone(),
+                    project: Arc::clone(&project),
+                    usage: advisor.usage,
+                    cost,
+                    missing_pricing_model,
+                    stored_cost: None,
+                    raw_model: Some(advisor.model),
+                    timestamp_text: parent.timestamp_text.clone(),
+                    version: parent.version.clone(),
+                    recorded_session_id: parent.recorded_session_id.clone(),
+                    cost_usd: None,
+                    is_api_error_message: parent.is_api_error_message,
+                }
+            })
+            .collect::<Vec<_>>();
+        entries.push(build(parent, line));
+        entries.extend(advisors.into_iter().map(|advisor| build(advisor, line)));
+        ControlFlow::<()>::Continue(())
     });
-    loaded_file
+    entries
 }
 
-fn is_valid_daily_usage_entry(data: &DailyUsageEntry) -> bool {
+fn is_valid_usage_record(data: &ClaudeUsageRecord) -> bool {
     if data
         .version
         .as_deref()
@@ -517,48 +760,48 @@ fn is_valid_daily_usage_entry(data: &DailyUsageEntry) -> bool {
     }
     true
 }
-fn daily_usage_token_total(entry: &DailyLoadedEntry) -> u64 {
-    entry.usage.input_tokens
-        + entry.usage.output_tokens
-        + entry.usage.cache_creation_token_count()
-        + entry.usage.cache_read_input_tokens
+fn usage_token_total(entry: &impl DedupEntry) -> u64 {
+    let usage = entry.usage();
+    usage.input_tokens
+        + usage.output_tokens
+        + usage.cache_creation_token_count()
+        + usage.cache_read_input_tokens
 }
 
-fn push_deduped_daily_entry(
-    entry: DailyLoadedEntry,
+pub(super) fn push_deduped_entry<E: DedupEntry>(
+    entry: E,
     deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
-    deduped: &mut Vec<DailyLoadedEntry>,
-) -> Option<(usize, DailyLoadedEntry)> {
-    let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
-        let request_id = entry.request_id.as_deref();
+    deduped: &mut Vec<E>,
+) -> Option<(usize, E)> {
+    let dedupe_lookup = entry.message_id().map(|message_id| {
+        let request_id = entry.request_id();
         let exact_hash = usage_dedupe_hash(
             message_id,
             request_id,
-            entry.session_id.as_ref(),
-            entry.timestamp,
+            entry.session_id(),
+            entry.timestamp(),
         );
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
                 indexes.iter().find_map(|dedupe_index| {
                     let existing = &deduped[dedupe_index.index];
-                    (existing.message_id.as_deref() == Some(message_id)
-                        && existing.request_id.as_deref() == request_id
+                    (existing.message_id() == Some(message_id)
+                        && existing.request_id() == request_id
                         && (request_id.is_some()
-                            || (existing.session_id == entry.session_id
-                                && (is_anthropic_message_id(message_id)
-                                    || existing.timestamp == entry.timestamp))))
-                        .then_some(dedupe_index.index)
+                            || (existing.session_id() == entry.session_id()
+                                && (is_per_response_message_id(message_id)
+                                    || existing.timestamp() == entry.timestamp()))))
+                    .then_some(dedupe_index.index)
                 })
             })
             .or_else(|| {
-                // /btw sidechain logs can replay parent messages with new request IDs. A parent
-                // candidate only has to look through sidechain entries.
-                let candidate_is_sidechain = is_sidechain_daily_entry(&entry);
+                // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
+                let candidate_is_sidechain = entry.is_sidechain();
                 let route_hash = if candidate_is_sidechain {
-                    sidechain_replay_dedupe_hash(message_id, entry.session_id.as_ref())
+                    sidechain_replay_dedupe_hash(message_id, entry.session_id())
                 } else {
-                    sidechain_entry_replay_dedupe_hash(message_id, entry.session_id.as_ref())
+                    sidechain_entry_replay_dedupe_hash(message_id, entry.session_id())
                 };
                 deduped_indexes.get(&route_hash).and_then(|indexes| {
                     indexes.iter().find_map(|dedupe_index| {
@@ -566,10 +809,10 @@ fn push_deduped_daily_entry(
                         let indexed_session_id = dedupe_index
                             .session_alias
                             .as_deref()
-                            .unwrap_or(existing.session_id.as_ref());
-                        (existing.message_id.as_deref() == Some(message_id)
-                            && indexed_session_id == entry.session_id.as_ref()
-                            && (candidate_is_sidechain || is_sidechain_daily_entry(existing)))
+                            .unwrap_or(existing.session_id());
+                        (existing.message_id() == Some(message_id)
+                            && indexed_session_id == entry.session_id()
+                            && (candidate_is_sidechain || existing.is_sidechain()))
                         .then_some(dedupe_index.index)
                     })
                 })
@@ -578,13 +821,11 @@ fn push_deduped_daily_entry(
     });
 
     if let Some((hash, Some(index))) = dedupe_lookup {
-        if deduped[index].session_id != entry.session_id
-            && let Some(message_id) = entry.message_id.as_deref()
+        if deduped[index].session_id() != entry.session_id()
+            && let Some(message_id) = entry.message_id()
         {
-            // Cross-session copies can become the survivor, so keep every session route used by
-            // later sidechain replays.
-            let existing_session_id = Arc::clone(&deduped[index].session_id);
-            for session_id in [entry.session_id.as_ref(), existing_session_id.as_ref()] {
+            let existing_session_id = deduped[index].session_id();
+            for session_id in [entry.session_id(), existing_session_id] {
                 for route_hash in [
                     sidechain_replay_dedupe_hash(message_id, session_id),
                     sidechain_entry_replay_dedupe_hash(message_id, session_id),
@@ -593,24 +834,23 @@ fn push_deduped_daily_entry(
                 }
             }
         }
-        let discarded = if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
+        let discarded = if should_replace_deduped_entry(&entry, &deduped[index]) {
             let previous = std::mem::replace(&mut deduped[index], entry);
-            // The survivor is already indexed under its previous keys. Only register the keys
-            // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
-            if daily_entry_exact_hash(&previous) != Some(hash) {
+            if entry_exact_hash(&previous) != Some(hash) {
                 push_deduped_index(deduped_indexes, hash, index);
             }
-            let replay_route_changed = previous.session_id != deduped[index].session_id
-                || is_sidechain_daily_entry(&previous) != is_sidechain_daily_entry(&deduped[index])
-                || previous.message_id != deduped[index].message_id;
-            if replay_route_changed && let Some(message_id) = deduped[index].message_id.as_deref() {
-                let session_id = deduped[index].session_id.as_ref();
+            let survivor = &deduped[index];
+            let replay_route_changed = previous.session_id() != survivor.session_id()
+                || previous.is_sidechain() != survivor.is_sidechain()
+                || previous.message_id() != survivor.message_id();
+            if replay_route_changed && let Some(message_id) = survivor.message_id() {
+                let session_id = survivor.session_id();
                 push_deduped_index(
                     deduped_indexes,
                     sidechain_replay_dedupe_hash(message_id, session_id),
                     index,
                 );
-                if is_sidechain_daily_entry(&deduped[index]) {
+                if survivor.is_sidechain() {
                     push_deduped_index(
                         deduped_indexes,
                         sidechain_entry_replay_dedupe_hash(message_id, session_id),
@@ -628,16 +868,16 @@ fn push_deduped_daily_entry(
     let index = deduped.len();
     deduped.push(entry);
     if let Some((hash, None)) = dedupe_lookup {
-        // `index` is new, so none of these buckets can already hold it.
         push_new_deduped_index(deduped_indexes, hash, index);
-        if let Some(message_id) = deduped[index].message_id.as_deref() {
-            let session_id = deduped[index].session_id.as_ref();
+        let survivor = &deduped[index];
+        if let Some(message_id) = survivor.message_id() {
+            let session_id = survivor.session_id();
             push_new_deduped_index(
                 deduped_indexes,
                 sidechain_replay_dedupe_hash(message_id, session_id),
                 index,
             );
-            if is_sidechain_daily_entry(&deduped[index]) {
+            if survivor.is_sidechain() {
                 push_new_deduped_index(
                     deduped_indexes,
                     sidechain_entry_replay_dedupe_hash(message_id, session_id),
@@ -649,40 +889,30 @@ fn push_deduped_daily_entry(
     None
 }
 
-fn daily_entry_exact_hash(entry: &DailyLoadedEntry) -> Option<u64> {
-    entry.message_id.as_deref().map(|message_id| {
+fn entry_exact_hash(entry: &impl DedupEntry) -> Option<u64> {
+    entry.message_id().map(|message_id| {
         usage_dedupe_hash(
             message_id,
-            entry.request_id.as_deref(),
-            entry.session_id.as_ref(),
-            entry.timestamp,
+            entry.request_id(),
+            entry.session_id(),
+            entry.timestamp(),
         )
     })
 }
 
-fn should_replace_deduped_daily_entry(
-    candidate: &DailyLoadedEntry,
-    existing: &DailyLoadedEntry,
-) -> bool {
-    let candidate_is_sidechain = is_sidechain_daily_entry(candidate);
-    let existing_is_sidechain = is_sidechain_daily_entry(existing);
+fn should_replace_deduped_entry<E: DedupEntry>(candidate: &E, existing: &E) -> bool {
+    let candidate_is_sidechain = candidate.is_sidechain();
+    let existing_is_sidechain = existing.is_sidechain();
     if candidate_is_sidechain != existing_is_sidechain {
         return existing_is_sidechain;
     }
 
-    let candidate_total = daily_usage_token_total(candidate);
-    let existing_total = daily_usage_token_total(existing);
+    let candidate_total = usage_token_total(candidate);
+    let existing_total = usage_token_total(existing);
     if candidate_total != existing_total {
         return candidate_total > existing_total;
     }
-    if candidate.cost != existing.cost {
-        return candidate.cost > existing.cost;
-    }
-    carries_more_usage_detail(&candidate.usage, &existing.usage)
-}
-
-fn is_sidechain_daily_entry(entry: &DailyLoadedEntry) -> bool {
-    entry.is_sidechain == Some(true)
+    reports_more_of_the_request(candidate, existing)
 }
 
 #[derive(Default)]
@@ -695,7 +925,7 @@ struct DailyAccumulator {
 }
 
 impl DailyAccumulator {
-    fn add_entry(&mut self, entry: &DailyLoadedEntry) {
+    fn add_entry(&mut self, entry: &ClaudeEntry) {
         self.counts.add_usage(entry.usage);
         self.cost += entry.cost;
         if let Some(model) = &entry.model {
@@ -719,7 +949,7 @@ impl DailyAccumulator {
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
             }
-            breakdown.add_stored_cost(entry.stored_cost);
+            breakdown.add_stored_cost(entry.recorded_cost.billed());
         }
     }
 
@@ -751,17 +981,150 @@ impl DailyAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::Path, sync::Arc};
 
-    use super::{
-        DailyLoadedEntry, load_daily_summaries_inner, push_deduped_daily_entry,
-        read_daily_usage_file, session_days,
-    };
+    use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
     use crate::{
-        TimestampMs, TokenUsageRaw,
+        Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
     };
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_core::cost::PriceTable;
+    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use jiff::tz::TimeZone as JiffTimeZone;
+
+    fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
+        crate::load_daily_summaries_with_detection_progress(
+            shared,
+            None,
+            false,
+            ccusage_adapter_common::source::ProgressOwner::Caller,
+            diagnostics,
+        )
+        .unwrap()
+    }
+
+    fn read_daily_usage_file(
+        path: &Path,
+        tz: &JiffTimeZone,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> Vec<ClaudeEntry> {
+        read_daily_usage_file_with_diagnostics(
+            path,
+            tz,
+            pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
+            &Diagnostics::new("claude"),
+        )
+    }
+
+    #[test]
+    fn detection_and_reports_keep_parent_usage_with_a_null_advisor() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":1,"output_tokens":2,"cache_read_input_tokens":null}]}}}"#,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &path,
+            &JiffTimeZone::UTC,
+            PriceTable::Display,
+            &diagnostics,
+        );
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].usage.input_tokens, 10);
+        assert!(super::has_usage(&path));
+        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
+    }
+
+    #[test]
+    fn guards_only_the_advisor_iterations_it_reads() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"message","input_tokens":1,"output_tokens":1,"cache_read_input_tokens":null}]}}}"#,
+                r#"{"timestamp":"2026-01-02T10:00:01Z","message":{"usage":{"input_tokens":20,"output_tokens":1,"iterations":[{"type":"message","input_tokens":1,"output_tokens":1,"cache_read_input_tokens":null},{"type":"advisor_message","model":"advisor-model","input_tokens":3,"output_tokens":1}]}}}"#,
+            ]
+            .join("\n"),
+        });
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            &JiffTimeZone::UTC,
+            PriceTable::Display,
+            &diagnostics,
+        );
+        let input_tokens = loaded
+            .iter()
+            .map(|entry| entry.usage.input_tokens)
+            .collect::<Vec<_>>();
+        assert_eq!(input_tokens, [10, 20, 3]);
+        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
+    }
+
+    #[test]
+    fn malformed_advisors_preserve_parent_and_valid_sibling_usage() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"x"},{"type":"advisor_message","model":"good","input_tokens":3,"output_tokens":2}]}}}"#,
+        });
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            &JiffTimeZone::UTC,
+            PriceTable::Display,
+            &diagnostics,
+        );
+        assert_eq!(
+            loaded
+                .iter()
+                .map(|entry| entry.usage.input_tokens)
+                .collect::<Vec<_>>(),
+            [10, 3]
+        );
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn irrelevant_outer_advisor_fields_do_not_reject_progress_usage() {
+        for message in [
+            r#""advisor_message""#,
+            r#"{"usage":{"iterations":null},"content":"advisor_message"}"#,
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": format!(r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}}}}}"#),
+            });
+            let path = fixture.path("projects/project-a/session-a.jsonl");
+            let diagnostics = Diagnostics::new("claude");
+            let loaded = super::read_daily_usage_file_with_diagnostics(
+                &path,
+                &JiffTimeZone::UTC,
+                PriceTable::Display,
+                &diagnostics,
+            );
+            assert_eq!(loaded.len(), 1, "{message}");
+            assert_eq!(loaded[0].usage.input_tokens, 10);
+            assert!(super::has_usage(&path));
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 0);
+        }
+    }
+
+    #[test]
+    fn records_a_malformed_advisor_iteration_as_invalid_data() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":"SECRET_CANARY","output_tokens":1}]}}}"#,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let diagnostics = Diagnostics::new("claude");
+        let loaded = super::read_daily_usage_file_with_diagnostics(
+            &path,
+            &JiffTimeZone::UTC,
+            PriceTable::Display,
+            &diagnostics,
+        );
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].usage.input_tokens, 10);
+        assert_eq!(loaded[0].usage.output_tokens, 1);
+        assert!(super::has_usage(&path));
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
 
     #[test]
     fn null_contract_rejections_claude_code_writes_stay_quiet() {
@@ -772,56 +1135,48 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             debug: true,
             ..SharedArgs::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily =
-            load_daily_summaries_inner(&shared, None, false, session_days, &diagnostics).unwrap();
+        let daily = load_daily(&shared, &diagnostics);
 
         assert_eq!(daily.summaries[0].input_tokens, 10);
         assert!(diagnostics.warnings(&shared).is_empty());
     }
 
     #[test]
-    fn collects_session_days_of_counted_main_thread_usage_only() {
+    fn collects_sessions_of_counted_main_thread_usage_only() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
             "projects/project-a/session-empty.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-empty","type":"user","message":{"role":"user","content":"hi"}}"#,
             "projects/project-a/session-sub/subagents/agent-1.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-sub","isSidechain":true,"requestId":"req-sub","message":{"id":"msg-sub","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":1}}}"#,
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             ..SharedArgs::default()
         };
 
-        let daily = load_daily_summaries_inner(
-            &shared,
-            None,
-            false,
-            session_days,
-            &ccusage_core::Diagnostics::new("claude"),
-        )
-        .unwrap();
+        let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
         assert_eq!(
-            daily.session_days.into_iter().collect::<Vec<_>>(),
-            [(Arc::from("session-a"), "2026-01-02".to_string())]
+            daily.sessions.into_iter().collect::<Vec<_>>(),
+            [Arc::from("session-a")]
         );
         assert_eq!(daily.summaries[0].input_tokens, 130);
     }
@@ -841,21 +1196,20 @@ mod tests {
             .unwrap()
             .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(978_307_200))
             .unwrap();
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            since: Some("20260101".to_string()),
-            timezone: Some("UTC".to_string()),
+            since: Some("20260101".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             ..SharedArgs::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily =
-            load_daily_summaries_inner(&shared, None, false, session_days, &diagnostics).unwrap();
+        let daily = load_daily(&shared, &diagnostics);
 
         assert!(daily.summaries.is_empty());
         assert!(daily.detected);
@@ -867,7 +1221,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-parent",
@@ -878,7 +1232,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-sidechain-replay",
@@ -889,7 +1243,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-sidechain-answer",
                 request_id: "req-sidechain-answer",
@@ -902,11 +1256,11 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 2);
-        assert_eq!(deduped[0].message_id.as_deref(), Some("msg-parent"));
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.message_id.as_deref(), Some("msg-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
         assert_eq!(
-            deduped[1].message_id.as_deref(),
+            deduped[1].key.message_id.as_deref(),
             Some("msg-sidechain-answer")
         );
         assert_eq!(deduped[1].usage.cache_read_input_tokens, 700);
@@ -917,7 +1271,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -932,7 +1286,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -949,7 +1303,7 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
@@ -958,7 +1312,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-sidechain-replay",
@@ -969,7 +1323,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-parent",
@@ -980,7 +1334,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry(DailyEntryFixture {
                 message_id: "msg-parent",
                 request_id: "req-parent",
@@ -993,13 +1347,13 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
     #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
-        let (data, _) = super::deserialize_daily_usage_line(
+        let (data, _) = super::parse_usage_line(
             br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
         .unwrap();
@@ -1010,7 +1364,7 @@ mod tests {
 
     #[test]
     fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-        let (data, _) = super::deserialize_daily_usage_line(
+        let (data, _) = super::parse_usage_line(
             br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
         )
         .unwrap();
@@ -1038,8 +1392,8 @@ mod tests {
                 CostMode::Display,
                 None,
             );
-            for entry in loaded.entries {
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            for entry in loaded {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
         }
 
@@ -1069,8 +1423,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
         );
-        first.request_id = None;
-        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+        first.key.request_id = None;
+        push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
         let mut second = daily_loaded_entry_at(
             DailyEntryFixture {
@@ -1083,8 +1437,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_001_000),
         );
-        second.request_id = None;
-        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+        second.key.request_id = None;
+        push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 2);
         assert_eq!(
@@ -1111,25 +1465,18 @@ mod tests {
             let fixture = fs_fixture!({
                 "projects/project-a/session-a.jsonl": lines.join("\n"),
             });
-            let _env = EnvVarsGuard::set_many([(
+            let _env = EnvGuard::set_many([(
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_os_string()),
             )]);
             let shared = SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 single_thread: true,
                 ..SharedArgs::default()
             };
 
-            let daily = load_daily_summaries_inner(
-                &shared,
-                None,
-                false,
-                session_days,
-                &ccusage_core::Diagnostics::new("claude"),
-            )
-            .unwrap();
+            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
             let breakdown = &daily.summaries[0].model_breakdowns[0];
             assert_eq!(breakdown.cache_creation_tokens, 100);
@@ -1153,8 +1500,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
         );
-        first.request_id = None;
-        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+        first.key.request_id = None;
+        push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
         let mut second = daily_loaded_entry_at(
             DailyEntryFixture {
@@ -1167,8 +1514,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_500),
         );
-        second.request_id = None;
-        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+        second.key.request_id = None;
+        push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.output_tokens, 25);
@@ -1190,8 +1537,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
         );
-        first.request_id = None;
-        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+        first.key.request_id = None;
+        push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
         let mut second = daily_loaded_entry_at(
             DailyEntryFixture {
@@ -1204,8 +1551,8 @@ mod tests {
             "session-a",
             TimestampMs::from_millis(1_774_000_000_500),
         );
-        second.request_id = None;
-        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+        second.key.request_id = None;
+        push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.output_tokens, 25);
@@ -1216,7 +1563,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1231,7 +1578,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1276,8 +1623,8 @@ mod tests {
                 CostMode::Display,
                 None,
             );
-            for entry in loaded.entries {
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            for entry in loaded {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
         }
 
@@ -1298,9 +1645,9 @@ mod tests {
             None,
         );
 
-        assert_eq!(loaded.entries.len(), 2);
-        assert_eq!(loaded.entries[0].usage.input_tokens, 100);
-        assert_eq!(loaded.entries[1].usage.input_tokens, 10);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].usage.input_tokens, 100);
+        assert_eq!(loaded[1].usage.input_tokens, 10);
     }
 
     #[test]
@@ -1338,39 +1685,34 @@ mod tests {
             for line in [
                 format!(r#"{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}"#),
                 format!(
-                    r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
+                    r#"{{"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
                 ),
             ] {
-                let (_, lookup) = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
-                let previous = super::advisor_usages_from_line(line.as_bytes());
-                if matches!(lookup, super::AdvisorLookup::AskLine) {
-                    retained += 1;
-                } else {
-                    skipped += 1;
-                    assert!(previous.is_empty(), "{line}");
+                let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
+                let reference = format!(r#"{{"message":{message}}}"#);
+                let previous = super::advisor_usages_from_line(reference.as_bytes()).unwrap();
+                let actual = lookup.usages(line.as_bytes()).unwrap();
+                match lookup {
+                    super::AdvisorLookup::AskLine => {
+                        retained += 1;
+                        assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
+                        assert_eq!(actual.malformed, previous.malformed, "{line}");
+                    }
+                    super::AdvisorLookup::AskProgress => {
+                        retained += 1;
+                        assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
+                        assert_eq!(actual.malformed, previous.malformed, "{line}");
+                    }
+                    super::AdvisorLookup::RuledOut => {
+                        skipped += 1;
+                        assert!(previous.usages.is_empty(), "{line}");
+                        assert!(actual.usages.is_empty(), "{line}");
+                    }
                 }
             }
         }
         assert!(skipped > 0);
         assert!(retained > 0);
-    }
-
-    #[test]
-    fn reads_top_level_advisor_iterations_beside_an_agent_progress_record() {
-        let fixture = fs_fixture!({
-            "projects/project-a/session-a/chat.jsonl": r#"{"sessionId":"session-a","message":{"usage":{"input_tokens":5,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"data":{"message":{"timestamp":"2026-05-22T02:34:40.000Z","requestId":"req-a","message":{"id":"msg-a","model":"main-model","usage":{"input_tokens":100,"output_tokens":1}}}}}"#,
-        });
-
-        let loaded = read_daily_usage_file(
-            &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            &jiff::tz::TimeZone::system(),
-            CostMode::Display,
-            None,
-        );
-
-        assert_eq!(loaded.entries.len(), 2);
-        assert_eq!(loaded.entries[0].usage.input_tokens, 100);
-        assert_eq!(loaded.entries[1].usage.input_tokens, 10);
     }
 
     #[test]
@@ -1392,8 +1734,8 @@ mod tests {
                 CostMode::Display,
                 None,
             );
-            for entry in loaded.entries {
-                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            for entry in loaded {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
         }
 
@@ -1419,12 +1761,11 @@ mod tests {
                 CostMode::Display,
                 None,
             )
-            .entries
             .into_iter()
             .next()
             .unwrap();
-            push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
-                .map(|(index, discarded)| (index, discarded.session_id.to_string()))
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+                .map(|(index, discarded)| (index, discarded.key.session_id.to_string()))
         });
 
         assert_eq!(
@@ -1435,7 +1776,7 @@ mod tests {
                 Some((0, "session-c".to_string())),
             ]
         );
-        assert_eq!(deduped[0].session_id.as_ref(), "session-b");
+        assert_eq!(deduped[0].key.session_id.as_ref(), "session-b");
     }
 
     #[test]
@@ -1443,7 +1784,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1458,7 +1799,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1473,7 +1814,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1490,7 +1831,7 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
@@ -1499,7 +1840,7 @@ mod tests {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();
 
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1514,7 +1855,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1529,7 +1870,7 @@ mod tests {
             &mut deduped_indexes,
             &mut deduped,
         );
-        push_deduped_daily_entry(
+        push_deduped_entry(
             daily_loaded_entry_at(
                 DailyEntryFixture {
                     message_id: "msg-parent",
@@ -1546,8 +1887,8 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
-        assert_eq!(deduped[0].session_id.as_ref(), "session-a");
+        assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].key.session_id.as_ref(), "session-a");
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
     }
 
@@ -1559,12 +1900,17 @@ mod tests {
         output_tokens: u64,
     }
 
-    fn daily_loaded_entry(fixture: DailyEntryFixture) -> DailyLoadedEntry {
-        DailyLoadedEntry {
-            timestamp: TimestampMs::from_millis(1_774_000_000_000),
+    fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
+        ClaudeEntry {
+            key: super::DedupKey {
+                timestamp: TimestampMs::from_millis(1_774_000_000_000),
+                session_id: Arc::from("session-a"),
+                message_id: Some(fixture.message_id.to_string()),
+                request_id: Some(fixture.request_id.to_string()),
+                is_sidechain: Some(fixture.is_sidechain),
+            },
             date: "2026-03-29".to_string(),
             project: Arc::from("project-a"),
-            session_id: Arc::from("session-a"),
             usage: TokenUsageRaw {
                 input_tokens: 0,
                 output_tokens: fixture.output_tokens,
@@ -1576,10 +1922,7 @@ mod tests {
             cost: 0.0,
             model: Some("claude-sonnet-4-20250514".to_string()),
             missing_pricing_model: None,
-            message_id: Some(fixture.message_id.to_string()),
-            request_id: Some(fixture.request_id.to_string()),
-            is_sidechain: Some(fixture.is_sidechain),
-            stored_cost: None,
+            recorded_cost: super::RecordedCost::Absent,
         }
     }
 
@@ -1587,10 +1930,10 @@ mod tests {
         fixture: DailyEntryFixture,
         session_id: &str,
         timestamp: TimestampMs,
-    ) -> DailyLoadedEntry {
+    ) -> ClaudeEntry {
         let mut entry = daily_loaded_entry(fixture);
-        entry.session_id = Arc::from(session_id);
-        entry.timestamp = timestamp;
+        entry.key.session_id = Arc::from(session_id);
+        entry.key.timestamp = timestamp;
         entry
     }
 }

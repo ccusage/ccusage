@@ -1,10 +1,3 @@
-# hawk, a workspace-aware Cargo lint for unnecessary Rust visibility.
-#
-# The upstream release is used rather than a source build because hawk links
-# against `rustc_private` and would otherwise need the `rustc-dev` component and
-# `RUSTC_BOOTSTRAP=1`. A prebuilt binary carries the same constraint in a simpler
-# form: it only runs on the compiler it was built against, which is why
-# rust-toolchain.toml pins the version in `supportedRustChannel` below.
 {
   fetchurl,
   lib,
@@ -16,8 +9,9 @@
 }:
 let
   version = "0.1.18";
+  # NOTE(2026-11-16, #2119): Hawk links rustc_private. Its archive needs the exact Rust channel it was built against.
   supportedRustChannel = "1.100.0";
-  # sha256 values come from the `.sha256` file published beside each archive.
+  toolchain = builtins.fromTOML (builtins.readFile ../rust-toolchain.toml);
   archives = {
     aarch64-darwin = {
       target = "aarch64-apple-darwin";
@@ -36,6 +30,8 @@ let
     archives.${stdenv.hostPlatform.system}
       or (throw "cargo-hawk has no release for ${stdenv.hostPlatform.system}");
 in
+assert lib.assertMsg (toolchain.toolchain.channel == supportedRustChannel)
+  "cargo-hawk ${version} requires Rust ${supportedRustChannel}, but rust-toolchain.toml pins ${toolchain.toolchain.channel}";
 stdenvNoCC.mkDerivation {
   pname = "cargo-hawk";
   inherit version;
@@ -45,21 +41,11 @@ stdenvNoCC.mkDerivation {
     inherit (archive) hash;
   };
 
-  # The archive holds a single cargo-hawk-<target>/ directory.
   sourceRoot = "cargo-hawk-${archive.target}";
 
-  # The prebuilt Linux archives are ordinary glibc binaries, so they need the loader
-  # and rpath fixups; the Darwin ones resolve through @rpath as shipped.
   nativeBuildInputs =
     lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ]
     ++ lib.optionals stdenv.hostPlatform.isDarwin [ makeWrapper ];
-  # cargo-hawk-driver has a hard dependency on the compiler's librustc_driver, which
-  # is the concrete form of "only runs on the toolchain it was built against". The
-  # pinned toolchain carries the matching file because rust-overlay repackages the
-  # same upstream release, so it belongs in buildInputs rather than
-  # runtimeDependencies: the latter is written into the RUNPATH but is not part of
-  # the library set auto-patchelf resolves against, so the dependency is reported
-  # unsatisfied even once the path is on the RUNPATH.
   buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
     stdenv.cc.cc.lib
     rustToolchain
@@ -68,7 +54,6 @@ stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/bin"
-    # cargo-hawk invokes both helpers from its own directory.
     install -m555 cargo-hawk cargo-hawk-driver cargo-hawk-rustdoc "$out/bin/"
     ${lib.optionalString stdenv.hostPlatform.isDarwin ''
       mkdir -p "$out/libexec/hawk-tools"
@@ -85,8 +70,6 @@ stdenvNoCC.mkDerivation {
     ''}
     runHook postInstall
   '';
-
-  passthru = { inherit supportedRustChannel; };
 
   meta = {
     description = "Workspace-aware Cargo lint for unnecessary public Rust APIs";

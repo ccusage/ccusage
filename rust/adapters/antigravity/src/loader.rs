@@ -5,20 +5,30 @@ use ccusage_adapter_common::source::LoadContext;
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
+    parser::{
+        AntigravityUsageEvent, ParsedDatabase, event_to_loaded, merge_usage_event,
+        parse_sqlite_file,
+    },
     paths::conversation_db_paths,
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let mut events = Vec::new();
-    for database_path in conversation_db_paths(cx.diagnostics)? {
-        match parse_sqlite_file(&database_path) {
-            Ok(Some(parsed)) => events.extend(parsed),
-            Ok(None) => cx.diagnostics.debug_note(
+    for database_path in conversation_db_paths(cx.diagnostics, cx.shared.debug)? {
+        match parse_sqlite_file(&database_path, cx.diagnostics) {
+            Ok(ParsedDatabase::Events(parsed)) => events.extend(parsed),
+            Ok(ParsedDatabase::EmptySnapshot) => cx.diagnostics.debug_note(
                 &database_path,
                 format!(
                     "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                    database_path.display()
+                ),
+            ),
+            Ok(ParsedDatabase::NoGenerationTable) => cx.diagnostics.debug_note(
+                &database_path,
+                format!(
+                    "Skipping Antigravity database '{}': no gen_metadata table",
                     database_path.display()
                 ),
             ),
@@ -29,7 +39,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     events.sort_by_key(|event| event.timestamp);
     Ok(events
         .into_iter()
-        .map(|event| event_to_loaded(event, cx.window.timezone(), cx.shared.mode, pricing))
+        .map(|event| event_to_loaded(event, cx.window.timezone(), pricing))
         .collect())
 }
 
@@ -84,7 +94,7 @@ fn deduplicate_events(
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
     use serde_json::json;
 
     use std::path::Path;
@@ -103,7 +113,7 @@ mod tests {
         SharedArgs {
             mode: crate::cli::CostMode::Calculate,
             single_thread,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         }
     }
@@ -124,8 +134,6 @@ mod tests {
         )
     }
 
-    /// Loads a fixture holding databases the loader skips, and returns what
-    /// was recorded about them.
     fn skipped_databases() -> Diagnostics {
         let (entries, diagnostics) =
             load_with_diagnostics(&shared(true), &PricingMap::load_embedded()).unwrap();
@@ -133,7 +141,6 @@ mod tests {
         diagnostics
     }
 
-    /// Asserts that `path` is the one database skipped, as `kind`.
     fn assert_skipped(diagnostics: &Diagnostics, kind: SkipKind, label: &str, path: &Path) {
         assert_eq!(diagnostics.skipped(kind), 1, "{kind:?}");
         let lines = diagnostics.warnings(&SharedArgs {
@@ -157,7 +164,7 @@ mod tests {
         single_thread: bool,
         pricing: &PricingMap,
     ) -> Vec<LoadedEntry> {
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -165,6 +172,7 @@ mod tests {
     }
 
     fn snapshot_pricing() -> PricingMap {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         assert_eq!(
             pricing.load_json(
@@ -192,6 +200,7 @@ mod tests {
 
     #[test]
     fn loads_real_schema_rows_with_continuations_and_token_buckets() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/session.db");
         let first_usage = UsageFixture {
@@ -246,23 +255,21 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].model.as_deref(), Some("gemini-3-pro"));
         assert_eq!(entries[1].model.as_deref(), Some("gemini-3-pro"));
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("response-1"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 400);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            30
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 500);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 150);
+        assert_eq!(entries[0].message_id.as_deref(), Some("response-1"));
+        assert_eq!(entries[0].usage.input_tokens, 400);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 30);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 500);
+        assert_eq!(entries[0].usage.output_tokens, 150);
         assert_eq!(entries[0].extra_total_tokens, 50);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 300);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 75);
+        assert_eq!(entries[1].usage.input_tokens, 300);
+        assert_eq!(entries[1].usage.output_tokens, 75);
         assert_eq!(entries[1].extra_total_tokens, 25);
         assert!(entries[0].cost > 0.0);
     }
 
     #[test]
     fn decodes_model_id_without_counting_it_as_input_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/model-id.db"),
@@ -290,11 +297,12 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("gemini-2.5-pro"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 4);
+        assert_eq!(entries[0].usage.input_tokens, 4);
     }
 
     #[test]
     fn loads_multiple_databases_consistently() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("one/conversations/one.db"),
@@ -343,7 +351,7 @@ mod tests {
             fixture.path("one").display(),
             fixture.path("two").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
         )]);
@@ -354,11 +362,11 @@ mod tests {
         assert_eq!(
             single_threaded
                 .iter()
-                .map(|entry| entry.data.message.id.clone())
+                .map(|entry| entry.message_id.clone())
                 .collect::<Vec<_>>(),
             default_mode
                 .iter()
-                .map(|entry| entry.data.message.id.clone())
+                .map(|entry| entry.message_id.clone())
                 .collect::<Vec<_>>()
         );
         assert_eq!(single_threaded.len(), 2);
@@ -366,6 +374,7 @@ mod tests {
 
     #[test]
     fn deduplicates_response_ids_across_databases() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("first/conversations/first.db"),
@@ -418,7 +427,7 @@ mod tests {
             fixture.path("first").display(),
             fixture.path("second").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
         )]);
@@ -426,16 +435,14 @@ mod tests {
         let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("shared-response")
-        );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 200);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 350);
+        assert_eq!(entries[0].message_id.as_deref(), Some("shared-response"));
+        assert_eq!(entries[0].usage.input_tokens, 200);
+        assert_eq!(entries[0].usage.output_tokens, 350);
     }
 
     #[test]
     fn collects_steps_and_retries_and_deduplicates_source_copies() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let shared_usage = UsageFixture {
             input_tokens: 100,
@@ -508,18 +515,19 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 5);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 7);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 40);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 5);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 7);
+        assert_eq!(entries[0].usage.output_tokens, 40);
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].model.as_deref(), Some("gemini-3-pro"));
         assert_eq!(entries[1].model.as_deref(), Some("gemini-3.5-flash-high"));
-        assert_eq!(entries[1].data.message.usage.input_tokens, 11);
+        assert_eq!(entries[1].usage.input_tokens, 11);
     }
 
     #[test]
     fn deduplicates_unkeyed_mirror_copies_via_step_index() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let unkeyed = UsageFixture {
             input_tokens: 15_027,
@@ -556,16 +564,14 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 15_027);
-        assert_eq!(
-            entries[0].data.message.usage.cache_read_input_tokens,
-            500_131
-        );
-        assert_eq!(entries[0].data.message.usage.output_tokens, 49);
+        assert_eq!(entries[0].usage.input_tokens, 15_027);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 500_131);
+        assert_eq!(entries[0].usage.output_tokens, 49);
     }
 
     #[test]
     fn drops_unkeyed_retry_mirror_without_step_link() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let unkeyed = UsageFixture {
             input_tokens: 100,
@@ -591,12 +597,13 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
     }
 
     #[test]
     fn keeps_unkeyed_failed_attempt_when_retries_mirror_primary() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let success = UsageFixture {
             input_tokens: 100,
@@ -639,12 +646,7 @@ mod tests {
 
         let mut usages = entries
             .iter()
-            .map(|entry| {
-                (
-                    entry.data.message.usage.input_tokens,
-                    entry.data.message.usage.output_tokens,
-                )
-            })
+            .map(|entry| (entry.usage.input_tokens, entry.usage.output_tokens))
             .collect::<Vec<_>>();
         usages.sort_unstable();
         assert_eq!(usages, vec![(100, 10), (100, 50)]);
@@ -652,6 +654,7 @@ mod tests {
 
     #[test]
     fn attributes_step_and_retry_usage_to_their_token_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let step_usage = UsageFixture {
             model_id: Some(246),
@@ -685,7 +688,7 @@ mod tests {
             &[],
         );
 
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -695,11 +698,11 @@ mod tests {
         assert_eq!(entries.len(), 2);
         let step = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("step-pro"))
+            .find(|entry| entry.message_id.as_deref() == Some("step-pro"))
             .unwrap();
         let retry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("retry-opus"))
+            .find(|entry| entry.message_id.as_deref() == Some("retry-opus"))
             .unwrap();
         assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
         assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
@@ -715,6 +718,7 @@ mod tests {
 
     #[test]
     fn maps_required_aliases_and_keeps_unprovided_models_unprefixed() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let aliases = [
             "gemini-3-flash-agent",
@@ -783,6 +787,7 @@ mod tests {
 
     #[test]
     fn uses_trajectory_timestamp_when_generation_timestamp_is_missing() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/session.db"),
@@ -808,7 +813,84 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-09");
-        assert_eq!(entries[0].data.timestamp, "2026-05-09T04:13:20.456Z");
+        assert_eq!(
+            entries[0].timestamp,
+            crate::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()
+        );
+    }
+
+    #[test]
+    fn untimed_database_rows_are_diagnosed_without_using_file_mtime() {
+        let fixture = Fixture::new();
+        let usage = Some(UsageFixture {
+            input_tokens: 1,
+            ..UsageFixture::default()
+        });
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[
+                (1, metadata_blob(Some("test-model"), usage, None, &[])),
+                (
+                    2,
+                    metadata_blob(Some("test-model"), usage, Some((1_778_300_000, 0)), &[]),
+                ),
+            ],
+            &[],
+            &[],
+        );
+        let _guard = EnvGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+        let (entries, diagnostics) =
+            load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+    }
+
+    #[test]
+    fn untimed_step_usage_keeps_the_linked_generation_timestamp() {
+        let fixture = Fixture::new();
+        let usage = UsageFixture {
+            input_tokens: 10,
+            cache_read_tokens: 20,
+            response_id: Some("response"),
+            ..UsageFixture::default()
+        };
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                1,
+                metadata_blob_with_steps(
+                    Some("test-model"),
+                    Some(UsageFixture {
+                        input_tokens: 1,
+                        cache_read_tokens: 0,
+                        ..usage
+                    }),
+                    Some((1_778_300_000, 0)),
+                    &[],
+                    &[1],
+                ),
+            )],
+            &[(
+                1,
+                step_metadata_blob(Some("test-model"), Some(usage), None, &[], None),
+            )],
+            &[],
+        );
+        let _guard = EnvGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+        let (entries, diagnostics) =
+            load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 20);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
     }
 
     #[test]
@@ -900,26 +982,23 @@ mod tests {
         for response_id in ["snapshot-opus-id", "snapshot-opus-placeholder"] {
             let entry = entries
                 .iter()
-                .find(|entry| entry.data.message.id.as_deref() == Some(response_id))
+                .find(|entry| entry.message_id.as_deref() == Some(response_id))
                 .unwrap();
             assert_eq!(entry.model.as_deref(), Some("claude-opus-5-5"));
             assert!(entry.cost > 0.0);
             assert!(entry.missing_pricing_model.is_none());
         }
-        let periods = [
-            crate::cli::AgentReportKind::Daily,
-            crate::cli::AgentReportKind::Weekly,
-            crate::cli::AgentReportKind::Monthly,
-            crate::cli::AgentReportKind::Session,
-        ];
-        let reports = periods
-            .into_iter()
+        let reports = crate::cli::AgentId::Antigravity
+            .spec()
+            .reports
+            .iter()
+            .copied()
             .map(|kind| {
-                let rows = crate::report::summarize_entries(&entries, kind).unwrap();
+                let rows = ccusage_adapter_common::source::EntrySource::summarize(&crate::SOURCE, &entries, ccusage_adapter_common::source::SummaryKind::for_report(kind, ccusage_core::cli::WeekDay::Monday)).unwrap();
                 (
                     format!("{kind:?}").to_lowercase(),
                     json!({
-                    "json": crate::report::report_from_rows(&rows, kind),
+                    "json": ccusage_adapter_common::source::EntrySource::report_json(&crate::SOURCE, &rows, kind),
                     "table": rows.iter().map(|row| json!({
                         "firstColumn": ccusage_core::first_column(kind),
                         "period": ccusage_core::summary_period(row),
@@ -941,6 +1020,7 @@ mod tests {
 
     #[test]
     fn prefers_explicit_model_name_over_placeholder_for_unknown_ids() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let cases = [
             (1401, "claude-opus-5-5-medium", "unknown-opus"),
@@ -985,7 +1065,7 @@ mod tests {
         for (_, model, response_id) in cases {
             let entry = entries
                 .iter()
-                .find(|entry| entry.data.message.id.as_deref() == Some(response_id))
+                .find(|entry| entry.message_id.as_deref() == Some(response_id))
                 .unwrap();
             assert_eq!(entry.model.as_deref(), Some(model));
             assert!(entry.cost > 0.0);
@@ -993,13 +1073,14 @@ mod tests {
         }
         let retry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("unknown-retry"))
+            .find(|entry| entry.message_id.as_deref() == Some("unknown-retry"))
             .unwrap();
         assert_eq!(retry.model.as_deref(), Some("model_placeholder_m499"));
     }
 
     #[test]
     fn keeps_alias_mapped_ids_over_explicit_model_name() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/session.db"),
@@ -1033,6 +1114,7 @@ mod tests {
 
     #[test]
     fn keeps_explicit_model_name_when_merging_unnamed_step_copy() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = UsageFixture {
             model_id: Some(1401),
@@ -1067,9 +1149,122 @@ mod tests {
     }
 
     #[test]
-    fn skips_zero_byte_databases_and_reports_valid_entries() {
+    fn prices_flash_agent_routing_names_as_the_mapped_flash_model() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for model in [
+            "gemini-3-flash-agent",
+            "gemini-3-flash-agent-a",
+            "gemini-3-flash-agent-b",
+            "gemini-3-flash-a",
+            "gemini-3-flash-b",
+        ] {
+            let fixture = routing_model_fixture(model);
+            let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+            assert_eq!(entries.len(), 1, "{model}");
+            assert_eq!(entries[0].model.as_deref(), Some("gemini-3.5-flash-high"));
+            assert!(
+                (entries[0].cost - 0.00279).abs() < 1e-12,
+                "{model}: {}",
+                entries[0].cost
+            );
+        }
+    }
+
+    #[test]
+    fn prices_pro_agent_routing_name_as_the_mapped_pro_model_online() {
+        ccusage_test_support::install_pricing_snapshots();
+        ccusage_core::pricing::set_json_fetcher(|url, load| {
+            let live = if url.ends_with("/model_prices_and_context_window.json") {
+                r#"{
+                    "gemini-pro": {"input_cost_per_token": 0.0000005, "output_cost_per_token": 0.0000015},
+                    "gemini-3.1-pro": {"input_cost_per_token": 0.000002, "output_cost_per_token": 0.000012, "cache_read_input_token_cost": 0.0000002}
+                }"#
+            } else {
+                return Err(std::io::Error::other("no models.dev fixture"));
+            };
+            assert!(load(live), "{url}");
+            Ok(())
+        });
+        let pricing = PricingMap::load_with_overrides(false, false, []);
+        assert_eq!(pricing.find("gemini-pro").unwrap().input, 0.0000005);
+        let fixture = routing_model_fixture("gemini-pro-agent");
+        let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("gemini-3.1-pro"));
+        assert!(
+            (entries[0].cost - 0.00372).abs() < 1e-12,
+            "{}",
+            entries[0].cost
+        );
+    }
+
+    fn routing_model_fixture(model: &str) -> Fixture {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/empty.db", "");
+        fixture.write_file("conversations/session.db", "");
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                1,
+                metadata_blob(
+                    Some(model),
+                    Some(UsageFixture {
+                        input_tokens: 940,
+                        total_output_tokens: 120,
+                        visible_output_tokens: 120,
+                        cache_read_tokens: 2_000,
+                        ..UsageFixture::default()
+                    }),
+                    Some((1_778_000_000, 0)),
+                    &[],
+                ),
+            )],
+            &[],
+            &[],
+        );
+        fixture
+    }
+
+    #[test]
+    fn prices_the_logged_model_before_its_normalized_form() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        fixture.write_file("conversations/session.db", "");
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                1,
+                metadata_blob(
+                    Some("GPT-Logged-Model"),
+                    Some(UsageFixture {
+                        input_tokens: 100,
+                        ..UsageFixture::default()
+                    }),
+                    Some((1_778_000_000, 0)),
+                    &[],
+                ),
+            )],
+            &[],
+            &[],
+        );
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "GPT-Logged-Model":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "gpt-logged-model":{"input_cost_per_token":2,"output_cost_per_token":2}
+            }"#,
+        );
+        let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("gpt-logged-model"));
+        assert_eq!(entries[0].cost, 100.0);
+    }
+
+    #[test]
+    fn skips_zero_byte_databases_and_reports_valid_entries() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        fixture.write_file("conversations/empty.db", "");
         create_database(
             &fixture.path("conversations/session.db"),
             &[(
@@ -1094,18 +1289,19 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("valid-response")
-        );
+        assert_eq!(entries[0].message_id.as_deref(), Some("valid-response"));
     }
 
     #[test]
     fn returns_empty_report_when_only_zero_byte_databases_exist() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let database = fixture.write_file("conversations/empty.db", "");
 
-        assert!(parse_sqlite_file(&database).unwrap().is_none());
+        assert!(matches!(
+            parse_sqlite_file(&database, &Diagnostics::new("antigravity")).unwrap(),
+            ParsedDatabase::EmptySnapshot
+        ));
 
         let entries = load_from_fixture(&fixture, true);
 
@@ -1114,21 +1310,22 @@ mod tests {
 
     #[test]
     fn returns_empty_report_for_fresh_install_without_conversations_directory() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let summaries_path = fixture.path(".gemini/antigravity-cli/conversation_summaries.db");
-        let _ = fixture.create_dir_all(".gemini/antigravity-cli");
+        fixture.create_dir_all(".gemini/antigravity-cli");
         let connection = sqlite::open(&summaries_path).unwrap();
         connection
             .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (super::super::paths::ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
         ]);
 
         assert!(
-            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"))
+            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
                 .unwrap()
                 .is_empty()
         );
@@ -1140,15 +1337,16 @@ mod tests {
 
     #[test]
     fn skips_malformed_database_alongside_empty_databases() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/empty.db", "");
+        fixture.write_file("conversations/empty.db", "");
         create_database(
             &fixture.path("conversations/malformed.db"),
             &[(1, vec![0x0a, 0x01, 0x80])],
             &[],
             &[],
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1176,9 +1374,10 @@ mod tests {
 
     #[test]
     fn skips_database_open_and_query_errors() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let not_a_database = fixture.write_file("conversations/not-a-db.db", "not sqlite");
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1192,15 +1391,47 @@ mod tests {
     }
 
     #[test]
-    fn skips_database_missing_generation_table() {
+    fn notes_database_without_generation_table_only_under_debug() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let db_path = fixture.path("conversations/missing-table.db");
-        let _ = fixture.create_dir_all("conversations");
+        let db_path = fixture.path("conversation_summaries.db");
         let connection = sqlite::open(&db_path).unwrap();
         connection
-            .execute("CREATE TABLE other (id INTEGER)")
+            .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+
+        let diagnostics = skipped_databases();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
+        assert!(diagnostics.warnings(&shared(true)).is_empty());
+        assert!(
+            diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..shared(true)
+                })
+                .contains(&format!(
+                    "Skipping Antigravity database '{}': no gen_metadata table",
+                    db_path.display()
+                ))
+        );
+    }
+
+    #[test]
+    fn skips_a_conversation_database_with_steps_but_no_generation_table() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        fixture.create_dir_all("conversations");
+        let db_path = fixture.path("conversations/renamed.db");
+        let connection = sqlite::open(&db_path).unwrap();
+        connection
+            .execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB)")
+            .unwrap();
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1215,9 +1446,10 @@ mod tests {
 
     #[test]
     fn skips_database_with_invalid_optional_table_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/bad-steps.db");
-        let _ = fixture.create_dir_all("conversations");
+        fixture.create_dir_all("conversations");
         let connection = sqlite::open(&db_path).unwrap();
         connection
             .execute("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB NOT NULL)")
@@ -1245,7 +1477,7 @@ mod tests {
         statement.bind((1, 1_i64)).unwrap();
         statement.bind((2, data.as_slice())).unwrap();
         statement.next().unwrap();
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1260,6 +1492,7 @@ mod tests {
 
     #[test]
     fn skips_database_with_malformed_metadata() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/malformed.db"),
@@ -1267,7 +1500,7 @@ mod tests {
             &[],
             &[],
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1282,12 +1515,13 @@ mod tests {
 
     #[test]
     fn structured_loads_tally_skipped_databases_without_their_content() {
+        ccusage_test_support::install_pricing_snapshots();
         use ccusage_adapter_common::source::LoadContext;
         use ccusage_core::{ReportWindow, cli::AgentReportKind};
 
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/broken.db", "SECRET_CANARY");
-        let _guard = EnvVarsGuard::set_many([(
+        fixture.write_file("conversations/broken.db", "SECRET_CANARY");
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1299,7 +1533,7 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

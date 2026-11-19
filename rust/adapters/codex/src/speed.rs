@@ -10,17 +10,6 @@ pub enum CodexSpeedPolicy {
     Forced(CodexServiceTier),
 }
 
-impl From<CodexSpeed> for CodexSpeedPolicy {
-    fn from(speed: CodexSpeed) -> Self {
-        match speed {
-            CodexSpeed::Auto => Self::Auto(CodexServiceTier::Standard),
-            CodexSpeed::Standard => Self::Forced(CodexServiceTier::Standard),
-            CodexSpeed::Fast => Self::Forced(CodexServiceTier::Fast),
-            CodexSpeed::Flex => Self::Forced(CodexServiceTier::Flex),
-        }
-    }
-}
-
 pub fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
     match requested {
         CodexSpeed::Auto => CodexSpeedPolicy::Auto(detect_codex_service_tier()),
@@ -54,25 +43,20 @@ fn codex_home_paths() -> Vec<std::path::PathBuf> {
 
 fn codex_config_service_tier(content: &str) -> Option<CodexServiceTier> {
     let config = content.parse::<toml::Table>().ok()?;
-    // Stored profiles affect fallback pricing only when the config selects them.
     let profile_tier = config
         .get("profile")
         .and_then(toml::Value::as_str)
         .and_then(|name| config.get("profiles")?.get(name)?.get("service_tier"));
-    let tier = profile_tier
-        .or_else(|| config.get("service_tier"))?
-        .as_str()?;
-    match tier {
-        "default" | "standard" => Some(CodexServiceTier::Standard),
-        "fast" | "priority" => Some(CodexServiceTier::Fast),
-        "flex" => Some(CodexServiceTier::Flex),
-        _ => None,
-    }
+    CodexServiceTier::from_codex_name(
+        profile_tier
+            .or_else(|| config.get("service_tier"))?
+            .as_str()?,
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use crate::CodexServiceTier;
 
@@ -105,12 +89,23 @@ mod tests {
             None
         );
         assert_eq!(
-            codex_config_service_tier(r#"service_tier = "ultrafast""#,),
-            None
-        );
-        assert_eq!(
             codex_config_service_tier(r#"service_tier = "standard""#,),
             Some(CodexServiceTier::Standard)
+        );
+    }
+
+    #[test]
+    fn configured_ultrafast_leaves_unclassified_usage_at_standard() {
+        let fixture = fs_fixture!({ "config.toml": r#"service_tier = "ultrafast""# });
+        let _codex_home = EnvGuard::set("CODEX_HOME", fixture.path(""));
+
+        assert_eq!(
+            codex_config_service_tier(r#"service_tier = "ultrafast""#),
+            Some(CodexServiceTier::Ultrafast)
+        );
+        assert_eq!(
+            super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
+            super::CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
         );
     }
 
@@ -204,6 +199,7 @@ mod tests {
 
     #[test]
     fn inactive_flex_profile_does_not_discount_unclassified_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "config.toml": r#"
                 service_tier = "standard"
@@ -211,7 +207,7 @@ mod tests {
                 service_tier = "flex"
             "#,
         });
-        let _codex_home = EnvVarGuard::set("CODEX_HOME", fixture.path(""));
+        let _codex_home = EnvGuard::set("CODEX_HOME", fixture.path(""));
         let mut pricing = crate::PricingMap::default();
         pricing.load_json(
             r#"{
@@ -223,27 +219,34 @@ mod tests {
             }"#,
         );
         let usage = crate::CodexModelUsage {
-            input_tokens: 30,
             total_tokens: 30,
-            recorded_flex_usage: crate::CodexUsageBucket {
-                input_tokens: 10,
-                ..Default::default()
-            },
-            recorded_fast_usage: crate::CodexUsageBucket {
-                input_tokens: 10,
-                ..Default::default()
-            },
-            ..Default::default()
+            ..crate::CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 30,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Flex] = crate::CodexUsageBucket {
+                        input_tokens: 10,
+                        ..Default::default()
+                    };
+                    tiers[crate::CodexServiceTier::Fast] = crate::CodexUsageBucket {
+                        input_tokens: 10,
+                        ..Default::default()
+                    };
+                    tiers
+                },
+            )
         };
 
         let cost = crate::report::calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
         );
 
-        // Ten unclassified tokens stay Standard; recorded Flex and Fast keep their rates.
         assert!((cost - 35e-6).abs() < 1e-12);
     }
 }

@@ -5,43 +5,26 @@ use std::{
     thread,
 };
 
-#[cfg(test)]
-use serde_json::json;
-
 use ccusage_adapter_common::{
-    claims::ClaudeCounted,
-    rows::UnifiedRow,
-    source::{
-        PricingSupply, ProgressOwner, SourceOptions, SourceRows, UnifiedRequest, UsageSource,
-    },
+    claims,
+    rows::SourceRow,
+    source::{LoadKind, LoadRequest, ProgressOwner, SourceOptions, UsageSource},
 };
 
 use crate::{
-    BUILT_IN_AGENT_NAMES, Diagnostics, LoadedEntry, PricingMap, Result,
+    Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind,
     adapter::{claude, opencode, pi},
-    cli::{AgentReportKind, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
+    cli::{AgentReportKind, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
 };
-
-#[cfg(test)]
-use crate::{
-    CodexGroup, UsageSummary, adapter::codex, cli::CodexSpeed, filter_loaded_entries_by_date,
-};
-#[cfg(test)]
-use ccusage_adapter_common::rows::summary_rows;
 
 use super::{
     report::sort_rows,
     sources::SOURCES,
     types::{
-        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult,
-        LoadedAgentRows,
+        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult, Bucket,
+        DayRow, LoadedAgentRows, ReportDay, ReportRow,
     },
 };
-
-/// No per-source options, which is how the tests that do not exercise them
-/// call the loader.
-#[cfg(test)]
-pub(super) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
 
 pub(super) fn load_rows(
     kind: AgentReportKind,
@@ -49,23 +32,26 @@ pub(super) fn load_rows(
     sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
-    let source_shared = shared_by_source(sources, shared);
-    let (pricing, unified_pricing) =
-        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
-    let load_kind = load_kind_for_report(kind);
-    let loaded = load_base_rows(
-        load_kind,
-        shared,
-        sources,
-        &source_shared,
-        &pricing,
-        unified_pricing.as_deref(),
-    )?;
-    Ok(AllLoadResult {
-        rows: finish_rows(kind, loaded.rows, shared, start_of_week),
-        detected_agents: loaded.detected_agents,
-        diagnostics: loaded.diagnostics,
-    })
+    let run_sources = run_sources(shared, sources)?;
+    let pricing = load_pricing(&run_sources);
+    match Bucket::for_report(kind, start_of_week) {
+        Some(bucket) => {
+            let loaded = load_day_rows(shared, &run_sources, &pricing)?;
+            Ok(AllLoadResult {
+                rows: finish_days(loaded.rows, bucket, shared),
+                detected_agents: loaded.detected_agents,
+                diagnostics: loaded.diagnostics,
+            })
+        }
+        None => {
+            let loaded = load_session_rows(shared, &run_sources, &pricing)?;
+            Ok(AllLoadResult {
+                rows: finish_sessions(loaded.rows, shared),
+                detected_agents: loaded.detected_agents,
+                diagnostics: loaded.diagnostics,
+            })
+        }
+    }
 }
 
 pub(super) fn load_sections(
@@ -74,32 +60,13 @@ pub(super) fn load_sections(
     sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
-    let source_shared = shared_by_source(sources, shared);
-    let (pricing, unified_pricing) =
-        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
+    let run_sources = run_sources(shared, sources)?;
+    let pricing = load_pricing(&run_sources);
     let mut daily_base = needs_daily_family(kinds)
-        .then(|| {
-            load_base_rows(
-                AgentReportKind::Daily,
-                shared,
-                sources,
-                &source_shared,
-                &pricing,
-                unified_pricing.as_deref(),
-            )
-        })
+        .then(|| load_day_rows(shared, &run_sources, &pricing))
         .transpose()?;
     let mut session_base = needs_session(kinds)
-        .then(|| {
-            load_base_rows(
-                AgentReportKind::Session,
-                shared,
-                sources,
-                &source_shared,
-                &pricing,
-                unified_pricing.as_deref(),
-            )
-        })
+        .then(|| load_session_rows(shared, &run_sources, &pricing))
         .transpose()?;
 
     let daily_detected_agents = daily_base
@@ -110,11 +77,13 @@ pub(super) fn load_sections(
         .as_ref()
         .map(|base| base.detected_agents.clone())
         .unwrap_or_default();
-    // The two loads read different files for one source, so their skips are
-    // merged per source rather than listed twice.
     let mut diagnostics = Vec::new();
-    for base in daily_base.iter_mut().chain(&mut session_base) {
-        for loaded in std::mem::take(&mut base.diagnostics) {
+    let loaded_diagnostics = daily_base
+        .iter_mut()
+        .map(|base| &mut base.diagnostics)
+        .chain(session_base.iter_mut().map(|base| &mut base.diagnostics));
+    for base_diagnostics in loaded_diagnostics {
+        for loaded in std::mem::take(base_diagnostics) {
             match diagnostics
                 .iter()
                 .find(|merged: &&Diagnostics| merged.source() == loaded.source())
@@ -127,18 +96,15 @@ pub(super) fn load_sections(
 
     let mut sections = Vec::with_capacity(kinds.len());
     for kind in kinds {
-        let rows = if *kind == AgentReportKind::Session {
-            session_base
+        let rows = match Bucket::for_report(*kind, start_of_week) {
+            Some(bucket) => daily_base
                 .as_ref()
-                .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
-                .unwrap_or_default()
-        } else {
-            daily_base
+                .map(|base| finish_days(base.rows.clone(), bucket, shared)),
+            None => session_base
                 .as_ref()
-                .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
-                .unwrap_or_default()
+                .map(|base| finish_sessions(base.rows.clone(), shared)),
         };
-        sections.push((*kind, rows));
+        sections.push((*kind, rows.unwrap_or_default()));
     }
 
     Ok(AllSectionsLoadResult {
@@ -150,99 +116,180 @@ pub(super) fn load_sections(
 }
 
 struct CachedPricingMap {
-    offline: bool,
     overrides: BTreeMap<String, crate::cli::PricingOverride>,
     pricing: Arc<PricingMap>,
 }
 
 fn cached_pricing_map(
     shared: &SharedArgs,
-    bases: &mut BTreeMap<bool, Arc<PricingMap>>,
+    base: &Arc<PricingMap>,
     cached: &mut Vec<CachedPricingMap>,
 ) -> Arc<PricingMap> {
-    if let Some(entry) = cached.iter().find(|entry| {
-        entry.offline == shared.offline && entry.overrides == shared.pricing_overrides
-    }) {
+    if let Some(entry) = cached
+        .iter()
+        .find(|entry| entry.overrides == shared.pricing_overrides)
+    {
         return Arc::clone(&entry.pricing);
     }
 
-    let base = bases.entry(shared.offline).or_insert_with(|| {
-        Arc::new(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            std::iter::empty::<(&String, &crate::cli::PricingOverride)>(),
-        ))
-    });
     let pricing = if shared.pricing_overrides.is_empty() {
         Arc::clone(base)
     } else {
         Arc::new(base.with_user_overrides(shared.pricing_overrides.iter()))
     };
     cached.push(CachedPricingMap {
-        offline: shared.offline,
         overrides: shared.pricing_overrides.clone(),
         pricing: Arc::clone(&pricing),
     });
     pricing
 }
 
-fn load_pricing(
-    shared: &SharedArgs,
-    source_shared: &BTreeMap<&'static str, SharedArgs>,
-    load_unified: bool,
-) -> (
-    BTreeMap<&'static str, Arc<PricingMap>>,
-    Option<Arc<PricingMap>>,
-) {
-    let mut bases = BTreeMap::new();
-    let mut cached = Vec::new();
-    let pricing_by_source = SOURCES
-        .iter()
-        .filter(|source| source.pricing_supply() == PricingSupply::Pipeline)
-        .map(|source| {
-            let agent = source.id();
-            (
-                agent,
-                cached_pricing_map(&source_shared[agent], &mut bases, &mut cached),
-            )
-        })
-        .collect();
-    let unified_pricing = load_unified.then(|| cached_pricing_map(shared, &mut bases, &mut cached));
-    (pricing_by_source, unified_pricing)
+enum RunSourceKind {
+    Claude,
+    OpenCode,
+    BuiltIn(&'static dyn UsageSource),
+    Named(pi::NamedStore),
 }
 
-fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
-    match kind {
-        AgentReportKind::Session => AgentReportKind::Session,
-        AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
-            AgentReportKind::Daily
+struct RunSource<'a> {
+    source: RunSourceKind,
+    shared: &'a SharedArgs,
+    options: SourceOptions<'a>,
+}
+
+impl RunSource<'_> {
+    fn source(&self) -> &dyn UsageSource {
+        match &self.source {
+            RunSourceKind::Claude => &claude::SOURCE,
+            RunSourceKind::OpenCode => &opencode::SOURCE,
+            RunSourceKind::BuiltIn(source) => *source,
+            RunSourceKind::Named(source) => source,
+        }
+    }
+
+    fn request<'a>(&'a self, kind: LoadKind, pricing: Option<&'a PricingMap>) -> LoadRequest<'a> {
+        LoadRequest {
+            kind,
+            shared: self.shared,
+            options: self.options,
+            pricing,
+            progress: ProgressOwner::Caller,
         }
     }
 }
 
-/// The shared options each source loads with: the ones the config resolved for
-/// it, or the unified ones for a source the config does not address.
-fn shared_by_source(
-    sources: &BTreeMap<String, SourceArgs>,
-    shared: &SharedArgs,
-) -> BTreeMap<&'static str, SharedArgs> {
-    BUILT_IN_AGENT_NAMES
+fn run_sources<'a>(
+    shared: &'a SharedArgs,
+    sources: &'a BTreeMap<String, SourceArgs>,
+) -> Result<Vec<RunSource<'a>>> {
+    let mut run_sources = SOURCES
         .iter()
-        .map(|agent| {
-            let options = sources.get(*agent).map_or(shared, |source| &source.shared);
-            (*agent, options.clone())
+        .map(|source| {
+            let args = sources.get(source.id());
+            let kind = match source.id() {
+                id if id == claude::SOURCE.id() => RunSourceKind::Claude,
+                id if id == opencode::SOURCE.id() => RunSourceKind::OpenCode,
+                _ => RunSourceKind::BuiltIn(*source),
+            };
+            RunSource {
+                source: kind,
+                shared: args.map_or(shared, |args| &args.shared),
+                options: SourceOptions::from_source(args),
+            }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let pi_path = sources
+        .get("pi")
+        .and_then(|source| source.options.pi_path.as_deref());
+    for store in resolve_named_pi_store_paths(&shared.pi_stores, pi_path)? {
+        let name = Box::leak(store.name.into_boxed_str());
+        run_sources.push(RunSource {
+            source: RunSourceKind::Named(pi::NamedStore::new(name, store.paths)),
+            shared,
+            options: SourceOptions::default(),
+        });
+    }
+    Ok(run_sources)
 }
 
-fn load_base_rows(
-    load_kind: AgentReportKind,
+fn load_pricing(sources: &[RunSource<'_>]) -> BTreeMap<&'static str, Arc<PricingMap>> {
+    let needs_pricing = |source: &&RunSource<'_>| {
+        source.source().uses_shared_pricing() && source.shared.mode != crate::cli::CostMode::Display
+    };
+    let modes = sources
+        .iter()
+        .filter(needs_pricing)
+        .map(|source| source.shared.offline)
+        .collect::<BTreeSet<_>>();
+    let mut result = BTreeMap::new();
+    for offline in modes {
+        let base = Arc::new(PricingMap::load_with_overrides(
+            offline,
+            crate::log_level() != Some(0),
+            std::iter::empty(),
+        ));
+        let mut cached = Vec::new();
+        for source in sources
+            .iter()
+            .filter(needs_pricing)
+            .filter(|source| source.shared.offline == offline)
+        {
+            result.insert(
+                source.source().id(),
+                cached_pricing_map(source.shared, &base, &mut cached),
+            );
+        }
+    }
+    result
+}
+
+struct BaseRows<R> {
+    rows: Vec<R>,
+    detected_agents: Vec<&'static str>,
+    diagnostics: Vec<Diagnostics>,
+}
+
+fn load_day_rows(
     shared: &SharedArgs,
-    sources: &BTreeMap<String, SourceArgs>,
-    source_shared: &BTreeMap<&'static str, SharedArgs>,
+    sources: &[RunSource<'_>],
     pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
-    unified_pricing: Option<&PricingMap>,
-) -> Result<AllLoadResult> {
+) -> Result<BaseRows<DayRow>> {
+    load_base_rows(
+        LoadKind::Day,
+        shared,
+        sources,
+        pricing,
+        |row, diagnostics| match ReportDay::parse(&row.period) {
+            Some(day) => Some(DayRow { day, row }),
+            None => {
+                diagnostics.record(Skip::unit(
+                    Path::new(&row.period),
+                    SkipKind::InvalidTimestamp,
+                    "daily row period is not a calendar day",
+                ));
+                None
+            }
+        },
+    )
+}
+
+fn load_session_rows(
+    shared: &SharedArgs,
+    sources: &[RunSource<'_>],
+    pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
+) -> Result<BaseRows<SourceRow>> {
+    load_base_rows(LoadKind::Session, shared, sources, pricing, |row, _| {
+        Some(row)
+    })
+}
+
+fn load_base_rows<R>(
+    load_kind: LoadKind,
+    shared: &SharedArgs,
+    sources: &[RunSource<'_>],
+    pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
+    admit: impl Fn(SourceRow, &Diagnostics) -> Option<R>,
+) -> Result<BaseRows<R>> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
             && crate::progress::should_show_usage_load_progress(
@@ -250,104 +297,7 @@ fn load_base_rows(
                 crate::progress::usage_load_output_is_tty(),
             ),
     );
-    let pi_path = sources
-        .get("pi")
-        .and_then(|source| source.pi_path.as_deref());
-    let (claude_counted_sender, claude_counted_receiver) = mpsc::sync_channel(1);
-    let mut claude_sender = Some(claude_counted_sender);
-    let mut claude_receiver = Some(claude_counted_receiver);
-    let mut specs = Vec::with_capacity(SOURCES.len() + shared.pi_stores.len());
-    for (index, source) in SOURCES.iter().copied().enumerate() {
-        let id = source.id();
-        let source_shared = &source_shared[id];
-        let source_args = sources.get(id);
-        let source_pricing = pricing.get(id).map(|pricing| pricing.as_ref());
-        let progress_agent = crate::progress::UsageLoadAgent(source.label());
-        let load: Box<dyn FnOnce() -> Result<AgentRows> + Send + '_> = match id {
-            "claude" => {
-                let sender = claude_sender.take().expect("Claude source is registered");
-                Box::new(move || {
-                    let source_rows = load_source_result(
-                        source,
-                        load_kind,
-                        source_shared,
-                        source_args,
-                        source_pricing,
-                        None,
-                    )?;
-                    let ccusage_adapter_common::source::SourceRows {
-                        rows,
-                        detected,
-                        diagnostics,
-                        claude_counted,
-                    } = source_rows;
-                    let counted = claude_counted.ok_or_else(|| {
-                        crate::cli_error("Claude source did not return counted usage")
-                    })?;
-                    let _ = sender.send(counted);
-                    Ok(AgentRows {
-                        rows,
-                        detected,
-                        diagnostics,
-                    })
-                })
-            }
-            "opencode" => {
-                let receiver = claude_receiver
-                    .take()
-                    .expect("OpenCode source is registered");
-                Box::new(move || {
-                    let claude_counted =
-                        move || receiver.recv().unwrap_or_else(|_| ClaudeCounted::nothing());
-                    let source_rows = load_source_result(
-                        source,
-                        load_kind,
-                        source_shared,
-                        source_args,
-                        source_pricing,
-                        Some(&claude_counted),
-                    )?;
-                    Ok(agent_rows(source_rows))
-                })
-            }
-            _ => Box::new(move || {
-                let source_rows = load_source_result(
-                    source,
-                    load_kind,
-                    source_shared,
-                    source_args,
-                    source_pricing,
-                    None,
-                )?;
-                Ok(agent_rows(source_rows))
-            }),
-        };
-        specs.push(AgentLoadSpec {
-            index,
-            agent: id,
-            progress_agent,
-            load,
-        });
-    }
-    drop(claude_sender);
-    drop(claude_receiver);
-    let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores, pi_path)?;
-    for store in named_pi_stores {
-        let agent = leak_agent_name(&store.name);
-        let store = pi::NamedStore::new(agent, store.paths);
-        let index = specs.len();
-        let pricing_ref =
-            unified_pricing.expect("unified pricing is loaded when named pi stores are configured");
-        specs.push(AgentLoadSpec {
-            index,
-            agent,
-            progress_agent: crate::progress::UsageLoadAgent(agent),
-            load: Box::new(move || {
-                load_source_result(&store, load_kind, shared, None, Some(pricing_ref), None)
-                    .map(agent_rows)
-            }),
-        });
-    }
+    let specs = load_specs(load_kind, sources, pricing);
     let loaded = load_agent_rows_parallel(specs, &mut progress)?;
     let mut detected_agents = Vec::new();
     let mut rows = Vec::new();
@@ -361,42 +311,82 @@ fn load_base_rows(
         if detected {
             detected_agents.push(loaded.agent);
         }
-        rows.extend(agent_rows);
+        rows.extend(
+            agent_rows
+                .into_iter()
+                .filter_map(|row| admit(row, &agent_diagnostics)),
+        );
         diagnostics.push(agent_diagnostics);
     }
-    Ok(AllLoadResult {
+    Ok(BaseRows {
         rows,
         detected_agents,
         diagnostics,
     })
 }
 
-fn finish_rows(
-    kind: AgentReportKind,
-    mut rows: Vec<UnifiedRow>,
-    shared: &SharedArgs,
-    start_of_week: WeekDay,
-) -> Vec<UnifiedRow> {
-    if kind == AgentReportKind::Session {
-        for row in &mut rows {
-            row.metadata_agents = None;
-        }
-        rows.sort_by(|a, b| {
-            let cost_order = if shared.order_explicit && shared.order == crate::cli::SortOrder::Asc
-            {
-                a.total_cost.total_cmp(&b.total_cost)
-            } else {
-                b.total_cost.total_cmp(&a.total_cost)
-            };
-            cost_order
-                .then_with(|| a.period.cmp(&b.period))
-                .then_with(|| a.agent.cmp(b.agent))
+fn load_specs<'a>(
+    load_kind: LoadKind,
+    sources: &'a [RunSource<'a>],
+    pricing: &'a BTreeMap<&'static str, Arc<PricingMap>>,
+) -> Vec<AgentLoadSpec<'a>> {
+    let runs =
+        |wanted: fn(&RunSourceKind) -> bool| sources.iter().any(|source| wanted(&source.source));
+    // NOTE(2026-11-01, #2007): OpenCode's claude-agent provider records the same main-thread turns that Claude Code writes to its transcript. Cross-source claims keep matching turns from being counted twice.
+    let (mut claims_tx, mut claims_rx) = if runs(|kind| matches!(kind, RunSourceKind::Claude))
+        && runs(|kind| matches!(kind, RunSourceKind::OpenCode))
+    {
+        let (sender, receiver) = claims::channel();
+        (Some(sender), Some(receiver))
+    } else {
+        (None, None)
+    };
+    let mut specs = Vec::with_capacity(sources.len());
+    for (index, source) in sources.iter().enumerate() {
+        let id = source.source().id();
+        let request = source.request(load_kind, pricing.get(id).map(Arc::as_ref));
+        let load: Box<dyn FnOnce() -> Result<AgentRows> + Send + '_> = match &source.source {
+            RunSourceKind::Claude => match claims_tx.take() {
+                Some(sender) => Box::new(move || claude::SOURCE.load_with_claims(&request, sender)),
+                None => Box::new(move || claude::SOURCE.load_rows(&request)),
+            },
+            RunSourceKind::OpenCode => match claims_rx.take() {
+                Some(receiver) => {
+                    Box::new(move || opencode::SOURCE.load_with_claims(&request, receiver))
+                }
+                None => Box::new(move || opencode::SOURCE.load_rows(&request)),
+            },
+            RunSourceKind::BuiltIn(_) | RunSourceKind::Named(_) => {
+                Box::new(move || source.source().load_rows(&request))
+            }
+        };
+        specs.push(AgentLoadSpec {
+            index,
+            agent: id,
+            progress_agent: crate::progress::UsageLoadAgent(source.source().label()),
+            load,
         });
-        return rows;
     }
+    specs
+}
 
-    let mut aggregated = aggregate_rows(rows, kind, start_of_week);
-    sort_rows(&mut aggregated, &shared.order);
+fn finish_sessions(rows: Vec<SourceRow>, shared: &SharedArgs) -> Vec<ReportRow> {
+    let mut rows = rows.into_iter().map(ReportRow::Source).collect::<Vec<_>>();
+    rows.sort_by(|a, b| {
+        let cost_order = match ccusage_report::session_cost_ordering(shared) {
+            crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
+            crate::cli::SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
+        };
+        cost_order
+            .then_with(|| a.period.cmp(&b.period))
+            .then_with(|| a.agent().cmp(b.agent()))
+    });
+    rows
+}
+
+fn finish_days(rows: Vec<DayRow>, bucket: Bucket, shared: &SharedArgs) -> Vec<ReportRow> {
+    let mut aggregated = aggregate_rows(rows, bucket);
+    sort_rows(&mut aggregated, &shared.order.unwrap_or_default());
     aggregated
 }
 
@@ -460,10 +450,6 @@ pub(super) fn load_agent_rows_parallel(
     })
 }
 
-fn leak_agent_name(name: &str) -> &'static str {
-    Box::leak(name.to_string().into_boxed_str())
-}
-
 struct ResolvedNamedPiStore {
     name: String,
     paths: Vec<PathBuf>,
@@ -516,170 +502,43 @@ fn path_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Session files are collected recursively, so a store rooted at an ancestor
-/// of another store (or of the default pi store) would ingest the same files
-/// twice under different dedupe identities. Treat equal and nested paths as
-/// overlapping.
 fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
 }
 
-/// Asks a source that implements the contract for its unified rows.
-fn load_source_result(
-    source: &dyn UsageSource,
-    load_kind: AgentReportKind,
-    shared: &SharedArgs,
-    source_args: Option<&SourceArgs>,
-    pricing: Option<&PricingMap>,
-    claude_counted: Option<&(dyn Fn() -> ClaudeCounted + Send)>,
-) -> Result<SourceRows> {
-    source.unified_rows(&UnifiedRequest {
-        kind: load_kind,
-        shared,
-        options: SourceOptions::from_source(source_args),
-        pricing,
-        progress: ProgressOwner::Caller,
-        multi_source_driver: true,
-        claude_counted,
-    })
-}
-
-fn agent_rows(rows: SourceRows) -> AgentRows {
-    AgentRows {
-        rows: rows.rows,
-        detected: rows.detected,
-        diagnostics: rows.diagnostics,
-    }
-}
-
-#[cfg(test)]
-fn load_pi_format_agent_rows(
-    custom_path: Option<&str>,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<AgentRows> {
-    pi::SOURCE
-        .unified_rows(&UnifiedRequest {
-            kind,
-            shared,
-            options: SourceOptions {
-                pi_path: custom_path,
-                ..SourceOptions::default()
-            },
-            pricing: Some(pricing),
-            progress: ProgressOwner::Caller,
-            multi_source_driver: true,
-            claude_counted: None,
-        })
-        .map(agent_rows)
-}
-
-#[cfg(test)]
-fn load_named_pi_store_rows(
-    agent: &'static str,
-    store_path: &str,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<AgentRows> {
-    let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
-    load_source_result(&store, kind, shared, None, Some(pricing), None).map(agent_rows)
-}
-
-/// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
-/// source counts are left to it unless `include_claude_agent` is set, so the
-/// focused reports add up to the unified one.
-///
-/// Also returns what the Claude load skipped, if it ran: a skipped transcript
-/// leaves its turns to OpenCode, so the skip changes these totals too.
 pub(super) fn load_opencode_entries(
     shared: &SharedArgs,
     kind: AgentReportKind,
     include_claude_agent: bool,
+    claude_source: Option<&ccusage_cli::SourceArgs>,
 ) -> Result<(Vec<LoadedEntry>, Option<Diagnostics>)> {
     let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
     if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
         return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
-    let claude_shared = SharedArgs {
-        json: true,
-        mode: CostMode::Display,
-        ..shared.clone()
-    };
-    // Focused Claude reports, sessions included, count only in-window days, so match by
-    // session day. Missing Claude directories load as no session days, so those turns stay.
-    let claude_rows = claude::SOURCE.unified_rows(&UnifiedRequest {
-        kind: AgentReportKind::Daily,
-        shared: &claude_shared,
-        options: SourceOptions::default(),
-        pricing: None,
-        progress: ProgressOwner::Source,
-        multi_source_driver: true,
-        claude_counted: None,
-    })?;
-    let claude_counted = claude_rows
-        .claude_counted
-        .ok_or_else(|| crate::cli_error("Claude source did not return counted usage"))?;
-    Ok((
-        claude_counted.retain_uncounted(entries),
-        Some(claude_rows.diagnostics),
-    ))
-}
-
-/// Retains the daily summaries inside the requested date bounds.
-#[cfg(test)]
-fn filter_daily_summaries_by_date(rows: &mut Vec<UsageSummary>, shared: &SharedArgs) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
-    }
-    rows.retain(|row| {
-        let date = row.date.as_deref().unwrap_or_default().replace('-', "");
-        shared.since.as_ref().is_none_or(|since| &date >= since)
-            && shared.until.as_ref().is_none_or(|until| &date <= until)
-    });
+    let claude_shared = claude_source.map_or(shared, |source| &source.shared);
+    let diagnostics = Diagnostics::for_report("claude", claude_shared.clock);
+    let project = claude_source.and_then(|source| source.options.claude_project.as_deref());
+    let counted = claude::SOURCE.counted(claude_shared, project, &diagnostics)?;
+    Ok((counted.retain_uncounted(entries), Some(diagnostics)))
 }
 
 fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
-    kinds.iter().any(|kind| *kind != AgentReportKind::Session)
+    kinds
+        .iter()
+        .any(|&kind| LoadKind::for_report(kind) == LoadKind::Day)
 }
 
 fn needs_session(kinds: &[AgentReportKind]) -> bool {
-    kinds.contains(&AgentReportKind::Session)
+    kinds
+        .iter()
+        .any(|&kind| LoadKind::for_report(kind) == LoadKind::Session)
 }
 
-#[cfg(test)]
-pub(super) fn codex_group_row<S>(
-    period: &str,
-    group: &CodexGroup,
-    pricing: &PricingMap,
-    speed: S,
-    mode: CostMode,
-) -> UnifiedRow
-where
-    S: Into<codex::CodexSpeedPolicy> + Copy,
-{
-    codex::unified_row_from_group(period, group, pricing, speed, mode)
-}
-
-pub(super) fn aggregate_rows(
-    rows: Vec<UnifiedRow>,
-    kind: AgentReportKind,
-    start_of_week: WeekDay,
-) -> Vec<UnifiedRow> {
+pub(super) fn aggregate_rows(rows: Vec<DayRow>, bucket: Bucket) -> Vec<ReportRow> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
-    for mut row in rows {
-        let period = match kind {
-            AgentReportKind::Daily => row.period.clone(),
-            AgentReportKind::Monthly => row
-                .period
-                .get(..7)
-                .map_or_else(|| row.period.clone(), str::to_string),
-            AgentReportKind::Weekly => {
-                crate::week_start(&row.period, start_of_week).unwrap_or_else(|| row.period.clone())
-            }
-            AgentReportKind::Session => row.period.clone(),
-        };
+    for DayRow { day, mut row } in rows {
+        let period = bucket.key(day);
         row.period = period.clone();
         groups.entry(period).or_default().add(row);
     }
@@ -691,9 +550,55 @@ pub(super) fn aggregate_rows(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::{
+        UsageSummary,
+        adapter::codex,
+        cli::{BUILT_IN_AGENT_NAMES, CodexSpeed, CostMode},
+        tests::{NO_SOURCES, aggregate_periods},
+    };
+    use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+    use ccusage_adapter_common::source::LoadRequest;
+    use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
+
+    fn load_pi_format_agent_rows(
+        custom_path: Option<&str>,
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+        pricing: &PricingMap,
+    ) -> Result<AgentRows> {
+        pi::SOURCE.load_rows(&LoadRequest {
+            kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
+            shared,
+            options: SourceOptions {
+                pi_path: custom_path,
+                ..SourceOptions::default()
+            },
+            pricing: Some(pricing),
+            progress: ProgressOwner::Caller,
+        })
+    }
+
+    fn load_named_pi_store_rows(
+        agent: &'static str,
+        store_path: &str,
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+        pricing: &PricingMap,
+    ) -> Result<AgentRows> {
+        let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
+        store.load_rows(&LoadRequest {
+            kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
+            shared,
+            options: SourceOptions::default(),
+            pricing: Some(pricing),
+            progress: ProgressOwner::Caller,
+        })
+    }
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
         UsageSummary {
@@ -719,41 +624,167 @@ mod tests {
         }
     }
 
-    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> UnifiedRow {
+    fn finish_rows(
+        kind: AgentReportKind,
+        rows: Vec<SourceRow>,
+        shared: &SharedArgs,
+        start_of_week: WeekDay,
+    ) -> Option<Vec<ReportRow>> {
+        match Bucket::for_report(kind, start_of_week) {
+            Some(bucket) => aggregate_periods(rows, bucket).map(|mut rows| {
+                sort_rows(&mut rows, &shared.order.unwrap_or_default());
+                rows
+            }),
+            None => Some(finish_sessions(rows, shared)),
+        }
+    }
+
+    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> SourceRow {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
     }
 
     #[test]
+    fn sources_start_loading_in_registry_order() {
+        let shared = SharedArgs::default();
+        let sources = run_sources(&shared, &NO_SOURCES).unwrap();
+        let pricing = BTreeMap::new();
+        let specs = load_specs(LoadKind::Day, &sources, &pricing);
+        let agents = specs.iter().map(|spec| spec.agent).collect::<Vec<_>>();
+        assert_eq!(agents, BUILT_IN_AGENT_NAMES);
+    }
+
+    #[test]
+    fn invalid_daily_periods_cannot_become_report_buckets() {
+        for period in ["invalid", "2026-02-30", "2026-01", "2026-01-02T00:00:00Z"] {
+            for bucket in [Bucket::Day, Bucket::Month, Bucket::Week(WeekDay::Monday)] {
+                assert!(aggregate_periods(vec![sorting_row(period, "amp", 1.0)], bucket).is_none());
+            }
+        }
+    }
+
+    #[test]
     fn pricing_maps_exclude_sources_that_load_their_own_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let shared = SharedArgs {
             offline: true,
             ..SharedArgs::default()
         };
-        let source_shared = shared_by_source(&BTreeMap::new(), &shared);
+        let sources = BTreeMap::new();
+        let run_sources = run_sources(&shared, &sources).unwrap();
+        let pricing_by_source = load_pricing(&run_sources);
 
-        let (pricing_by_source, unified_pricing) = load_pricing(&shared, &source_shared, false);
-
-        for agent in ["claude", "opencode", "qwen"] {
+        for agent in ["claude", "opencode"] {
             assert!(
                 !pricing_by_source.contains_key(agent),
                 "{agent} has its own pricing map"
             );
         }
         for agent in BUILT_IN_AGENT_NAMES {
-            if !["claude", "opencode", "qwen"].contains(agent) {
+            if !["claude", "opencode"].contains(agent) {
                 assert!(
                     pricing_by_source.contains_key(agent),
                     "{agent} needs a pricing map"
                 );
             }
         }
-        assert!(unified_pricing.is_none());
+    }
+
+    #[test]
+    fn display_sources_do_not_load_shared_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            ..SharedArgs::default()
+        };
+        let sources = run_sources(&shared, &NO_SOURCES).unwrap();
+        assert!(load_pricing(&sources).is_empty());
+    }
+
+    #[test]
+    fn named_stores_share_the_builtin_pricing_cache() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            offline: true,
+            pi_stores: vec![NamedPiStore {
+                name: "work".to_owned(),
+                path: fixture.path("work-store").to_string_lossy().into_owned(),
+            }],
+            ..Default::default()
+        };
+        let source_args = BTreeMap::new();
+        let sources = run_sources(&shared, &source_args).unwrap();
+        let pricing = load_pricing(&sources);
+        assert_eq!(sources.len(), SOURCES.len() + 1);
+        assert!(Arc::ptr_eq(&pricing["work"], &pricing["amp"]));
+    }
+
+    #[test]
+    fn focused_opencode_claims_use_the_claude_source_timezone() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "claude-config/projects/project-a/native-a.jsonl": r#"{"timestamp":"2099-01-02T20:00:00.000Z","sessionId":"native-a","requestId":"req-a","costUSD":1.0,"message":{"id":"msg-a","model":"claude-opus-4-20250514","usage":{"input_tokens":100,"output_tokens":70}}}"#,
+        });
+        let db_path = fixture.create_dir_all("opencode").join("opencode.db");
+        let db = sqlite::open(db_path).unwrap();
+        db.execute("CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT)").unwrap();
+        let created = 4_071_067_200_000_i64;
+        let data = json!({
+            "time": { "created": created },
+            "model": { "id": "opus", "providerID": "claude-agent" },
+            "content": [{ "type": "text", "text": "hi", "native": { "sessionID": "native-a", "messageID": "m" } }],
+            "tokens": { "input": 100, "output": 50 }, "cost": 0
+        }).to_string();
+        let mut statement = db
+            .prepare(
+                "INSERT INTO session_message VALUES ('m', 'ses-agent', 'assistant', 1, ?1, ?2)",
+            )
+            .unwrap();
+        statement.bind((1, created)).unwrap();
+        statement.bind((2, data.as_str())).unwrap();
+        statement.next().unwrap();
+        let _environment = EnvGuard::set_many([
+            ("HOME", Some(fixture.root().as_os_str().to_os_string())),
+            (
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.path("claude-config").into_os_string()),
+            ),
+            (
+                "OPENCODE_DATA_DIR",
+                Some(fixture.path("opencode").into_os_string()),
+            ),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            json: true,
+            mode: CostMode::Display,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
+            ..SharedArgs::with_defaults()
+        };
+        let source = SourceArgs {
+            shared: SharedArgs {
+                timezone: Some("Asia/Tokyo".parse().unwrap()),
+                ..shared.clone()
+            },
+            ..SourceArgs::default()
+        };
+        let (entries, _) =
+            load_opencode_entries(&shared, AgentReportKind::Daily, false, Some(&source)).unwrap();
+        assert_eq!(entries.len(), 1);
+        let (entries, _) =
+            load_opencode_entries(&shared, AgentReportKind::Daily, false, None).unwrap();
+        assert!(entries.is_empty());
     }
 
     #[test]
     fn source_claude_project_filters_daily_and_session_rows_without_filtering_other_sources() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "claude-config/projects/project-a/session-a.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-a","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-a"}}"#,
             "claude-config/projects/project-b/session-b.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-b","costUSD":0.02,"message":{"usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-b"}}"#,
@@ -764,15 +795,17 @@ mod tests {
             json: true,
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
             "claude".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    claude_project: Some("project-a".to_string()),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                claude_project: Some("project-a".to_string()),
-                ..SourceArgs::default()
             },
         )]);
 
@@ -780,7 +813,10 @@ mod tests {
 
         assert_eq!(daily.rows.len(), 1);
         assert_eq!(daily.rows[0].period, "2099-01-02");
-        assert_eq!(daily.rows[0].metadata_agents, Some(vec!["claude", "pi"]));
+        assert_eq!(
+            daily.rows[0].agents().map(<[_]>::to_vec),
+            Some(vec!["claude", "pi"])
+        );
         assert_eq!(daily.rows[0].input_tokens, 17);
         assert_eq!(daily.rows[0].output_tokens, 8);
         assert!((daily.rows[0].total_cost - 0.01).abs() < f64::EPSILON);
@@ -792,35 +828,35 @@ mod tests {
             sessions
                 .rows
                 .iter()
-                .any(|row| row.agent == "claude" && row.period == "session-a")
+                .any(|row| row.agent() == "claude" && row.period == "session-a")
         );
         assert!(
             !sessions
                 .rows
                 .iter()
-                .any(|row| row.agent == "claude" && row.period == "session-b")
+                .any(|row| row.agent() == "claude" && row.period == "session-b")
         );
         assert!(
             sessions
                 .rows
                 .iter()
-                .any(|row| row.agent == "pi" && row.period == "pi-session")
+                .any(|row| row.agent() == "pi" && row.period == "pi-session")
         );
     }
 
-    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvVarsGuard {
+    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvGuard {
         isolated_source_environment_with_pi_agent_dir(fixture, "pi/sessions")
     }
 
     fn isolated_source_environment_with_pi_agent_dir(
         fixture: &ccusage_test_support::Fixture,
         pi_agent_dir: &str,
-    ) -> EnvVarsGuard {
-        let _ = fixture.create_dir_all("claude-config/projects");
-        let _ = fixture.create_dir_all("pi/sessions");
-        let _ = fixture.create_dir_all("empty-xdg-config");
-        let _ = fixture.create_dir_all("empty-xdg-data");
-        EnvVarsGuard::set_many([
+    ) -> EnvGuard {
+        fixture.create_dir_all("claude-config/projects");
+        fixture.create_dir_all("pi/sessions");
+        fixture.create_dir_all("empty-xdg-config");
+        fixture.create_dir_all("empty-xdg-data");
+        EnvGuard::set_many([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             (
                 "USERPROFILE",
@@ -911,8 +947,7 @@ mod tests {
     #[test]
     fn session_cost_order_honors_explicit_ascending_order() {
         let shared = SharedArgs {
-            order: crate::cli::SortOrder::Asc,
-            order_explicit: true,
+            order: Some(crate::cli::SortOrder::Asc),
             ..SharedArgs::default()
         };
         let rows = vec![
@@ -921,10 +956,10 @@ mod tests {
             sorting_row("z-cheap", "claude", 1.0),
             sorting_row("b-zero", "claude", 0.0),
         ];
-        let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday);
+        let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday).unwrap();
         let keys: Vec<_> = sorted
             .iter()
-            .map(|row| (row.period.as_str(), row.agent))
+            .map(|row| (row.period.as_str(), row.agent()))
             .collect();
         assert_eq!(
             keys,
@@ -951,14 +986,14 @@ mod tests {
                 sorting_row("c-cheap", "codex", 1.0),
             ];
             let shared = SharedArgs {
-                order,
-                order_explicit,
+                order: order_explicit.then_some(order),
                 ..SharedArgs::default()
             };
-            let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday);
+            let sorted =
+                finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday).unwrap();
             let keys: Vec<_> = sorted
                 .iter()
-                .map(|row| (row.period.as_str(), row.agent))
+                .map(|row| (row.period.as_str(), row.agent()))
                 .collect();
             assert_eq!(
                 keys,
@@ -983,6 +1018,7 @@ mod tests {
                 &shared,
                 WeekDay::Monday
             )
+            .unwrap()
             .is_empty()
         );
         let rows = finish_rows(
@@ -990,7 +1026,8 @@ mod tests {
             vec![sorting_row("only-session", "claude", 0.0)],
             &shared,
             WeekDay::Monday,
-        );
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].period, "only-session");
     }
@@ -1012,10 +1049,10 @@ mod tests {
                     sorting_row("2026-02-02", "claude", 20.0),
                 ];
                 let shared = SharedArgs {
-                    order,
+                    order: Some(order),
                     ..SharedArgs::default()
                 };
-                let sorted = finish_rows(kind, rows, &shared, WeekDay::Monday);
+                let sorted = finish_rows(kind, rows, &shared, WeekDay::Monday).unwrap();
                 let costs: Vec<_> = sorted.iter().map(|row| row.total_cost).collect();
                 assert_eq!(costs, expected_costs, "{kind:?} {order:?}");
             }
@@ -1023,27 +1060,8 @@ mod tests {
     }
 
     #[test]
-    fn filters_daily_summaries_with_compact_date_bounds() {
-        let mut rows = vec![
-            usage_summary("2026-01-01", 10),
-            usage_summary("2026-01-02", 20),
-            usage_summary("2026-01-03", 30),
-        ];
-        let shared = SharedArgs {
-            since: Some("20260102".to_string()),
-            until: Some("20260102".to_string()),
-            ..SharedArgs::default()
-        };
-
-        filter_daily_summaries_by_date(&mut rows, &shared);
-
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].date.as_deref(), Some("2026-01-02"));
-        assert_eq!(rows[0].input_tokens, 20);
-    }
-
-    #[test]
     fn unified_row_matches_focused_cost_for_mixed_recorded_tiers() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1054,19 +1072,26 @@ mod tests {
                 }
             }"#,
         );
-        let usage = crate::CodexModelUsage {
-            input_tokens: 30,
-            total_tokens: 30,
-            recorded_standard_usage: codex::CodexUsageBucket {
-                input_tokens: 10,
-                ..codex::CodexUsageBucket::default()
+        let mut usage = CodexModelUsage::from_buckets(
+            ccusage_adapter_codex::CodexUsageBucket {
+                input_tokens: 30,
+                ..Default::default()
             },
-            recorded_fast_usage: codex::CodexUsageBucket {
-                input_tokens: 10,
-                ..codex::CodexUsageBucket::default()
+            {
+                let mut tiers = ccusage_adapter_codex::TierBuckets::default();
+                tiers[ccusage_adapter_codex::CodexServiceTier::Standard] =
+                    codex::CodexUsageBucket {
+                        input_tokens: 10,
+                        ..codex::CodexUsageBucket::default()
+                    };
+                tiers[ccusage_adapter_codex::CodexServiceTier::Fast] = codex::CodexUsageBucket {
+                    input_tokens: 10,
+                    ..codex::CodexUsageBucket::default()
+                };
+                tiers
             },
-            ..crate::CodexModelUsage::default()
-        };
+        );
+        usage.total_tokens = 30;
         let mut group = CodexGroup {
             input_tokens: 30,
             total_tokens: 30,
@@ -1075,8 +1100,15 @@ mod tests {
         group.models.insert("gpt-test".to_string(), usage);
         let speed = codex::CodexSpeedPolicy::Auto(codex::CodexServiceTier::Standard);
 
-        let focused_cost = codex::calculate_group_cost(&group, &pricing, speed);
-        let unified = codex_group_row("2026-07-22", &group, &pricing, speed, CostMode::Calculate);
+        let focused_cost = codex::calculate_group_cost(&group, Some(&pricing), speed);
+        let unified = codex::unified_row_from_group(
+            ccusage_adapter_common::source::LoadKind::Session,
+            "2026-07-22",
+            &group,
+            Some(&pricing),
+            speed,
+            CostMode::Calculate,
+        );
 
         assert!((focused_cost - 40e-6).abs() < f64::EPSILON);
         assert!((unified.total_cost - focused_cost).abs() < f64::EPSILON);
@@ -1085,19 +1117,22 @@ mod tests {
 
     #[test]
     fn unified_row_reports_codex_cache_write_tokens_and_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
-        let usage = crate::CodexModelUsage {
-            input_tokens: 935_040,
-            cached_input_tokens: 875_306,
-            cache_creation_tokens: 57_610,
-            output_tokens: 11_150,
-            total_tokens: 946_190,
-            long_context_input_tokens: 935_040,
-            long_context_cached_input_tokens: 875_306,
-            long_context_cache_creation_tokens: 57_610,
-            long_context_output_tokens: 11_150,
-            ..crate::CodexModelUsage::default()
-        };
+        let mut usage = CodexModelUsage::from_buckets(
+            ccusage_adapter_codex::CodexUsageBucket {
+                input_tokens: 935_040,
+                cached_input_tokens: 875_306,
+                cache_creation_tokens: 57_610,
+                output_tokens: 11_150,
+                long_context_input_tokens: 935_040,
+                long_context_cached_input_tokens: 875_306,
+                long_context_cache_creation_tokens: 57_610,
+                long_context_output_tokens: 11_150,
+            },
+            Default::default(),
+        );
+        usage.total_tokens = 946_190;
         let mut group = CodexGroup {
             input_tokens: 935_040,
             cached_input_tokens: 875_306,
@@ -1108,10 +1143,11 @@ mod tests {
         };
         group.models.insert("gpt-5.6-terra".to_string(), usage);
 
-        let row = codex_group_row(
+        let row = codex::unified_row_from_group(
+            ccusage_adapter_common::source::LoadKind::Session,
             "2026-08-20",
             &group,
-            &pricing,
+            Some(&pricing),
             codex::CodexSpeedPolicy::Forced(codex::CodexServiceTier::Standard),
             CostMode::Calculate,
         );
@@ -1133,7 +1169,7 @@ mod tests {
         kind: AgentReportKind,
         shared: &SharedArgs,
         pricing: &PricingMap,
-    ) -> Result<Vec<UnifiedRow>> {
+    ) -> Result<Vec<SourceRow>> {
         let (mut entries, _) = ccusage_adapter_common::testing::load_entries(
             &pi::SOURCE,
             shared,
@@ -1144,11 +1180,20 @@ mod tests {
             Some(pricing),
         )?;
         filter_loaded_entries_by_date(&mut entries, shared);
-        let summaries = pi::summarize_entries(&entries, kind)?;
-        Ok(summary_rows("pi", summaries, true))
+        let summaries = ccusage_adapter_common::source::EntrySource::summarize(
+            &pi::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                kind,
+                ccusage_core::cli::WeekDay::Sunday,
+            ),
+        )?;
+        Ok(summary_rows("pi", summaries, true).into_iter().collect())
     }
 
-    fn usage_fingerprint(rows: &[UnifiedRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
+    fn usage_fingerprint(
+        rows: &[impl std::ops::Deref<Target = ccusage_adapter_common::rows::RowUsage>],
+    ) -> Vec<(String, u64, u64, u64, u64, u64)> {
         rows.iter()
             .map(|row| {
                 (
@@ -1165,6 +1210,7 @@ mod tests {
 
     #[test]
     fn load_rows_filters_named_pi_store_sessions_like_pi_path_subcommand() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "omp/sessions/project-a/agent_inside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "omp/sessions/project-a/agent_outside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
@@ -1175,9 +1221,9 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("America/Boise".to_string()),
-            since: Some("20260704".to_string()),
-            until: Some("20260704".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
+            since: Some("20260704".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: store_path.clone(),
@@ -1195,7 +1241,7 @@ mod tests {
         let omp_rows = result
             .rows
             .iter()
-            .filter(|row| row.agent == "omp")
+            .filter(|row| row.agent() == "omp")
             .collect::<Vec<_>>();
         let pi_rows = pi_path_subcommand_rows(
             &store_path,
@@ -1260,9 +1306,9 @@ mod tests {
         });
         let shared = SharedArgs {
             mode: crate::cli::CostMode::Display,
-            timezone: Some("America/Boise".to_string()),
-            since: Some("20260703".to_string()),
-            until: Some("20260704".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
+            since: Some("20260703".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             ..SharedArgs::default()
         };
         let store_path = fixture.path("omp/sessions").to_string_lossy().into_owned();
@@ -1277,6 +1323,13 @@ mod tests {
             let named_rows = load_named_pi_store_rows("omp", &store_path, kind, &shared, &pricing)
                 .unwrap()
                 .rows;
+            let named_rows = finish_rows(
+                kind,
+                named_rows,
+                &shared,
+                ccusage_core::cli::WeekDay::Sunday,
+            )
+            .unwrap();
             let pi_rows = pi_path_subcommand_rows(&store_path, kind, &shared, &pricing).unwrap();
 
             assert_eq!(usage_fingerprint(&named_rows), usage_fingerprint(&pi_rows));
@@ -1285,6 +1338,7 @@ mod tests {
 
     #[test]
     fn default_pi_unified_session_window_keeps_until_day_like_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_until-day.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "pi/sessions/project-a/agent_after-day.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
@@ -1294,9 +1348,9 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("America/Boise".to_string()),
-            since: Some("20260704".to_string()),
-            until: Some("20260704".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
+            since: Some("20260704".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -1310,7 +1364,7 @@ mod tests {
         let pi_rows = result
             .rows
             .iter()
-            .filter(|row| row.agent == "pi")
+            .filter(|row| row.agent() == "pi")
             .cloned()
             .collect::<Vec<_>>();
         let pi_path_rows = pi_path_subcommand_rows(
@@ -1333,6 +1387,7 @@ mod tests {
 
     #[test]
     fn unified_claude_session_window_keeps_sessions_last_active_on_the_until_day() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "claude-config/projects/project-a/until-day.jsonl": r#"{"timestamp":"2026-07-05T03:00:00.000Z","sessionId":"until-day","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":1},"model":"claude-sonnet-4-20250514","id":"msg-until"}}"#,
             "claude-config/projects/project-a/after-day.jsonl": r#"{"timestamp":"2026-07-06T03:00:00.000Z","sessionId":"after-day","costUSD":0.02,"message":{"usage":{"input_tokens":20,"output_tokens":2},"model":"claude-sonnet-4-20250514","id":"msg-after"}}"#,
@@ -1342,9 +1397,9 @@ mod tests {
             json: true,
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("America/Boise".to_string()),
-            since: Some("20260704".to_string()),
-            until: Some("20260704".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
+            since: Some("20260704".parse().unwrap()),
+            until: Some("20260704".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -1358,7 +1413,7 @@ mod tests {
         let claude_rows = result
             .rows
             .iter()
-            .filter(|row| row.agent == "claude")
+            .filter(|row| row.agent() == "claude")
             .cloned()
             .collect::<Vec<_>>();
 
@@ -1369,7 +1424,7 @@ mod tests {
     }
 
     #[test]
-    fn default_pi_session_rows_keep_main_project_path_derivation() {
+    fn default_pi_session_rows_derive_project_from_the_store_root() {
         let fixture = fs_fixture!({
             "default-root/archive/sessions/project-a/agent_default-session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200}}}"#,
         });
@@ -1389,8 +1444,14 @@ mod tests {
         assert_eq!(rows.rows.len(), 1);
         assert_eq!(rows.rows[0].agent, "pi");
         assert_eq!(
-            rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-a")
+            rows.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "archive"
         );
     }
 
@@ -1418,8 +1479,14 @@ mod tests {
         assert_eq!(rows.rows[0].agent, "omp");
         assert_eq!(rows.rows[0].models_used, vec!["[omp] gpt-5"]);
         assert_eq!(
-            rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-a")
+            rows.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "project-a"
         );
     }
 
@@ -1465,7 +1532,13 @@ mod tests {
                 .iter()
                 .map(|row| {
                     (
-                        row.metadata.as_ref().unwrap()["projectPath"].clone(),
+                        row.metadata
+                            .as_ref()
+                            .unwrap()
+                            .project_path
+                            .as_ref()
+                            .unwrap()
+                            .clone(),
                         row.input_tokens,
                     )
                 })
@@ -1473,7 +1546,7 @@ mod tests {
         };
         assert_eq!(
             sessions(&named),
-            [(json!("project-a"), 10), (json!("project-b"), 20)]
+            [("project-a".to_string(), 10), ("project-b".to_string(), 20)]
         );
         assert_eq!(sessions(&named), sessions(&default));
     }
@@ -1507,12 +1580,24 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            plain_root.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-b")
+            plain_root.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "project-b"
         );
         assert_eq!(
-            earlier_sessions_root.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-c")
+            earlier_sessions_root.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "project-c"
         );
     }
 
@@ -1539,6 +1624,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_that_collides_with_default_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1548,9 +1634,9 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: fixture
@@ -1577,6 +1663,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_that_collides_with_another_store() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1589,8 +1676,8 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![
                 NamedPiStore {
                     name: "omp".to_string(),
@@ -1620,6 +1707,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_nested_inside_default_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1629,9 +1717,9 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: fixture
@@ -1658,6 +1746,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_partially_overlapping_another_store() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1671,8 +1760,8 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![
                 NamedPiStore {
                     name: "omp".to_string(),
@@ -1702,6 +1791,7 @@ mod tests {
 
     #[test]
     fn load_rows_includes_named_pi_store_through_production_wiring() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "omp/sessions/project-a/agent_omp-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1710,9 +1800,9 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "omp".to_string(),
                 path: fixture.path("omp/sessions").to_string_lossy().into_owned(),
@@ -1730,7 +1820,10 @@ mod tests {
 
         assert!(result.detected_agents.contains(&"omp"));
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].metadata_agents, Some(vec!["omp"]));
+        assert_eq!(
+            result.rows[0].agents().map(<[_]>::to_vec),
+            Some(vec!["omp"])
+        );
         assert_eq!(result.rows[0].models_used, vec!["[omp] gpt-5"]);
         assert_eq!(result.rows[0].input_tokens, 30);
         assert_eq!(result.rows[0].output_tokens, 40);
@@ -1738,6 +1831,7 @@ mod tests {
 
     #[test]
     fn load_rows_reads_the_default_pi_store_from_its_source_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1746,17 +1840,19 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
             "pi".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
-                ..SourceArgs::default()
             },
         )]);
 
@@ -1772,13 +1868,14 @@ mod tests {
         assert!(!unified.detected_agents.contains(&"pi"));
         assert!(result.detected_agents.contains(&"pi"));
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].metadata_agents, Some(vec!["pi"]));
+        assert_eq!(result.rows[0].agents().map(<[_]>::to_vec), Some(vec!["pi"]));
         assert_eq!(result.rows[0].input_tokens, 30);
         assert_eq!(result.rows[0].output_tokens, 40);
     }
 
     #[test]
     fn load_rows_filters_a_source_by_its_own_date_window() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1787,17 +1884,17 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20990101".to_string()),
-            until: Some("20990103".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990101".parse().unwrap()),
+            until: Some("20990103".parse().unwrap()),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
             "pi".to_string(),
             SourceArgs {
                 shared: SharedArgs {
-                    since: Some("20990105".to_string()),
-                    until: Some("20990106".to_string()),
+                    since: Some("20990105".parse().unwrap()),
+                    until: Some("20990106".parse().unwrap()),
                     ..shared.clone()
                 },
                 ..SourceArgs::default()
@@ -1820,6 +1917,7 @@ mod tests {
 
     #[test]
     fn loads_codex_and_pi_with_source_pricing_speed_and_date_options() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "codex-home/sessions/2026/07/21/before.jsonl": codex_rollout(
                 "2026-07-21",
@@ -1839,9 +1937,9 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260720".to_string()),
-            until: Some("20260723".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260720".parse().unwrap()),
+            until: Some("20260723".parse().unwrap()),
             ..SharedArgs::default()
         };
         let pricing_overrides = BTreeMap::from([(
@@ -1865,14 +1963,16 @@ mod tests {
             (
                 "codex".to_string(),
                 SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        codex_speed: CodexSpeed::Fast,
+                        ..Default::default()
+                    },
                     shared: SharedArgs {
-                        since: Some("20260722".to_string()),
-                        until: Some("20260722".to_string()),
+                        since: Some("20260722".parse().unwrap()),
+                        until: Some("20260722".parse().unwrap()),
                         pricing_overrides,
                         ..shared.clone()
                     },
-                    codex_speed: CodexSpeed::Fast,
-                    ..SourceArgs::default()
                 },
             ),
             (
@@ -1890,8 +1990,11 @@ mod tests {
         let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].metadata_agents, Some(vec!["codex", "pi"]));
-        let breakdowns = result.rows[0].agent_breakdowns.as_ref().unwrap();
+        assert_eq!(
+            result.rows[0].agents().map(<[_]>::to_vec),
+            Some(vec!["codex", "pi"])
+        );
+        let breakdowns = result.rows[0].agent_breakdowns().unwrap();
         let codex_row = breakdowns
             .iter()
             .find(|row| row.agent == "codex")
@@ -1909,6 +2012,7 @@ mod tests {
 
     #[test]
     fn loads_codex_with_source_pricing_speed_without_date_bounds() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "codex-home/sessions/2026/07/22/in-range.jsonl": codex_rollout(
                 "2026-07-22",
@@ -1921,12 +2025,16 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
             "codex".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    codex_speed: CodexSpeed::Fast,
+                    ..Default::default()
+                },
                 shared: SharedArgs {
                     pricing_overrides: BTreeMap::from([(
                         "gpt-source-config".to_string(),
@@ -1939,8 +2047,6 @@ mod tests {
                     )]),
                     ..shared.clone()
                 },
-                codex_speed: CodexSpeed::Fast,
-                ..SourceArgs::default()
             },
         )]);
 
@@ -1954,6 +2060,7 @@ mod tests {
 
     #[test]
     fn reads_openclaw_entries_from_the_source_custom_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "custom-openclaw/agents/main/sessions/custom.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1660,"output":55,"totalTokens":1715,"cost":{"total":0.02}},"timestamp":1769753935279}}"#,
         });
@@ -1961,20 +2068,22 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
             "openclaw".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    open_claw_path: Some(
+                        fixture
+                            .path("custom-openclaw")
+                            .to_string_lossy()
+                            .into_owned(),
+                    ),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                open_claw_path: Some(
-                    fixture
-                        .path("custom-openclaw")
-                        .to_string_lossy()
-                        .into_owned(),
-                ),
-                ..SourceArgs::default()
             },
         )]);
 
@@ -1989,6 +2098,7 @@ mod tests {
 
     #[test]
     fn rejects_named_pi_store_overlapping_the_source_custom_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1996,8 +2106,8 @@ mod tests {
         let custom_pi_path = fixture.path("custom/pi").to_string_lossy().into_owned();
         let shared = SharedArgs {
             offline: true,
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "fork".to_string(),
                 path: custom_pi_path.clone(),
@@ -2007,9 +2117,11 @@ mod tests {
         let sources = BTreeMap::from([(
             "pi".to_string(),
             SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    pi_path: Some(custom_pi_path),
+                    ..Default::default()
+                },
                 shared: shared.clone(),
-                pi_path: Some(custom_pi_path),
-                ..SourceArgs::default()
             },
         )]);
 
@@ -2025,6 +2137,7 @@ mod tests {
 
     #[test]
     fn named_pi_stores_keep_unified_shared_and_pricing_options() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "fork/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-named-source-config","usage":{"input":1000,"output":500}}}"#,
         });
@@ -2033,9 +2146,9 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".to_string()),
-            since: Some("20990102".to_string()),
-            until: Some("20990102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990102".parse().unwrap()),
+            until: Some("20990102".parse().unwrap()),
             pi_stores: vec![NamedPiStore {
                 name: "fork".to_string(),
                 path: fixture.path("fork/sessions").to_string_lossy().into_owned(),
@@ -2054,8 +2167,8 @@ mod tests {
             "pi".to_string(),
             SourceArgs {
                 shared: SharedArgs {
-                    since: Some("20990105".to_string()),
-                    until: Some("20990106".to_string()),
+                    since: Some("20990105".parse().unwrap()),
+                    until: Some("20990106".parse().unwrap()),
                     pricing_overrides: BTreeMap::from([(
                         pricing_key,
                         crate::cli::PricingOverride {
@@ -2074,8 +2187,7 @@ mod tests {
 
         assert!(result.detected_agents.contains(&"fork"));
         let named_store = result.rows[0]
-            .agent_breakdowns
-            .as_ref()
+            .agent_breakdowns()
             .unwrap()
             .iter()
             .find(|row| row.agent == "fork")
@@ -2115,11 +2227,14 @@ mod tests {
             .rows,
         );
 
-        let aggregated = aggregate_rows(rows, AgentReportKind::Daily, WeekDay::Monday);
+        let aggregated = aggregate_periods(rows, Bucket::Day).unwrap();
 
         assert_eq!(aggregated.len(), 1);
-        assert_eq!(aggregated[0].metadata_agents, Some(vec!["omp", "pi"]));
-        let breakdowns = aggregated[0].agent_breakdowns.as_ref().unwrap();
+        assert_eq!(
+            aggregated[0].agents().map(<[_]>::to_vec),
+            Some(vec!["omp", "pi"])
+        );
+        let breakdowns = aggregated[0].agent_breakdowns().unwrap();
         assert_eq!(
             breakdowns
                 .iter()

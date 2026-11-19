@@ -11,21 +11,15 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_session_files(cx.diagnostics)?;
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_session_file(file, cx.diagnostics)
     });
-    // The same session can be reachable from more than one DSH_HOME root.
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     for entry in loaded.into_iter().flatten().flatten() {
         if seen.insert(dsh_entry_key(&entry)) {
-            entries.push(dsh_entry_to_loaded(
-                entry,
-                cx.window.timezone(),
-                cx.shared.mode,
-                pricing,
-            ));
+            entries.push(dsh_entry_to_loaded(entry, cx.window.timezone(), pricing));
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
@@ -41,7 +35,7 @@ mod tests {
 
     use super::super::paths::DSH_HOME_ENV;
     use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     const SESSION: &str = concat!(
         r#"{"type":"session","version":4,"id":"sid-1","createdAt":1785015039278,"cwd":"/home/u/proj"}"#,
@@ -54,8 +48,6 @@ mod tests {
 
     const SESSION_FILE: &str = "sessions/--home-u-proj--/sid-1/session.v4.jsonl.zstd";
 
-    /// `SESSION` compressed as dsh writes it, one frame per write batch, and
-    /// ending in `tail`.
     fn compressed_session(tail: &[u8]) -> Vec<u8> {
         let (header, events) = SESSION.split_once('\n').unwrap();
         let mut compressed = zstd::stream::encode_all(format!("{header}\n").as_bytes(), 3).unwrap();
@@ -64,7 +56,6 @@ mod tests {
         compressed
     }
 
-    /// Half of a frame holding one more request.
     fn torn_frame() -> Vec<u8> {
         let frame = zstd::stream::encode_all(
             br#"{"type":"assistant/message","seq":9,"time":1785015046000,"data":{"usage":{"inputTokens":9999}}}"#
@@ -76,12 +67,18 @@ mod tests {
     }
 
     fn load(fixture: &ccusage_test_support::Fixture) -> (Vec<LoadedEntry>, Diagnostics) {
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap()
+        ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap()
     }
 
     fn debug_warnings(diagnostics: &Diagnostics) -> String {
@@ -105,6 +102,7 @@ mod tests {
 
     #[test]
     fn loads_zstd_sessions_split_across_frames_and_notes_a_tail_still_being_written() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({ "sessions/--home-u-proj--/sid-1/.keep": "" });
         fs::write(
             fixture.path(SESSION_FILE),
@@ -118,8 +116,8 @@ mod tests {
         assert_eq!(entries[0].date, "2026-07-25");
         assert_eq!(entries[0].session_id.as_ref(), "sid-1");
         assert_eq!(entries[0].model.as_deref(), Some("deepseek-v4-pro"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1200);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 8000);
+        assert_eq!(entries[0].usage.input_tokens, 1200);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 8000);
         assert!(entries[0].cost > 0.0);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert!(
@@ -131,6 +129,7 @@ mod tests {
 
     #[test]
     fn skips_a_torn_tail_left_alone_and_keeps_the_records_before_it() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({ "sessions/--home-u-proj--/sid-1/.keep": "" });
         fs::write(
             fixture.path(SESSION_FILE),
@@ -142,7 +141,7 @@ mod tests {
         let (entries, diagnostics) = load(&fixture);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1200);
+        assert_eq!(entries[0].usage.input_tokens, 1200);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert!(
             debug_warnings(&diagnostics)
@@ -154,6 +153,7 @@ mod tests {
 
     #[test]
     fn reports_corrupt_zstd_sessions_as_invalid_data() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/p/not-zstd/session.v4.jsonl.zstd": "not a zstd frame",
             "sessions/--home-u-proj--/sid-1/.keep": "",
@@ -178,16 +178,22 @@ mod tests {
 
     #[test]
     fn reads_only_the_newest_generation_and_dedupes_across_roots() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({
             "sessions/p/sid-1/session.v3.jsonl": SESSION,
             "sessions/p/sid-1/session.v4.jsonl": SESSION,
         });
         let second = fs_fixture!({ "sessions/p/sid-1/session.v4.jsonl": SESSION });
         let value = format!("{},{}", first.root().display(), second.root().display());
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, &value);
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, &value);
 
-        let (entries, _) =
-            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
     }

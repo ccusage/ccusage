@@ -72,8 +72,8 @@ exit: 0
     {
       "cacheCreationTokens": 200,
       "cacheReadTokens": 1500,
-      "inputTokens": 6020,
-      "messageCount": 19,
+      "inputTokens": 5950,
+      "messageCount": 18,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -87,10 +87,10 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 800,
-          "cost": 0.15882000000000002,
-          "inputTokens": 1070,
+          "cost": 0.158505,
+          "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 1074,
+          "outputTokens": 1067,
           "storedCost": 0.15
         },
         {
@@ -137,18 +137,18 @@ exit: 0
         "claude-opus-4-20250514"
       ],
       "month": "2026-01",
-      "outputTokens": 1771,
-      "totalCost": 0.660995,
-      "totalTokens": 9491
+      "outputTokens": 1764,
+      "totalCost": 0.6606799999999999,
+      "totalTokens": 9414
     }
   ],
   "totals": {
     "cacheCreationTokens": 600,
     "cacheReadTokens": 3800,
-    "inputTokens": 11160,
-    "outputTokens": 2885,
-    "totalCost": 1.4077175,
-    "totalTokens": 18465,
+    "inputTokens": 11090,
+    "outputTokens": 2878,
+    "totalCost": 1.4074025,
+    "totalTokens": 18388,
     "unpricedModels": [
       "copilot-mystery-1",
       "unknown"

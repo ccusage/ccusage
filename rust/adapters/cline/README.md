@@ -52,6 +52,9 @@ from its cache counters. Task-format records use `task:<id>` session IDs and
 CLI transcript records use `cli:<id>` so matching IDs from different formats
 do not collide.
 
+Otherwise eligible usage records without a valid timestamp are skipped with an
+invalid-timestamp diagnostic. Incomplete records remain ignored.
+
 The shared cost mode controls cost output: `auto` prefers a reported cost and
 calculates from historical pricing when no cost was recorded; `display` uses a
 reported cost without calculating one; `calculate` ignores recorded cost and
@@ -59,10 +62,6 @@ uses pricing. A reported zero is preserved. Valid custom model IDs remain
 labeled with their actual ID; reports flag them when pricing is unavailable
 rather than assigning a guessed model.
 
-## Adapter surface
+## Build layer
 
-- `load_entries(&SharedArgs, &PricingMap)` loads normalized usage records.
-- `run(AgentCommandArgs)` runs the Cline report command.
-
-The crate is built in the adapters Crane artifact layer with the other source
-adapters.
+Built in the `adapters` Crane artifact layer.

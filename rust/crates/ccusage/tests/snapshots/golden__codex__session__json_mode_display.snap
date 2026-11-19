@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "costUSD": 0.0003125,
+      "costUSD": 0,
       "directory": "2025/12/27",
       "inputTokens": 100,
       "lastActivity": "2025-12-27T22:00:00.000Z",
@@ -33,7 +33,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1950,
-      "costUSD": 0.06701000000000001,
+      "costUSD": 0,
       "directory": "2025/12/30",
       "inputTokens": 4220,
       "lastActivity": "2026-01-02T08:30:00.000Z",
@@ -84,7 +84,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 700,
-      "costUSD": 0.005625,
+      "costUSD": 0,
       "directory": "2025/12/31",
       "inputTokens": 1100,
       "lastActivity": "2025-12-31T15:30:01.000Z",
@@ -108,7 +108,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 30,
-      "costUSD": 0.00012937500000000001,
+      "costUSD": 0,
       "directory": "2025/12/31",
       "inputTokens": 100,
       "lastActivity": "2025-12-31T12:01:00.000Z",
@@ -132,7 +132,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 6000,
-      "costUSD": 0.01231875,
+      "costUSD": 0,
       "directory": "2025/12/31",
       "inputTokens": 3100,
       "lastActivity": "2026-01-01T01:05:00.000Z",
@@ -165,7 +165,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1220,
-      "costUSD": 0.0024975,
+      "costUSD": 0,
       "directory": "2026/01/01",
       "inputTokens": 500,
       "lastActivity": "2026-01-01T02:11:00.000Z",
@@ -189,7 +189,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 10,
-      "costUSD": 0.00046125,
+      "costUSD": 0,
       "directory": "2026/01/01",
       "inputTokens": 200,
       "lastActivity": "2026-01-01T14:00:00.000+09:00",
@@ -212,32 +212,32 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 150,
-      "costUSD": 0.0015187500000000001,
+      "cacheReadTokens": 100,
+      "costUSD": 0,
       "directory": "2026/01/01",
-      "inputTokens": 600,
-      "lastActivity": "2026-01-01T12:06:00.000Z",
+      "inputTokens": 400,
+      "lastActivity": "2026-01-01T12:05:00.500Z",
       "models": {
         "gpt-5-codex": {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 150,
-          "inputTokens": 600,
+          "cacheReadTokens": 100,
+          "inputTokens": 400,
           "isFallback": false,
-          "outputTokens": 75,
-          "reasoningOutputTokens": 5,
-          "totalTokens": 825
+          "outputTokens": 50,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 550
         }
       },
-      "outputTokens": 75,
-      "reasoningOutputTokens": 5,
+      "outputTokens": 50,
+      "reasoningOutputTokens": 0,
       "sessionFile": "rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
       "sessionId": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
-      "totalTokens": 825
+      "totalTokens": 550
     },
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 150,
-      "costUSD": 0.0015187500000000001,
+      "costUSD": 0,
       "directory": "2026/01/01",
       "inputTokens": 600,
       "lastActivity": "2026-01-01T12:06:00.000Z",
@@ -261,7 +261,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 450100,
-      "costUSD": 0.58118125,
+      "costUSD": 0,
       "directory": "2026/01/02",
       "inputTokens": 101000,
       "lastActivity": "2026-01-02T09:12:00.000Z",
@@ -294,7 +294,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
-      "costUSD": 0.00050625,
+      "costUSD": 0,
       "directory": "2026/01/02",
       "inputTokens": 400,
       "lastActivity": "2026-01-02T10:31:00.000Z",
@@ -318,7 +318,7 @@ exit: 0
     {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 540,
-      "costUSD": 0.003687375,
+      "costUSD": 0,
       "directory": "exec",
       "inputTokens": 1550,
       "lastActivity": "2026-01-02T05:00:00.000Z",
@@ -351,7 +351,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 50,
-      "costUSD": 0.00036562500000000006,
+      "costUSD": 0,
       "directory": "",
       "inputTokens": 300,
       "lastActivity": "2025-12-30T20:00:10.000Z",
@@ -375,7 +375,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 400,
-      "costUSD": 0.0018,
+      "costUSD": 0,
       "directory": "",
       "inputTokens": 600,
       "lastActivity": "2025-12-31T16:00:10.000Z",
@@ -399,12 +399,12 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 461400,
-    "costUSD": 0.6789323750000001,
-    "inputTokens": 114370,
-    "outputTokens": 4247,
-    "reasoningOutputTokens": 154,
-    "totalTokens": 580317
+    "cacheReadTokens": 461350,
+    "costUSD": 0,
+    "inputTokens": 114170,
+    "outputTokens": 4222,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 580042
   }
 }
 

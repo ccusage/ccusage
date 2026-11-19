@@ -1,12 +1,15 @@
-use std::{fs, path::Path};
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
+use std::path::Path;
 
 use ccusage_adapter_common::units::{UnitError, read_json};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
-use crate::{
-    PricingMap, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
-    cli::CostMode, format_rfc3339_millis, missing_pricing_model_for_candidates, parse_ts_timestamp,
-};
+use crate::{TokenUsageRaw, apply_total_token_fallback, format_rfc3339_millis, parse_ts_timestamp};
 
 const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
 
@@ -23,7 +26,7 @@ pub(super) struct AssistantUsage {
 
 pub(super) struct CodebuffEntry {
     pub(super) timestamp: crate::TimestampMs,
-    pub(super) timestamp_text: String,
+
     pub(super) session_id: String,
     pub(super) model: String,
     provider: String,
@@ -38,11 +41,13 @@ struct CodebuffContext {
     session_id: String,
 }
 
-pub(super) fn load_chat_file(path: &Path) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
+pub(super) fn load_chat_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
     let messages = read_json::<Vec<Value>>(path)?;
     let context = derive_context(path);
     let chat_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id);
-    let file_timestamp = file_modified_timestamp(path).unwrap_or(crate::TimestampMs::UNIX_EPOCH);
     let mut entries = Vec::new();
     for (ordinal, message) in messages.iter().enumerate() {
         let Some(message) = message.as_object() else {
@@ -55,9 +60,15 @@ pub(super) fn load_chat_file(path: &Path) -> std::result::Result<Vec<CodebuffEnt
         if !has_signal(&usage) {
             continue;
         }
-        let timestamp = message_timestamp(message)
-            .or(chat_timestamp)
-            .unwrap_or(file_timestamp);
+        let Some(timestamp) = message_timestamp(message).or(chat_timestamp) else {
+            diagnostics.record(Skip::record(
+                path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Codebuff usage record has no valid message or chat timestamp",
+            ));
+            continue;
+        };
         let model = usage
             .model
             .clone()
@@ -72,7 +83,7 @@ pub(super) fn load_chat_file(path: &Path) -> std::result::Result<Vec<CodebuffEnt
         );
         entries.push(CodebuffEntry {
             timestamp,
-            timestamp_text: format_rfc3339_millis(timestamp),
+
             session_id: context.session_id.clone(),
             provider: infer_provider(&model).to_string(),
             model,
@@ -318,26 +329,10 @@ fn timestamp_value(value: Option<&Value>) -> Option<crate::TimestampMs> {
     match value? {
         Value::String(value) => parse_ts_timestamp(value),
         Value::Number(value) => {
-            let raw = value.as_i64()?;
-            let millis = if raw < 10_000_000_000 {
-                raw.checked_mul(1_000)?
-            } else {
-                raw
-            };
-            (millis > 0).then(|| crate::TimestampMs::from_millis(millis))
+            ccusage_adapter_common::timestamps::epoch_secs_or_millis(value.as_i64()?)
         }
         _ => None,
     }
-}
-
-fn file_modified_timestamp(path: &Path) -> Option<crate::TimestampMs> {
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let millis = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_millis()
-        .min(i64::MAX as u128) as i64;
-    Some(crate::TimestampMs::from_millis(millis))
 }
 
 fn dedup_key(
@@ -387,61 +382,41 @@ fn infer_provider(model: &str) -> &'static str {
     }
 }
 
-pub(super) fn calculate_codebuff_cost(entry: &CodebuffEntry, pricing: &PricingMap) -> f64 {
-    let usage = TokenUsageRaw {
-        output_tokens: entry
-            .usage
-            .output_tokens
-            .saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..entry.usage
-    };
-    let raw = calculate_cost_for_usage_at(
-        Some(&entry.model),
-        usage,
-        None,
-        Some(entry.timestamp),
-        CostMode::Calculate,
-        Some(pricing),
+pub(super) fn price_codebuff(
+    entry: &CodebuffEntry,
+    pricing: PriceTable<'_>,
+) -> (f64, Option<String>) {
+    let candidates = codebuff_model_candidates(entry);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage: entry.usage,
+            reasoning_tokens: 0,
+            residual_tokens: entry.extra_total_tokens,
+            reported_model: Some(&entry.model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(entry.timestamp),
+        },
+        pricing,
     );
-    if raw > 0.0
-        || entry.provider == "unknown"
-        || entry.model.starts_with(&format!("{}/", entry.provider))
-    {
-        return raw;
-    }
-    calculate_cost_for_usage_at(
-        Some(&format!("{}/{}", entry.provider, entry.model)),
-        usage,
-        None,
-        Some(entry.timestamp),
-        CostMode::Calculate,
-        Some(pricing),
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
     )
 }
 
-pub(super) fn missing_codebuff_pricing(
-    entry: &CodebuffEntry,
-    pricing: &PricingMap,
-) -> Option<String> {
-    let usage = TokenUsageRaw {
-        output_tokens: entry
-            .usage
-            .output_tokens
-            .saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..entry.usage
-    };
+fn codebuff_model_candidates(entry: &CodebuffEntry) -> Vec<String> {
     let mut candidates = vec![entry.model.clone()];
     if entry.provider != "unknown" && !entry.model.starts_with(&format!("{}/", entry.provider)) {
         candidates.push(format!("{}/{}", entry.provider, entry.model));
     }
-    missing_pricing_model_for_candidates(
-        &entry.model,
-        candidates,
-        crate::total_usage_tokens(usage),
-        Some(pricing),
-    )
+    candidates
 }
 
 fn object_field<'a>(
@@ -473,4 +448,28 @@ fn pick_u64(record: &serde_json::Map<String, Value>, keys: &[&str]) -> u64 {
 
 fn pick_nested_u64(record: &serde_json::Map<String, Value>, key: &str, keys: &[&str]) -> u64 {
     object_field(record, key).map_or(0, |nested| pick_u64(nested, keys))
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let entry = CodebuffEntry {
+            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+
+            session_id: "s".into(),
+            model: "gpt-5.2".into(),
+            provider: "openai".into(),
+            credits: 0.0,
+            usage: TokenUsageRaw::default(),
+            extra_total_tokens: 0,
+            dedup_key: String::new(),
+        };
+        assert_eq!(
+            codebuff_model_candidates(&entry),
+            ["gpt-5.2", "openai/gpt-5.2"]
+        );
+    }
 }

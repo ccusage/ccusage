@@ -10,15 +10,15 @@ exit: 0
       "cacheCreationTokens": 200,
       "cacheReadTokens": 9500,
       "credits": 2.75,
-      "inputTokens": 1680,
+      "inputTokens": 1600,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
-          "cost": 0.00413,
-          "inputTokens": 980,
+          "cost": 0.00385,
+          "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 440
+          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -30,13 +30,13 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "claude-haiku-4-5-20251001",
-        "gpt-5"
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
       ],
       "month": "2025-12",
-      "outputTokens": 590,
-      "totalCost": 0.0068175,
-      "totalTokens": 11970
+      "outputTokens": 550,
+      "totalCost": 0.0065375,
+      "totalTokens": 11850
     },
     {
       "cacheCreationTokens": 0,
@@ -85,10 +85,10 @@ exit: 0
     "cacheCreationTokens": 200,
     "cacheReadTokens": 15500,
     "credits": 2.95,
-    "inputTokens": 3180,
-    "outputTokens": 1205,
-    "totalCost": 0.0186675,
-    "totalTokens": 20085,
+    "inputTokens": 3100,
+    "outputTokens": 1165,
+    "totalCost": 0.0183875,
+    "totalTokens": 19965,
     "unpricedModels": [
       "codebuff-mystery-1"
     ]

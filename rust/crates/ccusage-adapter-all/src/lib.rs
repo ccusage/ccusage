@@ -3,10 +3,7 @@ mod report;
 mod sources;
 mod types;
 
-#[cfg(test)]
-use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
-#[cfg(test)]
-use ccusage_adapter_common::filter_loaded_entries_by_date;
+use ccusage_cli::{AgentCommand, StandardAgent};
 use ccusage_core::*;
 
 mod adapter {
@@ -37,6 +34,43 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind},
     print_json_or_jq, wants_json,
 };
+
+pub fn runner(agent: StandardAgent, command: AgentCommand) -> Result<()> {
+    match (agent, command) {
+        (StandardAgent::Codex, AgentCommand::Statusline(args)) => {
+            adapter::codex::run_statusline(args)
+        }
+        (agent, AgentCommand::Statusline(_)) => Err(cli_error(format!(
+            "The statusline runner is unavailable for {}.",
+            agent.spec().name
+        ))),
+        (agent, AgentCommand::Report(args)) => report_runner(agent)(args),
+    }
+}
+
+fn report_runner(agent: StandardAgent) -> fn(AgentCommandArgs) -> Result<()> {
+    match agent {
+        StandardAgent::Codex => adapter::codex::run,
+        StandardAgent::Amp => adapter::amp::run,
+        StandardAgent::Droid => adapter::droid::run,
+        StandardAgent::Codebuff => adapter::codebuff::run,
+        StandardAgent::Hermes => adapter::hermes::run,
+        StandardAgent::Pi => adapter::pi::run,
+        StandardAgent::Goose => adapter::goose::run,
+        StandardAgent::Kilo => adapter::kilo::run,
+        StandardAgent::Copilot => adapter::copilot::run,
+        StandardAgent::Gemini => adapter::gemini::run,
+        StandardAgent::Antigravity => adapter::antigravity::run,
+        StandardAgent::Kimi => adapter::kimi::run,
+        StandardAgent::Qwen => adapter::qwen::run,
+        StandardAgent::OpenClaw => adapter::openclaw::run,
+        StandardAgent::Grok => adapter::grok::run,
+        StandardAgent::ZCode => adapter::zcode::run,
+        StandardAgent::Cline => adapter::cline::run,
+        StandardAgent::Dsh => adapter::dsh::run,
+        StandardAgent::OpenCode => run_opencode,
+    }
+}
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
@@ -76,18 +110,23 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     report::print_table(&result.rows, kind, &shared, &result.detected_agents)
 }
 
-/// Runs `ccusage opencode`, leaving Claude Agent turns to the Claude source
-/// unless `--include-claude-agent` keeps them.
-pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
-    let (entries, claude_diagnostics) =
-        loader::load_opencode_entries(&args.shared, args.kind, args.include_claude_agent)?;
+fn run_opencode(args: AgentCommandArgs) -> Result<()> {
+    let (entries, claude_diagnostics) = loader::load_opencode_entries(
+        &args.shared,
+        args.kind,
+        args.include_claude_agent,
+        args.sources.get("claude"),
+    )?;
     if let Some(diagnostics) = claude_diagnostics {
-        diagnostics.emit(&args.shared);
+        diagnostics.emit(
+            args.sources
+                .get("claude")
+                .map_or(args.shared.debug, |source| source.shared.debug),
+        );
     }
     adapter::opencode::print_report(&args, entries)
 }
 
-/// Prints each source's skips with the options that source loaded with.
 fn emit_diagnostics(
     diagnostics: &[Diagnostics],
     shared: &cli::SharedArgs,
@@ -97,7 +136,7 @@ fn emit_diagnostics(
         let shared = sources
             .get(diagnostics.source())
             .map_or(shared, |source| &source.shared);
-        diagnostics.emit(shared);
+        diagnostics.emit(shared.debug);
     }
 }
 
@@ -118,18 +157,6 @@ fn requested_sections(
     }
     requested
 }
-
-#[cfg(test)]
-use ccusage_adapter_common::rows::UnifiedRow;
-#[cfg(test)]
-use loader::{aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections};
-#[cfg(test)]
-use report::{
-    all_report_title, all_table_columns, all_table_row, report_json, report_json_with_agents,
-    sections_report_json,
-};
-#[cfg(test)]
-use types::{AgentLoadSpec, AgentRows};
 
 #[cfg(test)]
 mod tests;

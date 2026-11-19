@@ -7,9 +7,6 @@ inputs:
   binary:
     description: Path to the built ccusage binary
     required: true
-  nix-github-token:
-    description: Whether Nix builds may use the GitHub token from Nix config
-    default: 'true'
   cache-scope:
     description: >
       Unique matrix-entry identifier (the matrix `name`) used to scope the Nix
@@ -29,40 +26,20 @@ runs:
     - name: Build Linux static binary
       shell: bash
       env:
-        NIX_GITHUB_TOKEN: ${{ inputs.nix-github-token }}
-      run: |
-        if [ "$NIX_GITHUB_TOKEN" = "false" ]; then
-          NIX_CONFIG="access-tokens =" nix build .#ccusage-static --print-build-logs
-        else
-          nix build .#ccusage-static --print-build-logs
-        fi
+        ARCH: ${{ inputs.arch }}
+      run: nix build ".#ccusage-release-linux-$ARCH"
 
-    # The link lives inside the store's own gcroots, so it persists with the
-    # sticky disk and protects these artifacts (and, through keep-outputs, their
-    # toolchain) from the next trim until a later run replaces it.
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'
       shell: bash
+      env:
+        ARCH: ${{ inputs.arch }}
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
         user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
         mkdir -p "$user_gcroot"
-        nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
+        nix build ".#packages.$system.ccusage-release-linux-$ARCH.passthru.workspaceArtifacts.cacheRoot" \
           --out-link "$user_gcroot/ccusage-cargo-artifacts"
-
-    - name: Verify Linux binary is static
-      shell: bash
-      env:
-        BINARY: ${{ inputs.binary }}
-      run: |
-        file "$BINARY"
-        if ldd "$BINARY" > "$RUNNER_TEMP/ldd.txt" 2>&1; then
-          cat "$RUNNER_TEMP/ldd.txt"
-          grep -Eiq 'not a dynamic executable|statically linked' "$RUNNER_TEMP/ldd.txt"
-        else
-          cat "$RUNNER_TEMP/ldd.txt"
-          grep -Eiq 'not a dynamic executable|statically linked' "$RUNNER_TEMP/ldd.txt"
-        fi
 
     - name: Stage native package
       shell: bash

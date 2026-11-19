@@ -71,11 +71,17 @@ Session IDs carry a prefix for the format they came from: `task:<task-id>` for e
 
 ## Token and Cost Data
 
-The extension parser counts only `say` records whose `say` value is `api_req_started`. Each needs its own `ts` timestamp, `modelInfo.modelId`, and flat JSON in `text` with `tokensIn`, `tokensOut`, `cacheReads`, and `cacheWrites`. The CLI parser counts assistant messages with their own timestamp, `modelInfo.id`, and `metrics` containing `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`. All four counters must be present as non-negative integer JSON numbers; an explicit `0` is valid, and missing fields are not filled with zero. Records with a missing, blank, or case-insensitive `unknown` model are skipped. A model is not inferred from `task_metadata` or conversation history.
+Reports include complete usage records with a timestamp, a non-blank model ID
+other than `unknown` (case-insensitive), and non-negative integer input, output,
+cache-read, and cache-write counters. Individual zero counters are valid.
+Reports exclude requests with all four counters at zero, partial records,
+deleted-request rollups, and subagent aggregates. Missing or omitted records
+can make the reported totals lower than actual historical usage.
 
-Extension `ts` and CLI `ts` values must be non-negative integer epoch milliseconds within the supported date range. If CLI `ts` is absent, `timestamp` may use a timezone-qualified ISO string with whole seconds or exactly three fractional digits (`Z` or `±HH:MM`); an invalid present `ts` does not fall back to `timestamp`. Fractional or string-valued `ts`, and negative or out-of-range timestamps, are skipped. Requests with all four counters equal to zero are also skipped, even if they have a recorded cost; individual zero-valued counters are valid. Extension records marked `partial: true` are skipped even when their counters are complete, and counter-total overflow is skipped.
-
-In CLI records, `inputTokens` includes cache reads and writes. ccusage subtracts those counts only when their sum is valid and no greater than `inputTokens`; otherwise, it skips the record. Extension `tokensIn` is already separate from cache counters. The `deleted_api_reqs` and `subagent_usage` aggregate rollups are excluded. Daily, weekly, monthly, and session reports therefore cover eligible requests only, not complete historical totals where records are missing or omitted. This also applies to legacy task files: incomplete records are skipped.
+CLI input includes cache tokens. ccusage subtracts their sum from input and
+reports them separately. It skips the record if that sum exceeds the input
+count or overflows. The extension already reports cache tokens separately. See the [Cline adapter README](https://github.com/ccusage/ccusage/blob/main/rust/adapters/cline/README.md)
+for record formats and timestamp requirements.
 
 All cost modes follow the same eligibility rules; a recorded cost cannot rescue a record missing required counters, model, or timestamp. `auto` uses Cline's recorded cost when present and calculates only when that cost is missing and the model has known pricing. `display` uses recorded costs, while `calculate` estimates cost from token counts using known pricing for the request's timestamp. A recorded `$0.00` is distinct from a missing cost. A valid model ID without known pricing remains visible; when calculation is needed, cost is unavailable and ccusage shows a missing-pricing warning.
 

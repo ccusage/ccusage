@@ -1,57 +1,11 @@
 # ccusage-cli
 
-The plain argument types the runtime shares: `SharedArgs`, the per-command
-argument structs, the enums the reports switch on, and the few constants and
-helpers (`BUILT_IN_AGENT_NAMES`, `DEFAULT_SESSION_DURATION_HOURS`,
-`home::home_dir`, `home::expand_home_path`, `home::claude_config_dirs`) that
-`ccusage-config` and `ccusage-cli-parser` need without depending on
-`ccusage-core`. `home::claude_config_dirs` is the one place the Claude Code
-directories are resolved, so the Claude adapter and user config discovery
-agree.
-
-This crate deliberately has no dependencies, no build script, and no embedded
-assets. `ccusage-core` and every adapter depend on it, so anything heavier
-would sit on every crate's critical path — that is why the parser, the help
-renderer, and the help JSON live in `ccusage-cli-parser` instead.
-
-## Public surface
-
-- `BUILT_IN_AGENT_NAMES`
-- `DEFAULT_SESSION_DURATION_HOURS`
-- `home::ClaudeConfigDirs`
-- `home::claude_config_dirs`
-- `home::expand_home_path`
-- `home::home_dir`
-- `types::AgentCommandArgs`
-- `types::AgentReportKind`
-- `types::ALL_AGENT_REPORTS`
-- `types::BlocksArgs`
-- `types::CliConfig`
-- `types::CodexSpeed`
-- `types::CodexStatuslineArgs`
-- `types::Command`
-- `types::CostMode`
-- `types::CostSource`
-- `types::DATE_BOUND_FORMATS`
-- `types::DailyArgs`
-- `types::NamedPiStore`
-- `types::NoConfig`
-- `types::PricingOverride`
-- `types::STANDARD_AGENT_REPORTS`
-- `types::SessionArgs`
-- `types::SharedArgs`
-- `types::SortOrder`
-- `types::SourceArgs`
-- `types::StatuslineArgs`
-- `types::VisualBurnRate`
-- `types::WeekDay`
-- `types::WeeklyArgs`
-- `types::normalize_date_bound`
-
-## Depends on
-
-No dependencies.
+Plain arguments shared by the binary and adapters. Use
+`home::claude_config_dirs` for both Claude log discovery and ccusage configuration
+discovery.
 
 ## Build layer
 
-Built in the `foundation` Crane artifact layer, so a change here recompiles every adapter. It is small and dependency-free, so that is cheap.
+Keep this crate free of build scripts and embedded assets.
+Core and every adapter build on it in the `foundation` Crane layer. Put parsing
+and help generation in `ccusage-cli-parser`.

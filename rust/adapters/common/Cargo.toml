@@ -5,19 +5,17 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-# Tests only: the check that a source's focused report and its slice of the
-# unified report count the same usage. Adapters enable it from
-# [dev-dependencies], which Cargo leaves out of `cargo build`, so the shipped
-# binary never compiles it.
 testing = []
+sqlite = ["dep:sqlite"]
 
 [dependencies]
 ccusage-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sqlite = { workspace = true, optional = true }
+zstd.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 
 [lints]

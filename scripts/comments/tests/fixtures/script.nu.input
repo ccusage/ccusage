@@ -1,0 +1,17 @@
+#!/usr/bin/env nix
+#! nix shell --inputs-from .. nixpkgs#nushell --command nu
+# Show the value.
+# The value is required.
+export def show [
+    text: string # Text to show.
+] {
+    print $text # XXX
+}
+let raw = r##'# string
+# string
+'##
+let quoted = "# string" # outside
+# Not help.
+
+# NOTE(2026-11-19, Claude Code 2.1.81): The JSONL record may repeat. Its export overwrites duplicate records.
+let flake = .#package

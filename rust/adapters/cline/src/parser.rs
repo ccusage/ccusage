@@ -1,31 +1,33 @@
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
+use std::sync::Arc;
+
 use ccusage_adapter_common::{UnitError, units::read_json};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
-use crate::{LoadedEntry, PricingMap, Result, TokenUsageRaw, cli::CostMode};
-
-use super::{
-    loader::{EntryInput, loaded_entry},
-    paths::{SourceFile, SourceKind},
+use crate::{
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
 };
+
+use super::paths::{SourceFile, SourceKind};
 
 pub(super) fn read_file(
     source: &SourceFile,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
+    diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let root = read_json::<Value>(&source.path)?;
-    match source.kind {
+    Ok(match source.kind {
         SourceKind::Extension | SourceKind::CliTask => {
-            parse_extension_messages(&root, source, mode, pricing, timezone)
+            parse_extension_messages(&root, source, mode, pricing, timezone, diagnostics)
         }
-        SourceKind::Cli => parse_cli_messages(&root, source, mode, pricing, timezone),
-    }
-    .map_err(|_| {
-        UnitError::new(
-            ccusage_core::SkipKind::InvalidData,
-            "invalid Cline usage data",
-        )
+        SourceKind::Cli => parse_cli_messages(&root, source, mode, pricing, timezone, diagnostics),
     })
 }
 
@@ -33,15 +35,16 @@ fn parse_extension_messages(
     root: &Value,
     source: &SourceFile,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
-) -> Result<Vec<LoadedEntry>> {
+    diagnostics: &Diagnostics,
+) -> Vec<LoadedEntry> {
     let Some(messages) = root.as_array() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut entries = Vec::new();
 
-    for message in messages {
+    for (ordinal, message) in messages.iter().enumerate() {
         if string_field(message, "type") != Some("say") {
             continue;
         }
@@ -54,9 +57,6 @@ fn parse_extension_messages(
         if message.get("partial").and_then(Value::as_bool) == Some(true) {
             continue;
         }
-        let Some(timestamp) = millisecond_timestamp(message.get("ts")) else {
-            continue;
-        };
         let Some(text) = message.get("text").and_then(Value::as_str) else {
             continue;
         };
@@ -75,6 +75,15 @@ fn parse_extension_messages(
         if is_empty_usage(usage) || !has_valid_total(usage) {
             continue;
         }
+        let Some(timestamp) = millisecond_timestamp(message.get("ts")) else {
+            diagnostics.record(Skip::record(
+                &source.path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Cline usage record has no valid timestamp",
+            ));
+            continue;
+        };
         let request_id = string_field_from(metrics, "requestId")
             .or_else(|| string_field_from(metrics, "id"))
             .or_else(|| string_field(message, "requestId"))
@@ -95,28 +104,26 @@ fn parse_extension_messages(
             timezone,
         ));
     }
-    Ok(entries)
+    entries
 }
 
 fn parse_cli_messages(
     root: &Value,
     source: &SourceFile,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
     timezone: &jiff::tz::TimeZone,
-) -> Result<Vec<LoadedEntry>> {
+    diagnostics: &Diagnostics,
+) -> Vec<LoadedEntry> {
     let Some(messages) = root.get("messages").and_then(Value::as_array) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut entries = Vec::new();
 
-    for message in messages {
+    for (ordinal, message) in messages.iter().enumerate() {
         if string_field(message, "role") != Some("assistant") {
             continue;
         }
-        let Some(timestamp) = cli_timestamp(message) else {
-            continue;
-        };
         let Some(metrics) = message.get("metrics").and_then(Value::as_object) else {
             continue;
         };
@@ -127,6 +134,15 @@ fn parse_cli_messages(
             continue;
         }
         let Some((model, provider)) = cli_model_info(message.get("modelInfo")) else {
+            continue;
+        };
+        let Some(timestamp) = cli_timestamp(message) else {
+            diagnostics.record(Skip::record(
+                &source.path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Cline usage record has no valid timestamp",
+            ));
             continue;
         };
         let request_id = string_field(message, "requestId")
@@ -148,7 +164,83 @@ fn parse_cli_messages(
             timezone,
         ));
     }
-    Ok(entries)
+    entries
+}
+
+struct EntryInput {
+    timestamp: TimestampMs,
+    model: String,
+    provider: Option<String>,
+    usage: TokenUsageRaw,
+    reported_cost: Option<f64>,
+    request_id: Option<String>,
+}
+
+fn loaded_entry(
+    source: &SourceFile,
+    input: EntryInput,
+    mode: CostMode,
+    pricing: PriceTable<'_>,
+    timezone: &jiff::tz::TimeZone,
+) -> LoadedEntry {
+    let EntryInput {
+        timestamp,
+        model,
+        provider,
+        usage,
+        reported_cost,
+        request_id,
+    } = input;
+
+    let session_id = match source.kind {
+        SourceKind::Extension | SourceKind::CliTask => {
+            format!("task:{}", source.session_id)
+        }
+        SourceKind::Cli => format!("cli:{}", source.session_id),
+    };
+    let provider_model = provider
+        .as_deref()
+        .filter(|_| !model.contains('/'))
+        .map(|provider| format!("{provider}/{model}"));
+    let candidates: Vec<_> = std::iter::once(model.as_str())
+        .chain(provider_model.as_deref())
+        .map(|name| (name, MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(&model),
+            candidates: &candidates,
+            stored_cost: reported_cost,
+            timestamp: Some(timestamp),
+        },
+        pricing,
+    );
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
+    LoadedEntry {
+        date: format_date_tz(timestamp, timezone),
+        timestamp,
+        project: Arc::from("cline"),
+        session_id: Arc::from(session_id),
+        project_path: Arc::from("Cline"),
+        cost,
+        credits: None,
+        model: Some(model),
+        usage_limit_reset_time: None,
+        missing_pricing_model,
+        extra_total_tokens: 0,
+        message_count: None,
+        usage,
+        message_id: request_id.clone(),
+        version: None,
+        recorded_cost: reported_cost,
+        stored_cost: stored_cost_for_mode(reported_cost, mode),
+    }
 }
 
 fn extension_usage(
@@ -165,6 +257,7 @@ fn extension_usage(
     Some((usage, number_field_from(metrics, "cost")))
 }
 
+// NOTE(2026-11-10, #1977): Cline CLI includes cache reads and writes in inputTokens. The extension's tokensIn already excludes both, so only CLI input needs subtraction.
 fn cli_usage(metrics: &serde_json::Map<String, Value>) -> Option<(TokenUsageRaw, Option<f64>)> {
     let cache_reads = integer_field_from(metrics, "cacheReadTokens")?;
     let cache_writes = integer_field_from(metrics, "cacheWriteTokens")?;
@@ -292,6 +385,7 @@ mod tests {
 
     #[test]
     fn parses_completed_extension_requests_and_skips_partial_or_malformed_records() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!([
             {
                 "ts": 1790000000000_i64,
@@ -319,34 +413,32 @@ mod tests {
                 "text": r#"[{"tokensIn":3,"tokensOut":4,"cacheReads":1,"cacheWrites":2}]"#
             }
         ]);
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_extension_messages(
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &pricing,
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 25);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 25);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
         assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.cost_usd, Some(0.002));
+        assert_eq!(entries[0].recorded_cost, Some(0.002));
     }
 
     #[test]
     fn skips_extension_request_when_model_is_only_in_task_metadata() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = ccusage_test_support::fs_fixture!({
             "tasks/task-a/ui_messages.json": "[]",
             "tasks/task-a/task_metadata.json": r#"{
@@ -371,16 +463,17 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert!(entries.is_empty());
     }
 
     #[test]
     fn extension_requires_all_integer_counters_and_drops_rollup_events() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!([
             {
                 "ts": 1700000000000_i64,
@@ -466,10 +559,10 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
@@ -477,12 +570,13 @@ mod tests {
             entries[0].missing_pricing_model.as_deref(),
             Some("vendor/custom-model")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 0);
+        assert_eq!(entries[0].usage.input_tokens, 1);
+        assert_eq!(entries[0].usage.output_tokens, 0);
     }
 
     #[test]
     fn extension_requires_its_own_valid_timestamp_and_known_model_id() {
+        ccusage_test_support::install_pricing_snapshots();
         let complete_text =
             r#"{"tokensIn":1,"tokensOut":1,"cacheReads":0,"cacheWrites":0,"cost":0.5}"#;
         let root = json!([
@@ -547,10 +641,10 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
@@ -558,6 +652,7 @@ mod tests {
 
     #[test]
     fn cli_requires_complete_usage_model_and_valid_request_timestamp() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [
                 {
@@ -620,18 +715,18 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 8);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 2);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 3);
-        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 4);
+        assert_eq!(entries[0].usage.input_tokens, 8);
+        assert_eq!(entries[0].usage.output_tokens, 2);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 3);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 4);
         assert_eq!(
             entries[0].missing_pricing_model.as_deref(),
             Some("vendor/custom-model")
@@ -640,6 +735,7 @@ mod tests {
 
     #[test]
     fn cli_rejects_inconsistent_cache_totals_instead_of_saturating() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [{
                 "role": "assistant",
@@ -663,16 +759,17 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert!(entries.is_empty());
     }
 
     #[test]
     fn parses_cli_transcript_assistant_metrics_and_subtracts_cached_input() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [
                 {"role": "user", "timestamp": "2026-10-01T12:00:00Z", "metrics": {"inputTokens": 10}},
@@ -693,40 +790,38 @@ mod tests {
                 {"role": "assistant", "metrics": {"inputTokens": 20}}
             ]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_cli_messages(
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &pricing,
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].date, "2026-10-01");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 0);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 30);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 80);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            30
-        );
-        assert_eq!(entries[0].data.cost_usd, Some(0.0));
+        assert_eq!(entries[0].usage.input_tokens, 0);
+        assert_eq!(entries[0].usage.output_tokens, 30);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 80);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 30);
+        assert_eq!(entries[0].recorded_cost, Some(0.0));
         assert_eq!(entries[0].stored_cost, Some(0.0));
         assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("assistant-2"));
+        assert_eq!(entries[1].message_id.as_deref(), Some("assistant-2"));
         assert_eq!(entries[1].timestamp, entries[0].timestamp);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 60);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 12);
+        assert_eq!(entries[1].usage.input_tokens, 60);
+        assert_eq!(entries[1].usage.output_tokens, 12);
     }
 
     #[test]
     fn cost_modes_preserve_reported_zero_and_calculate_known_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let source = source(SourceKind::Cli);
         let root = json!({
             "messages": [{
@@ -736,32 +831,32 @@ mod tests {
                 "metrics": {"inputTokens": 1000, "outputTokens": 100, "cacheReadTokens": 0, "cacheWriteTokens": 0, "cost": 0}
             }]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let auto = parse_cli_messages(
             &root,
             &source,
             CostMode::Auto,
-            &pricing,
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
         let display = parse_cli_messages(
             &root,
             &source,
             CostMode::Display,
-            &pricing,
+            PriceTable::Display,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
         let calculate = parse_cli_messages(
             &root,
             &source,
             CostMode::Calculate,
-            &pricing,
+            PriceTable::Calculate(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(auto[0].cost, 0.0);
         assert_eq!(auto[0].stored_cost, Some(0.0));
@@ -773,6 +868,7 @@ mod tests {
 
     #[test]
     fn cost_modes_only_use_pricing_when_cost_was_not_reported() {
+        ccusage_test_support::install_pricing_snapshots();
         let source = source(SourceKind::Cli);
         let root = json!({
             "messages": [{
@@ -782,42 +878,43 @@ mod tests {
                 "metrics": {"inputTokens": 1000, "outputTokens": 100, "cacheReadTokens": 0, "cacheWriteTokens": 0}
             }]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let auto = parse_cli_messages(
             &root,
             &source,
             CostMode::Auto,
-            &pricing,
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
         let display = parse_cli_messages(
             &root,
             &source,
             CostMode::Display,
-            &pricing,
+            PriceTable::Display,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
         let calculate = parse_cli_messages(
             &root,
             &source,
             CostMode::Calculate,
-            &pricing,
+            PriceTable::Calculate(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert!(auto[0].cost > 0.0);
         assert_eq!(display[0].cost, 0.0);
         assert_eq!(calculate[0].cost, auto[0].cost);
-        assert_eq!(auto[0].data.cost_usd, None);
+        assert_eq!(auto[0].recorded_cost, None);
         assert_eq!(auto[0].stored_cost, None);
     }
 
     #[test]
     fn preserves_custom_unpriced_model_ids_when_cost_is_missing() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [{
                 "role": "assistant",
@@ -826,18 +923,18 @@ mod tests {
                 "metrics": {"inputTokens": 10, "outputTokens": 5, "cacheReadTokens": 0, "cacheWriteTokens": 0}
             }]
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_cli_messages(
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &pricing,
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
-        assert_eq!(entries[0].data.cost_usd, None);
+        assert_eq!(entries[0].recorded_cost, None);
         assert_eq!(entries[0].stored_cost, None);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
         assert_eq!(
@@ -848,6 +945,7 @@ mod tests {
 
     #[test]
     fn malformed_task_metadata_does_not_drop_extension_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = ccusage_test_support::fs_fixture!({
             "tasks/task-a/ui_messages.json": "[]",
             "tasks/task-a/task_metadata.json": "{malformed",
@@ -869,29 +967,30 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
     }
 
     #[test]
     fn skips_invalid_or_incomplete_extension_documents() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({"other": []});
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_extension_messages(
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &pricing,
+            PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+            &Diagnostics::new("cline"),
+        );
 
         assert!(entries.is_empty());
         assert!(serde_json::from_str::<Value>("not json").is_err());
@@ -917,6 +1016,25 @@ mod tests {
         assert_eq!(
             cli_timestamp(&json!({"timestamp": "1970-01-01T00:00:00Z"})),
             Some(crate::TimestampMs::UNIX_EPOCH)
+        );
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let extension = serde_json::json!({"modelId":"gpt-5.2","providerId":"openai"});
+        let cli = serde_json::json!({"id":"gpt-5.2","provider":"openai"});
+        assert_eq!(
+            extension_model_info(Some(&extension)),
+            Some(("gpt-5.2".into(), Some("openai".into())))
+        );
+        assert_eq!(
+            cli_model_info(Some(&cli)),
+            Some(("gpt-5.2".into(), Some("openai".into())))
         );
     }
 }

@@ -1,18 +1,22 @@
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::{collections::BTreeMap, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
     cli::{CostMode, PricingOverride},
-    format_date_tz, format_rfc3339_millis, total_usage_tokens,
+    format_date_tz, total_usage_tokens,
 };
 
 pub(super) struct ZcodeUsageRow {
     pub(super) id: Option<String>,
     pub(super) session_id: Option<String>,
-    pub(super) started_at: i64,
+    pub(super) started_at: Option<i64>,
     pub(super) model_id: Option<String>,
     pub(super) provider_id: Option<String>,
     pub(super) input_tokens: u64,
@@ -34,9 +38,9 @@ pub(super) fn row_to_entry(
     row: ZcodeUsageRow,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
-) -> std::result::Result<Option<LoadedEntry>, RowRejection> {
+) -> std::result::Result<Option<(String, LoadedEntry)>, RowRejection> {
     let cache_read = row.cache_read_input_tokens.min(row.input_tokens);
     let cache_creation = row
         .cache_creation_input_tokens
@@ -64,24 +68,19 @@ pub(super) fn row_to_entry(
     ) else {
         return Err(RowRejection::InvalidIdentity);
     };
-    if row.started_at <= 0 {
+    let Some(started_at) = row.started_at.filter(|started_at| *started_at > 0) else {
         return Err(RowRejection::InvalidTimestamp);
-    }
+    };
 
     let raw_model = raw_model.trim().to_string();
-    let cost_model = pricing_model(
-        &raw_model,
-        row.provider_id.as_deref(),
-        pricing,
-        pricing_overrides,
-    );
-    let timestamp = TimestampMs::from_millis(row.started_at);
+    let candidates =
+        ordered_pricing_candidates(&raw_model, row.provider_id.as_deref(), pricing_overrides);
+    let timestamp = TimestampMs::from_millis(started_at);
     let project_path = row
         .directory
         .filter(|directory| !directory.trim().is_empty())
         .unwrap_or_else(|| "ZCode".to_string());
-    // Z.ai exposes new content as a cache-creation bucket for display, but
-    // bills that content at the model's standard input rate.
+    // NOTE(2026-08-31, #1675): Z.ai bills new content at the standard input rate even when the ledger labels it cache creation. Both buckets therefore use the input rate for pricing.
     let is_zai = is_zai_provider(row.provider_id.as_deref())
         || (row.provider_id.is_none() && is_zai_model(&raw_model.to_ascii_lowercase()));
     let cost_usage = if is_zai {
@@ -99,54 +98,50 @@ pub(super) fn row_to_entry(
             ..usage
         }
     };
-    let cost = if mode == CostMode::Display {
-        0.0
-    } else {
-        calculate_cost_for_usage_at(
-            cost_model.as_deref(),
-            cost_usage,
-            None,
-            Some(timestamp),
-            CostMode::Calculate,
-            Some(pricing),
-        )
-    };
-    let missing_pricing_model = if mode == CostMode::Display || cost_model.is_some() {
-        None
-    } else {
-        (total_usage_tokens(usage).saturating_add(extra_total_tokens) > 0)
-            .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned())
-    };
-
-    Ok(Some(LoadedEntry {
-        data: UsageEntry {
-            session_id: Some(session_id.clone()),
-            timestamp: format_rfc3339_millis(timestamp),
-            version: row.version,
-            message: UsageMessage {
-                usage,
-                model: Some(raw_model.clone()),
-                id: Some(id),
-            },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage: cost_usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(&raw_model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(timestamp),
         },
-        date: format_date_tz(timestamp, tz),
-        timestamp,
-        project: Arc::from("zcode"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from(project_path),
-        cost,
-        extra_total_tokens,
-        credits: None,
-        message_count: None,
-        model: Some(raw_model),
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        stored_cost: None,
-    }))
+        pricing,
+    );
+    let cost = priced.cost;
+    let missing_pricing_model = (mode != CostMode::Display
+        && priced.matched.is_none()
+        && total_usage_tokens(usage).saturating_add(extra_total_tokens) > 0)
+        .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned());
+
+    Ok(Some((
+        id.clone(),
+        LoadedEntry {
+            usage,
+            message_id: Some(id),
+            version: row.version,
+            recorded_cost: None,
+            date: format_date_tz(timestamp, tz),
+            timestamp,
+            project: Arc::from("zcode"),
+            session_id: Arc::from(session_id),
+            project_path: Arc::from(project_path),
+            cost,
+            extra_total_tokens,
+            credits: None,
+            message_count: None,
+            model: Some(raw_model),
+            usage_limit_reset_time: None,
+            missing_pricing_model,
+            stored_cost: None,
+        },
+    )))
 }
 
 fn non_blank(value: Option<String>) -> Option<String> {
@@ -166,35 +161,32 @@ fn pricing_candidates(raw_model: &str, provider_id: Option<&str>) -> Vec<String>
     candidates
 }
 
-fn pricing_model(
+fn ordered_pricing_candidates(
     raw_model: &str,
     provider_id: Option<&str>,
-    pricing: &PricingMap,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
-) -> Option<String> {
+) -> Vec<String> {
     let candidates = pricing_candidates(raw_model, provider_id);
-    if let Some(candidate) = candidates
+    let mut ordered: Vec<_> = candidates
         .iter()
-        .find(|candidate| pricing_overrides.contains_key(*candidate))
-    {
-        return Some(candidate.clone());
-    }
-    if provider_id.is_some_and(|provider| !is_zai_provider(Some(provider))) {
-        return None;
-    }
-
-    if let Some(candidate) = candidates
-        .iter()
-        .filter(|candidate| candidate.starts_with("zai/"))
-        .find(|candidate| pricing.find(candidate).is_some())
-    {
-        return Some(candidate.clone());
-    }
-    candidates
-        .iter()
-        .filter(|candidate| !candidate.starts_with("zai/"))
-        .find(|candidate| pricing.find(candidate).is_some())
+        .filter(|name| pricing_overrides.contains_key(*name))
         .cloned()
+        .collect();
+    if provider_id.is_none_or(|provider| is_zai_provider(Some(provider))) {
+        ordered.extend(
+            candidates
+                .iter()
+                .filter(|name| name.starts_with("zai/"))
+                .cloned(),
+        );
+        ordered.extend(
+            candidates
+                .iter()
+                .filter(|name| !name.starts_with("zai/"))
+                .cloned(),
+        );
+    }
+    ordered
 }
 
 fn is_zai_provider(provider_id: Option<&str>) -> bool {
@@ -226,7 +218,7 @@ mod tests {
         ZcodeUsageRow {
             id: Some("usage-1".to_string()),
             session_id: Some("session-1".to_string()),
-            started_at: 1_786_909_042_666,
+            started_at: Some(1_786_909_042_666),
             model_id: Some("GLM-5.3".to_string()),
             provider_id: Some("builtin:zai-coding-plan".to_string()),
             input_tokens: 100,
@@ -241,30 +233,37 @@ mod tests {
 
     #[test]
     fn normalizes_both_inclusive_cache_buckets() {
-        let entry = row_to_entry(
+        ccusage_test_support::install_pricing_snapshots();
+        let (id, entry) = row_to_entry(
             row(),
             &JiffTimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            ccusage_core::cost::PriceTable::Display,
             &BTreeMap::new(),
         )
         .unwrap()
         .expect("test row has usage");
-        let usage = entry.data.message.usage;
+        assert_eq!(id, "usage-1");
+        assert_eq!(entry.message_id.as_deref(), Some(id.as_str()));
+        let usage = entry.usage;
 
         assert_eq!(usage.input_tokens, 60);
         assert_eq!(usage.cache_creation_input_tokens, 15);
         assert_eq!(usage.cache_read_input_tokens, 25);
         assert_eq!(usage.output_tokens, 10);
         assert_eq!(total_usage_tokens(usage), 110);
-        assert_eq!(entry.data.message.model.as_deref(), Some("GLM-5.3"));
-        assert_eq!(entry.data.version.as_deref(), Some("0.16.3"));
-        assert_eq!(entry.data.timestamp, "2026-08-16T19:37:22.666Z");
+        assert_eq!(entry.model.as_deref(), Some("GLM-5.3"));
+        assert_eq!(entry.version.as_deref(), Some("0.16.3"));
+        assert_eq!(
+            entry.timestamp,
+            crate::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
+        );
     }
 
     #[test]
     fn prices_current_zai_account_and_builtin_plan_ids() {
-        let pricing = PricingMap::load_embedded();
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         for provider in [
             "account:zai-individual-coding-plan",
             "account:zai-start-plan",
@@ -278,11 +277,12 @@ mod tests {
                     row,
                     &JiffTimeZone::UTC,
                     CostMode::Calculate,
-                    &pricing,
+                    ccusage_core::cost::PriceTable::Calculate(&pricing),
                     &BTreeMap::new(),
                 )
                 .unwrap()
-                .expect("test row has usage");
+                .expect("test row has usage")
+                .1;
                 assert!(entry.cost > 0.0, "{provider} {model}");
                 assert!(entry.missing_pricing_model.is_none(), "{provider} {model}");
             }
@@ -291,16 +291,18 @@ mod tests {
 
     #[test]
     fn prices_zai_models_but_not_unknown_custom_providers() {
-        let pricing = PricingMap::load_embedded();
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let priced = row_to_entry(
             row(),
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &pricing,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
         assert!(priced.cost > 0.0);
         assert!(priced.missing_pricing_model.is_none());
 
@@ -311,11 +313,12 @@ mod tests {
             custom,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &pricing,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
         assert_eq!(custom.cost, 0.0);
         assert_eq!(
             custom.missing_pricing_model.as_deref(),
@@ -325,6 +328,7 @@ mod tests {
 
     #[test]
     fn prices_legacy_bigmodel_provider_with_provider_qualified_glm_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut row = row();
         row.provider_id = Some("builtin:bigmodel-coding-plan".to_string());
 
@@ -332,11 +336,12 @@ mod tests {
             row,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &PricingMap::load_embedded(),
+            ccusage_core::cost::PriceTable::Calculate(&ccusage_core::PricingMap::load_embedded()),
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
 
         assert_eq!(entry.cost, 0.00015549999999999999);
         assert!(entry.missing_pricing_model.is_none());
@@ -344,7 +349,8 @@ mod tests {
 
     #[test]
     fn prices_zai_cache_creation_at_standard_input_rate_for_glm_52_and_53() {
-        let pricing = PricingMap::load_embedded();
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let priced = |model: &str| {
             let mut row = row();
             row.model_id = Some(model.to_string());
@@ -352,26 +358,28 @@ mod tests {
                 row,
                 &JiffTimeZone::UTC,
                 CostMode::Calculate,
-                &pricing,
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
                 &BTreeMap::new(),
             )
             .unwrap()
             .expect("test row has usage")
+            .1
         };
 
         let glm_52 = priced("GLM-5.2");
         assert_eq!(glm_52.cost, 0.00015549999999999999);
-        assert_eq!(glm_52.data.message.usage.input_tokens, 60);
-        assert_eq!(glm_52.data.message.usage.cache_creation_input_tokens, 15);
+        assert_eq!(glm_52.usage.input_tokens, 60);
+        assert_eq!(glm_52.usage.cache_creation_input_tokens, 15);
 
         let glm_53 = priced("GLM-5.3");
         assert_eq!(glm_53.cost, 0.00015549999999999999);
-        assert_eq!(glm_53.data.message.usage.input_tokens, 60);
-        assert_eq!(glm_53.data.message.usage.cache_creation_input_tokens, 15);
+        assert_eq!(glm_53.usage.input_tokens, 60);
+        assert_eq!(glm_53.usage.cache_creation_input_tokens, 15);
     }
 
     #[test]
     fn honors_raw_model_overrides_for_custom_providers() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut row = row();
         row.provider_id = Some("847d13c9-0568-4f2f-818e-8bd498e5d920".to_string());
         row.model_id = Some("deepseek-v4-flash".to_string());
@@ -385,17 +393,18 @@ mod tests {
                 ..Default::default()
             },
         );
-        let pricing = PricingMap::load_with_overrides(true, false, overrides.iter());
+        let pricing = ccusage_core::PricingMap::load_with_overrides(true, false, overrides.iter());
 
         let entry = row_to_entry(
             row,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &pricing,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &overrides,
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
 
         assert!(entry.cost > 0.0);
         assert!(entry.missing_pricing_model.is_none());
@@ -403,19 +412,21 @@ mod tests {
 
     #[test]
     fn routes_unaccounted_total_tokens_to_extra_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut row = row();
         row.computed_total_tokens = 123;
         let entry = row_to_entry(
             row,
             &JiffTimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            ccusage_core::cost::PriceTable::Display,
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
         assert_eq!(entry.extra_total_tokens, 13);
-        assert_eq!(entry.data.message.usage.output_tokens, 10);
+        assert_eq!(entry.usage.output_tokens, 10);
     }
 
     #[test]
@@ -425,7 +436,7 @@ mod tests {
                 row,
                 &JiffTimeZone::UTC,
                 CostMode::Display,
-                &PricingMap::default(),
+                ccusage_core::cost::PriceTable::Display,
                 &BTreeMap::new(),
             )
             .err()
@@ -439,12 +450,25 @@ mod tests {
             ..row()
         };
         let zero_timestamp = ZcodeUsageRow {
-            started_at: 0,
+            started_at: Some(0),
             ..row()
         };
 
         assert_eq!(reject(blank_id), Some(RowRejection::InvalidIdentity));
         assert_eq!(reject(null_model), Some(RowRejection::InvalidIdentity));
         assert_eq!(reject(zero_timestamp), Some(RowRejection::InvalidTimestamp));
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        assert_eq!(
+            ordered_pricing_candidates(" GLM-4.7 ", None, &BTreeMap::new()),
+            ["zai/GLM-4.7", "zai/glm-4.7", "GLM-4.7", "glm-4.7"]
+        );
     }
 }

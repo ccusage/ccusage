@@ -1,11 +1,13 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
+use ccusage_adapter_common::roots::{self, RootsEnv};
+
 use crate::Result;
 use ccusage_adapter_common::{collect_files_with_extension, dir_entries};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-pub const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
-pub const COPILOT_HOME_ENV: &str = "COPILOT_HOME";
+pub(crate) const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
+pub(crate) const COPILOT_HOME_ENV: &str = "COPILOT_HOME";
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub(super) enum CopilotSourceKind {
@@ -62,12 +64,14 @@ fn record_discovery_failure(diagnostics: &Diagnostics, path: &std::path::Path) {
 }
 
 fn copilot_root() -> Option<PathBuf> {
-    env::var(COPILOT_HOME_ENV)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| crate::home::home_dir().map(|home| home.join(".copilot")))
+    roots::resolve(RootsEnv::Single(COPILOT_HOME_ENV), || {
+        crate::cli::home::home_dir()
+            .map(|home| home.join(".copilot"))
+            .into_iter()
+            .collect()
+    })
+    .into_iter()
+    .next()
 }
 
 fn add_file(
@@ -91,11 +95,17 @@ fn copilot_exporter_path() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+impl AsRef<std::path::Path> for CopilotSourceFile {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
 
@@ -108,7 +118,7 @@ mod tests {
             "session-state/blocked/events.jsonl": "{}",
             "session-state/healthy/events.jsonl": "{}",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (COPILOT_HOME_ENV, Some(OsString::from(fixture.root()))),
             (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
         ]);
@@ -141,7 +151,7 @@ mod tests {
             "home/.copilot/session-state/nested/session-c/events.jsonl": "{}\n",
             "explicit.jsonl": "{}\n",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -186,7 +196,7 @@ mod tests {
             "home/.copilot/otel/default.jsonl": "{}\n",
             "home/.copilot/session-state/session-2/events.jsonl": "{}\n"
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),

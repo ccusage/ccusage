@@ -10,7 +10,7 @@ exit: 0
       "cacheCreationTokens": 300,
       "cacheReadTokens": 4000,
       "credits": 1.5,
-      "inputTokens": 1191,
+      "inputTokens": 1111,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 300,
@@ -27,25 +27,16 @@ exit: 0
           "inputTokens": 100,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00028,
-          "inputTokens": 80,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 40
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514",
-        "claude-sonnet-4-20250514",
-        "claude-haiku-4-5-20251001"
+        "claude-sonnet-4-20250514"
       ],
       "month": "2025-12",
-      "outputTokens": 297,
-      "totalCost": 0.013993,
-      "totalTokens": 5788
+      "outputTokens": 257,
+      "totalCost": 0.013713,
+      "totalTokens": 5668
     },
     {
       "cacheCreationTokens": 310,
@@ -80,7 +71,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 40,
-          "cost": 0.0019237500000000003,
+          "cost": 0.0019050000000000002,
           "inputTokens": 500,
           "modelName": "openai/gpt-5",
           "outputTokens": 120
@@ -122,7 +113,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1655,
-      "totalCost": 0.02703125,
+      "totalCost": 0.027012500000000002,
       "totalTokens": 28395
     }
   ],
@@ -130,10 +121,10 @@ exit: 0
     "cacheCreationTokens": 610,
     "cacheReadTokens": 25540,
     "credits": 8.2,
-    "inputTokens": 5731,
-    "outputTokens": 1952,
-    "totalCost": 0.04102425,
-    "totalTokens": 34183,
+    "inputTokens": 5651,
+    "outputTokens": 1912,
+    "totalCost": 0.0407255,
+    "totalTokens": 34063,
     "unpricedModels": [
       "codebuff-mystery-1"
     ]

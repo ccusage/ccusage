@@ -1,38 +1,32 @@
 use ccusage_adapter_common::{
-    SqliteStage, dir_entries, jsonl, read_units_flat,
-    units::{UnitError, decode_json},
+    SqliteStage, any_file_matching, dir_entries, jsonl, read_units_flat,
+    sqlite::{read_count, read_f64, read_i64},
+    units::{UnitError, read_filtered_json},
 };
+use ccusage_core::cost::PriceTable;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use ccusage_adapter_common::source::ProgressOwner;
+use ccusage_adapter_common::source::{ProgressOwner, UsageLoadContext};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
-        message_value_to_entry, session_message_value_to_entry_checked, session_value_to_entry,
+        MissingTimestamp, OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageError,
+        SessionMessageKind, SessionMessageRow, message_value_to_entry,
+        session_message_value_to_entry_checked, session_value_to_entry,
     },
     paths::paths,
 };
 use crate::{
-    LoadedEntry, PricingMap, Result,
+    LoadedEntry, Result,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    collect_files_with_extension, date_range_bounds_ms, debug_log, resolve_tz,
+    collect_files_with_extension, date_range_bounds_ms, debug_log,
 };
-
-pub(crate) fn load_entries(
-    shared: &SharedArgs,
-    report_kind: AgentReportKind,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_with_native_sessions(shared, report_kind)
-        .map(|entries| entries.into_iter().map(|(entry, _)| entry).collect())
-}
 
 /// An entry and the Claude Code session its `claude-agent` row ran in.
 pub type LinkedEntry = (LoadedEntry, Option<Arc<str>>);
@@ -53,220 +47,137 @@ pub(super) fn load_entries_with_native_sessions_with_diagnostics(
     owner: ProgressOwner,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<LinkedEntry>> {
-    let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
-    let load = || load_entries_inner(shared, allow_aggregate_fallback, diagnostics);
-    match owner {
-        ProgressOwner::Source => crate::progress::track_usage_load(
-            crate::progress::UsageLoadAgent("OpenCode"),
-            shared.json,
-            load,
-        ),
-        ProgressOwner::Caller => load(),
-    }
-}
-
-fn load_entries_inner(
-    shared: &SharedArgs,
-    allow_aggregate_fallback: bool,
-    diagnostics: &Diagnostics,
-) -> Result<Vec<LinkedEntry>> {
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    let mut message_sessions = HashSet::new();
-    let mut compaction_entries = Vec::new();
-    let mut aggregate_entries = Vec::new();
-    for path in paths()? {
-        let directory_entries = load_entries_from_directory_parts(
-            &path,
+    let load = || {
+        Ok(load_directories(
+            &paths()?,
             shared,
-            allow_aggregate_fallback,
+            report_kind,
             diagnostics,
-        )?;
-        for linked in directory_entries.message_entries {
-            message_sessions.insert(linked.0.session_id.to_string());
-            if let Some(id) = entry_id(&linked.0)
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            entries.push(linked);
-        }
-        compaction_entries.extend(directory_entries.compaction_entries);
-        aggregate_entries.extend(directory_entries.aggregate_entries);
-    }
-    append_fallback_entries(
-        &mut entries,
-        &mut seen,
-        &message_sessions,
-        aggregate_entries,
-        compaction_entries,
-    );
-    entries.sort_by_key(|(entry, _)| entry.timestamp);
-    Ok(entries)
-}
-
-#[cfg(test)]
-fn load_entries_from_directory(
-    opencode_dir: &Path,
-    shared: &SharedArgs,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_directory_for_report(opencode_dir, shared, AgentReportKind::Daily)
-}
-
-#[cfg(test)]
-fn load_entries_from_directory_for_report(
-    opencode_dir: &Path,
-    shared: &SharedArgs,
-    report_kind: AgentReportKind,
-) -> Result<Vec<LoadedEntry>> {
-    let diagnostics = &Diagnostics::new("opencode");
-    let directory_entries = load_entries_from_directory_parts(
-        opencode_dir,
-        shared,
-        report_kind == AgentReportKind::Session,
-        diagnostics,
-    )?;
-    let message_sessions = message_session_ids(&directory_entries.message_entries);
-    let mut seen = entry_ids(&directory_entries.message_entries);
-    let mut entries = directory_entries.message_entries;
-    append_fallback_entries(
-        &mut entries,
-        &mut seen,
-        &message_sessions,
-        directory_entries.aggregate_entries,
-        directory_entries.compaction_entries,
-    );
-    entries.sort_by_key(|(entry, _)| entry.timestamp);
-    Ok(entries.into_iter().map(|(entry, _)| entry).collect())
-}
-
-fn load_entries_from_directory_parts(
-    opencode_dir: &Path,
-    shared: &SharedArgs,
-    allow_aggregate_fallback: bool,
-    diagnostics: &Diagnostics,
-) -> Result<DirectoryLoadResult> {
-    let pricing = if shared.mode == CostMode::Display {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
         ))
     };
-    let tz = resolve_tz(shared.timezone.as_deref());
-    let window = DateWindow::from_shared(shared, &tz);
-    let mut message_entries = Vec::new();
-    let mut compaction_entries = Vec::new();
-    let mut seen = HashSet::new();
-    let mut aggregate_entries = Vec::new();
-    if let Some(db_path) = db_path(opencode_dir, diagnostics) {
-        let database_entries = load_entries_from_database(
-            &DatabaseLoadContext {
-                db_path: &db_path,
-                tz: &tz,
-                mode: shared.mode,
-                pricing: pricing.as_ref(),
-                shared,
-                window,
-                diagnostics,
-            },
-            allow_aggregate_fallback,
-        );
-        for linked in database_entries.message_entries {
-            if let Some(id) = entry_id(&linked.0)
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            message_entries.push(linked);
-        }
-        for linked in database_entries.compaction_entries {
-            if let Some(id) = entry_id(&linked.0)
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            compaction_entries.push(linked);
-        }
-        aggregate_entries = database_entries.aggregate_entries;
-    }
+    owner.run(
+        crate::progress::UsageLoadAgent("OpenCode"),
+        shared.json,
+        load,
+    )
+}
 
-    let messages_dir = opencode_dir.join("storage").join("message");
-    let mut files = Vec::new();
-    collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
+fn load_directories(
+    directories: &[PathBuf],
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+    diagnostics: &Diagnostics,
+) -> Vec<LinkedEntry> {
+    let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
+    let context = UsageLoadContext::new(shared);
+    let tz = context.window().timezone();
+    let window = DateWindow::from_shared(shared, tz);
+    let mut collector = EntryCollector::default();
+    for directory in directories {
+        if let Some(db_path) = db_path(directory, diagnostics) {
+            load_entries_from_database(
+                &DatabaseLoadContext {
+                    db_path: &db_path,
+                    tz,
+                    mode: shared.mode,
+                    pricing: context.table(),
+                    shared,
+                    window,
+                    diagnostics,
+                },
+                allow_aggregate_fallback,
+                &mut collector,
+            );
+        }
 
-    // Skip files the DB pass already covered. Message files are stored as
-    // `storage/message/<sessionID>/<messageID>.json`, so the file stem is the
-    // message id used for dedup. When the DB already contributed that id, the
-    // file would be discarded by the id dedup below anyway — drop it here so we
-    // never pay the read. Files whose stem is not a known id (or that have no
-    // usable stem) are kept and parsed normally.
-    if !seen.is_empty() {
+        let messages_dir = directory.join("storage").join("message");
+        let mut files = Vec::new();
+        collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
+
+        // NOTE(2026-06-15, #1332): Legacy OpenCode stores messages as storage/message/<sessionID>/<messageID>.json. A claimed file stem lets the loader skip reading the duplicate.
         files.retain(|file| {
             file.file_stem()
                 .and_then(|stem| stem.to_str())
-                .is_none_or(|stem| !seen.contains(stem))
+                .is_none_or(|stem| !collector.has_claimed(stem))
         });
-    }
 
-    // Read the surviving files in parallel, then run the sequential id dedup
-    // over the results in their original file order so parallelism never changes
-    // which duplicate survives.
-    let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
-        read_message_file(file, &tz, shared.mode, pricing.as_ref(), window)
-    });
-    for entry in loaded {
-        if let Some(id) = entry_id(&entry)
-            && !seen.insert(id.to_string())
-        {
-            continue;
+        let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
+            read_message_file(file, tz, shared.mode, context.table(), window)
+        });
+        for entry in loaded {
+            collector.push_message((entry, None));
         }
-        message_entries.push((entry, None));
     }
-
-    Ok(DirectoryLoadResult {
-        message_entries,
-        compaction_entries,
-        aggregate_entries,
-    })
+    collector.finish()
 }
 
-/// Reports whether `opencode_dir` holds any usage source at all: the SQLite
-/// database, or at least one message file.
-///
-/// Detection has to ignore `--since`/`--until` because the loader applies the
-/// window while reading, so an out-of-range query returns no entries even on an
-/// install full of logs. Stops at the first message file rather than collecting
-/// them all, so this stays cheap next to a large legacy dump.
+#[derive(Default)]
+struct EntryCollector {
+    claimed_ids: HashSet<String>,
+    message_sessions: HashSet<String>,
+    messages: Vec<LinkedEntry>,
+    compactions: Vec<LinkedEntry>,
+    aggregates: Vec<LoadedEntry>,
+}
+
+impl EntryCollector {
+    fn claim(&mut self, entry: &LoadedEntry) -> bool {
+        entry_id(entry).is_none_or(|id| self.claimed_ids.insert(id.to_string()))
+    }
+
+    fn has_claimed(&self, id: &str) -> bool {
+        self.claimed_ids.contains(id)
+    }
+
+    fn push_message(&mut self, linked: LinkedEntry) {
+        self.message_sessions
+            .insert(linked.0.session_id.to_string());
+        if self.claim(&linked.0) {
+            self.messages.push(linked);
+        }
+    }
+
+    fn push_compaction(&mut self, linked: LinkedEntry) {
+        self.compactions.push(linked);
+    }
+
+    fn push_aggregate(&mut self, entry: LoadedEntry) {
+        self.aggregates.push(entry);
+    }
+
+    // NOTE(2026-11-09, #2050): OpenCode session counters include compaction usage and retain usage after a revert deletes message rows. Use the aggregate to recover missing assistant usage without adding the compaction again.
+    fn finish(mut self) -> Vec<LinkedEntry> {
+        let mut entries = std::mem::take(&mut self.messages);
+        let mut aggregate_sessions = HashSet::new();
+        for entry in std::mem::take(&mut self.aggregates) {
+            if self.message_sessions.contains(entry.session_id.as_ref()) || !self.claim(&entry) {
+                continue;
+            }
+            aggregate_sessions.insert(entry.session_id.to_string());
+            entries.push((entry, None));
+        }
+        for linked in std::mem::take(&mut self.compactions) {
+            if !aggregate_sessions.contains(linked.0.session_id.as_ref()) && self.claim(&linked.0) {
+                entries.push(linked);
+            }
+        }
+        entries.sort_by_key(|(entry, _)| entry.timestamp);
+        entries
+    }
+}
+
 pub(crate) fn has_source(opencode_dir: &Path) -> bool {
     if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
         return true;
     }
-    has_json_file(&opencode_dir.join("storage").join("message"))
-}
-
-// Mirrors `collect_files_with_extension`: judge entries by `file_type()` so
-// symlinks are neither followed nor counted. Following them would let detection
-// claim files the collection pass then refuses to read, and a symlinked cycle
-// would recurse until the stack gives out.
-fn has_json_file(dir: &Path) -> bool {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return false;
-    };
-    entries.filter_map(std::result::Result::ok).any(|entry| {
-        let Ok(file_type) = entry.file_type() else {
-            return false;
-        };
-        let path = entry.path();
-        if file_type.is_file() {
+    any_file_matching(
+        &opencode_dir.join("storage").join("message"),
+        &|path| {
             path.extension()
                 .is_some_and(|extension| extension == "json")
-        } else {
-            file_type.is_dir() && has_json_file(&path)
-        }
-    })
+        },
+        &Diagnostics::new("opencode"),
+    )
 }
 
 fn db_path(opencode_dir: &Path, diagnostics: &Diagnostics) -> Option<PathBuf> {
@@ -300,52 +211,33 @@ fn is_channel_db_name(name: &str) -> bool {
 struct DatabaseLoadContext<'a> {
     tz: &'a JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&'a PricingMap>,
+    pricing: PriceTable<'a>,
     window: DateWindow,
     shared: &'a SharedArgs,
     db_path: &'a Path,
     diagnostics: &'a Diagnostics,
 }
 
-#[derive(Default)]
-struct DatabaseLoadResult {
-    message_entries: Vec<LinkedEntry>,
-    compaction_entries: Vec<LinkedEntry>,
-    aggregate_entries: Vec<LinkedEntry>,
-}
-
-#[derive(Default)]
-struct DirectoryLoadResult {
-    message_entries: Vec<LinkedEntry>,
-    compaction_entries: Vec<LinkedEntry>,
-    aggregate_entries: Vec<LinkedEntry>,
-}
-
 fn load_entries_from_database(
     context: &DatabaseLoadContext<'_>,
     allow_aggregate_fallback: bool,
-) -> DatabaseLoadResult {
+    collector: &mut EntryCollector,
+) {
     let &DatabaseLoadContext {
-        tz,
-        mode,
-        pricing,
         shared,
-        window,
         db_path,
         diagnostics,
+        ..
     } = context;
-    let connection = match sqlite::Connection::open_with_flags(
-        db_path,
-        sqlite::OpenFlags::new().with_read_only(),
-    ) {
+    let connection = match ccusage_adapter_common::sqlite::open_read_only(db_path) {
         Ok(connection) => connection,
         Err(error) => {
             debug_log(
                 shared,
                 format!("Failed to open OpenCode database: {}", db_path.display()),
             );
-            sqlite_setup_failure(error).record(db_path, diagnostics);
-            return DatabaseLoadResult::default();
+            error.record(db_path, diagnostics);
+            return;
         }
     };
     if let Err(error) = connection
@@ -353,316 +245,409 @@ fn load_entries_from_database(
         .and_then(|mut statement| statement.next())
     {
         sqlite_setup_failure(error).record(db_path, diagnostics);
-        return DatabaseLoadResult::default();
+        return;
     }
-    let mut message_entries = Vec::new();
-    let mut compaction_entries = Vec::new();
+    let probe = |table| TableSchema::probe(&connection, table, db_path, diagnostics);
+    let message = probe(Table::Message);
+    let session_message = probe(Table::SessionMessage);
+    let session_v2 = probe(Table::SessionV2);
 
-    let mut seen_message_ids = HashSet::new();
-    let mut message_sessions = HashSet::new();
-    let fork_copies = fork_copy_cutoffs(&connection, db_path, diagnostics);
+    if let Some(schema) = &message {
+        load_message_rows(&connection, schema, context, collector);
+    }
+    if let Some(schema) = &session_message {
+        let fork_copies = session_v2
+            .as_ref()
+            .map(|session_v2| fork_copy_cutoffs(&connection, session_v2, schema))
+            .unwrap_or_default();
+        load_session_message_rows(&connection, schema, &fork_copies, context, collector);
+    }
 
-    if table_exists(&connection, "message", db_path, diagnostics) {
-        // Push the window into SQL only while a sample of `time_created` still
-        // looks millisecond-scaled. The payload check remains authoritative.
-        let pushdown =
-            if window.is_unbounded() || time_created_looks_like_millis(&connection, "message") {
-                window.widened_for_pushdown()
-            } else {
+    if allow_aggregate_fallback && !has_temporal_filter(shared) {
+        let session = session_message
+            .is_some()
+            .then(|| probe(Table::Session))
+            .flatten();
+        for schema in [session_v2.as_ref(), session.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            for entry in load_session_aggregate_entries(&connection, schema, context) {
+                collector.push_aggregate(entry);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Table {
+    Message,
+    SessionMessage,
+    Session,
+    SessionV2,
+}
+
+impl Table {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Message => "message",
+            Self::SessionMessage => "session_message",
+            Self::Session => "session",
+            Self::SessionV2 => "session_v2",
+        }
+    }
+}
+
+struct TableSchema {
+    table: Table,
+    columns: HashSet<String>,
+    millis_scaled: bool,
+}
+
+impl TableSchema {
+    fn probe(
+        connection: &sqlite::Connection,
+        table: Table,
+        db_path: &Path,
+        diagnostics: &Diagnostics,
+    ) -> Option<Self> {
+        if !table_exists(connection, table, db_path, diagnostics) {
+            return None;
+        }
+        Self::read(connection, table, db_path, diagnostics)
+    }
+
+    fn read(
+        connection: &sqlite::Connection,
+        table: Table,
+        db_path: &Path,
+        diagnostics: &Diagnostics,
+    ) -> Option<Self> {
+        let columns = connection
+            .prepare(format!("SELECT * FROM {} LIMIT 0", table.name()))
+            .and_then(|statement| {
+                (0..statement.column_count())
+                    .map(|index| statement.column_name(index).map(str::to_string))
+                    .collect::<sqlite::Result<HashSet<_>>>()
+            });
+        let columns = match columns {
+            Ok(columns) => columns,
+            Err(error) => {
+                sqlite_setup_failure(error).record(db_path, diagnostics);
+                return None;
+            }
+        };
+        let millis_scaled =
+            columns.contains("time_created") && time_created_looks_like_millis(connection, table);
+        Some(Self {
+            table,
+            columns,
+            millis_scaled,
+        })
+    }
+
+    fn has_all(&self, columns: &[&str]) -> bool {
+        columns.iter().all(|column| self.columns.contains(*column))
+    }
+
+    fn column_or(&self, column: &'static str, fallback: &'static str) -> &'static str {
+        if self.columns.contains(column) {
+            column
+        } else {
+            fallback
+        }
+    }
+
+    fn pushdown(&self, context: &DatabaseLoadContext<'_>) -> DateWindow {
+        if context.window.is_unbounded() {
+            return DateWindow::UNBOUNDED;
+        }
+        if self.millis_scaled {
+            return context.window.with_sql_timestamp_margin();
+        }
+        debug_log(
+            context.shared,
+            format!(
+                "OpenCode {}.time_created is missing or not millisecond-scale; scanning unfiltered: {}",
+                self.table.name(),
+                context.db_path.display()
+            ),
+        );
+        DateWindow::UNBOUNDED
+    }
+}
+
+struct UnreadableRow;
+
+impl From<sqlite::Error> for UnreadableRow {
+    fn from(_: sqlite::Error) -> Self {
+        Self
+    }
+}
+
+fn row_diagnostics(statement: &sqlite::Statement<'_>, diagnostics: &Diagnostics) -> Diagnostics {
+    diagnostics.for_row(statement.read::<String, _>(0).ok().as_deref())
+}
+
+fn scan_rows<T>(
+    mut statement: sqlite::Statement<'_>,
+    context: &DatabaseLoadContext<'_>,
+    table: Table,
+    unreadable: &'static str,
+    read: impl Fn(&sqlite::Statement<'_>) -> std::result::Result<Option<T>, UnreadableRow>,
+    mut visit: impl FnMut(u32, T, &sqlite::Statement<'_>),
+) -> u32 {
+    let unit = context.db_path;
+    let diagnostics = context.diagnostics.for_table(table.name());
+    let mut row = 0_u32;
+    loop {
+        match statement.next() {
+            Ok(sqlite::State::Row) => {
+                row = row.saturating_add(1);
+                match read(&statement) {
+                    Ok(Some(value)) => visit(row, value, &statement),
+                    Ok(None) => {}
+                    Err(UnreadableRow) => row_diagnostics(&statement, &diagnostics)
+                        .record(Skip::record(unit, row, SkipKind::InvalidData, unreadable)),
+                }
+            }
+            Ok(sqlite::State::Done) => break,
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code)
+                    .record(context.db_path, context.diagnostics);
                 debug_log(
-                    shared,
+                    context.shared,
                     format!(
-                        "OpenCode time_created is not millisecond-scale; scanning unfiltered: {}",
-                        db_path.display()
+                        "Failed to query OpenCode {} table: {}",
+                        table.name(),
+                        context.db_path.display()
                     ),
                 );
-                DateWindow::UNBOUNDED
+                break;
+            }
+        }
+    }
+    row
+}
+
+const COLUMN_READ_FAILED: &str = "database column read failed";
+
+struct MessageRecord {
+    id: String,
+    session_id: String,
+    data: String,
+}
+
+fn load_message_rows(
+    connection: &sqlite::Connection,
+    schema: &TableSchema,
+    context: &DatabaseLoadContext<'_>,
+    collector: &mut EntryCollector,
+) {
+    let statement = match prepare_message_query(connection, schema.pushdown(context)) {
+        Ok(statement) => statement,
+        Err(error) => {
+            error.record(context.db_path, context.diagnostics);
+            debug_log(
+                context.shared,
+                format!(
+                    "Failed to read OpenCode database: {}",
+                    context.db_path.display()
+                ),
+            );
+            return;
+        }
+    };
+    let window = context.window;
+    let diagnostics = context.diagnostics.for_table(schema.table.name());
+    scan_rows(
+        statement,
+        context,
+        schema.table,
+        COLUMN_READ_FAILED,
+        |statement| {
+            Ok(Some(MessageRecord {
+                id: statement.read(0)?,
+                session_id: statement.read(1)?,
+                data: statement.read(2)?,
+            }))
+        },
+        |row,
+         MessageRecord {
+             id,
+             session_id,
+             data,
+         },
+         statement| {
+            if !window.is_unbounded()
+                && let Some(millis) = extract_message_timestamp(&data)
+                && !window.contains(millis)
+            {
+                return;
+            }
+            let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
+                data.as_bytes(),
+                context.db_path,
+                row,
+                Some(&id),
+                &diagnostics,
+                Some(|_| true),
+            ) else {
+                return;
             };
-        let statement = prepare_message_query(&connection, pushdown).or_else(|_| {
-            // A pre-SQLite-era schema has no `time_created` column, so the
-            // filtered query cannot prepare. Scan unfiltered instead.
-            debug_log(
-                shared,
-                format!(
-                    "Failed to prepare filtered OpenCode query; scanning unfiltered: {}",
-                    db_path.display()
+            match message_value_to_entry(
+                value,
+                Some(id),
+                Some(session_id),
+                context.tz,
+                context.mode,
+                context.pricing,
+            ) {
+                Ok(Some(entry)) => collector.push_message((entry, None)),
+                Ok(None) => {}
+                Err(MissingTimestamp) => record_missing_timestamp(
+                    &row_diagnostics(statement, &diagnostics),
+                    context.db_path,
+                    row,
                 ),
-            );
-            prepare_message_query(&connection, DateWindow::UNBOUNDED)
-        });
-        match statement {
-            Ok(mut statement) => {
-                let mut row = 0_u32;
-                loop {
-                    match statement.next() {
-                        Ok(sqlite::State::Row) => {
-                            row = row.saturating_add(1);
-                            let Ok(id) = statement.read::<String, _>(0) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(session_id) = statement.read::<String, _>(1) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(data) = statement.read::<String, _>(2) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            if !window.is_unbounded()
-                                && let Some(millis) = extract_message_timestamp(&data)
-                                && !window.contains(millis)
-                            {
-                                continue;
-                            }
-                            let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
-                                data.as_bytes(),
-                                db_path,
-                                row,
-                                diagnostics,
-                                Some(|_| true),
-                            ) else {
-                                continue;
-                            };
-                            if let Some(entry) = message_value_to_entry(
-                                &value,
-                                Some(id),
-                                Some(session_id),
-                                tz,
-                                mode,
-                                pricing,
-                            ) {
-                                let session_key = entry.session_id.to_string();
-                                message_sessions.insert(session_key);
-                                push_unique_entry(
-                                    &mut message_entries,
-                                    &mut seen_message_ids,
-                                    (entry, None),
-                                );
-                            }
-                        }
-                        Ok(sqlite::State::Done) => break,
-                        Err(error) => {
-                            UnitError::sqlite(SqliteStage::Rows, error.code)
-                                .record(db_path, diagnostics);
-                            debug_log(
-                                shared,
-                                format!("Failed to query OpenCode database: {}", db_path.display()),
-                            );
-                            break;
-                        }
-                    }
-                }
             }
-            Err(error) => {
-                error.record(db_path, diagnostics);
-                debug_log(
-                    shared,
-                    format!("Failed to read OpenCode database: {}", db_path.display()),
-                );
-            }
-        }
-    }
+        },
+    );
+}
 
-    let has_session_messages = table_exists(&connection, "session_message", db_path, diagnostics);
-    if has_session_messages {
-        let pushdown = if window.is_unbounded()
-            || time_created_looks_like_millis(&connection, "session_message")
-        {
-            window.widened_for_pushdown()
-        } else {
-            DateWindow::UNBOUNDED
+fn record_missing_timestamp(diagnostics: &Diagnostics, unit: &Path, row: u32) {
+    diagnostics.record(Skip::record(
+        unit,
+        row,
+        SkipKind::InvalidTimestamp,
+        MissingTimestamp::REASON,
+    ));
+}
+
+struct SessionMessageRecord {
+    id: String,
+    session_id: String,
+    kind: SessionMessageKind,
+    data: String,
+    created: Option<i64>,
+    seq: Option<i64>,
+}
+
+impl SessionMessageRecord {
+    fn read(statement: &sqlite::Statement<'_>) -> std::result::Result<Option<Self>, UnreadableRow> {
+        let id = statement.read(0)?;
+        let session_id = statement.read(1)?;
+        let row_type: String = statement.read(2)?;
+        let Some(kind) = SessionMessageKind::from_row_type(&row_type) else {
+            return Ok(None);
         };
-        let statement = prepare_session_message_query(&connection, pushdown).or_else(|_| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to prepare filtered OpenCode v2 query; scanning unfiltered: {}",
-                    db_path.display()
-                ),
-            );
-            prepare_session_message_query(&connection, DateWindow::UNBOUNDED)
-        });
-        let mut v2_rows = 0;
-        let mut v2_entries = 0;
-        match statement {
-            Ok(mut statement) => {
-                let mut row = 0_u32;
-                loop {
-                    match statement.next() {
-                        Ok(sqlite::State::Row) => {
-                            row = row.saturating_add(1);
-                            v2_rows += 1;
-                            let Ok(id) = statement.read::<String, _>(0) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(session_id) = statement.read::<String, _>(1) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(message_type) = statement.read::<String, _>(2) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Some(kind) = SessionMessageKind::from_row_type(&message_type)
-                            else {
-                                continue;
-                            };
-                            let Ok(data) = statement.read::<String, _>(3) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let created = statement
-                                .read::<i64, _>(4)
-                                .ok()
-                                .or_else(|| {
-                                    statement.read::<f64, _>(4).ok().map(|value| value as i64)
-                                })
-                                .unwrap_or(0);
-                            // Copies neither count nor mark the fork as covered:
-                            // the fork's `session_v2` counters start at zero and
-                            // only hold fork-local usage, so they stay a valid
-                            // fallback when every fork-local row is gone.
-                            if is_fork_copy(&fork_copies, &session_id, &statement) {
-                                continue;
-                            }
-                            if !window.is_unbounded()
-                                && let Some(millis) = extract_message_timestamp(&data)
-                                && !window.contains(millis)
-                            {
-                                continue;
-                            }
-                            let linked = match session_message_value_to_entry_checked(
-                                SessionMessageRow {
-                                    kind,
-                                    data: &data,
-                                    id,
-                                    session_id,
-                                    created,
-                                },
-                                tz,
-                                mode,
-                                pricing,
-                            ) {
-                                Ok(Some(linked)) => linked,
-                                Ok(None) => continue,
-                                Err(error) => {
-                                    jsonl::record_decode_error(
-                                        data.as_bytes(),
-                                        error,
-                                        db_path,
-                                        row,
-                                        false,
-                                        diagnostics,
-                                        Some(|_: &serde_json::Value| true),
-                                    );
-                                    continue;
-                                }
-                            };
-                            v2_entries += 1;
-                            // The session counters already include compaction usage,
-                            // so a compaction row alone must not suppress them.
-                            if kind == SessionMessageKind::Compaction {
-                                push_unique_entry(
-                                    &mut compaction_entries,
-                                    &mut seen_message_ids,
-                                    linked,
-                                );
-                                continue;
-                            }
-                            message_sessions.insert(linked.0.session_id.to_string());
-                            push_unique_entry(&mut message_entries, &mut seen_message_ids, linked);
-                        }
-                        Ok(sqlite::State::Done) => break,
-                        Err(error) => {
-                            UnitError::sqlite(SqliteStage::Rows, error.code)
-                                .record(db_path, diagnostics);
-                            debug_log(
-                                shared,
-                                format!(
-                                    "Failed to query OpenCode v2 database: {}",
-                                    db_path.display()
-                                ),
-                            );
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(error) => error.record(db_path, diagnostics),
-        }
-        if v2_rows > 0 && v2_entries == 0 {
-            debug_log(
-                shared,
-                format!(
-                    "OpenCode v2 rows produced no usage entries: {v2_rows} rows in {}",
-                    db_path.display()
-                ),
-            );
-        }
+        Ok(Some(Self {
+            id,
+            session_id,
+            kind,
+            data: statement.read(3)?,
+            created: read_i64(statement, 4),
+            seq: statement.read::<Option<i64>, _>(5).ok().flatten(),
+        }))
     }
+}
 
-    let mut aggregate_entries = Vec::new();
-    if allow_aggregate_fallback && !has_temporal_filter(shared) {
-        // Session aggregates are cumulative and cannot be sliced safely for a
-        // bounded report, so only unbounded reports may use this fallback.
-        let mut aggregate_tables = Vec::new();
-        if table_exists(&connection, "session_v2", db_path, diagnostics) {
-            aggregate_tables.push("session_v2");
+fn load_session_message_rows(
+    connection: &sqlite::Connection,
+    schema: &TableSchema,
+    fork_copies: &HashMap<String, i64>,
+    context: &DatabaseLoadContext<'_>,
+    collector: &mut EntryCollector,
+) {
+    let statement = match prepare_session_message_query(connection, schema, context) {
+        Ok(statement) => statement,
+        Err(error) => {
+            error.record(context.db_path, context.diagnostics);
+            return;
         }
-        if has_session_messages && table_exists(&connection, "session", db_path, diagnostics) {
-            aggregate_tables.push("session");
-        }
-        for table in aggregate_tables {
-            for entry in load_session_aggregate_entries(&connection, table, context) {
-                if message_sessions.contains(entry.session_id.as_ref()) {
-                    continue;
-                }
-                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, (entry, None));
+    };
+    let window = context.window;
+    let mut entries = 0;
+    let diagnostics = context.diagnostics.for_table(schema.table.name());
+    let rows = scan_rows(
+        statement,
+        context,
+        schema.table,
+        COLUMN_READ_FAILED,
+        SessionMessageRecord::read,
+        |row, record, statement| {
+            // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode starts fork session counters at zero, with only fork-local usage. Copied rows must leave the aggregate fallback available.
+            if fork_copies
+                .get(&record.session_id)
+                .is_some_and(|cutoff| record.seq.is_some_and(|seq| seq <= *cutoff))
+            {
+                return;
             }
-        }
-    }
-
-    DatabaseLoadResult {
-        message_entries,
-        compaction_entries,
-        aggregate_entries,
+            if !window.is_unbounded()
+                && let Some(millis) = extract_message_timestamp(&record.data)
+                && !window.contains(millis)
+            {
+                return;
+            }
+            let SessionMessageRecord {
+                id,
+                session_id,
+                kind,
+                data,
+                created,
+                ..
+            } = record;
+            let linked = match session_message_value_to_entry_checked(
+                SessionMessageRow {
+                    kind,
+                    data: &data,
+                    id,
+                    session_id,
+                    created,
+                },
+                context.tz,
+                context.mode,
+                context.pricing,
+            ) {
+                Ok(Some(linked)) => linked,
+                Ok(None) => return,
+                Err(SessionMessageError::MissingTimestamp) => {
+                    record_missing_timestamp(
+                        &row_diagnostics(statement, &diagnostics),
+                        context.db_path,
+                        row,
+                    );
+                    return;
+                }
+                Err(SessionMessageError::Decode(error)) => {
+                    jsonl::record_decode_error(
+                        data.as_bytes(),
+                        error,
+                        context.db_path,
+                        row,
+                        false,
+                        &row_diagnostics(statement, &diagnostics),
+                        Some(|_: &serde_json::Value| true),
+                    );
+                    return;
+                }
+            };
+            entries += 1;
+            if kind == SessionMessageKind::Compaction {
+                collector.push_compaction(linked);
+            } else {
+                collector.push_message(linked);
+            }
+        },
+    );
+    if rows > 0 && entries == 0 {
+        debug_log(
+            context.shared,
+            format!(
+                "OpenCode v2 rows produced no usage entries: {rows} rows in {}",
+                context.db_path.display()
+            ),
+        );
     }
 }
 
@@ -670,102 +655,34 @@ fn read_message_file(
     path: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     window: DateWindow,
 ) -> std::result::Result<Option<LoadedEntry>, UnitError> {
-    let content = fs::read(path)?;
-    // Skip out-of-range entries before the full parse. Extraction works on the
-    // raw text and fails open (non-UTF-8 or missing timestamp -> full parse).
-    if !window.is_unbounded()
-        && let Ok(text) = std::str::from_utf8(&content)
-        && let Some(millis) = extract_message_timestamp(text)
-        && !window.contains(millis)
-    {
+    let value = read_filtered_json::<OpenCodeMessage>(path, |content| {
+        window.is_unbounded()
+            || std::str::from_utf8(content)
+                .ok()
+                .and_then(extract_message_timestamp)
+                .is_none_or(|millis| window.contains(millis))
+    })?;
+    let Some(value) = value else {
         return Ok(None);
-    }
-    let value = decode_json::<OpenCodeMessage>(&content)?;
-    Ok(message_value_to_entry(
-        &value, None, None, tz, mode, pricing,
-    ))
-}
-
-fn push_unique_entry(
-    entries: &mut Vec<LinkedEntry>,
-    seen_message_ids: &mut HashSet<String>,
-    entry: LinkedEntry,
-) -> bool {
-    if let Some(id) = entry_id(&entry.0)
-        && !seen_message_ids.insert(id.to_string())
-    {
-        return false;
-    }
-    entries.push(entry);
-    true
-}
-
-#[cfg(test)]
-fn entry_ids(entries: &[LinkedEntry]) -> HashSet<String> {
-    entries
-        .iter()
-        .filter_map(|(entry, _)| entry_id(entry))
-        .map(str::to_string)
-        .collect()
-}
-
-#[cfg(test)]
-fn message_session_ids(entries: &[LinkedEntry]) -> HashSet<String> {
-    entries
-        .iter()
-        .map(|(entry, _)| entry.session_id.to_string())
-        .collect()
-}
-
-/// Adds session aggregates for sessions without assistant or legacy message
-/// usage, then compaction rows for sessions no aggregate covered. A session
-/// aggregate already includes the session's compaction usage.
-fn append_fallback_entries(
-    entries: &mut Vec<LinkedEntry>,
-    seen: &mut HashSet<String>,
-    message_sessions: &HashSet<String>,
-    aggregate_entries: Vec<LinkedEntry>,
-    compaction_entries: Vec<LinkedEntry>,
-) {
-    let mut aggregate_sessions = HashSet::new();
-    for linked in aggregate_entries {
-        if message_sessions.contains(linked.0.session_id.as_ref()) {
-            continue;
-        }
-        if let Some(id) = entry_id(&linked.0)
-            && !seen.insert(id.to_string())
-        {
-            continue;
-        }
-        aggregate_sessions.insert(linked.0.session_id.to_string());
-        entries.push(linked);
-    }
-    for linked in compaction_entries {
-        if aggregate_sessions.contains(linked.0.session_id.as_ref()) {
-            continue;
-        }
-        if let Some(id) = entry_id(&linked.0)
-            && !seen.insert(id.to_string())
-        {
-            continue;
-        }
-        entries.push(linked);
-    }
+    };
+    message_value_to_entry(value, None, None, tz, mode, pricing).map_err(|MissingTimestamp| {
+        UnitError::new(SkipKind::InvalidTimestamp, MissingTimestamp::REASON)
+    })
 }
 
 fn table_exists(
     connection: &sqlite::Connection,
-    table: &str,
+    table: Table,
     db_path: &Path,
     diagnostics: &Diagnostics,
 ) -> bool {
     let exists = connection
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
         .and_then(|mut statement| {
-            statement.bind((1, table))?;
+            statement.bind((1, table.name()))?;
             statement.next()
         });
     match exists {
@@ -778,42 +695,14 @@ fn table_exists(
     }
 }
 
-/// Fork sessions whose leading `seq` range is a copy of the parent history.
-///
-/// Returns the largest `seq` that is still copied history for each fork
-/// session, so the v2 row scan can drop inherited usage while
-/// keeping what the fork generated itself. `session_v2` carries the fork
-/// link (`fork_session_id`) plus the boundary message; `session_message`
-/// carries the `seq` the fork kept when it copied the parent's rows.
 fn fork_copy_cutoffs(
     connection: &sqlite::Connection,
-    db_path: &Path,
-    diagnostics: &Diagnostics,
+    session_v2: &TableSchema,
+    session_message: &TableSchema,
 ) -> HashMap<String, i64> {
     let mut cutoffs = HashMap::new();
-    for table in ["session_v2", "session_message"] {
-        if !table_exists(connection, table, db_path, diagnostics) {
-            return cutoffs;
-        }
-    }
-    let Some(v2_columns) = fork_table_columns(connection, "session_v2", db_path, diagnostics)
-    else {
-        return cutoffs;
-    };
-    if !["id", "fork_session_id", "fork_boundary"]
-        .into_iter()
-        .all(|column| v2_columns.contains(column))
-    {
-        return cutoffs;
-    }
-    let Some(message_columns) =
-        fork_table_columns(connection, "session_message", db_path, diagnostics)
-    else {
-        return cutoffs;
-    };
-    if !["id", "session_id", "seq"]
-        .into_iter()
-        .all(|column| message_columns.contains(column))
+    if !session_v2.has_all(&["id", "fork_session_id", "fork_boundary"])
+        || !session_message.has_all(&["id", "session_id", "seq"])
     {
         return cutoffs;
     }
@@ -843,28 +732,6 @@ fn fork_copy_cutoffs(
     cutoffs
 }
 
-fn fork_table_columns(
-    connection: &sqlite::Connection,
-    table: &str,
-    db_path: &Path,
-    diagnostics: &Diagnostics,
-) -> Option<HashSet<String>> {
-    match table_columns(connection, table) {
-        Ok(columns) => Some(columns),
-        Err(error) => {
-            sqlite_setup_failure(error).record(db_path, diagnostics);
-            None
-        }
-    }
-}
-
-/// Largest copied `seq` for one fork: the parent's boundary `seq` for a
-/// `through` fork, or the parent's last `seq` below the boundary for a
-/// `before` fork.
-///
-/// Returns `None` when the boundary cannot be resolved — a missing parent
-/// row, a missing boundary row, or an unparsable boundary payload — so the
-/// fork keeps all of its rows instead of being dropped on a guess.
 fn fork_copy_cutoff(
     connection: &sqlite::Connection,
     parent_id: &str,
@@ -872,9 +739,7 @@ fn fork_copy_cutoff(
 ) -> Option<i64> {
     let boundary: serde_json::Value = serde_json::from_str(boundary).ok()?;
     let boundary_type = boundary.get("type")?.as_str()?;
-    // The boundary names the parent's message id, which the fork copy does
-    // not reuse (every copy gets a new id), so the lookup has to run against
-    // the parent session's rows and then compare by the preserved `seq`.
+    // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode fork copies get new message IDs and preserve seq. Resolve the boundary ID in the parent session.
     let parent_message_id = boundary.get("messageID")?.as_str()?;
     let Ok(mut statement) = connection
         .prepare("SELECT seq FROM session_message WHERE session_id = ?1 AND id = ?2 LIMIT 1")
@@ -884,13 +749,12 @@ fn fork_copy_cutoff(
     statement.bind((1, parent_id)).ok()?;
     statement.bind((2, parent_message_id)).ok()?;
     let boundary_seq = match statement.next() {
-        Ok(sqlite::State::Row) => statement.read::<i64, _>(0).ok()?,
+        Ok(sqlite::State::Row) => statement.read::<Option<i64>, _>(0).ok().flatten()?,
         _ => return None,
     };
     match boundary_type {
         "through" => Some(boundary_seq),
-        // `seq` is sparse and the fork's own rows continue right after the
-        // last copied row, so `boundary_seq - 1` could swallow them.
+        // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode seq values can be sparse, and fork-local rows follow the last copy. Use the preceding parent seq so the cutoff keeps fork-local rows.
         "before" => last_parent_seq_before(connection, parent_id, boundary_seq),
         _ => None,
     }
@@ -909,103 +773,68 @@ fn last_parent_seq_before(
     statement.bind((1, parent_id)).ok()?;
     statement.bind((2, boundary_seq)).ok()?;
     match statement.next() {
-        // `MAX` over no rows is NULL: nothing was copied, so nothing is skipped.
         Ok(sqlite::State::Row) => statement.read::<Option<i64>, _>(0).ok()?,
         _ => None,
     }
 }
 
-fn is_fork_copy(
-    fork_copies: &HashMap<String, i64>,
-    session_id: &str,
-    statement: &sqlite::Statement,
-) -> bool {
-    let Some(cutoff) = fork_copies.get(session_id) else {
-        return false;
-    };
-    // Without a readable `seq` the row cannot be classified, so it stays.
-    statement
-        .read::<i64, _>(5)
-        .ok()
-        .is_some_and(|seq| seq <= *cutoff)
-}
-
-fn table_columns(connection: &sqlite::Connection, table: &str) -> sqlite::Result<HashSet<String>> {
-    let sql = match table {
-        "message" => "SELECT * FROM message LIMIT 0",
-        "session" => "SELECT * FROM session LIMIT 0",
-        "session_v2" => "SELECT * FROM session_v2 LIMIT 0",
-        "session_message" => "SELECT * FROM session_message LIMIT 0",
-        _ => return Ok(HashSet::new()),
-    };
-    let statement = connection.prepare(sql)?;
-    (0..statement.column_count())
-        .map(|index| statement.column_name(index).map(str::to_string))
-        .collect()
-}
-
-fn prepare_session_message_query(
-    connection: &sqlite::Connection,
-    window: DateWindow,
-) -> std::result::Result<sqlite::Statement<'_>, UnitError> {
-    let columns = table_columns(connection, "session_message").map_err(sqlite_setup_failure)?;
-    if !["id", "session_id", "type", "data"]
-        .into_iter()
-        .all(|column| columns.contains(column))
-    {
+fn prepare_session_message_query<'a>(
+    connection: &'a sqlite::Connection,
+    schema: &TableSchema,
+    context: &DatabaseLoadContext<'_>,
+) -> std::result::Result<sqlite::Statement<'a>, UnitError> {
+    if !schema.has_all(&["id", "session_id", "type", "data"]) {
         return Err(UnitError::unsupported_schema());
     }
-    let has_time_created = columns.contains("time_created");
-    let has_seq = columns.contains("seq");
-    // `seq` is position 5 only when the column exists; `is_fork_copy`
-    // falls back to keeping the row when it cannot read a `seq`.
-    let seq_column = if has_seq { ", seq" } else { "" };
-    let time_created = if has_time_created {
-        "time_created"
-    } else {
-        "NULL"
-    };
+    let window = schema.pushdown(context);
     let select = format!(
-        "SELECT id, session_id, type, data, {time_created}{seq_column} FROM session_message"
+        "SELECT id, session_id, type, data, {}, {} FROM session_message",
+        schema.column_or("time_created", "NULL"),
+        schema.column_or("seq", "NULL"),
     );
-    let sql = if has_time_created {
-        match (window.start, window.end) {
-            (Some(_), Some(_)) => {
-                format!("{select} WHERE time_created >= ?1 AND time_created < ?2",)
-            }
-            (Some(_), None) => format!("{select} WHERE time_created >= ?1",),
-            (None, Some(_)) => format!("{select} WHERE time_created < ?1",),
-            (None, None) => select.clone(),
-        }
-    } else {
-        select.clone()
+    let sql = match pushdown_condition(window) {
+        Some(condition) => format!("{select} WHERE {condition}"),
+        None => select,
     };
-    let mut statement = connection.prepare(&sql).map_err(sqlite_setup_failure)?;
-    if has_time_created {
-        for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
-            statement
-                .bind((index + 1, bound))
-                .map_err(sqlite_setup_failure)?;
-        }
-    }
+    let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
+    bind_window(&mut statement, window)?;
     Ok(statement)
+}
+
+fn pushdown_condition(window: DateWindow) -> Option<String> {
+    let range = match (window.start, window.end) {
+        (Some(_), Some(_)) => "time_created >= ?1 AND time_created < ?2",
+        (Some(_), None) => "time_created >= ?1",
+        (None, Some(_)) => "time_created < ?1",
+        (None, None) => return None,
+    };
+    Some(format!(
+        "(time_created IS NULL OR time_created <= 0 OR ({range}))"
+    ))
+}
+
+fn bind_window(
+    statement: &mut sqlite::Statement<'_>,
+    window: DateWindow,
+) -> std::result::Result<(), UnitError> {
+    for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
+        statement
+            .bind((index + 1, bound))
+            .map_err(sqlite_setup_failure)?;
+    }
+    Ok(())
 }
 
 fn sqlite_setup_failure(error: sqlite::Error) -> UnitError {
     UnitError::sqlite(SqliteStage::Setup, error.code)
 }
 
-fn prepare_session_aggregate_query<'a>(
-    connection: &'a sqlite::Connection,
-    table: &str,
-) -> sqlite::Result<Option<sqlite::Statement<'a>>> {
-    let table = match table {
-        "session" => "session",
-        "session_v2" => "session_v2",
-        _ => return Ok(None),
-    };
-    let columns = table_columns(connection, table)?;
-    if ![
+fn load_session_aggregate_entries(
+    connection: &sqlite::Connection,
+    schema: &TableSchema,
+    context: &DatabaseLoadContext<'_>,
+) -> Vec<LoadedEntry> {
+    if !schema.has_all(&[
         "id",
         "time_created",
         "cost",
@@ -1013,37 +842,18 @@ fn prepare_session_aggregate_query<'a>(
         "tokens_output",
         "tokens_cache_read",
         "tokens_cache_write",
-    ]
-    .into_iter()
-    .all(|column| columns.contains(column))
-    {
-        return Ok(None);
+    ]) {
+        return Vec::new();
     }
-    let reasoning = if columns.contains("tokens_reasoning") {
-        "tokens_reasoning"
-    } else {
-        "0"
-    };
-    let model = if columns.contains("model") {
-        "model"
-    } else {
-        "NULL"
-    };
+    let table = schema.table.name();
     let sql = format!(
         "SELECT id, time_created, cost, tokens_input, tokens_output, \
-         tokens_cache_read, tokens_cache_write, {reasoning}, {model} FROM {table}"
+         tokens_cache_read, tokens_cache_write, {}, {} FROM {table}",
+        schema.column_or("tokens_reasoning", "0"),
+        schema.column_or("model", "NULL"),
     );
-    connection.prepare(&sql).map(Some)
-}
-
-fn load_session_aggregate_entries(
-    connection: &sqlite::Connection,
-    table: &str,
-    context: &DatabaseLoadContext<'_>,
-) -> Vec<LoadedEntry> {
-    let mut statement = match prepare_session_aggregate_query(connection, table) {
-        Ok(Some(statement)) => statement,
-        Ok(None) => return Vec::new(),
+    let statement = match connection.prepare(sql) {
+        Ok(statement) => statement,
         Err(error) => {
             debug_log(
                 context.shared,
@@ -1057,79 +867,46 @@ fn load_session_aggregate_entries(
         }
     };
     let mut entries = Vec::new();
-    let mut row = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row = row.saturating_add(1);
-                let Ok(session_id) = statement.read::<String, _>(0) else {
-                    context.diagnostics.record(Skip::record(
-                        context.db_path,
-                        row,
-                        SkipKind::InvalidData,
-                        "invalid aggregate row",
-                    ));
-                    continue;
-                };
-                let Some(created) = read_f64(&statement, 1)
-                    .filter(|value| value.is_finite())
-                    .map(|value| value.trunc() as i64)
-                else {
-                    context.diagnostics.record(Skip::record(
-                        context.db_path,
-                        row,
-                        SkipKind::InvalidData,
-                        "invalid aggregate row",
-                    ));
-                    continue;
-                };
-                if !context.window.is_unbounded() && !context.window.contains(created) {
-                    continue;
-                }
-                let cost = read_f64(&statement, 2);
-                let input_tokens = read_u64(&statement, 3);
-                let output_tokens = read_u64(&statement, 4);
-                let cache_read_tokens = read_u64(&statement, 5);
-                let cache_write_tokens = read_u64(&statement, 6);
-                let reasoning_tokens = read_u64(&statement, 7);
-                let model = statement.read::<String, _>(8).ok();
-                let (model, provider) = parse_session_model(model.as_deref())
-                    .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
-                if let Some(entry) = session_value_to_entry(
-                    OpenCodeSessionAggregate {
-                        session_id,
-                        created,
-                        model,
-                        provider,
-                        input_tokens,
-                        output_tokens,
-                        reasoning_tokens,
-                        cache_read_tokens,
-                        cache_write_tokens,
-                        cost,
-                    },
-                    context.tz,
-                    context.mode,
-                    context.pricing,
-                ) {
-                    entries.push(entry);
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code)
-                    .record(context.db_path, context.diagnostics);
-                debug_log(
-                    context.shared,
-                    format!(
-                        "Failed to query OpenCode {table} table: {}",
-                        context.db_path.display()
-                    ),
-                );
-                break;
-            }
-        }
-    }
+    let diagnostics = context.diagnostics.for_table(schema.table.name());
+    scan_rows(
+        statement,
+        context,
+        schema.table,
+        "invalid aggregate row",
+        |statement| {
+            let session_id = statement.read(0)?;
+            let created = read_i64(statement, 1);
+            let model = statement.read::<String, _>(8).ok();
+            let (model, provider) = parse_session_model(model.as_deref())
+                .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+            Ok(Some(OpenCodeSessionAggregate {
+                session_id,
+                created,
+                model,
+                provider,
+                input_tokens: read_count(statement, 3),
+                output_tokens: read_count(statement, 4),
+                reasoning_tokens: read_count(statement, 7),
+                cache_read_tokens: read_count(statement, 5),
+                cache_write_tokens: read_count(statement, 6),
+                cost: read_f64(statement, 2),
+            }))
+        },
+        |row, aggregate, statement| match session_value_to_entry(
+            aggregate,
+            context.tz,
+            context.mode,
+            context.pricing,
+        ) {
+            Ok(Some(entry)) => entries.push(entry),
+            Ok(None) => {}
+            Err(MissingTimestamp) => record_missing_timestamp(
+                &row_diagnostics(statement, &diagnostics),
+                context.db_path,
+                row,
+            ),
+        },
+    );
     entries
 }
 
@@ -1166,46 +943,10 @@ fn parse_session_model(value: Option<&str>) -> Option<(String, String)> {
     Some((value.to_string(), "unknown".to_string()))
 }
 
-fn read_u64(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
-    statement
-        .read::<i64, _>(index)
-        .ok()
-        .and_then(|value| u64::try_from(value.max(0)).ok())
-        .or_else(|| {
-            statement
-                .read::<f64, _>(index)
-                .ok()
-                .filter(|value| value.is_finite() && *value > 0.0)
-                .map(|value| value.trunc() as u64)
-        })
-        .unwrap_or(0)
-}
-
-fn read_f64(statement: &sqlite::Statement<'_>, index: usize) -> Option<f64> {
-    statement
-        .read::<f64, _>(index)
-        .ok()
-        .filter(|value| value.is_finite())
-        .or_else(|| {
-            statement
-                .read::<i64, _>(index)
-                .ok()
-                .map(|value| value as f64)
-        })
-}
-
 fn entry_id(entry: &LoadedEntry) -> Option<&str> {
-    entry.data.message.id.as_deref().filter(|id| !id.is_empty())
+    entry.message_id.as_deref().filter(|id| !id.is_empty())
 }
 
-/// Pulls `time.created` millis from raw JSON to skip rows before a full parse.
-///
-/// Only the canonical `"time": { ... "created": <digits> ... }` shape is
-/// recognized, and the search for `created` never leaves that object, so a
-/// `time` object belonging to something else in the payload cannot contribute a
-/// number. Everything else returns `None` and the caller falls back to a full
-/// parse: a scan that gives up costs time, whereas a scan that guesses wrong
-/// would silently drop an in-range entry.
 fn extract_message_timestamp(data: &str) -> Option<i64> {
     const TIME_KEY: &str = "\"time\":";
     const CREATED_KEY: &str = "\"created\":";
@@ -1218,17 +959,12 @@ fn extract_message_timestamp(data: &str) -> Option<i64> {
     let end = after_key
         .find(|character: char| !character.is_ascii_digit())
         .unwrap_or(after_key.len());
-    after_key[..end].parse::<i64>().ok()
+    after_key[..end]
+        .parse::<i64>()
+        .ok()
+        .filter(|millis| *millis > 0)
 }
 
-/// Half-open millisecond window derived from `--since`/`--until`, used to skip
-/// rows and files before they are parsed.
-///
-/// A `None` bound is not narrowed, either because the option was absent or
-/// because it is not a full date. The window is deliberately equivalent to the
-/// authoritative `date_within_range` check applied to loaded entries: both
-/// resolve the bounds in the reporting timezone, so pre-filtering can never drop
-/// an entry the report would have kept.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct DateWindow {
     start: Option<i64>,
@@ -1246,8 +982,7 @@ impl DateWindow {
     };
 
     fn from_shared(shared: &SharedArgs, tz: &JiffTimeZone) -> Self {
-        let (start, end) =
-            date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), tz);
+        let (start, end) = date_range_bounds_ms(shared.since, shared.until, tz);
         Self { start, end }
     }
 
@@ -1255,17 +990,7 @@ impl DateWindow {
         self == Self::UNBOUNDED
     }
 
-    /// Same window, widened by a day on each side for the SQL push-down.
-    ///
-    /// SQL filters on `message.time_created` while the report filters on the
-    /// payload's `time.created`. They hold the same value on every OpenCode
-    /// build checked here, but the column is only a proxy for the payload, so
-    /// the pushed-down window is kept loose: a column drifting from its payload
-    /// by up to a day costs a few extra rows to scan instead of excluding a row
-    /// the report wanted. Drift past a day is still excluded — ruling that out
-    /// would take the full-column scan this push-down exists to avoid. The exact
-    /// window is applied per row either way.
-    fn widened_for_pushdown(self) -> Self {
+    fn with_sql_timestamp_margin(self) -> Self {
         Self {
             start: self.start.map(|start| start - crate::MILLIS_PER_DAY),
             end: self.end.map(|end| end + crate::MILLIS_PER_DAY),
@@ -1277,76 +1002,36 @@ impl DateWindow {
     }
 }
 
-/// Prepares the `message` scan, narrowed to `window` where its bounds are set.
-///
-/// Returns `None` when the statement cannot be prepared, which is what a schema
-/// without a `time_created` column looks like.
-///
-/// The bounds are applied through a subquery that selects only `id`. OpenCode's
-/// index is `(session_id, time_created, id)`, so a bare `time_created` range
-/// cannot seek it and scans the table, reading every `data` blob on the way. The
-/// subquery is answered from that index alone, leaving only in-range rows to be
-/// fetched by primary key — the difference is what keeps a narrow window off the
-/// gigabytes of payload it does not need.
+// NOTE(2026-07-27, #1492): OpenCode indexes message IDs with (session_id, time_created, id). Select IDs from the covering index before fetching payload blobs.
 fn prepare_message_query(
     connection: &sqlite::Connection,
     window: DateWindow,
 ) -> std::result::Result<sqlite::Statement<'_>, UnitError> {
-    let sql = match (window.start, window.end) {
-        (Some(_), Some(_)) => {
-            "SELECT id, session_id, data FROM message WHERE id IN \
-             (SELECT id FROM message WHERE time_created >= ?1 AND time_created < ?2)"
+    let select = "SELECT id, session_id, data FROM message";
+    let sql = match pushdown_condition(window) {
+        Some(condition) => {
+            format!("{select} WHERE id IN (SELECT id FROM message WHERE {condition})")
         }
-        (Some(_), None) => {
-            "SELECT id, session_id, data FROM message WHERE id IN \
-             (SELECT id FROM message WHERE time_created >= ?1)"
-        }
-        (None, Some(_)) => {
-            "SELECT id, session_id, data FROM message WHERE id IN \
-             (SELECT id FROM message WHERE time_created < ?1)"
-        }
-        (None, None) => "SELECT id, session_id, data FROM message",
+        None => select.to_string(),
     };
     let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
-    for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
-        statement
-            .bind((index + 1, bound))
-            .map_err(sqlite_setup_failure)?;
-    }
+    bind_window(&mut statement, window)?;
     Ok(statement)
 }
 
-/// Smallest value treated as millisecond scale: any Unix timestamp after 1973
-/// needs at least 12 digits, while second-scale values stay far below it.
 const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 
-/// Reports whether a sample of `message.time_created` looks like Unix
-/// milliseconds, the scale the payload's `time.created` uses.
-///
-/// Sampling keeps this cheap on databases tens of gigabytes in size, and proves
-/// nothing about the rows it did not read: a column with mixed scales can still
-/// slip through, and matching scales say nothing about matching values. What it
-/// does catch is a build that stored seconds, or left the column at zero, where
-/// millisecond bounds would otherwise exclude every row — those disable the
-/// push-down and leave the payload check to filter.
-fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) -> bool {
-    let sql = match table {
-        "message" => "SELECT max(time_created) FROM (SELECT time_created FROM message LIMIT 8)",
-        "session_message" => {
-            "SELECT max(time_created) FROM (SELECT time_created FROM session_message LIMIT 8)"
-        }
-        _ => return false,
-    };
-    if !table_columns(connection, table).is_ok_and(|columns| columns.contains("time_created")) {
-        return false;
-    }
-    let Ok(mut statement) = connection.prepare(sql) else {
+fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table) -> bool {
+    let Ok(mut statement) = connection.prepare(format!(
+        "SELECT max(time_created) FROM (SELECT time_created FROM {} LIMIT 8)",
+        table.name()
+    )) else {
         return false;
     };
     match statement.next() {
-        Ok(sqlite::State::Row) => statement
-            .read::<i64, _>(0)
-            .is_ok_and(|max| max >= MIN_MILLIS_SCALE),
+        Ok(sqlite::State::Row) => {
+            read_i64(&statement, 0).is_some_and(|max| max >= MIN_MILLIS_SCALE)
+        }
         _ => false,
     }
 }
@@ -1356,26 +1041,59 @@ fn load_entries_with_native_sessions_with_progress(
     kind: AgentReportKind,
     owner: ProgressOwner,
 ) -> Result<Vec<LinkedEntry>> {
-    let diagnostics = Diagnostics::new("opencode");
+    let diagnostics = Diagnostics::for_report("opencode", shared.clock);
     let entries =
         load_entries_with_native_sessions_with_diagnostics(shared, kind, owner, &diagnostics)?;
-    diagnostics.emit(shared);
+    diagnostics.emit(shared.debug);
     Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, path::Path};
+    use std::path::Path;
 
-    use super::{
-        load_entries, load_entries_from_directory, load_entries_from_directory_for_report,
-        load_entries_with_native_sessions,
+    use super::{LinkedEntry, load_directories};
+    use crate::{
+        LoadedEntry,
+        cli::{AgentReportKind, CostMode, SharedArgs},
     };
-    use crate::cli::{AgentReportKind, CostMode, SharedArgs};
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_core::Diagnostics;
+    use ccusage_test_support::fs_fixture;
+
+    fn load_linked(
+        directories: &[&Path],
+        shared: &SharedArgs,
+        report_kind: AgentReportKind,
+    ) -> Vec<LinkedEntry> {
+        let directories = directories
+            .iter()
+            .map(|directory| directory.to_path_buf())
+            .collect::<Vec<_>>();
+        load_directories(
+            &directories,
+            shared,
+            report_kind,
+            &Diagnostics::new("opencode"),
+        )
+    }
+
+    fn load_entries_from_directory_for_report(
+        directory: &Path,
+        shared: &SharedArgs,
+        report_kind: AgentReportKind,
+    ) -> Vec<LoadedEntry> {
+        load_linked(&[directory], shared, report_kind)
+            .into_iter()
+            .map(|(entry, _)| entry)
+            .collect()
+    }
+
+    fn load_entries_from_directory(directory: &Path, shared: &SharedArgs) -> Vec<LoadedEntry> {
+        load_entries_from_directory_for_report(directory, shared, AgentReportKind::Daily)
+    }
 
     #[test]
-    fn reports_failed_fork_schema_probes_without_database_details() {
+    fn reports_failed_schema_probes_without_database_details() {
         use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = ccusage_test_support::Fixture::new();
@@ -1387,14 +1105,19 @@ mod tests {
         let diagnostics = Diagnostics::new("opencode");
         assert!(super::table_exists(
             &connection,
-            "session_message",
+            super::Table::SessionMessage,
             &path,
             &diagnostics,
         ));
         connection.execute("DROP TABLE session_message").unwrap();
         assert!(
-            super::fork_table_columns(&connection, "session_message", &path, &diagnostics,)
-                .is_none()
+            super::TableSchema::read(
+                &connection,
+                super::Table::SessionMessage,
+                &path,
+                &diagnostics
+            )
+            .is_none()
         );
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
         let warnings = diagnostics
@@ -1426,10 +1149,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics);
+        load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
-        loaded.unwrap();
         if !denied {
             return;
         }
@@ -1456,9 +1182,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("opencode");
-        let loaded = super::load_entries_from_directory_parts(&data, &shared, false, &diagnostics);
+        load_directories(
+            std::slice::from_ref(&data),
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
         fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
-        loaded.unwrap();
         if !denied {
             return;
         }
@@ -1484,14 +1214,14 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
-                .unwrap();
-        assert_eq!(loaded.message_entries.len(), 1);
-        assert_eq!(
-            loaded.message_entries[0].0.data.message.usage.input_tokens,
-            10
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
         );
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0.usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert!(
             !diagnostics
@@ -1525,11 +1255,14 @@ mod tests {
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
 
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
-                .unwrap();
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
 
-        assert_eq!(loaded.message_entries.len(), 1);
+        assert_eq!(loaded.len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         assert!(
@@ -1547,7 +1280,7 @@ mod tests {
             .unwrap()
             .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
             .unwrap();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "storage/message/user.json",
             r#"{"role":"user","content":"SECRET_CANARY"}"#,
         );
@@ -1558,42 +1291,172 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, true, &diagnostics)
-                .unwrap();
-        assert!(loaded.message_entries.is_empty());
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Session,
+            &diagnostics,
+        );
+        assert!(loaded.is_empty());
         assert!(diagnostics.warnings(&shared).is_empty());
     }
 
     #[test]
     fn reports_aggregate_schema_read_failures() {
         use super::{
-            DatabaseLoadContext, DateWindow, load_session_aggregate_entries, table_exists,
+            DatabaseLoadContext, DateWindow, Table, TableSchema, load_session_aggregate_entries,
         };
         use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.path("opencode.db");
+        create_db_session_aggregate_table(&path, "session_v2");
         let connection = sqlite::open(&path).unwrap();
-        connection
-            .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
-            .unwrap();
         let diagnostics = Diagnostics::new("opencode");
-        assert!(table_exists(&connection, "session_v2", &path, &diagnostics));
+        let schema =
+            TableSchema::probe(&connection, Table::SessionV2, &path, &diagnostics).unwrap();
         connection.execute("DROP TABLE session_v2").unwrap();
         let shared = SharedArgs::default();
         let context = DatabaseLoadContext {
             tz: &jiff::tz::TimeZone::system(),
             mode: CostMode::Display,
-            pricing: None,
+            pricing: ccusage_core::cost::PriceTable::Display,
             window: DateWindow::UNBOUNDED,
             shared: &shared,
             db_path: &path,
             diagnostics: &diagnostics,
         };
 
-        assert!(load_session_aggregate_entries(&connection, "session_v2", &context).is_empty());
+        assert!(load_session_aggregate_entries(&connection, &schema, &context).is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn skips_usage_without_a_creation_time_in_every_format() {
+        const UNTIMED: &str = r#"{"modelID":"gpt-test","providerID":"openai","model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":10,"output":1},"cost":0.01}"#;
+        let fixture = fs_fixture!({
+            "storage/message/file-session/file-untimed.json": r#"{"id":"file-untimed","sessionID":"file-session","modelID":"gpt-test","providerID":"openai","time":{"created":0},"tokens":{"input":10,"output":1},"cost":0.01}"#,
+        });
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "timed",
+            "timed-session",
+            &assistant_payload(10, 1, 0.01).replace(
+                r#""model":{"id":"gpt-test","providerID":"openai"},"#,
+                r#""modelID":"gpt-test","providerID":"openai","#,
+            ),
+        );
+        create_db_message_with_time(&db, "db-untimed", "db-session", 0, UNTIMED);
+        create_db_session_message_table(&db, true);
+        insert_db_session_message(
+            &db,
+            "v2-timed",
+            "v2-session",
+            "assistant",
+            1_767_312_000_000,
+            assistant_payload(10, 1, 0.01).as_str(),
+            true,
+        );
+        insert_db_session_message(
+            &db,
+            "v2-untimed",
+            "v2-session",
+            "assistant",
+            0,
+            UNTIMED,
+            false,
+        );
+        create_db_session_aggregate_table(&db, "session_v2");
+        insert_db_session_aggregate(
+            &db,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "aggregate-session",
+                time_created: 0,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.5,
+                input_tokens: 200,
+                output_tokens: 100,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+        for (since, until, undatable) in [(None, None, 4), (Some("20260102"), Some("20260102"), 3)]
+        {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: since.map(|date| date.parse().unwrap()),
+                until: until.map(|date| date.parse().unwrap()),
+                ..SharedArgs::default()
+            };
+            let diagnostics = Diagnostics::new("opencode");
+
+            let entries = load_directories(
+                &[fixture.root().to_path_buf()],
+                &shared,
+                AgentReportKind::Session,
+                &diagnostics,
+            );
+
+            let ids = entries
+                .iter()
+                .map(|(entry, _)| entry.message_id.as_deref())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, [Some("timed"), Some("v2-timed")], "{since:?}");
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+                undatable,
+                "{since:?}"
+            );
+            assert_eq!(
+                diagnostics.warnings(&shared),
+                [format!(
+                    "WARN  opencode: skipped 1 input and {} records in 2 inputs (invalid timestamp)",
+                    undatable - 1
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn untimed_rows_in_two_tables_count_as_one_database_input() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let db = fixture.path("opencode.db");
+        const UNTIMED: &str = r#"{"modelID":"gpt-test","providerID":"openai","model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":10,"output":1},"cost":0.01}"#;
+        create_db_message_with_time(&db, "legacy", "session", 0, UNTIMED);
+        create_db_session_message_table(&db, true);
+        insert_db_session_message(&db, "current", "session", "assistant", 0, UNTIMED, false);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        assert!(
+            load_directories(
+                &[fixture.root().to_path_buf()],
+                &shared,
+                AgentReportKind::Daily,
+                &diagnostics
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            diagnostics.warnings(&shared),
+            ["WARN  opencode: skipped 2 records in 1 input (invalid timestamp)"]
+        );
+        let samples = diagnostics.warnings(&SharedArgs {
+            debug: true,
+            ..shared
+        });
+        assert!(samples.iter().any(|line| line.contains(":message:legacy:")));
+        assert!(
+            samples
+                .iter()
+                .any(|line| line.contains(":session_message:current:"))
+        );
     }
 
     #[test]
@@ -1625,10 +1488,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
-                .unwrap();
-        assert_eq!(loaded.message_entries.len(), 1);
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
+        assert_eq!(loaded.len(), 1);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
         assert!(
@@ -1639,8 +1505,6 @@ mod tests {
         );
     }
 
-    // Mirrors the real OpenCode schema, where `time_created` repeats the
-    // payload's `time.created`, so tests exercise the range push-down.
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
         let created = serde_json::from_str::<serde_json::Value>(data)
             .ok()
@@ -1649,8 +1513,6 @@ mod tests {
         create_db_message_with_time(path, id, session_id, created, data);
     }
 
-    // Schema with `time_created` set independently of the payload, for the cases
-    // where the column and the payload have to disagree.
     fn create_db_message_with_time(
         path: &Path,
         id: &str,
@@ -1676,8 +1538,6 @@ mod tests {
         statement.next().unwrap();
     }
 
-    // Pre-SQLite-era layout: no `time_created` column, so the filtered query
-    // cannot prepare and the loader has to fall back to an unfiltered scan.
     fn create_db_message_legacy_schema(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
         db.execute("CREATE TABLE IF NOT EXISTS message (id TEXT, session_id TEXT, data TEXT)")
@@ -1854,10 +1714,10 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -1866,13 +1726,10 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].cost, 0.02);
     }
 
@@ -1888,22 +1745,19 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
         assert_eq!(entries[0].session_id.as_ref(), "db-session-a");
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("db-msg-1"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 60);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            24
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 12);
+        assert_eq!(entries[0].message_id.as_deref(), Some("db-msg-1"));
+        assert_eq!(entries[0].usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.output_tokens, 60);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 24);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 12);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -1949,29 +1803,22 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &shared,
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("msg-v2-assistant")
-        );
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-v2-assistant"));
         assert_eq!(entries[0].session_id.as_ref(), "v2-session");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 60);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            24
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 12);
+        assert_eq!(entries[0].usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.output_tokens, 60);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 24);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 12);
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].cost, 0.03);
     }
@@ -1995,16 +1842,15 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("msg-v2-no-time-column")
         );
     }
@@ -2034,15 +1880,14 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -2075,7 +1920,7 @@ mod tests {
         entries
             .iter()
             .map(|entry| {
-                let usage = &entry.data.message.usage;
+                let usage = &entry.usage;
                 usage.input_tokens
                     + usage.output_tokens
                     + usage.cache_creation_input_tokens
@@ -2086,13 +1931,53 @@ mod tests {
     }
 
     #[test]
+    fn a_message_wins_over_a_compaction_with_its_id_in_an_earlier_directory() {
+        let fixture = fs_fixture!({});
+        let first = fixture.path("first/opencode.db");
+        let second = fixture.path("second/opencode.db");
+        std::fs::create_dir_all(fixture.path("first")).unwrap();
+        std::fs::create_dir_all(fixture.path("second")).unwrap();
+        create_db_session_message_table(&first, true);
+        insert_db_session_message(
+            &first,
+            "shared-id",
+            "v2-session",
+            "compaction",
+            1_767_312_000_000,
+            COMPACTION_COMPLETED,
+            true,
+        );
+        create_db_session_message_table(&second, true);
+        insert_db_session_message(
+            &second,
+            "shared-id",
+            "v2-session",
+            "assistant",
+            1_767_312_000_000,
+            assistant_payload(10, 2, 0.01).as_str(),
+            true,
+        );
+
+        let entries = load_linked(
+            &[&fixture.path("first"), &fixture.path("second")],
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            },
+            AgentReportKind::Daily,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0.usage.input_tokens, 10);
+    }
+
+    #[test]
     fn counts_completed_v2_compaction_usage_alongside_assistant_usage() {
         let fixture = fs_fixture!({});
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_assistant_and_compaction(&db_path, "v2-session", "msg");
-        // A running compaction carries no usage and a failed one has no model,
-        // so neither can be attributed.
         insert_db_session_message(
             &db_path,
             "msg-compaction-running",
@@ -2111,7 +1996,6 @@ mod tests {
             r#"{"status":"failed","reason":"auto","error":{"type":"unknown","message":"x"},"time":{"created":1767312000000},"tokens":{"input":50,"output":0},"cost":0.5}"#,
             true,
         );
-        // Only the status keeps these out: each has a model and usage.
         for (id, status) in [
             ("msg-compaction-failed-with-model", "failed"),
             ("msg-compaction-running-with-usage", "running"),
@@ -2140,15 +2024,14 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
-        )
-        .unwrap();
+        );
 
         let mut ids: Vec<_> = entries
             .iter()
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         ids.sort_unstable();
         assert_eq!(ids, vec!["msg-assistant", "msg-compaction"]);
@@ -2162,8 +2045,6 @@ mod tests {
         let fixture = fs_fixture!({});
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
-        // The assistant rows are gone (for example after a revert), but the
-        // session counters still hold them alongside the compaction usage.
         insert_db_session_message(
             &db_path,
             "msg-compaction",
@@ -2191,7 +2072,7 @@ mod tests {
         );
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -2199,22 +2080,19 @@ mod tests {
             fixture.root(),
             &shared,
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
         assert_eq!(session_entries.len(), 1);
         assert_ne!(
-            session_entries[0].data.message.id.as_deref(),
+            session_entries[0].message_id.as_deref(),
             Some("msg-compaction")
         );
         assert_eq!(total_tokens(&session_entries), 174);
         assert!((session_entries[0].cost - 0.03).abs() < 1e-9);
 
-        // Period reports never use cumulative session counters, so the
-        // compaction row is the only usage they can attribute.
-        let daily_entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let daily_entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(daily_entries.len(), 1);
         assert_eq!(
-            daily_entries[0].data.message.id.as_deref(),
+            daily_entries[0].message_id.as_deref(),
             Some("msg-compaction")
         );
         assert_eq!(total_tokens(&daily_entries), 162);
@@ -2252,7 +2130,7 @@ mod tests {
         let fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         assert_eq!(fork_ids, vec!["fork-own"]);
     }
@@ -2270,8 +2148,6 @@ mod tests {
         boundary_type: &str,
         boundary_message_id: &str,
     ) {
-        // Parent history: two assistant turns, then the boundary assistant
-        // turn, then a later assistant turn the fork never copies.
         for (id, seq, input) in [
             ("parent-msg-1", 0, 100),
             ("parent-msg-2", 1, 200),
@@ -2289,8 +2165,6 @@ mod tests {
             );
             set_db_session_message_seq(db_path, id, seq);
         }
-        // Fork copies: same `seq`, new ids, and the fork's own turn at seq 4.
-        // The boundary copy keeps usage so `through` vs `before` is observable.
         for (copy_id, seq, input) in [
             ("fork-copy-1", 0, 100),
             ("fork-copy-2", 1, 200),
@@ -2333,11 +2207,10 @@ mod tests {
             db_path.parent().expect("fixture db has a parent directory"),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         )
-        .unwrap()
     }
 
     #[test]
@@ -2349,13 +2222,11 @@ mod tests {
 
         let entries = fork_entries(&db_path);
 
-        // Parent keeps its four turns; the fork keeps only its own turn.
-        // `through` drops the copied boundary turn (seq 2) with the rest.
         assert_eq!(entries.len(), 5);
         let parent_input: u64 = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "parent")
-            .map(|entry| entry.data.message.usage.input_tokens)
+            .map(|entry| entry.usage.input_tokens)
             .sum();
         assert_eq!(parent_input, 1000);
         let fork_entries: Vec<_> = entries
@@ -2363,8 +2234,8 @@ mod tests {
             .filter(|entry| entry.session_id.as_ref() == "fork")
             .collect();
         assert_eq!(fork_entries.len(), 1);
-        assert_eq!(fork_entries[0].data.message.id.as_deref(), Some("fork-own"));
-        assert_eq!(fork_entries[0].data.message.usage.input_tokens, 40);
+        assert_eq!(fork_entries[0].message_id.as_deref(), Some("fork-own"));
+        assert_eq!(fork_entries[0].usage.input_tokens, 40);
     }
 
     #[test]
@@ -2376,12 +2247,10 @@ mod tests {
 
         let entries = fork_entries(&db_path);
 
-        // `before` keeps the copied boundary turn (seq 2) alongside the
-        // fork's own turn; everything at or below seq 1 is still dropped.
         let mut fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         fork_ids.sort_unstable();
         assert_eq!(fork_ids, vec!["fork-copy-boundary", "fork-own"]);
@@ -2393,7 +2262,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // Point the fork at a boundary message the parent never had.
         let db = sqlite::open(&db_path).unwrap();
         db.execute(
             "UPDATE session_v2 SET fork_boundary = '{\"type\":\"through\",\"messageID\":\"missing\"}' \
@@ -2419,7 +2287,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // Drop the fork link: no `session_v2` row means no exclusion.
         let db = sqlite::open(&db_path).unwrap();
         db.execute("DROP TABLE session_v2").unwrap();
 
@@ -2464,7 +2331,6 @@ mod tests {
 
         let entries = fork_entries(&db_path);
 
-        // Pre-`seq` schemas cannot tell copies apart, so every row stays.
         assert_eq!(entries.len(), 3);
     }
 
@@ -2474,8 +2340,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // The grandchild copies the fork's rows (including the fork's own
-        // turn) and names the fork's own message as its boundary.
         for (copy_id, seq) in [
             ("grand-copy-1", 0),
             ("grand-copy-2", 1),
@@ -2516,10 +2380,9 @@ mod tests {
         let grandchild_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "grandchild")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         assert_eq!(grandchild_ids, vec!["grand-own"]);
-        // Parent (4) + fork's own turn (1) + grandchild's own turn (1).
         assert_eq!(entries.len(), 6);
     }
 
@@ -2529,13 +2392,10 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // The fork's own turn was reverted, leaving only copied rows.
         sqlite::open(&db_path)
             .unwrap()
             .execute("DELETE FROM session_message WHERE id = 'fork-own'")
             .unwrap();
-        // OpenCode v2 starts fork counters at zero, so the aggregate holds only
-        // the fork-local usage that survived the revert.
         sqlite::open(&db_path)
             .unwrap()
             .execute(
@@ -2545,22 +2405,22 @@ mod tests {
                  model = '{\"id\":\"gpt-test\",\"providerID\":\"openai\"}' WHERE id = 'fork'",
             )
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(fixture.root().as_os_str().to_os_string()),
-        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+        let entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        );
 
         let fork_input: Vec<u64> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .map(|entry| entry.data.message.usage.input_tokens)
+            .map(|entry| entry.usage.input_tokens)
             .collect();
         assert_eq!(fork_input, vec![40]);
         assert_eq!(entries.len(), 5);
@@ -2572,8 +2432,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
-        // Parent seqs have gaps; the fork copies rows 0 and 10, and its own row
-        // continues right after the last copy instead of below the boundary.
         for (session_id, id, seq, input) in [
             ("parent", "parent-a", 0, 100),
             ("parent", "parent-b", 10, 200),
@@ -2606,7 +2464,7 @@ mod tests {
         let fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         assert_eq!(fork_ids, vec!["fork-own"]);
     }
@@ -2638,20 +2496,19 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "legacy-json-session");
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("legacy-json-message")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -2680,21 +2537,20 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "aggregate-session");
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("session:aggregate-session")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 5);
         assert_eq!(entries[0].cost, 0.25);
     }
@@ -2720,114 +2576,19 @@ mod tests {
             },
         );
 
-        // The cumulative aggregate includes usage outside this window, so it
-        // cannot be attributed safely to the requested date range.
         let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
-                since: Some("20260102".to_string()),
-                until: Some("20260103".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20260102".parse().unwrap()),
+                until: Some("20260103".parse().unwrap()),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn keeps_message_rows_but_excludes_aggregate_for_partial_since_bound() {
-        let fixture = fs_fixture!({});
-        let db_path = fixture.path("opencode.db");
-        create_db_message(
-            &db_path,
-            "partial-since-message",
-            "partial-since-message-session",
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
-        );
-        create_db_session_aggregate_table(&db_path, "session_v2");
-        insert_db_session_aggregate(
-            &db_path,
-            "session_v2",
-            &SessionAggregateFixture {
-                session_id: "partial-since-aggregate-session",
-                time_created: 1_767_312_000_000,
-                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
-                cost: 9.99,
-                input_tokens: 9_999,
-                output_tokens: 9_999,
-                cache_read_tokens: 0,
-                cache_write_tokens: 0,
-                reasoning_tokens: 0,
-            },
-        );
-
-        let entries = load_entries_from_directory_for_report(
-            fixture.root(),
-            &SharedArgs {
-                mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
-                since: Some("2026".to_string()),
-                ..SharedArgs::default()
-            },
-            AgentReportKind::Session,
-        )
-        .unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("partial-since-message")
-        );
-    }
-
-    #[test]
-    fn keeps_message_rows_but_excludes_aggregate_for_partial_until_bound() {
-        let fixture = fs_fixture!({});
-        let db_path = fixture.path("opencode.db");
-        create_db_message(
-            &db_path,
-            "partial-until-message",
-            "partial-until-message-session",
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
-        );
-        create_db_session_aggregate_table(&db_path, "session_v2");
-        insert_db_session_aggregate(
-            &db_path,
-            "session_v2",
-            &SessionAggregateFixture {
-                session_id: "partial-until-aggregate-session",
-                time_created: 1_767_312_000_000,
-                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
-                cost: 9.99,
-                input_tokens: 9_999,
-                output_tokens: 9_999,
-                cache_read_tokens: 0,
-                cache_write_tokens: 0,
-                reasoning_tokens: 0,
-            },
-        );
-
-        let entries = load_entries_from_directory_for_report(
-            fixture.root(),
-            &SharedArgs {
-                mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
-                until: Some("2026-02".to_string()),
-                ..SharedArgs::default()
-            },
-            AgentReportKind::Session,
-        )
-        .unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("partial-until-message")
-        );
     }
 
     #[test]
@@ -2853,28 +2614,20 @@ mod tests {
         let message_fixture = fs_fixture!({
             "storage/message/cross-directory-session/cross-directory-message.json": r#"{"id":"cross-directory-message","sessionID":"cross-directory-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":12,"output":6},"cost":0.03}"#,
         });
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(OsString::from(format!(
-                "{},{}",
-                aggregate_fixture.root().display(),
-                message_fixture.root().display()
-            ))),
-        )]);
-
-        let entries = load_entries(
+        let entries = load_linked(
+            &[aggregate_fixture.root(), message_fixture.root()],
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
+        let entries = entries.iter().map(|(entry, _)| entry).collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("cross-directory-message")
         );
         assert_eq!(entries[0].cost, 0.03);
@@ -2906,13 +2659,9 @@ mod tests {
                 reasoning_tokens: 0,
             },
         );
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(fixture.root().as_os_str().to_os_string()),
-        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -2921,18 +2670,20 @@ mod tests {
             AgentReportKind::Weekly,
             AgentReportKind::Monthly,
         ] {
-            let entries = load_entries(&shared, report_kind).unwrap();
+            let entries =
+                load_entries_from_directory_for_report(fixture.root(), &shared, report_kind);
             assert_eq!(entries.len(), 1);
-            assert_eq!(
-                entries[0].data.message.id.as_deref(),
-                Some("period-message")
-            );
+            assert_eq!(entries[0].message_id.as_deref(), Some("period-message"));
         }
 
-        let session_entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+        let session_entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        );
         assert_eq!(session_entries.len(), 2);
         assert!(session_entries.iter().any(|entry| {
-            entry.data.message.id.as_deref() == Some("session:period-aggregate-session")
+            entry.message_id.as_deref() == Some("session:period-aggregate-session")
         }));
     }
 
@@ -2981,26 +2732,22 @@ mod tests {
                 reasoning_tokens: 0,
             },
         );
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(OsString::from(format!(
-                "{},{}",
-                live.root().display(),
-                archive.root().display()
-            ))),
-        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
-        let entries = load_entries_with_native_sessions(&shared, AgentReportKind::Session).unwrap();
+        let entries = load_linked(
+            &[live.root(), archive.root()],
+            &shared,
+            AgentReportKind::Session,
+        );
         let linked = entries
             .iter()
             .map(|(entry, native_session)| {
                 (
-                    entry.data.message.id.as_deref().unwrap(),
+                    entry.message_id.as_deref().unwrap(),
                     native_session.as_deref(),
                 )
             })
@@ -3035,21 +2782,21 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "current-session");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 200);
+        assert_eq!(entries[0].usage.input_tokens, 200);
         assert_eq!(entries[0].cost, 0.5);
     }
 
     #[test]
     fn loads_channel_sqlite_database() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path("opencode-beta.db"),
@@ -3058,11 +2805,11 @@ mod tests {
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":80,"output":40}}"#,
         );
 
-        let entries = load_entries_from_directory(fixture.root(), &SharedArgs::default()).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &SharedArgs::default());
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "channel-session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 80);
+        assert_eq!(entries[0].usage.input_tokens, 80);
     }
 
     #[test]
@@ -3081,21 +2828,16 @@ mod tests {
             mode: CostMode::Display,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "db-session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
     }
 
     #[test]
     fn skips_message_files_already_covered_by_database() {
-        // Real OpenCode message files live at
-        // `storage/message/<sessionID>/<messageID>.json`, so the file stem is
-        // the message id. The DB pass contributes `msg-db`, so the matching
-        // file must be dropped (DB wins) while the file that the DB does not
-        // cover is still loaded.
         let fixture = fs_fixture!({
             "storage/message/ses_a/msg-db.json": r#"{"id":"msg-db","sessionID":"json-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":999,"output":999},"cost":0.99}"#,
             "storage/message/ses_a/msg-file.json": r#"{"id":"msg-file","sessionID":"file-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000001},"tokens":{"input":50,"output":25},"cost":0.01}"#,
@@ -3111,31 +2853,25 @@ mod tests {
             mode: CostMode::Display,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 2);
-        // The DB-covered id keeps the DB row, not the file's inflated tokens.
         let db_entry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("msg-db"))
+            .find(|entry| entry.message_id.as_deref() == Some("msg-db"))
             .expect("db-covered message present");
         assert_eq!(db_entry.session_id.as_ref(), "db-session");
-        assert_eq!(db_entry.data.message.usage.input_tokens, 120);
-        // The file the DB does not cover is still read and parsed.
+        assert_eq!(db_entry.usage.input_tokens, 120);
         let file_entry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("msg-file"))
+            .find(|entry| entry.message_id.as_deref() == Some("msg-file"))
             .expect("db-uncovered message present");
         assert_eq!(file_entry.session_id.as_ref(), "file-session");
-        assert_eq!(file_entry.data.message.usage.input_tokens, 50);
+        assert_eq!(file_entry.usage.input_tokens, 50);
     }
 
     #[test]
     fn dedup_is_stable_across_thread_counts() {
-        // Build a directory with many files spread over several sessions, some
-        // sharing ids with each other and with the DB, so the file pass has to
-        // dedup. Parallel reads must not change which duplicate survives or the
-        // final ordering compared to the single-threaded read.
         let fixture = ccusage_test_support::Fixture::new();
         for session in 0..4 {
             for message in 0..15 {
@@ -3146,12 +2882,10 @@ mod tests {
                     r#"{{"id":"{id}","sessionID":"ses_{session}","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{{"created":{created}}},"tokens":{{"input":{input},"output":10}}}}"#,
                     input = 100 + message,
                 );
-                let _ = fixture.write_file(path, data);
+                fixture.write_file(path, data);
             }
         }
-        // A duplicate file (same id, later timestamp) to force the file-vs-file
-        // dedup path under both thread counts.
-        let _ = fixture.write_file(
+        fixture.write_file(
             "storage/message/ses_dup/msg-0-0.json",
             r#"{"id":"msg-0-0","sessionID":"ses_dup","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312999999},"tokens":{"input":7777,"output":10}}"#,
         );
@@ -3174,8 +2908,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let single_entries = load_entries_from_directory(fixture.root(), &single).unwrap();
-        let multi_entries = load_entries_from_directory(fixture.root(), &multi).unwrap();
+        let single_entries = load_entries_from_directory(fixture.root(), &single);
+        let multi_entries = load_entries_from_directory(fixture.root(), &multi);
 
         let project = |entries: &[crate::LoadedEntry]| {
             entries
@@ -3183,9 +2917,9 @@ mod tests {
                 .map(|entry| {
                     (
                         entry.timestamp.as_millis(),
-                        entry.data.message.id.clone(),
+                        entry.message_id.clone(),
                         entry.session_id.to_string(),
-                        entry.data.message.usage.input_tokens,
+                        entry.usage.input_tokens,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -3197,7 +2931,6 @@ mod tests {
     #[test]
     fn since_filter_drops_db_rows_older_than_lower_bound() {
         let fixture = fs_fixture!({});
-        // 2025-12-31 00:00 UTC
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-old",
@@ -3205,7 +2938,6 @@ mod tests {
             1_767_139_200_000,
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767139200000},"tokens":{"input":1,"output":1}}"#,
         );
-        // 2026-01-04 00:00 UTC, in range for since=20260103
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-new",
@@ -3216,20 +2948,19 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260103".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-new"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-new"));
     }
 
     #[test]
     fn until_filter_drops_db_rows_at_or_after_upper_bound() {
         let fixture = fs_fixture!({});
-        // 2026-01-02 00:00 UTC, in range for until=20260105
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-early",
@@ -3237,7 +2968,6 @@ mod tests {
             1_767_312_000_000,
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
         );
-        // 2026-01-11 00:00 UTC, out of range for until=20260105
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-late",
@@ -3248,14 +2978,14 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            until: Some("20260105".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            until: Some("20260105".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-early"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-early"));
     }
 
     #[test]
@@ -3265,21 +2995,20 @@ mod tests {
             &fixture.path("opencode.db"),
             "msg-in-range",
             "session-a",
-            // payload date 2026-01-05, inside the requested window
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767571200000},"tokens":{"input":3,"output":3}}"#,
         );
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260103".to_string()),
-            until: Some("20260107".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260103".parse().unwrap()),
+            until: Some("20260107".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-in-range"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-in-range"));
     }
 
     #[test]
@@ -3289,18 +3018,17 @@ mod tests {
             &fixture.path("opencode.db"),
             "msg-out-of-range",
             "session-a",
-            // payload date 2026-01-02, before since=20260103
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":3,"output":3}}"#,
         );
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260103".to_string()),
-            until: Some("20260107".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260103".parse().unwrap()),
+            until: Some("20260107".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert!(
             entries.is_empty(),
@@ -3316,11 +3044,11 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            until: Some("20260101".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            until: Some("20260101".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert!(
             entries.is_empty(),
             "message on 2026-01-02 should be excluded by until=20260101"
@@ -3335,11 +3063,11 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260103".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert!(
             entries.is_empty(),
             "message on 2026-01-02 should be excluded by since=20260103"
@@ -3354,12 +3082,12 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260101".to_string()),
-            until: Some("20260103".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(
             entries.len(),
             1,
@@ -3375,11 +3103,11 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(
             entries.len(),
             1,
@@ -3395,11 +3123,11 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            until: Some("20260102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            until: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(
             entries.len(),
             1,
@@ -3407,9 +3135,7 @@ mod tests {
         );
     }
 
-    // Real OpenCode message files are pretty-printed (newlines + indentation),
-    // unlike the minified fixtures above. Pins `extract_message_timestamp`
-    // against the real on-disk shape.
+    // NOTE(2026-07-27, #1492): Legacy OpenCode pretty-prints message files. Exercise the timestamp scan with the whitespace it encounters on disk.
     const PRETTY_PRINTED_MESSAGE: &str = r#"{
   "id": "msg-pretty",
   "sessionID": "session-a",
@@ -3435,11 +3161,11 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            until: Some("20260101".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            until: Some("20260101".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert!(
             entries.is_empty(),
             "pretty-printed message on 2026-01-02 must be excluded by until=20260101"
@@ -3454,21 +3180,18 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260101".to_string()),
-            until: Some("20260103".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-pretty"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-pretty"));
     }
 
-    // 2026-01-01 12:00 UTC, which is 2026-01-02 in UTC+14 and therefore only
-    // kept when the lower bound is resolved in the reporting timezone.
     const NOON_UTC_2026_01_01: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
 
-    // 2026-01-02 06:00 UTC, which is still 2026-01-01 in UTC-12.
     const EARLY_UTC_2026_01_02: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767333600000},"tokens":{"input":1,"output":1}}"#;
 
     #[test]
@@ -3483,12 +3206,12 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("Pacific/Kiritimati".to_string()),
-            since: Some("20260102".to_string()),
-            until: Some("20260102".to_string()),
+            timezone: Some("Pacific/Kiritimati".parse().unwrap()),
+            since: Some("20260102".parse().unwrap()),
+            until: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3510,11 +3233,11 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("Etc/GMT+12".to_string()),
-            until: Some("20260101".to_string()),
+            timezone: Some("Etc/GMT+12".parse().unwrap()),
+            until: Some("20260101".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3527,8 +3250,6 @@ mod tests {
     #[test]
     fn pushdown_margin_keeps_rows_whose_column_drifts_from_the_payload() {
         let fixture = fs_fixture!({});
-        // Payload lands on 2026-01-02, but the column sits 26 hours later, which
-        // an exact SQL window would push past its upper bound.
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-drifted",
@@ -3539,12 +3260,12 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260102".to_string()),
-            until: Some("20260102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260102".parse().unwrap()),
+            until: Some("20260102".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3557,8 +3278,6 @@ mod tests {
     #[test]
     fn second_scale_time_created_disables_the_range_pushdown() {
         let fixture = fs_fixture!({});
-        // The payload is on 2026-01-02, but the column holds seconds. Comparing
-        // it against millisecond bounds would exclude the row outright.
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-seconds",
@@ -3569,50 +3288,19 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20260101".to_string()),
-            until: Some("20260103".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260103".parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
             1,
             "an unrecognized time_created scale must fall back to scanning, not drop rows"
         );
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-seconds"));
-    }
-
-    #[test]
-    fn non_ascii_date_bounds_leave_filtering_to_the_report() {
-        let fixture = fs_fixture!({});
-        create_db_message(
-            &fixture.path("opencode.db"),
-            "msg-1",
-            "session-a",
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
-        );
-
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            // Multi-byte bound: 8 bytes long, but not 8 ASCII digits.
-            since: Some("abあcde".to_string()),
-            ..SharedArgs::default()
-        };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
-
-        assert_eq!(
-            entries.len(),
-            1,
-            "a bound with no instant must not pre-filter; the report's string filter decides"
-        );
-        assert!(!crate::date_within_range(
-            &entries[0].date,
-            shared.since.as_deref(),
-            None
-        ));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-seconds"));
     }
 
     #[test]
@@ -3634,20 +3322,14 @@ mod tests {
         let empty = fs_fixture!({});
         assert!(!super::has_source(empty.root()));
 
-        // A window that excludes every entry must not make the source vanish;
-        // that is what keeps OpenCode in the aggregate report's detected list.
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            since: Some("20200101".to_string()),
-            until: Some("20200102".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20200101".parse().unwrap()),
+            until: Some("20200102".parse().unwrap()),
             ..SharedArgs::default()
         };
-        assert!(
-            load_entries_from_directory(db_only.root(), &shared)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(load_entries_from_directory(db_only.root(), &shared).is_empty());
         assert!(super::has_source(db_only.root()));
     }
 
@@ -3661,7 +3343,6 @@ mod tests {
             super::extract_message_timestamp(PRETTY_PRINTED_MESSAGE),
             Some(1_767_312_000_000)
         );
-        // Digits running to the end of the object, without a trailing comma.
         assert_eq!(
             super::extract_message_timestamp(r#"{"time":{"created": 42}}"#),
             Some(42)
@@ -3670,17 +3351,12 @@ mod tests {
 
     #[test]
     fn ignores_a_time_object_that_is_not_the_messages_own() {
-        // The scan must not reach past the first `time` object for a `created`
-        // key: guessing wrong here would drop an in-range message, while giving
-        // up only costs a full parse.
         assert_eq!(
             super::extract_message_timestamp(
                 r#"{"parts":[{"time":{"start":1}}],"time":{"created":1767312000000}}"#
             ),
             None
         );
-        // A quoted `"time"` that is a value rather than a key is not followed by
-        // a colon, so it cannot start a match either.
         assert_eq!(
             super::extract_message_timestamp(r#"{"unit":"time","created":1767312000000}"#),
             None
@@ -3689,8 +3365,6 @@ mod tests {
 
     #[test]
     fn declines_to_extract_timestamps_it_cannot_trust() {
-        // Quoted numbers, negative values and missing keys all fail open so the
-        // full parse decides.
         assert_eq!(
             super::extract_message_timestamp(r#"{"time":{"created":"1767312000000"}}"#),
             None

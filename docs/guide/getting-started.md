@@ -58,21 +58,18 @@ ccusage dsh daily
 
 ## Your First Report
 
-When you run ccusage for the first time, you'll see a table showing detected coding CLI usage by date:
+When you run ccusage for the first time, you'll see a title box naming the detected sources, then a table of usage by date. Each date has an `All` row followed by one row per source. This excerpt of the table, taken from the test fixtures, keeps one date and the Total row:
 
 ```text
-╭──────────────────────────────────────────╮
-│                                          │
-│  Coding (Agent) CLI Usage Report - Daily │
-│                                          │
-╰──────────────────────────────────────────╯
-
-┌────────────┬────────┬────────────────┬────────┬────────┬────────────┐
-│ Date       │ Agent  │ Models         │ Input  │ Output │ Cost (USD) │
-├────────────┼────────┼────────────────┼────────┼────────┼────────────┤
-│ 2026-05-16 │ Claude │ • sonnet-4-5   │  1,234 │ 15,678 │     $12.34 │
-│ 2026-05-16 │ Codex  │ • gpt-5.5      │    890 │ 12,345 │     $18.92 │
-└────────────┴────────┴────────────────┴────────┴────────┴────────────┘
+┌────────────┬──────────────────────┬───────────────────────────┬────────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date       │ Agent                │ Models                    │      Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-04-21 │ All                  │                           │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│            │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                      │                           │  1,347,424 │    58,720 │        17,765 │   1,309,967 │     2,737,293 │      $28.15 │
+└────────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ## Understanding the Output
@@ -88,10 +85,11 @@ When you run ccusage for the first time, you'll see a table showing detected cod
 
 ### Cache Tokens
 
-If you have a wide terminal, you'll also see cache token columns:
+The cache columns and Total Tokens are dropped in the compact layout that narrow terminals and `--compact` use:
 
 - **Cache Create**: Tokens used to create cache entries
 - **Cache Read**: Tokens read from cache (typically cheaper)
+- **Total Tokens**: Input, output, cache tokens, and any extra tokens reported separately by the source, such as reasoning tokens
 
 ## Next Steps
 

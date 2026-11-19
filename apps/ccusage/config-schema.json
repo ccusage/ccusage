@@ -118,6 +118,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -285,6 +289,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -458,6 +466,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -625,6 +637,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -798,6 +814,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -982,6 +1002,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -1149,6 +1173,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -1322,6 +1350,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -1489,6 +1521,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -1665,6 +1701,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -1838,6 +1878,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -1914,9 +1958,19 @@
 											"type": "string"
 										},
 										"tokenLimit": {
+											"anyOf": [
+												{
+													"pattern": "^(max|\\+?0*[1-9][0-9]*)$",
+													"type": "string"
+												},
+												{
+													"format": "uint64",
+													"minimum": 1.0,
+													"type": "integer"
+												}
+											],
 											"description": "Token limit for session block calculations.",
-											"markdownDescription": "Token limit for session block calculations.",
-											"type": "string"
+											"markdownDescription": "Token limit for session block calculations."
 										},
 										"until": {
 											"description": "Filter until date (inclusive).",
@@ -2013,6 +2067,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -2195,6 +2253,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -2365,6 +2427,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -2506,6 +2572,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -2662,6 +2732,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -2887,6 +2961,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -2993,9 +3071,19 @@
 									"type": "string"
 								},
 								"tokenLimit": {
+									"anyOf": [
+										{
+											"pattern": "^(max|\\+?0*[1-9][0-9]*)$",
+											"type": "string"
+										},
+										{
+											"format": "uint64",
+											"minimum": 1.0,
+											"type": "integer"
+										}
+									],
 									"description": "Token limit for session block calculations.",
-									"markdownDescription": "Token limit for session block calculations.",
-									"type": "string"
+									"markdownDescription": "Token limit for session block calculations."
 								},
 								"until": {
 									"description": "Filter until date (inclusive).",
@@ -3117,6 +3205,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -3290,6 +3382,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -3457,6 +3553,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -3630,6 +3730,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -3800,6 +3904,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -3984,6 +4092,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -4151,6 +4263,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -4324,6 +4440,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -4491,6 +4611,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -4667,6 +4791,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -4835,6 +4963,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -4995,6 +5127,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -5161,6 +5297,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -5267,6 +5407,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -5417,6 +5561,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -5583,6 +5731,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -5810,6 +5962,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -5886,9 +6042,19 @@
 									"type": "string"
 								},
 								"tokenLimit": {
+									"anyOf": [
+										{
+											"pattern": "^(max|\\+?0*[1-9][0-9]*)$",
+											"type": "string"
+										},
+										{
+											"format": "uint64",
+											"minimum": 1.0,
+											"type": "integer"
+										}
+									],
 									"description": "Token limit for session block calculations.",
-									"markdownDescription": "Token limit for session block calculations.",
-									"type": "string"
+									"markdownDescription": "Token limit for session block calculations."
 								},
 								"until": {
 									"description": "Filter until date (inclusive).",
@@ -6123,6 +6289,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -6497,6 +6667,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -6763,6 +6937,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -6904,6 +7082,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -7063,6 +7245,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -7122,7 +7308,7 @@
 									"type": "boolean"
 								},
 								"startOfWeek": {
-									"default": "sunday",
+									"default": "monday",
 									"description": "First day of week for weekly grouping.",
 									"enum": [
 										"sunday",
@@ -7279,6 +7465,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -7452,6 +7642,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -7622,6 +7816,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -7789,6 +7987,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -7965,6 +8167,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -8137,6 +8343,10 @@
 								"additionalProperties": false,
 								"properties": {
 									"cacheCreationInputTokenCost": {
+										"format": "double",
+										"type": "number"
+									},
+									"cacheCreationInputTokenCostAbove1hr": {
 										"format": "double",
 										"type": "number"
 									},
@@ -8318,6 +8528,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -8485,6 +8699,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -8658,6 +8876,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -8825,6 +9047,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -8998,6 +9224,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -9182,6 +9412,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -9349,6 +9583,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -9522,6 +9760,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -9689,6 +9931,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -9862,6 +10108,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -10046,6 +10296,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -10213,6 +10467,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -10386,6 +10644,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -10553,6 +10815,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -10726,6 +10992,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -10910,6 +11180,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -11077,6 +11351,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -11250,6 +11528,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -11417,6 +11699,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -11590,6 +11876,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -11774,6 +12064,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -11941,6 +12235,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -12114,6 +12412,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -12281,6 +12583,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -12454,6 +12760,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -12638,6 +12948,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -12805,6 +13119,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -12978,6 +13296,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -13145,6 +13467,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -13318,6 +13644,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -13502,6 +13832,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -13669,6 +14003,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -13842,6 +14180,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -14009,6 +14351,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -14182,6 +14528,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -14366,6 +14716,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -14533,6 +14887,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -14706,6 +15064,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -14873,6 +15235,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -15049,6 +15415,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -15222,6 +15592,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -15380,6 +15754,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -15544,6 +15922,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -15702,6 +16084,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -15866,6 +16252,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -16049,6 +16439,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -16216,6 +16610,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -16389,6 +16787,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -16556,6 +16958,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -16732,6 +17138,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"cacheCreationInputTokenCostAbove1hr": {
+												"format": "double",
+												"type": "number"
+											},
 											"cacheCreationInputTokenCostAbove200kTokens": {
 												"format": "double",
 												"type": "number"
@@ -16905,6 +17315,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -17063,6 +17477,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -17227,6 +17645,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -17385,6 +17807,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -17549,6 +17975,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -17755,6 +18185,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -17922,6 +18356,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -18095,6 +18533,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -18262,6 +18704,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -18435,6 +18881,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},
@@ -18619,6 +19069,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -18786,6 +19240,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -18959,6 +19417,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"cacheCreationInputTokenCostAbove1hr": {
+														"format": "double",
+														"type": "number"
+													},
 													"cacheCreationInputTokenCostAbove200kTokens": {
 														"format": "double",
 														"type": "number"
@@ -19126,6 +19588,10 @@
 												"additionalProperties": false,
 												"properties": {
 													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove1hr": {
 														"format": "double",
 														"type": "number"
 													},
@@ -19299,6 +19765,10 @@
 										"additionalProperties": false,
 										"properties": {
 											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove1hr": {
 												"format": "double",
 												"type": "number"
 											},

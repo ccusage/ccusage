@@ -1,6 +1,6 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use ccusage_cli::{DateBound, IsoDate, ReportTimezone, parse_digits};
 
-use jiff::{Timestamp as JiffTimestamp, civil::Date as JiffDate, tz::TimeZone as JiffTimeZone};
+use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
 
 const MILLIS_PER_SECOND: i64 = 1_000;
 pub const MILLIS_PER_MINUTE: i64 = 60 * MILLIS_PER_SECOND;
@@ -15,17 +15,10 @@ pub struct UtcParts {
     pub year: i32,
     pub month: u32,
     pub day: u32,
-    pub hour: u32,
-    pub minute: u32,
-    pub second: u32,
-    pub millisecond: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct IsoDate {
-    year: i32,
-    month: u32,
-    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    millisecond: u32,
 }
 
 impl TimestampMs {
@@ -33,6 +26,12 @@ impl TimestampMs {
 
     pub fn from_millis(millis: i64) -> Self {
         Self(millis)
+    }
+
+    pub fn from_instant_millis(millis: i64) -> Option<Self> {
+        JiffTimestamp::from_millisecond(millis)
+            .ok()
+            .map(|_| Self(millis))
     }
 
     pub fn from_unix_seconds(seconds: i64) -> Option<Self> {
@@ -64,7 +63,7 @@ impl TimestampMs {
         let millisecond = self.0.rem_euclid(MILLIS_PER_SECOND) as u32;
         let days = seconds.div_euclid(86_400);
         let second_of_day = seconds.rem_euclid(86_400);
-        let (year, month, day) = civil_from_days(days);
+        let (year, month, day) = IsoDate::from_epoch_days(days).parts();
         UtcParts {
             year,
             month,
@@ -77,50 +76,14 @@ impl TimestampMs {
     }
 }
 
-impl IsoDate {
-    fn from_ymd(year: i32, month: u32, day: u32) -> Option<Self> {
-        if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
-            return None;
-        }
-        Some(Self { year, month, day })
-    }
-
-    fn days_since_epoch(self) -> i64 {
-        days_from_civil(self.year, self.month, self.day)
-    }
-
-    pub(crate) fn weekday_from_sunday(self) -> u32 {
-        (self.days_since_epoch() + 4).rem_euclid(7) as u32
-    }
-
-    pub(crate) fn checked_add_days(self, days: i64) -> Option<Self> {
-        let days = self.days_since_epoch().checked_add(days)?;
-        let (year, month, day) = civil_from_days(days);
-        Some(Self { year, month, day })
+impl From<JiffTimestamp> for TimestampMs {
+    fn from(instant: JiffTimestamp) -> Self {
+        Self::from_millis(instant.as_millisecond())
     }
 }
 
 pub fn utc_now() -> TimestampMs {
-    #[cfg(feature = "test-clock")]
-    if let Some(now) = std::env::var_os("CCUSAGE_TEST_NOW") {
-        return parse_test_now(&now.to_string_lossy()).unwrap_or_else(|error| {
-            eprintln!("{error}");
-            std::process::exit(2)
-        });
-    }
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or(0);
-    TimestampMs::from_millis(millis)
-}
-
-#[cfg(any(test, feature = "test-clock"))]
-fn parse_test_now(value: &str) -> Result<TimestampMs, String> {
-    value
-        .parse::<JiffTimestamp>()
-        .map(|now| TimestampMs::from_millis(now.as_millisecond()))
-        .map_err(|error| format!("CCUSAGE_TEST_NOW={value} is not an RFC 3339 instant: {error}"))
+    JiffTimestamp::now().into()
 }
 
 pub fn parse_ts_timestamp(value: &str) -> Option<TimestampMs> {
@@ -175,84 +138,21 @@ fn parse_timezone_offset(bytes: &[u8]) -> Option<i64> {
     Some(if bytes[0] == b'+' { offset } else { -offset })
 }
 
-pub(crate) fn parse_iso_date(value: &str) -> Option<IsoDate> {
-    let bytes = value.as_bytes();
-    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
-        return None;
-    }
-    let year = parse_digits(&bytes[0..4])? as i32;
-    let month = parse_digits(&bytes[5..7])?;
-    let day = parse_digits(&bytes[8..10])?;
-    IsoDate::from_ymd(year, month, day)
-}
-
-/// Parses a compact `YYYYMMDD` date, the normalized form of the `--since` and
-/// `--until` bounds.
-///
-/// Returns `None` for anything that is not a full valid date, including partial
-/// bounds such as `202601` that callers still compare lexicographically.
-fn parse_compact_date(value: &str) -> Option<IsoDate> {
-    let bytes = value.as_bytes();
-    if bytes.len() != 8 {
-        return None;
-    }
-    let year = parse_digits(&bytes[0..4])? as i32;
-    let month = parse_digits(&bytes[4..6])?;
-    let day = parse_digits(&bytes[6..8])?;
-    IsoDate::from_ymd(year, month, day)
-}
-
-/// Reports whether a `YYYY-MM-DD` date falls inside the `--since`/`--until`
-/// window.
-///
-/// Both bounds are inclusive and compared as compact `YYYYMMDD` text, so
-/// partial bounds such as `2026` keep working. This is the authoritative window
-/// check shared by every report and loader.
-pub fn date_within_range(date: &str, since: Option<&str>, until: Option<&str>) -> bool {
-    if since.is_none() && until.is_none() {
-        return true;
-    }
-    let compact = date.replace('-', "");
-    since.is_none_or(|since| compact.as_str() >= since)
-        && until.is_none_or(|until| compact.as_str() <= until)
-}
-
-/// Resolves the `--since`/`--until` window to half-open Unix millisecond bounds
-/// `[since 00:00, the day after until 00:00)` in `timezone`.
-///
-/// A `None` bound means that side must not be narrowed: either the option was
-/// absent, or it is not a full `YYYYMMDD` date and therefore has no instant to
-/// compare against. Callers pair these bounds with [`date_within_range`], which
-/// stays authoritative for the exact per-entry decision.
 pub fn date_range_bounds_ms(
-    since: Option<&str>,
-    until: Option<&str>,
+    since: Option<DateBound>,
+    until: Option<DateBound>,
     timezone: &JiffTimeZone,
 ) -> (Option<i64>, Option<i64>) {
-    let start = since
-        .and_then(parse_compact_date)
-        .and_then(|date| start_of_day_ms(date, timezone));
+    let start = since.and_then(|date| start_of_day_ms(date.day(), timezone));
     let end = until
-        .and_then(parse_compact_date)
-        .and_then(|date| date.checked_add_days(1))
+        .and_then(|date| date.day().checked_add_days(1))
         .and_then(|date| start_of_day_ms(date, timezone));
     (start, end)
 }
 
-/// First instant of `date` in `timezone`, as Unix milliseconds.
-///
-/// Days whose midnight does not exist because of a spring-forward transition
-/// resolve to the first instant that does, so a bound never lands in the
-/// neighboring day.
 fn start_of_day_ms(date: IsoDate, timezone: &JiffTimeZone) -> Option<i64> {
-    let civil = JiffDate::new(
-        i16::try_from(date.year).ok()?,
-        i8::try_from(date.month).ok()?,
-        i8::try_from(date.day).ok()?,
-    )
-    .ok()?;
     Some(
-        civil
+        date.civil()?
             .to_zoned(timezone.clone())
             .ok()?
             .timestamp()
@@ -260,89 +160,19 @@ fn start_of_day_ms(date: IsoDate, timezone: &JiffTimeZone) -> Option<i64> {
     )
 }
 
-fn parse_digits(bytes: &[u8]) -> Option<u32> {
-    let mut value: u32 = 0;
-    for byte in bytes {
-        if !byte.is_ascii_digit() {
-            return None;
-        }
-        value = value.checked_mul(10)?.checked_add(u32::from(byte - b'0'))?;
-    }
-    Some(value)
+pub fn resolve_tz(timezone: Option<&ReportTimezone>) -> JiffTimeZone {
+    timezone.map_or_else(JiffTimeZone::system, |timezone| timezone.zone().clone())
 }
 
-fn days_in_month(year: i32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if is_leap_year(year) => 29,
-        2 => 28,
-        _ => 0,
-    }
-}
-
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
-fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
-    let year = i64::from(year) - i64::from(month <= 2);
-    let era = year.div_euclid(400);
-    let year_of_era = year - era * 400;
-    let month_prime = i64::from(month) + if month > 2 { -3 } else { 9 };
-    let day_of_year = (153 * month_prime + 2) / 5 + i64::from(day) - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
-}
-
-fn civil_from_days(days: i64) -> (i32, u32, u32) {
-    let days = days + 719_468;
-    let era = days.div_euclid(146_097);
-    let day_of_era = days - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let mut year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    (year as i32, month as u32, day as u32)
-}
-
-/// Resolves a `--timezone` value once per report. `local`, an absent value and
-/// a name the zone database does not know all mean the system zone.
-pub fn resolve_tz(timezone: Option<&str>) -> JiffTimeZone {
-    match timezone {
-        Some("UTC") => JiffTimeZone::UTC,
-        Some("local") | None => JiffTimeZone::system(),
-        Some(value) => JiffTimeZone::get(value).unwrap_or_else(|_| JiffTimeZone::system()),
+pub fn date_at(timestamp: TimestampMs, timezone: &JiffTimeZone) -> IsoDate {
+    match JiffTimestamp::from_millisecond(timestamp.as_millis()) {
+        Ok(timestamp) => timezone.to_datetime(timestamp).date().into(),
+        Err(_) => IsoDate::from_epoch_days(timestamp.as_millis().div_euclid(MILLIS_PER_DAY)),
     }
 }
 
 pub fn format_date_tz(timestamp: TimestampMs, timezone: &JiffTimeZone) -> String {
-    let Ok(timestamp) = JiffTimestamp::from_millisecond(timestamp.as_millis()) else {
-        return format_utc_date(timestamp);
-    };
-    let datetime = timezone.to_datetime(timestamp);
-    format_date_parts(
-        i32::from(datetime.year()),
-        u32::from(datetime.month() as u8),
-        u32::from(datetime.day() as u8),
-    )
-}
-
-fn format_utc_date(timestamp: TimestampMs) -> String {
-    let parts = timestamp.utc_parts();
-    format_date_parts(parts.year, parts.month, parts.day)
-}
-
-pub(crate) fn format_naive_date(date: IsoDate) -> String {
-    format_date_parts(date.year, date.month, date.day)
-}
-
-fn format_date_parts(year: i32, month: u32, day: u32) -> String {
-    format!("{year:04}-{month:02}-{day:02}")
+    date_at(timestamp, timezone).to_string()
 }
 
 pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
@@ -361,17 +191,24 @@ pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date,
-        parse_test_now, resolve_tz,
-    };
+    use super::{MILLIS_PER_HOUR, TimestampMs, date_range_bounds_ms, resolve_tz};
 
-    // 2026-01-02 00:00:00 UTC
     const JAN_2_UTC: i64 = 1_767_312_000_000;
 
     #[test]
+    fn accepts_only_millis_that_name_a_representable_instant() {
+        assert_eq!(
+            TimestampMs::from_instant_millis(JAN_2_UTC),
+            Some(TimestampMs::from_millis(JAN_2_UTC))
+        );
+        for millis in [9_000_000_000_000_000_000, i64::MAX, i64::MIN] {
+            assert_eq!(TimestampMs::from_instant_millis(millis), None, "{millis}");
+        }
+    }
+
+    #[test]
     fn formats_local_dates_across_dst_boundaries() {
-        let timezone = resolve_tz(Some("Europe/London"));
+        let timezone = resolve_tz(Some(&"Europe/London".parse().unwrap()));
         for (timestamp, expected) in [
             ("2026-03-28T23:30:00Z", "2026-03-28"),
             ("2026-03-29T23:30:00Z", "2026-03-30"),
@@ -384,41 +221,13 @@ mod tests {
     }
 
     #[test]
-    fn pins_the_test_clock_to_any_rfc3339_precision() {
-        let noon = JAN_2_UTC + 12 * MILLIS_PER_HOUR;
-        for value in [
-            "2026-01-02T12:00:00Z",
-            "2026-01-02T12:00:00.0Z",
-            "2026-01-02T12:00:00.000000Z",
-            "2026-01-02T12:00:00.000000000Z",
-            "2026-01-02T21:00:00+09:00",
-        ] {
-            assert_eq!(
-                parse_test_now(value).map(|now| now.as_millis()),
-                Ok(noon),
-                "{value}"
-            );
-        }
-        assert_eq!(
-            parse_test_now("2026-01-02T12:00:00.123456Z").map(|now| now.as_millis()),
-            Ok(noon + 123)
-        );
-    }
-
-    #[test]
-    fn explains_a_test_clock_that_is_not_an_instant() {
-        let error = parse_test_now("2026-01-02").unwrap_err();
-        assert!(
-            error.starts_with("CCUSAGE_TEST_NOW=2026-01-02 is not an RFC 3339 instant: "),
-            "{error}"
-        );
-    }
-
-    #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
-        assert_eq!(resolve_tz(Some("UTC")).iana_name(), Some("UTC"));
+        assert_eq!(
+            resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC)).iana_name(),
+            Some("UTC")
+        );
         let system = jiff::tz::TimeZone::system();
-        for timezone in [Some("local"), None, Some("Not/AZone")] {
+        for timezone in [Some(&"local".parse().unwrap()), None] {
             assert_eq!(
                 resolve_tz(timezone).iana_name(),
                 system.iana_name(),
@@ -428,28 +237,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_full_compact_dates_only() {
-        let date = parse_compact_date("20260102").unwrap();
-        assert_eq!((date.year, date.month, date.day), (2026, 1, 2));
-        assert!(parse_compact_date("202601").is_none());
-        assert!(parse_compact_date("2026010200").is_none());
-        assert!(parse_compact_date("20260231").is_none(), "invalid day");
-        assert!(parse_compact_date("2026-01-02").is_none());
-    }
-
-    #[test]
-    fn parses_multi_byte_bounds_without_panicking() {
-        // Eight bytes, but the character boundaries do not line up with the
-        // year/month/day fields.
-        assert!(parse_compact_date("abあcde").is_none());
-        assert!(parse_compact_date("ああ").is_none());
-        assert!(parse_compact_date("２０２６０１０２").is_none());
-    }
-
-    #[test]
     fn resolves_bounds_to_local_midnight() {
-        let utc = resolve_tz(Some("UTC"));
-        let (start, end) = date_range_bounds_ms(Some("20260102"), Some("20260102"), &utc);
+        let utc = resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC));
+        let (start, end) = date_range_bounds_ms(
+            Some("20260102".parse().unwrap()),
+            Some("20260102".parse().unwrap()),
+            &utc,
+        );
         assert_eq!(start, Some(JAN_2_UTC));
         assert_eq!(
             end,
@@ -457,16 +251,19 @@ mod tests {
             "until is inclusive, so the bound is the start of the next day"
         );
 
-        // UTC+14 reaches a given local date fourteen hours before UTC does.
-        let kiritimati = resolve_tz(Some("Pacific/Kiritimati"));
-        let (start, _) = date_range_bounds_ms(Some("20260102"), None, &kiritimati);
+        let kiritimati = resolve_tz(Some(&"Pacific/Kiritimati".parse().unwrap()));
+        let (start, _) = date_range_bounds_ms(Some("20260102".parse().unwrap()), None, &kiritimati);
         assert_eq!(start, Some(JAN_2_UTC - 14 * MILLIS_PER_HOUR));
     }
 
     #[test]
     fn spans_twenty_three_hours_across_a_spring_forward_day() {
-        let new_york = resolve_tz(Some("America/New_York"));
-        let (start, end) = date_range_bounds_ms(Some("20260308"), Some("20260308"), &new_york);
+        let new_york = resolve_tz(Some(&"America/New_York".parse().unwrap()));
+        let (start, end) = date_range_bounds_ms(
+            Some("20260308".parse().unwrap()),
+            Some("20260308".parse().unwrap()),
+            &new_york,
+        );
         assert_eq!(
             end.unwrap() - start.unwrap(),
             23 * MILLIS_PER_HOUR,
@@ -476,35 +273,7 @@ mod tests {
 
     #[test]
     fn leaves_bounds_open_when_they_have_no_instant() {
-        let utc = resolve_tz(Some("UTC"));
-        assert_eq!(
-            date_range_bounds_ms(Some("202601"), Some("abあcde"), &utc),
-            (None, None)
-        );
+        let utc = resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC));
         assert_eq!(date_range_bounds_ms(None, None, &utc), (None, None));
-    }
-
-    #[test]
-    fn treats_both_window_ends_as_inclusive() {
-        assert!(date_within_range("2026-01-02", Some("20260102"), None));
-        assert!(date_within_range("2026-01-02", None, Some("20260102")));
-        assert!(date_within_range(
-            "2026-01-02",
-            Some("20260101"),
-            Some("20260103")
-        ));
-        assert!(!date_within_range("2026-01-02", Some("20260103"), None));
-        assert!(!date_within_range("2026-01-02", None, Some("20260101")));
-        assert!(date_within_range("2026-01-02", None, None));
-    }
-
-    #[test]
-    fn compares_partial_bounds_lexicographically() {
-        assert!(date_within_range(
-            "2026-01-02",
-            Some("2026"),
-            Some("202602")
-        ));
-        assert!(!date_within_range("2025-12-31", Some("2026"), None));
     }
 }

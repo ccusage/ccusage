@@ -1,3 +1,7 @@
+(ns compare-pr-performance.report
+  (:require [clojure.string :as str]
+            [compare-pr-performance.data :as data]))
+
 (defn escape-cell [value] (-> (str value) (str/replace "|" "\\|") (str/replace "\n" "<br>")))
 (defn table-md [rows]
   (let [headers (keys (first rows)) row-values (fn [row] (map #(escape-cell (get row %)) headers))]
@@ -36,11 +40,11 @@
 
 (defn fixture-line [{:keys [fixture-stats codex-fixture-stats grok-fixture-stats]}]
   (format "Fixture: generated Claude logs (%s on disk, %d files)%s Codex logs (%s on disk, %d files, mostly zstd-compressed)%s shaped like current real logs; every value is synthetic."
-          (format-data-size (:bytes fixture-stats)) (:files fixture-stats)
+          (data/format-data-size (:bytes fixture-stats)) (:files fixture-stats)
           (if grok-fixture-stats "," " and")
-          (format-data-size (:bytes codex-fixture-stats)) (:files codex-fixture-stats)
+          (data/format-data-size (:bytes codex-fixture-stats)) (:files codex-fixture-stats)
           (if grok-fixture-stats
-            (format ", and Grok logs (%s on disk, %d files)" (format-data-size (:bytes grok-fixture-stats)) (:files grok-fixture-stats))
+            (format ", and Grok logs (%s on disk, %d files)" (data/format-data-size (:bytes grok-fixture-stats)) (:files grok-fixture-stats))
             "")))
 
 (defn method-line [{:keys [runs warmup threshold]}]
@@ -55,33 +59,32 @@
     (mapv (fn [{:keys [command base head comparison]}]
             (apply array-map
                    (concat ["Command" (str "`" command "`")
-                            "CPU base" (format-duration (get-in base [:cpu :median]))
-                            "CPU PR" (format-duration (get-in head [:cpu :median]))
+                            "CPU base" (data/format-duration (get-in base [:cpu :median]))
+                            "CPU PR" (data/format-duration (get-in head [:cpu :median]))
                             "CPU ratio" (format-ratio-spread (:cpu comparison))
-                            "Wall base" (format-spread (:wall base) format-duration)
-                            "Wall PR" (format-spread (:wall head) format-duration)
-                            "RSS base" (format-memory-size (get-in base [:rss :median]))
-                            "RSS PR" (format-memory-size (get-in head [:rss :median]))
+                            "Wall base" (format-spread (:wall base) data/format-duration)
+                            "Wall PR" (format-spread (:wall head) data/format-duration)
+                            "RSS base" (data/format-memory-size (get-in base [:rss :median]))
+                            "RSS PR" (data/format-memory-size (get-in head [:rss :median]))
                             "RSS ratio" (format-ratio-spread (:rss comparison))]
                            (when instructions? ["Instructions ratio" (format-ratio-spread (:instructions comparison))])
                            ["Verdict" (comparison-verdict comparison)])))
           results)))
 
-(def comment-marker "ccusage-perf-comment")
+(defn comment-marker [head-sha] (str "<!-- ccusage-perf-comment:" head-sha " -->"))
 
 (defn render-report [{:keys [base-sha head-sha] :as context} results sizes]
-  (str (str/join "\n" (concat [(str "<!-- " comment-marker " -->")]
-                              (when head-sha [(str "<!-- " comment-marker ":" head-sha " -->")])
+  (str (str/join "\n" (concat (when head-sha [(comment-marker head-sha)])
                               ["## ccusage performance comparison" ""]
-                              (when head-sha [(str "PR: `" (format-sha head-sha) "`"
-                                                   (when base-sha (str " merged onto Base: `" (format-sha base-sha) "`")))
+                              (when head-sha [(str "PR: `" (data/format-sha head-sha) "`"
+                                                   (when base-sha (str " merged onto Base: `" (data/format-sha base-sha) "`")))
                                               ""])
                               [(:text (overall-verdict results (:threshold context))) ""
                                (fixture-line context) "" (method-line context) ""
                                (table-md (comparison-rows results)) ""
                                "### Binary size" ""
-                               (table-md [(array-map "Artifact" "release binary" "Base" (format-optional-size (:base sizes))
-                                                     "PR" (format-optional-size (:head sizes))
-                                                     "Delta" (format-size-delta (:base sizes) (:head sizes)))])
+                               (table-md [(array-map "Artifact" "release binary" "Base" (data/format-optional-size (:base sizes))
+                                                     "PR" (data/format-optional-size (:head sizes))
+                                                     "Delta" (data/format-size-delta (:base sizes) (:head sizes)))])
                                ""]))
        "\n"))

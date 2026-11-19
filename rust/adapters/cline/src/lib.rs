@@ -1,15 +1,11 @@
-use ccusage_adapter_common::source::{ALL_REPORTS, EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
+#[cfg(test)]
 mod report;
-
-use crate::{
-    PricingMap, Result,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
-};
 
 pub struct Cline;
 pub static SOURCE: Cline = Cline;
@@ -17,7 +13,8 @@ pub static SOURCE: Cline = Cline;
 impl EntrySource for Cline {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
-            reports: ALL_REPORTS,
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
+            table: ccusage_adapter_common::source::TableStyle::Credits,
             ..EntryDescriptor::standard("cline", "Cline")
         }
     }
@@ -25,30 +22,8 @@ impl EntrySource for Cline {
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_for_context(cx)
     }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
-        report::report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        ccusage_adapter_common::print_table_for_agent("Cline", kind, rows, shared)
-    }
 }
 
-/// Runs a Cline usage report for the requested report kind.
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     SOURCE.run_focused(args)
 }

@@ -7,28 +7,6 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 11,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00002375,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "month": "1970-01",
-      "outputTokens": 1,
-      "totalCost": 0.00002375,
-      "totalTokens": 12
-    },
-    {
       "cacheCreationTokens": 500,
       "cacheReadTokens": 5000,
       "inputTokens": 2247,
@@ -73,7 +51,7 @@ exit: 0
     {
       "cacheCreationTokens": 200,
       "cacheReadTokens": 12500,
-      "inputTokens": 5003,
+      "inputTokens": 4939,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -127,18 +105,18 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
+          "cost": 0.0003375,
+          "inputTokens": 250,
+          "modelName": "k2p6",
+          "outputTokens": 25
         },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00033749999999999996,
-          "inputTokens": 250,
-          "modelName": "k2p6",
-          "outputTokens": 25
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -162,18 +140,18 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "month": "2026-01",
-      "outputTokens": 1357,
-      "totalCost": 2.0389550000000005,
-      "totalTokens": 19110
+      "outputTokens": 1351,
+      "totalCost": 2.0384850000000005,
+      "totalTokens": 19040
     }
   ],
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7261,
-    "outputTokens": 1838,
-    "totalCost": 2.8082550000000004,
-    "totalTokens": 27349,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
+    "totalCost": 2.8077612500000004,
+    "totalTokens": 27267,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

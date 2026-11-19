@@ -3,7 +3,14 @@ use std::ffi::OsString;
 pub(crate) struct ArgParser {
     pub(crate) args: Vec<String>,
     index: usize,
-    pending_value: Option<String>,
+    flags: Vec<String>,
+    pub(crate) timezone: Option<String>,
+    inline_value: Option<InlineValue>,
+}
+
+struct InlineValue {
+    flag: String,
+    value: String,
 }
 
 impl ArgParser {
@@ -18,7 +25,9 @@ impl ArgParser {
         Ok(Self {
             args: parsed,
             index: 0,
-            pending_value: None,
+            flags: Vec::new(),
+            timezone: None,
+            inline_value: None,
         })
     }
 
@@ -37,8 +46,12 @@ impl ArgParser {
         Some(value)
     }
 
+    pub(crate) fn saw_flag(&self, names: &[&str]) -> bool {
+        self.flags.iter().any(|flag| names.contains(&flag.as_str()))
+    }
+
     pub(crate) fn next_flag(&mut self) -> Result<String, String> {
-        self.pending_value = None;
+        self.reject_unread_inline_value()?;
         let arg = self
             .next()
             .ok_or_else(|| "Expected option but reached end of arguments".to_string())?;
@@ -46,10 +59,15 @@ impl ArgParser {
             if !flag.starts_with('-') {
                 return Err(format!("Expected option, got '{arg}'"));
             }
-            self.pending_value = Some(value.to_string());
+            self.inline_value = Some(InlineValue {
+                flag: flag.to_string(),
+                value: value.to_string(),
+            });
+            self.flags.push(flag.to_string());
             return Ok(flag.to_string());
         }
         if arg.starts_with('-') {
+            self.flags.push(arg.clone());
             Ok(arg)
         } else {
             Err(format!("Expected option, got '{arg}'"))
@@ -57,7 +75,7 @@ impl ArgParser {
     }
 
     pub(crate) fn value_for(&mut self, flag: &str) -> Result<String, String> {
-        if let Some(value) = self.pending_value.take() {
+        if let Some(InlineValue { value, .. }) = self.inline_value.take() {
             if value.is_empty() {
                 return Err(format!("Missing value for {flag}"));
             }
@@ -70,6 +88,26 @@ impl ArgParser {
             return Err(format!("Missing value for {flag}"));
         }
         Ok(value)
+    }
+
+    pub(crate) fn read_timezone(&mut self) -> Result<(), String> {
+        self.timezone = Some(self.value_for("--timezone")?);
+        Ok(())
+    }
+
+    pub(crate) fn finish(&mut self) -> Result<(), String> {
+        self.reject_unread_inline_value()?;
+        match self.next() {
+            Some(extra) => Err(format!("Unexpected argument '{extra}'")),
+            None => Ok(()),
+        }
+    }
+
+    fn reject_unread_inline_value(&mut self) -> Result<(), String> {
+        match self.inline_value.take() {
+            Some(InlineValue { flag, .. }) => Err(format!("{flag} does not take a value")),
+            None => Ok(()),
+        }
     }
 }
 
@@ -84,12 +122,35 @@ mod tests {
     }
 
     #[test]
-    fn clears_inline_value_when_reading_next_flag() {
-        let mut parser = parser(&["--json=ignored", "--since", "20260101"]);
+    fn rejects_an_inline_value_the_flag_did_not_read() {
+        let mut parser = parser(&["--offline=false", "--since", "20260101"]);
 
-        assert_eq!(parser.next_flag().unwrap(), "--json");
+        assert_eq!(parser.next_flag().unwrap(), "--offline");
+        assert_eq!(
+            parser.next_flag().unwrap_err(),
+            "--offline does not take a value"
+        );
+    }
+
+    #[test]
+    fn rejects_an_unread_inline_value_on_the_last_flag() {
+        let mut parser = parser(&["--offline=false"]);
+
+        assert_eq!(parser.next_flag().unwrap(), "--offline");
+        assert_eq!(
+            parser.finish().unwrap_err(),
+            "--offline does not take a value"
+        );
+    }
+
+    #[test]
+    fn reads_an_inline_value_once() {
+        let mut parser = parser(&["--since=20260101", "--json"]);
+
         assert_eq!(parser.next_flag().unwrap(), "--since");
         assert_eq!(parser.value_for("--since").unwrap(), "20260101");
+        assert_eq!(parser.next_flag().unwrap(), "--json");
+        assert!(parser.finish().is_ok());
     }
 
     #[test]

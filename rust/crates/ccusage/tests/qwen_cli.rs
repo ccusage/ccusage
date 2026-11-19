@@ -1,8 +1,8 @@
 use ccusage_test_support::{Fixture, fs_fixture};
 use serde_json::Value;
 
-/// Two sessions in America/Los_Angeles (UTC-8): the first is last active at
-/// 2026-02-24T02:00Z, still 2026-02-23 locally, and the second a day later.
+mod support;
+
 fn qwen_fixture() -> Fixture {
     fs_fixture!({
         "qwen/projects/myProject/chats/until-day.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"until-day","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
@@ -50,8 +50,6 @@ fn qwen_session_window_keeps_sessions_last_active_on_the_until_day() {
     );
 }
 
-/// The Qwen daemon moves archived sessions into `chats/archive/`; their
-/// usage must keep counting in reports.
 #[test]
 fn qwen_session_includes_archived_chat_files() {
     let fixture = fs_fixture!({
@@ -90,14 +88,8 @@ fn qwen_session_includes_archived_chat_files() {
 }
 
 fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
+    let output = support::hermetic_command(fixture.root())
         .env("QWEN_DATA_DIR", fixture.path("qwen"))
-        .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
-        .env("NO_COLOR", "1")
         .env("COLUMNS", "240")
         .args(args)
         .output()

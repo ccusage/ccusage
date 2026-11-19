@@ -1,124 +1,102 @@
-use std::{collections::HashSet, path::Path, path::PathBuf};
+use ccusage_core::cost::PriceTable;
+use std::path::PathBuf;
 
-use ccusage_adapter_common::{SqliteStage, UnitError, jsonl, read_units, source::LoadContext};
-use ccusage_core::{Skip, SkipKind};
+use ccusage_adapter_common::{
+    SqliteStage, UnitError, dedupe::dedupe_first_wins, jsonl, source::LoadContext,
+    sqlite::sqlite_units,
+};
+use ccusage_core::SkipKind;
 
-use crate::{LoadedEntry, PricingMap, Result};
+use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{KiloMessage, message_value_to_entry},
+    parser::{KiloMessage, MissingTimestamp, message_value_to_entry},
     paths::{db_path, paths},
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
-    let pricing = cx.pipeline_pricing()?;
-    // Load each database in parallel (a fresh read-only connection per DB), then
-    // run the sequential id dedup over the original path order so the surviving
-    // record per id matches the single-threaded read.
-    let loaded = read_units(
-        &db_paths,
-        cx.shared.single_thread,
-        cx.diagnostics,
-        |db_path| load_entries_from_database(db_path, cx, pricing),
-    );
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for db_entries in loaded.into_iter().flatten() {
-        for entry in db_entries {
-            if let Some(id) = entry.data.message.id.as_deref()
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            entries.push(entry);
-        }
-    }
+    let db_paths: Vec<PathBuf> = paths(cx.diagnostics, cx.shared.debug)
+        .iter()
+        .filter_map(|path| db_path(path))
+        .collect();
+    let pricing = cx.pricing.table(cx.shared.mode);
+    let loaded = load_entries_from_databases(&db_paths, cx, pricing);
+    let mut entries = dedupe_first_wins(loaded, |(id, _)| id.clone())
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-fn load_entries_from_database(
-    db_path: &Path,
+fn load_entries_from_databases(
+    db_paths: &[PathBuf],
     cx: &LoadContext<'_>,
-    pricing: &PricingMap,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut statement = connection
-        .prepare("SELECT id, session_id, data FROM message")
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                let row = statement
-                    .read::<String, _>(0)
-                    .and_then(|row_id| {
-                        statement
-                            .read::<String, _>(1)
-                            .map(|session| (row_id, session))
-                    })
-                    .and_then(|(row_id, session)| {
-                        statement
-                            .read::<String, _>(2)
-                            .map(|data| (row_id, session, data))
-                    });
-                let Ok((row_id, row_session_id, data)) = row else {
-                    cx.diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "Kilo message row has invalid fields",
-                    ));
-                    continue;
-                };
-                let Some(value) = jsonl::decode_record::<KiloMessage>(
-                    data.as_bytes(),
-                    db_path,
-                    row_number,
-                    cx.diagnostics,
-                    Some(|value| {
-                        value.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
-                            && value.get("tokens").is_some()
-                    }),
-                ) else {
-                    continue;
-                };
-                if let Some(entry) = message_value_to_entry(
-                    &value,
-                    &row_id,
-                    &row_session_id,
-                    db_path,
-                    cx.window.timezone(),
-                    cx.shared.mode,
-                    pricing,
-                ) {
-                    entries.push(entry);
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, cx.diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+    pricing: PriceTable<'_>,
+) -> Vec<(String, LoadedEntry)> {
+    sqlite_units(
+        db_paths,
+        cx.shared.single_thread,
+        cx.diagnostics,
+        |connection, _| {
+            connection
+                .prepare("SELECT id, session_id, data FROM message")
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, db_path, row_number| {
+            let row = statement
+                .read::<String, _>(0)
+                .and_then(|row_id| {
+                    statement
+                        .read::<String, _>(1)
+                        .map(|session| (row_id, session))
+                })
+                .and_then(|(row_id, session)| {
+                    statement
+                        .read::<String, _>(2)
+                        .map(|data| (row_id, session, data))
+                });
+            let (row_id, row_session_id, data) = row.map_err(|_| {
+                UnitError::new(SkipKind::InvalidData, "Kilo message row has invalid fields")
+            })?;
+            let Some(value) = jsonl::decode_record::<KiloMessage>(
+                data.as_bytes(),
+                db_path,
+                row_number,
+                None,
+                cx.diagnostics,
+                Some(|value| {
+                    value.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
+                        && value.get("tokens").is_some()
+                }),
+            ) else {
+                return Ok(None);
+            };
+            message_value_to_entry(
+                &value,
+                &row_id,
+                &row_session_id,
+                db_path,
+                cx.window.timezone(),
+                cx.shared.mode,
+                pricing,
+            )
+            .map_err(|MissingTimestamp| {
+                UnitError::new(
+                    SkipKind::InvalidTimestamp,
+                    "Kilo usage record has no valid creation time",
+                )
+            })
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use crate::{
-        PricingMap,
-        cli::{CostMode, SharedArgs},
-    };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use crate::cli::{CostMode, SharedArgs};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
@@ -135,6 +113,7 @@ mod tests {
 
     #[test]
     fn loads_kilo_messages_from_sqlite() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path(super::super::paths::KILO_DB_FILE_NAME),
@@ -142,13 +121,19 @@ mod tests {
             "session-a",
             r#"{"id":"msg-1","role":"assistant","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"reasoning":5,"cache":{"read":10,"write":20}},"cost":0.02,"agent":"build"}"#,
         );
-        let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&ccusage_core::PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -157,19 +142,17 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 5);
         assert_eq!(entries[0].cost, 0.02);
     }
 
     #[test]
     fn ignores_kilo_messages_without_timestamps() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path(super::super::paths::KILO_DB_FILE_NAME),
@@ -177,15 +160,26 @@ mod tests {
             "session-a",
             r#"{"role":"assistant","providerID":"openai","modelID":"gpt-5","tokens":{"input":1,"output":1,"cache":{"read":0,"write":0}}}"#,
         );
-        let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&ccusage_core::PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert!(entries.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
     }
 
     #[test]
     fn deduplicates_kilo_messages_across_data_dirs() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({});
         let second = fs_fixture!({});
         for (fixture, input) in [(&first, 10), (&second, 20)] {
@@ -198,19 +192,26 @@ mod tests {
                 ),
             );
         }
-        let _cleanup = EnvVarGuard::set(
+        let _cleanup = EnvGuard::set(
             super::super::paths::KILO_DATA_DIR_ENV,
             format!("{},{}", first.root().display(), second.root().display()),
         );
         let shared = SharedArgs::default();
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&ccusage_core::PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
     }
 
     #[test]
     fn keeps_healthy_database_entries_when_another_database_has_the_wrong_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let broken = fs_fixture!({});
         sqlite::open(broken.path(super::super::paths::KILO_DB_FILE_NAME))
             .unwrap()
@@ -223,7 +224,7 @@ mod tests {
             "session-a",
             r#"{"id":"msg-1","role":"assistant","providerID":"openai","modelID":"gpt-5","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"cache":{"read":0,"write":0}}}"#,
         );
-        let _cleanup = EnvVarGuard::set(
+        let _cleanup = EnvGuard::set(
             super::super::paths::KILO_DATA_DIR_ENV,
             format!("{},{}", broken.root().display(), healthy.root().display()),
         );
@@ -232,7 +233,7 @@ mod tests {
             &crate::SOURCE,
             &SharedArgs::default(),
             ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&PricingMap::load_embedded()),
+            Some(&ccusage_core::PricingMap::load_embedded()),
         )
         .unwrap();
 
@@ -261,7 +262,7 @@ mod tests {
             .unwrap();
         let shared = SharedArgs::default();
         let window = ReportWindow::from_shared(&shared);
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
 
         for (path, kind) in [
             (wrong_schema, SkipKind::Invariant),
@@ -272,13 +273,16 @@ mod tests {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
                 window: &window,
-                pricing: Some(&pricing),
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
                 options: SourceOptions::default(),
                 diagnostics: &diagnostics,
             };
-            super::load_entries_from_database(&path, &cx, &pricing)
-                .unwrap_err()
-                .record(&path, &diagnostics);
+            let entries = super::load_entries_from_databases(
+                std::slice::from_ref(&path),
+                &cx,
+                ccusage_core::cost::PriceTable::for_map(cx.shared.mode, &pricing),
+            );
+            assert!(entries.is_empty());
 
             assert_eq!(diagnostics.skipped(kind), 1, "{}", path.display());
         }
@@ -286,6 +290,7 @@ mod tests {
 
     #[test]
     fn debug_diagnostics_do_not_echo_malformed_message_values() {
+        ccusage_test_support::install_pricing_snapshots();
         use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
         use ccusage_core::{
             Diagnostics, ReportWindow,
@@ -300,8 +305,8 @@ mod tests {
             "session-a",
             r#"{"role":,"id":"SECRET_CANARY"}"#,
         );
-        let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
-        let pricing = PricingMap::load_embedded();
+        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
             debug: true,
             ..SharedArgs::default()
@@ -312,7 +317,7 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };

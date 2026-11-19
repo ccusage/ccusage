@@ -1,12 +1,9 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::cli::{AgentCommandArgs, AgentReportKind, SharedArgs};
-use ccusage_core::*;
-use serde_json::Value;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
 pub struct Codebuff;
 
@@ -14,36 +11,14 @@ pub static SOURCE: Codebuff = Codebuff;
 
 impl EntrySource for Codebuff {
     fn descriptor(&self) -> EntryDescriptor {
-        EntryDescriptor::standard("codebuff", "Codebuff")
+        EntryDescriptor {
+            table: ccusage_adapter_common::source::TableStyle::Credits,
+            ..EntryDescriptor::standard("codebuff", "Codebuff")
+        }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_with_context(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn sort_key<'a>(&self, row: &'a UsageSummary) -> &'a str {
-        report::summary_period(row)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report::report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        ccusage_adapter_common::print_table_for_agent("Codebuff", kind, rows, shared)
     }
 }
 

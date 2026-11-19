@@ -1,9 +1,3 @@
-# Recipes for the Rust workspace. Run from the repo root as
-# `just rust::<recipe>`, or from this directory as `just <recipe>`.
-#
-# Formatting and clippy run through the Nix flake at the repo root
-# (`just fmt` / `just check`), so they are intentionally not duplicated here.
-
 [private]
 default:
     @just --list

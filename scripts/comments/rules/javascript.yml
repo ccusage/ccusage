@@ -1,0 +1,5 @@
+id: javascript-comment
+language: JavaScript
+message: Collect JavaScript comments.
+rule:
+  kind: comment

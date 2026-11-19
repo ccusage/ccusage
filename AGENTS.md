@@ -1,8 +1,5 @@
 # AGENTS.md
 
-Routing plus the policies that are true before any task starts. Task-time detail lives in the
-skills below and loads when the task triggers them.
-
 ## Skill Routing
 
 - `development` - monorepo layout, `just` recipes, dev-shell environment, dependency and tooling policy, validation, releases.
@@ -15,6 +12,7 @@ skills below and loads when the task triggers them.
 - `rust-binary-size` - release profile, dependency features, native packaging size, executable bloat.
 - `reduce-similarities` - duplicate Rust code detection with `similarity-rs`.
 - `ast-grep` - structural searches in Rust or TypeScript.
+- `code-comments` - writing, reviewing, or deleting code comments in any repository language.
 - `nushell` - `.nu` scripts, Nix shebangs, and the recipes and workflows that call them.
 - `cmux-debug` - output that depends on real terminal geometry: responsive tables, progress, spinners.
 - `docs` - whether and where a change needs documentation updates; run it whenever a user-facing agent, command, option, report mode, config key, JSON field, or screenshot changes.
@@ -25,10 +23,9 @@ skills below and loads when the task triggers them.
 
 ## Repository Shape
 
-The production CLI is Rust-first. Source-specific runtime behavior belongs in
-`rust/adapters/<agent>`, shared behavior in `ccusage-core` or `ccusage-adapter-common`.
-`apps/ccusage` is the npm surface only - bin launcher, schema artifact, packaging and benchmark
-scripts - and not a place for adapter logic.
+The production CLI is Rust-first. Put source-specific runtime behavior in
+`rust/adapters/<agent>` and shared behavior in `ccusage-core` or `ccusage-adapter-common`.
+Keep adapter logic out of the npm package in `apps/ccusage`.
 
 Read the nearest `AGENTS.md` before editing:
 
@@ -38,9 +35,7 @@ Read the nearest `AGENTS.md` before editing:
 
 ## Policy
 
-- The canonical command is `ccusage` with agent subcommands, such as `ccusage codex daily`. The
-  standalone wrapper packages `ccusage-amp`, `ccusage-codex`, `ccusage-opencode`, and `ccusage-pi`
-  were removed; do not reintroduce them in code, docs, tests, or examples.
+- Use `ccusage` with agent subcommands, such as `ccusage codex daily`, in code, docs, tests, and examples. Keep the retired `ccusage-amp`, `ccusage-codex`, `ccusage-opencode`, and `ccusage-pi` wrapper packages out of the workspace.
 - Runtime libraries for bundled packages go in `devDependencies` unless the user asks otherwise.
 - Language choice: Rust for production binaries and CPU- or memory-intensive tooling; Nushell for
   small automation that mostly orchestrates external commands, files, HTTP, and JSON; Babashka once

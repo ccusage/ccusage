@@ -1,4 +1,63 @@
-use ccusage_test_support::Fixture;
+use std::time::Duration;
+
+use ccusage_test_support::{Fixture, Instant, instant, set_modified};
+
+mod support;
+
+fn claude_command(fixture: &Fixture) -> std::process::Command {
+    let mut command = support::hermetic_command(fixture.root());
+    command.env("CLAUDE_CONFIG_DIR", fixture.root());
+    command
+}
+
+#[test]
+fn calculate_mode_uses_primary_mythos_prices_from_the_embedded_snapshot() {
+    for (model, expected) in [
+        ("claude-mythos-5-1", 0.002175),
+        ("claude-mythos-5-2", 0.00174),
+        ("claude-mythos-preview", 0.002325),
+    ] {
+        let fixture = Fixture::new();
+        fixture.write_file(
+            "projects/project-a/session-a.jsonl",
+            serde_json::json!({
+                "timestamp": "2026-09-15T12:00:00Z",
+                "sessionId": "session-a",
+                "message": {
+                    "id": "message-a",
+                    "model": model,
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "cache_creation_input_tokens": 10,
+                        "cache_read_input_tokens": 200,
+                    },
+                },
+            })
+            .to_string(),
+        );
+        let output = claude_command(&fixture)
+            .args([
+                "claude",
+                "session",
+                "--json",
+                "--mode",
+                "calculate",
+                "--offline",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}: {}",
+            model,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let cost = report["sessions"][0]["totalCost"].as_f64().unwrap();
+        assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
+    }
+}
 
 #[test]
 fn session_id_deduplicates_repeated_message_usage() {
@@ -8,17 +67,12 @@ fn session_id_deduplicates_repeated_message_usage() {
         r#"{"timestamp":"2026-09-15T12:00:01.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
         r#"{"timestamp":"2026-09-15T12:00:02.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
     ];
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
         messages.join("\n"),
     );
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
+    let output = claude_command(&fixture)
         .args([
             "session",
             "--id",
@@ -46,11 +100,11 @@ fn write_two_model_session(fixture: &Fixture) {
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":0.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
         r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":1.5,"message":{"id":"message-b","model":"claude-opus-4-20250514","usage":{"input_tokens":30,"output_tokens":4,"cache_read_input_tokens":100}}}"#,
     ];
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
         messages.join("\n"),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-b/session-b/chat.jsonl",
         r#"{"timestamp":"2026-09-15T13:00:00.000Z","sessionId":"session-b","requestId":"request-c","costUSD":9.0,"message":{"id":"message-c","model":"claude-sonnet-4-20250514","usage":{"input_tokens":999,"output_tokens":999}}}"#,
     );
@@ -98,13 +152,7 @@ fn session_id_table_honors_breakdown() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
-        .env("NO_COLOR", "1")
+    let output = claude_command(&fixture)
         .env("COLUMNS", "200")
         .args([
             "claude",
@@ -129,24 +177,8 @@ fn session_id_table_honors_breakdown() {
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap());
 }
 
-fn set_file_modified(path: &std::path::Path, unix_seconds: u64) {
-    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
-    std::fs::File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_times(std::fs::FileTimes::new().set_modified(modified))
-        .unwrap();
-}
-
 fn run_bounded_daily(fixture: &Fixture, extra_args: &[&str]) -> std::process::Output {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
-        .env("NO_COLOR", "1")
+    let output = claude_command(fixture)
         .args([
             "claude",
             "daily",
@@ -178,13 +210,10 @@ fn daily_since_totals_match_after_pruning_stale_files() {
         )
     };
 
-    // Written long before --since: holds only pre-window history.
     let stale = fixture.write_file(
         "projects/project-a/stale.jsonl",
         entry("2026-09-01T12:00:00.000Z", "stale", 4.0),
     );
-    // Its mtime is inside the 24 hour margin, so it is still read even though
-    // its entry was flushed after it happened.
     let margin = fixture.write_file(
         "projects/project-a/margin.jsonl",
         entry("2026-09-10T08:00:00.000Z", "margin", 2.0),
@@ -197,10 +226,10 @@ fn daily_since_totals_match_after_pruning_stale_files() {
         ]
         .join("\n"),
     );
-    // 2026-09-01T12:00:00Z, 2026-09-09T06:00:00Z, 2026-09-11T12:00:00Z
-    set_file_modified(&stale, 1_788_264_000);
-    set_file_modified(&margin, 1_788_933_600);
-    set_file_modified(&fresh, 1_789_128_000);
+
+    set_modified(&stale, instant("2026-09-01T12:00:00Z"));
+    set_modified(&margin, instant("2026-09-09T06:00:00Z"));
+    set_modified(&fresh, instant("2026-09-11T12:00:00Z"));
 
     let json_output = run_bounded_daily(&fixture, &["--json"]);
     let json: serde_json::Value = serde_json::from_slice(&json_output.stdout).unwrap();
@@ -237,7 +266,7 @@ fn daily_since_totals_match_after_pruning_stale_files() {
 #[test]
 fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
         [
             r#"{"timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a","requestId":"request-direct","costUSD":1.0,"message":{"id":"message-direct","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}},"data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-shadow","costUSD":5.0,"message":{"id":"message-shadow","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":200}}}}}"#,
@@ -271,11 +300,12 @@ fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress
     assert_eq!(json["totals"]["totalCost"], 3.0);
 }
 
-// 2026-09-12T12:00:00Z, later than every fixture entry below.
-const FRESH_MTIME: u64 = 1_789_214_400;
-
 fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String {
-    String::from_utf8(run_ccusage_output(fixture, args, stdin).stdout).unwrap()
+    run_command(claude_command(fixture), args, stdin)
+}
+
+fn run_command(command: std::process::Command, args: &[&str], stdin: Option<&str>) -> String {
+    String::from_utf8(run_command_output(command, args, stdin).stdout).unwrap()
 }
 
 fn run_ccusage_output(
@@ -283,15 +313,17 @@ fn run_ccusage_output(
     args: &[&str],
     stdin: Option<&str>,
 ) -> std::process::Output {
+    run_command_output(claude_command(fixture), args, stdin)
+}
+
+fn run_command_output(
+    mut command: std::process::Command,
+    args: &[&str],
+    stdin: Option<&str>,
+) -> std::process::Output {
     use std::io::Write as _;
 
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
-        .env("NO_COLOR", "1")
+    let mut child = command
         .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -450,21 +482,18 @@ fn statusline_debug_includes_sanitized_skip_samples() {
     assert!(!stderr.contains("SECRET_CANARY"), "{stderr}");
 }
 
-/// Runs `args` twice: once with the fixture's own mtimes and once with every
-/// file touched to a fresh mtime. mtime pruning must never change a report.
 fn assert_output_ignores_mtimes(
-    fixture: &Fixture,
+    command: impl Fn() -> std::process::Command,
     files: &[std::path::PathBuf],
-    fresh_mtime: u64,
+    fresh_mtime: Instant,
     args: &[&str],
     stdin: Option<&str>,
-    normalize: impl Fn(&str) -> String,
 ) -> String {
-    let stale = normalize(&run_ccusage(fixture, args, stdin));
+    let stale = run_command(command(), args, stdin);
     for file in files {
-        set_file_modified(file, fresh_mtime);
+        set_modified(file, fresh_mtime);
     }
-    let fresh = normalize(&run_ccusage(fixture, args, stdin));
+    let fresh = run_command(command(), args, stdin);
     assert_eq!(stale, fresh, "ccusage {args:?} depends on file mtimes");
     fresh
 }
@@ -525,13 +554,12 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
     let files = [parent.clone(), sidechain.clone()];
 
     for command in ["daily", "weekly", "monthly", "session"] {
-        // 2026-09-01T12:00:00Z and 2026-09-11T12:05:00Z
-        set_file_modified(&parent, 1_788_264_000);
-        set_file_modified(&sidechain, 1_789_128_300);
+        set_modified(&parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&sidechain, instant("2026-09-11T12:05:00Z"));
         let output = assert_output_ignores_mtimes(
-            &fixture,
+            || claude_command(&fixture),
             &files,
-            FRESH_MTIME,
+            instant(NOW),
             &[
                 "claude",
                 command,
@@ -545,7 +573,6 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
                 "--json",
             ],
             None,
-            str::to_string,
         );
         if command == "daily" {
             let json: serde_json::Value = serde_json::from_str(&output).unwrap();
@@ -577,14 +604,14 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
             2.0,
         ),
     );
-    // 2026-09-11T12:00:00Z and 2026-09-01T12:00:00Z
-    set_file_modified(&parent, 1_789_128_000);
-    set_file_modified(&subagent, 1_788_264_000);
+
+    set_modified(&parent, instant("2026-09-11T12:00:00Z"));
+    set_modified(&subagent, instant("2026-09-01T12:00:00Z"));
 
     let output = assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &[parent, subagent],
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "session",
             "--since",
@@ -597,17 +624,15 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
             "--json",
         ],
         None,
-        str::to_string,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-    // Like `ccusage claude session`, the subagent's usage before `--since` is left out.
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
 }
 
 #[test]
 fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-e.jsonl",
         [
             usage_line(
@@ -652,7 +677,7 @@ fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
 #[test]
 fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a.jsonl",
         usage_line(
             "2026-09-11T10:00:00.000Z",
@@ -662,7 +687,7 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
             1.0,
         ),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/subagents/agent-b.jsonl",
         sidechain_line(
             "2026-09-11T10:03:00.000Z",
@@ -672,7 +697,7 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
             2.0,
         ),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/subagents/workflows/wf_1/agent-c.jsonl",
         sidechain_line(
             "2026-09-11T10:05:00.000Z",
@@ -708,7 +733,7 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
 #[test]
 fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-c.jsonl",
         usage_line(
             "2026-09-11T23:30:00.000Z",
@@ -718,7 +743,7 @@ fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
             1.0,
         ),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-d.jsonl",
         usage_line(
             "2026-09-12T00:30:00.000Z",
@@ -748,32 +773,25 @@ fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
 }
 
-/// Writes a continuous chain of usage entries 4 hours apart, never idle long
-/// enough to reset a 5 hour block. Files pair entries so they straddle block
-/// boundaries: dropping whole early files re-anchors every later block.
 fn write_block_chain(
     fixture: &Fixture,
-    last_entry_ms: i64,
-    entries: i64,
+    last_entry: Instant,
+    entries: u32,
 ) -> Vec<std::path::PathBuf> {
-    const STEP_MS: i64 = 4 * 60 * 60 * 1000;
     let timestamps = (0..entries)
         .rev()
-        .map(|back| last_entry_ms - back * STEP_MS)
+        .map(|back| last_entry.minus(HOUR * 4 * back))
         .collect::<Vec<_>>();
     let mut files = Vec::new();
-    // The earliest entry opens block 0 alone in its file; later files each hold
-    // the second entry of one block and the first entry of the next.
     let mut chunks = vec![&timestamps[..1]];
     chunks.extend(timestamps[1..].chunks(2));
     for (index, chunk) in chunks.into_iter().enumerate() {
         let lines = chunk
             .iter()
-            .map(|&ms| {
-                let timestamp =
-                    ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(ms));
+            .map(|&timestamp| {
+                let ms = timestamp.millis();
                 usage_line(
-                    &timestamp,
+                    &timestamp.rfc3339_millis(),
                     "session-chain",
                     &format!("msg-{ms}"),
                     &format!("req-{ms}"),
@@ -783,7 +801,7 @@ fn write_block_chain(
             .collect::<Vec<_>>()
             .join("\n");
         let file = fixture.write_file(format!("projects/chain/part-{index:03}.jsonl"), lines);
-        set_file_modified(&file, u64::try_from(chunk.last().unwrap() / 1000).unwrap());
+        set_modified(&file, *chunk.last().unwrap());
         files.push(file);
     }
     files
@@ -792,13 +810,12 @@ fn write_block_chain(
 #[test]
 fn bounded_blocks_keep_anchors_from_older_files() {
     let fixture = Fixture::new();
-    // Ends 2026-09-11T21:00:00Z; 71 entries reach back roughly 12 days.
-    let files = write_block_chain(&fixture, 1_789_160_400_000, 71);
+    let files = write_block_chain(&fixture, instant("2026-09-11T21:00:00Z"), 71);
 
     assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &files,
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "claude",
             "blocks",
@@ -812,56 +829,56 @@ fn bounded_blocks_keep_anchors_from_older_files() {
             "--json",
         ],
         None,
-        str::to_string,
     );
+}
+
+const NOW: &str = "2026-09-12T12:00:00Z";
+const HOUR: Duration = Duration::from_secs(60 * 60);
+
+fn claude_command_at_now(fixture: &Fixture) -> std::process::Command {
+    let mut command = claude_command(fixture);
+    command.env("CCUSAGE_TEST_NOW", NOW);
+    command
+}
+
+const STATUSLINE_ARGS: [&str; 7] = [
+    "statusline",
+    "--offline",
+    "--no-cache",
+    "--cost-source",
+    "cc",
+    "--timezone",
+    "UTC",
+];
+
+fn statusline_hook(session: &str, transcript: &std::path::Path) -> String {
+    serde_json::json!({
+        "session_id": session,
+        "transcript_path": transcript,
+        "model": {"display_name": "Model"},
+        "cost": {"total_cost_usd": 0},
+        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
+    })
+    .to_string()
 }
 
 #[test]
 fn statusline_active_block_keeps_anchors_from_older_files() {
     let fixture = Fixture::new();
-    let now_ms = i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-    )
-    .unwrap();
-    let files = write_block_chain(&fixture, now_ms - 60 * 60 * 1000, 71);
-    let hook = serde_json::json!({
-        "session_id": "session-chain",
-        "transcript_path": files.last().unwrap(),
-        "model": {"display_name": "Model"},
-        "cost": {"total_cost_usd": 0},
-        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
-    })
-    .to_string();
-    let fresh_mtime = u64::try_from(now_ms / 1000).unwrap();
+    let files = write_block_chain(&fixture, instant(NOW).minus(HOUR), 71);
+    let hook = statusline_hook("session-chain", files.last().unwrap());
 
-    let block = assert_output_ignores_mtimes(
-        &fixture,
+    let output = assert_output_ignores_mtimes(
+        || claude_command_at_now(&fixture),
         &files,
-        fresh_mtime,
-        &[
-            "statusline",
-            "--offline",
-            "--no-cache",
-            "--cost-source",
-            "cc",
-            "--timezone",
-            "UTC",
-        ],
+        instant(NOW),
+        &STATUSLINE_ARGS,
         Some(&hook),
-        // Keep only the block cost; the remaining time moves with the clock.
-        |output| {
-            output
-                .split(" / ")
-                .find(|segment| segment.contains("block"))
-                .and_then(|segment| segment.split(" (").next())
-                .unwrap_or(output)
-                .to_string()
-        },
     );
-    assert_eq!(block, "$1.00 block");
+    assert_eq!(
+        output,
+        "🤖 Model | 💰 $0.00 session / $3.00 today / $1.00 block (4h 0m left) | 🧠 1 (1%)\n"
+    );
 }
 
 #[test]
@@ -877,13 +894,13 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
             1.0,
         ),
     );
-    // 2026-09-01T12:00:00Z
-    set_file_modified(&old, 1_788_264_000);
+
+    set_modified(&old, instant("2026-09-01T12:00:00Z"));
 
     let output = assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &[old],
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "daily",
             "--since",
@@ -895,7 +912,6 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
             "--offline",
         ],
         None,
-        str::to_string,
     );
     assert!(output.contains("Detected: Claude"), "{output}");
 }
@@ -903,50 +919,38 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
 #[test]
 fn statusline_keeps_the_current_block_before_future_dated_entries() {
     let fixture = Fixture::new();
-    let now_ms = i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-    )
-    .unwrap();
-    let at = |offset_hours: i64| {
-        ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(
-            now_ms + offset_hours * 60 * 60 * 1000,
-        ))
-    };
-    // A skewed clock wrote an entry eight hours ahead, after a long pause.
+    let now = instant(NOW);
     let transcript = fixture.write_file(
         "projects/project-a/session-now.jsonl",
         [
-            usage_line(&at(-1), "session-now", "msg-now", "req-now", 1.0),
-            usage_line(&at(8), "session-now", "msg-future", "req-future", 9.0),
+            usage_line(
+                &now.minus(HOUR).rfc3339_millis(),
+                "session-now",
+                "msg-now",
+                "req-now",
+                1.0,
+            ),
+            usage_line(
+                &now.plus(HOUR * 8).rfc3339_millis(),
+                "session-now",
+                "msg-future",
+                "req-future",
+                9.0,
+            ),
         ]
         .join("\n"),
     );
-    let hook = serde_json::json!({
-        "session_id": "session-now",
-        "transcript_path": transcript,
-        "model": {"display_name": "Model"},
-        "cost": {"total_cost_usd": 0},
-        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
-    })
-    .to_string();
+    let hook = statusline_hook("session-now", &transcript);
 
-    let output = run_ccusage(
-        &fixture,
-        &[
-            "statusline",
-            "--offline",
-            "--no-cache",
-            "--cost-source",
-            "cc",
-            "--timezone",
-            "UTC",
-        ],
+    let output = run_command(
+        claude_command_at_now(&fixture),
+        &STATUSLINE_ARGS,
         Some(&hook),
     );
-    assert!(output.contains("$1.00 block"), "{output}");
+    assert_eq!(
+        output,
+        "🤖 Model | 💰 $0.00 session / $10.00 today / $1.00 block (4h 0m left) | 🧠 1 (1%)\n"
+    );
 }
 
 #[test]
@@ -962,7 +966,6 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
             1.0,
         ),
     );
-    // Workflow transcripts can live under one session and record another.
     let workflow = fixture.write_file(
         "projects/project-a/session-b/subagents/workflows/wf_1/agent-a.jsonl",
         [
@@ -983,14 +986,14 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
         ]
         .join("\n"),
     );
-    // 2026-09-01T12:00:00Z and 2026-09-11T12:05:00Z
-    set_file_modified(&parent, 1_788_264_000);
-    set_file_modified(&workflow, 1_789_128_300);
+
+    set_modified(&parent, instant("2026-09-01T12:00:00Z"));
+    set_modified(&workflow, instant("2026-09-11T12:05:00Z"));
 
     let output = assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &[parent, workflow],
-        FRESH_MTIME,
+        instant(NOW),
         &[
             "claude",
             "daily",
@@ -1004,7 +1007,6 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
             "--json",
         ],
         None,
-        str::to_string,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
@@ -1023,7 +1025,6 @@ fn requestless_line(
     )
 }
 
-/// Total tokens reported by each Claude report for the same window.
 fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
     ["daily", "weekly", "monthly", "session"]
         .into_iter()
@@ -1055,7 +1056,7 @@ fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
 #[test]
 fn requestless_sidechain_replays_are_counted_once_in_every_report() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a.jsonl",
         requestless_line(
             "2026-09-11T12:00:00.000Z",
@@ -1066,8 +1067,7 @@ fn requestless_sidechain_replays_are_counted_once_in_every_report() {
             false,
         ),
     );
-    // The /btw replay repeats the parent message, and its cache read, minutes later.
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/subagents/agent-a.jsonl",
         requestless_line(
             "2026-09-11T12:05:00.000Z",
@@ -1087,8 +1087,6 @@ fn requestless_sidechain_replays_are_counted_once_in_every_report() {
 #[test]
 fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
     let fixture = Fixture::new();
-    // A relay that answers every response with the same message ID and no request ID; each
-    // timestamp is a separate API call.
     let lines = Vec::from_fn(3, |minute| {
         requestless_line(
             &format!("2026-09-1{}T12:0{minute}:00.000Z", minute + 1),
@@ -1099,7 +1097,7 @@ fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
             false,
         )
     });
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 306, "claude {command}");
@@ -1109,8 +1107,6 @@ fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
 #[test]
 fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_report() {
     let fixture = Fixture::new();
-    // Claude Code writes one line per content block with the same real message ID, no
-    // request ID, and distinct timestamps for one response.
     let lines = [
         requestless_line(
             "2026-09-11T12:00:00.000Z",
@@ -1129,7 +1125,7 @@ fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_rep
             false,
         ),
     ];
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 102, "claude {command}");
@@ -1157,7 +1153,7 @@ fn requestless_response_message_id_content_blocks_are_counted_once_in_every_repo
             false,
         ),
     ];
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 102, "claude {command}");
@@ -1172,15 +1168,12 @@ fn requestless_anthropic_message_id_keeps_largest_usage_across_days_and_sessions
             r#"{{"timestamp":"{timestamp}","sessionId":"{session}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":{output_tokens}}}}}}}"#
         )
     };
-    // Content-block lines of one streamed response straddle midnight with growing output, so
-    // every report must keep only the final, largest line rather than one line per day.
     let session_a = [
         line("2026-09-11T23:59:59.900Z", "session-a", 5),
         line("2026-09-12T00:00:00.100Z", "session-a", 50),
     ];
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", session_a.join("\n"));
-    // The same message ID in another session is a separate copy and stays counted.
-    let _ = fixture.write_file(
+    fixture.write_file("projects/project-a/session-a.jsonl", session_a.join("\n"));
+    fixture.write_file(
         "projects/project-a/session-b.jsonl",
         line("2026-09-12T01:00:00.000Z", "session-b", 5),
     );
@@ -1197,7 +1190,7 @@ fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":100}}}"#,
         r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":0.5,"message":{"id":"message-b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":500,"output_tokens":10}}}"#,
     ];
-    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
     let breakdown = |args: &[&str], pointer: &str| -> serde_json::Value {
         let base = ["--json", "--offline", "--timezone", "UTC"];
@@ -1255,10 +1248,8 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
         r#"{"timestamp":"2026-09-16T12:00:00.000Z","sessionId":"session-a","requestId":"request-d","message":{"id":"message-d","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":80}}}}"#,
         r#"{"timestamp":"2026-09-16T12:01:00.000Z","sessionId":"session-a","requestId":"request-e","message":{"id":"message-e","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":30}}}"#,
     ];
-    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
-    // Daily rows stop at 2026-09-15; weekly, monthly and session rows merge
-    // both days.
     let first_day = (450, 300, 70);
     let both_days = (550, 380, 100);
     let reports = [
@@ -1343,7 +1334,7 @@ fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
 
     for lines in [[unsplit, split], [split, unsplit]] {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+        fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
         let mut costs = Vec::new();
         for (report, pointer) in [("daily", "/daily/0"), ("session", "/sessions/0")] {
@@ -1373,10 +1364,8 @@ fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
 #[test]
 fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_report() {
     let fixture = Fixture::new();
-    // The top-level split covers only the first `message` iteration; the
-    // second one's 1,181 5-minute writes appear only in `iterations`.
     let line = r#"{"isSidechain":false,"message":{"model":"claude-sonnet-4-20250514","id":"msg_advisor","type":"message","role":"assistant","content":[{"type":"text","text":"placeholder"}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":4,"cache_creation_input_tokens":12323,"cache_read_input_tokens":140030,"output_tokens":244,"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":11142,"ephemeral_5m_input_tokens":0},"iterations":[{"input_tokens":2,"output_tokens":58,"cache_read_input_tokens":64444,"cache_creation_input_tokens":11142,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":11142},"type":"message"},{"input_tokens":77025,"output_tokens":3427,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"advisor_message","model":"claude-opus-5"},{"input_tokens":2,"output_tokens":186,"cache_read_input_tokens":75586,"cache_creation_input_tokens":1181,"cache_creation":{"ephemeral_5m_input_tokens":1181,"ephemeral_1h_input_tokens":0},"type":"message"}],"speed":"standard"}},"requestId":"req_advisor","type":"assistant","uuid":"00000000-0000-4000-8000-000000000002","timestamp":"2026-09-15T12:00:00.000Z","cwd":"/tmp/demo","sessionId":"session-a","version":"2.1.323"}"#;
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", line);
+    fixture.write_file("projects/project-a/session-a.jsonl", line);
 
     let mut costs = Vec::new();
     for (report, pointer) in [
@@ -1442,15 +1431,8 @@ fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_repo
 }
 
 fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> serde_json::Value {
-    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"));
-    command
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("home"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("NO_COLOR", "1")
-        .current_dir(fixture.root())
-        .args(["claude", "daily", "--offline", "--mode", "display"]);
+    let mut command = support::hermetic_command(fixture.root());
+    command.args(["claude", "daily", "--offline", "--mode", "display"]);
     if let Some(claude_config_dir) = claude_config_dir {
         command.env("CLAUDE_CONFIG_DIR", claude_config_dir);
     }
@@ -1467,9 +1449,195 @@ fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> s
 const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
 
 #[test]
+fn block_table_and_active_detail_follow_the_report_timezone() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/p/session-a.jsonl",
+        usage_line(
+            "2026-01-02T23:00:00Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    for (flags, expected) in [
+        (vec![], "1/3/2026, 8:00:00 AM"),
+        (vec!["--active"], "2026-01-03 08:00:00"),
+    ] {
+        let output = claude_command(&fixture)
+            .env("COLUMNS", "200")
+            .env("CCUSAGE_TEST_NOW", "2026-01-03T00:00:00Z")
+            .args(["claude", "blocks", "--offline", "--timezone", "Asia/Tokyo"])
+            .args(flags)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(expected),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+}
+
+#[test]
+fn colored_blocks_right_align_assumptions_like_plain_blocks() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/p/session-a.jsonl",
+        [
+            usage_line(
+                "2026-01-02T23:00:00Z",
+                "session-a",
+                "message-a",
+                "request-a",
+                1.0,
+            ),
+            usage_line(
+                "2026-01-02T23:30:00Z",
+                "session-a",
+                "message-b",
+                "request-b",
+                1.0,
+            ),
+        ]
+        .join("\n"),
+    );
+    let assumptions = |flag| {
+        let output = claude_command(&fixture)
+            .env_remove("NO_COLOR")
+            .env("COLUMNS", "200")
+            .env("CCUSAGE_TEST_NOW", "2026-01-03T00:00:00Z")
+            .args([
+                "claude",
+                "blocks",
+                "--offline",
+                "--timezone",
+                "UTC",
+                "--token-limit",
+                "100",
+                flag,
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .filter(|line| line.contains("(assuming "))
+            .map(|line| line.split('│').nth(1).unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let plain = assumptions("--no-color");
+    let colored = assumptions("--color");
+    assert_eq!(plain.len(), 2);
+    assert!(plain[0].starts_with("  "));
+    assert!(colored.iter().all(|cell| cell.contains("\x1b[90m")));
+    assert_eq!(
+        colored
+            .iter()
+            .map(|cell| cell.replace("\x1b[90m", "").replace("\x1b[0m", ""))
+            .collect::<Vec<_>>(),
+        plain
+    );
+}
+
+#[test]
+fn blocks_reject_unrepresentable_session_lengths() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+    for value in ["NaN", "inf", "1e300"] {
+        let output = claude_command(&fixture)
+            .args([
+                "claude",
+                "blocks",
+                "--offline",
+                "--json",
+                "--session-length",
+                value,
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "accepted {value}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Session length"));
+    }
+}
+
+#[test]
+fn config_warnings_follow_log_level() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+    fixture.write_file("ccusage.json", r#"{"defaults":{"json":true,"jsoon":true}}"#);
+    for (level, expected) in [("0", false), ("1", true)] {
+        let output = claude_command(&fixture)
+            .env("LOG_LEVEL", level)
+            .args(["claude", "daily", "--offline"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).contains("defaults.jsoon"),
+            expected
+        );
+        assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_ok());
+    }
+}
+
+#[test]
+fn configured_project_preserves_base_report_scope() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+    for config in [
+        r#"{"defaults":{"project":"missing"}}"#,
+        r#"{"claude":{"defaults":{"project":"missing"}}}"#,
+        r#"{"commands":{"daily":{"project":"missing"},"weekly":{"project":"missing"},"monthly":{"project":"missing"},"session":{"project":"missing"}}}"#,
+    ] {
+        let path = fixture.write_file("config.json", config);
+        for prefix in [vec![], vec!["claude"]] {
+            for (report, expected) in [
+                ("daily", 0.0),
+                ("monthly", 10.75),
+                ("weekly", 10.75),
+                ("session", 10.75),
+            ] {
+                let output = claude_command(&fixture)
+                    .args(&prefix)
+                    .args([
+                        report,
+                        "--offline",
+                        "--json",
+                        "--mode",
+                        "display",
+                        "--config",
+                    ])
+                    .arg(&path)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(
+                    json["totals"]["totalCost"].as_f64().unwrap_or(0.0),
+                    expected,
+                    "{prefix:?} {report}: {json}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "xdg-config/claude/projects/project-a/session-a.jsonl",
         usage_line(
             "2026-09-15T12:00:00.000Z",
@@ -1479,7 +1647,7 @@ fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
             1.0,
         ),
     );
-    let _ = fixture.write_file("xdg-config/claude/ccusage.json", JSON_USER_CONFIG);
+    fixture.write_file("xdg-config/claude/ccusage.json", JSON_USER_CONFIG);
 
     let json = run_with_user_config(&fixture, None);
 
@@ -1489,7 +1657,7 @@ fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
 #[test]
 fn user_config_in_a_tilde_claude_config_dir_entry_is_loaded() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "home/claude-a/projects/project-a/session-a.jsonl",
         usage_line(
             "2026-09-15T12:00:00.000Z",
@@ -1499,7 +1667,7 @@ fn user_config_in_a_tilde_claude_config_dir_entry_is_loaded() {
             1.0,
         ),
     );
-    let _ = fixture.write_file("home/claude-b/ccusage.json", JSON_USER_CONFIG);
+    fixture.write_file("home/claude-b/ccusage.json", JSON_USER_CONFIG);
 
     let json = run_with_user_config(&fixture, Some("~/claude-a,~/claude-b"));
 

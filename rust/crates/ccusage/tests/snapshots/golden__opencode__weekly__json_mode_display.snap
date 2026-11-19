@@ -8,34 +8,12 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7261,
-    "outputTokens": 1838,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
     "totalCost": 2.75,
-    "totalTokens": 27349
+    "totalTokens": 27267
   },
   "weekly": [
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 11,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 1,
-      "totalCost": 0.0,
-      "totalTokens": 12,
-      "week": "1969-12-29"
-    },
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -61,7 +39,7 @@ exit: 0
     {
       "cacheCreationTokens": 700,
       "cacheReadTokens": 17500,
-      "inputTokens": 7150,
+      "inputTokens": 7086,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -107,9 +85,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 71,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -147,9 +125,9 @@ exit: 0
         "k2p6",
         "claude-haiku-4.5"
       ],
-      "outputTokens": 1787,
+      "outputTokens": 1781,
       "totalCost": 2.75,
-      "totalTokens": 27187,
+      "totalTokens": 27117,
       "week": "2025-12-29"
     }
   ]

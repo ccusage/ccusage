@@ -49,15 +49,15 @@ These views support `--json`, `--compact`, `--offline`, `--since`, `--until`, an
 
 - **Token usage** - Reads input, output, cache read, cache write, and reasoning token totals from Hermes session rows.
 - **Total tokens** - Includes reasoning tokens in the total token count.
-- **Costs** - Prefers recorded actual cost, then recorded estimated cost, then calculates from LiteLLM pricing when token data is available.
+- **Costs** - Selects recorded actual cost when present, otherwise estimated cost. Auto uses that value when positive and otherwise prices tokens. Calculate always prices tokens. Display uses only the selected recorded cost. See [Cost Modes](/guide/cost-modes).
 - **Message count** - Preserves Hermes `message_count` in JSON metadata.
 
 ## Environment Variables
 
-| Variable      | Description                                                                       |
-| ------------- | --------------------------------------------------------------------------------- |
-| `HERMES_HOME` | Override the directory containing `state.db`; comma-separated roots are supported |
-| `LOG_LEVEL`   | Adjust verbosity (0 silent ... 5 trace)                                           |
+| Variable      | Description                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `HERMES_HOME` | Override the directory containing `state.db`; comma-separated roots are supported                             |
+| `LOG_LEVEL`   | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

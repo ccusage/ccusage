@@ -10,16 +10,16 @@ exit: 0
       "cacheCreationTokens": 250,
       "cacheReadTokens": 16000,
       "firstActivity": "2025-12-31T23:50:00.000Z",
-      "inputTokens": 2320,
+      "inputTokens": 2353,
       "lastActivity": "2026-01-02T10:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 9000,
           "cost": 0.5,
-          "inputTokens": 1420,
+          "inputTokens": 1453,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 410
+          "outputTokens": 454
         },
         {
           "cacheCreationTokens": 200,
@@ -34,17 +34,17 @@ exit: 0
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 810,
+      "outputTokens": 854,
       "projectPath": "-Users-dev-beta",
       "sessionId": "sess-beta-1",
       "totalCost": 0.5,
-      "totalTokens": 19380
+      "totalTokens": 19457
     },
     {
-      "cacheCreationTokens": 1600,
-      "cacheReadTokens": 31850,
+      "cacheCreationTokens": 1000,
+      "cacheReadTokens": 22850,
       "firstActivity": "2025-12-30T10:00:00.000Z",
-      "inputTokens": 4100,
+      "inputTokens": 3600,
       "lastActivity": "2026-01-02T08:30:00.000Z",
       "modelBreakdowns": [
         {
@@ -65,12 +65,12 @@ exit: 0
         },
         {
           "cacheCreation1hTokens": 400,
-          "cacheCreationTokens": 1200,
-          "cacheReadTokens": 18500,
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 9500,
           "cost": 0.0,
-          "inputTokens": 1250,
+          "inputTokens": 750,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1660
+          "outputTokens": 860
         },
         {
           "cacheCreationTokens": 0,
@@ -96,11 +96,11 @@ exit: 0
         "claude-opus-5-fast",
         "claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 2605,
+      "outputTokens": 1805,
       "projectPath": "-Users-dev-alpha",
       "sessionId": "sess-alpha-1",
       "totalCost": 0.07700000000000001,
-      "totalTokens": 40155
+      "totalTokens": 29255
     },
     {
       "cacheCreationTokens": 0,
@@ -173,12 +173,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 3100,
-    "cacheReadTokens": 53350,
-    "inputTokens": 8674,
-    "outputTokens": 4415,
+    "cacheCreationTokens": 2500,
+    "cacheReadTokens": 44350,
+    "inputTokens": 8207,
+    "outputTokens": 3659,
     "totalCost": 0.587,
-    "totalTokens": 69539
+    "totalTokens": 58716
   }
 }
 

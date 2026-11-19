@@ -1,22 +1,22 @@
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
 };
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
+use ccusage_cli::command_tokens;
 use ccusage_cli::{
-    BlocksArgs, CodexSpeed, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore,
-    PricingOverride, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, ContextThresholds, CostMode, CostSource,
+    DailyArgs, NamedPiStore, PricingOverride, ReportTimezone, SharedArgs, SortOrder,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
 };
 
 use crate::config_schema::{
-    BlocksSpecificOptions, CodexOptions, ConfigCodexSpeed, ConfigCostMode, ConfigCostSource,
-    ConfigPricingOverride, ConfigSortOrder, ConfigVisualBurnRate, ConfigWeekDay,
-    DailySpecificOptions, NAMED_PI_STORE_NAME_PATTERN, OpenClawOptions, PiOptions, SharedOptions,
-    StatuslineSpecificOptions, WeeklySpecificOptions,
+    ConfigCodexSpeed, ConfigCostMode, ConfigCostSource, ConfigPricingOverride, ConfigSortOrder,
+    ConfigVisualBurnRate, ConfigWeekDay, NAMED_PI_STORE_NAME_PATTERN, PiStoreConfig, SharedOptions,
 };
 
 struct ConfigCommand {
@@ -26,147 +26,186 @@ struct ConfigCommand {
 }
 
 pub struct ConfigContext {
-    value: Option<Value>,
     command: ConfigCommand,
     pi_stores: Vec<NamedPiStore>,
-    pi_store_error: Option<String>,
-    date_bound_error: Option<String>,
+    pi_stores_error: Option<String>,
+    error: Option<String>,
+    layers: BTreeMap<String, crate::layers::Layer>,
+    warnings: RefCell<Vec<String>>,
+    config_origin: Option<(PathBuf, bool)>,
 }
 
 impl ConfigContext {
     pub fn from_args(args: &[String]) -> Self {
         let command = detect_config_command(args);
-        let value = load_config_value(scan_config_path(args).as_deref());
-        let (pi_stores, pi_store_error) = value
-            .as_ref()
-            .map(parse_named_pi_stores)
-            .transpose()
-            .map(|stores| (stores.unwrap_or_default(), None))
-            .unwrap_or_else(|error| (Vec::new(), Some(error)));
-        let mut context = Self {
-            value,
-            command,
-            pi_stores,
-            pi_store_error,
-            date_bound_error: None,
-        };
-        context.date_bound_error = context.detect_date_bound_error();
+        if args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-h" | "--help" | "-v" | "-V" | "--version"))
+        {
+            return Self::empty(command);
+        }
+        let explicit_path = scan_config_path(args);
+        let (file, error, warnings) = load_config_value(explicit_path.as_deref());
+        let mut context = Self::empty(command);
+        context.error = error;
+        context.warnings = RefCell::new(warnings);
+        if explicit_path.is_none()
+            && context.command.report == "statusline"
+            && let Some(error) = context.error.take()
+        {
+            context.warnings.get_mut().push(error);
+        }
+        if let Some(file) = file {
+            context.pi_stores = file.pi_stores;
+            context.pi_stores_error = file.pi_stores_error;
+            context.layers = file.layers;
+            context.config_origin = Some((file.path, explicit_path.is_some()));
+        }
         context
     }
 
-    /// The config as `ccusage <agent> <report>` reads it, for a unified report
-    /// that loads `agent` as one of its sources: `<agent>.defaults`,
-    /// `<agent>.commands.<report>`, `commands."<agent> <report>"` and
-    /// `commands.<agent>:<report>` join the layers the unified command already
-    /// applies. `None` when the file says nothing about that agent, so the
-    /// source keeps the unified options, and for commands that already name an
-    /// agent.
-    pub fn for_source(&self, agent: &str) -> Option<Self> {
-        if self.command.agent.is_some() {
-            return None;
+    pub fn warnings(&self) -> Vec<String> {
+        self.warnings.borrow().clone()
+    }
+
+    fn empty(command: ConfigCommand) -> Self {
+        Self {
+            command,
+            pi_stores: Vec::new(),
+            pi_stores_error: None,
+            error: None,
+            layers: BTreeMap::new(),
+            warnings: RefCell::new(Vec::new()),
+            config_origin: None,
         }
-        let root = self.value.as_ref().and_then(Value::as_object)?;
+    }
+
+    pub fn for_dependency(&self, agent: &str) -> Self {
         let report = &self.command.report;
-        let raw = format!("{agent} {report}");
-        let colon_name = format!("{agent}:{report}");
-        let addressed = object_at(root, agent).is_some()
-            || object_at(root, "commands").is_some_and(|commands| {
-                object_at(commands, &raw).is_some() || object_at(commands, &colon_name).is_some()
-            });
-        if !addressed {
-            return None;
-        }
-        let mut context = Self {
-            value: self.value.clone(),
+        Self {
             command: ConfigCommand {
-                raw,
+                raw: format!("{agent} {report}"),
                 agent: Some(agent.to_string()),
                 report: report.clone(),
             },
             pi_stores: self.pi_stores.clone(),
-            pi_store_error: self.pi_store_error.clone(),
-            date_bound_error: None,
+            pi_stores_error: self.pi_stores_error.clone(),
+            error: self.error.clone(),
+            layers: self.layers.clone(),
+            warnings: self.warnings.clone(),
+            config_origin: self.config_origin.clone(),
+        }
+    }
+
+    fn resolve_context_thresholds(
+        &self,
+        low_override: Option<u8>,
+        medium_override: Option<u8>,
+    ) -> Result<ContextThresholds, String> {
+        let mut lows = Vec::new();
+        let mut mediums = Vec::new();
+        for (index, path) in self.option_paths().into_iter().enumerate() {
+            if let Some(layer) = self.layers.get(&path) {
+                if let Some(value) = layer.statusline.context_low_threshold {
+                    lows.push((index, path.clone(), value));
+                }
+                if let Some(value) = layer.statusline.context_medium_threshold {
+                    mediums.push((index, path, value));
+                }
+            }
+        }
+        let defaults = ContextThresholds::default();
+        loop {
+            let low = low_override
+                .or_else(|| lows.last().map(|(_, _, value)| *value))
+                .unwrap_or(defaults.low());
+            let medium = medium_override
+                .or_else(|| mediums.last().map(|(_, _, value)| *value))
+                .unwrap_or(defaults.medium());
+            match ContextThresholds::new(low, medium) {
+                Ok(thresholds) => {
+                    return Ok(thresholds);
+                }
+                Err(error) => {
+                    let drop_low = match (low_override, medium_override) {
+                        (Some(_), None) if !mediums.is_empty() => false,
+                        (None, Some(_)) if !lows.is_empty() => true,
+                        (None, None) => lows.last().is_some_and(|(index, _, _)| {
+                            mediums.last().is_none_or(|(other, _, _)| index >= other)
+                        }),
+                        _ => return Err(error),
+                    };
+                    let (field, invalid) = if drop_low {
+                        ("contextLowThreshold", lows.pop())
+                    } else {
+                        ("contextMediumThreshold", mediums.pop())
+                    };
+                    let Some((_, path, _)) = invalid else {
+                        return Err(config_error(error));
+                    };
+                    let Some((file, strict)) = &self.config_origin else {
+                        return Err(error);
+                    };
+                    let message = format!("{}: {path}.{field}: {error}", file.display());
+                    if *strict {
+                        return Err(config_error(message));
+                    }
+                    self.warnings
+                        .borrow_mut()
+                        .push(format!("Invalid ccusage config field: {message}"));
+                }
+            }
+        }
+    }
+
+    fn warn_discovered_statusline_field(&self, path: &str, field: &str, message: &str) -> bool {
+        let Some((file, false)) = &self.config_origin else {
+            return false;
         };
-        context.date_bound_error = context.detect_date_bound_error();
-        Some(context)
+        self.warnings.borrow_mut().push(format!(
+            "Invalid ccusage config field: {}: {path}.{field}: {message}",
+            file.display()
+        ));
+        true
     }
 
-    /// Named pi stores only reach commands that read them, so their parse error
-    /// stays gated on those commands.
-    fn active_pi_store_error(&self) -> Option<&str> {
-        self.command_uses_named_pi_stores()
-            .then_some(self.pi_store_error.as_deref())
-            .flatten()
+    fn option_paths(&self) -> Vec<String> {
+        let report = &self.command.report;
+        let mut paths = vec!["defaults".to_string()];
+        if let Some(agent) = &self.command.agent {
+            paths.extend([
+                format!("commands.{report}"),
+                format!("commands.{}", self.command.raw),
+                format!("commands.{agent}:{report}"),
+                format!("{agent}.defaults"),
+                format!("{agent}.commands.{report}"),
+            ]);
+        } else {
+            paths.push(format!("commands.{}", self.command.raw));
+        }
+        paths
     }
 
-    /// Config bounds bypass the CLI parser, so they need the same rejection the
-    /// parser gives `--since` / `--until`. `apply_shared_options` cannot fail,
-    /// so the check runs here and surfaces through `config_error` for every
-    /// command that applies shared options, not just the pi-store readers.
-    fn detect_date_bound_error(&self) -> Option<String> {
-        self.option_maps().into_iter().find_map(|options| {
-            [
-                ("since", options.get("since")),
-                ("until", options.get("until")),
-            ]
-            .into_iter()
-            .find_map(|(key, value)| {
-                let value = value?;
-                let Some(value) = value.as_str() else {
-                    return Some(config_error(format!(
-                        "{key} must be a string. Expected {DATE_BOUND_FORMATS}"
-                    )));
-                };
-                normalize_date_bound(value).is_none().then(|| {
-                    config_error(format!(
-                        "{key} '{value}' is not a valid date. Expected {DATE_BOUND_FORMATS}"
-                    ))
-                })
-            })
+    fn timezone_setting(&self) -> Option<(String, &str)> {
+        self.option_paths().into_iter().rev().find_map(|path| {
+            let layer = self.layers.get(&path)?;
+            let value = if self.command.report == "statusline" {
+                &layer.statusline.timezone
+            } else {
+                &layer.shared.timezone
+            };
+            Some((path, value.as_deref()?))
         })
     }
 
-    fn option_maps(&self) -> Vec<&Map<String, Value>> {
-        let Some(root) = self.value.as_ref().and_then(Value::as_object) else {
+    fn option_maps(&self) -> Vec<&crate::layers::Layer> {
+        if self.layers.is_empty() {
             return Vec::new();
-        };
-        let report = self.command.report.as_str();
-        let command_keys = match self.command.agent.as_deref() {
-            Some(agent) => vec![
-                report.to_string(),
-                self.command.raw.clone(),
-                format!("{agent}:{report}"),
-            ],
-            None => vec![self.command.raw.clone()],
-        };
-        let commands = object_at(root, "commands");
-        let agent = self
-            .command
-            .agent
-            .as_deref()
-            .and_then(|agent| object_at(root, agent));
-        object_at(root, "defaults")
-            .into_iter()
-            .chain(
-                command_keys
-                    .iter()
-                    .filter_map(|key| commands.and_then(|commands| object_at(commands, key))),
-            )
-            .chain(agent.and_then(|agent| object_at(agent, "defaults")))
-            .chain(
-                agent
-                    .and_then(|agent| object_at(agent, "commands"))
-                    .and_then(|commands| object_at(commands, report)),
-            )
+        }
+        self.option_paths()
+            .iter()
+            .filter_map(|path| self.layers.get(path))
             .collect()
-    }
-
-    fn command_uses_named_pi_stores(&self) -> bool {
-        self.command.agent.is_none()
-            && matches!(
-                self.command.report.as_str(),
-                "daily" | "weekly" | "monthly" | "session"
-            )
     }
 }
 
@@ -179,28 +218,14 @@ fn parse_named_pi_stores(value: &Value) -> std::result::Result<Vec<NamedPiStore>
     else {
         return Ok(Vec::new());
     };
-    let Some(stores) = stores_value.as_array() else {
-        return Err(config_error("pi.stores must be an array"));
-    };
+    let stores = crate::layers::decode::<Vec<PiStoreConfig>>(stores_value, "pi.stores")
+        .map_err(config_error)?;
 
     let mut names = BTreeSet::new();
     let mut parsed = Vec::with_capacity(stores.len());
     for (index, store) in stores.iter().enumerate() {
-        let Some(store) = store.as_object() else {
-            return Err(config_error(format!(
-                "pi.stores[{index}] must contain string fields 'name' and 'path'"
-            )));
-        };
-        let Some(name) = store.get("name").and_then(Value::as_str) else {
-            return Err(config_error(format!(
-                "pi.stores[{index}] must contain string fields 'name' and 'path'"
-            )));
-        };
-        let Some(path) = store.get("path").and_then(Value::as_str) else {
-            return Err(config_error(format!(
-                "pi.stores[{index}] must contain string fields 'name' and 'path'"
-            )));
-        };
+        let name = &store.name;
+        let path = &store.path;
         if path.trim().is_empty() {
             return Err(config_error(format!(
                 "pi.stores[{index}] ('{name}'): path must be a non-empty string"
@@ -269,20 +294,100 @@ fn matches_named_pi_store_name_pattern(name: &str) -> bool {
     rest_len <= 31
 }
 
-fn object_at<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a Map<String, Value>> {
-    object.get(key).and_then(Value::as_object)
+fn load_config_value(
+    path: Option<&Path>,
+) -> (
+    Option<crate::layers::ConfigFile>,
+    Option<String>,
+    Vec<String>,
+) {
+    load_config_paths(
+        path.is_some(),
+        match path {
+            Some(path) => vec![path.to_path_buf()],
+            None => discover_config_paths(),
+        },
+    )
 }
 
-fn load_config_value(path: Option<&Path>) -> Option<Value> {
-    let paths = match path {
-        Some(path) => vec![path.to_path_buf()],
-        None => discover_config_paths(),
-    };
-    paths
-        .into_iter()
-        .filter_map(|path| fs::read_to_string(path).ok())
-        .filter_map(|content| serde_json::from_str::<Value>(&content).ok())
-        .find(|value| value.as_object().is_some())
+fn load_config_paths(
+    explicit: bool,
+    paths: Vec<PathBuf>,
+) -> (
+    Option<crate::layers::ConfigFile>,
+    Option<String>,
+    Vec<String>,
+) {
+    let mut warnings = Vec::new();
+    for path in paths {
+        let content = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if !explicit && error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                let message = config_error(format!("{}: {error}", path.display()));
+                return (None, Some(message), warnings);
+            }
+        };
+        let value = serde_json::from_str::<Value>(&content)
+            .map_err(|error| error.to_string())
+            .and_then(|value| {
+                if value.is_object() {
+                    Ok(value)
+                } else {
+                    Err("$: expected an object".to_string())
+                }
+            });
+        let value = match value {
+            Ok(value) => value,
+            Err(error) => {
+                let message = config_error(format!("{}: {error}", path.display()));
+                if explicit {
+                    return (None, Some(message), warnings);
+                }
+                warnings.push(message);
+                continue;
+            }
+        };
+        let file = if explicit {
+            crate::layers::ConfigFile::parse(value)
+        } else {
+            crate::layers::ConfigFile::parse_discovered(value)
+        };
+        match file {
+            Ok(mut file) => {
+                for layer in file.layers.values_mut() {
+                    if let Some(error) = &mut layer.date_error {
+                        *error = config_error(format!("{}: {error}", path.display()));
+                    }
+                }
+                match parse_named_pi_stores(&file.value) {
+                    Ok(stores) => file.pi_stores = stores,
+                    Err(error) => {
+                        let detail = error
+                            .strip_prefix("Invalid ccusage config: ")
+                            .unwrap_or(&error);
+                        let message = config_error(format!("{}: {detail}", path.display()));
+                        if explicit {
+                            return (None, Some(message), warnings);
+                        }
+                        file.pi_stores_error = Some(message);
+                    }
+                }
+                file.path = path.clone();
+                warnings.extend(
+                    file.warnings
+                        .drain(..)
+                        .map(|warning| format!("{}: {warning}", path.display())),
+                );
+                return (Some(file), None, warnings);
+            }
+            Err(error) => {
+                let message = config_error(format!("{}: {error}", path.display()));
+                return (None, Some(message), warnings);
+            }
+        }
+    }
+    (None, None, warnings)
 }
 
 fn discover_config_paths() -> Vec<PathBuf> {
@@ -324,10 +429,10 @@ fn detect_config_command(args: &[String]) -> ConfigCommand {
             report: "daily".to_string(),
         };
     };
-    if let Some((agent, report)) = first.split_once(':') {
+    if let Some((agent, report)) = ccusage_cli::AgentId::from_colon_command(first) {
         return ConfigCommand {
-            raw: format!("{agent} {report}"),
-            agent: Some(agent.to_string()),
+            raw: format!("{} {report}", agent.spec().name),
+            agent: Some(agent.spec().name.to_string()),
             report: report.to_string(),
         };
     }
@@ -350,65 +455,6 @@ fn detect_config_command(args: &[String]) -> ConfigCommand {
     }
 }
 
-fn command_tokens(args: &[String]) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while index < args.len() {
-        let arg = &args[index];
-        if let Some((flag, _)) = arg.split_once('=')
-            && flag.starts_with('-')
-        {
-            index += 1;
-            continue;
-        }
-        if arg.starts_with('-') {
-            index += if option_takes_value(arg) { 2 } else { 1 };
-            continue;
-        }
-        tokens.push(arg.clone());
-        index += 1;
-    }
-    tokens
-}
-
-fn option_takes_value(arg: &str) -> bool {
-    matches!(
-        arg.split_once('=').map_or(arg, |(name, _)| name),
-        "-s" | "--since"
-            | "-u"
-            | "--until"
-            | "--last"
-            | "-m"
-            | "--mode"
-            | "--debug-samples"
-            | "-o"
-            | "--order"
-            | "-z"
-            | "--timezone"
-            | "-q"
-            | "--jq"
-            | "--config"
-            | "-t"
-            | "--token-limit"
-            | "-n"
-            | "--session-length"
-            | "-w"
-            | "--start-of-week"
-            | "-p"
-            | "--project"
-            | "--project-aliases"
-            | "--pi-path"
-            | "--speed"
-            | "-B"
-            | "--visual-burn-rate"
-            | "--cost-source"
-            | "--refresh-interval"
-            | "--context-low-threshold"
-            | "--context-medium-threshold"
-            | "--sections"
-    )
-}
-
 fn is_agent_command(command: &str) -> bool {
     ccusage_cli::BUILT_IN_AGENT_NAMES.contains(&command)
 }
@@ -422,16 +468,14 @@ fn is_report_command(command: &str) -> bool {
 
 fn apply_config_to_shared(shared: &mut SharedArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        apply_shared_options(shared, SharedOptions::from_map(options));
+        apply_shared_options(shared, options.shared.clone());
     }
-    if config.pi_store_error.is_none() {
-        shared.pi_stores = config.pi_stores.clone();
-    }
+    shared.pi_stores = config.pi_stores.clone();
 }
 
 fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        let options = DailySpecificOptions::from_map(options);
+        let options = options.daily.clone();
         if let Some(instances) = options.instances {
             args.instances = instances;
         }
@@ -446,7 +490,7 @@ fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
 
 fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        if let Some(day) = WeeklySpecificOptions::from_map(options).start_of_week {
+        if let Some(day) = options.weekly.clone().start_of_week {
             args.start_of_week = day.into();
         }
     }
@@ -454,7 +498,7 @@ fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext) {
 
 fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        let options = BlocksSpecificOptions::from_map(options);
+        let options = options.blocks.clone();
         if let Some(active) = options.active {
             args.active = active;
         }
@@ -472,12 +516,12 @@ fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
 
 fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigContext) {
     for options in config.option_maps() {
-        let options = StatuslineSpecificOptions::from_map(options);
+        let options = options.statusline.clone();
         if let Some(offline) = options.offline {
             args.offline = offline;
         }
-        if let Some(no_offline) = options.no_offline {
-            args.no_offline = no_offline;
+        if options.no_offline == Some(true) {
+            args.offline = false;
         }
         if let Some(visual_burn_rate) = options.visual_burn_rate {
             args.visual_burn_rate = visual_burn_rate.into();
@@ -488,26 +532,11 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         if let Some(cache) = options.cache {
             args.cache = cache;
         }
-        if let Some(no_cache) = options.no_cache {
-            args.no_cache = no_cache;
+        if options.no_cache == Some(true) {
+            args.cache = false;
         }
         if let Some(refresh_interval) = options.refresh_interval {
             args.refresh_interval = refresh_interval;
-        }
-        if let Some(threshold) = options
-            .context_low_threshold
-            .and_then(|value| u8::try_from(value).ok())
-        {
-            args.context_low_threshold = threshold;
-        }
-        if let Some(threshold) = options
-            .context_medium_threshold
-            .and_then(|value| u8::try_from(value).ok())
-        {
-            args.context_medium_threshold = threshold;
-        }
-        if let Some(timezone) = options.timezone {
-            args.timezone = Some(timezone);
         }
         if let Some(debug) = options.debug {
             args.debug = debug;
@@ -521,34 +550,185 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
     }
 }
 
-fn apply_config_to_agent_args(
-    codex_speed: &mut CodexSpeed,
-    mut pi_path: Option<&mut Option<String>>,
-    mut open_claw_path: Option<&mut Option<String>>,
-    config: &ConfigContext,
-) {
-    for options in config.option_maps() {
-        let codex_options = CodexOptions::from_map(options);
-        if let Some(speed) = codex_options.speed {
-            *codex_speed = speed.into();
-        }
-        if let Some(pi_path) = pi_path.as_deref_mut()
-            && let Some(path) = PiOptions::from_map(options).pi_path
-        {
-            *pi_path = Some(path);
-        }
-        if let Some(open_claw_path) = open_claw_path.as_deref_mut()
-            && let Some(path) = OpenClawOptions::from_map(options).open_claw_path
-        {
-            *open_claw_path = Some(path);
-        }
-    }
-}
-
 impl ccusage_cli::CliConfig for ConfigContext {
+    fn context_thresholds(
+        &self,
+        low: Option<u8>,
+        medium: Option<u8>,
+    ) -> Result<ContextThresholds, String> {
+        self.resolve_context_thresholds(low, medium)
+    }
+
+    fn agent_options(&self, agent: &str) -> AgentOptions {
+        let mut resolved = AgentOptions::default();
+        for options in self.option_maps() {
+            match agent {
+                "claude" if self.command.report == "daily" => {
+                    if let Some(project) = options.daily.clone().project {
+                        resolved.claude_project = Some(project);
+                    }
+                }
+                "codex" => {
+                    if let Some(speed) = options.codex.clone().speed {
+                        resolved.codex_speed = speed.into();
+                    }
+                }
+                "pi" => {
+                    if let Some(path) = options.pi.clone().pi_path {
+                        resolved.pi_path = Some(path);
+                    }
+                }
+                "openclaw" => {
+                    if let Some(path) = options.openclaw.clone().open_claw_path {
+                        resolved.open_claw_path = Some(path);
+                    }
+                }
+                _ => {}
+            }
+        }
+        resolved
+    }
+
     fn config_error(&self) -> Option<&str> {
-        self.active_pi_store_error()
-            .or(self.date_bound_error.as_deref())
+        self.error
+            .as_deref()
+            .or_else(|| {
+                (self.command.agent.is_none()
+                    && matches!(
+                        self.command.report.as_str(),
+                        "daily" | "weekly" | "monthly" | "session"
+                    ))
+                .then_some(self.pi_stores_error.as_deref())
+                .flatten()
+            })
+            .or_else(|| {
+                (self.command.report != "statusline")
+                    .then(|| {
+                        self.option_maps()
+                            .into_iter()
+                            .find_map(|layer| layer.date_error.as_deref())
+                    })
+                    .flatten()
+            })
+    }
+
+    fn timezone(&self) -> Option<&str> {
+        self.timezone_setting().map(|(_, value)| value)
+    }
+
+    fn timezone_config_field(&self) -> Option<String> {
+        let (file, _) = self.config_origin.as_ref()?;
+        let (path, _) = self.timezone_setting()?;
+        Some(format!("{}: {path}.timezone", file.display()))
+    }
+
+    fn recover_statusline_timezone(
+        &self,
+        rejected: &str,
+        error: String,
+    ) -> Result<Option<ReportTimezone>, String> {
+        for path in self.option_paths().into_iter().rev() {
+            let Some(value) = self
+                .layers
+                .get(&path)
+                .and_then(|layer| layer.statusline.timezone.as_deref())
+            else {
+                continue;
+            };
+            if value != rejected
+                && let Ok(timezone) = value.parse()
+            {
+                return Ok(Some(timezone));
+            }
+            let message = format!("unknown IANA timezone '{value}'");
+            if !self.warn_discovered_statusline_field(&path, "timezone", &message) {
+                return Err(error);
+            }
+        }
+        Ok(None)
+    }
+
+    fn recover_statusline_window(
+        &self,
+        shared: &mut SharedArgs,
+        since_flag: bool,
+        until_flag: bool,
+        message: &str,
+    ) -> bool {
+        let Some((file, false)) = &self.config_origin else {
+            return false;
+        };
+        let paths = self.option_paths();
+        let layers = paths
+            .iter()
+            .filter_map(|path| self.layers.get(path).map(|layer| (path, &layer.shared)))
+            .collect::<Vec<_>>();
+        let since_source = if since_flag {
+            None
+        } else {
+            layers
+                .iter()
+                .rposition(|(_, options)| options.since.is_some())
+        };
+        let until_source = if until_flag {
+            None
+        } else {
+            layers
+                .iter()
+                .rposition(|(_, options)| options.until.is_some())
+        };
+        let Some(first_source) = since_source.into_iter().chain(until_source).min() else {
+            return false;
+        };
+        let since_path = since_source.map_or_else(
+            || "--since".to_string(),
+            |index| format!("{}.since", layers[index].0),
+        );
+        let until_path = until_source.map_or_else(
+            || "--until".to_string(),
+            |index| format!("{}.until", layers[index].0),
+        );
+        let warn = |field: &str, paired_with: &str, message: &str| {
+            self.warnings.borrow_mut().push(format!(
+                "Invalid ccusage config field: {}: {field}: {message} (paired with {paired_with})",
+                file.display()
+            ));
+        };
+        let (field, paired_with) = if since_flag {
+            (&until_path, &since_path)
+        } else {
+            (&since_path, &until_path)
+        };
+        warn(field, paired_with, message);
+
+        let fallback = layers[..first_source]
+            .iter()
+            .rev()
+            .find_map(|(path, options)| {
+                let since = &options.since.as_ref()?.0;
+                let until = &options.until.as_ref()?.0;
+                if since > until {
+                    warn(
+                        &format!("{path}.since"),
+                        &format!("{path}.until"),
+                        &format!(
+                            "The --since date '{since}' is later than the --until date '{until}'."
+                        ),
+                    );
+                    return None;
+                }
+                let compatible_with_flags = (!since_flag
+                    || shared.since.as_ref().is_none_or(|flag| flag <= until))
+                    && (!until_flag || shared.until.as_ref().is_none_or(|flag| since <= flag));
+                compatible_with_flags.then_some((since, until))
+            });
+        if !since_flag {
+            shared.since = fallback.map(|(since, _)| *since);
+        }
+        if !until_flag {
+            shared.until = fallback.map(|(_, until)| *until);
+        }
+        true
     }
 
     fn apply_shared(&self, shared: &mut SharedArgs) {
@@ -570,25 +750,14 @@ impl ccusage_cli::CliConfig for ConfigContext {
     fn apply_statusline_args(&self, args: &mut StatuslineArgs) {
         apply_config_to_statusline_args(args, self);
     }
-
-    fn apply_agent_args(
-        &self,
-        codex_speed: &mut CodexSpeed,
-        pi_path: Option<&mut Option<String>>,
-        open_claw_path: Option<&mut Option<String>>,
-    ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
-    }
 }
 
 fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
-    // Invalid bounds are rejected in `ConfigContext::detect_date_bound_error`, so an
-    // unnormalizable value here is left for that error to report.
-    if let Some(since) = options.since.as_deref().and_then(normalize_date_bound) {
-        shared.since = Some(since);
+    if let Some(since) = options.since {
+        shared.since = Some(since.0);
     }
-    if let Some(until) = options.until.as_deref().and_then(normalize_date_bound) {
-        shared.until = Some(until);
+    if let Some(until) = options.until {
+        shared.until = Some(until.0);
     }
     if let Some(json) = options.json {
         shared.json = json;
@@ -603,8 +772,7 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
         shared.debug_samples = debug_samples;
     }
     if let Some(order) = options.order {
-        shared.order = order.into();
-        shared.order_explicit = true;
+        shared.order = Some(order.into());
     }
     if let Some(breakdown) = options.breakdown {
         shared.breakdown = breakdown;
@@ -612,17 +780,14 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
     if let Some(offline) = options.offline {
         shared.offline = offline;
     }
-    if let Some(no_offline) = options.no_offline {
-        shared.no_offline = no_offline;
+    if options.no_offline == Some(true) {
+        shared.offline = false;
     }
-    if let Some(color) = options.color {
-        shared.color = color;
+    if options.color == Some(true) {
+        shared.color = ColorChoice::Always;
     }
-    if let Some(no_color) = options.no_color {
-        shared.no_color = no_color;
-    }
-    if let Some(timezone) = options.timezone {
-        shared.timezone = Some(timezone);
+    if options.no_color == Some(true) {
+        shared.color = ColorChoice::Never;
     }
     if let Some(jq) = options.jq {
         shared.jq = Some(jq);
@@ -660,6 +825,10 @@ fn merge_override_fields(target: &mut PricingOverride, source: ConfigPricingOver
     }
     if source.cache_creation_input_token_cost.is_some() {
         target.cache_creation_input_token_cost = source.cache_creation_input_token_cost;
+    }
+    if source.cache_creation_input_token_cost_above_1hr.is_some() {
+        target.cache_creation_input_token_cost_above_1hr =
+            source.cache_creation_input_token_cost_above_1hr;
     }
     if source.cache_read_input_token_cost.is_some() {
         target.cache_read_input_token_cost = source.cache_read_input_token_cost;
@@ -703,6 +872,8 @@ impl From<ConfigPricingOverride> for PricingOverride {
             input_cost_per_token: value.input_cost_per_token,
             output_cost_per_token: value.output_cost_per_token,
             cache_creation_input_token_cost: value.cache_creation_input_token_cost,
+            cache_creation_input_token_cost_above_1hr: value
+                .cache_creation_input_token_cost_above_1hr,
             cache_read_input_token_cost: value.cache_read_input_token_cost,
             input_cost_per_token_above_200k_tokens: value.input_cost_per_token_above_200k_tokens,
             output_cost_per_token_above_200k_tokens: value.output_cost_per_token_above_200k_tokens,
@@ -785,15 +956,481 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn malformed_discovered_files_warn_and_continue_discovery() {
+        for raw in ["", "[]", "null", "{", "{\"defaults\":{},}", "// comment"] {
+            let fixture = fs_fixture!({
+                "first.json": raw,
+                "second.json": r#"{"defaults":{"offline":true,"json":true}}"#,
+            });
+            let (file, error, warnings) = load_config_paths(
+                false,
+                vec![fixture.path("first.json"), fixture.path("second.json")],
+            );
+            assert!(error.is_none(), "{raw}: {error:?}");
+            let file = file.unwrap();
+            assert_eq!(file.path, fixture.path("second.json"));
+            assert_eq!(file.layers["defaults"].shared.offline, Some(true));
+            assert_eq!(warnings.len(), 1);
+            assert!(warnings[0].contains("first.json"));
+            let (file, error, _) = load_config_paths(true, vec![fixture.path("first.json")]);
+            assert!(file.is_none());
+            assert!(error.is_some());
+        }
+    }
+
+    #[test]
+    fn keeps_named_pi_store_errors_gated_to_commands_that_read_them() {
+        for raw in [
+            r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/store"}]}}"#,
+            r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
+        ] {
+            let fixture = fs_fixture!({"ccusage.json": raw});
+            let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            for command in [
+                vec!["statusline"],
+                vec!["claude", "blocks"],
+                vec!["claude", "session"],
+                vec!["codex", "daily"],
+                vec!["pi", "daily"],
+                vec!["pi", "session"],
+                vec!["pi:daily"],
+            ] {
+                let args = command
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                assert!(
+                    ConfigContext::from_args(&args).config_error().is_none(),
+                    "{command:?}"
+                );
+            }
+            for command in [
+                vec!["daily"],
+                vec!["weekly"],
+                vec!["monthly"],
+                vec!["session"],
+            ] {
+                let args = command
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                assert!(
+                    ConfigContext::from_args(&args).config_error().is_some(),
+                    "{command:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn discovered_date_errors_only_affect_commands_reading_the_layer() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "ccusage.json": r#"{"defaults":{"mode":"a.since:","json":true},"commands":{"weekly":{"since":"nope"}}}"#,
+        });
+        let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        for command in [
+            vec!["daily"],
+            vec!["monthly"],
+            vec!["session"],
+            vec!["claude", "session"],
+            vec!["codex", "daily"],
+            vec!["statusline"],
+        ] {
+            let args = command
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>();
+            let context = ConfigContext::from_args(&args);
+            assert!(
+                context.config_error().is_none(),
+                "{command:?}: {:?}",
+                context.config_error()
+            );
+            let mut shared = SharedArgs::default();
+            context.apply_shared(&mut shared);
+            assert!(shared.json);
+        }
+        for command in [vec!["weekly"], vec!["codex", "weekly"]] {
+            let args = command
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>();
+            let context = ConfigContext::from_args(&args);
+            assert!(
+                context
+                    .config_error()
+                    .unwrap()
+                    .contains("commands.weekly.since")
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_discovered_block_limits_drop_only_the_field() {
+        for (field, value) in [
+            ("tokenLimit", json!(0)),
+            ("tokenLimit", json!("0")),
+            ("tokenLimit", json!("abc")),
+            ("sessionLength", json!(0)),
+            ("sessionLength", json!(-1)),
+            ("sessionLength", json!(1e300)),
+            ("sessionLength", json!("NaN")),
+        ] {
+            let raw = json!({"commands": {"blocks": {field: value, "active": true, "json": true}}});
+            let fixture = fs_fixture!({"selected.json": raw.to_string()});
+            let (file, error, warnings) =
+                load_config_paths(false, vec![fixture.path("selected.json")]);
+            assert!(error.is_none(), "{error:?}");
+            let file = file.unwrap();
+            let options = &file.layers["commands.blocks"];
+            assert_eq!(options.blocks.active, Some(true));
+            assert_eq!(options.shared.json, Some(true));
+            assert!(options.blocks.token_limit.is_none());
+            assert!(options.blocks.session_length.is_none());
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(
+                warnings[0].contains(&format!("commands.blocks.{field}")),
+                "{warnings:?}"
+            );
+            assert!(warnings[0].contains("selected.json"));
+        }
+    }
+
+    #[test]
+    fn invalid_explicit_block_limits_are_errors() {
+        for (field, value) in [
+            ("tokenLimit", json!(0)),
+            ("tokenLimit", json!("abc")),
+            ("sessionLength", json!(0)),
+            ("sessionLength", json!(-1)),
+            ("sessionLength", json!(1e300)),
+        ] {
+            let raw = json!({"commands": {"blocks": {field: value, "json": true}}});
+            let fixture = fs_fixture!({"selected.json": raw.to_string()});
+            let (file, error, _) = load_config_paths(true, vec![fixture.path("selected.json")]);
+            assert!(file.is_none());
+            assert!(error.unwrap().contains(&format!("commands.blocks.{field}")));
+        }
+    }
+
+    #[test]
+    fn context_thresholds_validate_the_merged_layers() {
+        let raw = json!({
+            "defaults": {"contextLowThreshold": 90},
+            "commands": {"statusline": {"contextMediumThreshold": 95}}
+        });
+        let fixture = fs_fixture!({"selected.json": raw.to_string()});
+        let config = ConfigContext::from_args(&[
+            "statusline".into(),
+            "--config".into(),
+            fixture.path("selected.json").display().to_string(),
+        ]);
+        assert!(
+            config.config_error().is_none(),
+            "{:?}",
+            config.config_error()
+        );
+        let mut args = StatuslineArgs::default();
+        config.apply_statusline_args(&mut args);
+        assert_eq!(
+            config.context_thresholds(None, None).unwrap(),
+            ContextThresholds::new(90, 95).unwrap()
+        );
+    }
+
+    #[test]
+    fn discovered_context_thresholds_drop_the_invalid_override() {
+        let mut config = context(
+            json!({
+                "defaults": {"contextLowThreshold": 70},
+                "commands": {"statusline": {"contextMediumThreshold": 60, "cache": false}}
+            }),
+            "statusline",
+            None,
+            "statusline",
+        );
+        config.config_origin = Some((PathBuf::from("selected.json"), false));
+        assert!(config.config_error().is_none());
+        let mut args = StatuslineArgs::default();
+        config.apply_statusline_args(&mut args);
+        assert_eq!(
+            config.context_thresholds(None, None).unwrap(),
+            ContextThresholds::new(70, 80).unwrap()
+        );
+        assert!(!args.cache);
+        assert_eq!(config.warnings().len(), 1);
+        assert!(
+            config.warnings()[0]
+                .contains("selected.json: commands.statusline.contextMediumThreshold")
+        );
+    }
+
+    #[test]
+    fn discovered_threshold_does_not_invalidate_a_cli_flag() {
+        let mut config = context(
+            json!({"defaults": {"contextMediumThreshold": 40}}),
+            "statusline",
+            None,
+            "statusline",
+        );
+        config.config_origin = Some((PathBuf::from("selected.json"), false));
+        assert_eq!(
+            config.context_thresholds(Some(60), None).unwrap(),
+            ContextThresholds::new(60, 80).unwrap()
+        );
+        assert_eq!(config.warnings().len(), 1);
+        assert!(config.context_thresholds(Some(60), Some(40)).is_err());
+    }
+
+    #[test]
+    fn numeric_zero_token_limit_reports_the_positive_limit_requirement() {
+        let fixture = fs_fixture!({
+            "selected.json": r#"{"commands":{"blocks":{"tokenLimit":0}}}"#
+        });
+        let (_, _, warnings) = load_config_paths(false, vec![fixture.path("selected.json")]);
+        assert!(warnings[0].contains("Expected max or a positive whole number"));
+    }
+
+    #[test]
+    fn explicit_unordered_context_thresholds_are_errors() {
+        let fixture = fs_fixture!({"selected.json": r#"{"commands":{"statusline":{"contextLowThreshold":80,"cache":false}}}"#});
+        let config = ConfigContext::from_args(&[
+            "statusline".into(),
+            "--config".into(),
+            fixture.path("selected.json").display().to_string(),
+        ]);
+        assert!(
+            config
+                .context_thresholds(None, None)
+                .unwrap_err()
+                .contains("commands.statusline.contextLowThreshold")
+        );
+    }
+
+    #[test]
+    fn unreadable_discovered_config_does_not_select_another_file() {
+        let fixture = fs_fixture!({"lower.json": r#"{"defaults":{"json":true}}"#});
+        let selected = fixture.create_dir_all("selected.json");
+        let (file, error, _) = load_config_paths(false, vec![selected, fixture.path("lower.json")]);
+        assert!(file.is_none());
+        assert!(error.unwrap().contains("selected.json"));
+    }
+    #[test]
+    fn token_limits_accept_numbers_and_strings() {
+        for raw in [
+            r#"{"commands":{"blocks":{"tokenLimit":500000}}}"#,
+            r#"{"commands":{"blocks":{"tokenLimit":"500000"}}}"#,
+        ] {
+            let fixture = fs_fixture!({"config.json": raw});
+            let config = ConfigContext::from_args(&[
+                "blocks".into(),
+                "--config".into(),
+                fixture.path("config.json").display().to_string(),
+            ]);
+            assert!(
+                config.config_error().is_none(),
+                "{:?}",
+                config.config_error()
+            );
+            let mut args = BlocksArgs {
+                shared: SharedArgs::default(),
+                active: false,
+                recent: false,
+                token_limit: None,
+                session_length: ccusage_cli::SessionLength::DEFAULT,
+            };
+            config.apply_blocks_args(&mut args);
+            assert_eq!(args.token_limit, Some("500000".parse().unwrap()));
+        }
+    }
+    #[test]
+    fn discovered_config_retains_valid_fields_without_falling_through() {
+        let fixture = fs_fixture!({
+            "selected.json": r#"{"defaults":{"json":true,"timezone":"Asia/Tokyo","mode":"Calculate","pricingOverrides":{"sample":{"inputCostPerToken":0.1,"outputCostPerToken":"bad"}}},"commands":{"weekly":{"startOfWeek":"Sunday"}}}"#,
+            "lower.json": r#"{"defaults":{"json":false,"timezone":"UTC"}}"#,
+        });
+        let (file, error, warnings) = load_config_paths(
+            false,
+            vec![fixture.path("selected.json"), fixture.path("lower.json")],
+        );
+        assert!(error.is_none(), "{error:?}");
+        let file = file.unwrap();
+        assert_eq!(file.layers["defaults"].shared.json, Some(true));
+        assert_eq!(
+            file.layers["defaults"].shared.timezone.as_deref(),
+            Some("Asia/Tokyo")
+        );
+        assert_eq!(
+            file.layers["defaults"]
+                .shared
+                .pricing_overrides
+                .as_ref()
+                .unwrap()["sample"]
+                .input_cost_per_token,
+            Some(0.1)
+        );
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        for path in [
+            "defaults.mode",
+            "defaults.pricingOverrides.sample.outputCostPerToken",
+            "commands.weekly.startOfWeek",
+        ] {
+            assert!(
+                warnings.iter().any(|warning| warning.contains(path)),
+                "{warnings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn discovered_invalid_pi_stores_keep_the_selected_file() {
+        for raw in [
+            r#"{"pi":{"stores":[{"name":"claude","path":"/tmp/store"}]}}"#,
+            r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
+        ] {
+            let fixture = fs_fixture!({"selected.json": raw});
+            let (file, error, _) = load_config_paths(false, vec![fixture.path("selected.json")]);
+            assert!(file.unwrap().pi_stores_error.is_some(), "{raw}");
+            assert!(error.is_none(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn discovered_default_date_errors_are_fatal_except_for_statusline() {
+        for field in ["since", "until"] {
+            let fixture =
+                fs_fixture!({"ccusage.json": json!({"defaults": {field: "nope"}}).to_string()});
+            let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            assert!(
+                ConfigContext::from_args(&["daily".into()])
+                    .config_error()
+                    .is_some()
+            );
+            assert!(
+                ConfigContext::from_args(&["statusline".into()])
+                    .config_error()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_pi_store_fields_warn_without_discarding_stores() {
+        let value = json!({
+            "pi": {
+                "stores": [
+                    { "name": "work", "path": "/tmp/work", "alias": "w" },
+                    { "name": "side", "path": "/tmp/side", "enabled": true }
+                ]
+            }
+        });
+        let expected = [
+            "Unknown ccusage config key: pi.stores[0].alias",
+            "Unknown ccusage config key: pi.stores[1].enabled",
+        ];
+        let strict = crate::layers::ConfigFile::parse(value.clone()).unwrap();
+        let discovered = crate::layers::ConfigFile::parse_discovered(value.clone()).unwrap();
+
+        assert_eq!(strict.warnings, expected);
+        assert_eq!(discovered.warnings, expected);
+        assert_eq!(parse_named_pi_stores(&value).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn unknown_keys_warn_without_discarding_valid_options() {
+        let config = config_context_from_json(
+            r#"{"defaults":{"json":true,"jsoon":true,"pricingOverrides":{"model":{"inputCostPerToken":0.1,"inputPrice":9}}},"commands":{"blocks":{"live":true}},"cluade":{}}"#,
+        );
+        assert!(config.config_error().is_none());
+        let mut shared = SharedArgs::default();
+        config.apply_shared(&mut shared);
+        assert!(shared.json);
+        assert_eq!(
+            shared.pricing_overrides["model"].input_cost_per_token,
+            Some(0.1)
+        );
+        for path in [
+            "defaults.jsoon",
+            "defaults.pricingOverrides.model.inputPrice",
+            "commands.blocks.live",
+            "cluade",
+        ] {
+            assert!(
+                config
+                    .warnings()
+                    .iter()
+                    .any(|warning| warning.ends_with(path)),
+                "{path}: {:?}",
+                config.warnings
+            );
+        }
+        assert_eq!(config.warnings().len(), 4);
+    }
+
+    #[test]
+    fn explicit_config_rejects_wrong_types_and_bad_enums_with_paths() {
+        for (raw, path) in [
+            (r#"{"defaults":{"json":"yes"}}"#, "defaults.json"),
+            (
+                r#"{"commands":{"daily":{"mode":"invalid"}}}"#,
+                "commands.daily.mode",
+            ),
+            (
+                r#"{"commands":{"statusline":{"contextLowThreshold":256}}}"#,
+                "commands.statusline.contextLowThreshold",
+            ),
+            (
+                r#"{"defaults":{"pricingOverrides":{"model":{"inputCostPerToken":"cheap"}}}}"#,
+                "defaults.pricingOverrides.model.inputCostPerToken",
+            ),
+        ] {
+            let config = config_context_from_json(raw);
+            let error = config
+                .config_error()
+                .expect("invalid explicit file must fail");
+            assert!(error.contains(path), "{error}");
+        }
+    }
+
+    #[test]
+    fn explicit_config_rejects_broken_and_missing_files() {
+        let fixture = fs_fixture!({ "broken.json": "{" });
+        for name in ["broken.json", "missing.json"] {
+            let path = fixture.path(name);
+            let config = ConfigContext::from_args(&[
+                "daily".into(),
+                "--config".into(),
+                path.display().to_string(),
+            ]);
+            let error = config
+                .config_error()
+                .expect("invalid explicit path must fail");
+            assert!(error.contains(name), "{error}");
+        }
+    }
+
+    #[test]
+    fn colon_commands_select_only_registered_reports() {
+        for (name, agent) in [
+            ("codex:daily", Some("codex")),
+            ("claude:statusline", Some("claude")),
+            ("codex:weekly", None),
+            ("unknown:daily", None),
+        ] {
+            let command = super::detect_config_command(&[name.to_string()]);
+            assert_eq!(command.agent.as_deref(), agent, "{name}");
+        }
+    }
+
     use serde_json::{Value, json};
 
     use super::*;
-    use ccusage_cli::DEFAULT_SESSION_DURATION_HOURS;
     use ccusage_cli::{
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn applies_schema_backed_shared_options() {
@@ -827,19 +1464,23 @@ mod tests {
 
         apply_config_to_shared(&mut shared, &config);
 
-        assert_eq!(shared.since.as_deref(), Some("20260101"));
-        assert_eq!(shared.until.as_deref(), Some("20260131"));
+        assert_eq!(
+            shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
+        assert_eq!(
+            shared.until.map(|date| date.to_string()).as_deref(),
+            Some("20260131")
+        );
         assert!(shared.json);
         assert_eq!(shared.mode, CostMode::Calculate);
         assert!(shared.debug);
         assert_eq!(shared.debug_samples, 9);
-        assert_eq!(shared.order, SortOrder::Desc);
+        assert_eq!(shared.order, Some(SortOrder::Desc));
         assert!(shared.breakdown);
-        assert!(shared.offline);
-        assert!(shared.no_offline);
-        assert!(shared.color);
-        assert!(shared.no_color);
-        assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert!(!shared.offline);
+        assert_eq!(shared.color, ColorChoice::Never);
+        assert_eq!(config.timezone(), Some("Asia/Tokyo"));
         assert_eq!(shared.jq.as_deref(), Some(".totals"));
         assert!(shared.compact);
         assert!(shared.single_thread);
@@ -881,16 +1522,16 @@ mod tests {
             active: false,
             recent: false,
             token_limit: None,
-            session_length: DEFAULT_SESSION_DURATION_HOURS,
+            session_length: ccusage_cli::SessionLength::DEFAULT,
         };
         apply_config_to_blocks_args(&mut blocks, &config);
 
         assert!(blocks.active);
         assert!(blocks.recent);
-        assert_eq!(blocks.token_limit.as_deref(), Some("500000"));
-        assert_eq!(blocks.session_length, 6.5);
+        assert_eq!(blocks.token_limit, Some("500000".parse().unwrap()));
+        assert_eq!(blocks.session_length.as_millis(), 23_400_000);
 
-        let config = context(
+        let mut config = context(
             json!({
                 "commands": {
                     "statusline": {
@@ -912,19 +1553,18 @@ mod tests {
             None,
             "statusline",
         );
+        config.config_origin = Some((PathBuf::from("config.json"), true));
         let mut statusline = StatuslineArgs::default();
         apply_config_to_statusline_args(&mut statusline, &config);
 
         assert!(!statusline.offline);
-        assert!(statusline.no_offline);
         assert_eq!(statusline.visual_burn_rate, VisualBurnRate::EmojiText);
         assert_eq!(statusline.cost_source, ccusage_cli::CostSource::Both);
         assert!(!statusline.cache);
-        assert!(statusline.no_cache);
         assert_eq!(statusline.refresh_interval, 3);
-        assert_eq!(statusline.context_low_threshold, 45);
-        assert_eq!(statusline.context_medium_threshold, 75);
-        assert_eq!(statusline.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(config.context_thresholds(None, None).unwrap().low(), 45);
+        assert_eq!(config.context_thresholds(None, None).unwrap().medium(), 75);
+        assert_eq!(config.timezone(), Some("Asia/Tokyo"));
         assert!(statusline.debug);
     }
 
@@ -954,70 +1594,33 @@ mod tests {
 
         assert_eq!(weekly.start_of_week, WeekDay::Monday);
 
-        let mut speed = CodexSpeed::Auto;
-        apply_config_to_agent_args(
-            &mut speed,
-            None,
-            None,
-            &context(
-                json!({
-                    "codex": {
-                        "defaults": {
-                            "speed": "fast"
-                        }
-                    }
-                }),
-                "codex daily",
-                Some("codex"),
-                "daily",
-            ),
+        let codex = context(
+            json!({"codex":{"defaults":{"speed":"fast"}}}),
+            "codex daily",
+            Some("codex"),
+            "daily",
         );
-
-        assert_eq!(speed, CodexSpeed::Fast);
-
-        let mut speed = CodexSpeed::Auto;
-        let mut pi_path = None;
-        apply_config_to_agent_args(
-            &mut speed,
-            Some(&mut pi_path),
-            None,
-            &context(
-                json!({
-                    "pi": {
-                        "defaults": {
-                            "piPath": "/tmp/pi-sessions"
-                        }
-                    }
-                }),
-                "pi daily",
-                Some("pi"),
-                "daily",
-            ),
+        assert_eq!(codex.agent_options("codex").codex_speed, CodexSpeed::Fast);
+        let pi = context(
+            json!({"pi":{"defaults":{"piPath":"/tmp/pi-sessions"}}}),
+            "pi daily",
+            Some("pi"),
+            "daily",
         );
-
-        assert_eq!(pi_path.as_deref(), Some("/tmp/pi-sessions"));
-
-        let mut speed = CodexSpeed::Auto;
-        let mut open_claw_path = None;
-        apply_config_to_agent_args(
-            &mut speed,
-            None,
-            Some(&mut open_claw_path),
-            &context(
-                json!({
-                    "openclaw": {
-                        "defaults": {
-                            "openClawPath": "/tmp/openclaw"
-                        }
-                    }
-                }),
-                "openclaw daily",
-                Some("openclaw"),
-                "daily",
-            ),
+        assert_eq!(
+            pi.agent_options("pi").pi_path.as_deref(),
+            Some("/tmp/pi-sessions")
         );
-
-        assert_eq!(open_claw_path.as_deref(), Some("/tmp/openclaw"));
+        let openclaw = context(
+            json!({"openclaw":{"defaults":{"openClawPath":"/tmp/openclaw"}}}),
+            "openclaw daily",
+            Some("openclaw"),
+            "daily",
+        );
+        assert_eq!(
+            openclaw.agent_options("openclaw").open_claw_path.as_deref(),
+            Some("/tmp/openclaw")
+        );
     }
 
     #[test]
@@ -1089,15 +1692,17 @@ mod tests {
         for (name, commands, mode) in cases {
             let value = json!({ "commands": commands });
             let focused = context(value.clone(), "codex daily", Some("codex"), "daily");
-            let source = context(value, "daily", None, "daily")
-                .for_source("codex")
-                .expect("codex sections");
+            let source = context(value, "daily", None, "daily").for_dependency("codex");
 
             for config in [focused, source] {
                 let mut shared = SharedArgs::default();
                 config.apply_shared(&mut shared);
                 assert_eq!(shared.mode, mode, "{name}");
-                assert_eq!(shared.since.as_deref(), Some("20260101"), "{name}");
+                assert_eq!(
+                    shared.since.map(|date| date.to_string()).as_deref(),
+                    Some("20260101"),
+                    "{name}"
+                );
             }
         }
     }
@@ -1115,7 +1720,11 @@ mod tests {
             let mut shared = SharedArgs::default();
             config.apply_shared(&mut shared);
             assert_eq!(shared.mode, CostMode::Calculate, "{command:?}");
-            assert_eq!(shared.since.as_deref(), Some("20260101"), "{command:?}");
+            assert_eq!(
+                shared.since.map(|date| date.to_string()).as_deref(),
+                Some("20260101"),
+                "{command:?}"
+            );
         }
     }
 
@@ -1152,15 +1761,17 @@ mod tests {
             "daily",
         );
 
-        let codex = config.for_source("codex").expect("codex sections");
+        let codex = config.for_dependency("codex");
         let mut shared = SharedArgs::with_defaults();
         codex.apply_shared(&mut shared);
-        let mut speed = CodexSpeed::Auto;
-        codex.apply_agent_args(&mut speed, None, None);
+        let speed = codex.agent_options("codex").codex_speed;
 
-        assert_eq!(shared.since.as_deref(), Some("20260301"));
+        assert_eq!(
+            shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260301")
+        );
         assert_eq!(shared.mode, CostMode::Calculate);
-        assert_eq!(shared.timezone.as_deref(), Some("UTC"));
+        assert_eq!(codex.timezone(), Some("UTC"));
         assert!(shared.breakdown);
         assert_eq!(speed, CodexSpeed::Fast);
     }
@@ -1216,17 +1827,20 @@ mod tests {
         });
         let unified = context(value.clone(), "weekly", None, "weekly");
         let focused = context(value, "cline weekly", Some("cline"), "weekly");
-        let unified_source = unified.for_source("cline").expect("cline config");
+        let unified_source = unified.for_dependency("cline");
 
         for config in [&focused, &unified_source] {
             let mut shared = SharedArgs::default();
             apply_config_to_shared(&mut shared, config);
 
             assert_eq!(shared.mode, CostMode::Calculate);
-            assert_eq!(shared.since.as_deref(), Some("20260301"));
+            assert_eq!(
+                shared.since.map(|date| date.to_string()).as_deref(),
+                Some("20260301")
+            );
             assert!(shared.offline);
             assert!(shared.json);
-            assert_eq!(shared.timezone.as_deref(), Some("UTC"));
+            assert_eq!(config.timezone(), Some("UTC"));
             assert_eq!(
                 shared.pricing_overrides["cline-model"].input_cost_per_token,
                 Some(0.000003)
@@ -1239,7 +1853,7 @@ mod tests {
     }
 
     #[test]
-    fn source_view_exists_only_for_agents_the_config_addresses() {
+    fn dependency_views_resolve_effective_options_without_raw_json() {
         let config = context(
             json!({
                 "defaults": {
@@ -1268,10 +1882,17 @@ mod tests {
             "daily",
         );
 
-        assert!(config.for_source("pi").is_some());
-        assert!(config.for_source("openclaw").is_some());
-        assert!(config.for_source("cline").is_some());
-        assert!(config.for_source("codex").is_none());
+        let mut pi = SharedArgs::default();
+        config.for_dependency("pi").apply_shared(&mut pi);
+        assert!(pi.json);
+        let mut openclaw = SharedArgs::default();
+        config
+            .for_dependency("openclaw")
+            .apply_shared(&mut openclaw);
+        assert!(openclaw.offline);
+        let mut codex = SharedArgs::default();
+        config.for_dependency("codex").apply_shared(&mut codex);
+        assert_eq!(codex.mode, CostMode::Display);
 
         let focused = context(
             json!({
@@ -1286,33 +1907,54 @@ mod tests {
             "daily",
         );
 
-        assert!(focused.for_source("codex").is_none());
+        assert_eq!(
+            focused
+                .for_dependency("codex")
+                .agent_options("codex")
+                .codex_speed,
+            CodexSpeed::Fast
+        );
     }
 
     #[test]
     fn source_view_rejects_invalid_source_date_bounds() {
         let config = context(
-            json!({
-                "codex": {
-                    "defaults": {
-                        "since": "2026-02-30"
-                    }
-                }
-            }),
+            json!({"codex":{"defaults":{"since":"2026-02-30"}}}),
             "daily",
             None,
             "daily",
         );
-
+        let source = config.for_dependency("codex");
         assert_eq!(
-            config
-                .for_source("codex")
-                .expect("codex sections")
-                .config_error(),
+            source.config_error(),
             Some(
-                "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
+                "Invalid ccusage config: codex.defaults.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
             )
         );
+    }
+
+    #[test]
+    fn one_hour_cache_rates_survive_parsing_and_partial_config_merges() {
+        let parent: ConfigPricingOverride = serde_json::from_str(
+            r#"{"inputCostPerToken":0.000001,"cacheCreationInputTokenCostAbove1hr":0.000007}"#,
+        )
+        .unwrap();
+        let mut current = BTreeMap::from([("model".to_string(), parent.into())]);
+        let child: ConfigPricingOverride =
+            serde_json::from_str(r#"{"outputCostPerToken":0.000002}"#).unwrap();
+        merge_pricing_overrides(&mut current, BTreeMap::from([("model".to_string(), child)]));
+        assert_eq!(
+            current["model"].cache_creation_input_token_cost_above_1hr,
+            Some(7e-6)
+        );
+        let child: ConfigPricingOverride =
+            serde_json::from_str(r#"{"cacheCreationInputTokenCostAbove1hr":0}"#).unwrap();
+        merge_pricing_overrides(&mut current, BTreeMap::from([("model".to_string(), child)]));
+        assert_eq!(
+            current["model"].cache_creation_input_token_cost_above_1hr,
+            Some(0.0)
+        );
+        assert_eq!(current["model"].input_cost_per_token, Some(1e-6));
     }
 
     #[test]
@@ -1332,7 +1974,6 @@ mod tests {
             },
         );
 
-        // Child config only sets max_input_tokens for the same model
         let mut incoming = BTreeMap::new();
         incoming.insert(
             "[pi] gpt-5.4".to_string(),
@@ -1345,12 +1986,10 @@ mod tests {
         merge_pricing_overrides(&mut current, incoming);
 
         let result = &current["[pi] gpt-5.4"];
-        // Parent fields preserved
         assert_eq!(result.input_cost_per_token, Some(2.5e-6));
         assert_eq!(result.output_cost_per_token, Some(1.5e-5));
         assert_eq!(result.fast_multiplier, Some(2.0));
         assert_eq!(result.flex_multiplier, Some(0.75));
-        // Child field applied
         assert_eq!(result.max_input_tokens, Some(1_000_000));
     }
 
@@ -1372,7 +2011,6 @@ mod tests {
             },
         );
 
-        // Child overrides just input, leaves others alone
         let mut incoming = BTreeMap::new();
         incoming.insert(
             "model-a".to_string(),
@@ -1387,9 +2025,9 @@ mod tests {
         merge_pricing_overrides(&mut current, incoming);
 
         let result = &current["model-a"];
-        assert_eq!(result.input_cost_per_token, Some(2e-6)); // overridden
-        assert_eq!(result.output_cost_per_token, Some(15e-6)); // preserved
-        assert_eq!(result.cache_read_input_token_cost, Some(3e-7)); // preserved
+        assert_eq!(result.input_cost_per_token, Some(2e-6));
+        assert_eq!(result.output_cost_per_token, Some(15e-6));
+        assert_eq!(result.cache_read_input_token_cost, Some(3e-7));
         assert_eq!(result.fast_multiplier, Some(3.0));
         assert_eq!(result.flex_multiplier, Some(0.5));
     }
@@ -1448,12 +2086,7 @@ mod tests {
     fn rejects_named_pi_store_bad_shape() {
         let config = config_context_from_json(r#"{ "pi": { "stores": [{ "name": "omp" }] } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some(
-                "Invalid ccusage config: pi.stores[0] must contain string fields 'name' and 'path'"
-            )
-        );
+        assert_config_error(&config, "pi.stores[0]: missing field `path`");
     }
 
     #[test]
@@ -1462,9 +2095,9 @@ mod tests {
             r#"{ "pi": { "stores": [{ "name": "Omp", "path": "/tmp/omp" }] } }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: pi.stores[0].name must match ^[a-z][a-z0-9_-]{0,31}$")
+        assert_config_error(
+            &config,
+            "pi.stores[0].name must match ^[a-z][a-z0-9_-]{0,31}$",
         );
     }
 
@@ -1474,9 +2107,9 @@ mod tests {
             r#"{ "pi": { "stores": [{ "name": "pi", "path": "/tmp/omp" }] } }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: pi.stores name 'pi' collides with a built-in agent")
+        assert_config_error(
+            &config,
+            "pi.stores name 'pi' collides with a built-in agent",
         );
     }
 
@@ -1493,10 +2126,7 @@ mod tests {
             }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: duplicate pi.stores name 'omp'")
-        );
+        assert_config_error(&config, "duplicate pi.stores name 'omp'");
     }
 
     #[test]
@@ -1505,9 +2135,9 @@ mod tests {
             r#"{ "pi": { "stores": [{ "name": "omp", "path": "  " }] } }"#,
         );
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: pi.stores[0] ('omp'): path must be a non-empty string")
+        assert_config_error(
+            &config,
+            "pi.stores[0] ('omp'): path must be a non-empty string",
         );
     }
 
@@ -1540,20 +2170,16 @@ mod tests {
     fn rejects_config_date_bounds_that_are_not_real_calendar_dates() {
         let config = config_context_from_json(r#"{ "defaults": { "since": "2026-02-30" } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some(
-                "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-            )
+        assert_config_error(
+            &config,
+            "defaults.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
         );
 
         let config = config_context_from_json(r#"{ "commands": { "daily": { "until": "abc" } } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some(
-                "Invalid ccusage config: until 'abc' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-            )
+        assert_config_error(
+            &config,
+            "commands.daily.until: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
         );
     }
 
@@ -1561,9 +2187,9 @@ mod tests {
     fn rejects_config_date_bounds_that_are_not_strings() {
         let config = config_context_from_json(r#"{ "defaults": { "since": 20260710 } }"#);
 
-        assert_eq!(
-            config.config_error(),
-            Some("Invalid ccusage config: since must be a string. Expected YYYY-MM-DD or YYYYMMDD")
+        assert_config_error(
+            &config,
+            "defaults.since: invalid type: integer `20260710`, expected a string",
         );
     }
 
@@ -1578,12 +2204,9 @@ mod tests {
                 &command,
             );
 
-            assert_eq!(
-                config.config_error(),
-                Some(
-                    "Invalid ccusage config: since 'not-a-date' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-                ),
-                "expected {command:?} to inspect the weekly command config"
+            assert_config_error(
+                &config,
+                "commands.weekly.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
             );
         }
     }
@@ -1601,30 +2224,20 @@ mod tests {
                 &command,
             );
 
-            assert_eq!(
-                config.config_error(),
-                Some(
-                    "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
-                ),
-                "expected {command:?} to reject the invalid config date bound"
+            assert_config_error(
+                &config,
+                "defaults.since: not a valid date. Expected YYYY-MM-DD or YYYYMMDD",
             );
         }
     }
 
     #[test]
-    fn keeps_named_pi_store_errors_gated_to_commands_that_read_them() {
-        let raw = r#"{ "pi": { "stores": [{ "name": "omp" }] } }"#;
-
-        assert_eq!(
-            config_context_for_command(raw, &["daily"]).config_error(),
-            Some(
-                "Invalid ccusage config: pi.stores[0] must contain string fields 'name' and 'path'"
-            )
-        );
-        assert_eq!(
-            config_context_for_command(raw, &["blocks"]).config_error(),
-            None
-        );
+    fn rejects_invalid_explicit_named_stores_for_every_command() {
+        let raw = r#"{"pi":{"stores":[{"name":"omp"}]}}"#;
+        for command in [vec!["daily"], vec!["blocks"], vec!["codex", "daily"]] {
+            let config = config_context_for_command(raw, &command);
+            assert_config_error(&config, "pi.stores[0]: missing field `path`");
+        }
     }
 
     #[test]
@@ -1637,15 +2250,19 @@ mod tests {
         assert_eq!(config.config_error(), None);
         apply_config_to_shared(&mut shared, &config);
 
-        assert_eq!(shared.since.as_deref(), Some("20260101"));
-        assert_eq!(shared.until.as_deref(), Some("20260131"));
+        assert_eq!(
+            shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
+        assert_eq!(
+            shared.until.map(|date| date.to_string()).as_deref(),
+            Some("20260131")
+        );
     }
 
     fn user_config_timezone() -> Option<String> {
         let config = ConfigContext::from_args(&["daily".to_string()]);
-        let mut shared = SharedArgs::default();
-        apply_config_to_shared(&mut shared, &config);
-        shared.timezone
+        config.timezone().map(str::to_owned)
     }
 
     #[test]
@@ -1653,7 +2270,7 @@ mod tests {
         let fixture = fs_fixture!({
             "xdg/claude/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
         });
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CLAUDE_CONFIG_DIR", None),
             ("HOME", Some(fixture.path("home").into())),
             ("XDG_CONFIG_HOME", Some(fixture.path("xdg").into())),
@@ -1668,7 +2285,7 @@ mod tests {
             "home/claude-a/.keep": "",
             "home/claude-b/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
         });
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("HOME", Some(fixture.path("home").into())),
             ("CLAUDE_CONFIG_DIR", Some("~/claude-a, ~/claude-b".into())),
         ]);
@@ -1682,7 +2299,7 @@ mod tests {
             "archive/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
             "archive/projects/project/session.jsonl": "",
         });
-        let _env = EnvVarsGuard::set_many([(
+        let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.path("archive/projects").into()),
         )]);
@@ -1690,17 +2307,33 @@ mod tests {
         assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
     }
 
+    fn assert_config_error(config: &ConfigContext, detail: &str) {
+        let error = config
+            .config_error()
+            .expect("invalid explicit config must fail");
+        assert!(error.starts_with("Invalid ccusage config: "), "{error}");
+        assert!(error.contains("ccusage.json:"), "{error}");
+        assert!(error.ends_with(detail), "{error}");
+    }
+
     fn context(value: Value, raw: &str, agent: Option<&str>, report: &str) -> ConfigContext {
+        let parsed = crate::layers::ConfigFile::parse(value.clone());
+        let (layers, error, warnings) = match parsed {
+            Ok(file) => (file.layers, None, file.warnings),
+            Err(error) => (BTreeMap::new(), Some(config_error(error)), Vec::new()),
+        };
         ConfigContext {
-            value: Some(value),
+            layers,
             command: ConfigCommand {
                 raw: raw.to_string(),
                 agent: agent.map(ToString::to_string),
                 report: report.to_string(),
             },
             pi_stores: Vec::new(),
-            pi_store_error: None,
-            date_bound_error: None,
+            pi_stores_error: None,
+            error,
+            warnings: RefCell::new(warnings),
+            config_origin: None,
         }
     }
 

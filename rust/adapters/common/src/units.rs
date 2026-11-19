@@ -7,12 +7,13 @@ use std::{
 use ccusage_core::{CliError, Diagnostics, Skip, SkipKind};
 use serde::de::DeserializeOwned;
 
-use crate::read_files_parallel;
+use crate::{Split, map_parallel};
 
-/// Why a whole unit (one file or database) was left out.
-///
-/// Typed decoding errors retain their category and location; erased reader
-/// errors convert to [`SkipKind::Unreadable`] without their untrusted text.
+const SQLITE_ERROR: isize = 1;
+const SQLITE_CORRUPT: isize = 11;
+const SQLITE_SCHEMA: isize = 17;
+const SQLITE_NOTADB: isize = 26;
+
 #[derive(Debug)]
 pub struct UnitError {
     fault: Fault,
@@ -22,9 +23,7 @@ pub struct UnitError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Fault {
     Skip(SkipKind),
-    /// The unit holds nothing but whitespace: no document was written yet.
     Unwritten,
-    /// The document ends before it is complete: it is still being written.
     Unfinished,
 }
 
@@ -36,11 +35,8 @@ impl UnitError {
         }
     }
 
-    /// A unit that ends part-way through what its format promises, such as a
-    /// compressed stream cut inside a frame, described by `detail`. Like a
-    /// truncated JSON document, it reads as still being written while the
-    /// unit was modified within the in-progress window, and is skipped as
-    /// invalid data after; see [`Self::record`].
+    /// Marks a unit as incomplete. Reports classify it as invalid data after the
+    /// in-progress window expires.
     pub fn unfinished(detail: impl Into<String>) -> Self {
         Self {
             fault: Fault::Unfinished,
@@ -48,27 +44,22 @@ impl UnitError {
         }
     }
 
-    /// Classifies a failed SQLite call by its result code, so every database
-    /// source names the same cause the same way.
-    ///
-    /// A statement the database cannot run (`SQLITE_ERROR`, `SQLITE_SCHEMA`)
-    /// means its schema is not the one the loader reads; a corrupt file or one
-    /// that is not a database at all is invalid data; anything else, such as a
-    /// lock or an I/O error, left the database unreadable, or interrupted a
-    /// read whose earlier rows are kept.
     pub fn sqlite(stage: SqliteStage, code: Option<isize>) -> Self {
         let kept = stage == SqliteStage::Rows;
+        // NOTE(2026-11-16): SQLite stores the primary result code in the low byte of an extended code. Mask off the high bits to classify both kinds of code consistently.
         let (kind, detail) = match code.map(|code| code & 0xff) {
-            Some(1 | 17) if kept => (
+            Some(SQLITE_ERROR | SQLITE_SCHEMA) if kept => (
                 SkipKind::Invariant,
                 "database schema changed while reading; earlier rows were kept",
             ),
-            Some(1 | 17) => return Self::unsupported_schema(),
-            Some(11 | 26) if kept => (
+            Some(SQLITE_ERROR | SQLITE_SCHEMA) => return Self::unsupported_schema(),
+            Some(SQLITE_CORRUPT | SQLITE_NOTADB) if kept => (
                 SkipKind::InvalidData,
                 "database is corrupt or invalid; earlier rows were kept",
             ),
-            Some(11 | 26) => (SkipKind::InvalidData, "database is corrupt or invalid"),
+            Some(SQLITE_CORRUPT | SQLITE_NOTADB) => {
+                (SkipKind::InvalidData, "database is corrupt or invalid")
+            }
             _ if kept => (
                 SkipKind::ReadInterrupted,
                 "database read stopped early; earlier rows were kept",
@@ -78,28 +69,17 @@ impl UnitError {
         Self::new(kind, detail)
     }
 
-    /// A database whose tables or columns are not the ones the loader reads,
-    /// found before running a statement; the same cause [`Self::sqlite`]
-    /// names for a statement that does not prepare.
     pub fn unsupported_schema() -> Self {
         Self::new(SkipKind::Invariant, "database schema is not supported")
     }
 
-    /// Records this failure of `unit`. A reader that keeps what it read
-    /// before the failure calls this itself; [`read_units`] calls it for a
-    /// unit that failed as a whole.
-    ///
-    /// A unit that is gone, still an empty file, or a document still being
-    /// written when its read failed held no usage to lose: the agent removed
-    /// it after discovery, or has not finished writing it. Only `--debug`
-    /// names such a unit. A document cut short counts as still being written
-    /// only while the unit was modified within the in-progress window;
-    /// otherwise it stays truncated and is skipped as invalid data.
     #[cold]
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
         let state = match self.fault {
             Fault::Unwritten => UNWRITTEN,
-            Fault::Unfinished if being_written(unit) => "incomplete, read as still being written",
+            Fault::Unfinished if being_written(unit, diagnostics.report_now()) => {
+                "incomplete, read as still being written"
+            }
             Fault::Unfinished | Fault::Skip(_) => match fs::metadata(unit) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     "removed after discovery, read as absent"
@@ -120,14 +100,16 @@ impl UnitError {
             Fault::Unwritten | Fault::Unfinished => SkipKind::InvalidData,
         }
     }
+
+    #[cfg(feature = "sqlite")]
+    pub(crate) fn record_row(self, unit: &Path, row: u32, diagnostics: &Diagnostics) {
+        diagnostics.record(Skip::record(unit, row, self.kind(), self.detail));
+    }
 }
 
-/// How far reading a database got when a SQLite call failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SqliteStage {
-    /// Opening the database or preparing a statement, before any row is kept.
     Setup,
-    /// Stepping through rows, keeping the ones read before the failure.
     Rows,
 }
 
@@ -139,7 +121,6 @@ impl fmt::Display for UnitError {
 
 impl From<CliError> for UnitError {
     fn from(_error: CliError) -> Self {
-        // The erased error may include input; typed readers retain safe details.
         Self::new(SkipKind::Unreadable, "unit reader failed")
     }
 }
@@ -155,41 +136,44 @@ impl From<io::Error> for UnitError {
 
 const UNWRITTEN: &str = "empty, read as not yet written";
 
-/// How long after its last modification a unit that ends part-way through a
-/// JSON document still reads as being written. An agent that stops mid-write
-/// leaves the document truncated for good, and past this window the cut is
-/// skipped as invalid data instead.
-pub(crate) const IN_PROGRESS_WINDOW: Duration = Duration::from_secs(60);
+const IN_PROGRESS_WINDOW: Duration = Duration::from_secs(60);
 
-/// Whether `unit` was modified within [`IN_PROGRESS_WINDOW`]. A modification
-/// time ahead of the clock counts as recent; one that cannot be read does not.
 #[cold]
-pub(crate) fn being_written(unit: &Path) -> bool {
+pub(crate) fn being_written(unit: &Path, now: ccusage_core::TimestampMs) -> bool {
     fs::metadata(unit)
         .and_then(|metadata| metadata.modified())
         .is_ok_and(|modified| {
-            SystemTime::now()
-                .duration_since(modified)
-                .map_or(true, |age| age <= IN_PROGRESS_WINDOW)
+            let nanos = |duration: Duration| {
+                i128::from(duration.as_secs()) * 1_000_000_000 + i128::from(duration.subsec_nanos())
+            };
+            let modified = match modified.duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => nanos(duration),
+                Err(error) => -nanos(error.duration()),
+            };
+            i128::from(now.as_millis()) * 1_000_000 - modified <= nanos(IN_PROGRESS_WINDOW)
         })
 }
 
-/// Reads a whole JSON unit and decodes it like [`decode_json`].
-///
-/// File IO failures are recorded as unreadable units.
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
     decode_json(&fs::read(path)?)
 }
 
-/// Decodes `content`, the whole of one JSON unit, without copying it into a
-/// string.
-///
-/// An agent rewrites such a document in place as it grows, so a read can
-/// catch it before the first byte or part-way through: content that is only
-/// whitespace is noted under `--debug` like an empty file, and content that
-/// ends before the document does is noted while the unit is still being
-/// written (see [`UnitError::record`]). Any other decoding failure is invalid
-/// data, with only the error category and location retained for diagnostics.
+pub fn read_utf8_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
+    let content = fs::read(path)?;
+    std::str::from_utf8(&content)
+        .map_err(|_| UnitError::new(SkipKind::InvalidData, "JSON document is not UTF-8"))?;
+    decode_json(&content)
+}
+
+pub fn read_filtered_json<T: DeserializeOwned>(
+    path: &Path,
+    accept: impl FnOnce(&[u8]) -> bool,
+) -> Result<Option<T>, UnitError> {
+    let content = fs::read(path)?;
+    accept(&content).then(|| decode_json(&content)).transpose()
+}
+
+// NOTE(2026-11-16): Whole-document sources such as Cline can rewrite a JSON file in place. A read can therefore see an empty or truncated document while the writer is active.
 pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> {
     use serde_json::error::Category;
 
@@ -223,13 +207,7 @@ pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> 
     })
 }
 
-/// Reads `files` in parallel unless `single_thread` is set and records failed
-/// reads in `diagnostics`.
-///
-/// Returns one slot per file, in file order; `None` marks a failed unit, so a
-/// caller that tracks relationships between files can tell it from one that
-/// read as empty. A reader that skips single records while the unit still
-/// reads calls [`Diagnostics::record`] itself.
+/// Returns one slot per input, in input order. A failed unit records a diagnostic and leaves an empty slot.
 pub fn read_units<T, E, F>(
     files: &[PathBuf],
     single_thread: bool,
@@ -241,17 +219,56 @@ where
     E: Into<UnitError>,
     F: Fn(&Path) -> Result<T, E> + Sync,
 {
-    read_files_parallel(files, single_thread, |file| match read(file) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            error.into().record(file, diagnostics);
-            None
-        }
+    read_typed_units(files, single_thread, diagnostics, |file| {
+        read(file.as_path())
     })
 }
 
-/// [`read_units`] for readers that yield a unit's records: the records of
-/// every unit that read, concatenated in file order.
+pub fn read_typed_units<U, T, E, F>(
+    units: &[U],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+    read: F,
+) -> Vec<Option<T>>
+where
+    U: AsRef<Path> + Sync,
+    T: Send,
+    E: Into<UnitError>,
+    F: Fn(&U) -> Result<T, E> + Sync,
+{
+    map_parallel(
+        units,
+        single_thread,
+        Split::BySize(U::as_ref),
+        |unit| match read(unit) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                error.into().record(unit.as_ref(), diagnostics);
+                None
+            }
+        },
+    )
+}
+
+pub fn read_typed_units_flat<U, T, I, E, F>(
+    units: &[U],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+    read: F,
+) -> Vec<T>
+where
+    U: AsRef<Path> + Sync,
+    I: IntoIterator<Item = T> + Send,
+    E: Into<UnitError>,
+    F: Fn(&U) -> Result<I, E> + Sync,
+{
+    read_typed_units(units, single_thread, diagnostics, read)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect()
+}
+
 pub fn read_units_flat<T, I, E, F>(
     files: &[PathBuf],
     single_thread: bool,
@@ -293,6 +310,46 @@ pub(crate) mod tests {
             .unwrap()
             .set_modified(modified)
             .unwrap();
+    }
+
+    #[test]
+    fn typed_units_keep_metadata_order_and_failed_slots() {
+        struct Unit {
+            path: std::path::PathBuf,
+            id: u32,
+        }
+        impl AsRef<Path> for Unit {
+            fn as_ref(&self) -> &Path {
+                &self.path
+            }
+        }
+        let fixture = Fixture::new();
+        let units = [
+            Unit {
+                path: fixture.write_file("a", "1"),
+                id: 7,
+            },
+            Unit {
+                path: fixture.write_file("b", "2"),
+                id: 3,
+            },
+            Unit {
+                path: fixture.write_file("c", "3"),
+                id: 9,
+            },
+        ];
+        for single_thread in [true, false] {
+            let diagnostics = Diagnostics::new("test");
+            let loaded = super::read_typed_units(&units, single_thread, &diagnostics, |unit| {
+                if unit.id == 3 {
+                    Err(UnitError::new(SkipKind::InvalidData, "rejected"))
+                } else {
+                    Ok(unit.id)
+                }
+            });
+            assert_eq!(loaded, [Some(7), None, Some(9)]);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        }
     }
 
     fn numbers(path: &Path) -> Result<Vec<u32>> {

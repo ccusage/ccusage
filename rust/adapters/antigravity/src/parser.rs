@@ -1,14 +1,16 @@
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use ccusage_adapter_common::{SqliteStage, UnitError};
-use ccusage_core::SkipKind;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use crate::{
-    LoadedEntry, Pricing, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, calculate_cost_from_pricing, cli::CostMode, format_date_tz,
-};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, format_date_tz};
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -19,9 +21,10 @@ const API_PROVIDER_GOOGLE_EVERGREEN: u64 = 30;
 #[derive(Debug, Clone)]
 pub(super) struct AntigravityUsageEvent {
     pub(super) timestamp: TimestampMs,
-    timestamp_text: String,
+
     session_id: String,
     model: String,
+    logged_model: Option<String>,
     provider: Option<u64>,
     input_tokens: u64,
     output_tokens: u64,
@@ -160,9 +163,6 @@ struct ProtoField<'a> {
 
 type ProtoResult<T> = std::result::Result<T, &'static str>;
 
-/// Parses one Antigravity conversation database in ascending generation order.
-/// A database is read whole before any of its rows is kept, so every SQLite
-/// failure is classified at the setup stage.
 type DatabaseResult<T> = std::result::Result<T, UnitError>;
 
 fn sqlite_failure(error: sqlite::Error) -> UnitError {
@@ -177,16 +177,32 @@ fn undecoded(detail: &'static str) -> impl FnOnce(&'static str) -> UnitError {
     move |_| UnitError::new(SkipKind::InvalidData, detail)
 }
 
-pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<AntigravityUsageEvent>>> {
-    let fallback_timestamp = file_modified_timestamp(path);
-    let connection =
-        sqlite::Connection::open_with_flags(path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(sqlite_failure)?;
+#[derive(Debug)]
+pub(super) enum ParsedDatabase {
+    Events(Vec<AntigravityUsageEvent>),
+    EmptySnapshot,
+    NoGenerationTable,
+}
+
+pub(super) fn parse_sqlite_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> DatabaseResult<ParsedDatabase> {
+    let connection = ccusage_adapter_common::sqlite::open_read_only(path)?;
     connection
         .execute("BEGIN DEFERRED TRANSACTION")
         .map_err(sqlite_failure)?;
     if database_snapshot_is_empty(&connection)? {
-        return Ok(None);
+        return Ok(ParsedDatabase::EmptySnapshot);
+    }
+    // NOTE(2026-08-31, #1677): Antigravity stores GeneratorMetadata in gen_metadata and can also store CortexStepMetadata in steps. The optional trajectory_metadata_blob supplies a fallback timestamp for undated usage.
+    if !table_exists(&connection, "gen_metadata")? {
+        if table_exists(&connection, "steps")?
+            || table_exists(&connection, "trajectory_metadata_blob")?
+        {
+            return Err(UnitError::unsupported_schema());
+        }
+        return Ok(ParsedDatabase::NoGenerationTable);
     }
     let session_id = path
         .file_stem()
@@ -196,32 +212,46 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
     let trajectory_timestamp = read_trajectory_timestamp(&connection)?;
     let generation_rows = read_generation_rows(&connection)?;
     let step_rows = read_step_rows(&connection)?;
-    let generation_model = generation_rows.iter().rev().find_map(|(_, metadata)| {
-        metadata
-            .model
-            .as_deref()
-            .and_then(normalize_antigravity_model)
-            .or_else(|| {
-                metadata
-                    .model_id
-                    .map(model_name_from_id)
-                    .and_then(|model| normalize_antigravity_model(&model))
-            })
-    });
+    let generation_model = generation_rows
+        .iter()
+        .rev()
+        .find_map(|(_, metadata)| row_model(metadata.model.as_deref(), metadata.model_id));
 
     let mut events = Vec::new();
     let mut identity_timestamps = HashMap::new();
-    for (idx, metadata) in step_rows {
-        let model = metadata
-            .model
-            .as_deref()
-            .and_then(normalize_antigravity_model)
-            .or_else(|| {
-                metadata
-                    .model_id
-                    .map(model_name_from_id)
-                    .and_then(|model| normalize_antigravity_model(&model))
-            })
+    let timed_steps = step_rows.iter().filter_map(|(idx, metadata)| {
+        metadata.timestamp.map(|timestamp| {
+            (
+                timestamp,
+                vec![format!("step:{session_id}:{idx}")],
+                metadata.usage.iter().chain(&metadata.retry_usages),
+            )
+        })
+    });
+    let timed_generations = generation_rows.iter().filter_map(|(idx, metadata)| {
+        metadata.timestamp.map(|timestamp| {
+            (
+                timestamp,
+                generation_identities(&session_id, *idx, &metadata.step_indices),
+                metadata.usage.iter().chain(&metadata.retry_usages),
+            )
+        })
+    });
+    for (timestamp, identities, usages) in timed_steps.chain(timed_generations) {
+        for identity in identities
+            .into_iter()
+            .chain(usages.flat_map(ModelUsage::identity_keys))
+        {
+            let known = identity_timestamps
+                .entry(identity)
+                .or_insert((timestamp, 3));
+            known.0 = known.0.min(timestamp);
+        }
+    }
+    let step_diagnostics = diagnostics.for_table("steps");
+    let generation_diagnostics = diagnostics.for_table("gen_metadata");
+    for (ordinal, (idx, metadata)) in step_rows.into_iter().enumerate() {
+        let model = row_model(metadata.model.as_deref(), metadata.model_id)
             .or_else(|| generation_model.clone());
         let timestamp = metadata.timestamp.map(|timestamp| (timestamp, 3));
         let fallback_identities = [format!("step:{session_id}:{idx}")];
@@ -236,7 +266,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
                     provider: metadata.provider,
                     timestamp,
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &step_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &fallback_identities,
                 },
@@ -253,7 +284,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
                     provider: metadata.provider,
                     timestamp,
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &step_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &[],
                 },
@@ -262,38 +294,20 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
     }
 
     let mut current_model = None;
-    for (idx, metadata) in generation_rows {
-        let row_model = metadata
-            .model
-            .as_deref()
-            .and_then(normalize_antigravity_model)
-            .or_else(|| {
+    for (ordinal, (idx, metadata)) in generation_rows.into_iter().enumerate() {
+        let resolved_model =
+            row_model(metadata.model.as_deref(), metadata.model_id).or_else(|| {
                 metadata
-                    .model_id
-                    .map(model_name_from_id)
-                    .and_then(|model| normalize_antigravity_model(&model))
-            })
-            .or_else(|| {
-                metadata.usage.as_ref().and_then(|usage| {
-                    usage
-                        .model_id
-                        .map(model_name_from_id)
-                        .and_then(|model| normalize_antigravity_model(&model))
-                })
+                    .usage
+                    .as_ref()
+                    .and_then(|usage| usage.model_id)
+                    .and_then(model_from_id)
             });
-        if let Some(model) = row_model {
+        if let Some(model) = resolved_model {
             current_model = Some(model);
         }
         let model = current_model.clone();
-        let fallback_identities: Vec<String> = if metadata.step_indices.is_empty() {
-            vec![format!("gen:{session_id}:{idx}")]
-        } else {
-            metadata
-                .step_indices
-                .iter()
-                .map(|step_idx| format!("step:{session_id}:{step_idx}"))
-                .collect()
-        };
+        let fallback_identities = generation_identities(&session_id, idx, &metadata.step_indices);
         if let Some(usage) = metadata.usage {
             append_usage_event(
                 &mut events,
@@ -305,7 +319,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
                     provider: None,
                     timestamp: metadata.timestamp.map(|timestamp| (timestamp, 3)),
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &generation_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &fallback_identities,
                 },
@@ -322,14 +337,26 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
                     provider: None,
                     timestamp: metadata.timestamp.map(|timestamp| (timestamp, 3)),
                     trajectory_timestamp,
-                    fallback_timestamp,
+                    diagnostics: &generation_diagnostics,
+                    record: (path, Skip::line_number(ordinal)),
                     session_id: &session_id,
                     fallback_identities: &[],
                 },
             );
         }
     }
-    Ok(Some(events))
+    Ok(ParsedDatabase::Events(events))
+}
+
+fn generation_identities(session_id: &str, idx: i64, step_indices: &[i64]) -> Vec<String> {
+    if step_indices.is_empty() {
+        vec![format!("gen:{session_id}:{idx}")]
+    } else {
+        step_indices
+            .iter()
+            .map(|idx| format!("step:{session_id}:{idx}"))
+            .collect()
+    }
 }
 
 fn database_snapshot_is_empty(connection: &sqlite::Connection) -> DatabaseResult<bool> {
@@ -438,7 +465,8 @@ struct EventContext<'a> {
     provider: Option<u64>,
     timestamp: Option<(TimestampMs, u8)>,
     trajectory_timestamp: Option<TimestampMs>,
-    fallback_timestamp: TimestampMs,
+    diagnostics: &'a Diagnostics,
+    record: (&'a Path, u32),
     session_id: &'a str,
     fallback_identities: &'a [String],
 }
@@ -456,15 +484,24 @@ fn append_usage_event(
     if identities.is_empty() {
         identities.extend(context.fallback_identities.iter().cloned());
     }
-    let (timestamp, timestamp_rank) = context
+    let Some((timestamp, timestamp_rank)) = context
         .timestamp
         .or_else(|| {
             identities
                 .iter()
+                .chain(context.fallback_identities)
                 .find_map(|identity| identity_timestamps.get(identity).copied())
         })
         .or_else(|| context.trajectory_timestamp.map(|timestamp| (timestamp, 1)))
-        .unwrap_or((context.fallback_timestamp, 0));
+    else {
+        context.diagnostics.record(Skip::record(
+            context.record.0,
+            context.record.1,
+            SkipKind::InvalidTimestamp,
+            "Antigravity usage record has no valid generation, step or trajectory timestamp",
+        ));
+        return;
+    };
     let total_output_tokens = usage.total_output_tokens.max(
         usage
             .visible_output_tokens
@@ -476,21 +513,25 @@ fn append_usage_event(
     let reasoning_tokens = usage
         .reasoning_tokens
         .max(total_output_tokens.saturating_sub(output_tokens));
-    let id_model = usage
-        .model_id
-        .map(model_name_from_id)
-        .and_then(|model| normalize_antigravity_model(&model));
-    let same_model_row = context
-        .model
-        .filter(|_| context.model_id == usage.model_id)
-        .and_then(normalize_antigravity_model);
+    let id_model = usage.model_id.and_then(model_from_id);
+    let row_model = context.model.and_then(normalize_antigravity_model);
+    let same_model_id = context.model_id == usage.model_id;
     let model = id_model
         .clone()
         .filter(|model| is_resolved_model(model))
-        .or_else(|| same_model_row.filter(|model| is_resolved_model(model)))
+        .or_else(|| {
+            row_model
+                .as_ref()
+                .filter(|model| same_model_id && is_resolved_model(model))
+                .cloned()
+        })
         .or(id_model)
-        .or_else(|| context.model.and_then(normalize_antigravity_model))
+        .or_else(|| row_model.clone())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let logged_model = context
+        .model
+        .filter(|raw| *raw != model && (same_model_id || row_model.as_ref() == Some(&model)))
+        .map(str::to_owned);
     let provider = usage.provider.or(context.provider);
     let (message_id, message_id_rank) = usage.preferred_message_id();
     let timestamp_value = timestamp;
@@ -508,9 +549,10 @@ fn append_usage_event(
     }
     events.push(AntigravityUsageEvent {
         timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
+
         session_id: context.session_id.to_string(),
         model,
+        logged_model,
         provider,
         input_tokens: usage.input_tokens,
         output_tokens,
@@ -552,6 +594,9 @@ pub(super) fn merge_usage_event(
         .saturating_add(target.total_output_tokens);
     if model_resolution(&duplicate.model) > model_resolution(&target.model) {
         target.model = duplicate.model.clone();
+        target.logged_model = duplicate.logged_model;
+    } else if target.model == duplicate.model && target.logged_model.is_none() {
+        target.logged_model = duplicate.logged_model;
     }
     if target.provider.is_none() {
         target.provider = duplicate.provider;
@@ -561,7 +606,7 @@ pub(super) fn merge_usage_event(
             && duplicate.timestamp < target.timestamp);
     if use_duplicate_timestamp {
         target.timestamp = duplicate.timestamp;
-        target.timestamp_text = duplicate.timestamp_text.clone();
+
         target.timestamp_rank = duplicate.timestamp_rank;
     }
     if duplicate.message_id_rank > target.message_id_rank {
@@ -609,8 +654,7 @@ fn parse_generator_metadata(blob: &[u8]) -> ProtoResult<GeneratorMetadata> {
     })
 }
 
-// `retry_infos` lists every attempt, including the one already reported as the
-// primary `usage`, so exactly one entry may be its copy.
+// NOTE(2026-11-09, #2027): Antigravity's retry_infos repeats the primary usage attempt. Dropping a single mirror preserves the usage of distinct retries.
 fn drop_primary_mirror(primary: Option<&ModelUsage>, retries: &mut Vec<ModelUsage>) {
     if let Some(primary) = primary
         && let Some(position) = retries.iter().position(|retry| retry.is_mirror_of(primary))
@@ -874,21 +918,20 @@ fn model_name_from_id(model_id: u64) -> String {
         333 | 334 => "claude-4.5-sonnet".to_string(),
         340 | 341 => "claude-4.5-haiku".to_string(),
         342 => "model_openai_gpt_oss_120b_medium".to_string(),
-        1318 => "gemini-3.8-flash-high".to_string(),
-        1319 => "gemini-3.8-flash-medium".to_string(),
-        1320 => "gemini-3.8-flash-low".to_string(),
-        1298 => "gemini-3.7-flash-high".to_string(),
-        1299 => "gemini-3.7-flash-medium".to_string(),
-        1300 => "gemini-3.7-flash-low".to_string(),
-        1071 => "gemini-3.6-flash-high".to_string(),
-        1072 => "gemini-3.6-flash-medium".to_string(),
-        1073 => "gemini-3.6-flash-low".to_string(),
-        1417..=1419 => "gemini-4-argon".to_string(),
-        1402 => "claude-opus-5-5".to_string(),
-        1050 => "gemini-3.1-flash-lite".to_string(),
         1_000.. => format!("{UNRESOLVED_PLACEHOLDER_PREFIX}{}", model_id - 1_000),
         _ => format!("{UNRESOLVED_ID_PREFIX}{model_id}"),
     }
+}
+
+fn model_from_id(model_id: u64) -> Option<String> {
+    normalize_antigravity_model(&model_name_from_id(model_id))
+}
+
+fn row_model(model: Option<&str>, model_id: Option<u64>) -> Option<String> {
+    model
+        .filter(|model| !model.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| model_id.and_then(model_from_id))
 }
 
 const UNRESOLVED_PLACEHOLDER_PREFIX: &str = "model_placeholder_m";
@@ -901,8 +944,6 @@ enum ModelResolution {
     Resolved,
 }
 
-// Placeholders that normalization did not map to a real model rank below a
-// model name from another field or a duplicate copy, but above the default.
 fn model_resolution(model: &str) -> ModelResolution {
     if model == DEFAULT_MODEL {
         ModelResolution::Default
@@ -925,20 +966,8 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         return None;
     }
     let lower = trimmed.to_ascii_lowercase();
-    let effort_variant = match lower.as_str() {
-        "gemini 3.8 flash (high)" => Some("gemini-3.8-flash-high"),
-        "gemini 3.8 flash (medium)" => Some("gemini-3.8-flash-medium"),
-        "gemini 3.8 flash (low)" => Some("gemini-3.8-flash-low"),
-        "gemini 3.7 flash (high)" => Some("gemini-3.7-flash-high"),
-        "gemini 3.7 flash (medium)" => Some("gemini-3.7-flash-medium"),
-        "gemini 3.7 flash (low)" => Some("gemini-3.7-flash-low"),
-        "gemini 3.6 flash (high)" => Some("gemini-3.6-flash-high"),
-        "gemini 3.6 flash (medium)" => Some("gemini-3.6-flash-medium"),
-        "gemini 3.6 flash (low)" => Some("gemini-3.6-flash-low"),
-        _ => None,
-    };
-    if let Some(model) = effort_variant {
-        return Some(model.to_string());
+    if let Some(model) = gemini_flash_effort_variant(&lower) {
+        return Some(model);
     }
     let base = lower
         .find('(')
@@ -1013,8 +1042,7 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
 pub(super) fn event_to_loaded(
     event: AntigravityUsageEvent,
     timezone: &JiffTimeZone,
-    mode: CostMode,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: event.input_tokens,
@@ -1032,30 +1060,14 @@ pub(super) fn event_to_loaded(
     let extra_total_tokens = event
         .total_output_tokens
         .saturating_sub(event.output_tokens);
-    let cost = calculate_antigravity_cost(
+    let (cost, missing_pricing_model) = price_antigravity(
         &event.model,
+        event.logged_model.as_deref(),
         event.provider,
         cost_usage,
         event.timestamp,
-        mode,
         pricing,
     );
-    let missing_pricing_model =
-        missing_antigravity_pricing(&event.model, event.provider, cost_usage, mode, pricing);
-    let data = UsageEntry {
-        session_id: Some(event.session_id.clone()),
-        timestamp: event.timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(event.model.clone()),
-            id: event.message_id,
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(event.timestamp, timezone),
         timestamp: event.timestamp,
@@ -1069,103 +1081,85 @@ pub(super) fn event_to_loaded(
         model: Some(event.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
-        data,
+        usage,
+        message_id: event.message_id,
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }
 
-fn calculate_antigravity_cost(
+fn price_antigravity(
     model: &str,
+    logged_model: Option<&str>,
     provider: Option<u64>,
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> f64 {
-    match mode {
-        CostMode::Display => 0.0,
-        CostMode::Auto | CostMode::Calculate => {
-            let exact_lookup = gemini_flash_pricing_alias(model).is_some();
-            if exact_lookup {
-                model_candidates(model, provider)
-                    .into_iter()
-                    .find_map(|candidate| find_exact_pricing_with_alias(pricing, &candidate))
-                    .map(|pricing| calculate_cost_from_pricing(usage, pricing))
-                    .unwrap_or(0.0)
-            } else {
-                model_candidates(model, provider)
-                    .into_iter()
-                    .find_map(|candidate| {
-                        pricing.find(&candidate).map(|_| {
-                            calculate_cost_for_usage_at(
-                                Some(&candidate),
-                                usage,
-                                None,
-                                Some(timestamp),
-                                CostMode::Calculate,
-                                Some(pricing),
-                            )
-                        })
-                    })
-                    .unwrap_or(0.0)
-            }
-        }
-    }
-}
-
-fn missing_antigravity_pricing(
-    model: &str,
-    provider: Option<u64>,
-    usage: TokenUsageRaw,
-    mode: CostMode,
-    pricing: &PricingMap,
-) -> Option<String> {
-    if mode == CostMode::Display {
-        return None;
-    }
-    let total_tokens = usage
-        .input_tokens
-        .saturating_add(usage.output_tokens)
-        .saturating_add(usage.cache_creation_token_count())
-        .saturating_add(usage.cache_read_input_tokens);
-    if total_tokens == 0 {
-        return None;
-    }
-    let exact_lookup = gemini_flash_pricing_alias(model).is_some();
-    model_candidates(model, provider)
+    pricing: PriceTable<'_>,
+) -> (f64, Option<String>) {
+    let exact = gemini_flash_pricing_alias(model).is_some();
+    let kind = if exact {
+        MatchKind::Exact
+    } else {
+        MatchKind::Fuzzy
+    };
+    let candidates: Vec<_> = model_candidates(model, provider)
         .into_iter()
-        .all(|candidate| {
-            if exact_lookup {
-                find_exact_pricing_with_alias(pricing, &candidate).is_none()
-            } else {
-                pricing.find(&candidate).is_none()
-            }
+        .flat_map(|name| {
+            let alias = crate::model_aliases::resolve_model_name(&name).into_owned();
+            let extra = (exact && alias != name).then_some((alias, MatchKind::Exact));
+            std::iter::once((name, kind)).chain(extra)
         })
-        .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
+        .collect();
+    let candidates: Vec<_> = logged_model
+        .map(|name| (name, MatchKind::Exact))
+        .into_iter()
+        .chain(candidates.iter().map(|(name, kind)| (name.as_str(), *kind)))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(timestamp),
+        },
+        pricing,
+    );
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(model).into_owned()),
+    )
 }
 
-fn find_exact_pricing_with_alias(pricing: &PricingMap, model: &str) -> Option<Pricing> {
-    pricing.find_exact_with_fallback(model).or_else(|| {
-        let alias = crate::model_aliases::resolve_model_name(model);
-        (alias.as_ref() != model)
-            .then(|| pricing.find_exact_with_fallback(alias.as_ref()))
-            .flatten()
-    })
-}
+const GEMINI_FLASH_EFFORT_FAMILIES: [&str; 3] =
+    ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"];
+const GEMINI_FLASH_EFFORTS: [&str; 3] = ["high", "medium", "low"];
 
 fn gemini_flash_pricing_alias(model: &str) -> Option<&'static str> {
-    match model {
-        "gemini-3.8-flash-high" | "gemini-3.8-flash-medium" | "gemini-3.8-flash-low" => {
-            Some("gemini-3.8-flash")
-        }
-        "gemini-3.7-flash-high" | "gemini-3.7-flash-medium" | "gemini-3.7-flash-low" => {
-            Some("gemini-3.7-flash")
-        }
-        "gemini-3.6-flash-high" | "gemini-3.6-flash-medium" | "gemini-3.6-flash-low" => {
-            Some("gemini-3.6-flash")
-        }
-        _ => None,
+    let (family, effort) = model.rsplit_once('-')?;
+    if !GEMINI_FLASH_EFFORTS.contains(&effort) {
+        return None;
     }
+    GEMINI_FLASH_EFFORT_FAMILIES
+        .into_iter()
+        .find(|candidate| *candidate == family)
+}
+
+fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
+    let (base, rest) = display_name.split_once(" (")?;
+    let effort = rest.strip_suffix(')')?;
+    if base.contains('-') {
+        return None;
+    }
+    let variant = format!("{}-{effort}", base.replace(' ', "-"));
+    gemini_flash_pricing_alias(&variant)
+        .is_some()
+        .then_some(variant)
 }
 
 fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
@@ -1193,16 +1187,6 @@ fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     candidates.retain(|candidate| seen.insert(candidate.clone()));
     candidates
-}
-
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .map(TimestampMs::from_millis)
-        .unwrap_or(TimestampMs::UNIX_EPOCH)
 }
 
 #[cfg(test)]
@@ -1434,12 +1418,11 @@ mod tests {
     use super::test_support::{UsageFixture, metadata_blob_with_steps, step_metadata_blob};
     use super::{
         API_PROVIDER_GOOGLE_GEMINI, DEFAULT_MODEL, EventContext, ModelUsage, ProtoField,
-        ProtoValue, append_usage_event, calculate_antigravity_cost, field_bytes, field_bytes_all,
-        field_text, field_varint, merge_usage_event, missing_antigravity_pricing, model_candidates,
-        model_name_from_id, normalize_antigravity_model, parse_generator_metadata,
-        parse_step_metadata,
+        ProtoValue, append_usage_event, field_bytes, field_bytes_all, field_text, field_varint,
+        merge_usage_event, model_candidates, model_from_id, normalize_antigravity_model,
+        parse_generator_metadata, parse_step_metadata, price_antigravity,
     };
-    use crate::{PricingMap, TimestampMs, TokenUsageRaw, cli::CostMode, parse_ts_timestamp};
+    use crate::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
 
     #[test]
     fn merge_prefers_resolved_then_placeholder_then_default_model() {
@@ -1456,9 +1439,10 @@ mod tests {
                     model,
                     model_id: None,
                     provider: None,
-                    timestamp: None,
+                    timestamp: Some((TimestampMs::UNIX_EPOCH, 3)),
                     trajectory_timestamp: None,
-                    fallback_timestamp: TimestampMs::UNIX_EPOCH,
+                    diagnostics: &ccusage_core::Diagnostics::new("antigravity"),
+                    record: (std::path::Path::new("fixture.db"), 1),
                     session_id: "session",
                     fallback_identities: &[],
                 },
@@ -1643,10 +1627,11 @@ mod tests {
 
     #[test]
     fn missing_pricing_token_total_saturates() {
-        let pricing = PricingMap::default();
+        let pricing = ccusage_core::PricingMap::default();
         let result = std::panic::catch_unwind(|| {
-            missing_antigravity_pricing(
+            price_antigravity(
                 "antigravity-unpriced",
+                None,
                 None,
                 TokenUsageRaw {
                     input_tokens: u64::MAX,
@@ -1656,9 +1641,10 @@ mod tests {
                     speed: None,
                     cache_creation: None,
                 },
-                CostMode::Calculate,
-                &pricing,
+                TimestampMs::UNIX_EPOCH,
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
             )
+            .1
         });
 
         assert!(result.is_ok());
@@ -1749,7 +1735,7 @@ mod tests {
         ];
 
         for (model_id, placeholder, display_name, expected) in cases {
-            assert_eq!(model_name_from_id(model_id), expected);
+            assert_eq!(model_from_id(model_id).as_deref(), Some(expected));
             assert_eq!(
                 normalize_antigravity_model(placeholder).as_deref(),
                 Some(expected)
@@ -1763,39 +1749,50 @@ mod tests {
             normalize_antigravity_model("Gemini 3.8 Flash").as_deref(),
             Some("gemini-3.8-flash")
         );
+        for display_name in ["gemini 3.8 flash(high)", "gemini-3.8-flash (high)"] {
+            assert_eq!(
+                normalize_antigravity_model(display_name).as_deref(),
+                Some("gemini-3.8-flash"),
+                "{display_name}"
+            );
+        }
     }
 
     #[test]
     fn maps_claude_opus_5_5_id_and_placeholder_to_priced_model() {
-        assert_eq!(model_name_from_id(1402), "claude-opus-5-5");
+        ccusage_test_support::install_pricing_snapshots();
+        assert_eq!(model_from_id(1402).as_deref(), Some("claude-opus-5-5"));
         assert_eq!(
             normalize_antigravity_model("model_placeholder_m402").as_deref(),
             Some("claude-opus-5-5")
         );
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 1_000_000,
             output_tokens: 1_000_000,
             ..TokenUsageRaw::default()
         };
-        let cost = calculate_antigravity_cost(
-            &model_name_from_id(1402),
+        let cost = price_antigravity(
+            "claude-opus-5-5",
+            None,
             None,
             usage,
             TimestampMs::UNIX_EPOCH,
-            CostMode::Calculate,
-            &pricing,
-        );
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .0;
         assert!(cost > 0.0);
         assert!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "claude-opus-5-5",
                 None,
+                None,
                 usage,
-                CostMode::Calculate,
-                &pricing,
+                TimestampMs::UNIX_EPOCH,
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
+            .1
             .is_none()
         );
     }
@@ -1828,7 +1825,8 @@ mod tests {
 
     #[test]
     fn provider_specific_variant_pricing_precedes_base_fallback() {
-        let mut pricing = PricingMap::default();
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
                 r#"{
@@ -1845,8 +1843,9 @@ mod tests {
             2
         );
 
-        let cost = calculate_antigravity_cost(
+        let cost = price_antigravity(
             "gemini-3.7-flash-medium",
+            None,
             Some(API_PROVIDER_GOOGLE_GEMINI),
             TokenUsageRaw {
                 input_tokens: 1,
@@ -1857,16 +1856,17 @@ mod tests {
                 cache_creation: None,
             },
             TimestampMs::UNIX_EPOCH,
-            CostMode::Calculate,
-            &pricing,
-        );
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .0;
 
         assert_eq!(cost, 2.0);
     }
 
     #[test]
     fn sibling_effort_variant_does_not_satisfy_base_pricing_fallback() {
-        let mut pricing = PricingMap::default();
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
                 r#"{
@@ -1888,24 +1888,27 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_antigravity_cost(
+            price_antigravity(
                 "gemini-3.8-flash-medium",
+                None,
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                &pricing,
-            ),
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
+            )
+            .0,
             0.0
         );
         assert_eq!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "gemini-3.8-flash-medium",
                 None,
+                None,
                 usage,
-                CostMode::Calculate,
-                &pricing,
+                TimestampMs::UNIX_EPOCH,
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
+            .1
             .as_deref(),
             Some("gemini-3.8-flash-medium")
         );
@@ -1913,11 +1916,12 @@ mod tests {
 
     #[test]
     fn effort_variant_honors_explicit_model_alias() {
+        ccusage_test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("gemini-3.6-flash-medium", "custom-flash-medium"),
             ("gemini-3.8-flash-low", "custom-unpriced-flash-low"),
         ]);
-        let mut pricing = PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
                 r#"{
@@ -1939,34 +1943,39 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_antigravity_cost(
+            price_antigravity(
                 "gemini-3.6-flash-medium",
+                None,
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
-                CostMode::Calculate,
-                &pricing,
-            ),
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
+            )
+            .0,
             3.0
         );
         assert!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "gemini-3.6-flash-medium",
                 None,
+                None,
                 usage,
-                CostMode::Calculate,
-                &pricing,
+                TimestampMs::UNIX_EPOCH,
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
+            .1
             .is_none()
         );
         assert_eq!(
-            missing_antigravity_pricing(
+            price_antigravity(
                 "gemini-3.8-flash-low",
                 None,
+                None,
                 usage,
-                CostMode::Calculate,
-                &pricing,
+                TimestampMs::UNIX_EPOCH,
+                ccusage_core::cost::PriceTable::Calculate(&pricing)
             )
+            .1
             .as_deref(),
             Some("custom-unpriced-flash-low")
         );
@@ -1974,23 +1983,51 @@ mod tests {
 
     #[test]
     fn legacy_models_keep_timestamp_aware_pricing() {
-        let pricing = PricingMap::load_embedded();
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 1_000_000,
             ..TokenUsageRaw::default()
         };
         let cost_at = |timestamp| {
-            calculate_antigravity_cost(
+            price_antigravity(
                 "deepseek-v4-flash",
+                None,
                 None,
                 usage,
                 parse_ts_timestamp(timestamp).unwrap(),
-                CostMode::Calculate,
-                &pricing,
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
             )
+            .0
         };
 
         assert!((cost_at("2026-08-17T01:00:00Z") - 0.44).abs() < 1e-12);
         assert!((cost_at("2026-08-17T12:00:00Z") - 0.22).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        ccusage_test_support::install_pricing_snapshots();
+        let model = normalize_antigravity_model("gemini-3.6-flash-high").unwrap();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{"gemini-3.6-flash":{"input_cost_per_token":0.00000075,"output_cost_per_token":0.00000375},"gemini/gemini-3.6-flash-lite":{"input_cost_per_token":0.0000001,"output_cost_per_token":0.0000004}}"#);
+        let (cost, missing) = price_antigravity(
+            &model,
+            None,
+            None,
+            TokenUsageRaw {
+                input_tokens: 1000,
+                ..Default::default()
+            },
+            crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            PriceTable::Calculate(&pricing),
+        );
+        assert!((cost - 0.00075).abs() < 1e-12);
+        assert_eq!(missing, None);
     }
 }

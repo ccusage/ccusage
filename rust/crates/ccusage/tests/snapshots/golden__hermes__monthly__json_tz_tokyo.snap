@@ -48,11 +48,11 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2545,
-          "cost": 0.303743125,
+          "cost": 0.550455625,
           "inputTokens": 820,
           "modelName": "gpt-5",
           "outputTokens": 180,
-          "storedCost": 0.3
+          "storedCost": 0.55
         },
         {
           "cacheCreationTokens": 50,
@@ -89,7 +89,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
+          "cost": 0.00010080000000000001,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
@@ -115,7 +115,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1230,
-      "totalCost": 0.33735662499999997,
+      "totalCost": 0.583893925,
       "totalTokens": 25455
     }
   ],
@@ -124,7 +124,7 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.338931625,
+    "totalCost": 1.5854689250000003,
     "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"

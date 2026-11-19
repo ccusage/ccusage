@@ -7,7 +7,7 @@ exit: 0
 {
   "cacheCreationTokens": 300,
   "cacheReadTokens": 8950,
-  "costUSD": 0.03670675,
+  "costUSD": 0.036659875,
   "inputTokens": 8100,
   "outputTokens": 1735,
   "reasoningOutputTokens": 84,

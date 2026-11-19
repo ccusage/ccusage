@@ -1,612 +1,225 @@
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, HashMap};
 
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use serde_json::{Map, Value, json};
+use ccusage_cli::{SessionLength, TokenLimit};
+use serde::{Deserialize, Deserializer};
 
-use schemars::{JsonSchema, r#gen::SchemaSettings};
+#[cfg(any(feature = "schema", test))]
+pub(crate) mod generator;
 
-pub const NAMED_PI_STORE_NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
+pub(crate) const NAMED_PI_STORE_NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CcusageConfig {
-    /// JSON Schema URL for validation and autocomplete.
-    #[serde(rename = "$schema")]
-    pub schema_url: Option<String>,
-    /// Default values for all-agent reports and legacy Claude commands.
-    pub defaults: Option<SharedOptions>,
-    /// Command-specific configuration for all-agent reports.
-    pub commands: Option<RootCommandsConfig>,
-    /// Claude Code configuration.
-    pub claude: Option<ClaudeConfig>,
-    /// Cline configuration.
-    pub cline: Option<ClineConfig>,
-    /// Codex configuration.
-    pub codex: Option<CodexConfig>,
-    /// OpenCode configuration.
-    pub opencode: Option<OpenCodeConfig>,
-    /// Amp configuration.
-    pub amp: Option<AmpConfig>,
-    /// Droid configuration.
-    pub droid: Option<DroidConfig>,
-    /// Codebuff configuration.
-    pub codebuff: Option<CodebuffConfig>,
-    /// Hermes Agent configuration.
-    pub hermes: Option<HermesConfig>,
-    /// pi-agent configuration.
-    pub pi: Option<PiConfig>,
-    /// Goose configuration.
-    pub goose: Option<GooseConfig>,
-    /// OpenClaw configuration.
-    pub openclaw: Option<OpenClawConfig>,
-    /// Kilo configuration.
-    pub kilo: Option<KiloConfig>,
-    /// GitHub Copilot CLI configuration.
-    pub copilot: Option<CopilotConfig>,
-    /// Gemini CLI configuration.
-    pub gemini: Option<GeminiConfig>,
-    /// Antigravity configuration.
-    pub antigravity: Option<AntigravityConfig>,
-    /// Kimi configuration.
-    pub kimi: Option<KimiConfig>,
-    /// Qwen configuration.
-    pub qwen: Option<QwenConfig>,
-    /// Grok Build CLI configuration.
-    pub grok: Option<GrokConfig>,
-    /// ZCode configuration.
-    pub zcode: Option<ZCodeConfig>,
-    /// DeepSeek Harness configuration.
-    pub dsh: Option<DshConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RootCommandsConfig {
-    pub daily: Option<DailyOptions>,
-    pub weekly: Option<WeeklyOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-    pub blocks: Option<BlocksOptions>,
-    pub statusline: Option<StatuslineOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeConfig {
-    pub defaults: Option<ClaudeOptions>,
-    pub commands: Option<ClaudeCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeCommandsConfig {
-    pub daily: Option<DailyOptions>,
-    pub weekly: Option<WeeklyOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-    pub blocks: Option<BlocksOptions>,
-    pub statusline: Option<StatuslineOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexConfig {
-    pub defaults: Option<CodexOptions>,
-    pub commands: Option<CodexCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexCommandsConfig {
-    pub daily: Option<CodexOptions>,
-    pub weekly: Option<CodexOptions>,
-    pub monthly: Option<CodexOptions>,
-    pub session: Option<CodexOptions>,
-    pub statusline: Option<CodexStatuslineOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenCodeConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<OpenCodeCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenCodeCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AmpConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<AmpCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AmpCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DroidConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<DroidCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DroidCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CodebuffConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<CodebuffCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CodebuffCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClineConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<ClineCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClineCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DshConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<DshCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DshCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HermesConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<HermesCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HermesCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PiConfig {
-    /// Additional named pi-format session stores included in all-agent reports.
-    pub stores: Option<Vec<PiStoreConfig>>,
-    pub defaults: Option<PiOptions>,
-    pub commands: Option<PiCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PiStoreConfig {
     /// Agent name to use for this pi-format store in all-agent reports.
-    #[schemars(regex(pattern = "^[a-z][a-z0-9_-]{0,31}$"))]
-    pub name: String,
+    #[cfg_attr(
+        any(feature = "schema", test),
+        schemars(regex(pattern = "^[a-z][a-z0-9_-]{0,31}$"))
+    )]
+    pub(crate) name: String,
     /// Path to this pi-format sessions directory. Comma-separated lists are supported.
-    pub path: String,
+    pub(crate) path: String,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PiCommandsConfig {
-    pub daily: Option<PiOptions>,
-    pub weekly: Option<PiOptions>,
-    pub monthly: Option<PiOptions>,
-    pub session: Option<PiOptions>,
+#[derive(Clone, Debug)]
+pub struct ConfigDateBound(pub(crate) ccusage_cli::DateBound);
+
+impl<'de> Deserialize<'de> for ConfigDateBound {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        ccusage_cli::DateBound::parse(&value)
+            .map(Self)
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "not a valid date. Expected {}",
+                    ccusage_cli::DATE_BOUND_FORMATS
+                ))
+            })
+    }
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GooseConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<GooseCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GooseCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenClawConfig {
-    pub defaults: Option<OpenClawOptions>,
-    pub commands: Option<OpenClawCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenClawCommandsConfig {
-    pub daily: Option<OpenClawOptions>,
-    pub weekly: Option<OpenClawOptions>,
-    pub monthly: Option<OpenClawOptions>,
-    pub session: Option<OpenClawOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct KiloConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<KiloCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct KiloCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CopilotConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<CopilotCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CopilotCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GeminiConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<GeminiCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GeminiCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AntigravityConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<AntigravityCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AntigravityCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct KimiConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<KimiCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct KimiCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct QwenConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<QwenCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct QwenCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GrokConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<GrokCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GrokCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ZCodeConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<ZCodeCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ZCodeCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SharedOptions {
     /// Filter from date (YYYY-MM-DD or YYYYMMDD).
-    pub since: Option<String>,
+    #[cfg_attr(any(feature = "schema", test), schemars(with = "Option<String>"))]
+    pub(crate) since: Option<ConfigDateBound>,
     /// Filter until date (inclusive).
-    pub until: Option<String>,
+    #[cfg_attr(any(feature = "schema", test), schemars(with = "Option<String>"))]
+    pub(crate) until: Option<ConfigDateBound>,
     /// Output in JSON format.
-    pub json: Option<bool>,
+    pub(crate) json: Option<bool>,
     /// Cost calculation mode.
-    pub mode: Option<ConfigCostMode>,
+    pub(crate) mode: Option<ConfigCostMode>,
     /// Show pricing mismatch information for debugging.
-    pub debug: Option<bool>,
+    pub(crate) debug: Option<bool>,
     /// Number of sample discrepancies to show in debug output.
-    pub debug_samples: Option<usize>,
+    pub(crate) debug_samples: Option<usize>,
     /// Sort order.
-    pub order: Option<ConfigSortOrder>,
+    pub(crate) order: Option<ConfigSortOrder>,
     /// Show per-model cost breakdown.
-    pub breakdown: Option<bool>,
+    pub(crate) breakdown: Option<bool>,
     /// Use cached pricing data where supported.
-    pub offline: Option<bool>,
+    pub(crate) offline: Option<bool>,
     /// Disable cached pricing data where supported.
-    pub no_offline: Option<bool>,
+    pub(crate) no_offline: Option<bool>,
     /// Enable colored output.
-    pub color: Option<bool>,
+    pub(crate) color: Option<bool>,
     /// Disable colored output.
-    pub no_color: Option<bool>,
+    pub(crate) no_color: Option<bool>,
     /// Timezone for date grouping (IANA).
-    pub timezone: Option<String>,
+    pub(crate) timezone: Option<String>,
     /// jq filter to apply to JSON output.
-    pub jq: Option<String>,
-    /// Accepted for compatibility; all detected supported agents are included by default.
-    pub all: Option<bool>,
+    pub(crate) jq: Option<String>,
     /// Force compact table layout for narrow terminals.
-    pub compact: Option<bool>,
+    pub(crate) compact: Option<bool>,
     /// Disable parallel file processing.
-    pub single_thread: Option<bool>,
+    pub(crate) single_thread: Option<bool>,
     /// Hide cost information in table and JSON output.
-    pub no_cost: Option<bool>,
+    pub(crate) no_cost: Option<bool>,
     /// Runtime pricing overrides keyed by raw model name.
-    pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
+    pub(crate) pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
-    #[serde(flatten)]
-    pub daily: DailySpecificOptions,
-    #[serde(flatten)]
-    pub weekly: WeeklySpecificOptions,
-    #[serde(flatten)]
-    pub blocks: BlocksSpecificOptions,
-    #[serde(flatten)]
-    pub statusline: StatuslineSpecificOptions,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DailyOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
-    #[serde(flatten)]
-    pub daily: DailySpecificOptions,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailySpecificOptions {
     /// Show per-session project instances.
-    pub instances: Option<bool>,
+    pub(crate) instances: Option<bool>,
     /// Filter to a project name or path.
-    pub project: Option<String>,
+    pub(crate) project: Option<String>,
     /// JSON object or path mapping project paths to display aliases.
-    pub project_aliases: Option<String>,
+    pub(crate) project_aliases: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WeeklyOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
-    #[serde(flatten)]
-    pub weekly: WeeklySpecificOptions,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklySpecificOptions {
     /// First day of week for weekly grouping.
-    pub start_of_week: Option<ConfigWeekDay>,
+    pub(crate) start_of_week: Option<ConfigWeekDay>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BlocksOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
-    #[serde(flatten)]
-    pub blocks: BlocksSpecificOptions,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BlocksSpecificOptions {
     /// Show the active session block.
-    pub active: Option<bool>,
+    pub(crate) active: Option<bool>,
     /// Show recent session blocks.
-    pub recent: Option<bool>,
+    pub(crate) recent: Option<bool>,
     /// Token limit for session block calculations.
-    pub token_limit: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_token_limit")]
+    #[cfg_attr(
+        any(feature = "schema", test),
+        schemars(with = "Option<ConfigTokenLimit>")
+    )]
+    pub(crate) token_limit: Option<TokenLimit>,
     /// Session block duration in hours.
-    pub session_length: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_session_length")]
+    #[cfg_attr(any(feature = "schema", test), schemars(with = "Option<f64>"))]
+    pub(crate) session_length: Option<SessionLength>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StatuslineOptions {
-    #[serde(flatten)]
-    pub statusline: StatuslineSpecificOptions,
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum ConfigTokenLimit {
+    Text(
+        #[cfg_attr(
+            any(feature = "schema", test),
+            schemars(regex(pattern = r"^(max|\+?0*[1-9][0-9]*)$"))
+        )]
+        String,
+    ),
+    Number(#[cfg_attr(any(feature = "schema", test), schemars(range(min = 1)))] u64),
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+fn deserialize_token_limit<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<TokenLimit>, D::Error> {
+    Option::<ConfigTokenLimit>::deserialize(deserializer)?
+        .map(|value| {
+            let text = match value {
+                ConfigTokenLimit::Text(value) => value,
+                ConfigTokenLimit::Number(value) => value.to_string(),
+            };
+            text.parse().map_err(serde::de::Error::custom)
+        })
+        .transpose()
+}
+
+fn deserialize_session_length<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SessionLength>, D::Error> {
+    Option::<f64>::deserialize(deserializer)?
+        .map(|value| SessionLength::from_hours(value).map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StatuslineSpecificOptions {
     /// Use cached pricing data where supported.
-    pub offline: Option<bool>,
+    pub(crate) offline: Option<bool>,
     /// Disable cached pricing data where supported.
-    pub no_offline: Option<bool>,
+    pub(crate) no_offline: Option<bool>,
     /// Visual burn-rate display mode.
-    pub visual_burn_rate: Option<ConfigVisualBurnRate>,
+    pub(crate) visual_burn_rate: Option<ConfigVisualBurnRate>,
     /// Source for statusline cost calculation.
-    pub cost_source: Option<ConfigCostSource>,
+    pub(crate) cost_source: Option<ConfigCostSource>,
     /// Enable statusline cache.
-    pub cache: Option<bool>,
+    pub(crate) cache: Option<bool>,
     /// Disable statusline cache.
-    pub no_cache: Option<bool>,
+    pub(crate) no_cache: Option<bool>,
     /// Statusline refresh interval in seconds.
-    pub refresh_interval: Option<u64>,
+    pub(crate) refresh_interval: Option<u64>,
     /// Percentage threshold for low context warning.
-    pub context_low_threshold: Option<u64>,
+    #[cfg_attr(any(feature = "schema", test), schemars(with = "Option<u64>"))]
+    pub(crate) context_low_threshold: Option<u8>,
     /// Percentage threshold for medium context warning.
-    pub context_medium_threshold: Option<u64>,
+    #[cfg_attr(any(feature = "schema", test), schemars(with = "Option<u64>"))]
+    pub(crate) context_medium_threshold: Option<u8>,
     /// Timezone for date grouping (IANA).
-    pub timezone: Option<String>,
+    pub(crate) timezone: Option<String>,
     /// Show statusline debug information.
-    pub debug: Option<bool>,
+    pub(crate) debug: Option<bool>,
     /// Map model identifiers to short display labels.
-    pub model_label_aliases: Option<HashMap<String, String>>,
+    pub(crate) model_label_aliases: Option<HashMap<String, String>>,
     /// Runtime pricing overrides keyed by raw model name.
-    pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
+    pub(crate) pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CodexOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
     /// Codex speed normalization strategy.
-    pub speed: Option<ConfigCodexSpeed>,
+    pub(crate) speed: Option<ConfigCodexSpeed>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexStatuslineOptions {
-    pub json: Option<bool>,
-    pub jq: Option<String>,
-    pub mode: Option<ConfigCostMode>,
-    pub no_cost: Option<bool>,
-    pub since: Option<String>,
-    pub until: Option<String>,
-    pub timezone: Option<String>,
-    pub offline: Option<bool>,
-    pub no_offline: Option<bool>,
-    pub single_thread: Option<bool>,
-    pub speed: Option<ConfigCodexSpeed>,
-    pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PiOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
     /// Path or comma-separated paths to pi-agent sessions directories.
-    pub pi_path: Option<String>,
+    pub(crate) pi_path: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct OpenClawOptions {
-    #[serde(flatten)]
-    pub shared: SharedOptions,
     /// Path or comma-separated paths to OpenClaw data directories.
-    pub open_claw_path: Option<String>,
+    pub(crate) open_claw_path: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigCostMode {
     Auto,
@@ -614,14 +227,16 @@ pub enum ConfigCostMode {
     Display,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigSortOrder {
     Desc,
     Asc,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigWeekDay {
     Sunday,
@@ -633,7 +248,8 @@ pub enum ConfigWeekDay {
     Saturday,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigCodexSpeed {
     Auto,
@@ -642,7 +258,8 @@ pub enum ConfigCodexSpeed {
     Flex,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum ConfigVisualBurnRate {
     Off,
@@ -651,7 +268,8 @@ pub enum ConfigVisualBurnRate {
     EmojiText,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigCostSource {
     Auto,
@@ -660,513 +278,89 @@ pub enum ConfigCostSource {
     Both,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema, Clone)]
+#[derive(Debug, Default, Deserialize, Clone)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigPricingOverride {
-    pub input_cost_per_token: Option<f64>,
-    pub output_cost_per_token: Option<f64>,
-    pub cache_creation_input_token_cost: Option<f64>,
-    pub cache_read_input_token_cost: Option<f64>,
-    pub input_cost_per_token_above_200k_tokens: Option<f64>,
-    pub output_cost_per_token_above_200k_tokens: Option<f64>,
-    pub cache_creation_input_token_cost_above_200k_tokens: Option<f64>,
-    pub cache_read_input_token_cost_above_200k_tokens: Option<f64>,
-    pub max_input_tokens: Option<u64>,
-    pub fast_multiplier: Option<f64>,
-    pub flex_multiplier: Option<f64>,
-}
-
-impl SharedOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            since: string_option(map, "since"),
-            until: string_option(map, "until"),
-            json: bool_option(map, "json"),
-            mode: enum_option(map, "mode"),
-            debug: bool_option(map, "debug"),
-            debug_samples: usize_option(map, "debugSamples"),
-            order: enum_option(map, "order"),
-            breakdown: bool_option(map, "breakdown"),
-            offline: bool_option(map, "offline"),
-            no_offline: bool_option(map, "noOffline"),
-            color: bool_option(map, "color"),
-            no_color: bool_option(map, "noColor"),
-            timezone: string_option(map, "timezone"),
-            jq: string_option(map, "jq"),
-            all: bool_option(map, "all"),
-            compact: bool_option(map, "compact"),
-            single_thread: bool_option(map, "singleThread"),
-            no_cost: bool_option(map, "noCost"),
-            pricing_overrides: pricing_override_map_option(map, "pricingOverrides"),
-        }
-    }
-}
-
-impl DailySpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            instances: bool_option(map, "instances"),
-            project: string_option(map, "project"),
-            project_aliases: string_option(map, "projectAliases"),
-        }
-    }
-}
-
-impl WeeklySpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            start_of_week: enum_option(map, "startOfWeek"),
-        }
-    }
-}
-
-impl BlocksSpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            active: bool_option(map, "active"),
-            recent: bool_option(map, "recent"),
-            token_limit: string_option(map, "tokenLimit"),
-            session_length: f64_option(map, "sessionLength"),
-        }
-    }
-}
-
-impl StatuslineSpecificOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            offline: bool_option(map, "offline"),
-            no_offline: bool_option(map, "noOffline"),
-            visual_burn_rate: enum_option(map, "visualBurnRate"),
-            cost_source: enum_option(map, "costSource"),
-            cache: bool_option(map, "cache"),
-            no_cache: bool_option(map, "noCache"),
-            refresh_interval: u64_option(map, "refreshInterval"),
-            context_low_threshold: u64_option(map, "contextLowThreshold"),
-            context_medium_threshold: u64_option(map, "contextMediumThreshold"),
-            timezone: string_option(map, "timezone"),
-            debug: bool_option(map, "debug"),
-            model_label_aliases: hashmap_option(map, "modelLabelAliases"),
-            pricing_overrides: pricing_override_map_option(map, "pricingOverrides"),
-        }
-    }
-}
-
-impl CodexOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            shared: SharedOptions::from_map(map),
-            speed: enum_option(map, "speed"),
-        }
-    }
-}
-
-impl PiOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            shared: SharedOptions::from_map(map),
-            pi_path: string_option(map, "piPath"),
-        }
-    }
-}
-
-impl OpenClawOptions {
-    pub fn from_map(map: &Map<String, Value>) -> Self {
-        Self {
-            shared: SharedOptions::from_map(map),
-            open_claw_path: string_option(map, "openClawPath"),
-        }
-    }
-}
-
-pub fn generate_config_schema_json() -> String {
-    let generator = SchemaSettings::draft07()
-        .with(|settings| {
-            settings.meta_schema = Some("https://json-schema.org/draft-07/schema#".to_string());
-            settings.option_add_null_type = false;
-        })
-        .into_generator();
-    let mut schema =
-        serde_json::to_value(generator.into_root_schema_for::<CcusageConfig>()).unwrap();
-    if let Value::Object(root) = &mut schema {
-        root.insert(
-            "title".to_string(),
-            Value::String("ccusage Configuration".to_string()),
-        );
-        root.insert(
-            "description".to_string(),
-            Value::String("Configuration file for ccusage".to_string()),
-        );
-        root.insert(
-            "examples".to_string(),
-            json!([
-                {
-                    "$schema": "https://ccusage.com/config-schema.json",
-                    "defaults": {
-                        "json": false,
-                        "timezone": "Asia/Tokyo",
-                        "pricingOverrides": {
-                            "[pi] gpt-5.4": {
-                                "inputCostPerToken": 0.0000025,
-                                "outputCostPerToken": 0.000015,
-                                "cacheReadInputTokenCost": 0.00000025
-                            }
-                        }
-                    },
-                    "claude": {
-                        "defaults": {
-                            "mode": "auto"
-                        },
-                        "commands": {
-                            "daily": {
-                                "instances": true
-                            },
-                            "blocks": {
-                                "tokenLimit": "500000"
-                            }
-                        }
-                    },
-                    "codex": {
-                        "defaults": {
-                            "speed": "auto"
-                        }
-                    },
-                    "pi": {
-                        "stores": [
-                            {
-                                "name": "omp",
-                                "path": "~/.omp/agent/sessions"
-                            }
-                        ]
-                    },
-                    "gemini": {
-                        "defaults": {
-                            "offline": true
-                        }
-                    }
-                }
-            ]),
-        );
-    }
-    enrich_schema(&mut schema);
-    add_schema_defaults(&mut schema);
-    inline_schema_references(&mut schema);
-    if let Some(offline) = schema.pointer_mut(
-        "/properties/codex/properties/commands/properties/statusline/properties/offline",
-    ) {
-        offline["default"] = json!(true);
-    }
-    wrap_root_schema(&mut schema);
-    add_agent_command_keys(&mut schema);
-    let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema).unwrap());
-    json.push('\n');
-    json
-}
-
-fn tab_indent_json(json: &str) -> String {
-    json.lines()
-        .map(|line| {
-            let spaces = line
-                .as_bytes()
-                .iter()
-                .take_while(|byte| **byte == b' ')
-                .count();
-            let mut formatted = "\t".repeat(spaces / 2);
-            formatted.push_str(&line[spaces..]);
-            formatted
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn string_option(map: &Map<String, Value>, key: &str) -> Option<String> {
-    map.get(key)?.as_str().map(ToString::to_string)
-}
-
-fn bool_option(map: &Map<String, Value>, key: &str) -> Option<bool> {
-    map.get(key)?.as_bool()
-}
-
-fn usize_option(map: &Map<String, Value>, key: &str) -> Option<usize> {
-    map.get(key)?
-        .as_u64()
-        .and_then(|value| usize::try_from(value).ok())
-}
-
-fn u64_option(map: &Map<String, Value>, key: &str) -> Option<u64> {
-    map.get(key)?.as_u64()
-}
-
-fn f64_option(map: &Map<String, Value>, key: &str) -> Option<f64> {
-    map.get(key)?.as_f64()
-}
-
-fn enum_option<T>(map: &Map<String, Value>, key: &str) -> Option<T>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_value(map.get(key)?.clone()).ok()
-}
-
-fn pricing_override_map_option(
-    map: &Map<String, Value>,
-    key: &str,
-) -> Option<BTreeMap<String, ConfigPricingOverride>> {
-    serde_json::from_value(map.get(key)?.clone()).ok()
-}
-
-fn hashmap_option(map: &Map<String, Value>, key: &str) -> Option<HashMap<String, String>> {
-    let obj = map.get(key)?.as_object()?;
-    let mut result = HashMap::new();
-    for (k, v) in obj {
-        if let Some(s) = v.as_str() {
-            result.insert(k.clone(), s.to_string());
-        }
-    }
-    if result.is_empty() {
-        None
-    } else {
-        Some(result)
-    }
-}
-
-fn enrich_schema(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            if let Some(description) = map.get("description").cloned() {
-                map.entry("markdownDescription".to_string())
-                    .or_insert(description);
-            }
-            if map.contains_key("properties") {
-                map.entry("additionalProperties".to_string())
-                    .or_insert(Value::Bool(false));
-            }
-            for child in map.values_mut() {
-                enrich_schema(child);
-            }
-        }
-        Value::Array(values) => {
-            for child in values {
-                enrich_schema(child);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn add_schema_defaults(schema: &mut Value) {
-    set_definition_defaults(
-        schema,
-        "SharedOptions",
-        &[
-            ("json", json!(false)),
-            ("mode", json!("auto")),
-            ("debug", json!(false)),
-            ("debugSamples", json!(5)),
-            ("order", json!("asc")),
-            ("breakdown", json!(false)),
-            ("offline", json!(false)),
-            ("noOffline", json!(false)),
-            ("color", json!(false)),
-            ("noColor", json!(false)),
-            ("all", json!(false)),
-            ("compact", json!(false)),
-            ("singleThread", json!(false)),
-            ("noCost", json!(false)),
-        ],
-    );
-    set_definition_defaults(schema, "WeeklyOptions", &[("startOfWeek", json!("sunday"))]);
-    set_definition_defaults(schema, "BlocksOptions", &[("sessionLength", json!(5.0))]);
-    set_definition_defaults(
-        schema,
-        "StatuslineOptions",
-        &[
-            ("offline", json!(true)),
-            ("noOffline", json!(false)),
-            ("visualBurnRate", json!("off")),
-            ("costSource", json!("auto")),
-            ("cache", json!(true)),
-            ("noCache", json!(false)),
-            ("refreshInterval", json!(1)),
-            ("contextLowThreshold", json!(50)),
-            ("contextMediumThreshold", json!(80)),
-            ("debug", json!(false)),
-        ],
-    );
-    set_definition_defaults(schema, "CodexOptions", &[("speed", json!("auto"))]);
-}
-
-fn set_definition_defaults(schema: &mut Value, definition: &str, defaults: &[(&str, Value)]) {
-    let Some(properties) = schema
-        .get_mut("definitions")
-        .and_then(|definitions| definitions.get_mut(definition))
-        .and_then(|definition| definition.get_mut("properties"))
-        .and_then(Value::as_object_mut)
-    else {
-        return;
-    };
-    for (property, default) in defaults {
-        if let Some(property_schema) = properties.get_mut(*property).and_then(Value::as_object_mut)
-        {
-            property_schema
-                .entry("default".to_string())
-                .or_insert_with(|| default.clone());
-        }
-    }
-}
-
-fn inline_schema_references(schema: &mut Value) {
-    let definitions = schema
-        .get("definitions")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    inline_schema_value(schema, &definitions);
-}
-
-fn inline_schema_value(value: &mut Value, definitions: &Map<String, Value>) {
-    match value {
-        Value::Object(map) => {
-            inline_ref(map, definitions);
-            inline_all_of(map, definitions);
-            for child in map.values_mut() {
-                inline_schema_value(child, definitions);
-            }
-        }
-        Value::Array(values) => {
-            for child in values {
-                inline_schema_value(child, definitions);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn inline_ref(map: &mut Map<String, Value>, definitions: &Map<String, Value>) {
-    let Some(reference) = map.remove("$ref") else {
-        return;
-    };
-    let Some(reference) = reference.as_str() else {
-        return;
-    };
-    let Some(definition_name) = reference.strip_prefix("#/definitions/") else {
-        return;
-    };
-    let Some(Value::Object(definition)) = definitions.get(definition_name).cloned() else {
-        return;
-    };
-
-    let existing = std::mem::take(map);
-    for (key, value) in definition {
-        map.insert(key, value);
-    }
-    for (key, value) in existing {
-        map.insert(key, value);
-    }
-}
-
-fn inline_all_of(map: &mut Map<String, Value>, definitions: &Map<String, Value>) {
-    let Some(Value::Array(items)) = map.remove("allOf") else {
-        return;
-    };
-    for mut item in items {
-        inline_schema_value(&mut item, definitions);
-        let Value::Object(item) = item else {
-            continue;
-        };
-        merge_schema_object(map, item);
-    }
-}
-
-fn merge_schema_object(target: &mut Map<String, Value>, source: Map<String, Value>) {
-    for (key, value) in source {
-        if key == "properties" {
-            let target_properties = target
-                .entry(key)
-                .or_insert_with(|| Value::Object(Map::new()));
-            if let (Some(target), Value::Object(source)) =
-                (target_properties.as_object_mut(), value)
-            {
-                target.extend(source);
-            }
-            continue;
-        }
-        target.entry(key).or_insert(value);
-    }
-}
-
-fn wrap_root_schema(schema: &mut Value) {
-    let Value::Object(root) = schema else {
-        return;
-    };
-    root.remove("definitions");
-    let mut definitions = Map::new();
-    let mut root_definition = Map::new();
-    for key in [
-        "additionalProperties",
-        "description",
-        "markdownDescription",
-        "properties",
-        "type",
-    ] {
-        if let Some(value) = root.remove(key) {
-            root_definition.insert(key.to_string(), value);
-        }
-    }
-    definitions.insert("ccusage-config".to_string(), Value::Object(root_definition));
-    root.insert(
-        "$ref".to_string(),
-        Value::String("#/definitions/ccusage-config".to_string()),
-    );
-    root.insert("definitions".to_string(), Value::Object(definitions));
-}
-
-/// `commands."<agent> <report>"` and `commands."<agent>:<report>"` take the
-/// options of `<agent>.commands.<report>`. They point at that schema instead of
-/// inlining it, which would add a copy of every agent report schema per form.
-fn add_agent_command_keys(schema: &mut Value) {
-    let Some(config) = schema.pointer("/definitions/ccusage-config/properties") else {
-        return;
-    };
-    let keys = config
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter_map(|(agent, agent_schema)| {
-            agent_schema
-                .pointer("/properties/commands/properties")
-                .and_then(Value::as_object)
-                .map(|reports| (agent, reports))
-        })
-        .flat_map(|(agent, reports)| {
-            reports.keys().flat_map(move |report| {
-                let reference = json!({
-                    "$ref": format!(
-                        "#/definitions/ccusage-config/properties/{agent}/properties/commands/properties/{report}"
-                    )
-                });
-                [
-                    (format!("{agent} {report}"), reference.clone()),
-                    (format!("{agent}:{report}"), reference),
-                ]
-            })
-        })
-        .collect::<Vec<_>>();
-    if let Some(commands) = schema
-        .pointer_mut("/definitions/ccusage-config/properties/commands/properties")
-        .and_then(Value::as_object_mut)
-    {
-        commands.extend(keys);
-    }
+    pub(crate) input_cost_per_token: Option<f64>,
+    pub(crate) output_cost_per_token: Option<f64>,
+    pub(crate) cache_creation_input_token_cost: Option<f64>,
+    pub(crate) cache_creation_input_token_cost_above_1hr: Option<f64>,
+    pub(crate) cache_read_input_token_cost: Option<f64>,
+    pub(crate) input_cost_per_token_above_200k_tokens: Option<f64>,
+    pub(crate) output_cost_per_token_above_200k_tokens: Option<f64>,
+    pub(crate) cache_creation_input_token_cost_above_200k_tokens: Option<f64>,
+    pub(crate) cache_read_input_token_cost_above_200k_tokens: Option<f64>,
+    pub(crate) max_input_tokens: Option<u64>,
+    pub(crate) fast_multiplier: Option<f64>,
+    pub(crate) flex_multiplier: Option<f64>,
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use serde_json::{Value, json};
+    use schemars::r#gen::SchemaSettings;
+    use serde_json::{Map, Value, json};
 
-    use super::StatuslineSpecificOptions;
-    use super::generate_config_schema_json;
+    use super::{
+        SharedOptions, StatuslineSpecificOptions,
+        generator::{codex_statusline_section, generate_config_schema_json, option_properties},
+    };
+
+    #[test]
+    fn published_example_uses_valid_config_keys() {
+        let schema = generated_schema();
+        let example = &schema["examples"][0];
+        let parsed = crate::layers::ConfigFile::parse(example.clone()).unwrap();
+        assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+
+        let mut warnings = Vec::new();
+        unknown_fields(example, &schema, &schema, "$", &mut warnings);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    fn unknown_fields(
+        value: &Value,
+        schema: &Value,
+        root: &Value,
+        path: &str,
+        warnings: &mut Vec<String>,
+    ) {
+        if let Some(reference) = schema.get("$ref").and_then(Value::as_str)
+            && let Some(schema) = reference
+                .strip_prefix('#')
+                .and_then(|path| root.pointer(path))
+        {
+            unknown_fields(value, schema, root, path, warnings);
+            return;
+        }
+        if let (Some(fields), Some(properties)) = (
+            value.as_object(),
+            schema.get("properties").and_then(Value::as_object),
+        ) {
+            for (key, value) in fields {
+                let path = format!("{path}.{key}");
+                match properties.get(key) {
+                    Some(schema) => unknown_fields(value, schema, root, &path, warnings),
+                    None => warnings.push(format!("Unknown ccusage config key: {path}")),
+                }
+            }
+        } else if let (Some(fields), Some(additional)) = (
+            value.as_object(),
+            schema
+                .get("additionalProperties")
+                .filter(|schema| schema.is_object()),
+        ) {
+            for (key, value) in fields {
+                unknown_fields(value, additional, root, &format!("{path}.{key}"), warnings);
+            }
+        } else if let (Some(values), Some(items)) = (value.as_array(), schema.get("items")) {
+            for (index, value) in values.iter().enumerate() {
+                unknown_fields(value, items, root, &format!("{path}[{index}]"), warnings);
+            }
+        }
+    }
 
     #[test]
     fn schema_option_sets_expose_expected_keys() {
@@ -1279,11 +473,18 @@ mod tests {
 
     #[test]
     fn generated_schema_does_not_accept_null_config_values() {
-        let schema = generate_config_schema_json();
+        let schema = generate_config_schema_json().unwrap();
         let value = serde_json::from_str::<Value>(&schema).unwrap();
 
         assert!(!schema.contains("\"null\""));
-        assert!(!contains_key(&value, "anyOf"));
+        let limit = schema_property(&value, &["commands", "blocks", "tokenLimit"]).unwrap();
+        let types = limit["anyOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|branch| branch["type"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(types, ["string", "integer"]);
     }
 
     #[test]
@@ -1555,6 +756,10 @@ mod tests {
         );
         assert_eq!(
             property_default(&schema, &["commands", "weekly", "startOfWeek"]),
+            Some(&json!("monday"))
+        );
+        assert_eq!(
+            property_default(&schema, &["claude", "commands", "weekly", "startOfWeek"]),
             Some(&json!("sunday"))
         );
         assert_eq!(
@@ -1607,7 +812,7 @@ mod tests {
                 "arn:aws:bedrock:ap-northeast-1:012345678910:application-inference-profile/abcde12345": "claude-opus-4-6"
             }
         });
-        let options = StatuslineSpecificOptions::from_map(map.as_object().unwrap());
+        let options = serde_json::from_value::<StatuslineSpecificOptions>(map).unwrap();
 
         let aliases = options.model_label_aliases.unwrap();
         assert_eq!(
@@ -1619,23 +824,19 @@ mod tests {
     }
 
     #[test]
-    fn statusline_options_ignore_non_string_alias_values() {
+    fn statusline_options_reject_non_string_alias_values() {
         let map = serde_json::json!({
             "modelLabelAliases": {
                 "valid": "short",
                 "invalid": 123
             }
         });
-        let options = StatuslineSpecificOptions::from_map(map.as_object().unwrap());
-
-        let aliases = options.model_label_aliases.unwrap();
-        assert_eq!(aliases.get("valid"), Some(&"short".to_string()));
-        assert!(!aliases.contains_key("invalid"));
+        assert!(serde_json::from_value::<StatuslineSpecificOptions>(map).is_err());
     }
 
     #[test]
     fn codex_statusline_schema_exposes_shared_options_with_offline_default() {
-        let schema: Value = serde_json::from_str(&generate_config_schema_json()).unwrap();
+        let schema: Value = serde_json::from_str(&generate_config_schema_json().unwrap()).unwrap();
         assert_eq!(
             property_default(&schema, &["codex", "commands", "statusline", "offline"]),
             Some(&json!(true))
@@ -1653,10 +854,18 @@ mod tests {
     }
 
     #[test]
+    fn codex_statusline_schema_reports_a_missing_option() {
+        let mut generator = SchemaSettings::draft07().into_generator();
+        let shared = option_properties::<SharedOptions>(&mut generator).unwrap();
+        let error = codex_statusline_section(&shared, &Map::new(), true).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "missing object schema for Codex statusline option 'speed'"
+        );
+    }
+
+    #[test]
     fn snapshots_schema_agent_specific_option_edges() {
-        if running_in_schema_generator_test_binary() {
-            return;
-        }
         let schema = generated_schema();
 
         insta::assert_json_snapshot!(json!({
@@ -1676,21 +885,16 @@ mod tests {
         }));
     }
 
-    fn running_in_schema_generator_test_binary() -> bool {
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| {
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
-            .is_some_and(|name| {
-                name.starts_with("generate_config_schema")
-                    || name.starts_with("generate-config-schema")
-            })
+    #[test]
+    fn token_limit_schema_requires_max_or_positive_integers() {
+        let schema = generated_schema();
+        let token_limit = schema_property(&schema, &["commands", "blocks", "tokenLimit"]).unwrap();
+        assert_eq!(token_limit["anyOf"][1]["minimum"], 1.0);
+        assert!(token_limit["anyOf"][0]["pattern"].as_str().is_some());
     }
 
     fn generated_schema() -> Value {
-        serde_json::from_str(&generate_config_schema_json()).unwrap()
+        serde_json::from_str(&generate_config_schema_json().unwrap()).unwrap()
     }
 
     fn assert_properties(schema: &Value, definition: &str, expected: &[&str]) {
@@ -1746,16 +950,6 @@ mod tests {
 
     fn with_keys<'a>(base: &[&'a str], extra: &[&'a str]) -> Vec<&'a str> {
         base.iter().chain(extra).copied().collect()
-    }
-
-    fn contains_key(value: &Value, key: &str) -> bool {
-        match value {
-            Value::Object(map) => {
-                map.contains_key(key) || map.values().any(|value| contains_key(value, key))
-            }
-            Value::Array(values) => values.iter().any(|value| contains_key(value, key)),
-            _ => false,
-        }
     }
 
     fn assert_value_keys_allowed_by_schema(value: &Value, schema: &Value, root: &Value) {

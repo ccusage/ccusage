@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
+
+use ccusage_test_support::instant;
 
 use crate::golden::{Case, json_path};
 
@@ -16,14 +19,12 @@ const OUTSIDE_ROOT: &str = "pi/outside/extra-project/outside-root.jsonl";
 const NAMED_STORE: &str = "pi/omp";
 const NAMED_STORE_CONFIG: &str = "pi/config/ccusage.json";
 
-/// Session header line. `parent` is the raw JSON value of `parentSession`.
 fn header(id: &str, timestamp: Option<&str>, parent: Option<&str>) -> String {
     let timestamp = timestamp.map_or_else(String::new, |ts| format!(r#","timestamp":"{ts}""#));
     let parent = parent.map_or_else(String::new, |raw| format!(r#","parentSession":{raw}"#));
     format!(r#"{{"type":"session","version":3,"id":"{id}"{timestamp}{parent}}}"#)
 }
 
-/// Body of a `usage` object whose `totalTokens` agrees with its parts.
 fn tokens(input: u64, output: u64, cache_read: u64, cache_write: u64) -> String {
     format!(
         r#""input":{input},"output":{output},"cacheRead":{cache_read},"cacheWrite":{cache_write},"totalTokens":{}"#,
@@ -35,21 +36,19 @@ fn with_cost(usage: &str, cost: &str) -> String {
     format!(r#"{usage},"cost":{{"input":0.001,"output":0.002,"total":{cost}}}"#)
 }
 
-/// Version 1 assistant record: no entry links.
 fn message(timestamp: &str, model: &str, usage: &str) -> String {
     format!(
         r#"{{"type":"message","timestamp":"{timestamp}","message":{{"role":"assistant","model":"{model}","usage":{{{usage}}}}}}}"#
     )
 }
 
-/// Tree-format assistant record. `parent` is the raw JSON value of `parentId`.
 fn linked(id: &str, parent: &str, timestamp: &str, model: &str, usage: &str) -> String {
     format!(
         r#"{{"type":"message","id":"{id}","parentId":{parent},"timestamp":"{timestamp}","message":{{"role":"assistant","model":"{model}","usage":{{{usage}}}}}}}"#
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let write = |relative: &str, lines: &[String]| {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
@@ -61,12 +60,49 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     seed_fork_lab(root, &write);
     seed_named_store(root, &write);
 
-    vec![("PI_AGENT_DIR", root.join("pi/sessions"))]
+    vec![(
+        "PI_AGENT_DIR",
+        vec![root.join("pi/sessions").into_os_string()],
+    )]
+}
+
+pub(crate) fn seed_tied_fork(
+    root: &Path,
+    parent_first: bool,
+) -> Vec<(&'static str, Vec<OsString>)> {
+    let sessions = root.join("pi/sessions/project");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let timestamp = "2025-12-27T05:00:00.000Z";
+    let usage = tokens(1000, 0, 0, 0);
+    let parent = [
+        header("shared", Some("2025-12-27T00:00:00.000Z"), None),
+        message(timestamp, SONNET, &with_cost(&usage, "0.003")),
+    ];
+    let child = [
+        header(
+            "shared",
+            Some("2025-12-27T04:00:00.000Z"),
+            Some(r#""z_shared.jsonl""#),
+        ),
+        message(timestamp, SONNET, &usage),
+    ];
+    let mut files = [
+        ("z_shared.jsonl", parent.join("\n")),
+        ("a_shared.jsonl", child.join("\n")),
+    ];
+    if !parent_first {
+        files.reverse();
+    }
+    for (name, contents) in files {
+        std::fs::write(sessions.join(name), contents).unwrap();
+    }
+    vec![(
+        "PI_AGENT_DIR",
+        vec![root.join("pi/sessions").into_os_string()],
+    )]
 }
 
 fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
-    // Tree-format session. `a2` is an abandoned sibling branch: it stays
-    // counted here but is not part of the path a fork copies.
     let main_file = format!("{ALPHA}/2025-12-30T09-59-00-000Z_sess-alpha-main.jsonl");
     let a1 = linked(
         "a1",
@@ -121,8 +157,6 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
         ],
     );
 
-    // Fork of the session above taken on 2026-01-01T13:00Z: it replays the
-    // active branch up to `a4`, then adds its own usage.
     write(
         &format!("{ALPHA}/2026-01-01T13-00-00-000Z_sess-alpha-fork.jsonl"),
         &[
@@ -153,8 +187,6 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
         ],
     );
 
-    // Fresh-context child sessions under `run-*/` count; derived transcripts
-    // under `subagent-artifacts/` do not.
     write(
         &format!("{ALPHA}/sess-alpha-main/run-abc/run-0/session.jsonl"),
         &[message(
@@ -172,8 +204,6 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
         )],
     );
 
-    // Version 1 session without a header line, carrying the per-record edge
-    // cases. Lines that must not be counted use 9999/8888/7777/6666/5555.
     let replayed = format!(
         r#"{{"timestamp":"2025-12-31T23:50:00.000Z","message":{{"role":"assistant","model":"{HAIKU}","usage":{{{}}}}}}}"#,
         with_cost(&tokens(900, 400, 7000, 200), "2.0")
@@ -183,7 +213,6 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
         &[
             replayed.clone(),
             replayed,
-            // Same timestamp and model as the replayed line, one output token more.
             message(
                 "2025-12-31T23:50:00.000Z",
                 HAIKU,
@@ -207,20 +236,19 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
             ),
             message("2025-12-31 12:00:00", SONNET, &tokens(6666, 6666, 0, 0)),
             format!(
-                r#"{{"type":"message","timestamp":1767225600000,"message":{{"role":"assistant","model":"{SONNET}","usage":{{{}}}}}}}"#,
-                tokens(5555, 5555, 0, 0)
+                r#"{{"type":"message","timestamp":{timestamp},"message":{{"role":"assistant","model":"{SONNET}","usage":{{{}}}}}}}"#,
+                tokens(5555, 5555, 0, 0),
+                timestamp = instant("2026-01-01T00:00:00Z").millis()
             ),
             String::new(),
             "not json".to_string(),
             r#"["usage","message"]"#.to_string(),
-            // 2026-01-01T00:10Z written with a +09:00 offset.
             message(
                 "2026-01-01T09:10:00.000+09:00",
                 SONNET,
                 &tokens(600, 100, 3000, 0),
             ),
             message("2026-01-01T00:20:00.000Z", GPT5, r#""totalTokens":500"#),
-            // `totalTokens` exceeds the parts by 250, and `cost` is not an object.
             message(
                 "2026-01-01T00:30:00Z",
                 OPUS,
@@ -256,8 +284,6 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
         ],
     );
 
-    // One record written to three files. The two under the same project share
-    // a session ID (the file stem after `_`), the third only the session ID.
     let shared = message(
         "2025-12-30T08:10:00.000Z",
         SONNET,
@@ -309,7 +335,6 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
     write(&format!("{BETA}/backup.jsonl.bak"), &stray);
     write("pi/sessions/index.json", &stray);
 
-    // A session file directly under the store root has no project directory.
     write(
         "pi/sessions/loose.jsonl",
         &[message(
@@ -320,17 +345,138 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
     );
 }
 
-/// Fork-replay cases, all on the stale day. Records that survive in two files
-/// at one timestamp use the same model and either equal costs, a zero cost, or
-/// exactly representable costs at the start of the day, so the report does not
-/// depend on the order the directory is listed in.
-fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
-    let lab = |name: &str| format!("{LAB}/{name}.jsonl");
-    let day_start = Some("2025-12-27T00:00:00.000Z");
-    let relative = |name: &str| format!(r#""{name}.jsonl""#);
+fn lab(name: &str) -> String {
+    format!("{LAB}/{name}.jsonl")
+}
 
-    // Stored cost differs between parent and copy: a replay only under
-    // `--mode calculate`, which ignores stored cost.
+fn relative(name: &str) -> String {
+    format!(r#""{name}.jsonl""#)
+}
+
+fn seed_fork_with_parent_outside_store(
+    root: &Path,
+    write: &impl Fn(&str, &[String]),
+    day_start: Option<&str>,
+) {
+    let outside = message("2025-12-27T11:30:00.000Z", UNPRICED, &tokens(25, 8, 0, 0));
+    write(
+        OUTSIDE_ROOT,
+        &[
+            header("outside-root", day_start, None),
+            outside.clone(),
+            message("2025-12-27T12:50:00.000Z", UNPRICED, &tokens(5, 5, 0, 0)),
+        ],
+    );
+    write(
+        &lab("lab-outside-child"),
+        &[
+            header(
+                "lab-outside-child",
+                Some("2025-12-27T12:00:00.000Z"),
+                Some(&json_path(&root.join(OUTSIDE_ROOT))),
+            ),
+            outside,
+            message("2025-12-27T11:40:00.000Z", UNPRICED, &tokens(2, 1, 0, 0)),
+        ],
+    );
+}
+
+fn seed_active_branch_and_partial_tree_replays(
+    write: &impl Fn(&str, &[String]),
+    day_start: Option<&str>,
+) {
+    let tree = |id: &str, parent: &str, time: &str, input: u64| {
+        linked(
+            id,
+            parent,
+            &format!("2025-12-27T{time}:00.000Z"),
+            UNPRICED,
+            &tokens(input, 10, 20, 3),
+        )
+    };
+    write(
+        &lab("lab-tree-root"),
+        &[
+            header("lab-tree-root", day_start, None),
+            tree("t-unrelated", "null", "12:00", 50),
+            tree("t-a", "null", "12:10", 100),
+            tree("t-x", r#""t-a""#, "12:20", 200),
+            tree("t-y", r#""t-a""#, "12:30", 300),
+            tree("t-z", r#""t-y""#, "12:40", 400),
+        ],
+    );
+    write(
+        &lab("lab-tree-child"),
+        &[
+            header(
+                "lab-tree-child",
+                Some("2025-12-27T13:00:00.000Z"),
+                Some(&relative("lab-tree-root")),
+            ),
+            tree("copy-a", "null", "12:10", 100),
+            tree("copy-y", r#""copy-a""#, "12:30", 300),
+            tree("copy-z", r#""copy-y""#, "12:40", 400),
+            tree("child-only", r#""copy-z""#, "13:10", 500),
+        ],
+    );
+
+    let partial_plain = message("2025-12-27T14:10:00.000Z", UNPRICED, &tokens(27, 9, 0, 0));
+    write(
+        &lab("lab-tree-partial"),
+        &[
+            header("lab-tree-partial", day_start, None),
+            tree("pt1", "null", "14:00", 26),
+            partial_plain.clone(),
+        ],
+    );
+    write(
+        &lab("lab-tree-partial-child"),
+        &[
+            header(
+                "lab-tree-partial-child",
+                Some("2025-12-27T14:20:00.000Z"),
+                Some(&relative("lab-tree-partial")),
+            ),
+            message("2025-12-27T14:00:00.000Z", UNPRICED, &tokens(26, 10, 20, 3)),
+            partial_plain,
+        ],
+    );
+}
+
+fn seed_fork_with_missing_and_zero_cost(write: &impl Fn(&str, &[String]), day_start: Option<&str>) {
+    let zero_usage = tokens(1000, 100, 0, 0);
+    write(
+        &lab("lab-zero-root"),
+        &[
+            header("lab-zero-root", day_start, None),
+            message("2025-12-27T14:30:00.000Z", GPT5, &zero_usage),
+        ],
+    );
+    write(
+        &lab("lab-zero-child"),
+        &[
+            header(
+                "lab-zero-child",
+                Some("2025-12-27T14:40:00.000Z"),
+                Some(&relative("lab-zero-root")),
+            ),
+            message(
+                "2025-12-27T14:30:00.000Z",
+                GPT5,
+                &with_cost(&zero_usage, "0"),
+            ),
+            message(
+                "2025-12-27T14:50:00.000Z",
+                GPT5,
+                &with_cost(&tokens(10, 1, 0, 0), "0.125"),
+            ),
+        ],
+    );
+}
+
+fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
+    let day_start = Some("2025-12-27T00:00:00.000Z");
+
     let cost_usage = tokens(10, 20, 30, 40);
     write(
         &lab("lab-cost-root"),
@@ -385,8 +531,6 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
         ],
     );
 
-    // Forked at 04:00: `p1` and `p2` are a replay, the copy of `p3` is not
-    // because the parent wrote it after the fork.
     let child_own = message("2025-12-27T06:00:00.000Z", UNPRICED, &tokens(70, 7, 8, 2));
     write(
         &lab("lab-child-exact"),
@@ -402,8 +546,6 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
             child_own.clone(),
         ],
     );
-    // The second copied record differs in one token field, which ends the
-    // replayed prefix there.
     write(
         &lab("lab-child-nearmiss"),
         &[
@@ -451,7 +593,6 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
             p1.clone(),
         ],
     );
-    // Entry links with a repeated ID make the copy's own history unusable.
     let duplicate_id = |line: &str| {
         line.replacen(
             r#"{"type":"message","#,
@@ -532,125 +673,13 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
         ],
     );
 
-    // The parent lives outside `PI_AGENT_DIR`, so its copy is a replay only
-    // when `--pi-path` lists both directories.
-    let outside = message("2025-12-27T11:30:00.000Z", UNPRICED, &tokens(25, 8, 0, 0));
-    write(
-        OUTSIDE_ROOT,
-        &[
-            header("outside-root", day_start, None),
-            outside.clone(),
-            message("2025-12-27T12:50:00.000Z", UNPRICED, &tokens(5, 5, 0, 0)),
-        ],
-    );
-    write(
-        &lab("lab-outside-child"),
-        &[
-            header(
-                "lab-outside-child",
-                Some("2025-12-27T12:00:00.000Z"),
-                Some(&json_path(&root.join(OUTSIDE_ROOT))),
-            ),
-            outside,
-            message("2025-12-27T11:40:00.000Z", UNPRICED, &tokens(2, 1, 0, 0)),
-        ],
-    );
+    seed_fork_with_parent_outside_store(root, write, day_start);
 
-    // Tree-format parent with a disconnected root and an abandoned sibling;
-    // the fork copies only the branch that ends at the last physical entry.
-    let tree = |id: &str, parent: &str, time: &str, input: u64| {
-        linked(
-            id,
-            parent,
-            &format!("2025-12-27T{time}:00.000Z"),
-            UNPRICED,
-            &tokens(input, 10, 20, 3),
-        )
-    };
-    write(
-        &lab("lab-tree-root"),
-        &[
-            header("lab-tree-root", day_start, None),
-            tree("t-unrelated", "null", "12:00", 50),
-            tree("t-a", "null", "12:10", 100),
-            tree("t-x", r#""t-a""#, "12:20", 200),
-            tree("t-y", r#""t-a""#, "12:30", 300),
-            tree("t-z", r#""t-y""#, "12:40", 400),
-        ],
-    );
-    write(
-        &lab("lab-tree-child"),
-        &[
-            header(
-                "lab-tree-child",
-                Some("2025-12-27T13:00:00.000Z"),
-                Some(&relative("lab-tree-root")),
-            ),
-            tree("copy-a", "null", "12:10", 100),
-            tree("copy-y", r#""copy-a""#, "12:30", 300),
-            tree("copy-z", r#""copy-y""#, "12:40", 400),
-            tree("child-only", r#""copy-z""#, "13:10", 500),
-        ],
-    );
+    seed_active_branch_and_partial_tree_replays(write, day_start);
 
-    // Only one of the parent's entries carries an ID, so it has no usable
-    // active branch.
-    let partial_plain = message("2025-12-27T14:10:00.000Z", UNPRICED, &tokens(27, 9, 0, 0));
-    write(
-        &lab("lab-tree-partial"),
-        &[
-            header("lab-tree-partial", day_start, None),
-            tree("pt1", "null", "14:00", 26),
-            partial_plain.clone(),
-        ],
-    );
-    write(
-        &lab("lab-tree-partial-child"),
-        &[
-            header(
-                "lab-tree-partial-child",
-                Some("2025-12-27T14:20:00.000Z"),
-                Some(&relative("lab-tree-partial")),
-            ),
-            message("2025-12-27T14:00:00.000Z", UNPRICED, &tokens(26, 10, 20, 3)),
-            partial_plain,
-        ],
-    );
-
-    // Missing stored cost in the parent, a stored cost of zero in the copy, on
-    // a priced model: a replay under `display` and `calculate` but not `auto`.
-    let zero_usage = tokens(1000, 100, 0, 0);
-    write(
-        &lab("lab-zero-root"),
-        &[
-            header("lab-zero-root", day_start, None),
-            message("2025-12-27T14:30:00.000Z", GPT5, &zero_usage),
-        ],
-    );
-    write(
-        &lab("lab-zero-child"),
-        &[
-            header(
-                "lab-zero-child",
-                Some("2025-12-27T14:40:00.000Z"),
-                Some(&relative("lab-zero-root")),
-            ),
-            message(
-                "2025-12-27T14:30:00.000Z",
-                GPT5,
-                &with_cost(&zero_usage, "0"),
-            ),
-            message(
-                "2025-12-27T14:50:00.000Z",
-                GPT5,
-                &with_cost(&tokens(10, 1, 0, 0), "0.125"),
-            ),
-        ],
-    );
+    seed_fork_with_missing_and_zero_cost(write, day_start);
 }
 
-/// A second pi-format store, reachable only through `pi.stores` in a config
-/// file, which the unified reports load under its own name.
 fn seed_named_store(root: &Path, write: &impl Fn(&str, &[String])) {
     let store = |name: &str| format!("{NAMED_STORE}/project-x/{name}.jsonl");
     let copied = message(
@@ -701,9 +730,8 @@ fn seed_named_store(root: &Path, write: &impl Fn(&str, &[String])) {
     );
 }
 
-pub fn extra_cases(root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(root: &Path) -> Vec<Case> {
     let path = |relative: &str| root.join(relative).to_string_lossy().into_owned();
-    // The default store, a second directory, a missing one, and a repeat.
     let multi = [
         path("pi/sessions"),
         path("pi/outside"),
@@ -743,8 +771,6 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
             "table_pi_path_missing",
             &["pi", "daily", "--offline", "--pi-path", &missing],
         ),
-        // Named stores are read only by the unified reports, so these two run
-        // without the agent name; every other agent's store is empty.
         Case::new(
             "daily",
             "json_named_store",

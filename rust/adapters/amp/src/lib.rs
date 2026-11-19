@@ -1,53 +1,24 @@
-use serde_json::Value;
-
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
-use crate::{
-    Result,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
-};
-
-pub use report::{report_from_rows, summarize_entries};
-
-/// The Amp usage source.
 pub struct Amp;
 
 pub static SOURCE: Amp = Amp;
 
 impl EntrySource for Amp {
     fn descriptor(&self) -> EntryDescriptor {
-        EntryDescriptor::standard("amp", "Amp")
+        EntryDescriptor {
+            table: ccusage_adapter_common::source::TableStyle::Credits,
+            ..EntryDescriptor::standard("amp", "Amp")
+        }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report::report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        report::print_table(kind, rows, shared)
     }
 }
 
@@ -59,9 +30,9 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 mod tests {
     use ccusage_adapter_common::{
         parity::assert_focused_matches_unified,
-        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+        source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarGuard, Fixture, fs_fixture};
+    use ccusage_test_support::{EnvGuard, Fixture, fs_fixture};
 
     use super::*;
 
@@ -84,9 +55,9 @@ mod tests {
 
     fn shared(since: Option<&str>, until: Option<&str>, timezone: &str) -> SharedArgs {
         SharedArgs {
-            since: since.map(str::to_string),
-            until: until.map(str::to_string),
-            timezone: Some(timezone.to_string()),
+            since: since.map(|date| date.parse().unwrap()),
+            until: until.map(|date| date.parse().unwrap()),
+            timezone: Some(timezone.parse().unwrap()),
             offline: true,
             ..SharedArgs::with_defaults()
         }
@@ -94,24 +65,26 @@ mod tests {
 
     #[test]
     fn focused_totals_match_the_unified_slice() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
-        let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("AMP_DATA_DIR", fixture.root());
 
         for shared in [
             shared(None, None, "UTC"),
             shared(Some("20260131"), Some("20260201"), "UTC"),
             shared(Some("20260201"), Some("20260201"), "Asia/Tokyo"),
-            shared(Some("2026"), Some("202602"), "UTC"),
+            shared(Some("20260101"), Some("20260131"), "UTC"),
             shared(Some("20270101"), None, "UTC"),
         ] {
-            assert_focused_matches_unified(&SOURCE, &shared, &[]);
+            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared);
         }
     }
 
     #[test]
     fn a_thread_file_cut_mid_write_is_noted_under_debug_and_the_rest_still_counts() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
-        let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("AMP_DATA_DIR", fixture.root());
         let quiet = shared(None, None, "UTC");
         let shared = SharedArgs {
             debug: true,
@@ -119,14 +92,14 @@ mod tests {
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Session,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(
+                    AgentReportKind::Session,
+                ),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
 

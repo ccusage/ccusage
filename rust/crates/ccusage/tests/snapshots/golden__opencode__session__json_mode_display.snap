@@ -51,28 +51,6 @@ exit: 0
       "totalTokens": 88
     },
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 8888,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.88,
-          "inputTokens": 8888,
-          "modelName": "gpt-5",
-          "outputTokens": 8888
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 8888,
-      "sessionId": "ses-agg-no-time",
-      "totalCost": 0.88,
-      "totalTokens": 17776
-    },
-    {
       "cacheCreationTokens": 100,
       "cacheReadTokens": 900,
       "inputTokens": 400,
@@ -283,24 +261,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 71,
+      "inputTokens": 7,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 71,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         }
       ],
       "modelsUsed": [
         "opus"
       ],
-      "outputTokens": 7,
+      "outputTokens": 1,
       "sessionId": "ses-v2-agent",
       "totalCost": 0.0,
-      "totalTokens": 78
+      "totalTokens": 8
     },
     {
       "cacheCreationTokens": 0,
@@ -415,24 +393,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 56,
+      "inputTokens": 45,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 56,
+          "inputTokens": 45,
           "modelName": "gpt-5",
-          "outputTokens": 6
+          "outputTokens": 5
         }
       ],
       "modelsUsed": [
         "gpt-5"
       ],
-      "outputTokens": 6,
+      "outputTokens": 5,
       "sessionId": "ses-v2-misc",
       "totalCost": 0.0,
-      "totalTokens": 62
+      "totalTokens": 50
     },
     {
       "cacheCreationTokens": 200,
@@ -500,10 +478,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 800,
     "cacheReadTokens": 18400,
-    "inputTokens": 16774,
-    "outputTokens": 10828,
-    "totalCost": 4.409999999999999,
-    "totalTokens": 46872
+    "inputTokens": 7811,
+    "outputTokens": 1933,
+    "totalCost": 3.53,
+    "totalTokens": 29014
   }
 }
 

@@ -1,24 +1,24 @@
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
-use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage_at,
-    cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
-};
-use ccusage_adapter_common::jsonl;
+use crate::{LoadedEntry, TokenUsageRaw, format_date_tz};
+use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
-/// Goose stores the per-session model selection as a JSON blob in the
-/// `model_config_json` column. Only the human-readable model name is consumed.
+// NOTE(2026-05-19, #1035): Goose embeds the model name in model_config_json on the SQLite session row. Parsing that object recovers the session's model attribution.
 #[derive(Debug, Deserialize)]
 struct GooseModelConfig {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model_name: Option<String>,
 }
 
-/// Why a Goose session row that carries usage was left out.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RowRejection {
     MissingId,
@@ -46,7 +46,7 @@ impl RowRejection {
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
     tz: &JiffTimeZone,
-    pricing: &PricingMap,
+    pricing: PriceTable<'_>,
 ) -> Result<Option<LoadedEntry>, RowRejection> {
     let input_tokens = read_token_value(statement, 8)
         .or_else(|| read_token_value(statement, 5))
@@ -84,31 +84,31 @@ pub(super) fn row_to_entry(
         speed: None,
         cache_creation: None,
     };
-    let timestamp_text = crate::format_rfc3339_millis(timestamp);
-    let data = UsageEntry {
-        session_id: Some(id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
+
+    let mut candidates = vec![(model.clone(), MatchKind::Fuzzy)];
+    if provider_id != "goose" {
+        candidates.push((format!("{provider_id}/{model}"), MatchKind::Fuzzy));
+    }
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|(name, kind)| (name.as_str(), *kind))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
             usage,
-            model: Some(model.clone()),
-            id: Some(id.clone()),
+            reasoning_tokens,
+            residual_tokens: 0,
+            reported_model: Some(&model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(timestamp),
         },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-    let cost = calculate_goose_cost(
-        &model,
-        &provider_id,
-        usage,
-        reasoning_tokens,
-        timestamp,
         pricing,
     );
-    let missing_pricing_model =
-        missing_goose_pricing(&model, &provider_id, usage, reasoning_tokens, pricing);
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
 
     Ok(Some(LoadedEntry {
         date: format_date_tz(timestamp, tz),
@@ -123,26 +123,22 @@ pub(super) fn row_to_entry(
         missing_pricing_model,
         extra_total_tokens: reasoning_tokens,
         message_count: None,
-        data,
+        usage,
+        message_id: Some(id.clone()),
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }))
 }
 
 fn read_token_value(statement: &sqlite::Statement<'_>, index: usize) -> Option<u64> {
-    statement
-        .read::<i64, _>(index)
-        .ok()
+    read_i64(statement, index)
+        .and_then(|value| u64::try_from(value).ok())
         .filter(|value| *value > 0)
-        .map(|value| value as u64)
 }
 
 fn read_timestamp_value(statement: &sqlite::Statement<'_>, index: usize) -> Option<String> {
-    statement.read::<String, _>(index).ok().or_else(|| {
-        statement
-            .read::<i64, _>(index)
-            .ok()
-            .map(|value| value.to_string())
-    })
+    statement.read::<Option<String>, _>(index).ok().flatten()
 }
 
 fn parse_goose_model_config(value: &str) -> Option<String> {
@@ -156,12 +152,7 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
         return None;
     }
     if let Ok(number) = trimmed.parse::<i64>() {
-        let millis = if number > 1_000_000_000_000 {
-            number
-        } else {
-            number.checked_mul(1_000)?
-        };
-        return (millis > 0).then(|| crate::TimestampMs::from_millis(millis));
+        return ccusage_adapter_common::timestamps::epoch_secs_or_millis(number);
     }
     if let Some(timestamp) = crate::parse_ts_timestamp(trimmed) {
         return Some(timestamp);
@@ -205,61 +196,53 @@ fn normalize_provider(provider: Option<&str>, model: &str) -> String {
     "goose".to_string()
 }
 
-fn calculate_goose_cost(
-    model: &str,
-    provider_id: &str,
-    usage: TokenUsageRaw,
-    reasoning_tokens: u64,
-    timestamp: crate::TimestampMs,
-    pricing: &PricingMap,
-) -> f64 {
-    let cost_usage = TokenUsageRaw {
-        output_tokens: usage.output_tokens.saturating_add(reasoning_tokens),
-        cache_creation: None,
-        ..usage
-    };
-    let raw = calculate_cost_for_usage_at(
-        Some(model),
-        cost_usage,
-        None,
-        Some(timestamp),
-        CostMode::Calculate,
-        Some(pricing),
-    );
-    if raw > 0.0 || provider_id == "goose" {
-        return raw;
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn zero_rates_stop_candidate_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut row = connection.prepare(r#"SELECT 's', '{"model_name":"sample"}', 'vendor', '2026-05-19 00:00:00', 100, 100, 0, 100, 100, 0"#).unwrap();
+        assert_eq!(row.next().unwrap(), sqlite::State::Row);
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        let loaded = super::row_to_entry(
+            &row,
+            &jiff::tz::TimeZone::UTC,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(loaded.cost, 0.0);
+        assert_eq!(loaded.missing_pricing_model, None);
     }
-    let candidate = format!("{provider_id}/{model}");
-    calculate_cost_for_usage_at(
-        Some(&candidate),
-        cost_usage,
-        None,
-        Some(timestamp),
-        CostMode::Calculate,
-        Some(pricing),
-    )
+
+    #[test]
+    fn mixed_epoch_units_use_one_boundary() {
+        for (raw, millis) in [
+            ("1767312000", 1_767_312_000_000),
+            ("10000000000", 10_000_000_000),
+            ("1000000000000", 1_000_000_000_000),
+        ] {
+            assert_eq!(
+                super::parse_goose_timestamp(raw).unwrap().as_millis(),
+                millis,
+                "{raw}"
+            );
+        }
+    }
 }
 
-fn missing_goose_pricing(
-    model: &str,
-    provider_id: &str,
-    usage: TokenUsageRaw,
-    reasoning_tokens: u64,
-    pricing: &PricingMap,
-) -> Option<String> {
-    let cost_usage = TokenUsageRaw {
-        output_tokens: usage.output_tokens.saturating_add(reasoning_tokens),
-        cache_creation: None,
-        ..usage
-    };
-    let mut candidates = vec![model.to_string()];
-    if provider_id != "goose" {
-        candidates.push(format!("{provider_id}/{model}"));
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let model = parse_goose_model_config(r#"{"model_name":"gpt-5.2"}"#).unwrap();
+        assert_eq!(model, "gpt-5.2");
+        assert_eq!(normalize_provider(None, &model), "openai");
+        assert_eq!(normalize_provider(Some("open-ai"), &model), "open_ai");
     }
-    missing_pricing_model_for_candidates(
-        model,
-        candidates,
-        crate::total_usage_tokens(cost_usage),
-        Some(pricing),
-    )
 }

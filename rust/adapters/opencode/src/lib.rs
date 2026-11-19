@@ -12,26 +12,10 @@ pub use report::report_json;
 pub(crate) use report::summarize_entries;
 pub use source::SOURCE;
 
-use crate::{
-    Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries, wants_json,
-};
+use crate::{Result, cli::AgentCommandArgs, print_json_or_jq, sort_summaries, wants_json};
 
-/// Reports whether an OpenCode install has usage data, independent of the
-/// requested date window.
-///
-/// The aggregate report lists which agents it found, and the loader narrows to
-/// `--since`/`--until` as it reads, so an out-of-range query cannot answer that
-/// question from the loaded entries alone.
 pub(crate) fn has_data() -> bool {
     paths::paths().is_ok_and(|paths| paths.iter().any(|path| loader::has_source(path)))
-}
-
-/// Runs the OpenCode report over every row, `claude-agent` turns included.
-/// The CLI goes through `ccusage_adapter_all::run_opencode`, which can drop
-/// the turns the Claude source already counts.
-pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let entries = loader::load_entries(&args.shared, args.kind)?;
-    print_report(&args, entries)
 }
 
 /// Prints the OpenCode report for already loaded entries.
@@ -41,20 +25,25 @@ pub fn print_report(args: &AgentCommandArgs, mut entries: Vec<LoadedEntry>) -> R
     filter_loaded_entries_by_date(&mut entries, shared);
     if wants_json(shared) {
         return print_json_or_jq(
-            report_json(&entries, kind, &shared.order)?,
+            report_json(
+                &entries,
+                kind,
+                &shared.order.unwrap_or_default(),
+                args.start_of_week,
+            )?,
             shared.jq.as_deref(),
             shared.no_cost,
         );
     }
-    let mut rows = summarize_entries(&entries, kind)?;
-    sort_summaries(&mut rows, &shared.order, |row| summary_period(row));
-    print_usage_table(
-        "OpenCode Token Usage Report",
-        first_column(kind),
+    let mut rows = summarize_entries(&entries, kind, args.start_of_week)?;
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+        summary_period(row)
+    });
+    ccusage_adapter_common::report::print_table(
+        ccusage_adapter_common::source::EntryDescriptor::standard("opencode", "OpenCode"),
         &rows,
+        kind,
         shared,
-        false,
-        None,
     )?;
     Ok(())
 }

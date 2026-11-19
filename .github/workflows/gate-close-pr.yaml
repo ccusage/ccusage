@@ -1,7 +1,5 @@
 name: Gate Close PR
 
-# Manually close a PR when a maintainer explicitly requests it.
-
 on:
   workflow_dispatch:
     inputs:
@@ -9,6 +7,10 @@ on:
         description: PR number to close
         required: true
         type: number
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   close:

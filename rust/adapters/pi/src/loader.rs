@@ -3,32 +3,20 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use ccusage_adapter_common::{collect_files_with_extension, read_units, source::LoadContext};
+use ccusage_adapter_common::{
+    collect_files_with_extension, dedupe::dedupe_first_wins, source::LoadContext,
+    units::read_typed_units,
+};
 
 use crate::{LoadedEntry, Result};
 
-use super::{parser, paths};
-
-#[cfg(test)]
-pub(crate) fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    custom_path: Option<&str>,
-    pricing: Option<&crate::PricingMap>,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions {
-            pi_path: custom_path,
-            ..ccusage_adapter_common::source::SourceOptions::default()
-        },
-        pricing,
-    )
-    .map(|(entries, _)| entries)
-}
+use super::{
+    parser::{self, ParentSession},
+    paths,
+};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, PiLoadScope::Default)
+    load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, "pi")
 }
 
 pub(crate) fn load_named_store_entries(
@@ -36,102 +24,50 @@ pub(crate) fn load_named_store_entries(
     store_paths: &[PathBuf],
     store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
-    load_entries_for_context(cx, store_paths, PiLoadScope::Named { store_name })
-}
-
-#[derive(Clone, Copy)]
-enum PiLoadScope<'a> {
-    Default,
-    Named { store_name: &'a str },
-}
-
-impl<'a> PiLoadScope<'a> {
-    fn store_name(self) -> &'a str {
-        match self {
-            Self::Default => "pi",
-            Self::Named { store_name } => store_name,
-        }
-    }
+    load_entries_for_context(cx, store_paths, store_name)
 }
 
 fn load_entries_for_context(
     cx: &LoadContext<'_>,
     paths: &[PathBuf],
-    scope: PiLoadScope<'_>,
+    store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx.pricing.table(cx.shared.mode);
     let shared = cx.shared;
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();
     for path in paths {
         let mut files = Vec::new();
         collect_files_with_extension(path, "jsonl", &mut files, cx.diagnostics);
-        // pi-subagents writes derived debug transcripts under a
-        // `subagent-artifacts/` directory inside the sessions tree. They are
-        // pure copies of calls already recorded in the primary session files
-        // (no session header, no entry ids), so neither the replay suppression
-        // below nor entry-id dedup can collapse them. Skip them here instead.
-        // `run-*/` fresh-context child sessions are the primary record for
-        // those children and must keep counting.
+        // NOTE(2026-09-15, #1714): pi-subagents writes debug transcripts under `subagent-artifacts/` that copy calls without their session header or entry IDs. Skip that directory and retain the primary `run-*/` child sessions.
         files.retain(|file| !is_subagent_artifact_transcript(file));
-        // Read session files in parallel; the first-wins dedup runs sequentially
-        // over the original file order so the surviving record per id matches the
-        // single-threaded read.
-        let loaded = read_units(
-            &files,
-            shared.single_thread,
-            cx.diagnostics,
-            |file| match scope {
-                PiLoadScope::Default => parser::read_session_file_data_with_diagnostics(
-                    file,
-                    cx.window.timezone(),
-                    shared.mode,
-                    cx.pricing,
-                    cx.diagnostics,
-                ),
-                PiLoadScope::Named { store_name } => {
-                    parser::read_session_file_data_for_store_with_diagnostics(
-                        file,
-                        path,
-                        cx.window.timezone(),
-                        shared.mode,
-                        cx.pricing,
-                        store_name,
-                        cx.diagnostics,
-                    )
-                }
-            },
-        );
-        discovered_files.extend(files.into_iter().map(|file| DiscoveredFile { path: file }));
+        let loaded = read_typed_units(&files, shared.single_thread, cx.diagnostics, |file| {
+            parser::read_session_file_data_for_store_with_diagnostics(
+                file,
+                path,
+                cx.window.timezone(),
+                shared.mode,
+                pricing,
+                store_name,
+                cx.diagnostics,
+            )
+        });
+        discovered_files.extend(files);
         loaded_files.extend(loaded);
     }
 
     let replay_plan = PiReplayPlan::new(&discovered_files, &loaded_files);
-    for (index, (_file, data)) in discovered_files.into_iter().zip(loaded_files).enumerate() {
-        let Some(data) = data else {
-            continue;
-        };
-        for entry in data
-            .entries
-            .into_iter()
-            .skip(replay_plan.skip_prefix(index))
-        {
-            let id = match scope {
-                PiLoadScope::Default => parser::entry_id(&entry),
-                PiLoadScope::Named { .. } => parser::entry_id_for_store(scope.store_name(), &entry),
-            };
-            if seen.insert(id) {
-                entries.push(entry);
-            }
-        }
-    }
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
-}
-
-struct DiscoveredFile {
-    path: PathBuf,
+    let records = loaded_files
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, data)| {
+            data.into_iter()
+                .flat_map(|data| data.entries)
+                .skip(replay_plan.skip_prefix(index))
+        });
+    let mut entries = dedupe_first_wins(records, parser::entry_id);
+    entries.sort_by_cached_key(|entry| (entry.timestamp, parser::entry_id(entry)));
+    Ok(entries.into_iter().map(|entry| entry.entry).collect())
 }
 
 struct ParentReplay {
@@ -144,12 +80,10 @@ struct PiReplayPlan {
 }
 
 impl PiReplayPlan {
-    fn new(files: &[DiscoveredFile], loaded: &[Option<parser::PiSessionData>]) -> Self {
+    fn new(files: &[PathBuf], loaded: &[Option<parser::PiSessionData>]) -> Self {
         let mut files_by_path = HashMap::new();
         for (index, file) in files.iter().enumerate() {
-            files_by_path
-                .entry(normalize_path(&file.path))
-                .or_insert(index);
+            files_by_path.entry(normalize_path(file)).or_insert(index);
         }
 
         let mut invalid_lineage = HashSet::new();
@@ -158,7 +92,7 @@ impl PiReplayPlan {
                 invalid_lineage.insert(index);
                 continue;
             };
-            if header.timestamp.is_none() || header.parent_session_is_malformed {
+            if header.timestamp.is_none() || header.parent_session == ParentSession::Malformed {
                 invalid_lineage.insert(index);
             }
         }
@@ -168,14 +102,14 @@ impl PiReplayPlan {
             let Some(header) = data.as_ref().and_then(|data| data.header.as_ref()) else {
                 continue;
             };
-            let Some(parent_path) = header.parent_session.as_ref() else {
+            let ParentSession::Path(parent_path) = &header.parent_session else {
                 continue;
             };
             let Some(fork_timestamp) = header.timestamp else {
                 continue;
             };
             let Some(parent_index) =
-                resolve_parent_index(parent_path, &files[child_index].path, &files_by_path)
+                resolve_parent_index(parent_path, &files[child_index], &files_by_path)
             else {
                 invalid_lineage.insert(child_index);
                 continue;
@@ -303,6 +237,7 @@ mod tests {
         path: PathBuf,
         pricing: Option<&PricingMap>,
     ) -> Vec<LoadedEntry> {
+        ccusage_test_support::install_pricing_snapshots();
         ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,
             shared,
@@ -317,6 +252,7 @@ mod tests {
     }
 
     fn load_store(shared: &SharedArgs, paths: Vec<PathBuf>) -> Vec<LoadedEntry> {
+        ccusage_test_support::install_pricing_snapshots();
         ccusage_adapter_common::testing::load_entries(
             &crate::NamedStore::new("omp", paths),
             shared,
@@ -325,6 +261,44 @@ mod tests {
         )
         .unwrap()
         .0
+    }
+
+    #[test]
+    fn default_store_uses_its_root_for_project_names() {
+        let fixture = ccusage_test_support::fs_fixture!({});
+        fixture.write_file(
+            "sessions/outer/pi-data/project-a/agent_session-a.jsonl",
+            usage_line("2026-01-02T00:00:00.000Z", 10, 1, 0, 0),
+        );
+        let entries = load_default(
+            &SharedArgs::default(),
+            fixture.path("sessions/outer/pi-data"),
+            None,
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(&*entries[0].project, "project-a");
+    }
+
+    #[test]
+    fn tied_timestamps_are_ordered_by_usage_identity() {
+        let fixture = ccusage_test_support::fs_fixture!({});
+        let timestamp = "2026-01-02T00:00:00.000Z";
+        fixture.write_file(
+            "data/project/agent_session.jsonl",
+            [
+                usage_line(timestamp, 20, 1, 0, 0),
+                usage_line(timestamp, 10, 1, 0, 0),
+            ]
+            .join("\n"),
+        );
+        let entries = load_default(&SharedArgs::default(), fixture.path("data"), None);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.usage.input_tokens)
+                .collect::<Vec<_>>(),
+            [10, 20],
+        );
     }
 
     fn session_line(id: &str, timestamp: &str, parent: Option<&Path>) -> String {
@@ -474,7 +448,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_a_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_a_entries[0].data.message.usage.input_tokens, 50,
+                child_a_entries[0].usage.input_tokens, 50,
                 "single_thread={single_thread}"
             );
             let child_b_entries = entries
@@ -483,12 +457,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_b_entries.len(), 2, "single_thread={single_thread}");
             assert_eq!(
-                child_b_entries[0]
-                    .data
-                    .message
-                    .usage
-                    .cache_creation_input_tokens,
-                999,
+                child_b_entries[0].usage.cache_creation_input_tokens, 999,
                 "single_thread={single_thread}"
             );
         }
@@ -508,7 +477,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -535,7 +504,7 @@ mod tests {
 
             assert_eq!(entries.len(), 5, "single_thread={single_thread}");
             assert!(entries.iter().any(|entry| {
-                entry.session_id.as_ref() == "root" && entry.data.message.usage.input_tokens == 200
+                entry.session_id.as_ref() == "root" && entry.usage.input_tokens == 200
             }));
             let child_entries = entries
                 .iter()
@@ -543,7 +512,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_entries[0].data.message.usage.input_tokens, 500,
+                child_entries[0].usage.input_tokens, 500,
                 "single_thread={single_thread}"
             );
         }
@@ -567,7 +536,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -598,7 +567,7 @@ mod tests {
 
             assert_eq!(entries.len(), 4, "single_thread={single_thread}");
             assert!(entries.iter().any(|entry| {
-                entry.session_id.as_ref() == "root" && entry.data.message.usage.input_tokens == 50
+                entry.session_id.as_ref() == "root" && entry.usage.input_tokens == 50
             }));
             let child_entries = entries
                 .iter()
@@ -606,7 +575,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_entries[0].data.message.usage.input_tokens, 300,
+                child_entries[0].usage.input_tokens, 300,
                 "single_thread={single_thread}"
             );
         }
@@ -625,7 +594,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/missing-child.jsonl",
             [
                 session_line(
@@ -637,7 +606,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/outside-parent-child.jsonl",
             [
                 session_line(
@@ -649,7 +618,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-parent.jsonl",
             [
                 "not json".to_string(),
@@ -657,7 +626,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-parent-child.jsonl",
             [
                 session_line(
@@ -669,7 +638,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-parent-grandchild.jsonl",
             [
                 session_line(
@@ -681,7 +650,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-child.jsonl",
             [
                 "not json".to_string(),
@@ -689,11 +658,11 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/regular-a.jsonl",
             usage_line("2026-01-02T11:00:00.000Z", 100, 10, 20, 3),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/regular-b.jsonl",
             usage_line("2026-01-02T11:00:00.000Z", 100, 10, 20, 3),
         );
@@ -756,7 +725,7 @@ mod tests {
         let self_path = fixture.path("sessions/project-a/self.jsonl");
         let cycle_a = fixture.path("sessions/project-a/cycle-a.jsonl");
         let cycle_b = fixture.path("sessions/project-a/cycle-b.jsonl");
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/self.jsonl",
             [
                 session_line("self", "2026-01-03T00:00:00.000Z", Some(&self_path)),
@@ -764,7 +733,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/cycle-a.jsonl",
             [
                 session_line("cycle-a", "2026-01-03T00:00:00.000Z", Some(&cycle_b)),
@@ -772,7 +741,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/cycle-b.jsonl",
             [
                 session_line("cycle-b", "2026-01-03T00:00:00.000Z", Some(&cycle_a)),
@@ -815,7 +784,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/grandchild.jsonl",
             [
                 session_line("grandchild", "2026-01-04T00:00:00.000Z", Some(&child)),
@@ -857,8 +826,6 @@ mod tests {
                     .iter()
                     .find(|entry| entry.session_id.as_ref() == "grandchild")
                     .unwrap()
-                    .data
-                    .message
                     .usage
                     .input_tokens,
                 400,
@@ -895,7 +862,7 @@ mod tests {
             ("total-fallback", "gpt-5", 10, 20, 30, 40, 110),
         ];
         for (name, model, input, output, cache_read, cache_write, total_tokens) in variants {
-            let _ = fixture.write_file(
+            fixture.write_file(
                 format!("sessions/project-a/child-{name}.jsonl"),
                 [
                     session_line(name, "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -946,7 +913,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -986,7 +953,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1015,7 +982,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1055,7 +1022,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1092,7 +1059,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1125,7 +1092,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_entries[0].data.message.usage.input_tokens, 1,
+                child_entries[0].usage.input_tokens, 1,
                 "single_thread={single_thread}"
             );
         }
@@ -1144,7 +1111,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "second/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1175,7 +1142,7 @@ mod tests {
     #[test]
     fn skips_subagent_artifact_transcripts_but_keeps_fresh_context_child_sessions() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/root.jsonl",
             [
                 session_line("root", "2026-01-01T00:00:00.000Z", None),
@@ -1183,18 +1150,15 @@ mod tests {
             ]
             .join("\n"),
         );
-        // Nested placement: `<session>/subagent-artifacts/*_transcript.jsonl`.
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
-        // Sibling placement: a stray `subagent-artifacts/` segment elsewhere.
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/subagent-artifacts/other_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
-        // Fresh-context children are the primary record and must keep counting.
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/root/run-abc/run-0/session.jsonl",
             usage_line("2026-01-03T01:00:00.000Z", 50, 5, 6, 1),
         );
@@ -1209,15 +1173,11 @@ mod tests {
 
             assert_eq!(entries.len(), 2, "single_thread={single_thread}");
             assert!(
-                entries
-                    .iter()
-                    .any(|entry| entry.data.message.usage.input_tokens == 100),
+                entries.iter().any(|entry| entry.usage.input_tokens == 100),
                 "single_thread={single_thread}"
             );
             assert!(
-                entries
-                    .iter()
-                    .any(|entry| entry.data.message.usage.input_tokens == 50),
+                entries.iter().any(|entry| entry.usage.input_tokens == 50),
                 "single_thread={single_thread}"
             );
             assert!(
@@ -1233,7 +1193,7 @@ mod tests {
     fn skips_subagent_artifact_transcripts_for_named_stores() {
         let fixture = Fixture::new();
         let store = fixture.create_dir_all("store");
-        let _ = fixture.write_file(
+        fixture.write_file(
             "store/project-a/root.jsonl",
             [
                 session_line("root", "2026-01-01T00:00:00.000Z", None),
@@ -1241,7 +1201,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "store/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
@@ -1254,7 +1214,7 @@ mod tests {
         let entries = load_store(&shared, vec![store]);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.input_tokens, 100);
     }
 
     #[test]

@@ -1,14 +1,15 @@
-use std::{fs, path::PathBuf};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use ccusage_core::Diagnostics;
-use ccusage_test_support::{EnvVarGuard, Fixture};
+use ccusage_test_support::{EnvGuard, Fixture};
 use serde_json::json;
 
 use crate::{
-    PricingMap,
-    aggregate::load_groups,
-    cli::{AgentReportKind, CodexSpeed, SharedArgs},
-    load_codex_events_from_directory, load_codex_events_with_detection, paths, report_json,
+    CodexServiceTier, CodexSpeedPolicy, PricingMap,
+    aggregate::load_groups_with_diagnostics,
+    cli::{AgentReportKind, CostMode, SharedArgs},
+    report::report_from_groups,
+    test_support::{collect_codex_usage_files, load_groups_from_directory},
 };
 
 fn write_compressed(fixture: &Fixture, path: &str, contents: &str) -> PathBuf {
@@ -45,18 +46,23 @@ fn cumulative_count(timestamp: &str, input: u64, cached: u64, output: u64) -> St
     .to_string()
 }
 
-fn load_from_codex_home(
-    fixture: &Fixture,
-    single_thread: bool,
-) -> Vec<crate::CodexTokenUsageEvent> {
-    let _guard = EnvVarGuard::set("CODEX_HOME", fixture.path("codex"));
-    let (events, detected) = load_codex_events_with_detection(&SharedArgs {
-        single_thread,
-        ..SharedArgs::default()
-    })
+fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTreeMap<String, u64> {
+    let _guard = EnvGuard::set("CODEX_HOME", fixture.path("codex"));
+    let (groups, detected) = load_groups_with_diagnostics(
+        &SharedArgs {
+            single_thread,
+            ..SharedArgs::default()
+        },
+        AgentReportKind::Session,
+        Some(&crate::PricingMap::load_embedded()),
+        &Diagnostics::new("codex"),
+    )
     .unwrap();
     assert!(detected);
-    events
+    groups
+        .into_iter()
+        .map(|(session, group)| (session, group.total_tokens))
+        .collect()
 }
 
 fn total_tokens(events: &[crate::CodexTokenUsageEvent]) -> u64 {
@@ -66,7 +72,7 @@ fn total_tokens(events: &[crate::CodexTokenUsageEvent]) -> u64 {
 #[test]
 fn loads_compressed_rollouts_with_the_plain_session_id() {
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "2026/10/14/rollout.jsonl.zst",
         &[
@@ -84,12 +90,12 @@ fn loads_compressed_rollouts_with_the_plain_session_id() {
         .join("\n"),
     );
 
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
     let event = &events[0];
     assert_eq!(event.session_id, "2026/10/14/rollout");
-    assert_eq!(event.model.as_deref(), Some("gpt-5"));
+    assert_eq!(event.model.as_str(), "gpt-5");
     assert_eq!(event.input_tokens, 100);
     assert_eq!(event.cached_input_tokens, 80);
     assert_eq!(event.output_tokens, 20);
@@ -99,51 +105,50 @@ fn loads_compressed_rollouts_with_the_plain_session_id() {
 
 #[test]
 fn discovers_compressed_rollouts_in_sessions_and_archived_sessions() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/sessions/2026/10/14/active.jsonl.zst",
         &usage_log("2026-10-14T00:00:00Z", 100),
     );
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/archived_sessions/archived.jsonl.zst",
         &usage_log("2026-10-14T00:01:00Z", 200),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/archived_sessions/plain.jsonl",
         usage_log("2026-10-14T00:02:00Z", 300),
     );
-    let _ = fixture.write_file("codex/sessions/notes.zst", "not a rollout");
+    fixture.write_file("codex/sessions/notes.zst", "not a rollout");
 
     for single_thread in [true, false] {
-        let events = load_from_codex_home(&fixture, single_thread);
+        let sessions = session_tokens_from_codex_home(&fixture, single_thread);
 
-        let mut session_ids = events
-            .iter()
-            .map(|event| event.session_id.as_str())
-            .collect::<Vec<_>>();
-        session_ids.sort_unstable();
-        assert_eq!(session_ids, ["2026/10/14/active", "archived", "plain"]);
-        assert_eq!(total_tokens(&events), 660);
+        assert_eq!(
+            sessions.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["2026/10/14/active", "archived", "plain"]
+        );
+        assert_eq!(sessions.values().sum::<u64>(), 660);
     }
 }
 
 #[test]
 fn counts_a_rollout_with_plain_and_compressed_copies_once() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:10Z", 100));
-    let _ = write_compressed(
+    fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:10Z", 100));
+    write_compressed(
         &fixture,
         "session.jsonl.zst",
         &usage_log("2026-10-14T00:00:01Z", 400),
     );
 
     assert_eq!(
-        paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex")),
+        collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex")),
         vec![fixture.path("session.jsonl")]
     );
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].session_id, "session");
@@ -152,21 +157,21 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
 
 #[test]
 fn keeps_active_rollout_when_archive_uses_a_different_encoding() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/sessions/session.jsonl.zst",
         &usage_log("2026-10-14T00:00:10Z", 100),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/archived_sessions/session.jsonl",
         usage_log("2026-10-14T00:00:01Z", 400),
     );
 
-    let events = load_from_codex_home(&fixture, true);
+    let sessions = session_tokens_from_codex_home(&fixture, true);
 
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].total_tokens, 120);
+    assert_eq!(sessions, BTreeMap::from([("session".to_string(), 120)]));
 }
 
 #[test]
@@ -191,7 +196,7 @@ fn counts_cumulative_deltas_across_concatenated_zstd_frames() {
     compressed.extend(zstd::stream::encode_all(second_frame.as_bytes(), 3).unwrap());
     fs::write(path, compressed).unwrap();
 
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[1].input_tokens, 60);
@@ -214,7 +219,7 @@ fn keeps_usage_decoded_before_a_truncated_frame() {
     let path = fixture.write_file("session.jsonl.zst", "");
     fs::write(path, compressed).unwrap();
 
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].total_tokens, 120);
@@ -224,9 +229,9 @@ fn keeps_usage_decoded_before_a_truncated_frame() {
 fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     let fixture = Fixture::new();
     let plain = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:00Z", 100));
-    let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "session.jsonl.zst",
         &usage_log("2026-10-14T00:00:00Z", 100),
@@ -234,11 +239,15 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
 
     assert_eq!(files, vec![plain]);
     let mut visited = Vec::new();
-    crate::parser::visit_codex_session_file(fixture.root(), &files[0], None, |event| {
-        visited.push(event);
-        Ok(())
-    })
-    .unwrap();
+    crate::parser::visit_codex_session_file_with_diagnostics(
+        fixture.root(),
+        &files[0],
+        None,
+        |event| {
+            visited.push(event);
+        },
+        &Diagnostics::new("codex"),
+    );
     assert_eq!(visited.len(), 1);
     assert_eq!(visited[0].session_id, "session");
     assert_eq!(visited[0].total_tokens, 120);
@@ -252,29 +261,34 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
     }})
     .to_string();
     let plain = fixture.write_file("run.jsonl", &headless);
-    let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
-    paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &compressed,
         crate::parse_ts_timestamp("2026-10-14T12:00:00.000Z").unwrap(),
     );
 
     let mut visited = Vec::new();
-    crate::parser::visit_codex_session_file(fixture.root(), &files[0], None, |event| {
-        visited.push(event);
-        Ok(())
-    })
-    .unwrap();
+    crate::parser::visit_codex_session_file_with_diagnostics(
+        fixture.root(),
+        &files[0],
+        None,
+        |event| {
+            visited.push(event);
+        },
+        &Diagnostics::new("codex"),
+    );
 
     assert_eq!(visited.len(), 1);
-    assert_eq!(visited[0].timestamp, "2026-10-14T12:00:00.000Z");
+    assert_eq!(visited[0].last_activity, "2026-10-14T12:00:00.000Z");
 }
 
 #[test]
 fn removes_inherited_usage_when_parent_and_child_are_compressed() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "a-parent.jsonl.zst",
         &[
@@ -283,7 +297,7 @@ fn removes_inherited_usage_when_parent_and_child_are_compressed() {
         ]
         .join("\n"),
     );
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "b-child.jsonl.zst",
         &[
@@ -297,19 +311,20 @@ fn removes_inherited_usage_when_parent_and_child_are_compressed() {
     );
 
     for single_thread in [true, false] {
-        let events = load_codex_events_from_directory(fixture.root(), single_thread).unwrap();
-        assert_eq!(events.len(), 2);
-        assert_eq!(total_tokens(&events), 190);
-        let child = events
-            .iter()
-            .find(|event| event.session_id == "b-child")
-            .unwrap();
-        assert_eq!(child.total_tokens, 70);
+        let shared = SharedArgs {
+            single_thread,
+            ..SharedArgs::default()
+        };
+        let groups =
+            load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Session).unwrap();
+        assert_eq!(groups["a-parent"].total_tokens, 120);
+        assert_eq!(groups["b-child"].total_tokens, 70);
     }
 }
 
 #[test]
 fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let parent = write_compressed(
         &fixture,
@@ -320,11 +335,11 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
         ]
         .join("\n"),
     );
-    paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &parent,
         crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/sessions/2026/10/14/child.jsonl",
         [
             json!({"timestamp": "2026-10-14T00:01:00Z", "type": "session_meta",
@@ -335,20 +350,22 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
         ]
         .join("\n"),
     );
-    let _guard = EnvVarGuard::set("CODEX_HOME", fixture.path("codex"));
+    let _guard = EnvGuard::set("CODEX_HOME", fixture.path("codex"));
 
     for single_thread in [true, false] {
         let shared = SharedArgs {
-            since: Some("20261014".into()),
-            timezone: Some("UTC".into()),
+            since: Some("20261014".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
         };
-        let (events, detected) = load_codex_events_with_detection(&shared).unwrap();
-        assert!(detected);
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].total_tokens, 70);
-        let groups = load_groups(&shared, AgentReportKind::Monthly).unwrap();
+        let (groups, _) = load_groups_with_diagnostics(
+            &shared,
+            AgentReportKind::Monthly,
+            None,
+            &Diagnostics::new("codex"),
+        )
+        .unwrap();
         assert_eq!(groups["2026-10"].total_tokens, 70);
     }
 }
@@ -356,7 +373,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
 #[test]
 fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "child.jsonl.zst",
         &[
@@ -370,7 +387,7 @@ fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
         .join("\n"),
     );
 
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].total_tokens, 70);
@@ -378,6 +395,7 @@ fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
 
 #[test]
 fn counts_compaction_records_in_a_compressed_archive_once() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let record = json!({"timestamp": "2026-10-14T00:00:02Z", "type": "token_usage_record",
     "payload": {
@@ -389,7 +407,7 @@ fn counts_compaction_records_in_a_compressed_archive_once() {
         "compaction_response_id": "compaction-1",
     }})
     .to_string();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/archived_sessions/session.jsonl.zst",
         &[
@@ -402,25 +420,37 @@ fn counts_compaction_records_in_a_compressed_archive_once() {
         .join("\n"),
     );
 
-    let events = load_from_codex_home(&fixture, true);
+    let sessions = session_tokens_from_codex_home(&fixture, true);
 
-    assert_eq!(events.len(), 2);
-    assert_eq!(total_tokens(&events), 640);
+    assert_eq!(sessions, BTreeMap::from([("session".to_string(), 640)]));
 }
 
 #[test]
 fn compressed_rollouts_match_plain_json_reports_for_every_report_mode() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let log = [
         usage_log("2026-02-01T00:00:00Z", 100).replace("gpt-5", "gpt-5.3-codex"),
         usage_log("2026-10-14T00:00:00Z", 50),
     ]
     .join("\n");
-    let _ = fixture.write_file("plain/session.jsonl", &log);
-    let _ = write_compressed(&fixture, "compressed/session.jsonl.zst", &log);
-    let plain = load_codex_events_from_directory(&fixture.path("plain"), true).unwrap();
-    let compressed = load_codex_events_from_directory(&fixture.path("compressed"), true).unwrap();
+    fixture.write_file("plain/session.jsonl", &log);
+    write_compressed(&fixture, "compressed/session.jsonl.zst", &log);
     let pricing = PricingMap::load_embedded();
+    let shared = SharedArgs {
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+        ..SharedArgs::default()
+    };
+    let report = |dir: &str, kind| {
+        let groups = load_groups_from_directory(&fixture.path(dir), &shared, kind).unwrap();
+        report_from_groups(
+            &groups,
+            kind,
+            Some(&pricing),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            CostMode::Calculate,
+        )
+    };
 
     for kind in [
         AgentReportKind::Daily,
@@ -428,16 +458,8 @@ fn compressed_rollouts_match_plain_json_reports_for_every_report_mode() {
         AgentReportKind::Monthly,
         AgentReportKind::Session,
     ] {
-        let expected =
-            report_json(&plain, kind, Some("UTC"), &pricing, CodexSpeed::Standard).unwrap();
-        let actual = report_json(
-            &compressed,
-            kind,
-            Some("UTC"),
-            &pricing,
-            CodexSpeed::Standard,
-        )
-        .unwrap();
+        let expected = report("plain", kind);
+        let actual = report("compressed", kind);
         assert_eq!(actual["totals"]["totalTokens"], 190);
         assert_eq!(actual, expected);
     }

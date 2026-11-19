@@ -6,12 +6,12 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316967,
-    "inputTokens": 1350271,
-    "outputTokens": 59366,
-    "totalCost": 28.65479542,
-    "totalTokens": 2748086,
+    "cacheCreationTokens": 17765,
+    "cacheReadTokens": 1309967,
+    "inputTokens": 1347424,
+    "outputTokens": 58720,
+    "totalCost": 28.147148424999997,
+    "totalTokens": 2737293,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -28,7 +28,6 @@ exit: 0
       "copilot-mystery-1",
       "droid-mystery-1",
       "dsh-mystery-1",
-      "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",
       "gpt-unknown",
@@ -46,44 +45,6 @@ exit: 0
     ]
   },
   "weekly": [
-    {
-      "agent": "all",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 22,
-      "metadata": {
-        "agents": [
-          "grok",
-          "opencode"
-        ]
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00002375,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 3.7e-6,
-          "inputTokens": 11,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5",
-        "grok-code-fast-1"
-      ],
-      "outputTokens": 2,
-      "period": "1969-12-29",
-      "totalCost": 0.000027450000000000003,
-      "totalTokens": 24
-    },
     {
       "agent": "all",
       "cacheCreationTokens": 0,
@@ -116,7 +77,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 8583,
+      "inputTokens": 8483,
       "metadata": {
         "agents": [
           "amp",
@@ -216,18 +177,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000172,
+          "cost": 0.000165,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
           "outputTokens": 50
         },
         {
@@ -277,22 +229,21 @@ exit: 0
         "antigravity-model-77",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
         "kimi-k2-thinking",
         "unknown"
       ],
-      "outputTokens": 1810,
+      "outputTokens": 1760,
       "period": "2025-12-22",
-      "totalCost": 3.8313745000000003,
-      "totalTokens": 12780
+      "totalCost": 3.8313675000000003,
+      "totalTokens": 12630
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 16801,
-      "cacheReadTokens": 1313874,
-      "inputTokens": 1340655,
+      "cacheCreationTokens": 16501,
+      "cacheReadTokens": 1306874,
+      "inputTokens": 1337930,
       "metadata": {
         "agents": [
           "amp",
@@ -321,10 +272,10 @@ exit: 0
         {
           "cacheCreationTokens": 1670,
           "cacheReadTokens": 58950,
-          "cost": 4.0417605000000005,
-          "inputTokens": 12023,
+          "cost": 4.0414805000000005,
+          "inputTokens": 11943,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 4495,
+          "outputTokens": 4455,
           "storedCost": 4.007
         },
         {
@@ -340,11 +291,11 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
           "cacheReadTokens": 108220,
-          "cost": 3.648100000000001,
-          "inputTokens": 31478,
+          "cost": 3.6477850000000003,
+          "inputTokens": 31408,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 9751,
+          "outputTokens": 9744,
           "storedCost": 3.451
         },
         {
@@ -367,15 +318,6 @@ exit: 0
           "storedCost": 2.0
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 15000,
-          "cost": 1.8547250000000002,
-          "inputTokens": 3650,
-          "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 725,
-          "storedCost": 1.85
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 252100,
           "cost": 1.4801725000000001,
@@ -393,13 +335,22 @@ exit: 0
           "storedCost": 1.1
         },
         {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 11000,
+          "cost": 1.1042,
+          "inputTokens": 2600,
+          "modelName": "[openclaw] claude-sonnet-4-20250514",
+          "outputTokens": 500,
+          "storedCost": 1.1
+        },
+        {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 36435,
-          "cost": 0.675855,
-          "inputTokens": 19430,
+          "cacheReadTokens": 33435,
+          "cost": 0.9203956249999999,
+          "inputTokens": 18830,
           "modelName": "gpt-5",
-          "outputTokens": 5393,
-          "storedCost": 0.6000000000000001
+          "outputTokens": 5293,
+          "storedCost": 0.8500000000000001
         },
         {
           "cacheCreationTokens": 0,
@@ -450,10 +401,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
-          "cost": 0.33329200000000003,
-          "inputTokens": 305952,
+          "cost": 0.33246600000000004,
+          "inputTokens": 305531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 3095
+          "outputTokens": 3014
         },
         {
           "cacheCreationTokens": 0,
@@ -496,10 +447,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6500,
-          "cost": 0.06726875,
-          "inputTokens": 2033,
+          "cost": 0.06681875,
+          "inputTokens": 1913,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 929,
+          "outputTokens": 899,
           "storedCost": 0.06
         },
         {
@@ -539,10 +490,10 @@ exit: 0
         {
           "cacheCreationTokens": 900,
           "cacheReadTokens": 17000,
-          "cost": 0.015221619999999998,
-          "inputTokens": 4651,
+          "cost": 0.012631899999999998,
+          "inputTokens": 4511,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 1491
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 0,
@@ -569,6 +520,14 @@ exit: 0
           "outputTokens": 210
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.007427999999999999,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 1200,
           "cost": 0.0071719999999999996,
@@ -580,7 +539,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
-          "cost": 0.00707375,
+          "cost": 0.0070550000000000005,
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
@@ -600,14 +559,6 @@ exit: 0
           "inputTokens": 5350,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 1193
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0037139999999999994,
-          "inputTokens": 20500,
-          "modelName": "deepseek-flash",
-          "outputTokens": 1050
         },
         {
           "cacheCreationTokens": 50,
@@ -637,10 +588,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 633,
-          "cost": 0.00161989,
-          "inputTokens": 2303,
+          "cost": 0.00156439,
+          "inputTokens": 2243,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 354
+          "outputTokens": 339
         },
         {
           "cacheCreationTokens": 0,
@@ -701,14 +652,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
           "modelName": "grok-4",
@@ -725,7 +668,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00033749999999999996,
+          "cost": 0.0003375,
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
@@ -735,15 +678,7 @@ exit: 0
           "cacheReadTokens": 600,
           "cost": 0.000325,
           "inputTokens": 0,
-          "modelName": "[grok] grok-4.3-build",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
+          "modelName": "grok-4.3-build",
           "outputTokens": 100
         },
         {
@@ -753,14 +688,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "qwen/qwen3-coder",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000162,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
         },
         {
           "cacheCreationTokens": 0,
@@ -780,11 +707,27 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00006969999999999999,
           "inputTokens": 310,
           "modelName": "qwen-3-30b",
           "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006000000000000001,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -995,7 +938,6 @@ exit: 0
         "GLM-5.2",
         "GLM-5.3",
         "GLM-5.3-Flash",
-        "[grok] grok-4.3-build",
         "[openclaw] claude-haiku-4-5-20251001",
         "[openclaw] claude-sonnet-4-20250514",
         "[openclaw] gpt-5",
@@ -1046,6 +988,7 @@ exit: 0
         "gpt-6.1-sol",
         "gpt-unknown",
         "grok-4",
+        "grok-4.3-build",
         "grok-4.5-build",
         "grok-4.7-build",
         "grok-code-fast-1",
@@ -1056,7 +999,6 @@ exit: 0
         "kilo-mystery-1",
         "kimi-for-coding",
         "kimi-k2-thinking",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "model_placeholder_m499",
         "mystery-model-9000",
@@ -1071,10 +1013,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 57047,
+      "outputTokens": 56453,
       "period": "2025-12-29",
-      "totalCost": 24.820039719999997,
-      "totalTokens": 2731764
+      "totalCost": 24.312427174999996,
+      "totalTokens": 2721145
     },
     {
       "agent": "all",

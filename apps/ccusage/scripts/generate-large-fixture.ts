@@ -1,13 +1,10 @@
 #!/usr/bin/env nix
 /*
-#! nix shell --inputs-from ../../.. nixpkgs#bun -c bun
+#! nix shell --inputs-from ../../.. nixpkgs#nodejs -c node
 */
-// Writes Claude Code, Codex, and Grok Build logs whose line shapes, line-type mix, and
-// per-type byte share follow aggregate statistics of real logs, with every
-// value synthesized. Parser cost depends on those shapes (null-valued fields,
-// nested usage, escaped strings, non-usage lines), so a fixture made of
-// uniform padded usage lines hides regressions that real logs expose.
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { zstdCompressSync } from 'node:zlib';
 
 const MIB = 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,11 +23,6 @@ type SizeProfile = {
 	totalBytes: number;
 	quantiles: readonly { percentile: number; size: number }[];
 };
-
-// File-size distribution of real logs, uncompressed, from
-// profile-log-sizes.nu. Each agent keeps its own profile because Codex
-// rollouts are fewer and much larger than Claude transcripts, and the default
-// fixture size is the profiled total so a benchmark reads a real-sized history.
 const SIZE_PROFILES = {
 	claude: {
 		files: 10_723,
@@ -101,7 +93,7 @@ const CODEX_MODELS = [
 	'gpt-5.3-codex',
 	'gpt-5.1-codex-mini',
 ] as const;
-const WORDS = [
+const BMP_WORDS = [
 	'the',
 	'parser',
 	'returns',
@@ -229,9 +221,6 @@ function interpolateFileSize(profile: SizeProfile, percentile: number): number {
 		if (!previous || !current || percentile > current.percentile) {
 			continue;
 		}
-		// Sizes span six orders of magnitude, so a straight line between two
-		// tail quantiles would overstate the bytes inside that interval.
-		// log1p keeps a profiled empty file from turning every size into NaN.
 		const ratio = (percentile - previous.percentile) / (current.percentile - previous.percentile);
 		return Math.expm1(
 			Math.log1p(previous.size) + (Math.log1p(current.size) - Math.log1p(previous.size)) * ratio,
@@ -256,7 +245,6 @@ function shuffledIndex(index: number, length: number): number {
 	return (index * (length - 1) + 17) % length;
 }
 
-/** Deterministic PRNG (mulberry32) so every run writes byte-identical fixtures. */
 class Random {
 	#state: number;
 
@@ -306,12 +294,12 @@ class Random {
 	}
 }
 
-function buildTextPool(): string {
+function buildBmpTextPool(): string {
 	const random = new Random(7);
 	const parts: string[] = [];
 	let length = 0;
 	while (length < 2 * MIB) {
-		const word = random.chance(0.08) ? '\n' : random.pick(WORDS);
+		const word = random.chance(0.08) ? '\n' : random.pick(BMP_WORDS);
 		parts.push(word, ' ');
 		length += word.length + 1;
 	}
@@ -324,14 +312,12 @@ function buildOpaquePool(): string {
 	return Array.from({ length: MIB }, () => alphabet[random.int(alphabet.length)]).join('');
 }
 
-const TEXT_POOL = buildTextPool();
+const BMP_TEXT_POOL = buildBmpTextPool();
 const OPAQUE_POOL = buildOpaquePool();
 
-// Pool slices stay within the Basic Multilingual Plane, so a slice boundary can
-// never split a surrogate pair into an invalid JSON escape.
 function text(random: Random, length: number): string {
-	const start = random.int(TEXT_POOL.length - length - 1);
-	return TEXT_POOL.slice(start, start + length);
+	const start = random.int(BMP_TEXT_POOL.length - length - 1);
+	return BMP_TEXT_POOL.slice(start, start + length);
 }
 
 function opaque(random: Random, length: number): string {
@@ -453,8 +439,10 @@ function claudeContentBlock(random: Random, kind: string): Line {
 	}
 }
 
-/** One API response, written by Claude Code as one line per content block that all repeat the usage. */
-function claudeAssistantResponse(session: ClaudeSession, messageId?: string): Line[] {
+function claudeAssistantResponse(
+	session: ClaudeSession,
+	messageId?: string,
+): { lines: Line[]; replayableId?: string } {
 	const { random } = session;
 	const model = random.chance(0.01) ? '<synthetic>' : random.pick(CLAUDE_MODELS);
 	const id = messageId ?? `msg_${random.hex(24)}`;
@@ -466,7 +454,7 @@ function claudeAssistantResponse(session: ClaudeSession, messageId?: string): Li
 		blocks.push('tool_use');
 	}
 	const timestamp = session.clock.tick(random);
-	return blocks.map((kind) => {
+	const lines: Line[] = blocks.map((kind) => {
 		const message = {
 			model,
 			id,
@@ -506,6 +494,7 @@ function claudeAssistantResponse(session: ClaudeSession, messageId?: string): Li
 			advisorModel: null,
 		};
 	});
+	return { lines, replayableId: lines[0]?.type === 'assistant' ? id : undefined };
 }
 
 function claudeUser(session: ClaudeSession, withToolResult: boolean): Line {
@@ -631,10 +620,8 @@ function* claudeSessionLines(session: ClaudeSession): Generator<Line> {
 		sessionId: session.sessionId,
 	};
 	yield { type: 'custom-title', customTitle: text(random, 40), sessionId: session.sessionId };
-	// A sidechain transcript replays parent messages under new request IDs; the
-	// loaders must drop those copies, so the fixture exercises that path.
 	for (const messageId of session.parentMessageIds.slice(0, 2)) {
-		yield* claudeAssistantResponse(session, messageId);
+		yield* claudeAssistantResponse(session, messageId).lines;
 	}
 	while (true) {
 		yield claudeUser(session, false);
@@ -642,15 +629,14 @@ function* claudeSessionLines(session: ClaudeSession): Generator<Line> {
 		for (let step = 0; step < steps; step += 1) {
 			yield* claudeSideLines(session);
 			const response = claudeAssistantResponse(session);
-			const firstMessage = response[0]?.message as { id?: string } | undefined;
 			if (
 				session.agentId === undefined &&
-				firstMessage?.id &&
+				response.replayableId !== undefined &&
 				session.parentMessageIds.length < 4
 			) {
-				session.parentMessageIds.push(firstMessage.id);
+				session.parentMessageIds.push(response.replayableId);
 			}
-			yield* response;
+			yield* response.lines;
 			yield claudeUser(session, true);
 		}
 	}
@@ -719,8 +705,8 @@ function codexItemCompleted(session: CodexSession, turnId: string): Line {
 	});
 }
 
-function codexUsageRecord(session: CodexSession, turnId: string, usage: Line): Line {
-	return codexLine(session, 'token_usage_record', {
+function codexUsageRecordPayload(session: CodexSession, turnId: string, usage: Line) {
+	return {
 		thread_id: session.sessionId,
 		turn_id: turnId,
 		session_id: session.sessionId,
@@ -729,7 +715,7 @@ function codexUsageRecord(session: CodexSession, turnId: string, usage: Line): L
 		usage,
 		turn_token_usage: usage,
 		thread_token_usage: session.total,
-	});
+	};
 }
 
 function* codexSessionLines(session: CodexSession): Generator<Line> {
@@ -796,10 +782,11 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			});
 			const usage = codexUsage(random);
 			session.total = addUsage(session.total, usage);
-			// Codex writes the response's usage record before the token_count
-			// that advances the cumulative total, which is what lets the parser
-			// settle each record instead of keeping it pending.
-			yield codexUsageRecord(session, turnId, usage);
+			yield codexLine(
+				session,
+				'token_usage_record',
+				codexUsageRecordPayload(session, turnId, usage),
+			);
 			yield codexLine(session, 'event_msg', {
 				type: 'token_count',
 				info: {
@@ -828,11 +815,8 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			phase: 'final',
 		});
 		if (random.chance(CODEX_COMPACTION_CHANCE)) {
-			// A remote compaction's usage is missing from the cumulative total,
-			// so its record stays pending until the marker naming it arrives.
-			const record = codexUsageRecord(session, turnId, codexUsage(random));
-			yield record;
-			const latest = record.payload as Line;
+			const latest = codexUsageRecordPayload(session, turnId, codexUsage(random));
+			yield codexLine(session, 'token_usage_record', latest);
 			yield codexLine(session, 'compacted', {
 				message: '',
 				replacement_history: [
@@ -900,7 +884,6 @@ function grokTurnMeta(session: GrokSession, updateType: string, turnStartMs: num
 	};
 }
 
-/** Grok records command output as arrays of byte values, which is most of a real session's bytes. */
 function byteArray(random: Random, length: number): number[] {
 	return Array.from(Buffer.from(text(random, length)));
 }
@@ -985,8 +968,6 @@ function* grokSessionLines(session: GrokSession): Generator<Line> {
 			sessionUpdate: 'user_message_chunk',
 			content: { type: 'text', text: text(random, around(random, 3000)) },
 		});
-		// Most real sessions are a few KiB yet still record a completed turn,
-		// so turns often answer without tools, the first one most of all.
 		const toolFree = random.chance(session.promptIndex === 1 ? 0.8 : 0.5);
 		const tools = toolFree ? 0 : random.between(1, 40);
 		for (let tool = 0; tool < tools; tool += 1) {
@@ -1071,12 +1052,11 @@ function* grokSessionLines(session: GrokSession): Generator<Line> {
 	}
 }
 
-function assertSafeDeletionTarget(directory: string, flagName: string): string {
-	const resolved = resolve(directory);
-	if (resolved === resolve('/') || resolved === resolve('.') || resolved.length < 5) {
-		throw new Error(`Refusing to delete unsafe ${flagName} path: ${resolved}`);
+async function createEmptyDirectory(directory: string, flagName: string): Promise<void> {
+	await mkdir(directory, { recursive: true });
+	if ((await readdir(directory)).length > 0) {
+		throw new Error(`${flagName} must be absent or empty: ${directory}`);
 	}
-	return resolved;
 }
 
 function paddedNumber(value: number, width: number): string {
@@ -1162,11 +1142,6 @@ function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout
 	};
 	const name = `rollout-${stamp}-${sessionId}.jsonl`;
 	const day = fileIndex % FIXTURE_DAYS;
-	// Codex compresses rollouts once they age and moves some to
-	// archived_sessions, so most real Codex bytes are read through zstd. The
-	// legacy layout keeps every rollout plain under sessions/, which ccusage
-	// releases before Zstandard (#1890) and archived-session (#1230) support
-	// read in full, so they can be compared on the same input.
 	const compressed = layout === 'current' && day < FIXTURE_DAYS - CODEX_PLAIN_RECENT_DAYS;
 	const archived = compressed && fileIndex % CODEX_ARCHIVED_FILE_EVERY === 0;
 	return {
@@ -1216,11 +1191,11 @@ function planGrokFile(directory: string, fileIndex: number): PlannedFile {
 	};
 }
 
-async function writeFile(
+async function writePlannedFile(
 	file: PlannedFile,
 	targetSize: number,
 ): Promise<{ bytes: number; diskBytes: number; lines: number }> {
-	await Bun.$`mkdir -p ${dirname(file.path)}`;
+	await mkdir(dirname(file.path), { recursive: true });
 	const chunks: string[] = [];
 	let bytes = 0;
 	let lines = 0;
@@ -1231,8 +1206,6 @@ async function writeFile(
 		}
 		const line = `${JSON.stringify(next.value)}\n`;
 		const lineBytes = Buffer.byteLength(line);
-		// Stop at whichever line boundary lands nearer the target; always
-		// appending the crossing line would inflate every small file.
 		if (lines > 0 && bytes + lineBytes - targetSize > targetSize - bytes) {
 			break;
 		}
@@ -1240,22 +1213,14 @@ async function writeFile(
 		bytes += lineBytes;
 		lines += 1;
 	}
-	const content = chunks.join('');
-	const diskBytes = await Bun.write(
-		file.path,
-		file.compressed ? Bun.zstdCompressSync(content) : content,
-	);
+	const content = Buffer.from(chunks.join(''));
+	const data = file.compressed ? zstdCompressSync(content) : content;
+	await writeFile(file.path, data);
 	if (file.sidecar) {
-		await Bun.write(file.sidecar.path, JSON.stringify(file.sidecar.value));
+		await writeFile(file.sidecar.path, JSON.stringify(file.sidecar.value));
 	}
-	return { bytes, diskBytes, lines };
+	return { bytes, diskBytes: data.byteLength, lines };
 }
-
-const OUTPUT_DIR_FLAGS = {
-	claude: '--output-dir',
-	codex: '--codex-output-dir',
-	grok: '--grok-output-dir',
-} as const satisfies Record<Format, string>;
 
 async function generateFixture(
 	outputDir: string,
@@ -1263,9 +1228,7 @@ async function generateFixture(
 	format: Format,
 	codexLayout: CodexLayout = 'current',
 ): Promise<FixtureResult> {
-	const directory = assertSafeDeletionTarget(outputDir, OUTPUT_DIR_FLAGS[format]);
 	const fileSizeTargets = createFileSizeTargets(SIZE_PROFILES[format], sizeMib * MIB);
-	await Bun.$`rm -rf ${directory}`;
 
 	let totalBytes = 0;
 	let diskBytes = 0;
@@ -1278,15 +1241,15 @@ async function generateFixture(
 		}
 		let file: PlannedFile;
 		if (format === 'claude') {
-			const planned = planClaudeFile(directory, fileIndex, previousSession);
+			const planned = planClaudeFile(outputDir, fileIndex, previousSession);
 			file = planned.file;
 			previousSession = planned.session;
 		} else if (format === 'codex') {
-			file = planCodexFile(directory, fileIndex, codexLayout);
+			file = planCodexFile(outputDir, fileIndex, codexLayout);
 		} else {
-			file = planGrokFile(directory, fileIndex);
+			file = planGrokFile(outputDir, fileIndex);
 		}
-		const written = await writeFile(file, targetSize);
+		const written = await writePlannedFile(file, targetSize);
 		totalBytes += written.bytes;
 		diskBytes += written.diskBytes;
 		lineCount += written.lines;
@@ -1306,11 +1269,23 @@ function printResult(name: string, outputDir: string, result: FixtureResult): vo
 async function main(): Promise<void> {
 	const options = parseArguments(process.argv.slice(2));
 	const outputDir = resolve(options.outputDir);
+	const codexOutputDir =
+		options.codexOutputDir === undefined ? undefined : resolve(options.codexOutputDir);
+	const grokOutputDir =
+		options.grokOutputDir === undefined ? undefined : resolve(options.grokOutputDir);
+	await createEmptyDirectory(outputDir, '--output-dir');
+	if (codexOutputDir !== undefined) {
+		await createEmptyDirectory(codexOutputDir, '--codex-output-dir');
+	}
+
+	if (grokOutputDir !== undefined) {
+		await createEmptyDirectory(grokOutputDir, '--grok-output-dir');
+	}
+
 	const claudeResult = await generateFixture(outputDir, options.sizeMib, 'claude');
 	printResult('Claude', outputDir, claudeResult);
 
-	if (options.codexOutputDir) {
-		const codexOutputDir = resolve(options.codexOutputDir);
+	if (codexOutputDir !== undefined) {
 		const codexResult = await generateFixture(
 			codexOutputDir,
 			options.codexSizeMib,
@@ -1320,8 +1295,7 @@ async function main(): Promise<void> {
 		printResult('Codex', codexOutputDir, codexResult);
 	}
 
-	if (options.grokOutputDir) {
-		const grokOutputDir = resolve(options.grokOutputDir);
+	if (grokOutputDir !== undefined) {
 		const grokResult = await generateFixture(grokOutputDir, options.grokSizeMib, 'grok');
 		printResult('Grok', grokOutputDir, grokResult);
 	}

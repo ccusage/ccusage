@@ -1,14 +1,10 @@
 use ccusage_adapter_common::{
-    claims::ClaudeCounted,
+    claims::{ClaudeClaimsRx, ClaudeCounted},
     rows::summary_rows,
-    source::{ALL_REPORTS, PricingSupply, ProgressOwner, SourceRows, UnifiedRequest, UsageSource},
+    source::{LoadRequest, LoadedRows, ProgressOwner, UsageSource},
 };
 use ccusage_core::Diagnostics;
-use ccusage_core::{
-    ReportWindow, Result,
-    cli::AgentReportKind,
-    progress::{UsageLoadAgent, track_usage_load},
-};
+use ccusage_core::{ReportWindow, Result, progress::UsageLoadAgent};
 
 use crate::{
     has_data, loader::load_entries_with_native_sessions_with_diagnostics, summarize_entries,
@@ -17,6 +13,20 @@ use crate::{
 pub struct OpenCode;
 
 pub static SOURCE: OpenCode = OpenCode;
+
+impl OpenCode {
+    pub fn load_with_claims(
+        &self,
+        request: &LoadRequest<'_>,
+        claims: ClaudeClaimsRx,
+    ) -> Result<LoadedRows> {
+        request
+            .progress
+            .run(UsageLoadAgent("OpenCode"), request.shared.json, || {
+                load_rows(request, || claims.receive())
+            })
+    }
+}
 
 impl UsageSource for OpenCode {
     fn id(&self) -> &'static str {
@@ -27,51 +37,48 @@ impl UsageSource for OpenCode {
         "OpenCode"
     }
 
-    fn reports(&self) -> &'static [AgentReportKind] {
-        ALL_REPORTS
+    fn uses_shared_pricing(&self) -> bool {
+        false
     }
 
-    fn pricing_supply(&self) -> PricingSupply {
-        PricingSupply::Source
-    }
-
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-        let load = || unified_rows(request);
-        match request.progress {
-            ProgressOwner::Source => {
-                track_usage_load(UsageLoadAgent("OpenCode"), request.shared.json, load)
-            }
-            ProgressOwner::Caller => load(),
-        }
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+        request
+            .progress
+            .run(UsageLoadAgent("OpenCode"), request.shared.json, || {
+                load_rows(request, || Ok(ClaudeCounted::nothing()))
+            })
     }
 }
 
-fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-    let diagnostics = Diagnostics::new("opencode");
+fn load_rows(
+    request: &LoadRequest<'_>,
+    counted: impl FnOnce() -> Result<ClaudeCounted>,
+) -> Result<LoadedRows> {
+    let diagnostics = Diagnostics::for_report("opencode", request.shared.clock);
     let linked = load_entries_with_native_sessions_with_diagnostics(
         request.shared,
-        request.kind,
+        request.kind.report_kind(),
         ProgressOwner::Caller,
         &diagnostics,
     )?;
     let detected = !linked.is_empty() || has_data();
     let mut entries = if linked.iter().any(|(_, session)| session.is_some()) {
-        request
-            .claude_counted
-            .map_or_else(ClaudeCounted::nothing, |load| load())
-            .retain_uncounted(linked)
+        counted()?.retain_uncounted(linked)
     } else {
         linked.into_iter().map(|(entry, _)| entry).collect()
     };
     let window = ReportWindow::from_shared(request.shared);
     entries.retain(|entry| window.contains_date(&entry.date));
-    let summaries = summarize_entries(&entries, request.kind)?;
+    let summaries = summarize_entries(
+        &entries,
+        request.kind.report_kind(),
+        crate::cli::WeekDay::Monday,
+    )?;
 
-    Ok(SourceRows {
+    Ok(LoadedRows {
         rows: summary_rows("opencode", summaries, false),
         detected,
         diagnostics,
-        claude_counted: None,
     })
 }
 
@@ -79,15 +86,15 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
 mod diagnostic_tests {
     use super::*;
     use ccusage_adapter_common::source::SourceOptions;
-    use ccusage_core::cli::{CostMode, SharedArgs};
-    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
+    use ccusage_test_support::{EnvGuard, Fixture};
     #[test]
     fn specialized_diagnostics_keep_healthy_opencode_usage() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("opencode.db", "SECRET_CANARY");
-        let _ = fixture.write_file("storage/message/good.json", r#"{"id":"good","sessionID":"s","modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#);
-        let _ = fixture.write_file("storage/message/bad.json", "{SECRET_CANARY");
-        let _env = EnvVarsGuard::set_many([
+        fixture.write_file("opencode.db", "SECRET_CANARY");
+        fixture.write_file("storage/message/good.json", r#"{"id":"good","sessionID":"s","modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#);
+        fixture.write_file("storage/message/bad.json", "{SECRET_CANARY");
+        let _env = EnvGuard::set_many([
             (
                 "OPENCODE_DATA_DIR",
                 Some(fixture.root().as_os_str().to_owned()),
@@ -101,14 +108,12 @@ mod diagnostic_tests {
             ..Default::default()
         };
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
         assert_eq!(rows.rows.len(), 1);

@@ -12,9 +12,5 @@
 		"preinstall": "npx only-allow pnpm"
 	},
 	"dependencies": {},
-	"devDependencies": {
-		"oxlint": "catalog:lint",
-		"tsrs": "catalog:lint"
-	},
-	"packageManager": "pnpm@12.21.0"
+	"packageManager": "pnpm@12.9.0"
 }

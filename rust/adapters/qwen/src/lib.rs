@@ -1,23 +1,11 @@
 use ccusage_adapter_common::source::{
-    Detection, EntryDescriptor, EntrySource, LoadContext, PricingSupply, WindowMode,
+    Detection, EntryDescriptor, EntrySource, LoadContext, WindowMode,
 };
-use ccusage_core::*;
-use serde_json::Value;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
-
-use crate::{
-    LoadedEntry, Result, UsageSummary,
-    cli::{AgentCommandArgs, AgentReportKind},
-};
-
-#[cfg(test)]
-pub(crate) use loader::load_entries;
-pub(crate) use report::report_from_rows;
-pub(crate) use report::summarize_entries;
 
 pub struct Qwen;
 
@@ -26,9 +14,9 @@ pub static SOURCE: Qwen = Qwen;
 impl EntrySource for Qwen {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             window: WindowMode::SessionLastActivity,
             detection: Detection::NonEmptyOrHasData(has_data),
-            pricing: PricingSupply::Source,
             ..EntryDescriptor::standard("qwen", "Qwen")
         }
     }
@@ -37,33 +25,12 @@ impl EntrySource for Qwen {
         loader::load_entries_with_context(cx)
     }
 
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &crate::cli::SharedArgs,
-    ) -> Result<()> {
-        crate::print_usage_table(
-            "Qwen Token Usage Report",
-            ccusage_core::first_column(kind),
-            rows,
-            shared,
-            false,
-            None,
-        )?;
-        Ok(())
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
+        let mut report = ccusage_adapter_common::report::report_json(rows, kind, true);
+        if rows.is_empty() {
+            report["totals"] = serde_json::Value::Null;
+        }
+        report
     }
 }
 
@@ -80,9 +47,9 @@ fn has_data() -> bool {
 mod tests {
     use ccusage_adapter_common::{
         parity::assert_focused_matches_unified,
-        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+        source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use serde_json::json;
 
     use super::*;
@@ -100,20 +67,26 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-02-23");
         assert_eq!(entries[0].session_id.as_ref(), "session-json");
         assert_eq!(entries[0].project_path.as_ref(), "myProject");
         assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 5);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 5);
         assert_eq!(entries[0].extra_total_tokens, 10);
     }
 
@@ -122,20 +95,33 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/myProject/chats/live.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"live-0001","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
             "projects/myProject/chats/archive/archived.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"arch-0002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
-            // Only the flat `chats/archive/` location is picked up.
             "projects/myProject/chats/other/ignored.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","sessionId":"other-0003","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":500}}"#,
             "projects/myProject/chats/archive/nested/deep.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T05:00:00.000Z","sessionId":"deep-0004","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":500}}"#,
         });
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
-        let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
         assert_eq!(entries.len(), 2);
         assert!(
@@ -165,11 +151,17 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             entries
@@ -191,13 +183,27 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
-        let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            None,
+        )
+        .unwrap();
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
         assert_eq!(report["daily"][0]["date"], "2026-02-23");
         assert_eq!(report["daily"][0]["outputTokens"], 50);
@@ -229,31 +235,29 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
-            since: Some("20260131".to_string()),
-            until: Some("20260131".to_string()),
-            timezone: Some("UTC".to_string()),
+            since: Some("20260131".parse().unwrap()),
+            until: Some("20260131".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared);
 
         let outside_window = SharedArgs {
-            since: Some("20270101".to_string()),
+            since: Some("20270101".parse().unwrap()),
             ..shared.clone()
         };
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &outside_window,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
         assert!(rows.detected);
@@ -270,24 +274,22 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
             debug: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
 

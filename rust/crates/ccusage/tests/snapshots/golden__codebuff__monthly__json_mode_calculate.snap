@@ -10,7 +10,7 @@ exit: 0
       "cacheCreationTokens": 500,
       "cacheReadTokens": 13500,
       "credits": 4.25,
-      "inputTokens": 2791,
+      "inputTokens": 2711,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 300,
@@ -31,10 +31,10 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
-          "cost": 0.00413,
-          "inputTokens": 980,
+          "cost": 0.00385,
+          "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 440
+          "outputTokens": 400
         },
         {
           "cacheCreationTokens": 0,
@@ -48,13 +48,13 @@ exit: 0
       "modelsUsed": [
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
-        "claude-haiku-4-5-20251001",
-        "gpt-5"
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
       ],
       "month": "2025-12",
-      "outputTokens": 847,
-      "totalCost": 0.0205305,
-      "totalTokens": 17638
+      "outputTokens": 807,
+      "totalCost": 0.020250499999999998,
+      "totalTokens": 17518
     },
     {
       "cacheCreationTokens": 110,
@@ -81,7 +81,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 40,
-          "cost": 0.0019237500000000003,
+          "cost": 0.0019050000000000002,
           "inputTokens": 500,
           "modelName": "openai/gpt-5",
           "outputTokens": 120
@@ -122,7 +122,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1105,
-      "totalCost": 0.020493749999999998,
+      "totalCost": 0.020475,
       "totalTokens": 16545
     }
   ],
@@ -130,10 +130,10 @@ exit: 0
     "cacheCreationTokens": 610,
     "cacheReadTokens": 25540,
     "credits": 8.2,
-    "inputTokens": 5731,
-    "outputTokens": 1952,
-    "totalCost": 0.04102425,
-    "totalTokens": 34183,
+    "inputTokens": 5651,
+    "outputTokens": 1912,
+    "totalCost": 0.0407255,
+    "totalTokens": 34063,
     "unpricedModels": [
       "codebuff-mystery-1"
     ]

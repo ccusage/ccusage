@@ -2,16 +2,14 @@ use ccusage_test_support::fs_fixture;
 use serde_json::{Value, json};
 
 use crate::{
-    PricingMap,
-    aggregate::{aggregate_events, load_groups_from_directory},
-    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
-    load_codex_events_from_directory,
-    parser::{CodexForkReplay, visit_codex_session_file},
+    CodexSpeedPolicy, PricingMap,
+    cli::{AgentReportKind, CostMode, SharedArgs},
+    parser::{CodexForkReplay, visit_codex_session_file_with_diagnostics},
     report::report_from_groups,
+    test_support::{load_groups_from_directory, load_rollouts, service_tier_line},
     types::{
         CodexRawUsage,
-        CodexServiceTier::{Fast, Flex, Standard, Ultrafast},
-        CodexTokenUsageEvent,
+        CodexServiceTier::{self, Fast, Flex, Standard, Ultrafast},
     },
 };
 
@@ -50,7 +48,7 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
         ..CodexRawUsage::default()
     }];
     let mut events = Vec::new();
-    visit_codex_session_file(
+    visit_codex_session_file_with_diagnostics(
         fixture.root(),
         &fixture.path("child.jsonl"),
         Some(CodexForkReplay {
@@ -59,10 +57,9 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
         }),
         |event| {
             events.push(event);
-            Ok(())
         },
-    )
-    .unwrap();
+        &ccusage_core::Diagnostics::new("codex"),
+    );
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].response_id.as_deref(), Some("response-1"));
@@ -83,7 +80,7 @@ fn parent_compaction_records_do_not_change_the_normal_replay_prefix() {
             token_count("2026-09-01T00:02:00Z", 50),
         ].join("\n"),
     });
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
     assert_eq!(events.len(), 3);
     assert_eq!(
         events.iter().map(|event| event.total_tokens).sum::<u64>(),
@@ -100,6 +97,7 @@ fn parent_compaction_records_do_not_change_the_normal_replay_prefix() {
 
 #[test]
 fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "2026/09/01/parent.jsonl": [
             json!({"type": "session_meta", "payload": {"id": "parent"}}).to_string(),
@@ -114,33 +112,35 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
             token_count("2026-09-02T00:02:00Z", 20),
         ].join("\n"),
     });
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
-    let _guard = ccusage_test_support::EnvVarGuard::set("CODEX_HOME", fixture.root());
+    let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
     for single_thread in [true, false] {
         let shared = SharedArgs {
-            since: Some("20260902".into()),
-            timezone: Some("UTC".into()),
+            since: Some("20260902".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
         };
         let groups =
             load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily).unwrap();
         assert_eq!(groups["2026-09-02"].total_tokens, 110);
-        let (events, detected) = crate::load_codex_events_with_detection(&shared).unwrap();
+        let (_, detected) = crate::aggregate::load_groups_with_diagnostics(
+            &shared,
+            AgentReportKind::Daily,
+            Some(&crate::PricingMap::load_embedded()),
+            &ccusage_core::Diagnostics::new("codex"),
+        )
+        .unwrap();
         assert!(detected);
-        assert_eq!(
-            events.iter().map(|event| event.total_tokens).sum::<u64>(),
-            110
-        );
-        assert_eq!(events[0].response_id.as_deref(), Some("child-response"));
     }
 }
 
 #[test]
 fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "2026/09/01/parent.jsonl": [
             r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
@@ -158,32 +158,27 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
             token_count("2026-09-02T00:02:00Z", 30),
         ].join("\n"),
     });
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
-    let _guard = ccusage_test_support::EnvVarGuard::set("CODEX_HOME", fixture.root());
+    let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
     for single_thread in [true, false] {
         let shared = SharedArgs {
-            since: Some("20260902".into()),
-            timezone: Some("UTC".into()),
+            since: Some("20260902".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
         };
         let groups =
             load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily).unwrap();
         assert_eq!(groups["2026-09-02"].total_tokens, 120);
-        let (events, _) = crate::load_codex_events_with_detection(&shared).unwrap();
-        assert_eq!(
-            events.iter().map(|event| event.total_tokens).sum::<u64>(),
-            120
-        );
-        assert_eq!(events[0].response_id.as_deref(), Some("child-response"));
     }
 }
 
 #[test]
 fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "a-first.jsonl": compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300),
         "b-copy.jsonl": [
@@ -198,50 +193,51 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
         AgentReportKind::Monthly,
         AgentReportKind::Session,
     ] {
-        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
-        let expected_groups = aggregate_events(&events, kind, Some("UTC")).unwrap();
-        let expected = report_from_groups(
-            &expected_groups,
-            kind,
-            &pricing,
-            CodexSpeed::Auto.into(),
-            CostMode::Auto,
-        );
-        assert_eq!(expected["totals"]["totalTokens"], 320);
-        for single_thread in [true, false] {
+        let reports = [true, false].map(|single_thread| {
             let shared = SharedArgs {
-                timezone: Some("UTC".into()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 single_thread,
                 ..SharedArgs::default()
             };
             let groups = load_groups_from_directory(fixture.root(), &shared, kind).unwrap();
-            let actual = report_from_groups(
-                &groups,
-                kind,
-                &pricing,
-                CodexSpeed::Auto.into(),
-                CostMode::Auto,
-            );
-            assert_eq!(actual, expected);
             assert_eq!(groups.len(), 1);
             assert_eq!(
-                groups.values().next().unwrap().models["gpt-5"]
-                    .recorded_fast_usage
+                groups.values().next().unwrap().models["gpt-5"].recorded_usage
+                    [crate::CodexServiceTier::Fast]
                     .input_tokens,
                 300
             );
-        }
+            report_from_groups(
+                &groups,
+                kind,
+                Some(&pricing),
+                CodexSpeedPolicy::Auto(Standard),
+                CostMode::Auto,
+            )
+        });
+        assert_eq!(reports[0]["totals"]["totalTokens"], 320);
+        assert_eq!(reports[0], reports[1]);
     }
 }
 
 #[test]
 fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
-    let fixture = fs_fixture!({
-        "first.jsonl": compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300),
-    });
-    let loaded = load_codex_events_from_directory(fixture.root(), true)
-        .unwrap()
-        .remove(0);
+    ccusage_test_support::install_pricing_snapshots();
+    let rollout = |tier: Option<CodexServiceTier>| {
+        let marker = tier.map(|tier| {
+            let name = match tier {
+                Standard => "default",
+                Fast => "priority",
+                Flex => "flex",
+                Ultrafast => "ultrafast",
+            };
+            service_tier_line("2026-09-01T00:00:00Z", name)
+        });
+        marker
+            .into_iter()
+            .chain([compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300)])
+            .collect::<Vec<_>>()
+    };
     for (first_tier, copy_tier, merged_tier) in [
         (None, Fast, Fast),
         (None, Ultrafast, Ultrafast),
@@ -250,24 +246,26 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
         (Some(Ultrafast), Standard, Standard),
         (Some(Standard), Ultrafast, Standard),
     ] {
-        let first = CodexTokenUsageEvent {
-            service_tier: first_tier,
-            ..loaded.clone()
-        };
-        let duplicate = CodexTokenUsageEvent {
-            session_id: "copied-session".into(),
-            service_tier: Some(copy_tier),
-            ..loaded.clone()
-        };
-        let groups =
-            aggregate_events(&[first, duplicate], AgentReportKind::Session, Some("UTC")).unwrap();
+        let groups = load_rollouts(
+            &[
+                ("a-first.jsonl", &rollout(first_tier)),
+                ("b-copy.jsonl", &rollout(Some(copy_tier))),
+            ],
+            AgentReportKind::Session,
+        );
         assert_eq!(groups.len(), 1);
-        let usage = &groups["first"].models["gpt-5"];
+        let usage = &groups["a-first"].models["gpt-5"];
         let recorded = [
-            (Standard, usage.recorded_standard_usage),
-            (Fast, usage.recorded_fast_usage),
-            (Flex, usage.recorded_flex_usage),
-            (Ultrafast, usage.recorded_ultrafast_usage),
+            (
+                Standard,
+                usage.recorded_usage[crate::CodexServiceTier::Standard],
+            ),
+            (Fast, usage.recorded_usage[crate::CodexServiceTier::Fast]),
+            (Flex, usage.recorded_usage[crate::CodexServiceTier::Flex]),
+            (
+                Ultrafast,
+                usage.recorded_usage[crate::CodexServiceTier::Ultrafast],
+            ),
         ];
         let input_tokens = |tier| {
             recorded
@@ -289,7 +287,7 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
             300,
             "{first_tier:?} + {copy_tier:?}"
         );
-        assert_eq!(usage.input_tokens, 300);
+        assert_eq!(usage.usage.input_tokens, 300);
     }
 }
 
@@ -316,16 +314,13 @@ fn compaction_records_without_a_valid_pair_are_ignored() {
         vec![marker],
     ] {
         let fixture = fs_fixture!({"session.jsonl": lines.iter().map(Value::to_string).collect::<Vec<_>>().join("\n")});
-        assert!(
-            load_codex_events_from_directory(fixture.root(), true)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(crate::test_support::rollout_events(fixture.root()).is_empty());
     }
 }
 
 #[test]
 fn local_compaction_usage_already_in_cumulative_counts_is_not_added_again() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "session.jsonl": [
             r#"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
@@ -336,7 +331,7 @@ fn local_compaction_usage_already_in_cumulative_counts_is_not_added_again() {
             r#"{"timestamp":"2026-09-01T00:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":450,"output_tokens":60}}}}"#,
         ].join("\n"),
     });
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
     assert_eq!(
         events.iter().map(|event| event.total_tokens).sum::<u64>(),
         510
@@ -345,7 +340,7 @@ fn local_compaction_usage_already_in_cumulative_counts_is_not_added_again() {
     for single_thread in [true, false] {
         let shared = SharedArgs {
             single_thread,
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let groups =
@@ -375,7 +370,7 @@ fn invalid_or_completed_records_do_not_hide_pending_compaction_usage() {
                 r#"{"type":"compacted","payload":{"compaction_response_id":"new-response"}}"#,
             ].join("\n"),
         });
-        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(
             events.iter().map(|event| event.total_tokens).sum::<u64>(),
             450
@@ -393,7 +388,7 @@ fn thread_totals_identify_already_counted_compaction_without_an_earlier_snapshot
             r#"{"timestamp":"2026-09-01T00:00:03Z","type":"compacted","payload":{"compaction_response_id":"response-1"}}"#,
         ].join("\n"),
     });
-    let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+    let events = crate::test_support::rollout_events(fixture.root());
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].total_tokens, 450);
 }

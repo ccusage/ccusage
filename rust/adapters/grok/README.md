@@ -3,16 +3,6 @@
 The Grok Build CLI adapter: it turns session `updates.jsonl` files under
 `~/.grok` into the usage entries the reports render.
 
-## Owns
-
-- `loader.rs` — reading sessions, progress, global dedupe, `has_data`
-- `parser.rs` — `turn_completed` admission, token split, pricing candidates
-- `paths.rs` — root resolution and `sessions/**/updates.jsonl` discovery
-- `report.rs` — daily / monthly / session summary shapes
-
-Anything that is not specific to this source belongs in `ccusage-core` or
-`ccusage-adapter-common` instead.
-
 ## Data source
 
 Only completed turns:
@@ -35,6 +25,9 @@ killed mid-turn never gets that row, so its usage is invisible here even though
 `logs/unified.jsonl` recorded the underlying requests. That log is not used as a
 source: it carries no per-request model id, so its tokens cannot be priced or
 attributed.
+
+Completed turns use `agentTimestampMs` in milliseconds, then the envelope
+`timestamp` in seconds. Turns with neither valid timestamp are skipped with a diagnostic.
 
 ## Token mapping
 
@@ -59,19 +52,6 @@ per-request long-context tiering.
 
 - Display label: raw `modelUsage` key (e.g. `grok-4.5-build`)
 - Pricing candidates strip trailing `-build` and try `xai/` / `x-ai/` forms
-
-## Public surface
-
-- `loader::load_entries`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde`
-- `serde_json`
 
 ## Testing
 

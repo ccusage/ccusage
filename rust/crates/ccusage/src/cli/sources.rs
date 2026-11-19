@@ -1,131 +1,66 @@
 use std::ffi::OsString;
 
-use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, CliConfig, CodexSpeed, Command, DailyArgs, SharedArgs,
-    SourceArgs,
-};
+use ccusage_cli::{AgentCommandArgs, CliConfig, SourceArgs};
 use ccusage_config::ConfigContext;
-use ccusage_core::BUILT_IN_AGENT_NAMES;
+use ccusage_core::cli::BUILT_IN_AGENT_NAMES;
 
-use super::Cli;
-
-/// A unified report loads every source, and the config can address one source
-/// at a time through `<source>.defaults`, `<source>.commands.<report>`,
-/// `commands."<source> <report>"` and `commands.<source>:<report>`. Those
-/// sections sit under the command-line flags, as they do for
-/// `ccusage <source> <report>`, so each source's options come from parsing the
-/// same command line against that source's view of the config rather than from
-/// patching the unified options afterwards. A source the config does not
-/// address keeps the unified options.
 pub(crate) fn resolve(
     unified: &mut AgentCommandArgs,
     args: &[OsString],
     config: &ConfigContext,
 ) -> Result<(), String> {
-    let start_of_week = unified.start_of_week;
-    if unified.kind == AgentReportKind::Daily
-        && let Some(claude_project) = project_from_config(config, unified.shared.clone())
-    {
-        unified.sources.insert(
-            "claude".to_string(),
-            SourceArgs {
-                shared: unified.shared.clone(),
-                claude_project: Some(claude_project),
-                ..SourceArgs::default()
-            },
-        );
-    }
-    let mut global_source = SourceArgs {
-        shared: unified.shared.clone(),
-        ..SourceArgs::default()
-    };
-    config.apply_agent_args(
-        &mut global_source.codex_speed,
-        Some(&mut global_source.pi_path),
-        Some(&mut global_source.open_claw_path),
-    );
-    if global_source.codex_speed != CodexSpeed::Auto {
-        unified.sources.insert(
-            "codex".to_string(),
-            SourceArgs {
-                shared: global_source.shared.clone(),
-                codex_speed: global_source.codex_speed,
-                ..SourceArgs::default()
-            },
-        );
-    }
-    if let Some(pi_path) = global_source.pi_path {
-        unified.sources.insert(
-            "pi".to_string(),
-            SourceArgs {
-                shared: global_source.shared.clone(),
-                pi_path: Some(pi_path),
-                ..SourceArgs::default()
-            },
-        );
-    }
-    if let Some(open_claw_path) = global_source.open_claw_path {
-        unified.sources.insert(
-            "openclaw".to_string(),
-            SourceArgs {
-                shared: global_source.shared,
-                open_claw_path: Some(open_claw_path),
-                ..SourceArgs::default()
-            },
-        );
-    }
     for agent in BUILT_IN_AGENT_NAMES {
-        let Some(view) = config.for_source(agent) else {
-            continue;
-        };
-        let cli = super::try_parse_with(args.to_vec(), &view, Some(start_of_week))
-            .map_err(|message| format!("{message} (in {agent} config)"))?;
-        let mut source = SourceArgs {
-            shared: unified_shared(cli),
-            ..SourceArgs::default()
-        };
-        view.apply_agent_args(
-            &mut source.codex_speed,
-            Some(&mut source.pi_path),
-            Some(&mut source.open_claw_path),
+        let view = config.for_dependency(agent);
+        let report = super::try_parse_report_with(
+            args.to_vec(),
+            &view,
+            unified.start_of_week,
+            unified.shared.timezone.as_ref(),
+            unified.shared.clock,
+        )
+        .map_err(|message| format!("{message} (in {agent} config)"))?;
+        unified.sources.insert(
+            agent.to_string(),
+            SourceArgs::from_options(report.shared, view.agent_options(agent)),
         );
-        if *agent == "claude" && unified.kind == AgentReportKind::Daily {
-            source.claude_project = project_from_config(&view, source.shared.clone());
-        }
-        unified.sources.insert(agent.to_string(), source);
     }
     Ok(())
 }
 
-fn project_from_config(config: &dyn CliConfig, shared: SharedArgs) -> Option<String> {
-    let mut daily = DailyArgs {
-        shared,
-        instances: false,
-        project: None,
-        project_aliases: None,
-    };
-    config.apply_daily_args(&mut daily);
-    daily.project
-}
-
-/// The shared options the unified command parsed to, whether it was spelled
-/// out or left as the bare `ccusage`.
-fn unified_shared(cli: Cli) -> SharedArgs {
-    match cli.command {
-        Some(Command::All(args)) => args.shared,
-        _ => cli.shared,
-    }
+pub(crate) fn resolve_opencode_claims(
+    focused: &mut AgentCommandArgs,
+    args: &[OsString],
+    config: &ConfigContext,
+) -> Result<(), String> {
+    let view = config.for_dependency("claude");
+    let parsed = super::try_parse_report_with(
+        args.to_vec(),
+        &view,
+        focused.start_of_week,
+        focused.shared.timezone.as_ref(),
+        focused.shared.clock,
+    )?;
+    let options = view.agent_options("claude");
+    focused.sources.insert(
+        "claude".to_string(),
+        SourceArgs::from_options(parsed.shared, options),
+    );
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use ccusage_cli::{AgentReportKind, CodexSpeed, CostMode, WeekDay};
-    use ccusage_core::utc_now;
-    use ccusage_report::{PeriodUnit, format_date, last_periods_since};
+    use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, PeriodUnit, WeekDay};
+    use ccusage_core::{date_at, resolve_tz};
+    use ccusage_report::last_periods_since;
     use ccusage_test_support::fs_fixture;
 
     use super::*;
-    use crate::cli::{try_parse_with, unified_or_command};
+    fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
+        let mut command = ccusage_cli_parser::parse_from_with_config(args, config, "test")?;
+        super::super::resolve_report_clock(&mut command, ccusage_cli::ReportClock::System)?;
+        Ok(command)
+    }
 
     const CONFIG: &str = r#"{
         "defaults": { "mode": "display", "since": "20260101" },
@@ -190,8 +125,8 @@ mod tests {
         let argv = std::iter::once(OsString::from("ccusage"))
             .chain(args.iter().map(OsString::from))
             .collect::<Vec<_>>();
-        let cli = try_parse_with(argv.clone(), &config, None)?;
-        let Command::All(mut unified) = unified_or_command(cli) else {
+        let cli = try_parse_with(argv.clone(), &config)?;
+        let Command::All(mut unified) = cli else {
             return Err("expected a unified report".to_string());
         };
         resolve(&mut unified, &argv, &config)?;
@@ -210,21 +145,78 @@ mod tests {
     fn reads_each_source_through_its_own_config_sections() {
         let unified = unified(&["daily"]);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
         assert_eq!(unified.shared.mode, CostMode::Display);
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260301"));
-        assert_eq!(codex.shared.mode, CostMode::Calculate);
-        assert_eq!(codex.codex_speed, CodexSpeed::Fast);
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260301")
+        );
+        assert_eq!(codex.shared.mode, CostMode::Calculate);
+        assert_eq!(codex.options.codex_speed, CodexSpeed::Fast);
+        assert_eq!(
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/data/pi/sessions")
         );
         assert_eq!(
-            unified.sources["openclaw"].open_claw_path.as_deref(),
+            unified.sources["openclaw"]
+                .options
+                .open_claw_path
+                .as_deref(),
             Some("/data/openclaw")
         );
-        assert!(!unified.sources.contains_key("amp"));
+        assert_eq!(unified.sources["amp"].shared.since, unified.shared.since);
+    }
+
+    #[test]
+    fn focused_opencode_resolves_claude_claim_options_and_cli_precedence() {
+        let fixture = fs_fixture!({
+            "config.json": r#"{"opencode":{"defaults":{"timezone":"UTC","since":"20990101"}},"claude":{"defaults":{"timezone":"Asia/Tokyo","since":"20990103","project":"selected"}}}"#,
+        });
+        let config_path = fixture.path("config.json");
+        let strings = vec![
+            "opencode".to_string(),
+            "daily".to_string(),
+            "--config".to_string(),
+            config_path.to_string_lossy().into_owned(),
+            "--since".to_string(),
+            "20990102".to_string(),
+        ];
+        let config = ConfigContext::from_args(&strings);
+        let args = std::iter::once(OsString::from("ccusage"))
+            .chain(strings.iter().map(OsString::from))
+            .collect::<Vec<_>>();
+        let Command::Agent(_, ccusage_cli::AgentCommand::Report(mut focused)) =
+            try_parse_with(args.clone(), &config).unwrap()
+        else {
+            panic!("expected focused command")
+        };
+        resolve_opencode_claims(&mut focused, &args, &config).unwrap();
+        assert_eq!(
+            focused
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("UTC")
+        );
+        let claude = &focused.sources["claude"];
+        assert_eq!(
+            claude
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("Asia/Tokyo")
+        );
+        assert_eq!(
+            claude.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20990102")
+        );
+        assert_eq!(claude.options.claude_project.as_deref(), Some("selected"));
     }
 
     #[test]
@@ -241,34 +233,29 @@ mod tests {
             let unified = unified_with_config(args, GLOBAL_AGENT_CONFIG);
 
             assert_eq!(unified.kind, kind, "{name}");
-            assert_eq!(
-                unified
-                    .sources
-                    .keys()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>(),
-                ["codex", "openclaw", "pi"],
-                "{name}"
-            );
 
             let codex = &unified.sources["codex"];
-            assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
-            assert!(codex.pi_path.is_none(), "{name}");
-            assert!(codex.open_claw_path.is_none(), "{name}");
+            assert_eq!(codex.options.codex_speed, CodexSpeed::Fast, "{name}");
+            assert!(codex.options.pi_path.is_none(), "{name}");
+            assert!(codex.options.open_claw_path.is_none(), "{name}");
 
             let pi = &unified.sources["pi"];
-            assert_eq!(pi.pi_path.as_deref(), Some("/global/pi/sessions"), "{name}");
-            assert_eq!(pi.codex_speed, CodexSpeed::Auto, "{name}");
-            assert!(pi.open_claw_path.is_none(), "{name}");
+            assert_eq!(
+                pi.options.pi_path.as_deref(),
+                Some("/global/pi/sessions"),
+                "{name}"
+            );
+            assert_eq!(pi.options.codex_speed, CodexSpeed::Auto, "{name}");
+            assert!(pi.options.open_claw_path.is_none(), "{name}");
 
             let openclaw = &unified.sources["openclaw"];
             assert_eq!(
-                openclaw.open_claw_path.as_deref(),
+                openclaw.options.open_claw_path.as_deref(),
                 Some("/global/openclaw"),
                 "{name}"
             );
-            assert_eq!(openclaw.codex_speed, CodexSpeed::Auto, "{name}");
-            assert!(openclaw.pi_path.is_none(), "{name}");
+            assert_eq!(openclaw.options.codex_speed, CodexSpeed::Auto, "{name}");
+            assert!(openclaw.options.pi_path.is_none(), "{name}");
         }
     }
 
@@ -293,27 +280,32 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily", "--since", "20260401", "--offline"], config);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260401"));
-        assert!(unified.shared.offline);
         assert_eq!(
-            unified
-                .sources
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["codex", "openclaw", "pi"]
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260401")
         );
+        assert!(unified.shared.offline);
+
         for source in unified.sources.values() {
-            assert_eq!(source.shared.since.as_deref(), Some("20260401"));
+            assert_eq!(
+                source.shared.since.map(|date| date.to_string()).as_deref(),
+                Some("20260401")
+            );
             assert!(source.shared.offline);
         }
-        assert_eq!(unified.sources["codex"].codex_speed, CodexSpeed::Flex);
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["codex"].options.codex_speed,
+            CodexSpeed::Flex
+        );
+        assert_eq!(
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/source/pi/sessions")
         );
         assert_eq!(
-            unified.sources["openclaw"].open_claw_path.as_deref(),
+            unified.sources["openclaw"]
+                .options
+                .open_claw_path
+                .as_deref(),
             Some("/source/openclaw")
         );
     }
@@ -330,22 +322,20 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily"], config);
 
-        assert_eq!(unified.sources["codex"].codex_speed, CodexSpeed::Flex);
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["codex"].options.codex_speed,
+            CodexSpeed::Flex
+        );
+        assert_eq!(
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/global/pi/sessions")
         );
         assert_eq!(
-            unified.sources["openclaw"].open_claw_path.as_deref(),
+            unified.sources["openclaw"]
+                .options
+                .open_claw_path
+                .as_deref(),
             Some("/global/openclaw")
-        );
-        assert_eq!(
-            unified
-                .sources
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["codex", "openclaw", "pi"]
         );
     }
 
@@ -366,11 +356,21 @@ mod tests {
         );
 
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260601"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260601")
+        );
         assert_eq!(codex.shared.mode, CostMode::Auto);
-        assert_eq!(codex.shared.timezone.as_deref(), Some("Pacific/Auckland"));
+        assert_eq!(
+            codex
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("Pacific/Auckland")
+        );
         assert!(codex.shared.offline);
-        assert_eq!(codex.codex_speed, CodexSpeed::Fast);
+        assert_eq!(codex.options.codex_speed, CodexSpeed::Fast);
     }
 
     #[test]
@@ -418,15 +418,23 @@ mod tests {
 
             assert_eq!(unified.kind, kind, "{name}");
             let codex = &unified.sources["codex"];
-            assert_eq!(codex.shared.since.as_deref(), Some(since), "{name}");
+            assert_eq!(
+                codex.shared.since.map(|date| date.to_string()).as_deref(),
+                Some(since),
+                "{name}"
+            );
             assert_eq!(codex.shared.mode, mode, "{name}");
             assert_eq!(
-                codex.shared.timezone.as_deref(),
+                codex
+                    .shared
+                    .timezone
+                    .as_ref()
+                    .map(|timezone| timezone.name()),
                 Some("Europe/London"),
                 "{name}"
             );
             assert!(!codex.shared.offline, "{name}");
-            assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
+            assert_eq!(codex.options.codex_speed, CodexSpeed::Fast, "{name}");
         }
     }
 
@@ -440,7 +448,10 @@ mod tests {
         let unified = unified_with_config(&["daily"], config);
 
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260602")
+        );
         assert_eq!(codex.shared.mode, CostMode::Auto);
     }
 
@@ -454,10 +465,16 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily"], config);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
         assert_eq!(unified.shared.mode, CostMode::Display);
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260602")
+        );
         assert_eq!(codex.shared.mode, CostMode::Calculate);
     }
 
@@ -471,10 +488,16 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["daily"], config);
 
-        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(
+            unified.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260101")
+        );
         assert_eq!(unified.shared.mode, CostMode::Display);
         let codex = &unified.sources["codex"];
-        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(
+            codex.shared.since.map(|date| date.to_string()).as_deref(),
+            Some("20260602")
+        );
         assert_eq!(codex.shared.mode, CostMode::Calculate);
     }
 
@@ -484,11 +507,15 @@ mod tests {
 
         assert_eq!(unified.kind, AgentReportKind::Daily);
         assert_eq!(
-            unified.sources["codex"].shared.since.as_deref(),
+            unified.sources["codex"]
+                .shared
+                .since
+                .map(|date| date.to_string())
+                .as_deref(),
             Some("20260301")
         );
         assert_eq!(
-            unified.sources["pi"].pi_path.as_deref(),
+            unified.sources["pi"].options.pi_path.as_deref(),
             Some("/data/pi/sessions")
         );
     }
@@ -499,7 +526,7 @@ mod tests {
 
         assert_eq!(unified.kind, AgentReportKind::Session);
         assert_eq!(unified.sources["codex"].shared.mode, CostMode::Display);
-        assert!(unified.sources["openclaw"].open_claw_path.is_none());
+        assert!(unified.sources["openclaw"].options.open_claw_path.is_none());
     }
 
     #[test]
@@ -514,17 +541,29 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["weekly", "--last", "1"], config);
         let codex = &unified.sources["codex"];
-        let today = format_date(utc_now(), codex.shared.timezone.as_deref());
+        let today = date_at(
+            codex.shared.clock.now().into(),
+            &resolve_tz(codex.shared.timezone.as_ref()),
+        );
 
         assert_eq!(unified.start_of_week, WeekDay::Wednesday);
         assert_eq!(
-            codex.shared.timezone.as_deref(),
+            codex
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
             Some("America/Los_Angeles")
         );
-        assert_eq!(codex.shared.last, Some(1));
+        assert_eq!(codex.shared.last, Some(std::num::NonZeroU32::MIN));
         assert_eq!(
             codex.shared.since,
-            last_periods_since(PeriodUnit::Week, 1, &today, unified.start_of_week)
+            last_periods_since(
+                PeriodUnit::Week,
+                std::num::NonZeroU32::MIN,
+                today,
+                unified.start_of_week
+            )
         );
     }
 
@@ -540,12 +579,20 @@ mod tests {
             config,
         );
         let codex = &unified.sources["codex"];
-        let today = format_date(utc_now(), codex.shared.timezone.as_deref());
+        let today = date_at(
+            codex.shared.clock.now().into(),
+            &resolve_tz(codex.shared.timezone.as_ref()),
+        );
 
         assert_eq!(unified.start_of_week, WeekDay::Friday);
         assert_eq!(
             codex.shared.since,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Friday)
+            last_periods_since(
+                PeriodUnit::Week,
+                std::num::NonZeroU32::MIN,
+                today,
+                WeekDay::Friday
+            )
         );
     }
 
@@ -575,10 +622,9 @@ mod tests {
             .err()
             .expect("expected the source timezone to be rejected");
 
-        assert_eq!(
-            error,
-            "Invalid value for --timezone 'Not/AZone'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone. (in codex config)"
-        );
+        assert!(error.starts_with("Invalid value for ccusage config field "));
+        assert!(error.contains("ccusage.json: codex.defaults.timezone 'Not/AZone'."));
+        assert!(error.ends_with("(in codex config)"));
     }
 
     #[test]
@@ -590,7 +636,7 @@ mod tests {
         let unified = unified_with_config(&["daily"], config);
 
         assert_eq!(
-            unified.sources["claude"].claude_project.as_deref(),
+            unified.sources["claude"].options.claude_project.as_deref(),
             Some("repo")
         );
     }
@@ -625,7 +671,7 @@ mod tests {
                 unified
                     .sources
                     .get("claude")
-                    .and_then(|source| source.claude_project.as_deref()),
+                    .and_then(|source| source.options.claude_project.as_deref()),
                 Some(project),
                 "{config}"
             );

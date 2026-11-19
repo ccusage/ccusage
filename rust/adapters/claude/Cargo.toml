@@ -7,6 +7,7 @@ publish.workspace = true
 [dependencies]
 ccusage-adapter-common.workspace = true
 ccusage-core.workspace = true
+ccusage-report.workspace = true
 jiff.workspace = true
 memchr.workspace = true
 rustc-hash.workspace = true
@@ -14,7 +15,12 @@ serde.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.6", features = ["process"] }
+
 [dev-dependencies]
+ccusage-cli-parser.workspace = true
+ccusage-config.workspace = true
 ccusage-test-support.workspace = true
 
 [lints]

@@ -1,12 +1,15 @@
+use ccusage_adapter_common::source::ReportPricing;
 use ccusage_core::{
-    PricingMap, Result,
+    Diagnostics, Result,
     cli::{AgentReportKind, CodexStatuslineArgs},
-    format_currency, format_date_tz, format_number, print_json_or_jq, resolve_tz, utc_now,
-    wants_json,
+    date_at, format_currency, format_number, print_json_or_jq, resolve_tz, wants_json,
 };
 use serde_json::Value;
 
-use super::{load_groups, report, resolve_codex_speed, resolve_session_id};
+use super::{
+    aggregate::{load_groups_from_file_selection, select_session_files},
+    paths, report, resolve_codex_speed, resolve_session_id,
+};
 
 mod mcp;
 mod native;
@@ -17,7 +20,7 @@ pub fn run_statusline(args: CodexStatuslineArgs) -> Result<()> {
     if args.mcp {
         return mcp::serve(args);
     }
-    let pricing = load_pricing(&args);
+    let pricing = ReportPricing::for_load(&args.shared, None);
     let summary = summarize(&args, &pricing)?;
     if wants_json(&args.shared) {
         return print_json_or_jq(summary, args.shared.jq.as_deref(), args.shared.no_cost);
@@ -26,15 +29,7 @@ pub fn run_statusline(args: CodexStatuslineArgs) -> Result<()> {
     Ok(())
 }
 
-fn load_pricing(args: &CodexStatuslineArgs) -> PricingMap {
-    PricingMap::load_with_overrides(
-        args.mcp || (args.shared.offline && !args.shared.no_offline),
-        false,
-        args.shared.pricing_overrides.iter(),
-    )
-}
-
-fn summarize(args: &CodexStatuslineArgs, pricing: &PricingMap) -> Result<Value> {
+fn summarize(args: &CodexStatuslineArgs, pricing: &ReportPricing<'_>) -> Result<Value> {
     let mut shared = args.shared.clone();
     let requested_session = args.session_id.as_deref();
     let scope = if requested_session.is_some() {
@@ -44,9 +39,9 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &PricingMap) -> Result<Value> 
     } else if shared.since.is_some() || shared.until.is_some() {
         "range"
     } else {
-        let timezone = resolve_tz(shared.timezone.as_deref());
-        let today = format_date_tz(utc_now(), &timezone).replace('-', "");
-        shared.since = Some(today.clone());
+        let timezone = resolve_tz(shared.timezone.as_ref());
+        let today = date_at(shared.clock.now().into(), &timezone).into();
+        shared.since = Some(today);
         shared.until = Some(today);
         "today"
     };
@@ -55,11 +50,17 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &PricingMap) -> Result<Value> 
     } else {
         AgentReportKind::Daily
     };
+    let diagnostics = Diagnostics::for_report("codex", shared.clock);
+    let pricing = pricing.get();
     let mut groups = if let Some(requested) = requested_session {
-        super::aggregate::load_session_groups(&shared, requested)?
+        let files =
+            paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, &diagnostics);
+        let selected = select_session_files(&files, requested, false);
+        load_groups_from_file_selection(&files, &selected, &shared, kind, pricing, &diagnostics)?
     } else {
-        load_groups(&shared, kind)?
+        super::aggregate::load_groups_with_diagnostics(&shared, kind, pricing, &diagnostics)?.0
     };
+    diagnostics.emit(shared.debug);
     let session_id = if let Some(requested) = requested_session {
         let thread = super::normalize_session_id(requested);
         let has_replacement = groups.keys().any(|id| {

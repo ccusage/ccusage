@@ -2,12 +2,7 @@
 
 ## Commands
 
-`just` is the single entry point (`just --list`). Each workspace package owns a
-justfile imported as a module, so package recipes are `just <module>::<recipe>`
-and `just <module>::--list` lists one module. Whole-repo jobs the Nix flake owns
-(`fmt`, `check`, `schema`) stay at the root.
-
-`just fmt` mutates files, so run it before the read-only checks.
+Use `just` as the project entry point. Run `just fmt` before read-only checks.
 
 ## Adding A Dependency Or Tool
 
@@ -16,12 +11,12 @@ repeatedly belongs in the repo: system and dev-shell CLIs in `flake.nix`
 (`nix/dev-shell.nix` is the current list), JS/TS tooling and scripts in
 `package.json`. Land the matching lockfile update — `flake.lock`,
 `pnpm-lock.yaml` — in the same commit so the addition stays independently
-revertable.
+revertable. Keep Cargo's `global-min-publish-age` in `.cargo/config.toml` aligned
+with `minimumReleaseAge` in `pnpm-workspace.yaml`.
 
 ## Validation
 
-Git hooks and CI cover the standard path: `.pre-commit-config.yaml` is generated
-from `nix/git-hooks.nix` and shows exactly which hook runs at which stage.
+Edit `nix/git-hooks.nix` to change Git hooks.
 
 Run `just typecheck` and `just test` yourself when the change touches behavior,
 types, or package code, or when the hooks and CI do not cover the edited files.

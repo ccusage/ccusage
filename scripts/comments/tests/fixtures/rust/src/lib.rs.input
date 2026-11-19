@@ -1,0 +1,43 @@
+//! Crate documentation.
+// SPDX-License-Identifier: MIT
+
+/// An exported symbol.
+#[inline]
+pub fn exported() {}
+
+/// Internal documentation.
+pub(crate) fn internal() {}
+
+// NOTE(2024-02-29, #123): The timestamp uses UTC. A local date can move the event.
+fn run() {
+    // SAFETY: The pointer remains live.
+    let _value = unsafe { std::ptr::read(&0) };
+    // SAFETY: This is attached to an ordinary statement.
+    let _plain = 0; // misplaced note
+    // TODO: document this
+    let _text = r#"// fake note"#;
+}
+
+/* A block comment. */
+mod nested {
+    //! This is module documentation.
+}
+
+#[doc = "Internal attribute documentation."]
+fn private() {}
+
+#[doc = "Public attribute documentation."]
+pub fn public() {}
+
+mod private_module {
+    /// Unreachable public item.
+    pub fn hidden() {}
+
+    #[doc = "Unreachable public attribute documentation."]
+    pub fn also_hidden() {}
+}
+
+pub mod public_module {
+    /// Reachable public item.
+    pub fn visible() {}
+}

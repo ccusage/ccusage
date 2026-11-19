@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1660,
-      "inputTokens": 3910,
+      "inputTokens": 3610,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -22,10 +22,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.0047,
-          "inputTokens": 2300,
+          "cost": 0.00415,
+          "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 350
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -61,9 +61,9 @@ exit: 0
         "qwen-mystery-1"
       ],
       "month": "2025-12",
-      "outputTokens": 1369,
-      "totalCost": 0.0115497,
-      "totalTokens": 7039
+      "outputTokens": 1319,
+      "totalCost": 0.010999700000000001,
+      "totalTokens": 6689
     },
     {
       "cacheCreationTokens": 0,
@@ -100,10 +100,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 0,
     "cacheReadTokens": 101760,
-    "inputTokens": 304691,
-    "outputTokens": 3532,
-    "totalCost": 0.33449070000000003,
-    "totalTokens": 410150,
+    "inputTokens": 304391,
+    "outputTokens": 3482,
+    "totalCost": 0.33394070000000003,
+    "totalTokens": 409800,
     "unpricedModels": [
       "qwen-mystery-1"
     ]

@@ -1,11 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
-use crate::golden::{Case, set_modified};
+use ccusage_test_support::{Instant, instant, set_modified};
+
+use crate::golden::Case;
 
 const GPT5: &str = "gpt-5";
-// Priced with a fast and a flex multiplier, and a 272K long-context tier.
 const GPT55: &str = "gpt-5.5";
-// Priced with an ultrafast multiplier as well.
 const SOL: &str = "gpt-6.1-sol";
 const CODEX: &str = "gpt-5-codex";
 const UNPRICED: &str = "codex-mystery-1";
@@ -22,21 +23,10 @@ const LEGACY_FORK: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const COMPACTING_FORK: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ARCHIVED_COPY: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const MISSING_PARENT: &str = "99999999-9999-4999-8999-999999999999";
+
 const REPLACEMENT: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const SUBAGENT_SIBLING: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 
-const NEW_YEAR: u64 = 1_767_225_600; // 2026-01-01T00:00:00Z
-
-/// Unix seconds for a time on the day `day` days after 2026-01-01.
-fn utc(day: i64, hour: u64, minute: u64) -> u64 {
-    NEW_YEAR
-        .checked_add_signed(day * 86_400)
-        .expect("fixture day is in range")
-        + hour * 3_600
-        + minute * 60
-}
-
-/// Rollout path below a sessions directory; the session ID omits `.jsonl`.
 fn rollout(date: &str, time: &str, id: &str) -> String {
     format!(
         "{}/rollout-{date}T{time}-{id}.jsonl",
@@ -51,14 +41,12 @@ fn usage(input: u64, cached: u64, output: u64, reasoning: u64) -> String {
     )
 }
 
-/// `extra` holds further payload members, each with its leading comma.
 fn meta(timestamp: &str, id: &str, extra: &str) -> String {
     format!(
         r#"{{"timestamp":"{timestamp}","type":"session_meta","payload":{{"id":"{id}","cli_version":"0.144.0"{extra}}}}}"#
     )
 }
 
-/// `model` is the payload body, so each spelling of the model field can be used.
 fn turn(timestamp: &str, model: &str) -> String {
     format!(r#"{{"timestamp":"{timestamp}","type":"turn_context","payload":{{{model}}}}}"#)
 }
@@ -77,14 +65,12 @@ fn count(timestamp: &str, last: Option<&str>, total: Option<&str>) -> String {
     )
 }
 
-/// `settings` is the body of the `thread_settings` object.
 fn settings(timestamp: &str, settings: &str) -> String {
     format!(
         r#"{{"timestamp":"{timestamp}","type":"event_msg","payload":{{"type":"thread_settings_applied","thread_settings":{{{settings}}}}}}}"#
     )
 }
 
-/// `extra` holds further payload members, each with its leading comma.
 fn record(timestamp: &str, response_id: &str, usage: &str, extra: &str) -> String {
     format!(
         r#"{{"timestamp":"{timestamp}","type":"token_usage_record","payload":{{"response_id":"{response_id}","usage":{usage}{extra}}}}}"#
@@ -97,21 +83,8 @@ fn compacted(timestamp: &str, response_id: &str) -> String {
     )
 }
 
-/// The compacting session's turns. `stamp` rewrites each timestamp, as Codex
-/// does when it copies a history into a fork.
-fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
-    vec![
-        turn(
-            &stamp("2025-12-31T16:00:05.000Z"),
-            &format!(r#""model_name":"{CODEX}""#),
-        ),
-        count(
-            &stamp("2025-12-31T16:00:10.000Z"),
-            None,
-            Some(&usage(1000, 400, 100, 0)),
-        ),
-        // Remote compaction: no token_count advance follows, so the record
-        // itself is the usage. The repeated marker must not count it again.
+fn remote_compaction_with_repeated_marker(stamp: &dyn Fn(&str) -> String) -> [String; 3] {
+    [
         record(
             &stamp("2025-12-31T16:05:00.000Z"),
             "resp-remote-1",
@@ -120,8 +93,11 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
         ),
         compacted(&stamp("2025-12-31T16:05:01.000Z"), "resp-remote-1"),
         compacted(&stamp("2025-12-31T16:05:02.000Z"), "resp-remote-1"),
-        // Local compaction: the advancing token_count already carries the
-        // request, so the record adds nothing.
+    ]
+}
+
+fn local_compaction_already_in_token_count(stamp: &dyn Fn(&str) -> String) -> [String; 3] {
+    [
         record(
             &stamp("2025-12-31T16:10:00.000Z"),
             "resp-local-1",
@@ -134,8 +110,11 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
             Some(&usage(1800, 400, 180, 0)),
         ),
         compacted(&stamp("2025-12-31T16:10:02.000Z"), "resp-local-1"),
-        // Records that no `compacted` marker ever names, or that carry no ID
-        // or no usage.
+    ]
+}
+
+fn unmatched_or_empty_compaction_records(stamp: &dyn Fn(&str) -> String) -> [String; 4] {
+    [
         record(
             &stamp("2025-12-31T16:15:00.000Z"),
             "resp-not-compaction",
@@ -155,7 +134,11 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
             "",
         ),
         compacted(&stamp("2025-12-31T16:17:01.000Z"), "resp-zero"),
-        // Marker before record, and the record names its own model.
+    ]
+}
+
+fn remote_compaction_marker_before_record(stamp: &dyn Fn(&str) -> String) -> [String; 2] {
+    [
         compacted(&stamp("2026-01-01T01:00:00.000Z"), "resp-remote-2"),
         record(
             &stamp("2026-01-01T01:00:01.000Z"),
@@ -163,181 +146,61 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
             &usage(2000, 1500, 200, 50),
             &format!(r#","model":"{GPT5}""#),
         ),
-        count(
-            &stamp("2026-01-01T01:05:00.000Z"),
-            Some(&usage(300, 100, 30, 0)),
-            Some(&usage(2100, 500, 210, 0)),
-        ),
     ]
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
-    let write_bytes = |relative: &str, contents: &[u8], modified: u64| {
-        let path = root.join("codex").join(relative);
-        std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
-            .expect("failed to create fixture directory");
-        std::fs::write(&path, contents).expect("failed to write fixture file");
-        set_modified(&path, modified);
-    };
-    let write = |relative: &str, lines: &[String], modified: u64| {
-        write_bytes(relative, lines.join("\n").as_bytes(), modified);
-    };
-    let compress = |lines: &[String]| {
-        zstd::encode_all(lines.join("\n").as_bytes(), 0).expect("failed to compress fixture")
-    };
-
-    // The profile the config selects decides the tier of usage that records
-    // none; the top-level value and the unselected profile must not.
-    write(
-        "work/config.toml",
-        &[r#"service_tier = "fast"
-profile = "slow"
-
-[profiles.slow]
-service_tier = "flex"
-
-[profiles.unused]
-service_tier = "fast"
-"#
-        .to_string()],
-        utc(-2, 0, 0),
-    );
-
-    let main = rollout("2025-12-30", "10-00-00", MAIN);
-    let first_turn = count(
-        "2025-12-30T10:01:00.000Z",
-        Some(&usage(1000, 200, 100, 20)),
-        Some(&usage(1000, 200, 100, 20)),
-    );
-    // Written before the window opens but resumed after it, so the window
-    // variants keep the file by its mtime.
-    write(
-        &format!("work/sessions/{main}"),
-        &[
-            meta("2025-12-30T10:00:00.000Z", MAIN, ""),
-            turn("2025-12-30T10:00:01.000Z", &format!(r#""model":"{GPT55}""#)),
-            r#"{"timestamp":"2025-12-30T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":null}}"#
-                .to_string(),
-            first_turn.clone(),
-            // Same cumulative total again: a repeated snapshot, not a request.
-            count(
-                "2025-12-30T10:01:01.000Z",
-                Some(&usage(9999, 0, 9999, 0)),
-                Some(&usage(1000, 200, 100, 20)),
-            ),
-            settings("2025-12-30T10:01:30.000Z", r#""service_tier":"priority""#),
-            // Cumulative total only: the delta is recovered by subtraction.
-            count(
-                "2025-12-30T10:02:00.000Z",
-                None,
-                Some(&usage(3000, 1200, 400, 50)),
-            ),
-            // No `service_tier` key: the previous tier stands.
-            settings("2025-12-30T10:03:00.000Z", r#""approval_policy":"never""#),
-            count(
-                "2025-12-31T09:00:00.000Z",
-                Some(&usage(500, 100, 50, 0)),
-                Some(&usage(3500, 1300, 450, 50)),
-            ),
-            // An unrecognized tier clears the recorded one.
-            settings("2025-12-31T15:00:00.000Z", r#""service_tier":"warp""#),
-            // 2026-01-01 in Asia/Tokyo.
-            count(
-                "2025-12-31T15:30:00.000Z",
-                Some(&usage(700, 300, 70, 10)),
-                Some(&usage(4200, 1600, 520, 60)),
-            ),
-            turn(
-                "2026-01-01T11:59:00.000Z",
-                &format!(r#""model":"{UNPRICED}""#),
-            ),
-            count(
-                "2026-01-01T12:00:00.000Z",
-                Some(&usage(300, 0, 30, 0)),
-                Some(&usage(4500, 1600, 550, 60)),
-            ),
-            turn(
-                "2026-01-01T12:09:00.000Z",
-                &format!(r#""metadata":{{"model":"{GPT55}"}}"#),
-            ),
-            // The cumulative counter restarts below its previous value, then
-            // advances from the new baseline.
-            count(
-                "2026-01-01T12:10:00.000Z",
-                None,
-                Some(&usage(100, 50, 10, 0)),
-            ),
-            count(
-                "2026-01-01T12:11:00.000Z",
-                None,
-                Some(&usage(400, 150, 40, 0)),
-            ),
-            r#"{"timestamp":"2026-01-01T13:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":9999,"outp"#
-                .to_string(),
-            r#"{"timestamp":"2026-01-01T13:01:00.000Z","type":"response_item","payload":{"type":"message","usage":{"input_tokens":7777,"output_tokens":7777}}}"#
-                .to_string(),
-            r#"{"timestamp":"2026-01-01T13:02:00.000Z","type":"event_msg","payload":{"type":"agent_message","message":"token_count 9999"}}"#
-                .to_string(),
-            // Epoch-seconds timestamp: 2026-01-02T08:00:00Z.
-            format!(
-                r#"{{"timestamp":1767340800,"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{},"total_token_usage":{}}}}}}}"#,
-                usage(600, 200, 60, 0),
-                usage(1000, 350, 100, 0)
-            ),
-            format!(
-                r#"{{"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{}}}}}}}"#,
-                usage(9999, 0, 9999, 0)
-            ),
-            format!(
-                r#"{{"timestamp":"2026-01-02T08:30:00.000Z","type":"event_msg","payload":{{"type":"token_count","info":{{"model":"gpt-5-mini","last_token_usage":{},"total_token_usage":{}}}}}}}"#,
-                usage(200, 0, 20, 0),
-                usage(1200, 350, 120, 0)
-            ),
-        ],
-        utc(1, 8, 31),
-    );
-
-    // A second Codex home without `sessions/`, so the home itself is scanned.
-    // It holds the same relative path as the main rollout: both files are read
-    // and land in one session row. The first turn is a copy that records the
-    // tier the original lacks.
-    let twins = count("2025-12-30T23:40:00.000Z", Some(&usage(60, 0, 6, 0)), None);
-    write(
-        &format!("personal/{main}"),
-        &[
-            meta("2025-12-30T10:00:00.000Z", MAIN, ""),
-            turn("2025-12-30T10:00:01.000Z", &format!(r#""model":"{GPT55}""#)),
-            settings("2025-12-30T10:00:30.000Z", r#""service_tier":"default""#),
-            first_turn,
-            settings("2025-12-30T23:00:00.000Z", r#""service_tier":"ultrafast""#),
-            turn("2025-12-30T23:00:01.000Z", &format!(r#""model":"{SOL}""#)),
-            // 2025-12-31 in Asia/Tokyo.
-            count(
-                "2025-12-30T23:30:00.000Z",
-                Some(&usage(450, 50, 45, 5)),
-                Some(&usage(1450, 250, 145, 25)),
-            ),
-            // Identical events in one file are two requests.
-            twins.clone(),
-            twins,
-        ],
-        utc(-2, 23, 41),
-    );
-
-    let mut compacting = vec![meta("2025-12-31T16:00:00.000Z", COMPACTING, "")];
-    compacting.extend(compacting_history(&|timestamp| timestamp.to_string()));
-    write(
-        &format!(
-            "work/sessions/{}",
-            rollout("2025-12-31", "16-00-00", COMPACTING)
+fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
+    [
+        turn(
+            &stamp("2025-12-31T16:00:05.000Z"),
+            &format!(r#""model_name":"{CODEX}""#),
         ),
-        &compacting,
-        utc(0, 1, 6),
-    );
+        count(
+            &stamp("2025-12-31T16:00:10.000Z"),
+            None,
+            Some(&usage(1000, 400, 100, 0)),
+        ),
+    ]
+    .into_iter()
+    .chain(remote_compaction_with_repeated_marker(stamp))
+    .chain(local_compaction_already_in_token_count(stamp))
+    .chain(unmatched_or_empty_compaction_records(stamp))
+    .chain(remote_compaction_marker_before_record(stamp))
+    .chain([count(
+        &stamp("2026-01-01T01:05:00.000Z"),
+        Some(&usage(300, 100, 30, 0)),
+        Some(&usage(2100, 500, 210, 0)),
+    )])
+    .collect()
+}
 
-    // User fork of the compacting session: the whole history is copied at the
-    // fork instant, compaction records included, then the fork compacts once
-    // itself.
+fn seed_exec_json_with_timestamp_fallback(write: &impl Fn(&str, &[String], Instant)) {
+    write(
+        "work/sessions/exec/headless-run.jsonl",
+        &[
+            format!(
+                r#"{{"timestamp":"2026-01-01T03:00:00.000Z","model":"{GPT5}","usage":{{"prompt_tokens":900,"cached_tokens":300,"completion_tokens":90,"reasoning_tokens":9}}}}"#
+            ),
+            r#"{"timestamp":"2026-01-01T03:10:00.000Z","usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":400,"output_tokens":50}}"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-01T03:30:00.000Z","usage":{"input_tokens":0,"output_tokens":0}}"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-01T03:31:00.000Z","usage":"n/a","note":"9999"}"#.to_string(),
+            format!(
+                r#"{{"created_at":{created_at},"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#,
+                created_at = instant("2026-01-02T03:00:00Z").secs()
+            ),
+            r#"{"result":{"usage":{"input":120,"output":12}}}"#.to_string(),
+            r#"{"timestamp":"2026-01-02T05:00:00Z","model":5,"usage":{"input_tokens":80,"output_tokens":8}}"#
+                .to_string(),
+            r#"{"timestamp":"2025-12-31T23:59:59.000Z","model":"codex-auto-review","usage":{"input_tokens":640,"cached_input_tokens":40,"output_tokens":64}}"#
+                .to_string(),
+        ],
+        instant("2026-01-02T04:00:00Z"),
+    );
+}
+
+fn seed_fork_with_copied_compactions(write: &impl Fn(&str, &[String], Instant)) {
     let mut compacting_fork = vec![meta(
         "2026-01-01T02:00:00.000Z",
         COMPACTING_FORK,
@@ -366,12 +229,11 @@ service_tier = "fast"
             rollout("2026-01-01", "02-00-00", COMPACTING_FORK)
         ),
         &compacting_fork,
-        utc(0, 2, 12),
+        instant("2026-01-01T02:12:00Z"),
     );
+}
 
-    // An archived copy under another name and session ID, with no fork
-    // metadata: only the cross-file dedupe can drop its usage. It also records
-    // the tier the original compaction lacks.
+fn seed_archived_copy_with_service_tier(write: &impl Fn(&str, &[String], Instant)) {
     write(
         &format!("work/archived_sessions/rollout-2025-12-31T16-00-00-{ARCHIVED_COPY}.jsonl"),
         &[
@@ -394,11 +256,161 @@ service_tier = "fast"
             ),
             compacted("2025-12-31T16:05:01.000Z", "resp-remote-1"),
         ],
-        utc(-1, 16, 6),
+        instant("2025-12-31T16:06:00Z"),
+    );
+}
+
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let write_bytes = |relative: &str, contents: &[u8], modified: Instant| {
+        let path = root.join("codex").join(relative);
+        std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
+            .expect("failed to create fixture directory");
+        std::fs::write(&path, contents).expect("failed to write fixture file");
+        set_modified(&path, modified);
+    };
+    let write = |relative: &str, lines: &[String], modified: Instant| {
+        write_bytes(relative, lines.join("\n").as_bytes(), modified);
+    };
+    let compress = |lines: &[String]| {
+        zstd::encode_all(lines.join("\n").as_bytes(), 0).expect("failed to compress fixture")
+    };
+
+    write(
+        "work/config.toml",
+        &[r#"service_tier = "fast"
+profile = "slow"
+
+[profiles.slow]
+service_tier = "flex"
+
+[profiles.unused]
+service_tier = "fast"
+"#
+        .to_string()],
+        instant("2025-12-30T00:00:00Z"),
     );
 
-    // User fork of the main session: the three turns before the fork are
-    // replayed at the fork instant and matched against the parent's stream.
+    let main = rollout("2025-12-30", "10-00-00", MAIN);
+    let first_turn = count(
+        "2025-12-30T10:01:00.000Z",
+        Some(&usage(1000, 200, 100, 20)),
+        Some(&usage(1000, 200, 100, 20)),
+    );
+    write(
+        &format!("work/sessions/{main}"),
+        &[
+            meta("2025-12-30T10:00:00.000Z", MAIN, ""),
+            turn("2025-12-30T10:00:01.000Z", &format!(r#""model":"{GPT55}""#)),
+            r#"{"timestamp":"2025-12-30T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":null}}"#
+                .to_string(),
+            first_turn.clone(),
+            count(
+                "2025-12-30T10:01:01.000Z",
+                Some(&usage(9999, 0, 9999, 0)),
+                Some(&usage(1000, 200, 100, 20)),
+            ),
+            settings("2025-12-30T10:01:30.000Z", r#""service_tier":"priority""#),
+            count(
+                "2025-12-30T10:02:00.000Z",
+                None,
+                Some(&usage(3000, 1200, 400, 50)),
+            ),
+            settings("2025-12-30T10:03:00.000Z", r#""approval_policy":"never""#),
+            count(
+                "2025-12-31T09:00:00.000Z",
+                Some(&usage(500, 100, 50, 0)),
+                Some(&usage(3500, 1300, 450, 50)),
+            ),
+            settings("2025-12-31T15:00:00.000Z", r#""service_tier":"warp""#),
+            count(
+                "2025-12-31T15:30:00.000Z",
+                Some(&usage(700, 300, 70, 10)),
+                Some(&usage(4200, 1600, 520, 60)),
+            ),
+            turn(
+                "2026-01-01T11:59:00.000Z",
+                &format!(r#""model":"{UNPRICED}""#),
+            ),
+            count(
+                "2026-01-01T12:00:00.000Z",
+                Some(&usage(300, 0, 30, 0)),
+                Some(&usage(4500, 1600, 550, 60)),
+            ),
+            turn(
+                "2026-01-01T12:09:00.000Z",
+                &format!(r#""metadata":{{"model":"{GPT55}"}}"#),
+            ),
+            count(
+                "2026-01-01T12:10:00.000Z",
+                None,
+                Some(&usage(100, 50, 10, 0)),
+            ),
+            count(
+                "2026-01-01T12:11:00.000Z",
+                None,
+                Some(&usage(400, 150, 40, 0)),
+            ),
+            r#"{"timestamp":"2026-01-01T13:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":9999,"outp"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-01T13:01:00.000Z","type":"response_item","payload":{"type":"message","usage":{"input_tokens":7777,"output_tokens":7777}}}"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-01T13:02:00.000Z","type":"event_msg","payload":{"type":"agent_message","message":"token_count 9999"}}"#
+                .to_string(),
+            format!(
+                r#"{{"timestamp":{timestamp},"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{},"total_token_usage":{}}}}}}}"#,
+                usage(600, 200, 60, 0),
+                usage(1000, 350, 100, 0),
+                timestamp = instant("2026-01-02T08:00:00Z").secs()
+            ),
+            format!(
+                r#"{{"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{}}}}}}}"#,
+                usage(9999, 0, 9999, 0)
+            ),
+            format!(
+                r#"{{"timestamp":"2026-01-02T08:30:00.000Z","type":"event_msg","payload":{{"type":"token_count","info":{{"model":"gpt-5-mini","last_token_usage":{},"total_token_usage":{}}}}}}}"#,
+                usage(200, 0, 20, 0),
+                usage(1200, 350, 120, 0)
+            ),
+        ],
+        instant("2026-01-02T08:31:00Z"),
+    );
+
+    let twins = count("2025-12-30T23:40:00.000Z", Some(&usage(60, 0, 6, 0)), None);
+    write(
+        &format!("personal/{main}"),
+        &[
+            meta("2025-12-30T10:00:00.000Z", MAIN, ""),
+            turn("2025-12-30T10:00:01.000Z", &format!(r#""model":"{GPT55}""#)),
+            settings("2025-12-30T10:00:30.000Z", r#""service_tier":"default""#),
+            first_turn,
+            settings("2025-12-30T23:00:00.000Z", r#""service_tier":"ultrafast""#),
+            turn("2025-12-30T23:00:01.000Z", &format!(r#""model":"{SOL}""#)),
+            count(
+                "2025-12-30T23:30:00.000Z",
+                Some(&usage(450, 50, 45, 5)),
+                Some(&usage(1450, 250, 145, 25)),
+            ),
+            twins.clone(),
+            twins,
+        ],
+        instant("2025-12-30T23:41:00Z"),
+    );
+
+    let mut compacting = vec![meta("2025-12-31T16:00:00.000Z", COMPACTING, "")];
+    compacting.extend(compacting_history(&|timestamp| timestamp.to_string()));
+    write(
+        &format!(
+            "work/sessions/{}",
+            rollout("2025-12-31", "16-00-00", COMPACTING)
+        ),
+        &compacting,
+        instant("2026-01-01T01:06:00Z"),
+    );
+
+    seed_fork_with_copied_compactions(&write);
+
+    seed_archived_copy_with_service_tier(&write);
+
     write(
         &format!(
             "work/sessions/{}",
@@ -431,26 +443,20 @@ service_tier = "fast"
                 Some(&usage(400, 100, 40, 0)),
                 Some(&usage(3900, 1400, 490, 50)),
             ),
-            // Same instant, model, and usage as a turn the parent made after
-            // the fork: not replayed history, but a cross-file duplicate.
             count(
                 "2025-12-31T15:30:00.000Z",
                 Some(&usage(700, 300, 70, 10)),
                 Some(&usage(4600, 1700, 560, 60)),
             ),
-            // The same usage one second later is a turn of its own.
             count(
                 "2025-12-31T15:30:01.000Z",
                 Some(&usage(700, 300, 70, 10)),
                 Some(&usage(5300, 2000, 630, 70)),
             ),
         ],
-        utc(-1, 15, 31),
+        instant("2025-12-31T15:31:00Z"),
     );
 
-    // Spawned subagent of the main session: a spawn never copies the parent's
-    // usage records, so the first record ends the replayed prefix. The turn
-    // after it repeats the parent's third turn and is still the child's own.
     write(
         &format!(
             "work/sessions/{}",
@@ -493,11 +499,9 @@ service_tier = "fast"
                 Some(&usage(3750, 1350, 475, 55)),
             ),
         ],
-        utc(0, 12, 7),
+        instant("2026-01-01T12:07:00Z"),
     );
 
-    // The sibling reports the same request usage at the same instant. Its
-    // distinct response ID keeps both requests in cross-session totals.
     write(
         &format!(
             "work/sessions/{}",
@@ -524,8 +528,6 @@ service_tier = "fast"
                 Some(&usage(500, 100, 50, 0)),
                 Some(&usage(500, 100, 50, 0)),
             ),
-            // The first sibling only has a token count for this request.
-            // This rollout sorts later and carries the recording.
             record(
                 "2026-01-01T12:05:59.900Z",
                 "resp-subagent-sibling-later",
@@ -538,11 +540,9 @@ service_tier = "fast"
                 Some(&usage(750, 150, 75, 5)),
             ),
         ],
-        utc(0, 12, 7),
+        instant("2026-01-01T12:07:00Z"),
     );
 
-    // Fork whose parent log is gone: the dense burst written at the fork
-    // instant is the replayed history.
     write(
         &format!("work/archived_sessions/rollout-2025-12-30T20-00-00-{ORPHAN_FORK}.jsonl"),
         &[
@@ -568,11 +568,9 @@ service_tier = "fast"
                 None,
             ),
         ],
-        utc(-2, 20, 1),
+        instant("2025-12-30T20:01:00Z"),
     );
 
-    // Early rollout without model metadata. Last written before the window, so
-    // the window variants prune the file, yet its fork below still needs it.
     write(
         &format!(
             "work/sessions/{}",
@@ -586,7 +584,7 @@ service_tier = "fast"
                 Some(&usage(100, 0, 50, 0)),
             ),
         ],
-        utc(-5, 22, 1),
+        instant("2025-12-27T22:01:00Z"),
     );
     write(
         &format!(
@@ -611,40 +609,11 @@ service_tier = "fast"
                 Some(&usage(230, 30, 63, 0)),
             ),
         ],
-        utc(-1, 12, 2),
+        instant("2025-12-31T12:02:00Z"),
     );
 
-    // Saved `codex exec --json` output: no event envelope, OpenAI field
-    // spellings, and timestamps that fall back to the file mtime.
-    write(
-        "work/sessions/exec/headless-run.jsonl",
-        &[
-            format!(
-                r#"{{"timestamp":"2026-01-01T03:00:00.000Z","model":"{GPT5}","usage":{{"prompt_tokens":900,"cached_tokens":300,"completion_tokens":90,"reasoning_tokens":9}}}}"#
-            ),
-            // Cache writes are clamped to the input the cache reads leave over.
-            r#"{"timestamp":"2026-01-01T03:10:00.000Z","usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":400,"output_tokens":50}}"#
-                .to_string(),
-            r#"{"timestamp":"2026-01-01T03:30:00.000Z","usage":{"input_tokens":0,"output_tokens":0}}"#
-                .to_string(),
-            r#"{"timestamp":"2026-01-01T03:31:00.000Z","usage":"n/a","note":"9999"}"#.to_string(),
-            // Epoch seconds: 2026-01-02T03:00:00Z.
-            format!(
-                r#"{{"created_at":1767322800,"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#
-            ),
-            r#"{"result":{"usage":{"input":120,"output":12}}}"#.to_string(),
-            // A model of the wrong type takes the untyped parsing path.
-            r#"{"timestamp":"2026-01-02T05:00:00Z","model":5,"usage":{"input_tokens":80,"output_tokens":8}}"#
-                .to_string(),
-            // 2026-01-01 in Asia/Tokyo. The alias resolves by event date.
-            r#"{"timestamp":"2025-12-31T23:59:59.000Z","model":"codex-auto-review","usage":{"input_tokens":640,"cached_input_tokens":40,"output_tokens":64}}"#
-                .to_string(),
-        ],
-        utc(1, 4, 0),
-    );
+    seed_exec_json_with_timestamp_fallback(&write);
 
-    // Compressed only in `sessions/`, with a plain copy of the same relative
-    // path in `archived_sessions/`: the active copy wins.
     let compressed = rollout("2026-01-02", "09-00-00", COMPRESSED);
     write_bytes(
         &format!("work/sessions/{compressed}.zst"),
@@ -656,8 +625,6 @@ service_tier = "fast"
                 Some(&usage(1100, 100, 110, 0)),
                 None,
             ),
-            // One request above the model's 272K long-context threshold and
-            // one between it and the 200K default.
             turn("2026-01-02T09:10:00.000Z", &format!(r#""model":"{GPT55}""#)),
             count(
                 "2026-01-02T09:11:00.000Z",
@@ -670,7 +637,7 @@ service_tier = "fast"
                 None,
             ),
         ]),
-        utc(1, 9, 1),
+        instant("2026-01-02T09:01:00Z"),
     );
     write(
         &format!("work/archived_sessions/{compressed}"),
@@ -682,11 +649,9 @@ service_tier = "fast"
                 None,
             ),
         ],
-        utc(1, 9, 31),
+        instant("2026-01-02T09:31:00Z"),
     );
 
-    // Both encodings in one directory: the plain copy wins. Written with
-    // spaces after the colons and a zoned timestamp (05:00Z).
     let both = rollout("2026-01-01", "05-00-00", BOTH_ENCODINGS);
     write(
         &format!("work/sessions/{both}"),
@@ -699,7 +664,7 @@ service_tier = "fast"
             r#"{"timestamp": "2026-01-01T14:00:00.000+09:00", "type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 210, "cached_input_tokens": 10, "output_tokens": 21}}}}"#
                 .to_string(),
         ],
-        utc(0, 5, 1),
+        instant("2026-01-01T05:01:00Z"),
     );
     write_bytes(
         &format!("work/sessions/{both}.zst"),
@@ -711,20 +676,19 @@ service_tier = "fast"
                 None,
             ),
         ]),
-        utc(0, 5, 31),
+        instant("2026-01-01T05:31:00Z"),
     );
 
     write(
         "work/sessions/2025/12/30/rollout-2025-12-30T00-00-00-empty.jsonl",
         &[],
-        utc(-2, 0, 0),
+        instant("2025-12-30T00:00:00Z"),
     );
     write_bytes(
         "work/sessions/2025/12/31/rollout-2025-12-31T00-00-00-corrupt.jsonl.zst",
         b"not a zstd frame",
-        utc(-1, 0, 0),
+        instant("2025-12-31T00:00:00Z"),
     );
-    // Not rollouts by extension.
     let stray = [
         turn("2025-12-31T08:00:00.000Z", &format!(r#""model":"{GPT5}""#)),
         count(
@@ -736,12 +700,12 @@ service_tier = "fast"
     write(
         "work/sessions/2025/12/31/rollout-export.json",
         &stray,
-        utc(-1, 8, 1),
+        instant("2025-12-31T08:01:00Z"),
     );
     write_bytes(
         "work/sessions/2025/12/31/notes.zst",
         &compress(&stray),
-        utc(-1, 8, 1),
+        instant("2025-12-31T08:01:00Z"),
     );
 
     let replacement = rollout("2026-01-02", "10-30-00", &format!("{MAIN}_{REPLACEMENT}"));
@@ -756,20 +720,17 @@ service_tier = "fast"
                 None,
             ),
         ],
-        utc(1, 10, 32),
+        instant("2026-01-02T10:32:00Z"),
     );
 
-    let homes = format!(
-        "{},{}",
-        root.join("codex/work").display(),
-        root.join("codex/personal").display()
-    );
-    vec![("CODEX_HOME", PathBuf::from(homes))]
+    let homes = vec![
+        root.join("codex/work").into_os_string(),
+        root.join("codex/personal").into_os_string(),
+    ];
+    vec![("CODEX_HOME", homes)]
 }
 
-/// Codex-only options: `--speed`, `session --id`, and the single-threaded
-/// loader.
-pub fn extra_cases(_root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(_root: &Path) -> Vec<Case> {
     let thread_url = format!("codex://threads/{SUBAGENT}");
     let physical = rollout("2025-12-30", "10-00-00", MAIN).replace(".jsonl", "");
     vec![
@@ -781,7 +742,6 @@ pub fn extra_cases(_root: &Path) -> Vec<Case> {
         Case::new("statusline", "today_json", &["codex", "statusline", "--offline", "--json"]),
         Case::new("statusline", "today_table", &["codex", "statusline", "--offline"]),
         Case::new("statusline", "today_no_cost", &["codex", "statusline", "--offline", "--no-cost"]),
-        // At the fixed clock it is already January 3 in Kiritimati.
         Case::new("statusline", "today_kiritimati", &["codex", "statusline", "--offline", "--json", "--timezone", "Pacific/Kiritimati"]),
         Case::new("statusline", "range_json", &["codex", "statusline", "--offline", "--json", "--since", "20251231", "--until", "20260101"]),
         Case::new("statusline", "session_json", &["codex", "statusline", "--offline", "--json", "--id", MAIN]),

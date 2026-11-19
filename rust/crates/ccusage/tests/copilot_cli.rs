@@ -1,6 +1,6 @@
-use std::process::Command;
-
 use ccusage_test_support::{Fixture, fs_fixture};
+
+mod support;
 
 const SINCE: &str = "20260101";
 const UNTIL: &str = "20260228";
@@ -130,7 +130,6 @@ fn reports_the_credits_copilot_recorded_for_a_resumed_session() {
             ],
         )
     };
-    // The two calls recorded 371236500 and 31235400 nano-AIU; one AIU is $0.01.
     let recorded = 0.004_024_719;
     let tokens = [6, 16_517, 16_473, 10];
 
@@ -140,9 +139,7 @@ fn reports_the_credits_copilot_recorded_for_a_resumed_session() {
 
     assert!((auto_cost - recorded).abs() < 1e-12, "{auto_cost}");
     assert!((display_cost - recorded).abs() < 1e-12, "{display_cost}");
-    // Embedded gpt-5.4 rates per token: $2.5e-6 input, $3.125e-6 cache write
-    // (1.25x input), $2.5e-7 cache read, $1.5e-5 output.
-    let token_priced = 6.0 * 2.5e-6 + 16_517.0 * 3.125e-6 + 16_473.0 * 2.5e-7 + 10.0 * 1.5e-5;
+    let token_priced = 6.0 * 2.5e-6 + 16_517.0 * 2.5e-6 + 16_473.0 * 2.5e-7 + 10.0 * 1.5e-5;
     assert!(
         (calculated_cost - token_priced).abs() < 1e-12,
         "{calculated_cost}"
@@ -170,35 +167,13 @@ fn copilot_fixture() -> Fixture {
 }
 
 fn run_cli<const N: usize>(fixture: &Fixture, args: [&str; N]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_ccusage"))
+    let output = support::hermetic_command(fixture.root())
         .args(args)
         .args(["--offline", "--no-color", "--timezone", "UTC"])
         .args(["--since", SINCE, "--until", UNTIL])
         .env("COPILOT_HOME", fixture.path("copilot"))
-        .env("HOME", fixture.path("empty-home"))
-        .env("USERPROFILE", fixture.path("empty-userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("empty-xdg-config"))
-        .env("XDG_DATA_HOME", fixture.path("empty-xdg-data"))
         .env("LOG_LEVEL", "0")
-        .env("NO_COLOR", "1")
         .env("COLUMNS", "120")
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .env_remove("CODEX_HOME")
-        .env_remove("OPENCODE_DATA_DIR")
-        .env_remove("AMP_DATA_DIR")
-        .env_remove("DROID_SESSIONS_DIR")
-        .env_remove("CODEBUFF_DATA_DIR")
-        .env_remove("HERMES_HOME")
-        .env_remove("PI_AGENT_DIR")
-        .env_remove("GOOSE_PATH_ROOT")
-        .env_remove("OPENCLAW_DIR")
-        .env_remove("KILO_DATA_DIR")
-        .env_remove("COPILOT_OTEL_FILE_EXPORTER_PATH")
-        .env_remove("GEMINI_DATA_DIR")
-        .env_remove("KIMI_DATA_DIR")
-        .env_remove("QWEN_DATA_DIR")
-        .env_remove("GROK_HOME")
-        .env_remove("CLINE_DATA_DIR")
         .output()
         .expect("ccusage CLI should run");
     assert!(

@@ -100,7 +100,7 @@ For OpenCode, `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` is the default-pat
 The tool automatically detects available data and aggregates all supported coding CLIs by default.
 Source-specific environment variables that support multiple roots can contain comma-separated directories, which lets unified reports combine current profiles and archives.
 
-Some coding agents have been investigated but are not supported because their local files do not contain reliable token usage. See [Source Support Q&A](/guide/source-support-qa) for the current notes on legacy Grok CLI SQLite data and Devin CLI.
+Some coding agents have been investigated but are not supported because their local files do not contain reliable token usage. See [Source Support Q&A](/guide/source-support-qa) for the requirements and unsupported sources.
 
 ## Report Shape
 

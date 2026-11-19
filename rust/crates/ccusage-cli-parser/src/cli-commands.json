@@ -20,6 +20,7 @@
 	},
 	"root": {
 		"usage": ["ccusage [daily] <OPTIONS>", "ccusage <COMMANDS>"],
+		"options": "all_agent_options",
 		"commands": [
 			{
 				"name": "daily",

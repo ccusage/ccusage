@@ -1,209 +1,182 @@
+use ccusage_adapter_common::jsonl;
 use std::{
     collections::{HashMap, HashSet},
+    ops::ControlFlow,
     path::{Path, PathBuf},
-    thread,
 };
 
-#[cfg(test)]
-use std::cell::RefCell;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use ccusage_core::Diagnostics;
-use serde_json::Value;
-
-use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
+use crate::{CodexRawUsage, TimestampMs};
 
 use super::{
     parser::{
-        CodexForkReplay, codex_value_timestamp, visit_codex_session_file_with_compaction_history,
+        CodexForkReplay, codex_timestamp_instant, visit_codex_session_file_with_compaction_history,
     },
-    reader::{PROBE_BUFFER_SIZE, open_rollout_lines},
+    reader::{PROBE_BUFFER_SIZE, rollout_policy},
+    types::CodexSessionMeta,
 };
 
-#[cfg(test)]
-#[derive(Debug, Eq, PartialEq)]
-pub(super) enum ObservedFileRead {
-    MetadataProbe(PathBuf),
-    ParentUsage(PathBuf),
-}
-
-#[cfg(test)]
-thread_local! {
-    static OBSERVED_FILE_READS: RefCell<Vec<ObservedFileRead>> = const { RefCell::new(Vec::new()) };
-}
-
-#[cfg(test)]
-pub(super) fn take_observed_file_reads() -> Vec<PathBuf> {
-    take_observed_file_read_events()
-        .into_iter()
-        .map(|read| match read {
-            ObservedFileRead::MetadataProbe(path) | ObservedFileRead::ParentUsage(path) => path,
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub(super) fn take_observed_file_read_events() -> Vec<ObservedFileRead> {
-    OBSERVED_FILE_READS.with(|paths| std::mem::take(&mut *paths.borrow_mut()))
-}
-
-fn observe_metadata_probe(path: &Path) {
-    #[cfg(test)]
-    {
-        OBSERVED_FILE_READS.with(|paths| {
-            paths
-                .borrow_mut()
-                .push(ObservedFileRead::MetadataProbe(path.to_path_buf()));
-        });
-    }
-    #[cfg(not(test))]
-    {
-        let _ = path;
-    }
-}
-
-fn observe_parent_usage(path: &Path) {
-    #[cfg(test)]
-    {
-        OBSERVED_FILE_READS.with(|paths| {
-            paths
-                .borrow_mut()
-                .push(ObservedFileRead::ParentUsage(path.to_path_buf()));
-        });
-    }
-    #[cfg(not(test))]
-    {
-        let _ = path;
-    }
-}
-
-#[derive(Default)]
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
     usage_by_parent: HashMap<PathBuf, ParentUsage>,
 }
 
 struct ParentReplay {
-    /// `None` when the referenced parent log is not part of the scanned files.
     path: Option<PathBuf>,
     forked_at: Option<TimestampMs>,
     spawned: bool,
 }
 
 struct ParentUsage {
-    timestamps: Vec<Option<TimestampMs>>,
+    timestamps: Vec<TimestampMs>,
     usage: Vec<CodexRawUsage>,
     compactions: HashMap<String, Option<TimestampMs>>,
 }
 
+pub(super) struct CodexReplayFile<'a> {
+    pub(super) path: PathBuf,
+    pub(super) sessions_dir: &'a Path,
+    pub(super) metadata: CodexSessionMetadata,
+}
+
 impl CodexReplayPlan {
-    pub(super) fn new<'a>(
-        groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
+    pub(super) fn for_selection<'a>(
+        selected: &[(&'a Path, &'a [PathBuf])],
+        available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
         diagnostics: &Diagnostics,
     ) -> Self {
-        let files = collect_replay_files(groups);
-        let metadata = read_session_metadata(&files, single_thread);
-        Self::from_metadata(files, metadata, single_thread, diagnostics)
+        let mut failed_parent_ids = HashSet::new();
+        let files = read_replay_files(
+            &collect_replay_files(selected.iter().copied()),
+            single_thread,
+            Some(diagnostics),
+            &mut failed_parent_ids,
+        );
+        Self::for_metadata(
+            files,
+            available,
+            single_thread,
+            diagnostics,
+            failed_parent_ids,
+        )
     }
 
-    /// Plans from metadata already read from the first line of every file in
-    /// `groups`, in the same order.
-    pub(super) fn with_metadata<'a>(
-        groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
-        metadata: Vec<CodexSessionMetadata>,
+    pub(super) fn for_probes<'a>(
+        probes: Vec<ReplayProbe<'a>>,
+        available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
         diagnostics: &Diagnostics,
     ) -> Self {
-        Self::from_metadata(
-            collect_replay_files(groups),
-            metadata,
+        let mut failed_parent_ids = HashSet::new();
+        let files = decode_probes(probes, &mut failed_parent_ids);
+        Self::for_metadata(
+            files,
+            available,
+            single_thread,
+            diagnostics,
+            failed_parent_ids,
+        )
+    }
+
+    fn for_metadata<'a>(
+        files: Vec<CodexReplayFile<'a>>,
+        available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
+        single_thread: bool,
+        diagnostics: &Diagnostics,
+        mut failed_parent_ids: HashSet<String>,
+    ) -> Self {
+        let children = files
+            .iter()
+            .filter(|file| file.metadata.is_fork())
+            .map(|file| file.path.clone())
+            .collect::<HashSet<_>>();
+        if children.is_empty() {
+            return Self {
+                parent_by_child: HashMap::new(),
+                usage_by_parent: HashMap::new(),
+            };
+        }
+        let mut metadata = files
+            .into_iter()
+            .map(|file| (file.path.clone(), file))
+            .collect::<HashMap<_, _>>();
+        let available = available.into_iter().collect::<Vec<_>>();
+        let missing = collect_replay_files(available.iter().copied())
+            .into_iter()
+            .filter(|(path, _)| !metadata.contains_key(path))
+            .collect::<Vec<_>>();
+        for file in read_replay_files(&missing, single_thread, None, &mut failed_parent_ids) {
+            metadata.insert(file.path.clone(), file);
+        }
+        let files = available
+            .iter()
+            .flat_map(|(_, paths)| paths.iter())
+            .filter_map(|path| metadata.remove(path))
+            .collect();
+        Self::new(
+            files,
+            Some((&children, &failed_parent_ids)),
             single_thread,
             diagnostics,
         )
     }
 
-    fn from_metadata(
-        files: Vec<(PathBuf, &Path)>,
-        metadata: Vec<CodexSessionMetadata>,
+    pub(super) fn new(
+        files: Vec<CodexReplayFile<'_>>,
+        selection: Option<(&HashSet<PathBuf>, &HashSet<String>)>,
         single_thread: bool,
         diagnostics: &Diagnostics,
     ) -> Self {
-        let files_by_session_id = index_session_paths(&files, &metadata);
-        let parent_by_child = build_parent_replays(&files, metadata, &files_by_session_id);
+        let mut files_by_session_id = HashMap::<String, Vec<PathBuf>>::with_capacity(files.len());
+        for file in &files {
+            if let Some(id) = &file.metadata.session_id {
+                files_by_session_id
+                    .entry(id.clone())
+                    .or_default()
+                    .push(file.path.clone());
+            }
+        }
+        let parent_by_child = files
+            .iter()
+            .filter(|file| selection.is_none_or(|(children, _)| children.contains(&file.path)))
+            .filter_map(|file| {
+                let parent_id = file.metadata.parent_id.as_deref()?;
+                let path = first_non_child_path(&files_by_session_id, parent_id, &file.path);
+                if path.is_none() && selection.is_some_and(|(_, failed)| failed.contains(parent_id))
+                {
+                    diagnostics.record(Skip::unit(
+                        &file.path,
+                        SkipKind::UnreadableForkParent,
+                        format_args!("parent session {parent_id}"),
+                    ));
+                }
+                Some((
+                    file.path.clone(),
+                    ParentReplay {
+                        path,
+                        forked_at: file.metadata.timestamp,
+                        spawned: file.metadata.spawned,
+                    },
+                ))
+            })
+            .collect::<HashMap<_, _>>();
         let parent_paths = parent_by_child
             .values()
-            .filter_map(|parent| parent.path.clone())
+            .filter_map(|parent| parent.path.as_ref())
             .collect::<HashSet<_>>();
         let parents = files
             .iter()
-            .filter(|(path, _)| parent_paths.contains(path))
-            .cloned()
+            .filter(|file| parent_paths.contains(&file.path))
+            .map(|file| (file.path.clone(), file.sessions_dir))
             .collect::<Vec<_>>();
-
         Self {
-            parent_by_child,
             usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
+            parent_by_child,
         }
     }
 
-    pub(super) fn for_bounded_files<'a>(
-        children: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
-        available_files: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
-        single_thread: bool,
-        diagnostics: &Diagnostics,
-    ) -> Self {
-        let children = collect_replay_files(children);
-        let child_metadata = read_session_metadata(&children, single_thread);
-        if child_metadata
-            .iter()
-            .all(|metadata| metadata.parent_id.is_none())
-        {
-            return Self::default();
-        }
-        let available_files = collect_replay_files(available_files);
-        let mut metadata_by_path = children
-            .iter()
-            .zip(&child_metadata)
-            .map(|((path, _), metadata)| (path.clone(), metadata.clone()))
-            .collect::<HashMap<_, _>>();
-        let missing_files = available_files
-            .iter()
-            .filter(|(path, _)| !metadata_by_path.contains_key(path))
-            .cloned()
-            .collect::<Vec<_>>();
-        metadata_by_path.extend(
-            missing_files
-                .iter()
-                .zip(read_session_metadata(&missing_files, single_thread))
-                .map(|((path, _), metadata)| (path.clone(), metadata)),
-        );
-        let available_metadata = available_files
-            .iter()
-            .map(|(path, _)| metadata_by_path[path].clone())
-            .collect::<Vec<_>>();
-        let files_by_session_id = index_session_paths(&available_files, &available_metadata);
-        let parent_by_child = build_parent_replays(&children, child_metadata, &files_by_session_id);
-        let parent_paths = parent_by_child
-            .values()
-            .filter_map(|parent| parent.path.clone())
-            .collect::<HashSet<_>>();
-        let parents = available_files
-            .iter()
-            .filter(|(path, _)| parent_paths.contains(path))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        Self {
-            parent_by_child,
-            usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
-        }
-    }
-
-    /// Usage history that `child` replayed from the session it forked from.
-    ///
-    /// Returns `None` for sessions that are not forks. Forked sessions whose
-    /// parent log is unavailable get an empty prefix, which tells the parser
-    /// to fall back to the rewritten-burst heuristic.
     pub(super) fn fork_replay(&self, child: &Path) -> Option<CodexForkReplay<'_>> {
         let parent = self.parent_by_child.get(child)?;
         Some(CodexForkReplay {
@@ -220,20 +193,16 @@ impl CodexReplayPlan {
         else {
             return &[];
         };
-        // Usage the parent recorded after the fork was never replayed, so it must
-        // not mask the child's own events.
         let replay_len = parent.forked_at.map_or(stream.usage.len(), |forked_at| {
             stream
                 .timestamps
                 .iter()
-                .position(|timestamp| timestamp.is_some_and(|timestamp| timestamp > forked_at))
+                .position(|timestamp| *timestamp > forked_at)
                 .unwrap_or(stream.usage.len())
         });
         &stream.usage[..replay_len]
     }
 
-    /// Recognizes copied compaction requests even when date filtering excludes
-    /// their parent from the report. Requests after the fork stay countable.
     pub(super) fn is_replayed_compaction(&self, child: &Path, response_id: Option<&str>) -> bool {
         let Some(response_id) = response_id else {
             return false;
@@ -253,44 +222,6 @@ impl CodexReplayPlan {
             .forked_at
             .is_none_or(|forked_at| timestamp.is_none_or(|timestamp| timestamp <= forked_at))
     }
-}
-
-fn index_session_paths(
-    files: &[(PathBuf, &Path)],
-    metadata: &[CodexSessionMetadata],
-) -> HashMap<String, Vec<PathBuf>> {
-    let mut files_by_session_id = HashMap::<String, Vec<PathBuf>>::with_capacity(files.len());
-    for ((path, _), metadata) in files.iter().zip(metadata) {
-        if let Some(session_id) = metadata.session_id.as_deref() {
-            files_by_session_id
-                .entry(session_id.to_string())
-                .or_default()
-                .push(path.clone());
-        }
-    }
-    files_by_session_id
-}
-
-fn build_parent_replays(
-    children: &[(PathBuf, &Path)],
-    metadata: impl IntoIterator<Item = CodexSessionMetadata>,
-    files_by_session_id: &HashMap<String, Vec<PathBuf>>,
-) -> HashMap<PathBuf, ParentReplay> {
-    children
-        .iter()
-        .zip(metadata)
-        .filter_map(|((child, _), metadata)| {
-            let parent_id = metadata.parent_id.as_deref()?;
-            Some((
-                child.clone(),
-                ParentReplay {
-                    path: first_non_child_path(files_by_session_id, parent_id, child),
-                    forked_at: metadata.timestamp,
-                    spawned: metadata.spawned,
-                },
-            ))
-        })
-        .collect()
 }
 
 fn first_non_child_path(
@@ -316,51 +247,51 @@ fn collect_replay_files<'a>(
         .collect()
 }
 
-fn replay_worker_count(files: usize, single_thread: bool) -> usize {
-    if single_thread || files <= 1 {
-        return 1;
-    }
-    thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(files)
+pub(super) type ReplayProbe<'a> = (PathBuf, &'a Path, Option<CodexSessionMetadata>);
+
+fn read_replay_files<'a>(
+    files: &[(PathBuf, &'a Path)],
+    single_thread: bool,
+    diagnostics: Option<&Diagnostics>,
+    failed_parent_ids: &mut HashSet<String>,
+) -> Vec<CodexReplayFile<'a>> {
+    let read = |(path, sessions_dir): &(PathBuf, &'a Path)| {
+        (
+            path.clone(),
+            *sessions_dir,
+            read_codex_session_metadata(path, diagnostics),
+        )
+    };
+    let probes = ccusage_adapter_common::map_parallel(
+        files,
+        single_thread,
+        ccusage_adapter_common::Split::ByCount,
+        read,
+    );
+    decode_probes(probes, failed_parent_ids)
 }
 
-fn read_session_metadata(
-    files: &[(PathBuf, &Path)],
-    single_thread: bool,
-) -> Vec<CodexSessionMetadata> {
-    let worker_count = replay_worker_count(files.len(), single_thread);
-    if worker_count <= 1 {
-        return files
-            .iter()
-            .map(|(path, _)| read_codex_session_metadata(path))
-            .collect();
-    }
-    // Every file costs one open plus one line, so split by count instead of by
-    // size, and keep chunks in order so duplicate session ids resolve the same
-    // way as the single-threaded pass.
-    let chunk_size = files.len().div_ceil(worker_count);
-    thread::scope(|scope| {
-        files
-            .chunks(chunk_size)
-            .map(|chunk| {
-                scope.spawn(|| {
-                    chunk
-                        .iter()
-                        .map(|(path, _)| read_codex_session_metadata(path))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(|handle| {
-                handle
-                    .join()
-                    .expect("codex replay metadata worker panicked")
-            })
-            .collect()
-    })
+fn decode_probes<'a>(
+    probes: Vec<ReplayProbe<'a>>,
+    failed_parent_ids: &mut HashSet<String>,
+) -> Vec<CodexReplayFile<'a>> {
+    probes
+        .into_iter()
+        .map(|(path, sessions_dir, metadata)| {
+            if metadata.is_none()
+                && let Some(name) = path.file_name().and_then(|name| name.to_str())
+            {
+                let id = super::rollout_identity(name)
+                    .map_or_else(|| super::normalize_session_id(name), |(thread, _)| thread);
+                failed_parent_ids.insert(id.to_string());
+            }
+            CodexReplayFile {
+                path,
+                sessions_dir,
+                metadata: metadata.unwrap_or_default(),
+            }
+        })
+        .collect()
 }
 
 fn read_parent_usage(
@@ -368,40 +299,17 @@ fn read_parent_usage(
     single_thread: bool,
     diagnostics: &Diagnostics,
 ) -> HashMap<PathBuf, ParentUsage> {
-    if parents.is_empty() {
-        return HashMap::new();
-    }
-    let worker_count = replay_worker_count(parents.len(), single_thread);
-    // A parent the report also reads records the same skips again, which
-    // `Diagnostics` counts once.
     let read = |(path, sessions_dir): &(PathBuf, &Path)| {
         read_parent_usage_file(path, sessions_dir, diagnostics)
     };
-    if worker_count <= 1 {
-        return parents.iter().map(read).collect();
-    }
-    let paths = parents
-        .iter()
-        .map(|(path, _)| path.clone())
-        .collect::<Vec<_>>();
-    let chunks = chunk_file_indexes_by_size(&paths, worker_count);
-    thread::scope(|scope| {
-        chunks
-            .into_iter()
-            .map(|chunk| {
-                let read = &read;
-                scope.spawn(move || {
-                    chunk
-                        .into_iter()
-                        .map(|index| read(&parents[index]))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("codex replay worker panicked"))
-            .collect()
-    })
+    ccusage_adapter_common::map_parallel(
+        parents,
+        single_thread,
+        ccusage_adapter_common::Split::BySize(|(path, _)| path.as_path()),
+        read,
+    )
+    .into_iter()
+    .collect()
 }
 
 fn read_parent_usage_file(
@@ -416,7 +324,6 @@ fn read_parent_usage_file(
 }
 
 fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics) -> ParentUsage {
-    observe_parent_usage(path);
     let mut stream = ParentUsage {
         timestamps: Vec::new(),
         usage: Vec::new(),
@@ -427,20 +334,17 @@ fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics
         usage,
         compactions,
     } = &mut stream;
-    let _ = visit_codex_session_file_with_compaction_history(
+    visit_codex_session_file_with_compaction_history(
         sessions_dir,
         path,
         None,
         Some(compactions),
         |event| {
-            // Response IDs deduplicate compactions independently of this normal
-            // token-count prefix, including when a fork omits compaction records.
             if event.response_id.is_some() {
-                return Ok(());
+                return;
             }
-            timestamps.push(parse_ts_timestamp(&event.timestamp));
+            timestamps.push(event.timestamp);
             usage.push(event.raw_usage());
-            Ok(())
         },
         diagnostics,
     );
@@ -449,83 +353,116 @@ fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics
 
 #[derive(Clone, Default)]
 pub(super) struct CodexSessionMetadata {
+    pub(super) is_session_meta: bool,
     session_id: Option<String>,
     parent_id: Option<String>,
-    timestamp: Option<TimestampMs>,
+    pub(super) timestamp: Option<TimestampMs>,
     spawned: bool,
 }
 
 impl CodexSessionMetadata {
-    /// Whether the rollout replays history from the session it forked from.
     pub(super) fn is_fork(&self) -> bool {
         self.parent_id.is_some()
     }
 }
 
-fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
-    observe_metadata_probe(path);
-    let Ok((mut lines, _)) = open_rollout_lines(path, PROBE_BUFFER_SIZE) else {
-        return CodexSessionMetadata::default();
-    };
-    let Ok(Some(line)) = lines.next_line() else {
-        return CodexSessionMetadata::default();
-    };
-    session_metadata_from_line(path, line)
+fn read_codex_session_metadata(
+    path: &Path,
+    diagnostics: Option<&Diagnostics>,
+) -> Option<CodexSessionMetadata> {
+    jsonl::read(
+        path,
+        diagnostics,
+        rollout_policy(path, PROBE_BUFFER_SIZE, false),
+        |line, _, _| ControlFlow::Break(session_metadata_from_line(path, line.raw)),
+    )
+    .ok()
+    .map(Option::unwrap_or_default)
 }
 
-/// Session metadata from a rollout's first line.
 pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
-    let Ok(line) = std::str::from_utf8(line) else {
+    let Ok(value) = jsonl::parse::<CodexSessionMeta<'_>>(line) else {
         return CodexSessionMetadata::default();
     };
-    let Ok(value) = serde_json::from_str::<Value>(line) else {
-        return CodexSessionMetadata::default();
-    };
-    let payload = (value.get("type").and_then(Value::as_str) == Some("session_meta"))
-        .then_some(value.get("payload"))
+    let payload = (value.entry_type.as_deref() == Some("session_meta"))
+        .then_some(value.payload.as_ref())
         .flatten();
     let spawn_parent_id = payload
-        .and_then(|payload| payload.pointer("/source/subagent/thread_spawn/parent_thread_id"))
-        .and_then(Value::as_str)
-        .filter(|parent_id| !parent_id.is_empty());
-    let mut metadata = CodexSessionMetadata {
-        timestamp: codex_value_timestamp(value.get("timestamp")),
-        session_id: payload
-            .and_then(|payload| payload.get("id"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        parent_id: payload
-            .and_then(|payload| payload.get("forked_from_id"))
-            .and_then(Value::as_str)
-            .filter(|parent_id| !parent_id.is_empty())
-            .or(spawn_parent_id)
-            .map(str::to_string),
+        .and_then(|payload| payload.source.as_ref())
+        .and_then(|source| source.subagent.as_ref())
+        .and_then(|subagent| subagent.thread_spawn.as_ref())
+        .and_then(|spawn| spawn.parent_thread_id.as_deref())
+        .filter(|id| !id.is_empty());
+    let session_id = payload.and_then(|payload| payload.id.as_deref());
+    let parent_id = payload
+        .filter(|payload| payload.history_base.is_none())
+        .and_then(|payload| {
+            payload
+                .forked_from_id
+                .as_deref()
+                .filter(|id| !id.is_empty())
+                .or(spawn_parent_id)
+        })
+        .filter(|_| {
+            !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(super::rollout_identity)
+                .is_some_and(|(thread, rollout)| thread != rollout && session_id == Some(thread))
+        })
+        .map(str::to_string);
+    CodexSessionMetadata {
+        is_session_meta: value.entry_type.as_deref() == Some("session_meta"),
+        timestamp: codex_timestamp_instant(value.timestamp.as_ref()),
+        session_id: session_id.map(str::to_string),
+        parent_id,
         spawned: spawn_parent_id.is_some(),
-    };
-    let referenced_history = payload
-        .and_then(|payload| payload.get("history_base"))
-        .is_some_and(Value::is_object);
-    let replacement = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(super::rollout_identity)
-        .is_some_and(|(thread, rollout)| {
-            thread != rollout && metadata.session_id.as_deref() == Some(thread)
-        });
-    if referenced_history || replacement {
-        // These files reference earlier history without copying its token events.
-        metadata.parent_id = None;
     }
-    metadata
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use ccusage_test_support::fs_fixture;
 
+    use super::*;
+
+    #[test]
+    fn metadata_keeps_a_spawn_parent_when_optional_fields_are_malformed() {
+        let metadata = session_metadata_from_line(
+            Path::new("session.jsonl"),
+            br#"{
+            "type": "session_meta",
+            "timestamp": 1767312000,
+            "payload": {
+                "id": false,
+                "forked_from_id": [],
+                "source": {"subagent": {"thread_spawn": {"parent_thread_id": "parent"}}},
+                "base_instructions": {"irrelevant": null}
+            }
+        }"#,
+        );
+        assert!(metadata.is_fork());
+        assert_eq!(metadata.parent_id.as_deref(), Some("parent"));
+        assert_eq!(metadata.session_id, None);
+        assert!(metadata.spawned);
+        assert_eq!(
+            metadata.timestamp,
+            Some(TimestampMs::from_millis(1_767_312_000_000))
+        );
+    }
+
+    #[test]
+    fn metadata_uses_the_last_duplicate_identity() {
+        let metadata = session_metadata_from_line(Path::new("session.jsonl"), br#"{
+            "type": "session_meta",
+            "payload": {"id": "first", "id": "last", "forked_from_id": "old", "forked_from_id": "parent"}
+        }"#);
+        assert_eq!(metadata.session_id.as_deref(), Some("last"));
+        assert_eq!(metadata.parent_id.as_deref(), Some("parent"));
+    }
     #[test]
     fn reference_backed_history_keeps_usage_while_physical_forks_dedupe() {
+        ccusage_test_support::install_pricing_snapshots();
         let parent_id = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
         let child_id = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
         let replacement_id = "01a0ddae-e9e2-7852-bfa4-a82da97152b2";
@@ -536,18 +473,23 @@ mod tests {
                 300,
             ),
             (
+                "non-object-history.jsonl".to_string(),
+                serde_json::json!("parent"),
+                150,
+            ),
+            (
                 format!("rollout-2026-09-19T12-01-00-{child_id}_{replacement_id}.jsonl"),
-                Value::Null,
+                serde_json::Value::Null,
                 300,
             ),
             (
                 format!("backup-{child_id}_{replacement_id}.jsonl"),
-                Value::Null,
+                serde_json::Value::Null,
                 150,
             ),
             (
                 format!("rollout-backup-{child_id}_{replacement_id}.jsonl"),
-                Value::Null,
+                serde_json::Value::Null,
                 150,
             ),
         ] {
@@ -562,24 +504,128 @@ mod tests {
                     usage("2026-09-19T12:00:01Z"),
                 ].join("\n"),
             });
-            let _ = fixture.write_file(child_file, [
+            fixture.write_file(child_file, [
                     serde_json::json!({"timestamp":"2026-09-19T12:01:00Z","type":"session_meta","payload":{"id":child_id,"forked_from_id":parent_id,"history_base":history_base}}).to_string(),
                     usage("2026-09-19T12:02:00Z"),
                 ].join("\n"));
-            let groups = crate::aggregate::load_groups_from_directory(
-                fixture.root(),
-                &crate::cli::SharedArgs {
-                    single_thread: true,
-                    timezone: Some("UTC".to_string()),
+            for single_thread in [false, true] {
+                let groups = crate::test_support::load_groups_from_directory(
+                    fixture.root(),
+                    &crate::cli::SharedArgs {
+                        single_thread,
+                        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                        ..Default::default()
+                    },
+                    crate::cli::AgentReportKind::Daily,
+                )
+                .unwrap();
+                assert_eq!(
+                    groups.values().map(|group| group.total_tokens).sum::<u64>(),
+                    expected,
+                    "single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_regular_sessions_do_not_open_unrelated_rollouts() {
+        let fixture = fs_fixture!({
+            "current.jsonl": r#"{"type":"session_meta","payload":{"id":"current"}}"#,
+            "other.jsonl.zst": "invalid zstd",
+        });
+        let selected = [fixture.path("current.jsonl")];
+        let available = [selected[0].clone(), fixture.path("other.jsonl.zst")];
+        let diagnostics = Diagnostics::new("codex");
+        let mut visited = false;
+        let plan = CodexReplayPlan::for_selection(
+            &[(fixture.root(), selected.as_slice())],
+            std::iter::once((fixture.root(), available.as_slice())).inspect(|_| visited = true),
+            true,
+            &diagnostics,
+        );
+        assert!(!visited);
+        assert!(plan.parent_by_child.is_empty());
+    }
+
+    #[test]
+    fn bounded_forks_warn_only_when_a_failed_probe_can_hide_the_parent() {
+        let _log_level = ccusage_test_support::EnvGuard::set("LOG_LEVEL", "1");
+        let usage = |timestamp: &str| {
+            serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
+                "type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
+            }}).to_string()
+        };
+        let replayed = usage("2026-09-19T12:00:01Z");
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                r#"{"type":"session_meta","timestamp":"2026-09-19T12:01:00Z","payload":{"id":"child","forked_from_id":"parent"}}"#.to_string(),
+                replayed.clone(),
+                usage("2026-09-19T12:02:00Z"),
+            ].join("\n"),
+            "parent.jsonl": [
+                r#"{"type":"session_meta","timestamp":"2026-09-19T12:00:00Z","payload":{"id":"parent"}}"#,
+                &replayed,
+            ].join("\n"),
+            "parent.jsonl.zst": "invalid zstd",
+            "other.jsonl.zst": "invalid zstd",
+        });
+        let child = fixture.path("child.jsonl");
+        let selected = [child.clone()];
+        for (parents, expected_tokens, expected_warning) in [
+            (
+                vec![
+                    fixture.path("parent.jsonl"),
+                    fixture.path("parent.jsonl.zst"),
+                ],
+                150,
+                false,
+            ),
+            (vec![fixture.path("parent.jsonl.zst")], 300, true),
+            (vec![], 300, false),
+        ] {
+            let mut available = vec![child.clone(), fixture.path("other.jsonl.zst")];
+            available.extend(parents);
+            for single_thread in [true, false] {
+                let diagnostics = Diagnostics::new("codex");
+                let plan = CodexReplayPlan::for_selection(
+                    &[(fixture.root(), &selected)],
+                    [(fixture.root(), available.as_slice())],
+                    single_thread,
+                    &diagnostics,
+                );
+                let mut tokens = 0;
+                crate::parser::visit_codex_session_file_with_diagnostics(
+                    fixture.root(),
+                    &selected[0],
+                    plan.fork_replay(&selected[0]),
+                    |event| tokens += event.total_tokens,
+                    &diagnostics,
+                );
+                assert_eq!(tokens, expected_tokens);
+                let warning = "WARN  codex: could not read the parent rollout for 1 forked session. Replayed usage may be counted twice.";
+                let default_warnings = diagnostics.warnings(&crate::cli::SharedArgs::default());
+                let debug_warnings = diagnostics.warnings(&crate::cli::SharedArgs {
+                    debug: true,
                     ..Default::default()
-                },
-                crate::cli::AgentReportKind::Daily,
-            )
-            .unwrap();
-            assert_eq!(
-                groups.values().map(|group| group.total_tokens).sum::<u64>(),
-                expected
-            );
+                });
+                if expected_warning {
+                    assert_eq!(default_warnings, [warning]);
+                    assert_eq!(
+                        debug_warnings,
+                        [
+                            warning.to_string(),
+                            format!(
+                                "codex: unreadable fork parent: {}: parent session parent",
+                                child.display()
+                            ),
+                        ]
+                    );
+                } else {
+                    assert!(default_warnings.is_empty(), "{default_warnings:?}");
+                    assert!(debug_warnings.is_empty(), "{debug_warnings:?}");
+                }
+            }
         }
     }
 
@@ -588,49 +634,32 @@ mod tests {
         let fixture = fs_fixture!({
             "child.jsonl": r#"{"type":"session_meta","payload":{"id":"child","forked_from_id":"parent"}}"#,
             "parent.jsonl": r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
+            "other.jsonl.zst": "invalid zstd",
         });
         let selected = [fixture.path("child.jsonl")];
-        let available = [fixture.path("child.jsonl"), fixture.path("parent.jsonl")];
-        take_observed_file_read_events();
-
-        CodexReplayPlan::for_bounded_files(
-            [(fixture.root(), selected.as_slice())],
-            [(fixture.root(), available.as_slice())],
+        let parent = fixture.path("parent.jsonl");
+        let available = [
+            selected[0].clone(),
+            parent.clone(),
+            fixture.path("other.jsonl.zst"),
+        ];
+        let diagnostics = Diagnostics::new("codex");
+        let plan = CodexReplayPlan::for_selection(
+            &[(fixture.root(), selected.as_slice())],
+            std::iter::once((fixture.root(), available.as_slice()))
+                .inspect(|_| std::fs::remove_file(&selected[0]).unwrap()),
             true,
-            &Diagnostics::new("codex"),
+            &diagnostics,
         );
-
-        let probes = take_observed_file_read_events()
-            .into_iter()
-            .filter_map(|read| match read {
-                ObservedFileRead::MetadataProbe(path) => Some(path),
-                ObservedFileRead::ParentUsage(_) => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(probes, available);
-    }
-
-    #[test]
-    fn bounded_regular_sessions_do_not_open_unrelated_rollouts() {
-        let fixture = fs_fixture!({
-            "current.jsonl": r#"{"type":"session_meta","payload":{"id":"current"}}"#,
-            "other.jsonl": r#"{"type":"session_meta","payload":{"id":"other"}}"#,
-        });
-        let selected = [fixture.path("current.jsonl")];
-        let available = [fixture.path("current.jsonl"), fixture.path("other.jsonl")];
-        take_observed_file_read_events();
-
-        let plan = CodexReplayPlan::for_bounded_files(
-            [(fixture.root(), selected.as_slice())],
-            [(fixture.root(), available.as_slice())],
-            true,
-            &Diagnostics::new("codex"),
-        );
-
-        assert!(plan.parent_by_child.is_empty());
         assert_eq!(
-            take_observed_file_read_events(),
-            vec![ObservedFileRead::MetadataProbe(selected[0].clone())]
+            plan.parent_by_child[&selected[0]].path.as_ref(),
+            Some(&parent)
         );
+        assert!(plan.usage_by_parent.contains_key(&parent));
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::ReadInterrupted),
+            0
+        );
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
     }
 }

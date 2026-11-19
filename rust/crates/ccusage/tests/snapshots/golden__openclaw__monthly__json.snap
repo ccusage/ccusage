@@ -7,18 +7,18 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 1900,
-      "cacheReadTokens": 27000,
-      "inputTokens": 6971,
+      "cacheCreationTokens": 1600,
+      "cacheReadTokens": 23000,
+      "inputTokens": 5851,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 1.85,
-          "inputTokens": 3000,
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 8000,
+          "cost": 1.1,
+          "inputTokens": 2000,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 600,
-          "storedCost": 1.85
+          "outputTokens": 400,
+          "storedCost": 1.1
         },
         {
           "cacheCreationTokens": 0,
@@ -42,10 +42,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.0639,
-          "inputTokens": 1520,
+          "cost": 0.06344999999999999,
+          "inputTokens": 1400,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 675,
+          "outputTokens": 645,
           "storedCost": 0.06
         },
         {
@@ -71,19 +71,19 @@ exit: 0
         "[openclaw] unknown",
         "[openclaw] claude-opus-4-20250514",
         "[openclaw] claude-sonnet-4-20250514",
-        "[openclaw] gpt-5",
         "[openclaw] claude-haiku-4-5-20251001",
+        "[openclaw] gpt-5",
         "[openclaw] openclaw-mystery-1"
       ],
       "month": "2025-12",
-      "outputTokens": 1912,
-      "totalCost": 2.2339,
-      "totalTokens": 37783
+      "outputTokens": 1682,
+      "totalCost": 1.4834500000000002,
+      "totalTokens": 32133
     },
     {
       "cacheCreationTokens": 250,
       "cacheReadTokens": 17500,
-      "inputTokens": 3323,
+      "inputTokens": 3273,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 50,
@@ -105,10 +105,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.004725,
-          "inputTokens": 650,
+          "cost": 0.0042,
+          "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 125
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -136,18 +136,18 @@ exit: 0
         "[openclaw] openclaw-mystery-1"
       ],
       "month": "2026-01",
-      "outputTokens": 1219,
-      "totalCost": 0.34284375,
-      "totalTokens": 22642
+      "outputTokens": 1194,
+      "totalCost": 0.34231875,
+      "totalTokens": 22567
     }
   ],
   "totals": {
-    "cacheCreationTokens": 2150,
-    "cacheReadTokens": 44500,
-    "inputTokens": 10294,
-    "outputTokens": 3131,
-    "totalCost": 2.5767437500000003,
-    "totalTokens": 60425,
+    "cacheCreationTokens": 1850,
+    "cacheReadTokens": 40500,
+    "inputTokens": 9124,
+    "outputTokens": 2876,
+    "totalCost": 1.8257687500000002,
+    "totalTokens": 54700,
     "unpricedModels": [
       "[openclaw] openclaw-mystery-1",
       "[openclaw] unknown"

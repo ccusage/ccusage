@@ -1,6 +1,8 @@
-use std::{collections::BTreeSet, process::Command};
+use std::collections::BTreeSet;
 
-use ccusage_test_support::{Fixture, fs_fixture};
+use ccusage_test_support::{Fixture, fs_fixture, instant};
+
+mod support;
 
 #[test]
 fn snapshots_cline_focused_json_and_table_reports_for_all_kinds() {
@@ -21,7 +23,11 @@ fn snapshots_cline_focused_json_and_table_reports_for_all_kinds() {
 #[test]
 fn table_reports_render_recorded_costs() {
     let fixture = fs_fixture!({
-        "data/sessions/costly/costly.messages.json": r#"{"version":1,"sessionId":"costly","messages":[{"role":"assistant","ts":1793491260000,"id":"costly-1","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":1.25}},{"role":"assistant","ts":1793491320000,"id":"costly-2","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":2.5}}]}"#,
+        "data/sessions/costly/costly.messages.json": &format!(
+            r#"{{"version":1,"sessionId":"costly","messages":[{{"role":"assistant","ts":{first_ts},"id":"costly-1","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":1.25}}}},{{"role":"assistant","ts":{second_ts},"id":"costly-2","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":2.5}}}}]}}"#,
+            first_ts = instant("2026-11-01T00:01:00Z").millis(),
+            second_ts = instant("2026-11-01T00:02:00Z").millis()
+        ),
     });
 
     for kind in ["daily", "weekly", "monthly", "session"] {
@@ -99,24 +105,22 @@ fn cline_fixture() -> Fixture {
             "../../../adapters/cline/tests/fixtures/cli/session.messages.json"
         ),
     });
-    let _ = fixture.write_file(
+    fixture.write_file(
         "data/sessions/rejected-cache/rejected-cache.messages.json",
-        r#"{"version":1,"sessionId":"rejected-cache","messages":[{"role":"assistant","ts":1793491260000,"id":"cache-exceeds-input-session","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}]}"#,
+        format!(
+            r#"{{"version":1,"sessionId":"rejected-cache","messages":[{{"role":"assistant","ts":{ts},"id":"cache-exceeds-input-session","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}}}]}}"#,
+            ts = instant("2026-11-01T00:01:00Z").millis()
+        ),
     );
     fixture
 }
 
 fn run_cli(fixture: &Fixture, kind: &str, json: bool) -> String {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_ccusage"));
+    let mut command = support::hermetic_command(fixture.root());
     command
-        .env_clear()
         .env("CLINE_DATA_DIR", fixture.root())
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
         .env("COLUMNS", "120")
         .env("LOG_LEVEL", "0")
-        .env("NO_COLOR", "1")
         .args([
             "cline",
             kind,

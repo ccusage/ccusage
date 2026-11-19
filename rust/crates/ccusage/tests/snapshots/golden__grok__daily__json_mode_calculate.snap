@@ -8,28 +8,6 @@ exit: 0
   "daily": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "date": "1970-01-01",
-      "inputTokens": 11,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 3.7e-6,
-          "inputTokens": 11,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1"
-      ],
-      "outputTokens": 1,
-      "totalCost": 3.7e-6,
-      "totalTokens": 12
-    },
-    {
-      "cacheCreationTokens": 0,
       "cacheReadTokens": 400,
       "date": "2025-12-27",
       "inputTokens": 600,
@@ -150,7 +128,7 @@ exit: 0
           "cacheReadTokens": 600,
           "cost": 0.000325,
           "inputTokens": 0,
-          "modelName": "[grok] grok-4.3-build",
+          "modelName": "grok-4.3-build",
           "outputTokens": 100
         },
         {
@@ -181,7 +159,7 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "[grok] grok-4.3-build",
+        "grok-4.3-build",
         "grok-4.5-build",
         "grok-mystery-1",
         "grok-code-fast-1",
@@ -235,10 +213,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 850,
     "cacheReadTokens": 53400,
-    "inputTokens": 207426,
-    "outputTokens": 3436,
-    "totalCost": 0.8665942,
-    "totalTokens": 265112,
+    "inputTokens": 207415,
+    "outputTokens": 3435,
+    "totalCost": 0.8665904999999999,
+    "totalTokens": 265100,
     "unpricedModels": [
       "grok-mystery-1",
       "unknown"

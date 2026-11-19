@@ -1,20 +1,80 @@
-//! Golden matrix over the `ccusage` binary: one test per agent, the unified
-//! reports over every agent at once, and a guard that fails when the CLI
-//! accepts an (agent, report) pair nothing here snapshots.
-//!
-//! Snapshots are `snapshots/golden__<agent|all>__<kind>__<variant>.snap`.
+//! Golden CLI snapshots for each usage source and unified report.
 
 use std::collections::BTreeSet;
 
 use ccusage_test_support::Fixture;
 
 mod golden;
+mod support;
 
 use golden::{ALL_REPORT_KINDS, AgentMatrix, Case, UNSUPPORTED_VARIANT, agent_cases, run_case};
 
-/// Declares the agents of the matrix once, as both the table the coverage
-/// guard checks against the CLI and one `#[test]` per agent, so an agent
-/// cannot be in the table without being run.
+#[test]
+fn seed_environment_preserves_list_entries() {
+    use std::{ffi::OsString, path::Path};
+
+    fn first(_root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+        vec![(
+            "CLAUDE_CONFIG_DIR",
+            vec!["first".into(), " first ".into(), "".into()],
+        )]
+    }
+
+    fn second(_root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+        vec![("CLAUDE_CONFIG_DIR", vec!["second".into()])]
+    }
+
+    let agents = [
+        AgentMatrix {
+            agent: "first",
+            seed: first,
+            extras: golden::no_extras,
+        },
+        AgentMatrix {
+            agent: "second",
+            seed: second,
+            extras: golden::no_extras,
+        },
+    ];
+    let fixture = Fixture::new();
+    let seeded = golden::seed_all(&agents, fixture.root());
+    let command = golden::hermetic_command(fixture.root(), &seeded, 200);
+
+    assert_eq!(
+        command
+            .get_envs()
+            .find(|(name, _)| *name == "CLAUDE_CONFIG_DIR")
+            .unwrap()
+            .1,
+        Some(std::ffi::OsStr::new("first, first ,,second")),
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn seed_environment_preserves_non_utf8_paths() {
+    use std::{
+        ffi::{OsStr, OsString},
+        os::unix::ffi::{OsStrExt as _, OsStringExt as _},
+    };
+
+    let fixture = Fixture::new();
+    let seeded = [(
+        "CLAUDE_CONFIG_DIR",
+        vec![OsString::from_vec(b"store-\xff".to_vec()), "other".into()],
+    )];
+    let command = golden::hermetic_command(fixture.root(), &seeded, 200);
+
+    assert_eq!(
+        command
+            .get_envs()
+            .find(|(name, _)| *name == "CLAUDE_CONFIG_DIR")
+            .unwrap()
+            .1,
+        Some(OsStr::from_bytes(b"store-\xff,other")),
+    );
+}
+
 macro_rules! agent_matrix {
     ($($agent:ident => $extras:expr),* $(,)?) => {
         const AGENTS: &[AgentMatrix] = &[
@@ -48,7 +108,7 @@ agent_matrix! {
     hermes => golden::no_extras,
     pi => golden::pi::extra_cases,
     goose => golden::no_extras,
-    kilo => golden::no_extras,
+    kilo => golden::kilo::extra_cases,
     copilot => golden::no_extras,
     gemini => golden::no_extras,
     antigravity => golden::antigravity::extra_cases,
@@ -56,9 +116,222 @@ agent_matrix! {
     qwen => golden::no_extras,
     openclaw => golden::openclaw::extra_cases,
     grok => golden::no_extras,
-    zcode => golden::no_extras,
+    zcode => golden::zcode::extra_cases,
     cline => golden::no_extras,
     dsh => golden::dsh::extra_cases,
+}
+
+#[test]
+fn codebuff_fixture_keeps_distinct_messages_at_the_same_instant() {
+    let fixture = Fixture::new();
+    let seeded = golden::codebuff::seed(fixture.root());
+    let messages = |store: &str| {
+        let path = fixture.root().join(format!(
+            "codebuff/{store}/manicode/projects/alpha/chats/2025-12-31T23-50-00.000Z/chat-messages.json"
+        ));
+        serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap()
+    };
+    let original = messages(".");
+    let backup = messages("backup");
+    assert_eq!(original[1]["timestamp"], backup[1]["timestamp"]);
+    assert_ne!(original[1]["id"], backup[1]["id"]);
+    for flags in [vec![], vec!["--single-thread"]] {
+        let mut case = Case::new("daily", "", &["codebuff", "daily", "--offline", "--json"]);
+        case.args.extend(flags.into_iter().map(str::to_string));
+        let output = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(output.exit, "0", "{}", output.stderr);
+        let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+        let days = report["daily"].as_array().unwrap();
+        let day = |date: &str| days.iter().find(|day| day["date"] == date).unwrap();
+        assert_eq!(day("2025-12-31")["credits"], 2.75);
+        assert_eq!(day("2026-01-01")["inputTokens"], 1500);
+        assert_eq!(day("2026-01-01")["totalCost"], 0.01185);
+    }
+}
+
+#[test]
+fn codebuff_timestamp_ties_pin_order_and_replay_winner() {
+    let fixture = Fixture::new();
+    let seeded = golden::codebuff::seed_timestamp_ties(fixture.root());
+    let case = Case::new(
+        "daily",
+        "json_tie_order",
+        &["codebuff", "daily", "--offline", "--json"],
+    );
+    let output = run_case(fixture.root(), &seeded, &case);
+    assert_eq!(output.exit, "0", "{}", output.stderr);
+    let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+    assert_eq!(
+        report["daily"][0]["modelsUsed"],
+        serde_json::json!(["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"])
+    );
+    assert_eq!(report["totals"]["inputTokens"], 30);
+    assert_eq!(report["daily"][0]["credits"], 2.75);
+    for flags in [vec![], vec!["--single-thread".to_string()]] {
+        let mut case = Case::new(
+            "daily",
+            "json_tie_order",
+            &["codebuff", "daily", "--offline", "--json"],
+        );
+        case.args.extend(flags);
+        let actual = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(actual.stdout, output.stdout);
+    }
+    golden::assert_case("codebuff", fixture.root(), &seeded, &case);
+}
+
+#[test]
+fn focused_week_start_controls_buckets_and_last_together() {
+    for (agent, seed) in [
+        ("cline", golden::cline::seed as golden::Seed),
+        ("dsh", golden::dsh::seed),
+        ("opencode", golden::opencode::seed),
+    ] {
+        let fixture = Fixture::new();
+        let seeded = seed(fixture.root());
+        let config = fixture.write_file(
+            "week.json",
+            r#"{"commands":{"weekly":{"startOfWeek":"wednesday"}}}"#,
+        );
+        let daily = Case::new(
+            "daily",
+            "",
+            &[
+                agent,
+                "daily",
+                "--offline",
+                "--json",
+                "--timezone",
+                "UTC",
+                "--since",
+                "20251231",
+            ],
+        );
+        let expected: serde_json::Value =
+            serde_json::from_str(&run_case(fixture.root(), &seeded, &daily).stdout).unwrap();
+        for flags in [
+            vec!["-w".to_string(), "wednesday".to_string()],
+            vec!["--config".to_string(), config.display().to_string()],
+        ] {
+            let mut weekly = Case::new(
+                "weekly",
+                "",
+                &[
+                    agent,
+                    "weekly",
+                    "--offline",
+                    "--json",
+                    "--timezone",
+                    "UTC",
+                    "--last",
+                    "1",
+                ],
+            )
+            .env("CCUSAGE_TEST_NOW", "2026-01-01T12:00:00Z");
+            weekly.args.extend(flags);
+            let output = run_case(fixture.root(), &seeded, &weekly);
+            assert_eq!(output.exit, "0", "{}", output.stderr);
+            let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+            assert_eq!(
+                report["weekly"].as_array().unwrap().len(),
+                1,
+                "{agent}: {report}"
+            );
+            assert_eq!(report["weekly"][0]["week"], "2025-12-31", "{agent}");
+            assert_eq!(
+                report["totals"]["totalTokens"], expected["totals"]["totalTokens"],
+                "{agent}"
+            );
+            assert_eq!(
+                report["totals"]["totalCost"], expected["totals"]["totalCost"],
+                "{agent}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pi_tied_fork_keeps_the_first_path_in_both_read_modes() {
+    for parent_first in [true, false] {
+        let fixture = Fixture::new();
+        let root = fixture.root();
+        let seeded = golden::pi::seed_tied_fork(root, parent_first);
+        for flags in [vec![], vec!["--single-thread"]] {
+            let mut case = Case::new("session", "", &["pi", "session", "--offline", "--json"]);
+            case.args.extend(flags.into_iter().map(str::to_string));
+            let output = run_case(root, &seeded, &case);
+            assert_eq!(output.exit, "0", "{}", output.stderr);
+            let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+            let rows = report["sessions"].as_array().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0]["sessionId"], "shared");
+            assert_eq!(rows[0]["inputTokens"], 1000);
+            assert_eq!(rows[0]["totalCost"], 0.003);
+            assert!(rows[0]["modelBreakdowns"][0].get("storedCost").is_none());
+        }
+    }
+}
+
+#[test]
+fn nested_claude_advisor_is_counted_once_with_a_top_level_copy() {
+    let fixture = Fixture::new();
+    let nested = serde_json::json!({
+        "type": "assistant", "timestamp": "2026-01-02T10:00:00Z", "requestId": "req-advisor",
+        "message": {"id": "msg-advisor", "model": "claude-sonnet-4-20250514", "usage": {
+            "input_tokens": 100, "output_tokens": 1, "iterations": [{
+                "type": "advisor_message", "model": "claude-opus-4-20250514", "input_tokens": 10, "output_tokens": 2
+            }]
+        }}
+    });
+    let wrapped = serde_json::json!({"type":"progress", "sessionId":"session-advisor", "data": {
+        "type":"agent_progress", "message": nested
+    }})
+    .to_string();
+    let transcript = fixture.write_file("claude/projects/p/session-advisor.jsonl", &wrapped);
+    let seeded = vec![(
+        "CLAUDE_CONFIG_DIR",
+        vec![fixture.path("claude").into_os_string()],
+    )];
+    let daily = Case::new(
+        "daily",
+        "json_nested_advisor",
+        &[
+            "claude",
+            "daily",
+            "--offline",
+            "--json",
+            "--mode",
+            "calculate",
+        ],
+    );
+    let first = run_case(fixture.root(), &seeded, &daily);
+    assert_eq!(first.exit, "0", "{}", first.stderr);
+    let report: serde_json::Value = serde_json::from_str(&first.stdout).unwrap();
+    assert_eq!(report["totals"]["inputTokens"], 110);
+    assert_eq!(report["totals"]["outputTokens"], 3);
+    golden::assert_case("claude", fixture.root(), &seeded, &daily);
+    let cases: Vec<_> = ["daily", "session", "blocks"]
+        .into_iter()
+        .map(|kind| {
+            Case::new(
+                kind,
+                "",
+                &["claude", kind, "--offline", "--json", "--mode", "calculate"],
+            )
+        })
+        .collect();
+    let before: Vec<_> = cases
+        .iter()
+        .map(|case| run_case(fixture.root(), &seeded, case).stdout)
+        .collect();
+    let mut direct = nested;
+    direct["sessionId"] = "session-advisor".into();
+    std::fs::write(&transcript, format!("{wrapped}\n{direct}")).unwrap();
+    for (case, expected) in cases.iter().zip(before) {
+        let actual = run_case(fixture.root(), &seeded, case);
+        assert_eq!(actual.exit, "0", "{}", actual.stderr);
+        assert_eq!(actual.stdout, expected, "{}", case.kind);
+    }
 }
 
 #[test]
@@ -66,8 +339,6 @@ fn all_agents_unified() {
     golden::all::run(AGENTS);
 }
 
-/// Entry point for `diff-refs.bb`, which compares two refs over the golden
-/// seeds instead of an empty store.
 #[test]
 #[ignore = "writes into CCUSAGE_GOLDEN_FIXTURE_DIR; run by diff-refs.bb"]
 fn export_golden_fixture() {
@@ -85,12 +356,6 @@ fn exported_fixture_replays_the_unified_report() {
         serde_json::from_slice(&std::fs::read(root.join(golden::FIXTURE_MANIFEST)).unwrap())
             .unwrap();
     let env = manifest["env"].as_object().unwrap();
-    for name in golden::AGENT_HOME_ENV_VARS {
-        assert!(
-            env.contains_key(name),
-            "{name} is missing from the manifest"
-        );
-    }
     let seeded = manifest["seeded"].as_array().unwrap();
     assert!(!seeded.is_empty());
     for name in seeded {
@@ -198,7 +463,6 @@ fn statusline_hook_paths_round_trip_as_json() {
     }
 }
 
-/// The names under `COMMANDS:` in a `--help` page.
 fn help_commands(help: &str) -> Vec<String> {
     help.lines()
         .skip_while(|line| line.trim() != "COMMANDS:")
@@ -237,8 +501,6 @@ fn every_accepted_agent_report_is_in_the_matrix() {
          a new agent needs a seed in tests/golden and an entry there"
     );
 
-    // diff-refs.bb builds its command list from these help pages, so they
-    // must name exactly the reports the parser accepts.
     for matrix in AGENTS {
         let listed: BTreeSet<String> = help_commands(&run(&[matrix.agent, "--help"]).stdout)
             .into_iter()

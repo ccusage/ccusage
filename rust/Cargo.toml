@@ -1,20 +1,12 @@
 [workspace]
-# adapters/ holds the per-source adapters plus the helpers they share; crates/ holds
-# everything that is not tied to a single source, including the unified report.
-# Both are globs so a layer can be built from a filtered source tree containing
-# only some crates — a glob that matches nothing is an error, which is why
-# ccusage-adapter-common lives with the adapters: every layer includes it.
 members = ["adapters/*", "crates/*"]
 resolver = "2"
 
-# Every workspace crate inherits these, so a version or edition bump is one edit.
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
 publish = false
 
-# Shared dependency specs. Crates opt in with `<dep>.workspace = true`, which keeps
-# the per-crate manifests to a list of what that crate actually uses.
 [workspace.dependencies]
 ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "adapters/amp" }
@@ -56,13 +48,9 @@ jiff = { version = "0.2.46", default-features = false, features = [
 	"tzdb-bundle-platform",
 ] }
 memchr = "2.8.3"
-# Inflate-only consumer of the deflated pricing snapshots ccusage-pricing-snapshots
-# embeds; the compression side is a build-dependency of that crate.
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
-# The pricing client's crypto: rustls over ring, with the provider assembled in
-# the binary (rust/crates/ccusage/src/http/tls.rs) rather than rustls' own.
 ring = { version = "0.17.14", default-features = false }
 rustc-hash = "2.1.3"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }

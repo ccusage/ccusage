@@ -23,7 +23,7 @@
 	],
 	"type": "module",
 	"scripts": {
-		"build": "scripts/ensure-native-binary.nu && publint",
+		"build": "publint",
 		"prepack": "pnpm run build"
 	},
 	"devDependencies": {

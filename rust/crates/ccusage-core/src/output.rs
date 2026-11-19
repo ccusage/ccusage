@@ -4,11 +4,12 @@ use std::{
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
-    cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
+    Color, ColumnKind, ModelBreakdown, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD,
+    UsageSummary, cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
     format_project_name, parse_project_aliases, parse_ts_timestamp, print_box_title, resolve_tz,
     short_model_name, terminal_width,
 };
@@ -27,53 +28,28 @@ pub fn should_use_compact_layout(
 }
 
 pub fn totals_json(rows: &[UsageSummary]) -> Value {
-    let input = rows
-        .iter()
-        .map(|row| row.input_tokens)
-        .fold(0, u64::saturating_add);
-    let output = rows
-        .iter()
-        .map(|row| row.output_tokens)
-        .fold(0, u64::saturating_add);
-    let cache_create = rows
-        .iter()
-        .map(|row| row.cache_creation_tokens)
-        .fold(0, u64::saturating_add);
-    let cache_read = rows
-        .iter()
-        .map(|row| row.cache_read_tokens)
-        .fold(0, u64::saturating_add);
-    let extra = rows
-        .iter()
-        .map(|row| row.extra_total_tokens)
-        .fold(0, u64::saturating_add);
-    let mut value = json!({
-        "inputTokens": input,
-        "outputTokens": output,
-        "cacheCreationTokens": cache_create,
-        "cacheReadTokens": cache_read,
-        "totalTokens": input
-            .saturating_add(output)
-            .saturating_add(cache_create)
-            .saturating_add(cache_read)
-            .saturating_add(extra),
-        "totalCost": crate::sum_costs(rows.iter().map(|row| row.total_cost)),
-    });
-    let credits = crate::sum_costs(rows.iter().filter_map(|row| row.credits));
-    if credits > 0.0 {
-        value["credits"] = json!(credits);
-    }
-    attach_unpriced_models(
-        &mut value,
-        unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns)),
-    );
-    value
+    Totals::from_summaries(rows).to_json()
 }
 
-/// Model names with at least one usage entry that had no price. A model can
-/// still show positive cost when other entries carried stored costs. Sorted
-/// and deduplicated so JSON consumers can compare runs.
-pub fn unpriced_models<'a>(
+impl Totals {
+    fn to_json(&self) -> Value {
+        let mut value = json!({
+            "inputTokens": self.input_tokens,
+            "outputTokens": self.output_tokens,
+            "cacheCreationTokens": self.cache_creation_tokens,
+            "cacheReadTokens": self.cache_read_tokens,
+            "totalTokens": self.total_tokens,
+            "totalCost": self.total_cost,
+        });
+        if let Some(credits) = self.credits {
+            value["credits"] = json!(credits);
+        }
+        attach_unpriced_models(&mut value, self.unpriced_models.clone());
+        value
+    }
+}
+
+pub(crate) fn unpriced_models<'a>(
     breakdowns: impl IntoIterator<Item = &'a ModelBreakdown>,
 ) -> Vec<String> {
     breakdowns
@@ -85,9 +61,7 @@ pub fn unpriced_models<'a>(
         .collect()
 }
 
-/// Adds `unpricedModels` to a totals object when any model had no price. The
-/// key is absent when pricing was complete, so existing consumers see no
-/// change and scripts can test `.totals.unpricedModels // []`.
+/// Adds `unpricedModels` to JSON totals when any model lacked pricing.
 pub fn attach_unpriced_models(totals: &mut Value, models: Vec<String>) {
     if !models.is_empty() {
         totals["unpricedModels"] = json!(models);
@@ -98,6 +72,10 @@ pub fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool) -> Re
     if no_cost {
         strip_cost_json(&mut value);
     }
+    write_json_or_jq(&value, jq)
+}
+
+pub fn write_json_or_jq(value: &impl Serialize, jq: Option<&str>) -> Result<()> {
     if let Some(filter) = jq {
         let mut child = std::process::Command::new("jq")
             .arg(filter)
@@ -107,7 +85,7 @@ pub fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool) -> Re
             .map_err(|error| cli_error(format!("failed to run jq: {error}")))?;
         if let Some(stdin) = child.stdin.take() {
             let mut stdin = BufWriter::new(stdin);
-            serde_json::to_writer(&mut stdin, &value)?;
+            serde_json::to_writer(&mut stdin, value)?;
             stdin.write_all(b"\n")?;
             stdin.flush()?;
         }
@@ -118,17 +96,15 @@ pub fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool) -> Re
     } else {
         let stdout = std::io::stdout();
         let mut stdout = BufWriter::new(stdout.lock());
-        serde_json::to_writer_pretty(&mut stdout, &value)?;
+        serde_json::to_writer_pretty(&mut stdout, value)?;
         stdout.write_all(b"\n")?;
         stdout.flush()?;
     }
     Ok(())
 }
 
-/// Controls optional metrics in a focused usage table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UsageTableOptions {
-    /// Whether a full-width table includes the cache-creation column.
     pub show_cache_creation: bool,
 }
 
@@ -159,7 +135,6 @@ pub fn print_usage_table(
     )
 }
 
-/// Print a focused usage table with source-specific display options.
 pub fn print_usage_table_with_options(
     title: &str,
     first_column: &str,
@@ -182,19 +157,19 @@ pub fn print_usage_table_with_options(
         USAGE_COMPACT_WIDTH_THRESHOLD,
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
-    let timezone = resolve_tz(shared.timezone.as_deref());
+    let timezone = resolve_tz(shared.timezone.as_ref());
     print_box_title(title, shared);
-    let (mut headers, mut aligns) =
+    let (mut headers, mut columns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
     if shared.no_cost {
         headers.pop();
-        aligns.pop();
+        columns.pop();
     }
     if include_last_activity {
         headers.push("Last Activity");
-        aligns.push(Align::Left);
+        columns.push(ColumnKind::Text);
     }
-    let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
+    let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
     let aliases = parse_project_aliases(project_aliases);
@@ -263,49 +238,24 @@ pub fn print_usage_table_with_options(
         }
     }
 
-    let totals = totals_json(rows);
-    let input = totals
-        .get("inputTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let output = totals
-        .get("outputTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let cache_create = totals
-        .get("cacheCreationTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let cache_read = totals
-        .get("cacheReadTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let total_cost = totals
-        .get("totalCost")
-        .and_then(Value::as_f64)
-        .unwrap_or_default();
-    let total_tokens = totals.get("totalTokens").and_then(Value::as_u64).unwrap_or(
-        input
-            .saturating_add(output)
-            .saturating_add(cache_create)
-            .saturating_add(cache_read),
-    );
+    let totals = Totals::from_summaries(rows);
+    let total = |value: String| color(shared, value, Color::Yellow);
     table.separator();
     let mut total_row = vec![
-        color(shared, "Total", Color::Yellow),
+        total("Total".to_string()),
         String::new(),
-        color(shared, format_number(input), Color::Yellow),
-        color(shared, format_number(output), Color::Yellow),
+        total(format_number(totals.input_tokens)),
+        total(format_number(totals.output_tokens)),
     ];
     if !compact && options.show_cache_creation {
-        total_row.push(color(shared, format_number(cache_create), Color::Yellow));
+        total_row.push(total(format_number(totals.cache_creation_tokens)));
     }
     if compact {
-        total_row.push(color(shared, format_currency(total_cost), Color::Yellow));
+        total_row.push(total(format_currency(totals.total_cost)));
     } else {
-        total_row.push(color(shared, format_number(cache_read), Color::Yellow));
-        total_row.push(color(shared, format_number(total_tokens), Color::Yellow));
-        total_row.push(color(shared, format_currency(total_cost), Color::Yellow));
+        total_row.push(total(format_number(totals.cache_read_tokens)));
+        total_row.push(total(format_number(totals.total_tokens)));
+        total_row.push(total(format_currency(totals.total_cost)));
     }
     if shared.no_cost {
         total_row.pop();
@@ -315,7 +265,10 @@ pub fn print_usage_table_with_options(
     }
     table.push(total_row);
     table.print()?;
-    print_missing_pricing_warnings(rows, shared.offline);
+    print_missing_pricing_warnings_for_models(
+        totals.unpriced_models.iter().map(String::as_str),
+        shared.offline,
+    );
     if compact {
         eprintln!("\nRunning in Compact Mode");
         eprintln!("Expand terminal width to see cache metrics and total tokens");
@@ -327,36 +280,34 @@ fn usage_table_columns(
     first_column: &str,
     compact: bool,
     show_cache_creation: bool,
-) -> (Vec<&str>, Vec<Align>) {
+) -> (Vec<&str>, Vec<ColumnKind>) {
     let mut headers = vec![first_column, "Models", "Input", "Output"];
-    let mut aligns = vec![Align::Left, Align::Left, Align::Right, Align::Right];
+    let mut columns = vec![
+        ColumnKind::Primary,
+        ColumnKind::Models,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+    ];
     if !compact && show_cache_creation {
         headers.push("Cache Create");
-        aligns.push(Align::Right);
+        columns.push(ColumnKind::Numeric);
     }
     if compact {
         headers.push("Cost (USD)");
-        aligns.push(Align::Right);
+        columns.push(ColumnKind::Numeric);
     } else {
         headers.extend(["Cache Read", "Total Tokens", "Cost (USD)"]);
-        aligns.extend([Align::Right, Align::Right, Align::Right]);
+        columns.extend([
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+        ]);
     }
-    (headers, aligns)
+    (headers, columns)
 }
 
 fn empty_usage_table_message() -> &'static str {
     "No usage data found."
-}
-
-pub fn print_missing_pricing_warnings(rows: &[UsageSummary], offline: bool) {
-    for warning in missing_pricing_warnings(rows, offline) {
-        eprintln!("{warning}");
-    }
-}
-
-fn missing_pricing_warnings(rows: &[UsageSummary], offline: bool) -> Vec<String> {
-    let models = unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns));
-    missing_pricing_warnings_for_models(models.iter().map(String::as_str), offline)
 }
 
 pub fn print_missing_pricing_warnings_for_models<'a>(
@@ -531,12 +482,13 @@ fn format_last_activity_date(value: &str, timezone: &JiffTimeZone) -> String {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::ModelBreakdown;
 
     #[test]
     fn last_activity_column_shows_the_date_in_the_report_timezone() {
-        let timezone = resolve_tz(Some("America/Los_Angeles"));
+        let timezone = resolve_tz(Some(&"America/Los_Angeles".parse().unwrap()));
 
         assert_eq!(
             format_last_activity_date("2026-02-24T02:00:00.000Z", &timezone),
@@ -579,7 +531,7 @@ mod tests {
 
     #[test]
     fn focused_table_can_omit_cache_creation_without_dropping_cache_reads() {
-        let (headers, aligns) = usage_table_columns("Date", false, false);
+        let (headers, columns) = usage_table_columns("Date", false, false);
 
         assert_eq!(
             headers,
@@ -593,16 +545,16 @@ mod tests {
                 "Cost (USD)",
             ]
         );
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
     }
 
     #[test]
     fn focused_table_includes_cache_creation_by_default() {
         let options = UsageTableOptions::default();
-        let (headers, aligns) = usage_table_columns("Date", false, options.show_cache_creation);
+        let (headers, columns) = usage_table_columns("Date", false, options.show_cache_creation);
 
         assert!(headers.contains(&"Cache Create"));
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
     }
 
     #[test]
@@ -795,12 +747,11 @@ mod tests {
 
     #[test]
     fn missing_pricing_warnings_deduplicate_models() {
-        let mut row = snapshot_summary("2026-01-02", None, None);
-        row.model_breakdowns[0].missing_pricing = true;
-        row.model_breakdowns[1].missing_pricing = true;
-
         assert_eq!(
-            missing_pricing_warnings(&[row], false),
+            missing_pricing_warnings_for_models(
+                ["gpt-5.2-codex", "claude-sonnet-4-20250514", "gpt-5.2-codex"],
+                false
+            ),
             vec![
                 "WARN  Missing pricing for claude-sonnet-4-20250514; cost excludes this model. Update pricing or run again after LiteLLM has the model.",
                 "WARN  Missing pricing for gpt-5.2-codex; cost excludes this model. Update pricing or run again after LiteLLM has the model.",
@@ -810,11 +761,8 @@ mod tests {
 
     #[test]
     fn missing_pricing_warnings_mention_embedded_pricing_offline() {
-        let mut row = snapshot_summary("2026-01-02", None, None);
-        row.model_breakdowns[0].missing_pricing = true;
-
         assert_eq!(
-            missing_pricing_warnings(&[row], true),
+            missing_pricing_warnings_for_models(["gpt-5.2-codex"], true),
             vec![
                 "WARN  Missing embedded pricing for gpt-5.2-codex; cost excludes this model. Run without --offline or update ccusage after pricing is added.",
             ]

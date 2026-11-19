@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 1600,
       "cacheReadTokens": 23000,
-      "inputTokens": 5971,
+      "inputTokens": 5851,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 600,
@@ -22,10 +22,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.009275,
-          "inputTokens": 1520,
+          "cost": 0.008825,
+          "inputTokens": 1400,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 675
+          "outputTokens": 645
         },
         {
           "cacheCreationTokens": 1000,
@@ -66,19 +66,19 @@ exit: 0
         "[openclaw] unknown",
         "[openclaw] claude-opus-4-20250514",
         "[openclaw] claude-sonnet-4-20250514",
-        "[openclaw] gpt-5",
         "[openclaw] claude-haiku-4-5-20251001",
+        "[openclaw] gpt-5",
         "[openclaw] openclaw-mystery-1"
       ],
       "month": "2025-12",
-      "outputTokens": 1712,
-      "totalCost": 0.037925,
-      "totalTokens": 32283
+      "outputTokens": 1682,
+      "totalCost": 0.037475,
+      "totalTokens": 32133
     },
     {
       "cacheCreationTokens": 250,
       "cacheReadTokens": 17500,
-      "inputTokens": 3323,
+      "inputTokens": 3273,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -91,10 +91,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.004725,
-          "inputTokens": 650,
+          "cost": 0.0042,
+          "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 125
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -131,18 +131,18 @@ exit: 0
         "[openclaw] openclaw-mystery-1"
       ],
       "month": "2026-01",
-      "outputTokens": 1219,
-      "totalCost": 0.01284375,
-      "totalTokens": 22642
+      "outputTokens": 1194,
+      "totalCost": 0.01231875,
+      "totalTokens": 22567
     }
   ],
   "totals": {
     "cacheCreationTokens": 1850,
     "cacheReadTokens": 40500,
-    "inputTokens": 9294,
-    "outputTokens": 2931,
-    "totalCost": 0.05076875,
-    "totalTokens": 54925,
+    "inputTokens": 9124,
+    "outputTokens": 2876,
+    "totalCost": 0.04979375,
+    "totalTokens": 54700,
     "unpricedModels": [
       "[openclaw] openclaw-mystery-1",
       "[openclaw] unknown"

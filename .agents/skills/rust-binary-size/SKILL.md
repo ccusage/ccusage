@@ -15,13 +15,8 @@ https://github.com/johnthagen/min-sized-rust
 
 ## Baseline
 
-`[profile.release]` in `rust/Cargo.toml` already applies the `min-sized-rust`
-settings, including a separate `opt-level` for dependencies. Read it before adding
-anything, and change it only when a measurement argues for it.
-
-What ends up in a published platform package is the single `bin/ccusage` staged by
-the Nushell scripts in `apps/ccusage/scripts/`, so packaged size tracks the binary
-almost exactly. The `development` skill covers that packaging seam.
+Review existing `[profile.release]` settings in `rust/Cargo.toml` before
+changing the profile. Measure `bin/ccusage` for platform package size.
 
 ## Investigation
 

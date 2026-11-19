@@ -1,12 +1,7 @@
-# Shared helpers for the pricing lock update scripts driven by update-pricing.yaml.
+export def report [result: record]: nothing -> string {
+    $result | to json --raw
+}
 
-# Hand the workflow both the verdict and the paths to commit, so the file list
-# lives in one place instead of being repeated in the workflow.
-export def report [result: record]: nothing -> nothing {
-    [
-        $"changed=($result.changed)"
-        $"paths=($result.paths | str join ' ')"
-    ]
-    | to text
-    | save --append $env.GITHUB_OUTPUT
+export def --wrapped run-update [...args: string]: nothing -> nothing {
+    ^sh -c 'exec "$@" >&2' pricing-update ...$args
 }

@@ -1,13 +1,9 @@
-use ccusage_adapter_common::source::{ALL_REPORTS, EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
-
-use crate::cli::{AgentCommandArgs, AgentReportKind, SharedArgs};
-use crate::{LoadedEntry, Result};
 
 pub struct Copilot;
 pub static SOURCE: Copilot = Copilot;
@@ -15,25 +11,13 @@ pub static SOURCE: Copilot = Copilot;
 impl EntrySource for Copilot {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
-            reports: ALL_REPORTS,
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             ..EntryDescriptor::standard("copilot", "GitHub Copilot CLI")
         }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_for_context(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
-        report::report_from_rows(rows, kind)
     }
 
     fn print_table(

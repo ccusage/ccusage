@@ -1,21 +1,13 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::*;
-use serde_json::Value;
+use ccusage_core::{cli::*, *};
 
 mod loader;
 mod parser;
 mod paths;
+#[cfg(test)]
 mod report;
 
-use crate::{
-    LoadedEntry, Result, UsageSummary,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
-};
-
-#[cfg(test)]
-pub(crate) use loader::load_entries;
 pub use paths::{named_store_paths, paths as default_paths};
-pub use report::{report_from_rows, summarize_entries};
 
 pub struct Pi;
 
@@ -24,50 +16,15 @@ pub static SOURCE: Pi = Pi;
 impl EntrySource for Pi {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             unified_project_path: true,
+            session_scope: ccusage_adapter_common::source::SessionScope::Project,
             ..EntryDescriptor::standard("pi", "pi-agent")
         }
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_entries_with_context(cx)
-    }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        summarize_entries(entries, kind)
-    }
-
-    fn summarize_unified(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        report::summarize_unified_entries(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        report_from_rows(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        crate::print_usage_table(
-            "pi-agent Token Usage Report",
-            ccusage_core::first_column(kind),
-            rows,
-            shared,
-            false,
-            None,
-        )?;
-        Ok(())
     }
 }
 
@@ -93,7 +50,9 @@ impl NamedStore {
 impl EntrySource for NamedStore {
     fn descriptor(&self) -> EntryDescriptor {
         EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
             unified_project_path: true,
+            session_scope: ccusage_adapter_common::source::SessionScope::Project,
             ..EntryDescriptor::standard(self.name, self.name)
         }
     }
@@ -101,49 +60,21 @@ impl EntrySource for NamedStore {
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         loader::load_named_store_entries(cx, &self.paths, self.name)
     }
-
-    fn summarize(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        SOURCE.summarize(entries, kind)
-    }
-
-    fn summarize_unified(
-        &self,
-        entries: &[LoadedEntry],
-        kind: AgentReportKind,
-    ) -> Result<Vec<UsageSummary>> {
-        SOURCE.summarize_unified(entries, kind)
-    }
-
-    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
-        SOURCE.report_json(rows, kind)
-    }
-
-    fn print_table(
-        &self,
-        rows: &[UsageSummary],
-        kind: AgentReportKind,
-        shared: &SharedArgs,
-    ) -> Result<()> {
-        SOURCE.print_table(rows, kind, shared)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use ccusage_adapter_common::{
         parity::assert_focused_matches_unified,
-        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+        source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
 
     #[test]
-    fn unified_sessions_keep_project_paths_and_focused_totals() {
+    fn focused_and_unified_sessions_keep_projects_with_the_same_session_id() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_same-session.jsonl": [
                 r#"{"type":"session","id":"same-session","timestamp":"2026-01-01T00:00:00.000Z"}"#,
@@ -156,24 +87,46 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
+        let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..crate::cli::SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, &shared, &[]);
-        let entries = load_entries(&shared, None, None).unwrap();
-        let focused = summarize_entries(&entries, AgentReportKind::Session).unwrap();
-        let unified =
-            report::summarize_unified_entries(&entries, AgentReportKind::Session).unwrap();
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Pi, &shared);
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions {
+                pi_path: None,
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        let focused = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &entries,
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Sunday,
+            ),
+        )
+        .unwrap();
 
-        assert_eq!(focused.len(), 1);
-        assert_eq!(unified.len(), 2);
+        assert_eq!(focused.len(), 2);
+        assert_eq!(focused[0].input_tokens, 10);
+        assert_eq!(focused[1].input_tokens, 20);
+        let json = SOURCE.report_json(&focused, AgentReportKind::Session);
+        assert_eq!(json["sessions"][0]["sessionId"], "same-session");
+        assert_eq!(json["sessions"][0]["projectPath"], "project-a");
+        assert_eq!(json["sessions"][1]["sessionId"], "same-session");
+        assert_eq!(json["sessions"][1]["projectPath"], "project-b");
+        assert_eq!(json["totals"]["inputTokens"], 30);
         assert_eq!(
-            unified
+            focused
                 .iter()
                 .filter_map(|row| row.project_path.as_deref())
                 .collect::<std::collections::BTreeSet<_>>(),
@@ -183,6 +136,7 @@ mod tests {
 
     #[test]
     fn malformed_selected_message_is_diagnosed_without_dropping_following_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": [
                 r#"{"type":"session","id":"session-a","timestamp":"2026-01-01T00:00:00.000Z"}"#,
@@ -191,24 +145,22 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
+        let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
             debug: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..crate::cli::SharedArgs::default()
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
 

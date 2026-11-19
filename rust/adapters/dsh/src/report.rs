@@ -1,92 +1,31 @@
-use serde_json::{Value, json};
-
-use crate::{
-    BucketKind, LoadedEntry, Result,
-    cli::{AgentReportKind, WeekDay},
-    summarize_by_key, summarize_summaries_by_bucket, totals_json,
-};
-
-pub(crate) fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
-    let rows_json = rows
-        .iter()
-        .map(|row| ccusage_core::agent_summary_json(row, kind, false))
-        .collect::<Vec<_>>();
-    json!({
-        rows_key(kind): rows_json,
-        "totals": totals_json(rows),
-    })
-}
-
-pub(crate) fn summarize_entries(
-    entries: &[LoadedEntry],
-    kind: AgentReportKind,
-) -> Result<Vec<crate::UsageSummary>> {
-    match kind {
-        AgentReportKind::Daily => summarize_by_key(
-            entries,
-            |entry| entry.date.clone(),
-            |date| (date.to_string(), None),
-        ),
-        AgentReportKind::Monthly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Monthly,
-                WeekDay::Sunday,
-            ))
-        }
-        AgentReportKind::Session => summarize_by_key(
-            entries,
-            |entry| entry.session_id.to_string(),
-            |session_id| (session_id.to_string(), None),
-        )
-        .map(|mut rows| {
-            for row in &mut rows {
-                row.session_id = row.date.take();
-            }
-            rows
-        }),
-        AgentReportKind::Weekly => {
-            let daily = summarize_entries(entries, AgentReportKind::Daily)?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Monday,
-            ))
-        }
-    }
-}
-
-fn rows_key(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "daily",
-        AgentReportKind::Weekly => "weekly",
-        AgentReportKind::Monthly => "monthly",
-        AgentReportKind::Session => "sessions",
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::*;
     use crate::{PricingMap, cli::SharedArgs, paths::DSH_HOME_ENV};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn snapshots_focused_reports_from_fixture_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/--home-user-project--/dsh-parent/session.v4.jsonl":
                 include_str!("../tests/fixtures/parent/session.v4.jsonl"),
             "sessions/--home-user-project--/dsh-fork/session.v4.jsonl":
                 include_str!("../tests/fixtures/fork/session.v4.jsonl"),
         });
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
-        let (entries, _) = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         for kind in [
             AgentReportKind::Daily,
@@ -94,16 +33,26 @@ mod tests {
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let rows = summarize_entries(&entries, kind).unwrap();
+            let rows = SOURCE
+                .summarize(
+                    &entries,
+                    ccusage_adapter_common::source::SummaryKind::for_report(kind, WeekDay::Monday),
+                )
+                .unwrap();
             insta::assert_json_snapshot!(
                 format!("focused_dsh_{kind:?}_json").to_lowercase(),
-                report_from_rows(&rows, kind)
+                ccusage_adapter_common::source::EntrySource::report_json(
+                    &crate::SOURCE,
+                    &rows,
+                    kind
+                )
             );
         }
     }
 
     #[test]
     fn weeks_start_on_monday_like_the_last_window() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/p/s/session.v4.jsonl": concat!(
                 r#"{"type":"session","version":4,"id":"s","createdAt":1794744000000}"#, "\n",
@@ -112,15 +61,26 @@ mod tests {
                 r#"{"type":"assistant/message","seq":3,"time":1794830400000,"data":{"usage":{"inputTokens":1,"outputTokens":1}}}"#, "\n",
             ),
         });
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
-        let (entries, _) = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
-        let rows = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
+        let rows = SOURCE
+            .summarize(
+                &entries,
+                ccusage_adapter_common::source::SummaryKind::Weekly(WeekDay::Monday),
+            )
+            .unwrap();
         let weeks = rows
             .iter()
             .map(|row| row.week.as_deref())

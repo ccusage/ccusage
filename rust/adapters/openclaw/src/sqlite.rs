@@ -1,30 +1,30 @@
+use ccusage_core::cost::PriceTable;
 use std::path::Path;
 
-use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl};
+use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl, sqlite::read_i64};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use super::parser::{OpenClawLine, parse_transcript_message, sqlite_entry_to_loaded};
-use crate::{LoadedEntry, PricingMap, TimestampMs, cli::CostMode};
+use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded, timestamp_from_millis};
+use crate::{LoadedEntry, cli::CostMode};
 
-/// One per-agent SQLite store (`agents/<agentId>/agent/openclaw-agent.sqlite`).
 struct AgentDatabase {
     path: std::path::PathBuf,
 }
 
-/// Find every per-agent SQLite store under `root`.
-///
-/// OpenClaw resolves the agent database as
-/// `<stateDir>/agents/<agentId>/agent/openclaw-agent.sqlite`, and
-/// `~/.openclaw` is the default state directory, so each configured root is
-/// scanned for `agents/*/agent/openclaw-agent.sqlite`. Directory traversal
-/// stays lexical (no symlink following, no canonicalization): discovery must
-/// agree with the JSONL walk in `paths.rs`, which also refuses symlinks.
-/// Reads open read-only.
+impl AsRef<Path> for AgentDatabase {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+// NOTE(2026-09-16, #1727): OpenClaw 2026.9.x moved live sessions into per-agent SQLite stores. Discovery includes these stores because their live events may have no JSONL copy.
 fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentDatabase> {
     let mut databases = Vec::new();
     let agents_path = root.join("agents");
-    if !lexical_type(&agents_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
+    if !file_type_without_following_symlinks(&agents_path, diagnostics)
+        .is_some_and(|kind| kind.is_dir())
+    {
         return databases;
     }
     for (agent, file_type) in dir_entries(&agents_path, diagnostics) {
@@ -32,11 +32,15 @@ fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentD
             continue;
         }
         let agent_path = agent.join("agent");
-        if !lexical_type(&agent_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
+        if !file_type_without_following_symlinks(&agent_path, diagnostics)
+            .is_some_and(|kind| kind.is_dir())
+        {
             continue;
         }
         let path = agent_path.join("openclaw-agent.sqlite");
-        if lexical_type(&path, diagnostics).is_some_and(|kind| kind.is_file()) {
+        if file_type_without_following_symlinks(&path, diagnostics)
+            .is_some_and(|kind| kind.is_file())
+        {
             databases.push(AgentDatabase { path });
         }
     }
@@ -44,9 +48,10 @@ fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentD
     databases
 }
 
-/// The type of `path` itself, not of a symlink's target; `None` when it is
-/// missing, or cannot be inspected, which is recorded in `diagnostics`.
-fn lexical_type(path: &Path, diagnostics: &Diagnostics) -> Option<std::fs::FileType> {
+fn file_type_without_following_symlinks(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Option<std::fs::FileType> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) => Some(metadata.file_type()),
         Err(error) => {
@@ -66,7 +71,7 @@ pub(super) fn collect_sqlite_entries(
     root: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
@@ -82,147 +87,75 @@ pub(super) fn collect_sqlite_entries(
     entries
 }
 
-/// Read one agent database, returning usage entries in `(session_id, seq)`
-/// order.
-///
-/// The connection opens read-only, so inspecting a hostile store cannot write
-/// to it. Rows whose `event_json` fails to parse are skipped: transcript
-/// events are an append-only log shared with redaction and branch-control
-/// records, and a single malformed row must not drop the session around it.
 fn read_agent_database(
     database: &AgentDatabase,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
-    let connection = match sqlite::Connection::open_with_flags(
-        &database.path,
-        sqlite::OpenFlags::new().with_read_only(),
-    ) {
-        Ok(connection) => connection,
-        Err(error) => {
-            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
-            return Vec::new();
-        }
-    };
-    match table_exists(&connection) {
-        Ok(true) => {}
-        Ok(false) => {
-            diagnostics.record(Skip::unit(
-                &database.path,
-                SkipKind::Invariant,
-                "OpenClaw database has no transcript_events table",
-            ));
-            return Vec::new();
-        }
-        Err(error) => {
-            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
-            return Vec::new();
-        }
-    }
-    let mut statement = match connection.prepare(
-        "SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC",
-    ) {
-        Ok(statement) => statement,
-        Err(error) => {
-            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
-            return Vec::new();
-        }
-    };
-    // Model/provider tracking is per session in the JSONL path (state resets
-    // per file). SQLite rows arrive in session order, so track the current
-    // session and reset the tracked model/provider on session boundaries.
     let prefilter = super::parser::record_prefilter();
-    let mut current_session: Option<String> = None;
-    let mut current_model: Option<String> = None;
-    let mut current_provider: Option<String> = None;
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                let Ok(session_id) = statement.read::<String, _>(0) else {
-                    diagnostics.record(Skip::record(
-                        &database.path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "OpenClaw transcript row has no session id",
+    ccusage_adapter_common::sqlite::sqlite_units_with_state(
+        std::slice::from_ref(database),
+        true,
+        diagnostics,
+        |connection, _| {
+            match table_exists(connection) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(UnitError::new(
+                        SkipKind::Invariant,
+                        "OpenClaw database has no transcript_events table",
                     ));
-                    continue;
-                };
-                if current_session.as_deref() != Some(&session_id) {
-                    current_session = Some(session_id.clone());
-                    current_model = None;
-                    current_provider = None;
                 }
-                let created_at = statement
-                    .read::<i64, _>(3)
-                    .or_else(|_| {
-                        statement
-                            .read::<f64, _>(3)
-                            .map(|value| value.trunc() as i64)
-                    })
-                    .unwrap_or(0);
-                let fallback_timestamp = TimestampMs::from_millis(created_at.max(0));
-                let Ok(event_json) = statement.read::<String, _>(2) else {
-                    diagnostics.record(Skip::record(
-                        &database.path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "OpenClaw transcript row has no event data",
-                    ));
-                    continue;
-                };
-                if !prefilter.matches(event_json.as_bytes()) {
-                    continue;
-                }
-                let Some(record) = jsonl::decode_record::<OpenClawLine>(
-                    event_json.as_bytes(),
-                    &database.path,
-                    row_number,
-                    diagnostics,
-                    Some(super::parser::is_usage_envelope),
-                ) else {
-                    continue;
-                };
-                super::parser::record_message_error(
+                Err(error) => return Err(UnitError::sqlite(SqliteStage::Setup, error.code)),
+            }
+            connection.prepare("SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC")
+                .map(|statement| (statement, None::<TranscriptReader>))
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |session, statement, database, row_number| {
+            let session_id = statement.read::<String, _>(0).map_err(|_| {
+                UnitError::new(
+                    SkipKind::InvalidData,
+                    "OpenClaw transcript row has no session id",
+                )
+            })?;
+            let reader = match session.take() {
+                Some(reader) if reader.session_id() == session_id => session.insert(reader),
+                _ => session.insert(TranscriptReader::sqlite(session_id)),
+            };
+            let fallback_timestamp = read_i64(statement, 3).and_then(timestamp_from_millis);
+            let event_json = statement.read::<String, _>(2).map_err(|_| {
+                UnitError::new(
+                    SkipKind::InvalidData,
+                    "OpenClaw transcript row has no event data",
+                )
+            })?;
+            if !prefilter.matches(event_json.as_bytes()) {
+                return Ok(None);
+            }
+            let Some(record) = jsonl::decode_record::<OpenClawLine>(
+                event_json.as_bytes(),
+                &database.path,
+                row_number,
+                None,
+                diagnostics,
+                Some(super::parser::is_usage_envelope),
+            ) else {
+                return Ok(None);
+            };
+            Ok(reader
+                .read(
                     &record,
                     &database.path,
                     row_number,
-                    diagnostics,
-                );
-                if super::parser::is_model_change(&record) {
-                    let (model, provider) = super::parser::model_change_source(&record);
-                    if let Some(model) = model {
-                        current_model = Some(model);
-                    }
-                    if let Some(provider) = provider {
-                        current_provider = Some(provider);
-                    }
-                    continue;
-                }
-                let Some((entry, message_id)) = parse_transcript_message(
-                    &record,
-                    &session_id,
-                    current_model.as_deref(),
-                    current_provider.as_deref(),
                     fallback_timestamp,
-                ) else {
-                    continue;
-                };
-                entries.push(sqlite_entry_to_loaded(entry, message_id, tz, mode, pricing));
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code)
-                    .record(&database.path, diagnostics);
-                break;
-            }
-        }
-    }
-    entries
+                    diagnostics,
+                )
+                .map(|entry| entry_to_loaded(entry, tz, mode, pricing)))
+        },
+    )
 }
 
 fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sqlite::Error> {
@@ -238,7 +171,7 @@ fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sq
 #[cfg(test)]
 mod tests {
     use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
-    use ccusage_core::{PricingMap, ReportWindow, cli::AgentReportKind};
+    use ccusage_core::{ReportWindow, cli::AgentReportKind};
     use ccusage_test_support::{Fixture, fs_fixture};
 
     use super::*;
@@ -295,22 +228,54 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics(),
         );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
-        assert_eq!(entries[0].data.version.as_deref(), Some("openai-codex"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1660);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 55);
-        assert_eq!(
-            entries[0].data.message.usage.cache_read_input_tokens,
-            108_928
-        );
+        assert_eq!(entries[0].version.as_deref(), Some("openai-codex"));
+        assert_eq!(entries[0].usage.input_tokens, 1660);
+        assert_eq!(entries[0].usage.output_tokens, 55);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 108_928);
         assert!((entries[0].cost - 0.02).abs() < f64::EPSILON);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-2"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("evt-2"));
+    }
+
+    #[test]
+    fn an_undatable_event_is_skipped_instead_of_dated_by_a_clamped_created_at() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let usage = r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":5}}}"#;
+        create_agent_db(&db_path, &[("session-a", 1_769_753_935_279, usage)]);
+        let db = sqlite::open(&db_path).unwrap();
+        let mut statement = db
+            .prepare(
+                "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session-a', 1, ?1, 1e300)",
+            )
+            .unwrap();
+        statement.bind((1, usage)).unwrap();
+        statement.next().unwrap();
+        let diagnostics = diagnostics();
+
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            PriceTable::Display,
+            &diagnostics,
+        );
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.timestamp.as_millis())
+                .collect::<Vec<_>>(),
+            [1_769_753_935_279]
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
     }
 
     #[test]
@@ -344,13 +309,13 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 30);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[1].usage.input_tokens, 30);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         let warnings = diagnostics
             .warnings(&ccusage_core::cli::SharedArgs {
@@ -392,12 +357,12 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
@@ -426,13 +391,60 @@ mod tests {
             &AgentDatabase { path: db_path },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+    }
+
+    #[test]
+    fn tracks_the_model_per_session() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        create_agent_db(
+            &db_path,
+            &[
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai"}"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                ),
+                (
+                    "session-b",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":{"input":30,"output":40}}}"#,
+                ),
+            ],
+        );
+
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
+            &diagnostics(),
+        );
+
+        let models = entries
+            .iter()
+            .map(|entry| (entry.session_id.as_ref(), entry.model.as_deref()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            models,
+            [
+                ("session-a", Some("[openclaw] gpt-5.2")),
+                ("session-b", Some("[openclaw] unknown")),
+            ]
+        );
     }
 
     #[test]
@@ -452,7 +464,7 @@ mod tests {
             },
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            None,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
         );
 
@@ -462,6 +474,7 @@ mod tests {
 
     #[test]
     fn reports_sqlite_corruption_during_schema_probe_as_invalid_data() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "agents/main/agent/openclaw-agent.sqlite": "not a SQLite database",
         });
@@ -486,17 +499,17 @@ mod tests {
         let custom_path = fixture.root().to_str().unwrap();
         let shared = ccusage_core::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let window = ReportWindow::from_shared(&shared);
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let diagnostics = diagnostics();
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions {
                 open_claw_path: Some(custom_path),
                 ..SourceOptions::default()

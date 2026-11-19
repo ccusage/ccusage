@@ -1,7 +1,9 @@
+mod support;
+
 use std::{
     fs,
     io::{self, BufRead, BufReader, Write},
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, ChildStdin, Stdio},
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -20,13 +22,60 @@ const LOADING_TEXT: &str = "Codex | Loading usage...";
 #[test]
 fn native_resource_keeps_valid_usage_when_another_rollout_is_corrupt() {
     let fixture = native_usage_fixture();
-    let _ = fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt-rollout-canary");
+    fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt-rollout-canary");
     let mut process = McpProcess::start(&fixture, &["--no-cost"]);
     assert_eq!(
         process.read_resource_line(1, THREAD_UUID),
         "Codex | Session: 600 tokens | Today: 300 tokens"
     );
     process.finish();
+}
+
+#[test]
+fn native_fork_parent_warning_stays_off_stdout() {
+    let fixture = fs_fixture!({
+        "codex/sessions/unrelated.jsonl.zst": "corrupt rollout",
+    });
+    fixture.write_file(
+        format!("codex/sessions/rollout-2000-01-01T12-00-00-{THREAD_UUID}.jsonl"),
+        [
+            json!({
+                "type":"session_meta",
+                "timestamp":"2000-01-01T12:00:00Z",
+                "payload":{"id":THREAD_UUID,"forked_from_id":OTHER_THREAD_UUID}
+            })
+            .to_string(),
+            usage("2000-01-01T11:59:00Z", 100, 50),
+            usage("2000-01-01T12:01:00Z", 100, 50),
+        ]
+        .join("\n"),
+    );
+    fixture.write_file(
+        format!("codex/sessions/rollout-2000-01-01T11-00-00-{OTHER_THREAD_UUID}.jsonl.zst"),
+        "corrupt parent",
+    );
+    let stderr = fixture.path("stderr.log");
+    let mut process = McpProcess::start_with_stderr(
+        &fixture,
+        &["--no-cost"],
+        fs::File::create(&stderr).unwrap().into(),
+    );
+
+    assert_eq!(
+        process.read_resource_line(1, THREAD_UUID),
+        "Codex | Session: 300 tokens | Today: 0 tokens"
+    );
+    process.finish();
+    assert!(matches!(
+        process.stdout.recv_timeout(Duration::from_secs(5)),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    ));
+    let stderr = fs::read_to_string(stderr).unwrap();
+    assert_eq!(
+        stderr.lines().filter(|line| *line == "WARN  codex: could not read the parent rollout for 1 forked session. Replayed usage may be counted twice.").count(),
+        1,
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -205,7 +254,7 @@ fn native_resource_refreshes_cached_usage_after_a_new_revert_rollout() {
     let timestamp_text = format_rfc3339_millis(timestamp);
     let file_stamp = rollout_stamp(&timestamp_text);
     let new_usage = usage(&timestamp_text, 200, 100);
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-{file_stamp}-{THREAD_UUID}_{LATE_REVERT_UUID}.jsonl"),
         rollout(THREAD_UUID, &timestamp_text, &[new_usage]),
     );
@@ -294,7 +343,7 @@ fn run_mcp(fixture: &Fixture, requests: &[Value]) -> Vec<Value> {
 }
 
 fn run_mcp_raw(fixture: &Fixture, requests: &[String], args: &[&str]) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_ccusage"))
+    let mut child = support::hermetic_command(fixture.root())
         .args([
             "codex",
             "statusline",
@@ -305,10 +354,6 @@ fn run_mcp_raw(fixture: &Fixture, requests: &[String], args: &[&str]) -> Vec<Val
         ])
         .args(args)
         .env("CODEX_HOME", fixture.path("codex"))
-        .env("HOME", fixture.path("empty-home"))
-        .env("USERPROFILE", fixture.path("empty-userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("empty-config"))
-        .env_remove("LOG_LEVEL")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -359,7 +404,7 @@ impl McpProcess {
     }
 
     fn start_with_stderr(fixture: &Fixture, args: &[&str], stderr: Stdio) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_ccusage"))
+        let mut child = support::hermetic_command(fixture.root())
             .args([
                 "codex",
                 "statusline",
@@ -370,10 +415,6 @@ impl McpProcess {
             ])
             .args(args)
             .env("CODEX_HOME", fixture.path("codex"))
-            .env("HOME", fixture.path("empty-home"))
-            .env("USERPROFILE", fixture.path("empty-userprofile"))
-            .env("XDG_CONFIG_HOME", fixture.path("empty-config"))
-            .env_remove("LOG_LEVEL")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)
@@ -531,14 +572,14 @@ fn native_usage_fixture() -> Fixture {
             let file_stamp = rollout_stamp(&timestamp_text);
             let event = usage(&timestamp_text, 100, 50);
             let path = format!("codex/sessions/rollout-{file_stamp}-{thread_id}.jsonl");
-            let _ = fixture.write_file(path, rollout(thread_id, &timestamp_text, &[event]));
+            fixture.write_file(path, rollout(thread_id, &timestamp_text, &[event]));
         }
     }
 
     let reverted_text = format_rfc3339_millis(reverted);
     let file_stamp = rollout_stamp(&reverted_text);
     let new_usage = usage(&reverted_text, 100, 50);
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-{file_stamp}-{THREAD_UUID}_{REVERT_UUID}.jsonl"),
         rollout(THREAD_UUID, &reverted_text, &[new_usage]),
     );

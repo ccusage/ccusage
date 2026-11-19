@@ -1,4 +1,6 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::{env, path::PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use crate::Result;
 
@@ -6,49 +8,26 @@ const OPENCODE_DATA_DIR_ENV: &str = "OPENCODE_DATA_DIR";
 const XDG_DATA_HOME_ENV: &str = "XDG_DATA_HOME";
 
 pub(super) fn paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
-    if let Some(env_paths) = env::var_os(OPENCODE_DATA_DIR_ENV) {
-        let configured_paths = match env_paths.into_string() {
-            Ok(env_paths) => env_paths
-                .split(',')
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
+    Ok(roots::resolve(
+        RootsEnv::List(OPENCODE_DATA_DIR_ENV),
+        || {
+            let data_home = env::var_os(XDG_DATA_HOME_ENV)
                 .map(PathBuf::from)
-                .collect(),
-            Err(env_path) => vec![PathBuf::from(env_path)],
-        };
-        for path in configured_paths {
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        return Ok(paths);
-    }
-
-    let data_home = match env::var_os(XDG_DATA_HOME_ENV)
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-    {
-        Some(path) => path,
-        None => {
-            let home = crate::home::home_dir()
-                .ok_or_else(|| crate::cli_error("home directory is not set"))?;
-            home.join(".local/share")
-        }
-    };
-    let path = data_home.join("opencode");
-    if path.is_dir() && seen.insert(path.clone()) {
-        paths.push(path);
-    }
-    Ok(paths)
+                .filter(|path| path.is_absolute())
+                .or_else(|| crate::cli::home::home_dir().map(|home| home.join(".local/share")));
+            data_home
+                .map(|home| home.join("opencode"))
+                .into_iter()
+                .collect()
+        },
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::{OPENCODE_DATA_DIR_ENV, XDG_DATA_HOME_ENV, paths};
 
@@ -56,8 +35,8 @@ mod tests {
         opencode_data_dir: Option<OsString>,
         xdg_data_home: Option<OsString>,
         home: Option<OsString>,
-    ) -> EnvVarsGuard {
-        EnvVarsGuard::set_many([
+    ) -> EnvGuard {
+        EnvGuard::set_many([
             (OPENCODE_DATA_DIR_ENV, opencode_data_dir),
             (XDG_DATA_HOME_ENV, xdg_data_home),
             ("HOME", home),
@@ -146,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn does_not_fall_back_when_configured_data_dir_is_empty() {
+    fn falls_back_when_configured_data_dir_is_empty() {
         let fixture = fs_fixture!({
             "home/.local/share/opencode/opencode.db": "",
         });
@@ -156,7 +135,10 @@ mod tests {
             Some(fixture.path("home").into_os_string()),
         );
 
-        assert!(paths().unwrap().is_empty());
+        assert_eq!(
+            paths().unwrap(),
+            vec![fixture.path("home/.local/share/opencode")]
+        );
     }
 
     #[test]

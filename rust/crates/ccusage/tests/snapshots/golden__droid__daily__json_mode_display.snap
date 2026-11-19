@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0010500000000000002,
+          "cost": 0.0,
           "inputTokens": 100,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 50
@@ -25,7 +25,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 50,
-      "totalCost": 0.0010500000000000002,
+      "totalCost": 0.0,
       "totalTokens": 150
     },
     {
@@ -37,7 +37,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 4000,
-          "cost": 0.046125,
+          "cost": 0.0,
           "inputTokens": 1000,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 200
@@ -47,7 +47,7 @@ exit: 0
         "claude-opus-4-20250514"
       ],
       "outputTokens": 200,
-      "totalCost": 0.046125,
+      "totalCost": 0.0,
       "totalTokens": 5560
     },
     {
@@ -58,26 +58,25 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0029249999999999996,
-          "inputTokens": 770,
-          "modelName": "gpt-5",
-          "outputTokens": 165
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0014000000000000002,
+          "cost": 0.0,
           "inputTokens": 400,
           "modelName": "gemini-2-5-pro",
           "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0,
+          "inputTokens": 770,
+          "modelName": "gpt-5",
+          "outputTokens": 165
         },
         {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 300,
-          "missingPricing": true,
           "modelName": "droid-mystery-1",
           "outputTokens": 70
         }
@@ -88,7 +87,7 @@ exit: 0
         "droid-mystery-1"
       ],
       "outputTokens": 325,
-      "totalCost": 0.004325,
+      "totalCost": 0.0,
       "totalTokens": 4825
     },
     {
@@ -98,17 +97,9 @@ exit: 0
       "inputTokens": 1540,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 7000,
-          "cost": 0.00385,
-          "inputTokens": 900,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 400
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0033,
+          "cost": 0.0,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 100
@@ -118,7 +109,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 40,
-          "missingPricing": true,
           "modelName": "grok-unknown",
           "outputTokens": 10
         },
@@ -127,9 +117,16 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
         }
       ],
       "modelsUsed": [
@@ -139,7 +136,7 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "outputTokens": 855,
-      "totalCost": 0.00715,
+      "totalCost": 0.0,
       "totalTokens": 9625
     },
     {
@@ -151,7 +148,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6000,
-          "cost": 0.012,
+          "cost": 0.0,
           "inputTokens": 1300,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 420
@@ -161,7 +158,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 420,
-      "totalCost": 0.012,
+      "totalCost": 0.0,
       "totalTokens": 7720
     }
   ],
@@ -170,13 +167,8 @@ exit: 0
     "cacheReadTokens": 20000,
     "inputTokens": 5410,
     "outputTokens": 1850,
-    "totalCost": 0.07065,
-    "totalTokens": 27880,
-    "unpricedModels": [
-      "droid-mystery-1",
-      "gpt-unknown",
-      "grok-unknown"
-    ]
+    "totalCost": 0.0,
+    "totalTokens": 27880
   }
 }
 

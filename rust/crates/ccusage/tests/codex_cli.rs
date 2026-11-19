@@ -1,7 +1,9 @@
-use std::process::{Command, Output};
+use std::process::Output;
 
 use ccusage_test_support::{Fixture, fs_fixture};
 use serde_json::{Value, json};
+
+mod support;
 
 const SESSION_UUID: &str = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
 const SESSION_ID: &str =
@@ -12,7 +14,7 @@ const OTHER_UUID: &str = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
 #[test]
 fn codex_statusline_keeps_valid_usage_when_a_replacement_rollout_is_corrupt() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-2026-09-20T12-00-00-{SESSION_UUID}_{OTHER_UUID}.jsonl.zst"),
         "corrupt-rollout-canary",
     );
@@ -37,27 +39,22 @@ fn codex_statusline_keeps_valid_usage_when_a_replacement_rollout_is_corrupt() {
 
 #[test]
 fn codex_statusline_reports_today_without_reading_stdin() {
-    let today = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
     let fixture = fs_fixture!({
-        "codex/sessions/today.jsonl": usage(&format!("{today}T12:00:00.000Z"), 1_000, 50),
-        "codex/sessions/old.jsonl": usage("2026-01-01T12:00:00.000Z", 9_000, 500),
+        "codex/sessions/today.jsonl": usage("2026-11-19T12:00:00Z", 1_000, 50),
+        "codex/sessions/old.jsonl": usage("2026-01-01T12:00:00Z", 9_000, 500),
     });
 
-    let output = run_cli(&fixture, &["codex", "statusline"]);
-
-    let after = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
-    // The subprocess can run on either side of midnight.
-    let expected = std::collections::BTreeMap::from([(
-        today.as_str(),
-        "Codex | Today: 1,050 tokens | Est. $0.00\n",
-    )]);
-    let allowed = [today.as_str(), after.as_str()].map(|date| {
-        expected
-            .get(date)
-            .copied()
-            .unwrap_or("Codex | Today: 0 tokens | Est. $0.00\n")
-    });
-    assert!(allowed.contains(&output.as_str()), "{output}");
+    let output = codex_command(support::hermetic_command(fixture.root()), &fixture)
+        .args(["codex", "statusline"])
+        .env("CCUSAGE_TEST_NOW", "2026-11-19T12:30:00Z")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"Codex | Today: 1,050 tokens | Est. $0.00\n");
 }
 
 #[test]
@@ -111,7 +108,7 @@ fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
 #[test]
 fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/{SESSION_ID}.jsonl"),
         [
             usage("2026-09-19T23:22:40Z", 100, 50),
@@ -119,7 +116,7 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
         ]
         .join("\n"),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/{SESSION_UUID}.jsonl"),
         [
             json!({"type":"session_meta","payload":{"id":"01a0cc9d-d8d1-8741-ae93-971c986041a1"}})
@@ -132,7 +129,7 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     let replacement = format!(
         "codex/sessions/2026/09/20/rollout-2026-09-20T12-00-00-{SESSION_UUID}_01a0ddae-e9e2-7852-bfa4-a82da97152b2.jsonl"
     );
-    let _ = fixture.write_file(replacement, [
+    fixture.write_file(replacement, [
         json!({"timestamp":"2026-09-20T12:00:00Z","type":"session_meta","payload":{"id":SESSION_UUID}}).to_string(),
         usage("2026-09-20T12:00:01Z", 200, 50),
     ].join("\n"));
@@ -155,7 +152,7 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
 #[test]
 fn codex_statusline_session_includes_usage_outside_date_filters() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/{SESSION_ID}.jsonl"),
         [
             usage("2026-09-19T23:22:40Z", 100, 50),
@@ -186,7 +183,7 @@ fn codex_statusline_session_includes_usage_outside_date_filters() {
 #[test]
 fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
     let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/2026/09/20/rollout-2026-09-20T00-00-00-{SESSION_UUID}.jsonl"),
         [
             usage("2026-09-19T18:00:00Z", 100, 50),
@@ -215,7 +212,7 @@ fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
 #[test]
 fn codex_statusline_skips_directories_after_the_last_possible_local_date() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/sessions/2026/09/21/future.jsonl",
         usage("invalid", 100, 50),
     );
@@ -356,13 +353,210 @@ fn codex_statusline_date_range_matches_daily_totals() {
 }
 
 #[test]
-fn codex_statusline_uses_the_selected_timezone_for_today() {
-    let today = ccusage_report::format_date(ccusage_core::utc_now(), Some("Asia/Tokyo"));
+fn codex_statusline_recovers_discovered_config_and_keeps_valid_settings() {
     let fixture = fs_fixture!({
-        "codex/sessions/today.jsonl": usage(&format!("{today}T00:30:00.000Z"), 100, 50),
-        "codex/sessions/tomorrow.jsonl": usage(&format!("{today}T23:30:00.000Z"), 9_000, 500),
+        "cwd/.ccusage/ccusage.json": r#"{
+            "defaults":{"since":"20261119","until":"20261119","timezone":"Pacific/Kiritimati"},
+            "codex":{"commands":{"statusline":{
+                "json":true, "timezone":"Invalid/Zone",
+                "since":"20990101", "until":"20261119"
+            }}}
+        }"#,
+        "codex/sessions/previous-utc-day.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+        "codex/sessions/outside-range.jsonl": usage("2026-11-17T12:00:00Z", 9000, 500),
     });
-    let output = Command::new(env!("CARGO_BIN_EXE_ccusage"))
+    let output = support::hermetic_command(fixture.root())
+        .args(["--offline", "codex", "statusline"])
+        .env("CODEX_HOME", fixture.path("codex"))
+        .env("CCUSAGE_TEST_NOW", "2026-11-19T12:30:00Z")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains("Invalid ccusage config field:"));
+    assert!(stderr.contains("ccusage.json: codex.commands.statusline.timezone:"));
+    assert!(stderr.contains("ccusage.json: codex.commands.statusline.since:"));
+    assert!(stderr.contains("Invalid/Zone"));
+    assert!(stderr.contains("later than"));
+    let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["scope"], "range");
+    assert_eq!(summary["totalTokens"], 150);
+}
+
+#[test]
+fn codex_statusline_recovers_reversed_discovered_windows_as_a_pair() {
+    for (config, until_path, expected_scope, expected_tokens) in [
+        (
+            r#"{
+                "codex":{"commands":{"statusline":{"since":"20261118","until":"20000101"}}},
+                "defaults":{"since":"19990101","until":"20261118"}
+            }"#,
+            "codex.commands.statusline.until",
+            "range",
+            300,
+        ),
+        (
+            r#"{"codex":{"defaults":{"until":"20000101"},"commands":{"statusline":{"since":"20261118"}}}}"#,
+            "codex.defaults.until",
+            "today",
+            150,
+        ),
+    ] {
+        let fixture = fs_fixture!({
+            "cwd/.ccusage/ccusage.json": config,
+            "codex/sessions/today.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+            "codex/sessions/previous-day.jsonl": usage("2026-11-17T12:00:00Z", 100, 50),
+        });
+        let output = support::hermetic_command(fixture.root())
+            .args(["codex", "statusline", "--json", "--timezone", "UTC"])
+            .env("CODEX_HOME", fixture.path("codex"))
+            .env("CCUSAGE_TEST_NOW", "2026-11-18T13:00:00Z")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stderr}");
+        assert!(
+            stderr.lines().any(|line| {
+                line.contains("codex.commands.statusline.since")
+                    && line.contains(until_path)
+                    && line.contains("later than")
+            }),
+            "{stderr}"
+        );
+        let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(summary["scope"], expected_scope);
+        assert_eq!(summary["totalTokens"], expected_tokens);
+    }
+}
+
+#[test]
+fn codex_statusline_names_the_config_field_before_the_paired_flag() {
+    for (field, config_bound, flag) in [
+        ("until", "20000101", "--since"),
+        ("since", "20990101", "--until"),
+    ] {
+        let fixture = fs_fixture!({
+            "codex/sessions/today.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+        });
+        let path = fixture.write_file(
+            "cwd/.ccusage/ccusage.json",
+            json!({"codex":{"commands":{"statusline":{field:config_bound}}}}).to_string(),
+        );
+        let path = path.canonicalize().unwrap();
+        let output = support::hermetic_command(fixture.root())
+            .args(["codex", "statusline", flag, "20261118", "--no-cost"])
+            .env("CODEX_HOME", fixture.path("codex"))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stderr}");
+        let prefix = format!(
+            "WARN Invalid ccusage config field: {}: codex.commands.statusline.{field}: ",
+            path.display()
+        );
+        assert!(
+            stderr.lines().any(|line| {
+                line.starts_with(&prefix) && line.ends_with(&format!(" (paired with {flag})"))
+            }),
+            "{stderr}"
+        );
+        assert_eq!(output.stdout, b"Codex | Usage: 150 tokens\n");
+    }
+}
+
+#[test]
+fn invalid_discovered_statusline_bounds_warn_in_every_mode() {
+    for (config, field, daily_exit) in [
+        (
+            json!({"defaults":{"since":"invalid-date"}}),
+            "defaults.since",
+            2,
+        ),
+        (
+            json!({"codex":{"commands":{"statusline":{"until":"invalid-date"}}}}),
+            "codex.commands.statusline.until",
+            0,
+        ),
+    ] {
+        let fixture = codex_fixture();
+        let path = fixture.write_file("cwd/.ccusage/ccusage.json", config.to_string());
+        let run = |args: &[&str]| {
+            support::hermetic_command(fixture.root())
+                .args(args)
+                .env("CODEX_HOME", fixture.path("codex"))
+                .env("CCUSAGE_TEST_NOW", "2026-09-19T23:30:00Z")
+                .output()
+                .unwrap()
+        };
+        let warning = format!(
+            "{}: Invalid ccusage config field: {field}: not a valid date",
+            path.display()
+        );
+        for (args, expected) in [
+            (
+                &["codex", "statusline", "--no-cost"][..],
+                "Codex | Today: 150 tokens\n",
+            ),
+            (
+                &["codex", "statusline", "--id", SESSION_UUID, "--no-cost"],
+                "Codex | Session: 150 tokens\n",
+            ),
+            (&["codex", "statusline", "--mcp"], ""),
+        ] {
+            let output = run(args);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{stderr}");
+            assert!(stderr.contains(&warning), "{stderr}");
+            assert_eq!(output.stdout, expected.as_bytes());
+        }
+
+        let output = run(&["codex", "daily", "--offline", "--json"]);
+        assert_eq!(output.status.code(), Some(daily_exit));
+    }
+}
+
+#[test]
+fn invalid_explicit_statusline_bounds_are_errors_in_every_mode() {
+    let fixture = fs_fixture!({
+        "bad-config.json": r#"{"defaults":{"since":"invalid-date"}}"#,
+    });
+    let path = fixture.path("bad-config.json");
+    let config_error = format!("{}: defaults.since: not a valid date", path.display());
+    for mode in [&[][..], &["--id", SESSION_UUID], &["--mcp"]] {
+        for (bound, expected_error) in [
+            (
+                ["--since", "invalid-date"],
+                "Invalid value for --since 'invalid-date'",
+            ),
+            (
+                ["--until", "invalid-date"],
+                "Invalid value for --until 'invalid-date'",
+            ),
+            (["--config", path.to_str().unwrap()], config_error.as_str()),
+        ] {
+            let output = run_cli_output(
+                &fixture,
+                &["codex", "statusline"]
+                    .into_iter()
+                    .chain(mode.iter().copied())
+                    .chain(bound)
+                    .collect::<Vec<_>>(),
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(2), "{stderr}");
+            assert!(stderr.contains(expected_error), "{stderr}");
+            assert!(output.stdout.is_empty());
+        }
+    }
+}
+
+#[test]
+fn codex_statusline_uses_the_selected_timezone_for_today() {
+    let fixture = fs_fixture!({
+        "codex/sessions/today.jsonl": usage("2026-11-19T00:30:00Z", 100, 50),
+        "codex/sessions/tomorrow.jsonl": usage("2026-11-19T23:30:00Z", 9_000, 500),
+    });
+    let output = support::hermetic_command(fixture.root())
         .args([
             "codex",
             "statusline",
@@ -371,12 +565,9 @@ fn codex_statusline_uses_the_selected_timezone_for_today() {
             "--no-cost",
         ])
         .env("CODEX_HOME", fixture.path("codex"))
-        .env("HOME", fixture.path("empty-home"))
-        .env("XDG_CONFIG_HOME", fixture.path("empty-xdg-config"))
-        .env_remove("LOG_LEVEL")
+        .env("CCUSAGE_TEST_NOW", "2026-11-19T12:00:00Z")
         .output()
         .unwrap();
-
     assert!(
         output.status.success(),
         "{}",
@@ -387,17 +578,10 @@ fn codex_statusline_uses_the_selected_timezone_for_today() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let after = ccusage_report::format_date(ccusage_core::utc_now(), Some("Asia/Tokyo"));
-    let expected =
-        std::collections::BTreeMap::from([(today.as_str(), "Codex | Today: 150 tokens\n")]);
-    let allowed = [today.as_str(), after.as_str()].map(|date| {
-        expected
-            .get(date)
-            .copied()
-            .unwrap_or("Codex | Today: 9,500 tokens\n")
-    });
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(allowed.contains(&stdout.as_str()), "{stdout}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "Codex | Today: 150 tokens\n"
+    );
 }
 
 #[test]
@@ -449,10 +633,20 @@ fn codex_statusline_marks_incomplete_pricing_and_can_hide_costs() {
         summary["unpricedModels"],
         json!(["unknown-statusline-model"])
     );
-    assert_eq!(
-        run_cli(&fixture, &[&args[..], &["--jq", ".totalTokens"]].concat()),
-        "150\n"
+    let output = codex_command(
+        support::hermetic_command_with_tools(fixture.root(), &["jq"]),
+        &fixture,
+    )
+    .args(args)
+    .args(["--jq", ".totalTokens"])
+    .output()
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(output.stdout, b"150\n");
 }
 
 #[test]
@@ -671,8 +865,6 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
     ]
     .join("\n");
 
-    // Standard: $2 input, $0.10 cached input, $10 output per 1M tokens ($0.00252 here).
-    // Ultrafast: $12 input, $0.60 cached input, $60 output per 1M tokens ($0.01512 here).
     for (rollout, total_tokens, expected_cost) in [
         (ultrafast_only, 1250, 0.01512),
         (switched_back, 2500, 0.01512 + 0.00252),
@@ -764,6 +956,105 @@ fn reports_issue_2184_spawned_siblings_with_identical_usage_separately() {
     assert_eq!(totals["totalTokens"], 40_400);
 }
 
+#[test]
+fn session_reports_credit_a_replaced_stand_in_once() {
+    let timestamp = "2026-11-01T09:00:00Z";
+    let fixture = fs_fixture!({
+        "codex/sessions/child.jsonl": [
+            usage(timestamp, 1_000, 10),
+            usage("2026-11-01T09:01:00Z", 300, 3),
+        ].join("\n"),
+        "codex/sessions/parent.jsonl": recorded_request(timestamp),
+    });
+
+    let reports = [
+        ("sessions", "sessionId", &["codex", "session"][..]),
+        (
+            "sessions",
+            "sessionId",
+            &[
+                "codex", "session", "--since", "20261101", "--until", "20261101",
+            ],
+        ),
+        ("session", "period", &["session"]),
+        (
+            "session",
+            "period",
+            &["session", "--since", "20261101", "--until", "20261101"],
+        ),
+    ];
+    let actual = [&[][..], &["--single-thread"]].map(|threading| {
+        reports.map(|(rows, session_id, report)| {
+            let args = [report, &["--json"], threading].concat();
+            let output: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
+            let mut session_tokens = output[rows]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        row[session_id].as_str().unwrap().to_owned(),
+                        row["totalTokens"].as_u64().unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            session_tokens.sort_unstable();
+            (
+                output["totals"]["totalTokens"].as_u64().unwrap(),
+                session_tokens,
+            )
+        })
+    });
+    let expected = (
+        1_313,
+        vec![("child".to_owned(), 303), ("parent".to_owned(), 1_010)],
+    );
+    assert_eq!(
+        actual,
+        std::array::from_fn(|_| std::array::from_fn(|_| expected.clone())),
+        "parallel then serial, for {reports:?}"
+    );
+}
+
+#[test]
+fn session_and_daily_reports_dedupe_copied_records_across_sessions() {
+    let request = recorded_request("2026-11-01T09:00:00Z");
+    let fixture = fs_fixture!({
+        "codex/sessions/original.jsonl": &request,
+        "codex/sessions/copy.jsonl": &request,
+    });
+
+    let totals = [&[][..], &["--single-thread"]].map(|threading| {
+        ["session", "daily"].map(|report| {
+            let args = [&["codex", report, "--json"][..], threading].concat();
+            let output: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
+            output["totals"]["totalTokens"].as_u64().unwrap()
+        })
+    });
+    assert_eq!(totals, [[1_010, 1_010]; 2], "parallel then serial");
+}
+
+fn recorded_request(timestamp: &str) -> String {
+    [
+        json!({
+            "timestamp": timestamp,
+            "type": "token_usage_record",
+            "payload": {
+                "response_id": "resp_parent",
+                "usage": {
+                    "input_tokens": 1_000,
+                    "cached_input_tokens": 10,
+                    "output_tokens": 10,
+                    "total_tokens": 1_010,
+                },
+            },
+        })
+        .to_string(),
+        usage(timestamp, 1_000, 10),
+    ]
+    .join("\n")
+}
+
 fn issue_1970_codex_fixture() -> Fixture {
     fs_fixture!({
         "codex/sessions/2026/01/05/child.jsonl":
@@ -824,18 +1115,17 @@ fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
 }
 
 fn run_cli_output(fixture: &Fixture, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .args(["--offline", "--no-color", "--timezone", "UTC"])
+    codex_command(support::hermetic_command(fixture.root()), fixture)
         .args(args)
-        .env("CODEX_HOME", fixture.path("codex"))
-        .env("HOME", fixture.path("empty-home"))
-        .env("USERPROFILE", fixture.path("empty-userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("empty-xdg-config"))
-        .env("LOG_LEVEL", "0")
-        .env("NO_COLOR", "1")
-        .env("COLUMNS", "240")
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .env_remove("CLINE_DATA_DIR")
         .output()
         .expect("ccusage CLI should run")
+}
+
+fn codex_command(mut command: std::process::Command, fixture: &Fixture) -> std::process::Command {
+    command
+        .args(["--offline", "--no-color", "--timezone", "UTC"])
+        .env("CODEX_HOME", fixture.path("codex"))
+        .env("LOG_LEVEL", "0")
+        .env("COLUMNS", "240");
+    command
 }

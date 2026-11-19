@@ -10,16 +10,16 @@ exit: 0
       "cacheCreationTokens": 200,
       "cacheReadTokens": 10000,
       "firstActivity": "2025-12-31T23:50:00.000Z",
-      "inputTokens": 1520,
-      "lastActivity": "2026-01-01T01:00:05.000Z",
+      "inputTokens": 1553,
+      "lastActivity": "2026-01-01T02:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.50021,
-          "inputTokens": 620,
+          "cost": 0.500969,
+          "inputTokens": 653,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 110,
+          "outputTokens": 154,
           "storedCost": 0.5
         },
         {
@@ -35,11 +35,11 @@ exit: 0
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 510,
+      "outputTokens": 554,
       "projectPath": "-Users-dev-beta",
       "sessionId": "sess-beta-1",
-      "totalCost": 0.55796,
-      "totalTokens": 12230
+      "totalCost": 0.558719,
+      "totalTokens": 12307
     },
     {
       "cacheCreationTokens": 100,
@@ -135,10 +135,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 1550,
     "cacheReadTokens": 22450,
-    "inputTokens": 5374,
-    "outputTokens": 1595,
-    "totalCost": 0.6289695000000001,
-    "totalTokens": 30969,
+    "inputTokens": 5407,
+    "outputTokens": 1639,
+    "totalCost": 0.6297285,
+    "totalTokens": 31046,
     "unpricedModels": [
       "mystery-model-9000"
     ]

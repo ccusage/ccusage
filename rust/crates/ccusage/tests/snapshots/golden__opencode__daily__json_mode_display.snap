@@ -9,28 +9,6 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "date": "1970-01-01",
-      "inputTokens": 11,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 1,
-      "totalCost": 0.0,
-      "totalTokens": 12
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
       "date": "2025-12-27",
       "inputTokens": 100,
       "modelBreakdowns": [
@@ -134,7 +112,7 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 3000,
       "date": "2026-01-01",
-      "inputTokens": 2205,
+      "inputTokens": 2141,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -172,9 +150,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 71,
+          "inputTokens": 7,
           "modelName": "opus",
-          "outputTokens": 7
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -193,9 +171,9 @@ exit: 0
         "opus",
         "gemini-3-pro-high"
       ],
-      "outputTokens": 380,
+      "outputTokens": 374,
       "totalCost": 0.0,
-      "totalTokens": 5585
+      "totalTokens": 5515
     },
     {
       "cacheCreationTokens": 0,
@@ -241,10 +219,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7261,
-    "outputTokens": 1838,
+    "inputTokens": 7186,
+    "outputTokens": 1831,
     "totalCost": 2.75,
-    "totalTokens": 27349
+    "totalTokens": 27267
   }
 }
 

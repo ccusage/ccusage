@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::Path;
 
-use crate::golden::{Case, json_path, set_modified};
+use ccusage_test_support::{Instant, instant, set_modified};
+
+use crate::golden::{Case, json_path};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
@@ -10,8 +13,6 @@ const ALPHA: &str = "claude/projects/-Users-dev-alpha";
 const BETA: &str = "claude/projects/-Users-dev-beta";
 const GAMMA: &str = "claude/projects/-Users-dev-gamma";
 
-/// One assistant transcript line. `usage` is the body of the usage object and
-/// `extra` holds further top-level members, each with its leading comma.
 fn entry(
     timestamp: &str,
     session: &str,
@@ -27,8 +28,8 @@ fn entry(
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
-    let write = |relative: &str, lines: &[String], modified: u64| {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let write = |relative: &str, lines: &[String], modified: Instant| {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
             .expect("failed to create fixture directory");
@@ -38,8 +39,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
     let alpha = "sess-alpha-1";
     let copied_turn = |session: &str| {
-        // 2026-01-01 in Asia/Tokyo. Written to two transcripts with the same
-        // message and request IDs, as a resumed session does.
         entry(
             "2025-12-31T15:30:00.000Z",
             session,
@@ -51,7 +50,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         )
     };
 
-    // Flat transcript: the session ID is the file stem.
     write(
         &format!("{ALPHA}/{alpha}.jsonl"),
         &[
@@ -78,8 +76,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 r#""input_tokens":500,"output_tokens":800,"cache_creation_input_tokens":600,"cache_read_input_tokens":9000,"cache_creation":{"ephemeral_5m_input_tokens":200,"ephemeral_1h_input_tokens":400}"#,
                 "",
             ),
-            // One response written once per content block: same `msg_` ID, no
-            // request ID, distinct timestamps.
             entry(
                 "2025-12-31T09:00:00.000Z",
                 alpha,
@@ -99,8 +95,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "",
             ),
             copied_turn(alpha),
-            // Carries the `"usage":{` marker the loader scans for, but is not a
-            // usage entry.
             format!(
                 r#"{{"type":"user","timestamp":"2025-12-31T15:31:00.000Z","sessionId":"{alpha}","toolUseResult":{{"usage":{{"input_tokens":7777,"output_tokens":7777}}}}}}"#
             ),
@@ -143,18 +137,18 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "msg_a8",
                 "<synthetic>",
                 r#""input_tokens":0,"output_tokens":0"#,
-                r#","isApiErrorMessage":true,"content":[{"type":"text","text":"Claude AI usage limit reached|1767344400"}]"#,
+                &format!(
+                    r#","isApiErrorMessage":true,"content":[{{"type":"text","text":"Claude AI usage limit reached|{reset_at}"}}]"#,
+                    reset_at = instant("2026-01-02T09:00:00Z").secs()
+                ),
             ),
         ],
-        1_767_342_660, // 2026-01-02T08:31:00Z
+        instant("2026-01-02T08:31:00Z"),
     );
 
-    // Subagent transcript: the session ID is the directory above `subagents/`.
     write(
         &format!("{ALPHA}/{alpha}/subagents/agent-btw.jsonl"),
         &[
-            // Replays of parent messages under new request IDs: the first at
-            // the parent's timestamp, the second a minute after it.
             entry(
                 "2025-12-30T10:00:00.000Z",
                 alpha,
@@ -183,7 +177,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 r#","isSidechain":true"#,
             ),
         ],
-        1_767_089_280, // 2025-12-30T10:08:00Z
+        instant("2025-12-30T10:08:00Z"),
     );
 
     write(
@@ -208,10 +202,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 r#","isSidechain":true,"costUSD":0.007"#,
             ),
         ],
-        1_767_173_460,
+        instant("2025-12-31T09:31:00Z"),
     );
 
-    // Nested transcript: the session ID is the directory name.
     let beta = "sess-beta-1";
     let gateway = |timestamp: &str| {
         entry(
@@ -227,7 +220,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write(
         &format!("{BETA}/{beta}/chat.jsonl"),
         &[
-            // 2026-01-01 in Asia/Tokyo.
             entry(
                 "2025-12-31T23:50:00.000Z",
                 beta,
@@ -246,8 +238,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 r#""input_tokens":600,"output_tokens":100,"cache_read_input_tokens":3000"#,
                 r#","costUSD":0.5"#,
             ),
-            // A gateway placeholder ID reused per response: the repeat at the
-            // same timestamp is one write, the later one is another response.
             gateway("2026-01-01T01:00:00.000Z"),
             gateway("2026-01-01T01:00:00.000Z"),
             gateway("2026-01-01T01:00:05.000Z"),
@@ -264,7 +254,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "",
             ),
         ],
-        1_767_348_060, // 2026-01-02T10:01:00Z
+        instant("2026-01-02T10:01:00Z"),
     );
 
     let resumed = "sess-beta-2";
@@ -272,9 +262,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &format!("{BETA}/{resumed}.jsonl"),
         &[
             copied_turn(resumed),
-            // An advisor turn: the top-level cache-write split covers only the
-            // first `message` iteration, and the second one's 5-minute writes
-            // appear only in `iterations`.
             entry(
                 "2026-01-01T03:00:00.000Z",
                 resumed,
@@ -294,13 +281,15 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 "",
             ),
         ],
-        1_767_351_660, // 2026-01-02T11:01:00Z
+        instant("2026-01-02T11:01:00Z"),
     );
 
-    write(&format!("{BETA}/sess-empty.jsonl"), &[], 1_767_052_800); // 2025-12-30T00:00:00Z
+    write(
+        &format!("{BETA}/sess-empty.jsonl"),
+        &[],
+        instant("2025-12-30T00:00:00Z"),
+    );
 
-    // Last written more than a day before the shared window opens, so the
-    // window variants prune the file by mtime.
     write(
         &format!("{GAMMA}/sess-gamma-old.jsonl"),
         &[entry(
@@ -312,15 +301,16 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             r#""input_tokens":100,"output_tokens":50"#,
             r#","costUSD":0.01"#,
         )],
-        1_766_872_860, // 2025-12-27T22:01:00Z
+        instant("2025-12-27T22:01:00Z"),
     );
 
-    vec![("CLAUDE_CONFIG_DIR", root.join("claude"))]
+    vec![(
+        "CLAUDE_CONFIG_DIR",
+        vec![root.join("claude").into_os_string()],
+    )]
 }
 
-/// Claude-only options, plus `statusline`, which reads a hook payload from
-/// stdin. The clock is pinned to `golden::FIXED_NOW`, inside the last block.
-pub fn extra_cases(root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(root: &Path) -> Vec<Case> {
     let transcript = root.join(ALPHA).join("sess-alpha-1.jsonl");
     let hook = |context: &str| {
         format!(
@@ -381,6 +371,16 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
         ),
         Case::new(
             "session",
+            "json_order_asc",
+            &["claude", "session", "--offline", "--json", "--order", "asc"],
+        ),
+        Case::new(
+            "session",
+            "table_order_asc",
+            &["claude", "session", "--offline", "--order", "asc"],
+        ),
+        Case::new(
+            "session",
             "id_json",
             &[
                 "claude",
@@ -389,6 +389,20 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
                 "--json",
                 "--id",
                 "sess-alpha-1",
+            ],
+        ),
+        Case::new(
+            "session",
+            "id_json_order_desc",
+            &[
+                "claude",
+                "session",
+                "--offline",
+                "--json",
+                "--id",
+                "sess-alpha-1",
+                "--order",
+                "desc",
             ],
         ),
         Case::new(
@@ -439,6 +453,21 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
                 "1",
             ],
         ),
+        Case::new(
+            "blocks",
+            "table_token_limit_narrow",
+            &[
+                "claude",
+                "blocks",
+                "--offline",
+                "--no-color",
+                "--since",
+                "20260102",
+                "--token-limit",
+                "100",
+            ],
+        )
+        .columns(80),
         Case::new(
             "blocks",
             "json_recent",
@@ -494,4 +523,145 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
             &["claude", "statusline", "--offline", "--no-cache"],
         ),
     ]
+}
+
+#[test]
+fn session_order_honors_flags_and_config_without_changing_the_default() {
+    use ccusage_test_support::Fixture;
+    use serde_json::Value;
+
+    use crate::golden::run_case;
+
+    let fixture = Fixture::new();
+    let seeded = seed(fixture.root());
+    let config = fixture.write_file("order.json", r#"{"defaults":{"order":"asc"}}"#);
+    let report = |flags: &[&str]| {
+        let mut case = Case::new("session", "", &["claude", "session", "--offline", "--json"]);
+        case.args
+            .extend(flags.iter().map(|flag| (*flag).to_string()));
+        let output = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(output.exit, "0", "{}", output.stderr);
+        output.stdout
+    };
+    let ids = |output: &str| {
+        serde_json::from_str::<Value>(output).unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["sessionId"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let ascending = [
+        "sess-gamma-old",
+        "sess-beta-2",
+        "sess-alpha-1",
+        "sess-beta-1",
+    ];
+    assert_eq!(ids(&report(&["--order", "asc"])), ascending);
+    assert_eq!(
+        ids(&report(&["--config", config.to_str().unwrap()])),
+        ascending
+    );
+    assert_eq!(report(&[]), report(&["--order", "desc"]));
+    assert_eq!(
+        report(&["--config", config.to_str().unwrap(), "--order", "desc"]),
+        report(&[]),
+    );
+}
+
+#[test]
+fn chronological_reports_honor_order_without_changing_their_default() {
+    use ccusage_test_support::Fixture;
+    use serde_json::Value;
+
+    use crate::golden::run_case;
+
+    let fixture = Fixture::new();
+    let seeded = seed(fixture.root());
+    let config = fixture.write_file("order.json", r#"{"defaults":{"order":"desc"}}"#);
+    for (kind, field) in [
+        ("daily", "date"),
+        ("weekly", "week"),
+        ("monthly", "month"),
+        ("blocks", "startTime"),
+    ] {
+        let report = |flags: &[&str]| {
+            let mut case = Case::new(kind, "", &["claude", kind, "--offline", "--json"]);
+            case.args
+                .extend(flags.iter().map(|flag| (*flag).to_string()));
+            let output = run_case(fixture.root(), &seeded, &case);
+            assert_eq!(output.exit, "0", "{kind}: {}", output.stderr);
+            output.stdout
+        };
+        let periods = |output: &str| {
+            serde_json::from_str::<Value>(output).unwrap()[kind]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row[field].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        let ascending = report(&["--order", "asc"]);
+        assert_eq!(report(&[]), ascending, "{kind}");
+        let mut expected = periods(&ascending);
+        assert!(expected.len() > 1, "{kind}");
+        assert!(expected.windows(2).all(|pair| pair[0] < pair[1]), "{kind}");
+        expected.reverse();
+        assert_eq!(periods(&report(&["--order", "desc"])), expected, "{kind}");
+        assert_eq!(
+            periods(&report(&["--config", config.to_str().unwrap()])),
+            expected,
+            "{kind}",
+        );
+    }
+}
+
+#[test]
+fn session_id_orders_entries_without_reordering_aggregation() {
+    use ccusage_test_support::Fixture;
+    use serde_json::Value;
+
+    use crate::golden::run_case;
+
+    let fixture = Fixture::new();
+    let seeded = seed(fixture.root());
+    let config = fixture.write_file("order.json", r#"{"defaults":{"order":"desc"}}"#);
+    let report = |flags: &[&str]| {
+        let mut case = Case::new(
+            "session",
+            "",
+            &[
+                "claude",
+                "session",
+                "--offline",
+                "--json",
+                "--id",
+                "sess-alpha-1",
+            ],
+        );
+        case.args
+            .extend(flags.iter().map(|flag| (*flag).to_string()));
+        let output = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(output.exit, "0", "{}", output.stderr);
+        output.stdout
+    };
+    let default = report(&[]);
+    assert_eq!(default, report(&["--order", "asc"]));
+    let mut expected: Value = serde_json::from_str(&default).unwrap();
+    expected.as_object_mut().unwrap().remove("entries");
+    for flags in [
+        vec!["--order", "desc"],
+        vec!["--config", config.to_str().unwrap()],
+    ] {
+        let mut actual: Value = serde_json::from_str(&report(&flags)).unwrap();
+        let inputs = actual["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["inputTokens"].as_u64().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(inputs, [0, 200, 300, 400, 250, 700, 80, 120, 50, 500, 1000]);
+        actual.as_object_mut().unwrap().remove("entries");
+        assert_eq!(actual, expected);
+    }
 }

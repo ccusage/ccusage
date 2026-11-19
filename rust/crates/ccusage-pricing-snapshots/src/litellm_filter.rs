@@ -1,0 +1,205 @@
+use serde_json::{Map, Value};
+
+const LOADED_FIELDS: [&str; 12] = [
+    "input_cost_per_token",
+    "output_cost_per_token",
+    "cache_creation_input_token_cost",
+    "cache_creation_input_token_cost_above_1hr",
+    "cache_creation_input_token_cost_above_1hr_above_200k_tokens",
+    "cache_read_input_token_cost",
+    "input_cost_per_token_above_200k_tokens",
+    "output_cost_per_token_above_200k_tokens",
+    "cache_creation_input_token_cost_above_200k_tokens",
+    "cache_read_input_token_cost_above_200k_tokens",
+    "max_input_tokens",
+    "litellm_provider",
+];
+
+// NOTE(2026-11-19, #2187): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai, https://docs.litellm.ai/docs/providers/moonshot and https://docs.litellm.ai/docs/providers/xai. Use those IDs for direct-provider pricing.
+const SOURCES: &str = include_str!("litellm-sources.json");
+
+pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
+    let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
+        return None;
+    };
+    let sources: Value = serde_json::from_str(SOURCES).ok()?;
+    let admissions = sources.get("embedded")?.as_array()?;
+    let mut filtered = Map::new();
+    for (model, pricing) in raw {
+        let Value::Object(pricing) = pricing else {
+            continue;
+        };
+        let provider = pricing.get("litellm_provider").and_then(Value::as_str);
+        if !admissions
+            .iter()
+            .any(|rule| is_admitted(rule, &model, provider))
+        {
+            continue;
+        }
+        let mut fields = Map::new();
+        for field in LOADED_FIELDS {
+            if let Some(value) = pricing.get(field).filter(|value| !value.is_null()) {
+                fields.insert(field.to_string(), value.clone());
+            }
+        }
+        let tiers: Map<String, Value> = pricing
+            .get("provider_specific_entry")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|entry| ["fast", "flex"].map(|tier| (tier, entry.get(tier))))
+            .filter_map(|(tier, multiplier)| {
+                let multiplier = multiplier.filter(|value| !value.is_null())?;
+                Some((tier.to_string(), multiplier.clone()))
+            })
+            .collect();
+        if !tiers.is_empty() {
+            fields.insert("provider_specific_entry".to_string(), Value::Object(tiers));
+        }
+        if fields.contains_key("input_cost_per_token")
+            && fields.contains_key("output_cost_per_token")
+        {
+            filtered.insert(model, Value::Object(fields));
+        }
+    }
+    serde_json::to_string(&Value::Object(filtered)).ok()
+}
+
+fn is_admitted(rule: &Value, key: &str, provider: Option<&str>) -> bool {
+    rule.get("key").and_then(Value::as_str) == Some(key)
+        || rule
+            .get("keyPrefix")
+            .and_then(Value::as_str)
+            .is_some_and(|prefix| key.starts_with(prefix))
+        || provider
+            .is_some_and(|provider| rule.get("provider").and_then(Value::as_str) == Some(provider))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_pricing_json;
+    use ccusage_core::{PricingMap, pricing::MatchKind};
+
+    #[test]
+    fn admits_free_direct_rows_and_excludes_same_prefix_hosted_rows() {
+        let json = serde_json::json!({
+            "deepseek-chat": {"litellm_provider":"deepseek","input_cost_per_token":0.00000028,"output_cost_per_token":0.00000042},
+            "deepseek/deepseek-v3": {"litellm_provider":"deepseek","input_cost_per_token":0.00000027,"output_cost_per_token":0.0000011},
+            "deepseek.v3.2": {"litellm_provider":"bedrock_converse","input_cost_per_token":0.00000062,"output_cost_per_token":0.00000185},
+            "deepseek-v3-2-251201": {"litellm_provider":"volcengine","input_cost_per_token":0,"output_cost_per_token":0},
+            "deepseek/deepseek-test": {"litellm_provider":"deepseek","input_cost_per_token":0,"output_cost_per_token":0},
+            "deepseek-vendor-test": {"litellm_provider":"reseller","input_cost_per_token":0.000001,"output_cost_per_token":0.000002}
+        });
+        let filtered: serde_json::Value =
+            serde_json::from_str(&filter_pricing_json(&json.to_string()).unwrap()).unwrap();
+        assert_eq!(
+            filtered
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            [
+                "deepseek-chat",
+                "deepseek/deepseek-test",
+                "deepseek/deepseek-v3"
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_the_two_existing_exact_key_admissions() {
+        let sources: serde_json::Value = serde_json::from_str(super::SOURCES).unwrap();
+        let rules = sources["embedded"].as_array().unwrap();
+        let keys: Vec<_> = rules
+            .iter()
+            .filter_map(|rule| rule["key"].as_str())
+            .collect();
+        assert_eq!(keys, ["o3", "o4-mini"]);
+    }
+
+    #[test]
+    fn retains_published_one_hour_cache_rates() {
+        let filtered = filter_pricing_json(r#"{"claude-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002,"cache_creation_input_token_cost_above_1hr":0.000007,"cache_creation_input_token_cost_above_1hr_above_200k_tokens":0.000014}}"#).unwrap();
+        let pricing: serde_json::Value = serde_json::from_str(&filtered).unwrap();
+        assert_eq!(
+            pricing["claude-test"]["cache_creation_input_token_cost_above_1hr"],
+            7e-6
+        );
+        assert_eq!(
+            pricing["claude-test"]["cache_creation_input_token_cost_above_1hr_above_200k_tokens"],
+            14e-6
+        );
+    }
+
+    #[test]
+    fn keeps_service_tier_multipliers_in_embedded_pricing() {
+        ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
+            litellm_sources: crate::LITELLM_SOURCES,
+            litellm_pricing: crate::LITELLM_PRICING,
+            models_dev_pricing: crate::MODELS_DEV_PRICING,
+            models_dev_catalog_rules: crate::MODELS_DEV_CATALOG_RULES,
+        });
+        let filtered = filter_pricing_json(
+            r#"{
+                "gpt-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "provider_specific_entry": { "fast": 2, "flex": 0.5 }
+                },
+                "gpt-flex-only": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "provider_specific_entry": { "fast": null, "flex": 0.25 }
+                }
+            }"#,
+        )
+        .unwrap();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(&filtered);
+
+        let both = pricing
+            .resolve_at(None, &[("gpt-test", MatchKind::StrictExact)], None)
+            .unwrap()
+            .1;
+        assert_eq!(both.fast_multiplier, 2.0);
+        assert_eq!(both.flex_multiplier, 0.5);
+        let flex_only = pricing
+            .resolve_at(None, &[("gpt-flex-only", MatchKind::StrictExact)], None)
+            .unwrap()
+            .1;
+        assert_eq!(flex_only.fast_multiplier, 1.0);
+        assert_eq!(flex_only.flex_multiplier, 0.25);
+    }
+
+    #[test]
+    fn drops_other_families_and_fields_the_loader_does_not_read() {
+        let filtered = filter_pricing_json(
+            r#"{
+                "claude-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "litellm_provider": "anthropic",
+                    "supports_vision": true
+                },
+                "vertex_ai/gemini-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002
+                },
+                "gpt-no-output": { "input_cost_per_token": 0.000001 }
+            }"#,
+        )
+        .unwrap();
+
+        let filtered: serde_json::Value = serde_json::from_str(&filtered).unwrap();
+        assert_eq!(
+            filtered,
+            serde_json::json!({
+                "claude-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "litellm_provider": "anthropic"
+                }
+            })
+        );
+    }
+}

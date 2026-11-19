@@ -1,27 +1,26 @@
-use ccusage_adapter_common::{UnitError, jsonl};
+use ccusage_adapter_common::jsonl;
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    fs,
+    ops::ControlFlow,
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
 };
 
 use memchr::memmem::Finder;
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs, parse_ts_timestamp,
+    CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, TimestampMs, parse_ts_timestamp,
 };
 
 use super::{
-    reader::{READ_BUFFER_SIZE, open_rollout_lines, uncompressed_rollout_path},
+    reader::{READ_BUFFER_SIZE, rollout_policy, uncompressed_rollout_path},
     replay::{CodexSessionMetadata, session_metadata_from_line},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
-        CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
+        CodexTimestamp, CodexUsageCandidate,
     },
 };
 
@@ -44,39 +43,42 @@ static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
 static SESSION_META_MARKER: LazyLock<LinePrefilter> =
     LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
-const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
+const CODEX_AUTO_REVIEW_DEFAULT_MODEL: &str = "gpt-5";
+// NOTE(2026-09-17, #1753): The server can reroute `codex-auto-review` without a public model release. The rollout omits the resolved model, so a new timeline entry needs routing evidence.
+const CODEX_AUTO_REVIEW_FALLBACKS: &[CodexAutoReviewFallback] = &[
+    CodexAutoReviewFallback::new((2026, 7, 30), "gpt-5.6-luna"),
+    CodexAutoReviewFallback::new((2026, 3, 5), "gpt-5.4"),
+    CodexAutoReviewFallback::new((2026, 2, 5), "gpt-5.3-codex"),
+    CodexAutoReviewFallback::new((2025, 12, 11), "gpt-5.2-codex"),
+    CodexAutoReviewFallback::new((2025, 11, 13), "gpt-5.1-codex"),
+    CodexAutoReviewFallback::new((2025, 9, 15), "gpt-5-codex"),
+    CodexAutoReviewFallback::new((2025, 8, 7), CODEX_AUTO_REVIEW_DEFAULT_MODEL),
+];
 
-static CODEX_AUTO_REVIEW_FALLBACK_MODELS: LazyLock<Vec<CodexAutoReviewFallback<'static>>> =
-    LazyLock::new(|| {
-        serde_json::from_str(CODEX_AUTO_REVIEW_FALLBACKS_JSON)
-            .expect("embedded codex-auto-review fallback snapshot must parse")
-    });
+struct CodexAutoReviewFallback {
+    released_on: (i32, u32, u32),
+    model: &'static str,
+}
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CodexAutoReviewFallback<'a> {
-    released_on: &'a str,
-    model: &'a str,
+impl CodexAutoReviewFallback {
+    const fn new(released_on: (i32, u32, u32), model: &'static str) -> Self {
+        Self { released_on, model }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CodexLineKind {
     Session,
     Headless,
-}
-
-struct CodexExecTimestamps {
-    event: String,
-    model: String,
+    Escaped,
 }
 
 #[derive(Default)]
 struct CodexCompactionUsageState {
-    compacted_response_ids: HashSet<Arc<str>>,
-    pending_usage: HashMap<Arc<str>, CodexPendingUsage>,
-    emitted_response_ids: HashSet<Arc<str>>,
-    latest_usage_response_id: Option<Arc<str>>,
-    /// Whether no snapshot advanced the totals since the latest record.
+    compacted_response_ids: HashSet<String>,
+    pending_usage: HashMap<String, CodexPendingUsage>,
+    emitted_response_ids: HashSet<String>,
+    latest_usage_response_id: Option<String>,
     latest_record_awaits_snapshot: bool,
     recorded_usage_timestamps: Option<HashMap<String, Option<TimestampMs>>>,
 }
@@ -101,212 +103,167 @@ struct CodexTokenCountUsage {
     delta: Option<CodexRawUsage>,
 }
 
-/// History a forked session replayed from its parent.
 #[derive(Clone, Copy)]
 pub(super) struct CodexForkReplay<'a> {
-    /// The parent's usage up to the fork; empty when the parent log is unavailable.
     pub(super) prefix: &'a [CodexRawUsage],
-    /// Codex drops the parent's `token_usage_record` lines when it spawns a
-    /// subagent, so every record in such a child is a request the child sent
-    /// itself and nothing after it can be replayed history. A user fork copies
-    /// them with the rest of the parent's history, so they prove nothing there.
+    // NOTE(2026-11-09, Codex VS Code 0.164.0-alpha.11.1, #2051): Spawned subagents drop inherited `token_usage_record` lines, so the first record ends replay even if the timestamps coincide. User forks copy those lines.
     pub(super) ends_at_usage_record: bool,
 }
 
-/// Tracks how far a forked session's leading events still match the history it
-/// replayed from its parent.
 enum CodexReplayState<'a> {
-    /// Comparing the child's leading usage against the parent's usage prefix.
     MatchingParent {
         prefix: &'a [CodexRawUsage],
         index: usize,
     },
-    /// The parent stream could not anchor the replay, so skip the leading burst
-    /// that Codex rewrote to the fork instant. Carries the last skipped event so
-    /// the run can be followed however long it takes to write.
     SkippingRewrittenBurst(TimestampMs),
-    /// Past the replayed history: every remaining event is the child's own usage.
     Done,
 }
 
-/// Longest pause tolerated inside a burst of replayed usage.
-///
-/// Codex rewrites a replayed history to the fork instant and writes it in one
-/// go, so the burst is dense while the child's own first turn follows a real
-/// pause. Across the fork logs this was measured against, bursts spanned 10 to
-/// 40ms and the pause that followed ran from 5.8 to 15.3 seconds, so a second
-/// sits two orders of magnitude above the one and well below the other.
-///
-/// Bucketing by the recorded second instead would split any burst written across
-/// a second tick, leaving the remainder counted as the child's own usage.
+// NOTE(2026-07-27, #1501): Codex rewrites replay timestamps near the fork instant. Observed bursts spanned 10–40 ms, crossed second boundaries, and preceded a 5.8–15.3 s pause before the child's own usage.
 const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 
-/// Start of the burst of replayed usage at the head of `path`, if it has one.
-///
-/// A session that opens with two usage events written back to back replayed a
-/// history it did not spend; one that pauses between them was recording its own
-/// turns from the start.
-fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
-    let Ok((mut lines, _)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
-        return None;
-    };
-    let mut first: Option<TimestampMs> = None;
-    let mut session_start = None;
+#[derive(Default)]
+struct CodexBurst {
+    session_start: Option<TimestampMs>,
+    first: Option<TimestampMs>,
+    decision: Option<Option<TimestampMs>>,
+}
 
-    loop {
-        let Ok(Some(line)) = lines.next_line() else {
-            return None;
-        };
-        if SESSION_META_MARKER.matches(line)
-            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line)
-            && value.entry_type.as_deref() == Some("session_meta")
-        {
-            if session_start.is_none() {
-                session_start = codex_session_timestamp(value.timestamp.as_ref())
-                    .and_then(|timestamp| parse_ts_timestamp(&timestamp));
-            }
-            continue;
+impl CodexBurst {
+    fn observe(&mut self, timestamp: TimestampMs) {
+        if self.decision.is_some() {
+            return;
         }
-        let Some(CodexLineKind::Session) = codex_line_usage_kind(line) else {
-            continue;
+        let Some(first) = self.first else {
+            self.first = Some(timestamp);
+            return;
         };
-        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) else {
-            continue;
-        };
-        let info = value.payload.as_ref().and_then(|payload| {
-            (value.entry_type.as_deref() == Some("event_msg")
-                && payload.payload_type.as_deref() == Some("token_count"))
-            .then_some(payload.info.as_ref())
-            .flatten()
+        let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+            .contains(&(timestamp.as_millis() - first.as_millis()));
+        // NOTE(2026-10-26, #1971): A child's first request can produce a dense pair after the fork instant. Density alone can mistake it for replay.
+        let starts_at_fork = self.session_start.is_none_or(|start| {
+            first.as_millis().abs_diff(start.as_millis())
+                <= CODEX_REWRITTEN_BURST_PAUSE_MS.unsigned_abs()
         });
-        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
-            continue;
-        };
-        if !info.is_some_and(|info| {
-            info.last_token_usage
-                .as_ref()
-                .or(info.total_token_usage.as_ref())
-                .copied()
-                .map(normalize_codex_raw_usage)
-                .as_ref()
-                .is_some_and(has_codex_token_usage)
-        }) {
-            continue;
-        }
-        let Some(timestamp) = parse_ts_timestamp(&timestamp) else {
-            continue;
-        };
-        match first {
-            None => first = Some(timestamp),
-            Some(first) => {
-                let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                    .contains(&(timestamp.as_millis() - first.as_millis()));
-                // A late first request can also produce a dense pair.
-                let starts_at_fork = session_start.is_none_or(|start| {
-                    first.as_millis().abs_diff(start.as_millis())
-                        <= CODEX_REWRITTEN_BURST_PAUSE_MS as u64
-                });
-                return (is_dense && starts_at_fork).then_some(first);
-            }
-        }
+        self.decision = Some((is_dense && starts_at_fork).then_some(first));
     }
 }
 
+enum CodexPendingReplay {
+    Event(CodexTokenUsageEvent),
+    UsageRecord,
+}
+
 struct CodexReplayFilter<'a> {
-    path: &'a Path,
     state: CodexReplayState<'a>,
     ends_at_usage_record: bool,
+    burst: CodexBurst,
+    pending: Vec<CodexPendingReplay>,
 }
 
 impl CodexReplayFilter<'_> {
     fn observe_usage_record(&mut self) {
         if self.ends_at_usage_record {
-            self.state = CodexReplayState::Done;
+            if self.burst.decision.is_none() && !self.pending.is_empty() {
+                self.pending.push(CodexPendingReplay::UsageRecord);
+            } else {
+                self.state = CodexReplayState::Done;
+            }
         }
     }
 
-    fn visit(
+    fn observe_token_count(
         &mut self,
-        event: CodexTokenUsageEvent,
-        visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    ) -> Result<()> {
-        // Compaction requests have their own response identity. Comparing them
-        // with normal request totals could consume an unrelated replay entry;
-        // copied compactions are deduplicated by ID after parsing instead.
-        if event.response_id.is_some() {
-            return visit(event);
+        timestamp: Option<TimestampMs>,
+        usage: Option<CodexRawUsage>,
+        visit: &mut impl FnMut(CodexTokenUsageEvent),
+    ) {
+        if matches!(self.state, CodexReplayState::Done) && self.pending.is_empty() {
+            return;
         }
-        // Each arm either returns or advances the state toward `Done`, so this
-        // loop only re-runs to apply the event to the state it switched to.
+        if usage.is_some_and(|usage| !normalize_codex_raw_usage(usage).is_empty())
+            && let Some(timestamp) = timestamp
+        {
+            self.burst.observe(timestamp);
+            if self.burst.decision.is_some() {
+                self.flush(visit);
+            }
+        }
+    }
+
+    fn flush(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        for pending in std::mem::take(&mut self.pending) {
+            match pending {
+                CodexPendingReplay::Event(event) => self.visit(event, visit),
+                CodexPendingReplay::UsageRecord => self.observe_usage_record(),
+            }
+        }
+    }
+
+    fn finish(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        self.burst.decision.get_or_insert(None);
+        self.flush(visit);
+    }
+
+    fn visit(&mut self, event: CodexTokenUsageEvent, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        if self.burst.decision.is_none() && !self.pending.is_empty() {
+            self.pending.push(CodexPendingReplay::Event(event));
+            return;
+        }
+        if event.response_id.is_some() {
+            visit(event);
+            return;
+        }
         loop {
             match self.state {
                 CodexReplayState::MatchingParent { prefix, index } => {
-                    let usage = event.raw_usage();
-                    if prefix.get(index) == Some(&usage) {
+                    if prefix.get(index) == Some(&event.raw_usage()) {
                         self.state = CodexReplayState::MatchingParent {
                             prefix,
                             index: index + 1,
                         };
-                        return Ok(());
+                        return;
                     }
-                    // Nothing matched, so the parent stream cannot anchor this
-                    // replay: the log is unavailable, or Codex rewrote the copied
-                    // history. Fall back to the rewritten burst instead.
-                    self.state = (index == 0)
-                        .then(|| detect_rewritten_burst(self.path))
-                        .flatten()
-                        .map_or(
+                    if index == 0 {
+                        let Some(burst) = self.burst.decision else {
+                            self.pending.push(CodexPendingReplay::Event(event));
+                            return;
+                        };
+                        self.state = burst.map_or(
                             CodexReplayState::Done,
                             CodexReplayState::SkippingRewrittenBurst,
                         );
+                    } else {
+                        self.state = CodexReplayState::Done;
+                    }
                 }
                 CodexReplayState::SkippingRewrittenBurst(previous) => {
-                    if let Some(timestamp) = parse_ts_timestamp(&event.timestamp)
-                        && (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                            .contains(&(timestamp.as_millis() - previous.as_millis()))
+                    let timestamp = event.timestamp;
+                    if (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+                        .contains(&(timestamp.as_millis() - previous.as_millis()))
                     {
                         self.state = CodexReplayState::SkippingRewrittenBurst(timestamp);
-                        return Ok(());
+                        return;
                     }
                     self.state = CodexReplayState::Done;
                 }
-                CodexReplayState::Done => return visit(event),
+                CodexReplayState::Done => {
+                    visit(event);
+                    return;
+                }
             }
         }
     }
 }
 
-/// Visits every usage event in a Codex session log.
-///
-/// `fork_replay` carries the usage a forked session copied from its parent so it
-/// is not counted twice, and is `None` for sessions that are not forks.
-#[cfg(test)]
-pub(super) fn visit_codex_session_file(
-    sessions_dir: &Path,
-    path: &Path,
-    fork_replay: Option<CodexForkReplay<'_>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-) -> Result<()> {
-    visit_codex_session_file_with_compaction_history(
-        sessions_dir,
-        path,
-        fork_replay,
-        None,
-        visit,
-        &Diagnostics::new("codex"),
-    )
-}
-
-/// Visits usage while optionally retaining matched compaction identities,
-/// including requests already covered by cumulative usage in a parent log.
 pub(super) fn visit_codex_session_file_with_compaction_history(
     sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> Result<()> {
+) {
     visit_codex_session_file_inner(
         sessions_dir,
         path,
@@ -315,16 +272,16 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
         visit,
         diagnostics,
         None,
-    )
+    );
 }
 
 pub(super) fn visit_codex_session_file_with_diagnostics(
     sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> Result<()> {
+) {
     visit_codex_session_file_inner(
         sessions_dir,
         path,
@@ -333,20 +290,17 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
         visit,
         diagnostics,
         None,
-    )
+    );
 }
 
-/// Visits a rollout that its first line shows is not a fork, and returns that
-/// line's session metadata. A fork is left unvisited: which of its usage it
-/// replayed is known only once every rollout's metadata has been read.
 pub(super) fn visit_codex_session_file_unless_fork(
     sessions_dir: &Path,
     path: &Path,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> Result<CodexSessionMetadata> {
+) -> Option<CodexSessionMetadata> {
     let mut metadata = CodexSessionMetadata::default();
-    visit_codex_session_file_inner(
+    let opened = visit_codex_session_file_inner(
         sessions_dir,
         path,
         None,
@@ -354,8 +308,8 @@ pub(super) fn visit_codex_session_file_unless_fork(
         visit,
         diagnostics,
         Some(&mut metadata),
-    )?;
-    Ok(metadata)
+    );
+    opened.then_some(metadata)
 }
 
 fn visit_codex_session_file_inner(
@@ -363,161 +317,144 @@ fn visit_codex_session_file_inner(
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
-    mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    mut visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
     mut stop_at_fork: Option<&mut CodexSessionMetadata>,
-) -> Result<()> {
-    let (mut lines, opened_path) = match open_rollout_lines(path, READ_BUFFER_SIZE) {
-        Ok(opened) => opened,
-        Err(failed_path) => {
-            UnitError::new(SkipKind::Unreadable, "rollout open failed")
-                .record(&failed_path, diagnostics);
-            return Ok(());
-        }
-    };
+) -> bool {
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
     }
-    let fallback_timestamp = file_modified_timestamp(&opened_path);
+    let mut fallback_timestamp = None;
     let mut replay = CodexReplayFilter {
-        path,
         state: fork_replay.map_or(CodexReplayState::Done, |fork_replay| {
             CodexReplayState::MatchingParent {
                 prefix: fork_replay.prefix,
                 index: 0,
             }
         }),
+        burst: CodexBurst::default(),
+        pending: Vec::new(),
         ends_at_usage_record: fork_replay
             .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
     };
 
-    let mut line_number = 0_u32;
-    loop {
-        let line = match lines.next_line() {
-            Ok(Some(line)) => line,
-            Ok(None) => break,
-            Err(_) => {
-                diagnostics.record(Skip::unit(
-                    path,
-                    SkipKind::ReadInterrupted,
-                    "rollout read failed",
-                ));
-                break;
+    let result = jsonl::read(
+        path,
+        Some(diagnostics),
+        rollout_policy(path, READ_BUFFER_SIZE, true),
+        |current, opened_path, _| {
+            let line = current.raw;
+            let first_metadata = stop_at_fork.take().map(|metadata| {
+                *metadata = session_metadata_from_line(path, line);
+                metadata.clone()
+            });
+            if first_metadata
+                .as_ref()
+                .is_some_and(CodexSessionMetadata::is_fork)
+            {
+                return ControlFlow::Break(());
             }
-        };
-        line_number = line_number.saturating_add(1);
-        if let Some(metadata) = stop_at_fork.take() {
-            *metadata = session_metadata_from_line(path, line);
-            if metadata.is_fork() {
-                return Ok(());
-            }
-        }
-        let Some(line_kind) = codex_line_usage_kind(line) else {
-            continue;
-        };
-        // Type names inside headless data can pass the substring scan; only
-        // the decoded envelope selects session accounting. Every other line
-        // takes the one headless path below, however the session decode went.
-        if matches!(line_kind, CodexLineKind::Session) {
-            match serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) {
-                Ok(value)
-                    if is_session_usage_type(
-                        value.entry_type.as_deref(),
-                        value
-                            .payload
-                            .as_ref()
-                            .and_then(|payload| payload.payload_type.as_deref()),
-                    ) =>
-                {
-                    if value.entry_type.as_deref() == Some("token_usage_record") {
-                        replay.observe_usage_record();
+            let has_metadata = first_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.is_session_meta);
+            if has_metadata
+                || (replay.burst.session_start.is_none()
+                    && !matches!(replay.state, CodexReplayState::Done)
+                    && SESSION_META_MARKER.matches(line))
+            {
+                let metadata =
+                    first_metadata.unwrap_or_else(|| session_metadata_from_line(path, line));
+                if metadata.is_session_meta {
+                    if replay.burst.session_start.is_none() {
+                        replay.burst.session_start = metadata.timestamp;
                     }
-                    visit_codex_session_entry(
-                        &session_id,
-                        value,
-                        &mut state,
-                        &mut |event| replay.visit(event, &mut visit),
-                        &RecordLocation {
-                            path,
-                            line: line_number,
-                            diagnostics,
-                        },
-                    )?;
-                    continue;
+                    return ControlFlow::Continue(());
                 }
-                Ok(_) => {}
+            }
+            let Some(line_kind) = codex_line_usage_kind(line) else {
+                return ControlFlow::Continue(());
+            };
+            let value = match jsonl::parse::<CodexLogEntry<'_>>(line) {
+                Ok(value) => value,
                 Err(error) => {
-                    if !has_headless_envelope(line) {
-                        record_decode_failure(
-                            path,
-                            line_number,
-                            line,
-                            error,
-                            diagnostics,
-                            Some(&mut state.previous_totals),
-                        );
-                        continue;
+                    if line_kind == CodexLineKind::Escaped
+                        && verbatim_line_usage_kind(line).is_none()
+                    {
+                        return ControlFlow::Continue(());
                     }
+                    record_decode_failure(
+                        path,
+                        current.number(),
+                        line,
+                        error,
+                        diagnostics,
+                        Some(&mut state.previous_totals),
+                    );
+                    return ControlFlow::Continue(());
                 }
+            };
+            let location = RecordLocation {
+                path,
+                line: current.number(),
+                diagnostics,
+            };
+            if is_session_usage_type(
+                value.entry_type.as_deref(),
+                value
+                    .payload
+                    .as_ref()
+                    .and_then(|payload| payload.payload_type.as_deref()),
+            ) {
+                if value.entry_type.as_deref() == Some("token_usage_record") {
+                    replay.observe_usage_record();
+                }
+                visit_codex_session_entry(
+                    &session_id,
+                    value,
+                    &mut state,
+                    &mut replay,
+                    &mut visit,
+                    &location,
+                );
+            } else {
+                add_codex_exec_event(
+                    &session_id,
+                    &value,
+                    || {
+                        *fallback_timestamp
+                            .get_or_insert_with(|| file_modified_timestamp(opened_path))
+                    },
+                    &mut state.current_model,
+                    &mut state.current_model_is_fallback,
+                    &mut |event| replay.visit(event, &mut visit),
+                    &location,
+                );
             }
-        }
-        if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(line) {
-            add_codex_exec_event(
-                &session_id,
-                &value,
-                &fallback_timestamp,
-                &mut state.current_model,
-                &mut state.current_model_is_fallback,
-                &mut |event| replay.visit(event, &mut visit),
-                &RecordLocation {
-                    path,
-                    line: line_number,
-                    diagnostics,
-                },
-            )?;
-        } else {
-            add_codex_exec_event_from_value(
-                &session_id,
-                line,
-                &fallback_timestamp,
-                &mut state.current_model,
-                &mut state.current_model_is_fallback,
-                &mut |event| replay.visit(event, &mut visit),
-                &RecordLocation {
-                    path,
-                    line: line_number,
-                    diagnostics,
-                },
-            )?;
-        };
+            ControlFlow::Continue(())
+        },
+    );
+    match result {
+        Err(_) => return false,
+        Ok(Some(())) => return true,
+        Ok(None) => {}
     }
+
+    replay.finish(&mut visit);
 
     if let Some(history) = compaction_history
         && let Some(mut timestamps) = state.compaction_usage.recorded_usage_timestamps
     {
-        // Parent identity survives accounting suppression. A copied child can
-        // retain a compaction pair while its cumulative snapshot is missing.
         timestamps.retain(|response_id, _| {
             state
                 .compaction_usage
                 .compacted_response_ids
-                .contains(response_id.as_str())
+                .contains(response_id)
         });
         history.extend(timestamps);
     }
-
-    Ok(())
-}
-
-fn has_headless_envelope(line: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(line).is_ok_and(|value| {
-        !is_session_usage_type(
-            value.get("type").and_then(Value::as_str),
-            value.pointer("/payload/type").and_then(Value::as_str),
-        )
-    })
+    true
 }
 
 fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
@@ -533,11 +470,12 @@ fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -
 
 fn visit_codex_session_entry(
     session_id: &str,
-    value: CodexSessionLogEntry<'_>,
+    value: CodexLogEntry<'_>,
     state: &mut CodexSessionUsageState,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    replay: &mut CodexReplayFilter<'_>,
+    visit: &mut impl FnMut(CodexTokenUsageEvent),
     location: &RecordLocation<'_>,
-) -> Result<()> {
+) {
     let CodexSessionUsageState {
         previous_totals,
         current_model,
@@ -554,27 +492,22 @@ fn visit_codex_session_entry(
             .map(str::trim)
             .filter(|response_id| !response_id.is_empty())
         else {
-            return Ok(());
+            return;
         };
-        let response_id: Arc<str> = Arc::from(response_id);
+        let response_id = response_id.to_string();
         compaction_usage
             .compacted_response_ids
             .insert(response_id.clone());
         if let Some(pending) = compaction_usage.pending_usage.remove(&response_id)
-            && compaction_usage
-                .emitted_response_ids
-                .insert(Arc::clone(&response_id))
+            && compaction_usage.emitted_response_ids.insert(response_id)
         {
-            visit(CodexTokenUsageEvent {
-                response_id: Some(response_id.to_string()),
-                ..pending.event
-            })?;
+            replay.visit(pending.event, visit);
         }
-        return Ok(());
+        return;
     }
     if entry_type == Some("token_usage_record") {
         let Some(payload) = value.payload.as_ref() else {
-            return Ok(());
+            return;
         };
         let Some(response_id) = payload
             .response_id
@@ -582,56 +515,55 @@ fn visit_codex_session_entry(
             .map(str::trim)
             .filter(|response_id| !response_id.is_empty())
         else {
-            return Ok(());
+            return;
         };
-        if compaction_usage.emitted_response_ids.contains(response_id) {
-            return Ok(());
+        let response_id = response_id.to_string();
+        if compaction_usage.emitted_response_ids.contains(&response_id) {
+            return;
         }
         let raw_usage = match payload.usage {
-            CodexUsageCandidate::Missing => return Ok(()),
+            CodexUsageCandidate::Missing => return,
             CodexUsageCandidate::Malformed => {
-                location.invalid_usage("compaction usage did not decode");
-                return Ok(());
+                location.invalid_usage("field `payload.usage` did not decode");
+                return;
             }
             CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
         };
-        let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
-            location.invalid_timestamp();
-            return Ok(());
+        if payload.thread_token_usage == CodexUsageCandidate::Malformed {
+            location.invalid_usage("field `payload.thread_token_usage` did not decode");
+            return;
+        }
+        let Some((timestamp, last_activity)) = codex_usage_timestamp(value.timestamp.as_ref())
+        else {
+            location.rejected_timestamp(value.timestamp.as_ref());
+            return;
         };
-        if raw_usage.input_tokens == 0
-            && raw_usage.cached_input_tokens == 0
-            && raw_usage.cache_creation_tokens == 0
-            && raw_usage.output_tokens == 0
-            && raw_usage.reasoning_output_tokens == 0
-            && raw_usage.total_tokens == 0
-        {
-            return Ok(());
+        if raw_usage.is_empty() {
+            return;
         }
 
         if let Some(timestamps) = compaction_usage.recorded_usage_timestamps.as_mut() {
             timestamps
-                .entry(response_id.to_owned())
-                .or_insert_with(|| parse_ts_timestamp(&timestamp));
+                .entry(response_id.clone())
+                .or_insert(Some(timestamp));
         }
 
         let parsed_model = codex_model_from_payload(payload);
         let model_was_inferred = parsed_model.is_none();
-        // A request record can name a different model, or never match a
-        // compaction. Neither case changes the surrounding turn's model.
         let mut request_model = current_model.clone();
         let mut request_model_is_fallback = *current_model_is_fallback;
         let (model, is_fallback_model) = resolve_codex_usage_model(
             parsed_model,
-            &timestamp,
+            timestamp,
             &mut request_model,
             &mut request_model_is_fallback,
         );
         let event = CodexTokenUsageEvent {
             session_id: session_id.to_string(),
-            response_id: None,
+            response_id: Some(response_id.clone()),
             record_response_id: None,
             timestamp,
+            last_activity,
             model,
             input_tokens: raw_usage.input_tokens,
             cached_input_tokens: raw_usage.cached_input_tokens,
@@ -643,22 +575,15 @@ fn visit_codex_session_entry(
             service_tier: *current_service_tier,
         };
 
-        let response_id: Arc<str> = Arc::from(response_id);
-        compaction_usage.latest_usage_response_id = Some(Arc::clone(&response_id));
+        compaction_usage.latest_usage_response_id = Some(response_id.clone());
         compaction_usage.latest_record_awaits_snapshot = true;
 
         if compaction_usage
             .compacted_response_ids
             .contains(&response_id)
         {
-            if compaction_usage
-                .emitted_response_ids
-                .insert(Arc::clone(&response_id))
-            {
-                visit(CodexTokenUsageEvent {
-                    response_id: Some(response_id.to_string()),
-                    ..event
-                })?;
+            if compaction_usage.emitted_response_ids.insert(response_id) {
+                replay.visit(event, visit);
             }
         } else {
             compaction_usage
@@ -666,75 +591,84 @@ fn visit_codex_session_entry(
                 .entry(response_id)
                 .or_insert(CodexPendingUsage {
                     event,
-                    thread_token_usage: payload.thread_token_usage.map(normalize_codex_raw_usage),
+                    thread_token_usage: payload
+                        .thread_token_usage
+                        .decoded()
+                        .map(normalize_codex_raw_usage),
                 });
         }
-        return Ok(());
+        return;
     }
     if entry_type == Some("turn_context") {
         if let Some(model) = value.payload.as_ref().and_then(codex_model_from_payload) {
             *current_model = Some(model);
             *current_model_is_fallback = false;
         }
-        return Ok(());
+        return;
     }
     if entry_type != Some("event_msg") {
-        return Ok(());
+        return;
     }
     let Some(payload) = value.payload.as_ref() else {
-        return Ok(());
+        return;
     };
     if payload.payload_type.as_deref() == Some("thread_settings_applied") {
         if codex_session_timestamp(value.timestamp.as_ref()).is_none() {
-            return Ok(());
+            return;
         }
-        // A settings event that carries no `service_tier` at all says nothing
-        // about the tier, so the previous one stands. Codex emits such events
-        // for auto-review threads. A tier that is present but unrecognized is
-        // different: it means the tier changed to something unknown, so the
-        // stale value must not be inherited.
+        // NOTE(2026-07-26, Codex CLI 0.144.0, #1438): Auto-review rollouts can emit `thread_settings_applied` without `service_tier`. Keep the last recorded tier when that key is absent.
         if let Some(recorded) = payload
             .thread_settings
             .as_ref()
             .and_then(|settings| settings.service_tier.as_deref())
         {
-            *current_service_tier = codex_service_tier(recorded);
+            *current_service_tier = CodexServiceTier::from_codex_name(recorded);
         }
-        return Ok(());
+        return;
     }
     if payload.payload_type.as_deref() != Some("token_count") {
-        return Ok(());
+        return;
     }
-    // Rejected timestamps must not move this usage into the next cumulative delta.
     let info = payload.info.as_ref();
+    if let Some(field) = info.and_then(malformed_token_count_field) {
+        codex_token_count_usage(info, previous_totals);
+        location.invalid_usage(field);
+        return;
+    }
+    let parsed_timestamp = codex_usage_timestamp(value.timestamp.as_ref());
+    replay.observe_token_count(
+        parsed_timestamp.as_ref().map(|(timestamp, _)| *timestamp),
+        info.and_then(|info| {
+            info.last_token_usage
+                .decoded()
+                .or(info.total_token_usage.decoded())
+        }),
+        visit,
+    );
     let CodexTokenCountUsage {
         total_usage,
         cumulative_advanced,
         delta,
     } = codex_token_count_usage(info, previous_totals);
-    let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
-        if info
-            .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
-        {
-            location.invalid_timestamp();
-        }
-        return Ok(());
-    };
-    let Some(raw_usage) = delta else {
-        return Ok(());
-    };
-    if !has_codex_token_usage(&raw_usage) {
-        return Ok(());
-    }
-
-    // Local compaction emits an advancing token_count between the response
-    // record and its marker. Remote v2 compaction omits that advance, so only
-    // the latter needs an extra event. Matching the latest response keeps an
-    // unrelated request with identical token counts from consuming it.
-    // Codex writes every request's record just before its token_count, so the
-    // consumed record also names the request this token_count reports.
     let record_awaits_snapshot =
         cumulative_advanced && std::mem::take(&mut compaction_usage.latest_record_awaits_snapshot);
+    let Some((timestamp, last_activity)) = parsed_timestamp else {
+        if info.is_some_and(|info| {
+            info.last_token_usage != CodexUsageCandidate::Missing
+                || info.total_token_usage != CodexUsageCandidate::Missing
+        }) {
+            location.rejected_timestamp(value.timestamp.as_ref());
+        }
+        return;
+    };
+    let Some(raw_usage) = delta else {
+        return;
+    };
+    if raw_usage.is_empty() {
+        return;
+    }
+
+    // NOTE(2026-10-02, #1821): Local compaction emits an advancing `token_count` between its response record and compaction marker. Remote v2 omits that snapshot, so its usage can be missing from the cumulative counts.
     let mut record_response_id = None;
     if cumulative_advanced
         && let Some(response_id) = compaction_usage.latest_usage_response_id.as_ref()
@@ -748,116 +682,66 @@ fn visit_codex_session_entry(
                     )
             })
     {
+        record_response_id = record_awaits_snapshot.then(|| response_id.as_str().into());
         compaction_usage.pending_usage.remove(response_id);
         compaction_usage
             .emitted_response_ids
-            .insert(Arc::clone(response_id));
-        record_response_id = record_awaits_snapshot.then(|| Arc::clone(response_id));
+            .insert(response_id.clone());
     }
 
     let parsed_model =
         codex_model_from_payload(payload).or_else(|| info.and_then(codex_model_from_info));
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
-        &timestamp,
+        timestamp,
         current_model,
         current_model_is_fallback,
     );
 
-    visit(CodexTokenUsageEvent {
-        session_id: session_id.to_string(),
-        response_id: None,
-        record_response_id,
-        timestamp,
-        model,
-        input_tokens: raw_usage.input_tokens,
-        cached_input_tokens: raw_usage.cached_input_tokens,
-        cache_creation_tokens: raw_usage.cache_creation_tokens,
-        output_tokens: raw_usage.output_tokens,
-        reasoning_output_tokens: raw_usage.reasoning_output_tokens,
-        total_tokens: raw_usage.total_tokens,
-        is_fallback_model,
-        service_tier: *current_service_tier,
-    })
+    replay.visit(
+        CodexTokenUsageEvent {
+            session_id: session_id.to_string(),
+            response_id: None,
+            record_response_id,
+            timestamp,
+            last_activity,
+            model,
+            input_tokens: raw_usage.input_tokens,
+            cached_input_tokens: raw_usage.cached_input_tokens,
+            cache_creation_tokens: raw_usage.cache_creation_tokens,
+            output_tokens: raw_usage.output_tokens,
+            reasoning_output_tokens: raw_usage.reasoning_output_tokens,
+            total_tokens: raw_usage.total_tokens,
+            is_fallback_model,
+            service_tier: *current_service_tier,
+        },
+        visit,
+    )
 }
 
 fn add_codex_exec_event(
     session_id: &str,
     value: &CodexLogEntry<'_>,
-    fallback_timestamp: &str,
+    fallback_timestamp: impl FnOnce() -> TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: &mut impl FnMut(CodexTokenUsageEvent),
     location: &RecordLocation<'_>,
-) -> Result<()> {
+) {
     let raw_usage = match normalize_headless_codex_usage(value) {
         Ok(Some(raw_usage)) => raw_usage,
-        Ok(None) => return Ok(()),
+        Ok(None) => return,
         Err(()) => {
             location.invalid_usage("headless usage did not decode");
-            return Ok(());
+            return;
         }
     };
     let parsed_model = codex_model_from_result(value);
-    let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result(value).unwrap_or_else(|| fallback_timestamp.to_string()),
-        model: codex_model_timestamp_from_result(value)
-            .unwrap_or_else(|| fallback_timestamp.to_string()),
-    };
     visit_codex_exec_usage_event(
         session_id,
         raw_usage,
         parsed_model,
-        timestamps,
-        current_model,
-        current_model_is_fallback,
-        visit,
-    )
-}
-
-fn add_codex_exec_event_from_value(
-    session_id: &str,
-    line: &[u8],
-    fallback_timestamp: &str,
-    current_model: &mut Option<String>,
-    current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    location: &RecordLocation<'_>,
-) -> Result<()> {
-    let value = match serde_json::from_slice::<Value>(line) {
-        Ok(value) => value,
-        Err(error) => {
-            record_decode_failure(
-                location.path,
-                location.line,
-                line,
-                error,
-                location.diagnostics,
-                None,
-            );
-            return Ok(());
-        }
-    };
-    let raw_usage = match normalize_headless_codex_usage_value(&value) {
-        Ok(Some(raw_usage)) => raw_usage,
-        Ok(None) => return Ok(()),
-        Err(()) => {
-            location.invalid_usage("headless usage did not decode");
-            return Ok(());
-        }
-    };
-    let parsed_model = codex_model_from_result_value(&value);
-    let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result_value(&value)
-            .unwrap_or_else(|| fallback_timestamp.to_string()),
-        model: codex_model_timestamp_from_result_value(&value)
-            .unwrap_or_else(|| fallback_timestamp.to_string()),
-    };
-    visit_codex_exec_usage_event(
-        session_id,
-        raw_usage,
-        parsed_model,
-        timestamps,
+        codex_timestamp_from_result(value).unwrap_or_else(fallback_timestamp),
         current_model,
         current_model_is_fallback,
         visit,
@@ -868,15 +752,15 @@ fn visit_codex_exec_usage_event(
     session_id: &str,
     raw_usage: CodexRawUsage,
     parsed_model: Option<String>,
-    timestamps: CodexExecTimestamps,
+    timestamp: TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-) -> Result<()> {
+    visit: &mut impl FnMut(CodexTokenUsageEvent),
+) {
     let raw_usage = normalize_codex_raw_usage(raw_usage);
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
-        &timestamps.model,
+        timestamp,
         current_model,
         current_model_is_fallback,
     );
@@ -884,7 +768,8 @@ fn visit_codex_exec_usage_event(
         session_id: session_id.to_string(),
         response_id: None,
         record_response_id: None,
-        timestamp: timestamps.event,
+        timestamp,
+        last_activity: crate::format_rfc3339_millis(timestamp),
         model,
         input_tokens: raw_usage.input_tokens,
         cached_input_tokens: raw_usage.cached_input_tokens,
@@ -897,29 +782,11 @@ fn visit_codex_exec_usage_event(
     })
 }
 
-fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
-    match value {
-        // Both spellings mean non-priority pricing and occur in the same Codex
-        // version on the same day; which one is written depends on the client
-        // (Codex Desktop writes "standard"), not on the CLI version.
-        "default" | "standard" => Some(CodexServiceTier::Standard),
-        "fast" | "priority" => Some(CodexServiceTier::Fast),
-        "flex" => Some(CodexServiceTier::Flex),
-        "ultrafast" => Some(CodexServiceTier::Ultrafast),
-        _ => None,
-    }
-}
-
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
-    if !ESCAPED_USAGE_MARKERS.matches_escaped(line) {
-        return verbatim_line_usage_kind(line);
-    }
-    match serde_json::from_slice::<serde_json::Value>(line)
-        .ok()
-        .and_then(|value| serde_json::to_vec(&value).ok())
-    {
-        Some(canonical) => verbatim_line_usage_kind(&canonical),
-        None => verbatim_line_usage_kind(line),
+    if ESCAPED_USAGE_MARKERS.matches_escaped(line) {
+        Some(CodexLineKind::Escaped)
+    } else {
+        verbatim_line_usage_kind(line)
     }
 }
 
@@ -1027,111 +894,51 @@ fn codex_session_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String>
             (!text.is_empty()).then(|| text.to_string())
         }
         CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
+        CodexTimestamp::Invalid => None,
     }
 }
 
-fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
-    let timestamp = codex_session_timestamp(value)?;
-    parse_ts_timestamp(&timestamp)?;
-    Some(timestamp)
-}
-
-fn parsed_model_is_missing(
-    model: &Option<String>,
-    current_model: &Option<String>,
-    current_model_is_fallback: bool,
-) -> bool {
-    model.is_some() && current_model.is_some() && current_model_is_fallback
+fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<(TimestampMs, String)> {
+    let instant = codex_timestamp_instant(value)?;
+    let raw = match value? {
+        CodexTimestamp::String(text) => text.trim().to_string(),
+        CodexTimestamp::Number(_) => crate::format_rfc3339_millis(instant),
+        CodexTimestamp::Invalid => return None,
+    };
+    Some((instant, raw))
 }
 
 fn resolve_codex_usage_model(
     parsed_model: Option<String>,
-    timestamp: &str,
+    timestamp: TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
-) -> (Option<String>, bool) {
-    if let Some(model) = parsed_model.as_ref() {
-        *current_model = Some(model.clone());
+) -> (String, bool) {
+    if let Some(model) = parsed_model {
+        *current_model = Some(model);
         *current_model_is_fallback = false;
     }
-    let mut is_fallback_model = false;
-    let model = parsed_model.or_else(|| current_model.clone()).or_else(|| {
-        is_fallback_model = true;
+    let model = current_model.get_or_insert_with(|| {
         *current_model_is_fallback = true;
-        *current_model = Some("gpt-5".to_string());
-        current_model.clone()
+        "gpt-5".to_string()
     });
-    if parsed_model_is_missing(&model, current_model, *current_model_is_fallback) {
-        is_fallback_model = true;
+    match codex_log_model_fallback(model, timestamp) {
+        Some(fallback) => (fallback.to_string(), true),
+        None => (model.clone(), *current_model_is_fallback),
     }
-    let model = model.map(|model| {
-        codex_log_model_fallback(&model, timestamp)
-            .map(|fallback| {
-                is_fallback_model = true;
-                fallback.to_string()
-            })
-            .unwrap_or(model)
-    });
-    (model, is_fallback_model)
 }
 
-fn codex_log_model_fallback(model: &str, timestamp: &str) -> Option<&'static str> {
+fn codex_log_model_fallback(model: &str, timestamp: TimestampMs) -> Option<&'static str> {
     if model != CODEX_AUTO_REVIEW_MODEL {
         return None;
     }
-    let Some(date) = codex_timestamp_date(timestamp) else {
-        return Some("gpt-5");
-    };
-    Some(
-        codex_auto_review_fallback_models()
-            .iter()
-            .find_map(|fallback| (date >= fallback.released_on).then_some(fallback.model))
-            .unwrap_or("gpt-5"),
-    )
-}
-
-fn codex_auto_review_fallback_models() -> &'static [CodexAutoReviewFallback<'static>] {
-    CODEX_AUTO_REVIEW_FALLBACK_MODELS.as_slice()
-}
-
-fn codex_timestamp_date(timestamp: &str) -> Option<&str> {
-    let date = timestamp.get(..10)?;
-    let bytes = date.as_bytes();
-    if !(bytes.len() == 10
-        && bytes[0..4].iter().all(u8::is_ascii_digit)
-        && bytes[4] == b'-'
-        && bytes[5..7].iter().all(u8::is_ascii_digit)
-        && bytes[7] == b'-'
-        && bytes[8..10].iter().all(u8::is_ascii_digit))
-    {
-        return None;
-    }
-    let year = codex_date_part(&bytes[0..4])?;
-    let month = codex_date_part(&bytes[5..7])?;
-    let day = codex_date_part(&bytes[8..10])?;
-    let max_day = codex_days_in_month(year, month)?;
-    (day >= 1 && day <= max_day).then_some(date)
-}
-
-fn codex_date_part(bytes: &[u8]) -> Option<u16> {
-    bytes.iter().try_fold(0u16, |value, byte| {
-        let digit = byte.checked_sub(b'0')?;
-        (digit <= 9).then_some(value * 10 + u16::from(digit))
-    })
-}
-
-fn codex_days_in_month(year: u16, month: u16) -> Option<u16> {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => Some(31),
-        4 | 6 | 9 | 11 => Some(30),
-        2 if codex_is_leap_year(year) => Some(29),
-        2 => Some(28),
-        _ => None,
-    }
-}
-
-fn codex_is_leap_year(year: u16) -> bool {
-    year.is_multiple_of(4) && !year.is_multiple_of(100) || year.is_multiple_of(400)
+    let parts = timestamp.utc_parts();
+    let date = (parts.year, parts.month, parts.day);
+    let routed = CODEX_AUTO_REVIEW_FALLBACKS
+        .iter()
+        .filter(|fallback| fallback.released_on <= date)
+        .max_by_key(|fallback| fallback.released_on);
+    Some(routed.map_or(CODEX_AUTO_REVIEW_DEFAULT_MODEL, |fallback| fallback.model))
 }
 
 pub(super) fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
@@ -1207,36 +1014,8 @@ fn codex_model_from_parts(
         .or_else(|| metadata.and_then(|metadata| non_empty_cow_string(metadata.model.as_ref())))
 }
 
-fn codex_model_from_result_value(value: &Value) -> Option<String> {
-    codex_model_from_value_fields(value)
-        .or_else(|| value.get("data").and_then(codex_model_from_value_fields))
-        .or_else(|| value.get("result").and_then(codex_model_from_value_fields))
-        .or_else(|| {
-            value
-                .get("response")
-                .and_then(codex_model_from_value_fields)
-        })
-}
-
-fn codex_model_from_value_fields(value: &Value) -> Option<String> {
-    non_empty_value_string(value.get("model"))
-        .or_else(|| non_empty_value_string(value.get("model_name")))
-        .or_else(|| {
-            value
-                .get("metadata")
-                .and_then(|metadata| non_empty_value_string(metadata.get("model")))
-        })
-}
-
 fn non_empty_cow_string(value: Option<&Cow<'_, str>>) -> Option<String> {
     value.and_then(|text| {
-        let text = text.trim();
-        (!text.is_empty()).then(|| text.to_string())
-    })
-}
-
-fn non_empty_value_string(value: Option<&Value>) -> Option<String> {
-    value.and_then(Value::as_str).and_then(|text| {
         let text = text.trim();
         (!text.is_empty()).then(|| text.to_string())
     })
@@ -1260,21 +1039,6 @@ fn usage_from_result(value: &CodexLogEntry<'_>) -> CodexUsageCandidate {
     ])
 }
 
-fn usage_from_result_value(value: &Value) -> CodexUsageCandidate {
-    first_decoded_usage(
-        [
-            value.get("usage"),
-            value.get("data").and_then(|data| data.get("usage")),
-            value.get("result").and_then(|result| result.get("usage")),
-            value
-                .get("response")
-                .and_then(|response| response.get("usage")),
-        ]
-        .into_iter()
-        .map(usage_from_value),
-    )
-}
-
 fn first_decoded_usage(
     candidates: impl IntoIterator<Item = CodexUsageCandidate>,
 ) -> CodexUsageCandidate {
@@ -1293,20 +1057,10 @@ fn first_decoded_usage(
     }
 }
 
-fn usage_from_value(value: Option<&Value>) -> CodexUsageCandidate {
-    match value {
-        None | Some(Value::Null) => CodexUsageCandidate::Missing,
-        Some(value @ Value::Object(_)) => serde_json::from_value(value.clone())
-            .map(CodexUsageCandidate::Decoded)
-            .unwrap_or(CodexUsageCandidate::Malformed),
-        Some(_) => CodexUsageCandidate::Malformed,
-    }
-}
-
-fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
-    normalize_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| normalize_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| normalize_codex_timestamp(value.created_at_camel.as_ref()))
+fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<TimestampMs> {
+    codex_timestamp_instant(value.timestamp.as_ref())
+        .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
+        .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
         .or_else(|| {
             value
                 .data
@@ -1327,187 +1081,35 @@ fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
         })
 }
 
-fn codex_model_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
-    raw_or_normalized_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at_camel.as_ref()))
-        .or_else(|| {
-            value
-                .data
-                .as_ref()
-                .and_then(raw_or_normalized_result_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .result
-                .as_ref()
-                .and_then(raw_or_normalized_result_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .response
-                .as_ref()
-                .and_then(raw_or_normalized_result_fields_timestamp)
-        })
-}
-
-fn codex_timestamp_from_result_value(value: &Value) -> Option<String> {
-    normalize_value_fields_timestamp(value)
-        .or_else(|| value.get("data").and_then(normalize_value_fields_timestamp))
-        .or_else(|| {
-            value
-                .get("result")
-                .and_then(normalize_value_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .get("response")
-                .and_then(normalize_value_fields_timestamp)
-        })
-}
-
-fn codex_model_timestamp_from_result_value(value: &Value) -> Option<String> {
-    raw_or_normalized_value_fields_timestamp(value)
-        .or_else(|| {
-            value
-                .get("data")
-                .and_then(raw_or_normalized_value_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .get("result")
-                .and_then(raw_or_normalized_value_fields_timestamp)
-        })
-        .or_else(|| {
-            value
-                .get("response")
-                .and_then(raw_or_normalized_value_fields_timestamp)
-        })
-}
-
-fn normalize_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<String> {
-    normalize_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| normalize_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| normalize_codex_timestamp(value.created_at_camel.as_ref()))
-}
-
-fn raw_or_normalized_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<String> {
-    raw_or_normalized_codex_timestamp(value.timestamp.as_ref())
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at.as_ref()))
-        .or_else(|| raw_or_normalized_codex_timestamp(value.created_at_camel.as_ref()))
-}
-
-fn normalize_value_fields_timestamp(value: &Value) -> Option<String> {
-    normalize_value_timestamp(value.get("timestamp"))
-        .or_else(|| normalize_value_timestamp(value.get("created_at")))
-        .or_else(|| normalize_value_timestamp(value.get("createdAt")))
-}
-
-fn raw_or_normalized_value_fields_timestamp(value: &Value) -> Option<String> {
-    raw_or_normalized_value_timestamp(value.get("timestamp"))
-        .or_else(|| raw_or_normalized_value_timestamp(value.get("created_at")))
-        .or_else(|| raw_or_normalized_value_timestamp(value.get("createdAt")))
-}
-
-fn raw_or_normalized_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
-    match value? {
-        CodexTimestamp::String(text) => {
-            let text = text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            if codex_timestamp_date(text).is_some() {
-                return Some(text.to_string());
-            }
-            // Malformed string: try parsing-based normalization. If that also
-            // fails, return None so the caller's `or_else` chain can try the
-            // next available timestamp field instead of locking in a string
-            // that downstream date resolution will reject.
-            normalize_codex_timestamp(value)
-        }
-        CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
-    }
+fn normalize_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<TimestampMs> {
+    codex_timestamp_instant(value.timestamp.as_ref())
+        .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
+        .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
 }
 
 fn normalize_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
+    codex_timestamp_instant(value).map(crate::format_rfc3339_millis)
+}
+
+pub(super) fn codex_timestamp_instant(value: Option<&CodexTimestamp<'_>>) -> Option<TimestampMs> {
     match value? {
-        CodexTimestamp::String(text) => {
-            let text = text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            crate::parse_ts_timestamp(text).map(crate::format_rfc3339_millis)
-        }
+        CodexTimestamp::String(text) => parse_ts_timestamp(text.trim()),
+        CodexTimestamp::Invalid => None,
         CodexTimestamp::Number(raw) => {
             let millis = if *raw > 10_000_000_000 {
                 *raw
             } else {
                 raw.checked_mul(1_000)?
             };
-            Some(crate::format_rfc3339_millis(TimestampMs::from_millis(
-                millis.min(i64::MAX as u64) as i64,
-            )))
+            TimestampMs::from_instant_millis(i64::try_from(millis).ok()?)
         }
     }
-}
-
-fn raw_or_normalized_value_timestamp(value: Option<&Value>) -> Option<String> {
-    let value = value?;
-    if let Some(text) = value.as_str() {
-        let text = text.trim();
-        if text.is_empty() {
-            return None;
-        }
-        if codex_timestamp_date(text).is_some() {
-            return Some(text.to_string());
-        }
-        // Malformed string: try parsing-based normalization. If that also
-        // fails, return None so the caller's `or_else` chain can try the
-        // next available timestamp field instead of locking in a string
-        // that downstream date resolution will reject.
-        return normalize_value_timestamp(Some(value));
-    }
-    normalize_value_timestamp(Some(value))
-}
-
-/// Reads a Codex timestamp field that can hold an RFC3339 string or an epoch
-/// number, using the same normalization as session events.
-pub(super) fn codex_value_timestamp(value: Option<&Value>) -> Option<TimestampMs> {
-    normalize_value_timestamp(value)
-        .as_deref()
-        .and_then(crate::parse_ts_timestamp)
-}
-
-fn normalize_value_timestamp(value: Option<&Value>) -> Option<String> {
-    let value = value?;
-    if let Some(text) = value.as_str() {
-        let text = text.trim();
-        if text.is_empty() {
-            return None;
-        }
-        return crate::parse_ts_timestamp(text).map(crate::format_rfc3339_millis);
-    }
-    let raw = value.as_u64()?;
-    let millis = if raw > 10_000_000_000 {
-        raw
-    } else {
-        raw.checked_mul(1_000)?
-    };
-    Some(crate::format_rfc3339_millis(TimestampMs::from_millis(
-        millis.min(i64::MAX as u64) as i64,
-    )))
 }
 
 fn normalize_headless_codex_usage(
     value: &CodexLogEntry<'_>,
 ) -> std::result::Result<Option<CodexRawUsage>, ()> {
     normalize_headless_usage_candidate(usage_from_result(value))
-}
-
-fn normalize_headless_codex_usage_value(
-    value: &Value,
-) -> std::result::Result<Option<CodexRawUsage>, ()> {
-    normalize_headless_usage_candidate(usage_from_result_value(value))
 }
 
 fn normalize_headless_usage_candidate(
@@ -1518,29 +1120,24 @@ fn normalize_headless_usage_candidate(
         CodexUsageCandidate::Malformed => return Err(()),
         CodexUsageCandidate::Missing => return Ok(None),
     };
-    if usage.input_tokens == 0
-        && usage.cached_input_tokens == 0
-        && usage.cache_creation_tokens == 0
-        && usage.output_tokens == 0
-        && usage.reasoning_output_tokens == 0
-        && usage.total_tokens == 0
-    {
+    if usage.is_empty() {
         return Ok(None);
     }
     Ok(Some(usage))
 }
 
-fn file_modified_timestamp(path: &Path) -> String {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| {
-            crate::format_rfc3339_millis(TimestampMs::from_millis(
-                duration.as_millis().min(i64::MAX as u128) as i64,
-            ))
-        })
-        .unwrap_or_else(|| crate::format_rfc3339_millis(TimestampMs::UNIX_EPOCH))
+fn file_modified_timestamp(path: &Path) -> TimestampMs {
+    ccusage_adapter_common::timestamps::file_mtime(path).unwrap_or(TimestampMs::UNIX_EPOCH)
+}
+
+fn malformed_token_count_field(info: &CodexInfo<'_>) -> Option<&'static str> {
+    if info.last_token_usage == CodexUsageCandidate::Malformed {
+        Some("field `payload.info.last_token_usage` did not decode")
+    } else if info.total_token_usage == CodexUsageCandidate::Malformed {
+        Some("field `payload.info.total_token_usage` did not decode")
+    } else {
+        None
+    }
 }
 
 fn subtract_codex_raw_usage(
@@ -1573,12 +1170,12 @@ fn codex_token_count_usage(
     info: Option<&CodexInfo<'_>>,
     previous_totals: &mut Option<CodexRawUsage>,
 ) -> CodexTokenCountUsage {
-    let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
+    let total_usage = info.and_then(|info| info.total_token_usage.decoded());
     let cumulative_advanced = total_usage
         .as_ref()
         .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
     let raw_usage = info
-        .and_then(|info| info.last_token_usage.as_ref().copied())
+        .and_then(|info| info.last_token_usage.decoded())
         .filter(|_| cumulative_advanced)
         .or_else(|| {
             total_usage
@@ -1595,14 +1192,6 @@ fn codex_token_count_usage(
     }
 }
 
-fn has_codex_token_usage(usage: &CodexRawUsage) -> bool {
-    usage.input_tokens != 0
-        || usage.cached_input_tokens != 0
-        || usage.cache_creation_tokens != 0
-        || usage.output_tokens != 0
-        || usage.reasoning_output_tokens != 0
-}
-
 fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage.cached_input_tokens = usage.cached_input_tokens.min(usage.input_tokens);
     usage.cache_creation_tokens = usage
@@ -1611,9 +1200,7 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage
 }
 
-/// Classifies a rollout line that did not decode like every other JSONL
-/// source does. A rejected `token_count` still advances the cumulative
-/// baseline, so the next record's delta does not count its tokens again.
+// NOTE(2026-11-15): A rejected `token_count` can still carry a usable cumulative total. Advance the baseline or the next dated delta can recount its tokens.
 fn record_decode_failure(
     path: &Path,
     line: u32,
@@ -1663,7 +1250,11 @@ impl RecordLocation<'_> {
         ));
     }
 
-    fn invalid_timestamp(&self) {
+    fn rejected_timestamp(&self, timestamp: Option<&CodexTimestamp<'_>>) {
+        if matches!(timestamp, Some(CodexTimestamp::Invalid)) {
+            self.invalid_usage("field `timestamp` did not decode");
+            return;
+        }
         self.diagnostics.record(Skip::record(
             self.path,
             self.line,
@@ -1681,6 +1272,35 @@ mod tests {
     use std::assert_matches;
 
     #[test]
+    fn usage_with_only_a_total_is_empty_in_every_record_kind() {
+        let total_only = json!({"total_tokens": 50});
+        for record in [
+            json!({"timestamp": "2026-01-02T00:00:00Z", "type": "event_msg", "payload": {
+                "type": "token_count", "info": {"model": "gpt-5", "last_token_usage": total_only},
+            }}),
+            json!({"timestamp": "2026-01-02T00:00:00Z", "type": "turn.completed", "usage": total_only}),
+        ] {
+            let fixture = fs_fixture!({ "session.jsonl": record.to_string() });
+            assert!(
+                crate::test_support::rollout_events(fixture.root()).is_empty(),
+                "{record}"
+            );
+        }
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({"type": "turn_context", "payload": {"model": "gpt-5"}}),
+                json!({"timestamp": "2026-01-02T00:00:00Z", "type": "token_usage_record", "payload": {
+                    "response_id": "response-1", "usage": total_only,
+                }}),
+                json!({"type": "compacted", "payload": {"compaction_response_id": "response-1"}}),
+            ]
+            .map(|line| line.to_string())
+            .join("\n"),
+        });
+        assert!(crate::test_support::rollout_events(fixture.root()).is_empty());
+    }
+
+    #[test]
     fn maps_recorded_service_tier_spellings() {
         for (value, expected) in [
             ("standard", Some(CodexServiceTier::Standard)),
@@ -1692,7 +1312,7 @@ mod tests {
             ("", None),
         ] {
             assert_eq!(
-                codex_service_tier(value),
+                CodexServiceTier::from_codex_name(value),
                 expected,
                 "unexpected tier for {value:?}"
             );
@@ -1729,7 +1349,7 @@ mod tests {
             ].join("\n"),
         });
 
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
@@ -1761,7 +1381,7 @@ mod tests {
                 .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
             let fixture = fs_fixture!({ "headless.jsonl": line });
 
-            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+            let events = crate::test_support::rollout_events(fixture.root());
 
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].input_tokens, 100);
@@ -1791,10 +1411,10 @@ mod tests {
                 .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
             let fixture = fs_fixture!({ "headless.jsonl": line });
 
-            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+            let events = crate::test_support::rollout_events(fixture.root());
 
             assert_eq!(events.len(), 1);
-            assert_eq!(events[0].timestamp, "2026-09-01T00:00:01.000Z");
+            assert_eq!(events[0].last_activity, "2026-09-01T00:00:01.000Z");
             assert_eq!(events[0].input_tokens, 100);
             assert_eq!(events[0].output_tokens, 20);
             assert_eq!(events[0].total_tokens, 120);
@@ -1802,44 +1422,63 @@ mod tests {
     }
 
     #[test]
-    fn typed_and_value_headless_decoders_agree() {
-        let cases = [
-            json!({ "timestamp": "2026-09-01T00:00:01Z", "model": "gpt-5", "usage": { "input_tokens": 10, "output_tokens": 2 } }),
-            json!({ "created_at": 1_788_220_801_u64, "data": { "model_name": " gpt-5-mini ", "usage": { "prompt_tokens": 7, "completion_tokens": 3, "cached_tokens": 4 } } }),
-            json!({ "createdAt": 1_788_220_801_000_u64, "result": { "metadata": { "model": "gpt-5" }, "usage": { "input": 5, "output": 1, "total_tokens": 0 } } }),
-            json!({ "response": { "timestamp": "2026-09-01 00:00:01", "createdAt": "2026-09-01T00:00:02Z", "usage": { "input_tokens": "12", "reasoning_tokens": 3 } } }),
-            json!({ "timestamp": "not a date", "created_at": "2026-09-01T00:00:03Z", "model": "  ", "model_name": "gpt-5" }),
-            json!({ "usage": "broken", "data": { "usage": { "input_tokens": 1 } } }),
-            json!({ "usage": [1, 2], "result": { "usage": null } }),
-            json!({ "usage": { "input_tokens": 0, "output_tokens": 0 } }),
-            json!({ "data": null, "result": 3, "response": "x", "metadata": [] }),
-        ];
-        for case in cases {
-            let line = case.to_string();
-            let typed = serde_json::from_str::<CodexLogEntry<'_>>(&line).unwrap();
-            let value = serde_json::from_str::<Value>(&line).unwrap();
-
-            assert_eq!(
-                normalize_headless_codex_usage(&typed),
-                normalize_headless_codex_usage_value(&value),
-                "{line}"
-            );
-            assert_eq!(
-                codex_model_from_result(&typed),
-                codex_model_from_result_value(&value),
-                "{line}"
-            );
-            assert_eq!(
-                codex_timestamp_from_result(&typed),
-                codex_timestamp_from_result_value(&value),
-                "{line}"
-            );
-            assert_eq!(
-                codex_model_timestamp_from_result(&typed),
-                codex_model_timestamp_from_result_value(&value),
-                "{line}"
-            );
+    fn headless_decoder_recovers_malformed_optional_fields_and_usage() {
+        for line in [
+            r#"{"timestamp":false,"created_at":"2026-09-01T00:00:01Z","model":{},"model_name":"gpt-5-mini","usage":{"input_tokens":10,"output_tokens":2}}"#,
+            r#"{"timestamp":[],"metadata":{"model":false},"data":{"model_name":"gpt-5-mini","createdAt":1788220801000,"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"usage":{"input_tokens":[]},"response":{"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"usage":{"input_tokens":{}},"result":{"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"payload":{"info":{"last_token_usage":{"input_tokens":{}}}},"usage":{"input_tokens":10,"output_tokens":2}}"#,
+            r#"{"metadata":{"model":[]},"response":{"metadata":{"model":{}},"usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        ] {
+            let typed: CodexLogEntry<'_> = serde_json::from_str(line).unwrap();
+            let usage = normalize_headless_codex_usage(&typed).unwrap().unwrap();
+            assert_eq!(usage.input_tokens, 10, "{line}");
+            assert_eq!(usage.output_tokens, 2, "{line}");
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+            let events = crate::test_support::rollout_events(fixture.root());
+            assert_eq!(events.len(), 1, "{line}");
+            assert_eq!(events[0].input_tokens, 10, "{line}");
+            assert_eq!(events[0].output_tokens, 2, "{line}");
         }
+    }
+
+    #[test]
+    fn headless_decoder_keeps_the_last_duplicate_field() {
+        for line in [
+            r#"{"model":"old","model":"gpt-5-mini","usage":{"input_tokens":999},"usage":{"input_tokens":10,"output_tokens":2}}"#,
+            r#"{"data":{"model":"old","model":"gpt-5-mini","usage":{"input_tokens":999,"input_tokens":10,"output_tokens":2}}}"#,
+            r#"{"data":{"usage":{"input_tokens":999}},"data":{"model":"gpt-5-mini","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        ] {
+            let typed: CodexLogEntry<'_> = serde_json::from_str(line).unwrap();
+            assert_eq!(
+                codex_model_from_result(&typed).as_deref(),
+                Some("gpt-5-mini")
+            );
+            assert_eq!(
+                normalize_headless_codex_usage(&typed)
+                    .unwrap()
+                    .unwrap()
+                    .input_tokens,
+                10
+            );
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+            let events = crate::test_support::rollout_events(fixture.root());
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].model, "gpt-5-mini");
+            assert_eq!(events[0].input_tokens, 10);
+        }
+    }
+
+    #[test]
+    fn session_usage_ignores_unrelated_headless_fields() {
+        let fixture = fs_fixture!({
+            "session.jsonl": r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","model":{},"created_at":false,"data":{"model":[]},"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
+        });
+        let events = crate::test_support::rollout_events(fixture.root());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 10);
+        assert_eq!(events[0].model, "gpt-5");
     }
 
     #[test]
@@ -1854,20 +1493,44 @@ mod tests {
     }
 
     #[test]
-    fn loads_codex_auto_review_fallbacks_from_models_dev_snapshot() {
-        let fallbacks = codex_auto_review_fallback_models();
+    fn routes_codex_auto_review_through_models_the_embedded_pricing_knows() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = crate::PricingMap::load_embedded();
 
-        assert_eq!(fallbacks.len(), 7);
-        assert_eq!(fallbacks[0].released_on, "2026-07-30");
-        assert_eq!(fallbacks[0].model, "gpt-5.6-luna");
-        assert!(!fallbacks.iter().any(|fallback| fallback.model == "gpt-5.5"));
-        assert_eq!(fallbacks[6].released_on, "2025-08-07");
-        assert_eq!(fallbacks[6].model, "gpt-5");
+        for fallback in CODEX_AUTO_REVIEW_FALLBACKS {
+            assert!(
+                pricing
+                    .resolve_at(
+                        None,
+                        &[(fallback.model, ccusage_core::pricing::MatchKind::Exact)],
+                        None
+                    )
+                    .is_some(),
+                "{} has no embedded pricing",
+                fallback.model
+            );
+        }
         assert!(
-            fallbacks
-                .windows(2)
-                .all(|window| window[0].released_on > window[1].released_on)
+            !CODEX_AUTO_REVIEW_FALLBACKS
+                .iter()
+                .any(|fallback| fallback.model == "gpt-5.5")
         );
+        for (timestamp, expected) in [
+            ("2025-01-01T00:00:00Z", "gpt-5"),
+            ("2025-09-15T00:00:00Z", "gpt-5-codex"),
+            ("2026-07-29T23:59:59Z", "gpt-5.4"),
+            ("2026-07-30T00:00:00Z", "gpt-5.6-luna"),
+            ("2026-07-30T00:30:00+01:00", "gpt-5.4"),
+        ] {
+            assert_eq!(
+                codex_log_model_fallback(
+                    CODEX_AUTO_REVIEW_MODEL,
+                    parse_ts_timestamp(timestamp).unwrap()
+                ),
+                Some(expected),
+                "{timestamp}"
+            );
+        }
     }
 
     #[test]
@@ -1982,7 +1645,7 @@ mod tests {
             .join("\n"),
         });
 
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 3);
         let compacted_usages = events
@@ -1994,7 +1657,7 @@ mod tests {
         assert_eq!(compacted_usages[0].cached_input_tokens, 280);
         assert_eq!(compacted_usages[0].output_tokens, 20);
         assert_eq!(compacted_usages[0].total_tokens, 320);
-        assert_eq!(compacted_usages[0].model.as_deref(), Some("gpt-reserve"));
+        assert_eq!(compacted_usages[0].model.as_str(), "gpt-reserve");
         assert!(compacted_usages[0].is_fallback_model);
         assert_eq!(compacted_usages[1].input_tokens, 200);
     }
@@ -2013,8 +1676,8 @@ mod tests {
                     r#"{"timestamp":"2026-09-01T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
                 ].join("\n"),
             });
-            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
-            assert_eq!(events.last().unwrap().model.as_deref(), Some("gpt-5"));
+            let events = crate::test_support::rollout_events(fixture.root());
+            assert_eq!(events.last().unwrap().model.as_str(), "gpt-5");
             assert!(!events.last().unwrap().is_fallback_model);
         }
     }
@@ -2099,19 +1762,19 @@ mod tests {
         for (line, kind) in [
             (
                 br#"{"type":"turn\u005fcontext","payload":{}}"#.as_slice(),
-                CodexLineKind::Session,
+                CodexLineKind::Escaped,
             ),
             (
                 br#"{"type":"event_msg","payload":{"type":"token\u005fcount"}}"#.as_slice(),
-                CodexLineKind::Session,
+                CodexLineKind::Escaped,
             ),
             (
                 br#"{"type":"compact\u0065d","payload":{}}"#.as_slice(),
-                CodexLineKind::Session,
+                CodexLineKind::Escaped,
             ),
             (
                 br#"{"type":"turn.completed","us\u0061ge":{"input_tokens":1}}"#.as_slice(),
-                CodexLineKind::Headless,
+                CodexLineKind::Escaped,
             ),
         ] {
             assert_eq!(
@@ -2137,10 +1800,10 @@ mod tests {
                 r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event\u005fmsg","payload":{"type":"token\u005fcount","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
             ].join("\n"),
         });
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
-        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
+        assert_eq!(events[0].model.as_str(), "gpt-5-mini");
     }
 
     #[test]
@@ -2151,10 +1814,10 @@ mod tests {
                 r#"{"timestamp": "2026-09-01T00:00:01Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 100, "output_tokens": 20}}}}"#,
             ].join("\n"),
         });
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
-        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
+        assert_eq!(events[0].model.as_str(), "gpt-5-mini");
     }
     #[test]
     fn counts_compaction_usage_without_changing_cumulative_baseline() {
@@ -2167,7 +1830,7 @@ mod tests {
                 r#"{"timestamp":"2026-09-01T00:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"output_tokens":30}}}}"#,
             ].join("\n"),
         });
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 3);
         assert_eq!(
@@ -2178,7 +1841,7 @@ mod tests {
             [120, 330, 60]
         );
         assert_eq!(events[1].cached_input_tokens, 200);
-        assert_eq!(events[1].model.as_deref(), Some("gpt-5"));
+        assert_eq!(events[1].model.as_str(), "gpt-5");
         assert!(events[1].is_fallback_model);
     }
 }
@@ -2198,10 +1861,9 @@ mod diagnostic_tests {
             fixture.root(),
             &path,
             None,
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         let debug = crate::cli::SharedArgs {
@@ -2232,10 +1894,9 @@ mod diagnostic_tests {
             fixture.root(),
             &path,
             None,
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
         fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
@@ -2263,10 +1924,9 @@ mod diagnostic_tests {
             fixture.root(),
             &path,
             None,
-            |_| Ok(()),
+            |_| {},
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
     }
@@ -2291,10 +1951,9 @@ mod diagnostic_tests {
                 fixture.root(),
                 &path,
                 None,
-                |_| Ok(()),
+                |_| {},
                 &diagnostics,
-            )
-            .unwrap();
+            );
 
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{malformed}");
         }
@@ -2316,21 +1975,150 @@ mod diagnostic_tests {
             None,
             |event| {
                 events.push(event);
-                Ok(())
             },
             &diagnostics,
-        )
-        .unwrap();
+        );
         assert!(events.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
-        // Like every JSONL source, a selected record that does not decode and
-        // carries no usage is listed only under `--debug`.
-        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
-        let _log_level = ccusage_test_support::EnvVarGuard::set("LOG_LEVEL", "1");
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
+        let _log_level = ccusage_test_support::EnvGuard::set("LOG_LEVEL", "1");
         assert!(
             diagnostics
                 .warnings(&crate::cli::SharedArgs::default())
                 .is_empty()
+        );
+    }
+
+    fn session_events(lines: &[&str]) -> (Vec<CodexTokenUsageEvent>, Diagnostics) {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("session.jsonl", lines.join("\n"));
+        let diagnostics = Diagnostics::new("codex");
+        let mut events = Vec::new();
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |event| events.push(event),
+            &diagnostics,
+        );
+        (events, diagnostics)
+    }
+
+    #[test]
+    fn malformed_descriptive_session_fields_keep_the_usage() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"turn_context","timestamp":{},"payload":{"model":"gpt-5.4","metadata":[]}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","model":{},"model_name":7,"metadata":"x","info":{"model":[],"last_token_usage":{"input_tokens":10,"output_tokens":2},"total_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:01Z","payload":{"type":"thread_settings_applied","thread_settings":"fast"}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert_eq!((events[0].input_tokens, events[0].output_tokens), (10, 2));
+        assert_eq!(events[0].model, "gpt-5.4");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
+    }
+
+    #[test]
+    fn session_usage_objects_keep_the_last_value_of_a_repeated_key() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"input_tokens":10,"output_tokens":2}}}}"#,
+            r#"{"type":"token_usage_record","timestamp":"2026-01-02T00:00:01Z","payload":{"response_id":"r","usage":{"input_tokens":999,"input_tokens":20,"output_tokens":3}}}"#,
+            r#"{"type":"compacted","timestamp":"2026-01-02T00:00:02Z","payload":{"compaction_response_id":"r"}}"#,
+        ]);
+        let usage: Vec<_> = events
+            .iter()
+            .map(|event| (event.input_tokens, event.output_tokens))
+            .collect();
+        assert_eq!(usage, [(10, 2), (20, 3)]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn a_malformed_usage_field_is_named_by_its_static_key_path() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":{"x":"SECRET_CANARY"}}}}}"#,
+            r#"{"type":"event_msg","timestamp":{"x":"SECRET_CANARY"},"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#,
+            r#"{"type":"token_usage_record","timestamp":"2026-01-02T00:00:01Z","payload":{"response_id":"r","usage":{"input_tokens":10},"thread_token_usage":{"input_tokens":[]}}}"#,
+        ]);
+        assert!(events.is_empty());
+        let warnings = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 3, "{warnings}");
+        for field in [
+            "payload.info.last_token_usage",
+            "timestamp",
+            "payload.thread_token_usage",
+        ] {
+            assert!(
+                warnings.contains(&format!("field `{field}` did not decode")),
+                "{warnings}"
+            );
+        }
+        assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
+    }
+
+    #[test]
+    fn numeric_timestamps_beyond_the_supported_range_do_not_date_usage() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"event_msg","timestamp":1767312000000000,"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
+        ]);
+        assert!(events.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+
+        let (events, _) = session_events(&[
+            r#"{"type":"turn.completed","timestamp":1767312000000000,"created_at":"2026-01-02T00:00:00Z","usage":{"input_tokens":10,"output_tokens":2}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].timestamp,
+            parse_ts_timestamp("2026-01-02T00:00:00Z").unwrap()
+        );
+    }
+
+    #[test]
+    fn attributes_a_record_only_to_the_snapshot_that_follows_it() {
+        use ccusage_test_support::fs_fixture;
+        use serde_json::json;
+
+        let usage = |input_tokens: u64| json!({"input_tokens": input_tokens, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": input_tokens + 1});
+        let token_count = |timestamp: &str, last: u64, total: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "token_count", "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": usage(last),
+                    "total_token_usage": usage(total),
+                }},
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-11-01T09:00:00.000Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_unmatched", "usage": usage(10)},
+                })
+                .to_string(),
+                token_count("2026-11-01T09:00:01.000Z", 20, 20),
+                token_count("2026-11-01T09:00:02.000Z", 10, 30),
+            ]
+            .join("\n"),
+        });
+
+        let events = crate::test_support::rollout_events(fixture.root());
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (event.input_tokens, event.record_response_id.as_deref()))
+                .collect::<Vec<_>>(),
+            [(20, None), (10, None)]
         );
     }
 }

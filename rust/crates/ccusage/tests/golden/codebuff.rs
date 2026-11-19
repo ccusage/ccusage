@@ -1,6 +1,7 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::golden::set_modified;
+use ccusage_test_support::{instant, set_modified};
 
 fn write_chat(data_root: &Path, project: &str, chat_id: &str, contents: &str) -> PathBuf {
     let dir = data_root
@@ -14,32 +15,31 @@ fn write_chat(data_root: &Path, project: &str, chat_id: &str, contents: &str) ->
     path
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
-    // The session id is `<channel>/<project>/<chat id>`, where the channel is
-    // the directory above `projects`. `backup/manicode` therefore produces the
-    // same session ids as `manicode`, which is what lets a record be replayed
-    // across files; it sorts first, so the `manicode` copy is the survivor.
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let manicode = root.join("codebuff/manicode");
     let backup = root.join("codebuff/backup/manicode");
     let dev = root.join("codebuff/manicode-dev");
 
-    // Message-level usage in every key spelling and timestamp encoding.
     let ledger_chat = write_chat(
         &manicode,
         "alpha",
         "2025-12-30T10-00-00.000Z",
-        r#"[
-  {"id":"u1","role":"user","timestamp":"2025-12-30T10:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":9999,"outputTokens":9999}},"credits":9.0},
+        &format!(
+            r#"[
+  {{"id":"u1","role":"user","timestamp":"2025-12-30T10:00:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":9999,"outputTokens":9999}}}},"credits":9.0}},
   "garbage",
-  {"id":"a1","role":"assistant","timestamp":"2025-12-30T10:00:01.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":1000,"outputTokens":200,"cacheCreationInputTokens":300,"cacheReadInputTokens":4000}},"credits":1.5},
-  {"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{"model":"gpt-5","usage":{"inputTokens":9999,"outputTokens":9999}},"credits":9.0},
-  {"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{"usage":{"model":"gpt-5","input_tokens":700,"output_tokens":150,"cache_read_input_tokens":2500,"credits":0.75}}},
-  {"id":"a3","variant":"agent","createdAt":1767268800,"metadata":{"codebuff":{"usage":{"model":"codebuff-mystery-1","promptTokens":300,"completionTokens":70}}},"credits":0.2},
-  {"id":"a4","role":"assistant","metadata":{"timestamp":1767270600000,"model":"gpt-5","usage":{"totalTokens":345}}},
-  {"id":"a5","role":"assistant","timestamp":"2026-01-01T13:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":0,"outputTokens":0}}},
-  {"id":"a6","variant":"user","role":"assistant","timestamp":"2026-01-01T13:10:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":8888,"outputTokens":8888}}},
-  {"id":"a7","variant":"tool","timestamp":"2026-01-01T13:20:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":7777,"outputTokens":7777}},"credits":7.0}
+  {{"id":"a1","role":"assistant","timestamp":"2025-12-30T10:00:01.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":1000,"outputTokens":200,"cacheCreationInputTokens":300,"cacheReadInputTokens":4000}}}},"credits":1.5}},
+  {{"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{{"model":"gpt-5","usage":{{"inputTokens":9999,"outputTokens":9999}}}},"credits":9.0}},
+  {{"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{{"usage":{{"model":"gpt-5","input_tokens":700,"output_tokens":150,"cache_read_input_tokens":2500,"credits":0.75}}}}}},
+  {{"id":"a3","variant":"agent","createdAt":{created_at},"metadata":{{"codebuff":{{"usage":{{"model":"codebuff-mystery-1","promptTokens":300,"completionTokens":70}}}}}},"credits":0.2}},
+  {{"id":"a4","role":"assistant","metadata":{{"timestamp":{timestamp},"model":"gpt-5","usage":{{"totalTokens":345}}}}}},
+  {{"id":"a5","role":"assistant","timestamp":"2026-01-01T13:00:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":0,"outputTokens":0}}}}}},
+  {{"id":"a6","variant":"user","role":"assistant","timestamp":"2026-01-01T13:10:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":8888,"outputTokens":8888}}}}}},
+  {{"id":"a7","variant":"tool","timestamp":"2026-01-01T13:20:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":7777,"outputTokens":7777}}}},"credits":7.0}}
 ]"#,
+            created_at = instant("2026-01-01T12:00:00Z").secs(),
+            timestamp = instant("2026-01-01T12:30:00Z").millis()
+        ),
     );
     let chat_dir = ledger_chat.parent().expect("chat file has a parent");
     let ignored_usage = r#"[{"id":"x1","role":"assistant","timestamp":"2025-12-31T12:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":5555,"outputTokens":5555}}}]"#;
@@ -47,12 +47,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         .expect("failed to write sibling JSON file");
     std::fs::write(chat_dir.join("chat-messages.json.bak"), ignored_usage)
         .expect("failed to write backup file");
-    // Outside `projects`, so never discovered.
     std::fs::write(manicode.join("chat-messages.json"), ignored_usage)
         .expect("failed to write stray chat file");
 
-    // Same session as above: `a1` is a replay that loses to the `manicode`
-    // copy, `a9` is a new id and counts.
     write_chat(
         &backup,
         "alpha",
@@ -63,8 +60,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 ]"#,
     );
 
-    // Messages without an id are keyed by timestamp, model, position, and token
-    // counts. The first has no timestamp and takes the chat id's.
     write_chat(
         &manicode,
         "alpha",
@@ -74,22 +69,16 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
   {"role":"assistant","timestamp":"2026-01-01T09:10:00+09:00","metadata":{"model":"claude-sonnet-4-20250514","usage":{"promptTokens":600,"completionTokens":100,"promptTokensDetails":{"cachedTokens":3000}}}}
 ]"#,
     );
-    // The first message has the same key as its `manicode` twin (credits are
-    // not part of the key) and is dropped; the second differs from its twin
-    // only by one second and counts. It does not share the twin's timestamp
-    // because the loader orders equal timestamps by hash-map iteration.
     write_chat(
         &backup,
         "alpha",
         "2025-12-31T23-50-00.000Z",
         r#"[
   {"role":"assistant","metadata":{"model":"claude-haiku-4-5-20251001","usage":{"inputTokens":900,"outputTokens":400,"cachedTokensCreated":200,"cacheReadInputTokens":7000}},"credits":9.0},
-  {"role":"assistant","timestamp":"2026-01-01T09:10:01+09:00","metadata":{"model":"claude-sonnet-4-20250514","usage":{"promptTokens":600,"completionTokens":100,"promptTokensDetails":{"cachedTokens":3000}}}}
+  {"id":"same-time","role":"assistant","timestamp":"2026-01-01T09:10:00+09:00","metadata":{"model":"claude-sonnet-4-20250514","usage":{"promptTokens":600,"completionTokens":100,"promptTokensDetails":{"cachedTokens":3000}}}}
 ]"#,
     );
 
-    // Neither the messages nor the chat id carry a usable timestamp, so both
-    // messages take the file's mtime (2025-12-31T09:00:00Z).
     let mtime_chat = write_chat(
         &manicode,
         "alpha",
@@ -99,7 +88,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
   {"role":"assistant","timestamp":0,"metadata":{"model":"claude-haiku-4-5-20251001","usage":{"inputTokens":30,"outputTokens":15}}}
 ]"#,
     );
-    set_modified(&mtime_chat, 1_767_171_600);
+    set_modified(&mtime_chat, instant("2025-12-31T09:00:00Z"));
 
     write_chat(&manicode, "alpha", "empty-chat", "");
     write_chat(
@@ -108,7 +97,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "truncated-chat",
         r#"[{"id":"t1","role":"assistant","timestamp":"2025-12-31T12:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":9999,"outp"#,
     );
-    // Valid JSON that is not a message array.
     write_chat(
         &manicode,
         "alpha",
@@ -116,8 +104,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         r#"{"version":2,"messages":[{"id":"o1","role":"assistant","timestamp":"2025-12-31T12:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":6666,"outputTokens":6666}}}]}"#,
     );
 
-    // Second channel and project. `a1` repeats an id from the `manicode`
-    // session, but ids are scoped to the session, so it counts.
     write_chat(
         &dev,
         "beta",
@@ -143,15 +129,34 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         r#"[{"role":"assistant","metadata":{"model":"claude-opus-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}]"#,
     );
 
-    // Comma-separated roots: one given as the channel directory, one already
-    // ending in `projects`, a repeat, an empty item, and a missing directory.
-    let data_dirs = format!(
-        "{}, {} ,,{},{},{}",
-        backup.display(),
-        dev.join("projects").display(),
-        manicode.display(),
-        manicode.display(),
-        root.join("codebuff/missing").display(),
+    let mut padded = OsString::from(" ");
+    padded.push(dev.join("projects"));
+    padded.push(" ");
+    let data_dirs = vec![
+        backup.into_os_string(),
+        padded,
+        OsString::new(),
+        manicode.clone().into_os_string(),
+        manicode.into_os_string(),
+        root.join("codebuff/missing").into_os_string(),
+    ];
+    vec![("CODEBUFF_DATA_DIR", data_dirs)]
+}
+
+pub(crate) fn seed_timestamp_ties(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let store = root.join("codebuff");
+    write_chat(
+        &store.join("manicode"),
+        "ties",
+        "same-time",
+        r#"[
+      {"id":"tie-b","role":"assistant","timestamp":"2026-01-01T00:00:00Z","metadata":{"model":"claude-haiku-4-5-20251001","usage":{"inputTokens":20}}},
+      {"id":"tie-a","role":"assistant","timestamp":"2026-01-01T00:00:00Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100}},"credits":1.0},
+      {"id":"tie-a","role":"assistant","timestamp":"2026-01-01T00:00:00Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":10}},"credits":2.75}
+    ]"#,
     );
-    vec![("CODEBUFF_DATA_DIR", PathBuf::from(data_dirs))]
+    vec![(
+        "CODEBUFF_DATA_DIR",
+        vec![store.join("manicode").into_os_string()],
+    )]
 }

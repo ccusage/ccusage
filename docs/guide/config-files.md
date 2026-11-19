@@ -30,6 +30,8 @@ Put frequently used options in `defaults`:
 
 ### 3. Override for Specific Commands
 
+Only daily reports show the breakdown here:
+
 ```json
 {
 	"$schema": "https://ccusage.com/config-schema.json",
@@ -38,11 +40,13 @@ Put frequently used options in `defaults`:
 	},
 	"commands": {
 		"daily": {
-			"breakdown": true // Only daily needs breakdown
+			"breakdown": true
 		}
 	}
 }
 ```
+
+Configuration files are plain JSON: comments are not allowed, and a file with a syntax error is skipped as if it did not exist.
 
 ### 4. Convert CLI Arguments to Config
 
@@ -50,14 +54,13 @@ If you find yourself repeating CLI arguments:
 
 ```bash
 # Before (repeated CLI arguments)
-ccusage daily --breakdown --instances --timezone UTC
+ccusage claude daily --breakdown --instances --timezone UTC
 ccusage monthly --breakdown --timezone UTC
 ```
 
-Convert them to a config file:
+Convert them to a `ccusage.json` config file:
 
 ```json
-// ccusage.json
 {
 	"$schema": "https://ccusage.com/config-schema.json",
 	"defaults": {
@@ -75,23 +78,24 @@ Convert them to a config file:
 Now simpler commands:
 
 ```bash
-ccusage daily
+ccusage claude daily
 ccusage monthly
 ```
 
 ## Configuration File Locations
 
-ccusage searches for configuration files in these locations (in priority order):
+ccusage searches for configuration files in these locations, in order:
 
-1. **Local project**: `.ccusage/ccusage.json` (higher priority)
-2. **User config**: `ccusage.json` in the Claude Code directories (lower priority), described below
+1. **Local project**: `.ccusage/ccusage.json` in the current directory
+2. **User config**: `ccusage.json` in the Claude Code directories, described below
 
-The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at a `projects/` directory is read as its parent.
+The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at an existing `projects/` directory is read as its parent.
 
-Configuration files are merged in priority order, with local project settings overriding user settings.
-If you pass a custom config file using `--config`, it will override both local and user configs.
-Note that configuration files are not required; if none are found, ccusage will use built-in defaults.
-Also, if you have multiple config files, only the first one found will be used.
+ccusage tries the paths in order. It warns and continues if a discovered file contains malformed JSON or the top-level value is anything other than an object. ccusage loads a single configuration file. A valid local project config takes precedence over your user config.
+
+For a discovered JSON object, recoverable field errors produce a warning naming the file and JSON path. The valid settings in that file still apply. An unreadable file stops discovery. Invalid date bounds, invalid `pi.stores`, and an invalid effective `timezone` are errors for reports that use them. Statusline can recover from errors in discovered configuration and still render. With `--config`, malformed JSON and invalid settings are errors.
+
+Unknown keys warn. Set `LOG_LEVEL=0` to suppress warnings. When discovery finds no usable file, ccusage uses the built-in defaults.
 
 ## Basic Configuration
 
@@ -133,7 +137,7 @@ You can also reference a local schema file after installing ccusage:
 
 ### Global Defaults
 
-The `defaults` section sets shared default values for unified reports and legacy Claude commands:
+The `defaults` section sets shared default values for unified and source-focused reports:
 
 ```json
 {
@@ -158,7 +162,7 @@ Set `noCost` to `true` to hide cost columns in tables and remove cost fields fro
 
 ### Command-Specific Configuration
 
-Override shared defaults for specific unified reports and legacy Claude commands using the `commands` section:
+Override shared defaults for specific unified and source-focused reports using the `commands` section:
 
 ```json
 {
@@ -366,15 +370,16 @@ For a source-focused command, or each source within a unified report, options ar
 }
 ```
 
+`instances`, `project`, and `projectAliases` apply to `ccusage claude daily`.
+
 ### Session Command
 
 ```json
 {
 	"commands": {
 		"session": {
-			"id": "abc123-session",
-			"project": "my-project",
-			"json": true
+			"json": true,
+			"order": "desc"
 		}
 	}
 }
@@ -389,13 +394,13 @@ For a source-focused command, or each source within a unified report, options ar
 			"active": true,
 			"recent": false,
 			"tokenLimit": "max",
-			"sessionLength": 5,
-			"live": false,
-			"refreshInterval": 1
+			"sessionLength": 5
 		}
 	}
 }
 ```
+
+The `tokenLimit` value accepts `"max"` or a positive integer, written as a number or a string.
 
 ### Statusline
 
@@ -428,7 +433,7 @@ ccusage blocks --config /path/to/team-config.json
 
 ## Pricing Overrides
 
-ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the binary, optionally refreshed at runtime (or skipped with `--offline`). When a model is missing from LiteLLM (private deployments, internal wrappers like Pi's `[pi] gpt-5.4`, custom proxies), or when the snapshot price differs from your contract, set `pricingOverrides` under `defaults` to supply per-model values.
+When a catalogue lacks your model or its price differs from your contract, set `pricingOverrides` under `defaults`. The [pricing lookup order](/guide/cost-modes) is shared by the adapters.
 
 ```json
 {
@@ -452,7 +457,7 @@ ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the bin
 
 ### Raw Model Names
 
-Keys in `pricingOverrides` should match the model label reported by ccusage, including any adapter prefix:
+Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to the vendor-qualified ID for the same direct model.
 
 | Adapter                                | Prefix    | Example key                    |
 | -------------------------------------- | --------- | ------------------------------ |
@@ -460,9 +465,9 @@ Keys in `pricingOverrides` should match the model label reported by ccusage, inc
 | Named Pi store                         | `[name] ` | `[omp] gpt-5.4`                |
 | Others (Claude, Codex, OpenCode, etc.) | none      | `claude-sonnet-4-5`, `gpt-5.5` |
 
-To find the exact name, run `ccusage <agent> daily --json` and look at the `model` field in the per-row breakdown.
+To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
-If a key has no pricing entry of its own but is a model alias, unspecified fields come from the alias target's entry.
+A model alias can inherit unspecified fields from its target. Overrides inherit published long-context rates from LiteLLM or built-in base entries. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
 
 ### Supported Fields
 
@@ -470,6 +475,7 @@ All fields are optional. Unspecified fields keep existing values. Without a pric
 
 - `inputCostPerToken`, `outputCostPerToken` — base per-token rates
 - `cacheCreationInputTokenCost`, `cacheReadInputTokenCost` — cache pricing
+- `cacheCreationInputTokenCostAbove1hr` — one-hour cache write pricing, including an explicit zero rate
 - `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — tiered pricing past 200k tokens
 - `maxInputTokens` — context window limit (used by the Claude statusline hook)
 - `fastMultiplier` applies when Codex usage uses Fast pricing.
@@ -481,7 +487,7 @@ The Ultrafast multiplier comes only from published rates and cannot be set in `p
 
 `--offline` and `pricingOverrides` are independent:
 
-- `--offline` controls the **data source** — skip the network refresh and use the embedded LiteLLM snapshot only.
+- `--offline` controls the **data source** — skip the network refresh and use embedded LiteLLM and models.dev pricing.
 - `pricingOverrides` controls **specific entries** — patch in or replace prices for individual models.
 
 Overrides apply in both online and offline modes.
@@ -496,27 +502,23 @@ This is useful for:
 
 ## Configuration Example
 
-For a complete configuration example, see [`/ccusage.example.json`](/ccusage.example.json) in the repository root, which demonstrates:
+For a complete configuration example, see [`ccusage.example.json`](https://github.com/ccusage/ccusage/blob/main/ccusage.example.json) in the repository root, which demonstrates:
 
 - Global defaults configuration
 - Command-specific overrides
-- All available options with proper types
+- Examples of supported options and types
 
 ## Configuration Priority
 
 Settings are applied in this priority order (highest to lowest):
 
 1. **Command-line arguments** (e.g., `--json`, `--offline`)
-2. **Custom config file** (specified with `--config /path/to/config.json`)
-3. **Local project config** (`.ccusage/ccusage.json`)
-4. **User config** (`~/.config/claude/ccusage.json`)
-5. **Legacy config** (`~/.claude/ccusage.json`)
-6. **Built-in defaults**
+2. **The one configuration file ccusage reads**: the `--config` file, or else the first existing file among `.ccusage/ccusage.json`, `~/.config/claude/ccusage.json`, and `~/.claude/ccusage.json` (see [Configuration File Locations](#configuration-file-locations))
+3. **Built-in defaults**
 
-Example:
+Example, in `.ccusage/ccusage.json`:
 
 ```json
-// .ccusage/ccusage.json
 {
 	"defaults": {
 		"mode": "calculate"
@@ -530,52 +532,6 @@ ccusage daily  # Uses mode: calculate
 
 # But CLI argument overrides it
 ccusage daily --mode display  # Uses mode: display
-```
-
-## Debugging Configuration
-
-Use the `--debug` flag to see configuration loading details:
-
-```bash
-# Debug configuration loading
-ccusage daily --debug
-
-# Debug custom config file
-ccusage daily --debug --config ./my-config.json
-```
-
-Debug output shows:
-
-- Which config files are checked and found
-- Schema and option details from loaded configs
-- How options are merged from different sources
-- Final values used for each option
-
-Example debug output:
-
-```
-[ccusage] ℹ Debug mode enabled - showing config loading details
-
-[ccusage] ℹ Searching for config files:
-  • Checking: .ccusage/ccusage.json (found ✓)
-  • Checking: ~/.config/claude/ccusage.json (found ✓)
-  • Checking: ~/.claude/ccusage.json (not found)
-
-[ccusage] ℹ Loaded config from: .ccusage/ccusage.json
-  • Schema: https://ccusage.com/config-schema.json
-  • Has defaults: yes (3 options)
-  • Has command configs: yes (daily)
-
-[ccusage] ℹ Merging options for 'daily' command:
-  • From defaults: mode="auto", offline=false
-  • From command config: instances=true
-  • From CLI args: debug=true
-  • Final merged options: {
-      mode: "auto" (from defaults),
-      offline: false (from defaults),
-      instances: true (from command config),
-      debug: true (from CLI)
-    }
 ```
 
 ## Best Practices
@@ -604,10 +560,14 @@ team-configs/
 
 ### Config Not Being Applied
 
-1. Check file location is correct
-2. Verify JSON syntax is valid
-3. Use `--debug` to see loading details
-4. Ensure option names match exactly
+Check the diagnostic and the selected file:
+
+1. Check that no earlier file in the [search order](#configuration-file-locations) shadows it.
+2. Validate JSON syntax; unreadable files and invalid JSON stop loading.
+3. Check exact option names; unknown keys produce warnings.
+4. In discovered files, correct each invalid field named in a warning. Other valid settings remain effective. Invalid date bounds and named Pi stores stop the command.
+
+Warnings follow `LOG_LEVEL`; use a value above `0` to see them.
 
 ### Invalid JSON
 
@@ -620,14 +580,19 @@ jq . < ccusage.json
 
 ### Schema Validation Errors
 
-Ensure option values match expected types:
+Add `$schema` and let your editor check option names and value types against it:
 
 ```json
 {
-	"defaults": {
-		"tokenLimit": "500000", // ✅ String or number
-		"active": true, // ✅ Boolean
-		"refreshInterval": 2 // ✅ Number
+	"$schema": "https://ccusage.com/config-schema.json",
+	"commands": {
+		"blocks": {
+			"tokenLimit": "500000",
+			"active": true
+		},
+		"statusline": {
+			"refreshInterval": 2
+		}
 	}
 }
 ```

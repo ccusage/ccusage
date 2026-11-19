@@ -1,8 +1,5 @@
 name: PR Gate
 
-# Use pull_request_target so outside-contributor PRs receive the base
-# repository's write permissions. This workflow checks out only the base branch
-# and gives Pullfrog the PR diff as data; it never executes code from the PR.
 on:
   pull_request_target:
     types:
@@ -12,6 +9,10 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   check-contributor:
@@ -37,9 +38,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Nushell
-        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-        with:
-          version: 0.114.1
+        uses: ./.github/actions/setup-nu
 
       - name: Check PR author
         id: access
@@ -74,23 +73,7 @@ jobs:
           push: disabled
           shell: disabled
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["decision", "reason"],
-              "properties": {
-                "decision": {
-                  "type": "string",
-                  "enum": ["keep_open", "close", "needs_human"]
-                },
-                "reason": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1200
-                }
-              }
-            }
+          output_schema: ${{ steps.request.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -116,9 +99,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Nushell
-        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-        with:
-          version: 0.114.1
+        uses: ./.github/actions/setup-nu
 
       - name: Apply the PR verdict
         env:

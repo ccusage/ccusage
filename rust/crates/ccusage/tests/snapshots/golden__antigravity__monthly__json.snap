@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 50,
       "cacheReadTokens": 6500,
-      "inputTokens": 3175,
+      "inputTokens": 3075,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 50,
@@ -55,15 +55,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 100,
-          "missingPricing": true,
-          "modelName": "gemini-internal-model",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 10,
           "missingPricing": true,
           "modelName": "antigravity-model-77",
@@ -71,7 +62,6 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gemini-internal-model",
         "antigravity-model-77",
         "gemini-3-pro",
         "gpt-5",
@@ -80,9 +70,9 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "month": "2025-12",
-      "outputTokens": 516,
+      "outputTokens": 466,
       "totalCost": 0.01412125,
-      "totalTokens": 10361
+      "totalTokens": 10211
     },
     {
       "cacheCreationTokens": 400,
@@ -166,14 +156,13 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 450,
     "cacheReadTokens": 127500,
-    "inputTokens": 257516,
-    "outputTokens": 2730,
+    "inputTokens": 257416,
+    "outputTokens": 2680,
     "totalCost": 0.7002495,
-    "totalTokens": 388366,
+    "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",
       "antigravity-mystery-1",
-      "gemini-internal-model",
       "model_placeholder_m499"
     ]
   }

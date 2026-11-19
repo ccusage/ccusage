@@ -3,22 +3,14 @@
 The GitHub Copilot CLI adapter: it turns Copilot session-state and OpenTelemetry JSONL files
 into the usage entries the reports render.
 
-## Owns
-
-- `loader.rs` — reading the source, dedupe, and date filtering.
-- `parser.rs` — raw record parsing, token mapping, and model naming.
-- `paths.rs` — environment variables, default directories, and file discovery.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
-
-Anything that is not specific to this source belongs in `ccusage-core` or
-`ccusage-adapter-common` instead.
-
 ## Data source
 
 - `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl`
 - `${COPILOT_HOME:-~/.copilot}/otel/**/*.jsonl`
 - `COPILOT_HOME` (single relocated Copilot data root)
 - `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
+
+Usage records without a valid timestamp are skipped with a diagnostic.
 
 Session-state `session.usage_record` events are per-call receipts. A receipt's `accounting`
 identity (`sourceSessionId`, `sequence`) is unique across all session files, so the loader counts
@@ -58,7 +50,9 @@ time are file-local and never match across files. Copilot counts cache reads and
 `gen_ai.usage.input_tokens`, so the adapter reports the uncached remainder as input and keeps the
 cache buckets separate. Session-state reasoning tokens are already included in output tokens; OpenTelemetry
 reasoning is included when total usage metadata shows it is separate. Internal model suffixes such
-as `-1m` and `-1m-internal` are removed before pricing and source deduplication.
+as `-1m` and `-1m-internal` are removed for reporting and source deduplication.
+Pricing tries the logged ID first for identity matches. The ID with the
+suffix removed also supports fuzzy matches.
 
 Copilot records what it billed in nano-AIU (1 AIU is one GitHub AI credit, $0.01): a receipt's
 `copilotUsage.totalNanoAiu` for its call, and a shutdown's per-model `totalNanoAiu` for every call
@@ -79,23 +73,6 @@ later snapshot becomes cost-only `unknown` entries, dated where it first stays. 
 with usage records or with a shutdown or checkpoint whose watermarks cover usage records, or with
 OpenTelemetry rows get no such entries.
 
-Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
-chunking, and ordered parallel reads.
-
-## Public surface
-
-- `loader::load_entries`
-- `report::report_from_rows`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde`
-- `serde_json`
-
 ## Build layer
 
-Built in the `adapters` Crane artifact layer; the layer compiles all adapters in one Cargo invocation, so they build concurrently.
+Built in the `adapters` Crane artifact layer.

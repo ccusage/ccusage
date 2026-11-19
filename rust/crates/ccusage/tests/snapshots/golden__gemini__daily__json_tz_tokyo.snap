@@ -154,15 +154,15 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 130,
       "date": "2026-01-02",
-      "inputTokens": 870,
+      "inputTokens": 810,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
-          "cost": 0.0006019,
-          "inputTokens": 670,
+          "cost": 0.0005464,
+          "inputTokens": 610,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 150
+          "outputTokens": 135
         },
         {
           "cacheCreationTokens": 0,
@@ -177,9 +177,9 @@ exit: 0
         "gemini-3-flash-preview",
         "gemini-2.5-flash"
       ],
-      "outputTokens": 195,
-      "totalCost": 0.0008569000000000001,
-      "totalTokens": 1210
+      "outputTokens": 180,
+      "totalCost": 0.0008014000000000001,
+      "totalTokens": 1135
     },
     {
       "cacheCreationTokens": 0,
@@ -207,10 +207,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 0,
     "cacheReadTokens": 155413,
-    "inputTokens": 306559,
-    "outputTokens": 3184,
-    "totalCost": 0.8240038900000002,
-    "totalTokens": 465451,
+    "inputTokens": 306499,
+    "outputTokens": 3169,
+    "totalCost": 0.8239483900000001,
+    "totalTokens": 465376,
     "unpricedModels": [
       "gemini-mystery-1",
       "unknown"

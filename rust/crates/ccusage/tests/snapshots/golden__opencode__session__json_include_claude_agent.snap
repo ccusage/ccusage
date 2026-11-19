@@ -52,29 +52,6 @@ exit: 0
       "totalTokens": 88
     },
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 8888,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.88,
-          "inputTokens": 8888,
-          "modelName": "gpt-5",
-          "outputTokens": 8888,
-          "storedCost": 0.88
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 8888,
-      "sessionId": "ses-agg-no-time",
-      "totalCost": 0.88,
-      "totalTokens": 17776
-    },
-    {
       "cacheCreationTokens": 100,
       "cacheReadTokens": 900,
       "inputTokens": 400,
@@ -157,7 +134,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00033749999999999996,
+          "cost": 0.0003375,
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
@@ -423,24 +400,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 56,
+      "inputTokens": 45,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00013000000000000002,
-          "inputTokens": 56,
+          "cost": 0.00010625000000000001,
+          "inputTokens": 45,
           "modelName": "gpt-5",
-          "outputTokens": 6
+          "outputTokens": 5
         }
       ],
       "modelsUsed": [
         "gpt-5"
       ],
-      "outputTokens": 6,
+      "outputTokens": 5,
       "sessionId": "ses-v2-misc",
-      "totalCost": 0.00013000000000000002,
-      "totalTokens": 62
+      "totalCost": 0.00010625000000000001,
+      "totalTokens": 50
     },
     {
       "cacheCreationTokens": 200,
@@ -509,10 +486,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 800,
     "cacheReadTokens": 18400,
-    "inputTokens": 21774,
-    "outputTokens": 11328,
-    "totalCost": 4.505980000000001,
-    "totalTokens": 52372,
+    "inputTokens": 12875,
+    "outputTokens": 2439,
+    "totalCost": 3.62595625,
+    "totalTokens": 34584,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

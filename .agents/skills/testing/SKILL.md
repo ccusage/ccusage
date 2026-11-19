@@ -6,8 +6,6 @@ description: Guides ccusage Rust and Node tests. Use when adding or fixing cargo
 # ccusage Testing
 
 The `tdd` skill owns the Red-Green-Refactor loop and the focused runner commands.
-This skill owns what is specific to ccusage: fixtures, adapter coverage, pricing and
-model behavior, snapshots, CLI output, and package tooling.
 
 - Prefer behavior-focused tests over schema-shape tests, unless schema normalization
   itself is the behavior under test.
@@ -21,9 +19,9 @@ model behavior, snapshots, CLI output, and package tooling.
 Unit tests sit next to the module they exercise in `#[cfg(test)] mod tests`. When a
 large module is split, its tests move with the code instead of staying in `main.rs`.
 
-Read `references/rust.md` for fixtures, snapshots, pricing, and model names.
+Read [Rust tests](references/rust.md) for fixtures, snapshots, pricing, and model names.
 
 ## Node
 
-Read `references/node-test.md`. Node covers only the package launcher and the Nix-side
-JS tooling; production CLI runtime behavior is tested in Rust.
+Read [Node tests](references/node-test.md) for launcher and JS tooling tests.
+Test CLI runtime behavior in Rust.

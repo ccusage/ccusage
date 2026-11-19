@@ -101,25 +101,17 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 3000,
+      "cacheReadTokens": 0,
       "date": "2026-01-01",
-      "inputTokens": 1820,
+      "inputTokens": 1100,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0,
-          "inputTokens": 1100,
-          "modelName": "gpt-5",
-          "outputTokens": 200
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
+          "inputTokens": 500,
+          "modelName": "gpt-5",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -148,29 +140,20 @@ exit: 0
       ],
       "modelsUsed": [
         "gpt-5",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "kimi-k2-thinking",
         "kimi-for-coding"
       ],
-      "outputTokens": 827,
+      "outputTokens": 697,
       "totalCost": 0.0,
-      "totalTokens": 5897
+      "totalTokens": 2047
     },
     {
       "cacheCreationTokens": 50,
       "cacheReadTokens": 6000,
       "date": "2026-01-02",
-      "inputTokens": 940,
+      "inputTokens": 800,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 140,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 60
-        },
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 6000,
@@ -181,12 +164,11 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "kimi-k2-thinking",
         "kimi-for-coding"
       ],
-      "outputTokens": 360,
+      "outputTokens": 300,
       "totalCost": 0.0,
-      "totalTokens": 7350
+      "totalTokens": 7150
     },
     {
       "cacheCreationTokens": 0,
@@ -213,11 +195,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 1570,
-    "cacheReadTokens": 66000,
-    "inputTokens": 15621,
-    "outputTokens": 4616,
+    "cacheReadTokens": 63000,
+    "inputTokens": 14761,
+    "outputTokens": 4426,
     "totalCost": 0.0,
-    "totalTokens": 88057
+    "totalTokens": 84007
   }
 }
 

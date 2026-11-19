@@ -30,22 +30,9 @@ runs:
       env:
         ARCH: ${{ inputs.arch }}
       run: |
-        # arm64 builds natively; x64 cross-compiles on this same arm64 runner
-        # (the Apple SDK is multi-arch), so no separate Intel runner is needed.
-        case "$ARCH" in
-          x64)
-            package=ccusage-darwin-x64
-            ;;
-          arm64)
-            package=ccusage
-            ;;
-          *)
-            echo "Unsupported arch: $ARCH" >&2
-            exit 1
-            ;;
-        esac
+        package="ccusage-release-darwin-$ARCH"
         echo "package=$package" >> "$GITHUB_OUTPUT"
-        nix build ".#$package" --print-build-logs
+        nix build ".#$package"
 
     - name: Stage native package
       shell: bash

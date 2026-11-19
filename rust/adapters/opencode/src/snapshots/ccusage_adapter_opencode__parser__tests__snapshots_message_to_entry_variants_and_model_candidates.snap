@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/adapter/opencode/parser.rs
+source: adapters/opencode/src/parser.rs
 expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"displayCost\":\n    entry_snapshot(&display_cost), \"candidates\":\n    {\n        \"anthropic\":\n        open_code_model_candidates(\"claude-sonnet-4.5\", \"anthropic\"),\n        \"copilot\":\n        open_code_model_candidates(\"claude-sonnet-4.5\", \"github-copilot\"),\n        \"geminiAlias\":\n        open_code_model_candidates(\"gemini-3-pro-high\", \"google\"),\n        \"unknownProvider\": open_code_model_candidates(\"gpt-test\", \"unknown\"),\n    }\n})"
 ---
 {
@@ -18,7 +18,7 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
         }
       },
       "sessionId": "session-a",
-      "timestamp": "2026-01-02T00:00:00.000Z",
+      "timestamp": 1767312000000,
       "version": null
     },
     "date": "2026-01-02",
@@ -43,7 +43,9 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
       "github_copilot/claude-sonnet-4-5"
     ],
     "geminiAlias": [
+      "gemini-3-pro-high",
       "gemini-3-pro-preview",
+      "google/gemini-3-pro-high",
       "google/gemini-3-pro-preview"
     ],
     "unknownProvider": [
@@ -65,15 +67,15 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
         }
       },
       "sessionId": "explicit-session",
-      "timestamp": "1970-01-01T00:00:00.000Z",
+      "timestamp": 1767312000000,
       "version": null
     },
-    "date": "1970-01-01",
+    "date": "2026-01-02",
     "extraTotalTokens": 0,
     "model": "gpt-test",
     "project": "opencode",
     "projectPath": "OpenCode",
     "sessionId": "explicit-session",
-    "timestamp": 0
+    "timestamp": 1767312000000
   }
 }

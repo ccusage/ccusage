@@ -1,6 +1,6 @@
 # Weekly Usage
 
-Weekly usage aggregates usage by week, providing a mid-range view between daily and monthly usage. `ccusage weekly` covers all detected sources that support weekly aggregation; `ccusage claude weekly` and `ccusage opencode weekly` focus the same view on one source.
+Weekly usage aggregates usage by week, providing a mid-range view between daily and monthly usage. `ccusage weekly` covers every detected source; `ccusage claude weekly`, `ccusage opencode weekly`, `ccusage cline weekly`, and `ccusage dsh weekly` focus the same view on one source.
 
 ## Basic Usage
 
@@ -14,18 +14,18 @@ ccusage opencode weekly
 
 ## Example Output
 
+`ccusage weekly` prints an `All` row per week followed by one row per source. This excerpt from the fixture report keeps the week of 2026-04-20 and the Total row; the other weeks are omitted:
+
 ```text
-┌────────────────┬──────────────────────┬────────┬─────────┬─────────────┬────────────┬──────────────┬────────────┐
-│ Week           │ Models               │ Input  │ Output  │ Cache Create│ Cache Read │ Total Tokens │ Cost (USD) │
-├────────────────┼──────────────────────┼────────┼─────────┼─────────────┼────────────┼──────────────┼────────────┤
-│ 2026-05-11     │ • opus-4-1           │  1,234 │ 156,789 │       2,048 │      4,096 │      164,167 │     $87.56 │
-│                │ • sonnet-4-5         │        │         │             │            │              │            │
-├────────────────┼──────────────────────┼────────┼─────────┼─────────────┼────────────┼──────────────┼────────────┤
-│ 2026-05-04     │ • sonnet-4-5         │  2,456 │ 234,567 │       3,072 │      6,144 │      246,239 │    $104.33 │
-├────────────────┼──────────────────────┼────────┼─────────┼─────────────┼────────────┼──────────────┼────────────┤
-│ 2026-04-27     │ • opus-4-1           │  3,789 │ 345,678 │       4,096 │      8,192 │      361,755 │    $156.78 │
-│                │ • sonnet-4-5         │        │         │             │            │              │            │
-└────────────────┴──────────────────────┴────────┴─────────┴─────────────┴────────────┴──────────────┴────────────┘
+┌────────────┬──────────────────────┬───────────────────────────┬────────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Agent                │ Models                    │      Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-04-20 │ All                  │                           │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│            │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                      │                           │  1,347,024 │    58,670 │        17,765 │   1,309,867 │     2,736,743 │      $28.15 │
+└────────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ## Understanding the Columns
@@ -43,6 +43,8 @@ The columns are identical to daily reports but aggregated by week:
 ## Command Options
 
 ### Week Start Day
+
+Every focused agent command that supports weekly reports accepts `-w` and `--start-of-week`, as well as the `startOfWeek` configuration setting. Unified weekly reports apply their resolved week start to every source.
 
 Configure which day starts the week:
 
@@ -91,11 +93,11 @@ The window starts on the same weekday the report buckets by, so `ccusage claude 
 Control the order of weeks:
 
 ```bash
-# Newest weeks first (default)
-ccusage weekly --order desc
-
-# Oldest weeks first
+# Oldest weeks first (default)
 ccusage weekly --order asc
+
+# Newest weeks first
+ccusage weekly --order desc
 ```
 
 ### Model Breakdown
@@ -106,16 +108,32 @@ See per-model weekly costs:
 ccusage weekly --breakdown
 ```
 
+Each source row is followed by one `└─` row per model. This excerpt from a 120-column terminal keeps the week of 2025-12-29, its Amp row, and Amp's model rows; the other sources and weeks are omitted:
+
 ```text
-┌────────────────┬──────────────────────┬────────┬─────────┬────────────┐
-│ Week           │ Models               │ Input  │ Output  │ Cost (USD) │
-├────────────────┼──────────────────────┼────────┼─────────┼────────────┤
-│ 2026-05-11     │ opus-4-1, sonnet-4-5 │  1,234 │ 156,789 │     $87.56 │
-├────────────────┼──────────────────────┼────────┼─────────┼────────────┤
-│   └─ opus-4-1  │                      │    800 │  80,000 │     $54.80 │
-├────────────────┼──────────────────────┼────────┼─────────┼────────────┤
-│   └─ sonnet-4-5│                      │    434 │  76,789 │     $32.76 │
-└────────────────┴──────────────────────┴────────┴─────────┴────────────┘
+┌──────────┬──────────────┬──────────────┬────────────┬───────────┬────────────┬─────────────┬─────────────┬───────────┐
+│ Week     │ Agent        │ Models       │      Input │    Output │      Cache │  Cache Read │       Total │      Cost │
+│          │              │              │            │           │     Create │             │      Tokens │     (USD) │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│ 2025     │ All          │              │      8,483 │     1,760 │      1,264 │       1,093 │      12,630 │     $3.83 │
+│ 12-29    │              │              │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │ - Amp        │ - amp-myste… │      5,000 │     2,215 │        550 │      25,000 │      32,765 │     $0.03 │
+│          │              │ - gpt-5      │            │           │            │             │             │           │
+│          │              │ - haiku-4-5  │            │           │            │             │             │           │
+│          │              │ - sonnet-4   │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─ sonnet-4  │      1,600 │       800 │        300 │       7,000 │       9,700 │     $0.02 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │   └─ gpt-5   │      1,400 │       645 │          0 │       5,000 │       7,045 │     $0.01 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─ haiku-4-5 │        900 │       400 │        200 │       7,000 │       8,500 │     $0.00 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─           │      1,100 │       370 │         50 │       6,000 │       7,520 │     $0.00 │
+│          │              │ amp-mystery… │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│ Total    │              │              │  1,347,024 │    58,670 │     17,765 │   1,309,867 │   2,736,743 │    $28.15 │
+└──────────┴──────────────┴──────────────┴────────────┴───────────┴────────────┴─────────────┴─────────────┴───────────┘
 ```
 
 ### JSON Output
@@ -126,54 +144,79 @@ Export weekly data as JSON:
 ccusage weekly --json
 ```
 
+Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with the first day of the week in `period`. This excerpt keeps one row; `totals` covers the complete report:
+
 ```json
 {
 	"weekly": [
 		{
-			"week": "2026-05-11",
-			"inputTokens": 1234,
-			"outputTokens": 156789,
-			"cacheCreationTokens": 2048,
-			"cacheReadTokens": 4096,
-			"totalTokens": 164167,
-			"totalCost": 87.56,
-			"modelsUsed": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
-			"modelBreakdowns": {
-				"claude-opus-4-1-20250805": {
-					"inputTokens": 800,
-					"outputTokens": 80000,
-					"totalCost": 54.8
-				},
-				"claude-sonnet-4-5-20250929": {
-					"inputTokens": 434,
-					"outputTokens": 76789,
-					"totalCost": 32.76
+			"agent": "all",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
 				}
-			}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-20",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
 	],
 	"totals": {
-		"inputTokens": 7479,
-		"outputTokens": 737034,
-		"cacheCreationTokens": 9216,
-		"cacheReadTokens": 18432,
-		"totalTokens": 772161,
-		"totalCost": 348.67
+		"cacheCreationTokens": 17765,
+		"cacheReadTokens": 1309867,
+		"inputTokens": 1347024,
+		"outputTokens": 58670,
+		"totalCost": 28.146135925000003,
+		"totalTokens": 2736743,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
+			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
+			"amp-mystery-1",
+			"antigravity-model-77",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"model_placeholder_m499",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
 	}
 }
 ```
 
-### Project Analysis
-
-Group weekly usage by project:
-
-```bash
-# Show weekly usage per project
-ccusage weekly --instances
-
-# Filter to specific project
-ccusage weekly --project my-project
-```
+`ccusage claude weekly --json` uses the Claude shape, with the week start in `week` instead of `period`.
 
 ### Cost Calculation Modes
 
@@ -228,19 +271,12 @@ ccusage weekly --json > weekly-budget.json
 ccusage weekly --start-of-week monday --breakdown
 ```
 
-### Team Reporting
-
-```bash
-# Weekly team usage report
-ccusage weekly --instances --start-of-week monday
-```
-
 ## Tips
 
 1. **Week Start**: Choose a start day that aligns with your work schedule
 2. **Breakdown View**: Use `--breakdown` to identify which models drive costs
 3. **JSON Export**: Weekly JSON data is perfect for creating trend charts
-4. **Project Tracking**: Use `--instances` to track project-specific weekly usage
+4. **Project Tracking**: Weekly reports have no per-project grouping; use [`ccusage claude daily --instances`](/guide/daily-reports#project-analysis) for Claude Code projects
 
 ## Related Commands
 

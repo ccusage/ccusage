@@ -1,23 +1,17 @@
-use crate::{
-    aggregate::load_groups_with_diagnostics, loader::load_codex_events_with_detection_diagnostics,
-};
 use ccusage_core::Diagnostics;
-use serde_json::json;
 
 use ccusage_adapter_common::{
-    rows::UnifiedRow,
-    source::{ProgressOwner, STANDARD_REPORTS, SourceRows, UnifiedRequest, UsageSource},
+    rows::{RowUsage, SessionMetadata, SourceRow},
+    source::{LoadRequest, LoadedRows, UsageSource},
 };
-use ccusage_core::{
-    ModelBreakdown, PricingMap, Result,
-    cli::{AgentReportKind, CostMode},
-    log_level,
-    progress::{UsageLoadAgent, track_usage_load},
-};
+use ccusage_core::{ModelBreakdown, PricingMap, Result, cli::CostMode, progress::UsageLoadAgent};
 
 use crate::{
-    CodexGroup, aggregate_events, calculate_codex_model_cost, calculate_group_cost,
-    codex_model_missing_pricing, filter_events_by_date, non_cached_input_tokens,
+    CodexGroup,
+    report::{
+        calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
+        non_cached_input_tokens,
+    },
     resolve_codex_speed,
 };
 
@@ -34,102 +28,67 @@ impl UsageSource for Codex {
         "Codex"
     }
 
-    fn reports(&self) -> &'static [AgentReportKind] {
-        STANDARD_REPORTS
-    }
-
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-        let load = || unified_rows(request);
-        match request.progress {
-            ProgressOwner::Source => {
-                track_usage_load(UsageLoadAgent("Codex"), request.shared.json, load)
-            }
-            ProgressOwner::Caller => load(),
-        }
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+        let load = || load_rows(request);
+        request
+            .progress
+            .run(UsageLoadAgent("Codex"), request.shared.json, load)
     }
 }
 
-fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-    let diagnostics = Diagnostics::new("codex");
+fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let shared = request.shared;
-    let owned_pricing = request.pricing.is_none().then(|| {
-        PricingMap::load_with_overrides(
-            shared.offline,
-            log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        )
-    });
-    let pricing = request
-        .pricing
-        .or(owned_pricing.as_ref())
-        .expect("Codex pricing is available");
+    let diagnostics = Diagnostics::for_report("codex", shared.clock);
+    let report_pricing = request.pricing_or_load();
+    let sources = crate::paths::codex_usage_sources()?;
+    let pricing = report_pricing.get();
     let speed = resolve_codex_speed(request.options.codex_speed);
 
-    let (rows, detected) = if shared.since.is_none() && shared.until.is_none() {
-        let (groups, detected) = load_groups_with_diagnostics(
-            shared,
-            request.kind,
-            request.multi_source_driver,
-            &diagnostics,
-        )?;
-        let rows = groups
-            .iter()
-            .map(|(period, group)| {
-                unified_row_from_group(period, group, pricing, speed, shared.mode)
-            })
-            .collect();
-        (rows, detected)
-    } else {
-        let (mut events, detected) = load_codex_events_with_detection_diagnostics(
-            shared,
-            ProgressOwner::Caller,
-            &diagnostics,
-        )?;
-        filter_events_by_date(&mut events, shared)?;
-        let groups = aggregate_events(&events, request.kind, shared.timezone.as_deref())?;
-        let rows = groups
-            .iter()
-            .map(|(period, group)| {
-                unified_row_from_group(period, group, pricing, speed, shared.mode)
-            })
-            .collect();
-        (rows, detected)
-    };
+    let (groups, detected) = crate::aggregate::load_groups_from_sources_with_diagnostics(
+        &sources,
+        shared,
+        request.kind.report_kind(),
+        pricing,
+        &diagnostics,
+    )?;
+    let rows = groups
+        .iter()
+        .map(|(period, group)| {
+            unified_row_from_group(request.kind, period, group, pricing, speed, shared.mode)
+        })
+        .collect();
 
-    Ok(SourceRows {
+    Ok(LoadedRows {
         rows,
         detected,
         diagnostics,
-        claude_counted: None,
     })
 }
 
-pub fn unified_row_from_group<S>(
+pub fn unified_row_from_group(
+    kind: ccusage_adapter_common::source::LoadKind,
     period: &str,
     group: &CodexGroup,
-    pricing: &PricingMap,
-    speed: S,
+    pricing: Option<&PricingMap>,
+    speed: crate::CodexSpeedPolicy,
     mode: CostMode,
-) -> UnifiedRow
-where
-    S: Into<crate::CodexSpeedPolicy> + Copy,
-{
-    let speed = speed.into();
+) -> SourceRow {
+    let pricing = pricing.filter(|_| mode != CostMode::Display);
     let mut model_breakdowns = group
         .models
         .iter()
         .map(|(model, usage)| {
             let input = non_cached_input_tokens(
-                usage.input_tokens,
-                usage.cached_input_tokens,
-                usage.cache_creation_tokens,
+                usage.usage.input_tokens,
+                usage.usage.cached_input_tokens,
+                usage.usage.cache_creation_tokens,
             );
             ModelBreakdown {
                 model_name: model.clone(),
                 input_tokens: input,
-                output_tokens: usage.output_tokens,
-                cache_creation_tokens: usage.cache_creation_tokens,
-                cache_read_tokens: usage.cached_input_tokens,
+                output_tokens: usage.usage.output_tokens,
+                cache_creation_tokens: usage.usage.cache_creation_tokens,
+                cache_read_tokens: usage.usage.cached_input_tokens,
                 cache_creation_1h_tokens: None,
                 extra_total_tokens: 0,
                 cost: calculate_codex_model_cost(model, usage, pricing, speed),
@@ -141,38 +100,233 @@ where
         .collect::<Vec<_>>();
     model_breakdowns.sort_by(|left, right| right.cost.total_cmp(&left.cost));
 
-    UnifiedRow {
-        period: period.to_string(),
+    SourceRow {
         agent: "codex",
-        models_used: group.models.keys().cloned().collect(),
-        input_tokens: non_cached_input_tokens(
-            group.input_tokens,
-            group.cached_input_tokens,
-            group.cache_creation_tokens,
-        ),
-        output_tokens: group.output_tokens,
-        cache_creation_tokens: group.cache_creation_tokens,
-        cache_read_tokens: group.cached_input_tokens,
-        total_tokens: group.total_tokens,
-        total_cost: calculate_group_cost(group, pricing, speed),
-        metadata: Some(json!({
-            "lastActivity": group.last_activity,
-            "reasoningOutputTokens": group.reasoning_output_tokens,
-        })),
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns,
+        metadata: (kind == ccusage_adapter_common::source::LoadKind::Session).then(|| {
+            SessionMetadata {
+                last_activity: Some(group.last_activity.clone()),
+                reasoning_output_tokens: Some(group.reasoning_output_tokens),
+                ..Default::default()
+            }
+        }),
+        usage: RowUsage {
+            period: period.to_string(),
+            models_used: group.models.keys().cloned().collect(),
+            input_tokens: non_cached_input_tokens(
+                group.input_tokens,
+                group.cached_input_tokens,
+                group.cache_creation_tokens,
+            ),
+            output_tokens: group.output_tokens,
+            cache_creation_tokens: group.cache_creation_tokens,
+            cache_read_tokens: group.cached_input_tokens,
+            total_tokens: group.total_tokens,
+            total_cost: calculate_group_cost(group, pricing, speed),
+            model_breakdowns,
+        },
     }
 }
 
 #[cfg(test)]
 mod diagnostic_tests {
     use super::*;
-    use ccusage_adapter_common::source::SourceOptions;
-    use ccusage_core::cli::SharedArgs;
-    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use crate::aggregate::load_groups_with_diagnostics;
+    use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
+    use ccusage_core::cli::{AgentReportKind, SharedArgs};
+    use ccusage_test_support::{EnvGuard, Fixture};
+    use serde_json::json;
+
+    #[test]
+    fn supplied_pricing_is_used_for_codex_tier_aggregation() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);
+        let _env = EnvGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().into())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            mode: CostMode::Calculate,
+            offline: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+        for kind in [
+            ccusage_adapter_common::source::LoadKind::Day,
+            ccusage_adapter_common::source::LoadKind::Session,
+        ] {
+            let loaded = SOURCE
+                .load_rows(&LoadRequest {
+                    kind,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
+            assert_eq!(loaded.rows.len(), 1);
+            assert_eq!(loaded.rows[0].total_tokens, 250010);
+            assert!((loaded.rows[0].total_cost - 1.2503).abs() < 1e-12);
+        }
+    }
+
+    fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<SourceRow> {
+        SOURCE
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
+                shared,
+                options: SourceOptions::default(),
+                pricing: Some(&PricingMap::load_embedded()),
+                progress: ProgressOwner::Caller,
+            })
+            .unwrap()
+            .rows
+    }
+
+    #[test]
+    fn display_reports_tokens_without_calculating_cost_from_supplied_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        fixture.write_file("sessions/tiny.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}"#);
+        let _env = EnvGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+
+        let rows = unified_codex_rows(&shared, AgentReportKind::Daily);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].total_tokens, 110);
+        assert_eq!(rows[0].total_cost, 0.0);
+        assert_eq!(rows[0].model_breakdowns[0].cost, 0.0);
+        assert!(!rows[0].model_breakdowns[0].missing_pricing);
+    }
+
+    #[test]
+    fn loads_pricing_when_the_caller_does_not_supply_it() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let usage = json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
+        fixture.write_file("sessions/session.jsonl", usage);
+        let _env = EnvGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+        let loaded = SOURCE
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
+                shared: &shared,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+            })
+            .unwrap();
+        assert_eq!(loaded.rows.len(), 1);
+        assert_eq!(loaded.rows[0].total_tokens, 110);
+        assert!(loaded.rows[0].total_cost > 0.0);
+    }
+
+    #[test]
+    fn bounded_unified_session_report_keeps_identical_requests_of_two_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let usage = json!({"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
+        fixture.write_file("sessions/session-a.jsonl", &usage);
+        fixture.write_file("sessions/session-b.jsonl", &usage);
+        let _env = EnvGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20260101".parse().unwrap()),
+            ..Default::default()
+        };
+
+        let rows = unified_codex_rows(&shared, AgentReportKind::Session);
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.period.as_str())
+                .collect::<Vec<_>>(),
+            ["session-a", "session-b"]
+        );
+        assert!(rows.iter().all(|row| row.total_tokens == 110));
+    }
+
+    #[test]
+    fn bounded_base_loads_match_focused_codex_daily_and_session_rows() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let usage = |timestamp: &str| {
+            json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
+        };
+        fixture.write_file("sessions/original.jsonl", usage("2026-01-02T00:00:00.000Z"));
+        fixture.write_file("sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
+        fixture.write_file("sessions/later.jsonl", usage("2026-01-03T00:00:00.000Z"));
+        let _env = EnvGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        let speed = crate::CodexSpeedPolicy::Forced(crate::CodexServiceTier::Standard);
+        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20260102".parse().unwrap()),
+                until: Some("20260102".parse().unwrap()),
+                ..Default::default()
+            };
+
+            let focused = load_groups_with_diagnostics(
+                &shared,
+                kind,
+                Some(&pricing),
+                &Diagnostics::for_report("codex", shared.clock),
+            )
+            .unwrap()
+            .0
+            .iter()
+            .map(|(period, group)| {
+                unified_row_from_group(
+                    ccusage_adapter_common::source::LoadKind::for_report(kind),
+                    period,
+                    group,
+                    Some(&pricing),
+                    speed,
+                    shared.mode,
+                )
+            })
+            .map(|row| (row.usage.period, row.usage.total_tokens))
+            .collect::<Vec<_>>();
+            let unified = unified_codex_rows(&shared, kind)
+                .into_iter()
+                .map(|row| (row.usage.period, row.usage.total_tokens))
+                .collect::<Vec<_>>();
+
+            assert_eq!(unified, focused, "{kind:?}");
+            if kind != AgentReportKind::Session {
+                assert_eq!(unified, [(focused[0].0.clone(), 110)], "{kind:?}");
+            }
+        }
+    }
+
     #[test]
     fn malformed_compaction_usage_warns_while_missing_and_zero_usage_stay_quiet() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let mut records = [
             ("array", json!([])),
@@ -193,29 +347,29 @@ mod diagnostic_tests {
             .map(|record| record.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        let _ = fixture.write_file("sessions/compaction.jsonl", &contents);
-        let _env = EnvVarsGuard::set_many([
+        fixture.write_file("sessions/compaction.jsonl", &contents);
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
-        for since in [None, Some("20260101".to_owned())] {
+        for since in [None, Some("20260101".parse().unwrap())] {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
-                timezone: Some("UTC".to_owned()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since,
                 ..Default::default()
             };
             let result = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind: AgentReportKind::Daily,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(result.rows.len(), 1);
@@ -243,8 +397,9 @@ mod diagnostic_tests {
 
     #[test]
     fn rejected_timestamps_advance_cumulative_usage_without_recounting_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -259,24 +414,24 @@ mod diagnostic_tests {
                 json!({"timestamp":invalid_timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":110,"output_tokens":22,"total_tokens":132}}}}),
                 json!({"timestamp":"2026-01-02T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":115,"output_tokens":23,"total_tokens":138}}}}),
             ].map(|record| record.to_string()).join("\n");
-            let _ = fixture.write_file("sessions/cumulative.jsonl", &records);
-            for since in [None, Some("20260101".to_owned())] {
+            fixture.write_file("sessions/cumulative.jsonl", &records);
+            for since in [None, Some("20260101".parse().unwrap())] {
                 let shared = SharedArgs {
                     offline: true,
                     debug: true,
-                    timezone: Some("UTC".to_owned()),
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                     since,
                     ..Default::default()
                 };
                 let result = SOURCE
-                    .unified_rows(&UnifiedRequest {
-                        kind: AgentReportKind::Daily,
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(
+                            AgentReportKind::Daily,
+                        ),
                         shared: &shared,
                         options: SourceOptions::default(),
                         pricing: Some(&pricing),
                         progress: ProgressOwner::Caller,
-                        multi_source_driver: true,
-                        claude_counted: None,
                     })
                     .unwrap();
                 assert_eq!(result.rows.len(), 1);
@@ -298,79 +453,76 @@ mod diagnostic_tests {
 
     #[test]
     fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
         for file in ["sessions/header.jsonl", "archived_sessions/header.jsonl"] {
-            let _ = fixture.write_file(
+            fixture.write_file(
                 file,
                 r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
             );
-            for since in [None, Some("20260101".to_owned())] {
+            for since in [None, Some("20260101".parse().unwrap())] {
                 let shared = SharedArgs {
                     offline: true,
                     json: true,
-                    timezone: Some("UTC".to_owned()),
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                     since,
                     ..Default::default()
                 };
-                for multi_source_driver in [false, true] {
-                    let result = SOURCE
-                        .unified_rows(&UnifiedRequest {
-                            kind: AgentReportKind::Daily,
-                            shared: &shared,
-                            options: SourceOptions::default(),
-                            pricing: Some(&pricing),
-                            progress: ProgressOwner::Caller,
-                            multi_source_driver,
-                            claude_counted: None,
-                        })
-                        .unwrap();
-                    assert!(result.detected);
-                    assert!(result.rows.is_empty());
-                    assert!(result.diagnostics.warnings(&shared).is_empty());
-                }
-                let (events, detected) = crate::load_codex_events_with_detection(&shared).unwrap();
-                assert!(detected);
-                assert!(events.is_empty());
+                let result = SOURCE
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(
+                            AgentReportKind::Daily,
+                        ),
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: Some(&pricing),
+                        progress: ProgressOwner::Caller,
+                    })
+                    .unwrap();
+                assert!(result.detected);
+                assert!(result.rows.is_empty());
+                assert!(result.diagnostics.warnings(&shared).is_empty());
             }
         }
     }
 
     #[test]
     fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let records = [
             json!({"timestamp":"SECRET_CANARY","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}}),
             json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}),
             json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
         ].map(|record| record.to_string()).join("\n");
-        let _ = fixture.write_file("sessions/timestamps.jsonl", &records);
-        let _env = EnvVarsGuard::set_many([
+        fixture.write_file("sessions/timestamps.jsonl", &records);
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
-        for since in [None, Some("20260101".to_owned())] {
+        for since in [None, Some("20260101".parse().unwrap())] {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
-                timezone: Some("UTC".to_owned()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since,
                 ..Default::default()
             };
             let result = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind: AgentReportKind::Daily,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(result.rows.len(), 1);
@@ -399,10 +551,11 @@ mod diagnostic_tests {
 
     #[test]
     fn specialized_diagnostics_keep_healthy_codex_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
-        let _ = fixture.write_file("sessions/bad.jsonl", r#"{"timestamp":{"unexpected":"SECRET_CANARY"},"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#);
-        let _ = fixture.write_file("sessions/corrupt.jsonl.zst", "SECRET_CANARY");
+        fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
+        fixture.write_file("sessions/bad.jsonl", r#"{"timestamp":{"unexpected":"SECRET_CANARY"},"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#);
+        fixture.write_file("sessions/corrupt.jsonl.zst", "SECRET_CANARY");
         let good = std::fs::read_to_string(fixture.path("sessions/good.jsonl"))
             .unwrap()
             .replace("00:00:00Z", "00:01:00Z")
@@ -412,12 +565,12 @@ mod diagnostic_tests {
             zstd::stream::encode_all([good.as_slice(), b"\n"].concat().as_slice(), 0).unwrap();
         interrupted.extend_from_slice(b"SECRET_CANARY");
         std::fs::write(fixture.path("sessions/interrupted.jsonl.zst"), interrupted).unwrap();
-        let _env = EnvVarsGuard::set_many([
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
         let pricing = PricingMap::load_embedded();
-        for since in [None, Some("2026-01-01".to_owned())] {
+        for since in [None, Some("2026-01-01".parse().unwrap())] {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
@@ -425,27 +578,27 @@ mod diagnostic_tests {
                 ..Default::default()
             };
             let rows = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind: AgentReportKind::Daily,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    multi_source_driver: true,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);
-            let diagnostics = Diagnostics::new("codex");
-            let (events, _) = load_codex_events_with_detection_diagnostics(
+            let diagnostics = Diagnostics::for_report("codex", shared.clock);
+            let (groups, _) = load_groups_with_diagnostics(
                 &shared,
-                ProgressOwner::Caller,
+                AgentReportKind::Daily,
+                Some(&crate::PricingMap::load_embedded()),
                 &diagnostics,
             )
             .unwrap();
-            assert_eq!(events.len(), 2);
             assert_eq!(
-                events.iter().map(|event| event.input_tokens).sum::<u64>(),
+                groups.values().map(|group| group.input_tokens).sum::<u64>(),
                 30
             );
             assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
@@ -479,6 +632,7 @@ mod diagnostic_tests {
 
     #[test]
     fn headless_usage_decode_failures_warn_without_dropping_healthy_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let records = [
             json!({
@@ -525,8 +679,8 @@ mod diagnostic_tests {
             .to_string(),
         ]
         .join("\n");
-        let _ = fixture.write_file("sessions/headless.jsonl", &records);
-        let _env = EnvVarsGuard::set_many([
+        fixture.write_file("sessions/headless.jsonl", &records);
+        let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
         ]);
@@ -534,19 +688,17 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             offline: true,
             debug: true,
-            timezone: Some("UTC".to_owned()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: Some(&pricing),
                 progress: ProgressOwner::Caller,
-                multi_source_driver: true,
-                claude_counted: None,
             })
             .unwrap();
 

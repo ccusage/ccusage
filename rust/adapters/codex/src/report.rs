@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::{
-    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,
-    Color, PricingMap, Result, SimpleTable, attach_unpriced_models,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket, Color,
+    ColumnKind, PricingMap, Result, SimpleTable, attach_unpriced_models,
     cli::{AgentReportKind, CostMode, SharedArgs},
     color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
     json_float, missing_pricing_model_for_token_total, print_box_title,
@@ -16,10 +16,11 @@ use super::speed::CodexSpeedPolicy;
 pub(super) fn report_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
+    let pricing = pricing.filter(|_| mode != CostMode::Display);
     let rows = groups
         .iter()
         .map(|(period, group)| group_json(period, group, kind, pricing, speed, mode))
@@ -56,10 +57,11 @@ fn group_json(
     period: &str,
     group: &CodexGroup,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
+    let pricing = pricing.filter(|_| mode != CostMode::Display);
     let cost = calculate_group_cost(group, pricing, speed);
     let input_tokens = non_cached_input_tokens(
         group.input_tokens,
@@ -100,7 +102,7 @@ fn group_json(
 pub(super) fn session_detail_json(
     session_id: &str,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
@@ -120,7 +122,7 @@ pub(super) fn session_detail_json(
     row
 }
 
-pub fn non_cached_input_tokens(
+pub(super) fn non_cached_input_tokens(
     input_tokens: u64,
     cached_input_tokens: u64,
     cache_creation_tokens: u64,
@@ -131,13 +133,13 @@ pub fn non_cached_input_tokens(
 fn model_usage_json(usage: &CodexModelUsage) -> Value {
     json!({
         "inputTokens": non_cached_input_tokens(
-            usage.input_tokens,
-            usage.cached_input_tokens,
-            usage.cache_creation_tokens,
+            usage.usage.input_tokens,
+            usage.usage.cached_input_tokens,
+            usage.usage.cache_creation_tokens,
         ),
-        "cacheCreationTokens": usage.cache_creation_tokens,
-        "cacheReadTokens": usage.cached_input_tokens,
-        "outputTokens": usage.output_tokens,
+        "cacheCreationTokens": usage.usage.cache_creation_tokens,
+        "cacheReadTokens": usage.usage.cached_input_tokens,
+        "outputTokens": usage.usage.output_tokens,
         "reasoningOutputTokens": usage.reasoning_output_tokens,
         "totalTokens": usage.total_tokens,
         "isFallback": usage.is_fallback,
@@ -146,27 +148,27 @@ fn model_usage_json(usage: &CodexModelUsage) -> Value {
 
 fn totals_json<'a>(
     groups: impl Iterator<Item = &'a CodexGroup>,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> Value {
-    let mut input = 0;
-    let mut cached = 0;
-    let mut creation = 0;
-    let mut output = 0;
-    let mut reasoning = 0;
-    let mut total = 0;
+    let mut input = 0u64;
+    let mut cached = 0u64;
+    let mut creation = 0u64;
+    let mut output = 0u64;
+    let mut reasoning = 0u64;
+    let mut total = 0u64;
     let mut cost = 0.0;
     for group in groups {
-        input += non_cached_input_tokens(
+        input = input.saturating_add(non_cached_input_tokens(
             group.input_tokens,
             group.cached_input_tokens,
             group.cache_creation_tokens,
-        );
-        cached += group.cached_input_tokens;
-        creation += group.cache_creation_tokens;
-        output += group.output_tokens;
-        reasoning += group.reasoning_output_tokens;
-        total += group.total_tokens;
+        ));
+        cached = cached.saturating_add(group.cached_input_tokens);
+        creation = creation.saturating_add(group.cache_creation_tokens);
+        output = output.saturating_add(group.output_tokens);
+        reasoning = reasoning.saturating_add(group.reasoning_output_tokens);
+        total = total.saturating_add(group.total_tokens);
         cost += calculate_group_cost(group, pricing, speed);
     }
     json!({
@@ -180,41 +182,38 @@ fn totals_json<'a>(
     })
 }
 
-pub fn calculate_codex_model_cost(
+pub(super) fn calculate_codex_model_cost(
     model: &str,
     usage: &CodexModelUsage,
-    pricing: &PricingMap,
-    speed: impl Into<CodexSpeedPolicy>,
+    pricing: Option<&PricingMap>,
+    speed: CodexSpeedPolicy,
 ) -> f64 {
-    let speed = speed.into();
-    if !usage.timestamped_usage.is_empty() {
-        return sum_costs(usage.timestamped_usage.iter().filter_map(
-            |(timestamp, timestamped_usage)| {
-                let pricing =
-                    pricing.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
-                Some(calculate_codex_usage_cost(
-                    *timestamped_usage,
-                    &pricing,
-                    speed,
-                ))
-            },
-        ));
-    }
-
-    let Some(pricing) = pricing.find(model) else {
+    let Some(handle) = pricing.and_then(|table| table.find_handle(model)) else {
         return 0.0;
     };
-    calculate_codex_usage_cost(
-        CodexTimestampedUsage {
-            usage: model_usage_bucket(usage),
-            recorded_standard_usage: usage.recorded_standard_usage,
-            recorded_fast_usage: usage.recorded_fast_usage,
-            recorded_flex_usage: usage.recorded_flex_usage,
-            recorded_ultrafast_usage: usage.recorded_ultrafast_usage,
-        },
-        &pricing,
-        speed,
-    )
+    if !usage.timestamped_usage.is_empty() {
+        return sum_costs(
+            usage
+                .timestamped_usage
+                .iter()
+                .map(|(timestamp, timestamped_usage)| {
+                    handle
+                        .with_rates_at(Some(crate::TimestampMs::from_millis(*timestamp)), |rates| {
+                            calculate_codex_usage_cost(*timestamped_usage, rates, speed)
+                        })
+                }),
+        );
+    }
+    handle.with_rates_at(None, |rates| {
+        calculate_codex_usage_cost(
+            CodexTimestampedUsage {
+                usage: usage.usage,
+                recorded_usage: usage.recorded_usage,
+            },
+            rates,
+            speed,
+        )
+    })
 }
 
 fn calculate_codex_usage_cost(
@@ -224,22 +223,13 @@ fn calculate_codex_usage_cost(
 ) -> f64 {
     let CodexTimestampedUsage {
         usage: total_usage,
-        recorded_standard_usage,
-        recorded_fast_usage,
-        recorded_flex_usage,
-        recorded_ultrafast_usage,
+        recorded_usage,
     } = usage;
+    let recorded_flex_usage = recorded_usage[CodexServiceTier::Flex];
+    let recorded_fast_usage = recorded_usage[CodexServiceTier::Fast];
+    let recorded_ultrafast_usage = recorded_usage[CodexServiceTier::Ultrafast];
     let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
-    let unclassified_usage = subtract_codex_usage_bucket(
-        total_usage,
-        add_codex_usage_buckets(
-            recorded_standard_usage,
-            add_codex_usage_buckets(
-                recorded_flex_usage,
-                add_codex_usage_buckets(recorded_fast_usage, recorded_ultrafast_usage),
-            ),
-        ),
-    );
+    let unclassified_usage = total_usage.saturating_sub(recorded_usage.total());
     let empty = CodexUsageBucket::default();
     let (flex_usage, fast_usage, ultrafast_usage) = match speed {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => {
@@ -254,19 +244,19 @@ fn calculate_codex_usage_cost(
             recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Flex) => (
-            add_codex_usage_buckets(recorded_flex_usage, unclassified_usage),
+            recorded_flex_usage + unclassified_usage,
             recorded_fast_usage,
             recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => (
             recorded_flex_usage,
-            add_codex_usage_buckets(recorded_fast_usage, unclassified_usage),
+            recorded_fast_usage + unclassified_usage,
             recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Ultrafast) => (
             recorded_flex_usage,
             recorded_fast_usage,
-            add_codex_usage_buckets(recorded_ultrafast_usage, unclassified_usage),
+            recorded_ultrafast_usage + unclassified_usage,
         ),
     };
     standard_cost
@@ -276,93 +266,19 @@ fn calculate_codex_usage_cost(
             * (pricing.ultrafast_multiplier - 1.0)
 }
 
-fn model_usage_bucket(usage: &CodexModelUsage) -> CodexUsageBucket {
-    CodexUsageBucket {
-        input_tokens: usage.input_tokens,
-        cached_input_tokens: usage.cached_input_tokens,
-        cache_creation_tokens: usage.cache_creation_tokens,
-        output_tokens: usage.output_tokens,
-        long_context_input_tokens: usage.long_context_input_tokens,
-        long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
-        long_context_cache_creation_tokens: usage.long_context_cache_creation_tokens,
-        long_context_output_tokens: usage.long_context_output_tokens,
-    }
-}
-
-fn subtract_codex_usage_bucket(
-    total: CodexUsageBucket,
-    excluded: CodexUsageBucket,
-) -> CodexUsageBucket {
-    CodexUsageBucket {
-        input_tokens: total.input_tokens.saturating_sub(excluded.input_tokens),
-        cached_input_tokens: total
-            .cached_input_tokens
-            .saturating_sub(excluded.cached_input_tokens),
-        cache_creation_tokens: total
-            .cache_creation_tokens
-            .saturating_sub(excluded.cache_creation_tokens),
-        output_tokens: total.output_tokens.saturating_sub(excluded.output_tokens),
-        long_context_input_tokens: total
-            .long_context_input_tokens
-            .saturating_sub(excluded.long_context_input_tokens),
-        long_context_cached_input_tokens: total
-            .long_context_cached_input_tokens
-            .saturating_sub(excluded.long_context_cached_input_tokens),
-        long_context_cache_creation_tokens: total
-            .long_context_cache_creation_tokens
-            .saturating_sub(excluded.long_context_cache_creation_tokens),
-        long_context_output_tokens: total
-            .long_context_output_tokens
-            .saturating_sub(excluded.long_context_output_tokens),
-    }
-}
-
-fn add_codex_usage_buckets(left: CodexUsageBucket, right: CodexUsageBucket) -> CodexUsageBucket {
-    CodexUsageBucket {
-        input_tokens: left.input_tokens.saturating_add(right.input_tokens),
-        cached_input_tokens: left
-            .cached_input_tokens
-            .saturating_add(right.cached_input_tokens),
-        cache_creation_tokens: left
-            .cache_creation_tokens
-            .saturating_add(right.cache_creation_tokens),
-        output_tokens: left.output_tokens.saturating_add(right.output_tokens),
-        long_context_input_tokens: left
-            .long_context_input_tokens
-            .saturating_add(right.long_context_input_tokens),
-        long_context_cached_input_tokens: left
-            .long_context_cached_input_tokens
-            .saturating_add(right.long_context_cached_input_tokens),
-        long_context_cache_creation_tokens: left
-            .long_context_cache_creation_tokens
-            .saturating_add(right.long_context_cache_creation_tokens),
-        long_context_output_tokens: left
-            .long_context_output_tokens
-            .saturating_add(right.long_context_output_tokens),
-    }
-}
-
 fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricing) -> f64 {
-    let cache_read = if pricing.cache_read_explicit {
-        pricing.cache_read
-    } else {
-        pricing.input
-    };
-    let cache_creation = pricing.cache_creation_input_token_cost();
-    // OpenAI bills every token of a long-context request (input above 272K
-    // tokens) at the long-context rates, so the aggregated usage is priced as
-    // two independent buckets. Models without long-context rates fall back to
-    // the flat rates, which keeps both buckets at the same price.
-    let long_input_rate = pricing.input_above_200k.unwrap_or(pricing.input);
-    let long_output_rate = pricing.output_above_200k.unwrap_or(pricing.output);
-    let long_cache_read = if pricing.cache_read_explicit {
-        pricing.cache_read_above_200k.unwrap_or(cache_read)
-    } else {
-        long_input_rate
-    };
-    let long_cache_creation_rate = pricing
-        .cache_creation_input_token_cost_above_200k_tokens()
-        .unwrap_or(cache_creation);
+    let cache_read = pricing.cache_read_rate_at(pricing.input);
+    let cache_creation = pricing.cache_creation_rate();
+    let rates = pricing
+        .long_context
+        .map(|context| context.rates)
+        .unwrap_or_default();
+    let long_input_rate = rates.input.unwrap_or(pricing.input);
+    let long_output_rate = rates.output.unwrap_or(pricing.output);
+    let long_cache_read = rates
+        .cache_read
+        .unwrap_or_else(|| pricing.cache_read_rate_at(long_input_rate));
+    let long_cache_creation_rate = rates.cache_create.unwrap_or(cache_creation);
     let long_input = usage.long_context_input_tokens.min(usage.input_tokens);
     let long_cached = usage
         .long_context_cached_input_tokens
@@ -393,11 +309,11 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
         + long_output as f64 * long_output_rate
 }
 
-pub fn calculate_group_cost<S>(group: &CodexGroup, pricing: &PricingMap, speed: S) -> f64
-where
-    S: Into<CodexSpeedPolicy> + Copy,
-{
-    let speed = speed.into();
+pub fn calculate_group_cost(
+    group: &CodexGroup,
+    pricing: Option<&PricingMap>,
+    speed: CodexSpeedPolicy,
+) -> f64 {
     sum_costs(
         group
             .models
@@ -406,24 +322,27 @@ where
     )
 }
 
-pub fn codex_model_missing_pricing(
+pub(super) fn codex_model_missing_pricing(
     model: &str,
     usage: &CodexModelUsage,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> bool {
     missing_pricing_model_for_token_total(
         Some(model),
-        usage
-            .total_tokens
-            .max(usage.input_tokens.saturating_add(usage.output_tokens)),
-        Some(pricing),
+        usage.total_tokens.max(
+            usage
+                .usage
+                .input_tokens
+                .saturating_add(usage.usage.output_tokens),
+        ),
+        pricing,
     )
     .is_some()
 }
 
 pub fn codex_missing_pricing_models(
     groups: &BTreeMap<String, CodexGroup>,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> Vec<String> {
     let mut models = BTreeSet::new();
     for group in groups.values() {
@@ -439,7 +358,7 @@ pub fn codex_missing_pricing_models(
 fn codex_table_columns(
     first_column: &'static str,
     no_cost: bool,
-) -> (Vec<&'static str>, Vec<Align>) {
+) -> (Vec<&'static str>, Vec<ColumnKind>) {
     let mut headers = vec![
         first_column,
         "Models",
@@ -451,32 +370,30 @@ fn codex_table_columns(
         "Total Tokens",
         "Cost (USD)",
     ];
-    let mut aligns = vec![
-        Align::Left,
-        Align::Left,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
+    let mut columns = vec![
+        ColumnKind::Primary,
+        ColumnKind::Models,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
     ];
     if no_cost {
         headers.pop();
-        aligns.pop();
+        columns.pop();
     }
-    (headers, aligns)
+    (headers, columns)
 }
 
 fn codex_table_row(
     label: &str,
-    kind: AgentReportKind,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     no_cost: bool,
-    terminal_width: usize,
 ) -> (Vec<String>, u64, f64) {
     let input_tokens = non_cached_input_tokens(
         group.input_tokens,
@@ -486,7 +403,7 @@ fn codex_table_row(
     let cost = calculate_group_cost(group, pricing, speed);
     let models = format_models_multiline(&group.models.keys().cloned().collect::<Vec<_>>());
     let mut row = vec![
-        codex_table_label(label, kind, terminal_width),
+        sanitize_terminal_text(label),
         models,
         format_number(input_tokens),
         format_number(group.output_tokens),
@@ -502,23 +419,6 @@ fn codex_table_row(
     (row, input_tokens, cost)
 }
 
-fn codex_table_label(label: &str, kind: AgentReportKind, terminal_width: usize) -> String {
-    let label = sanitize_terminal_text(label);
-    if matches!(kind, AgentReportKind::Daily) && terminal_width <= 120 {
-        let bytes = label.as_bytes();
-        if bytes.len() == 10
-            && bytes[4] == b'-'
-            && bytes[7] == b'-'
-            && bytes[..4].iter().all(u8::is_ascii_digit)
-            && bytes[5..7].iter().all(u8::is_ascii_digit)
-            && bytes[8..10].iter().all(u8::is_ascii_digit)
-        {
-            return format!("{}\n{}", &label[..4], &label[5..]);
-        }
-    }
-    label
-}
-
 #[derive(Default)]
 struct CodexTableTotals {
     input_tokens: u64,
@@ -532,12 +432,18 @@ struct CodexTableTotals {
 
 impl CodexTableTotals {
     fn add(&mut self, group: &CodexGroup, input_tokens: u64, cost: f64) {
-        self.input_tokens += input_tokens;
-        self.cache_creation_tokens += group.cache_creation_tokens;
-        self.cached_input_tokens += group.cached_input_tokens;
-        self.output_tokens += group.output_tokens;
-        self.reasoning_output_tokens += group.reasoning_output_tokens;
-        self.total_tokens += group.total_tokens;
+        self.input_tokens = self.input_tokens.saturating_add(input_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(group.cache_creation_tokens);
+        self.cached_input_tokens = self
+            .cached_input_tokens
+            .saturating_add(group.cached_input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(group.output_tokens);
+        self.reasoning_output_tokens = self
+            .reasoning_output_tokens
+            .saturating_add(group.reasoning_output_tokens);
+        self.total_tokens = self.total_tokens.saturating_add(group.total_tokens);
         self.cost += cost;
     }
 }
@@ -545,7 +451,7 @@ impl CodexTableTotals {
 fn push_codex_breakdown_rows(
     table: &mut SimpleTable,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) {
@@ -556,7 +462,7 @@ fn push_codex_breakdown_rows(
 
 fn enabled_codex_breakdown_rows(
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Vec<Vec<String>> {
@@ -569,7 +475,7 @@ fn enabled_codex_breakdown_rows(
 
 fn codex_breakdown_rows(
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Vec<Vec<String>> {
@@ -588,15 +494,19 @@ fn codex_breakdown_rows(
     let mut rows = Vec::with_capacity(models.len());
     for (model, usage, cost) in models {
         let input_tokens = non_cached_input_tokens(
-            usage.input_tokens,
-            usage.cached_input_tokens,
-            usage.cache_creation_tokens,
+            usage.usage.input_tokens,
+            usage.usage.cached_input_tokens,
+            usage.usage.cache_creation_tokens,
         );
         let mut row = vec![
             color(shared, format_breakdown_model_label(model), Color::Grey),
             String::new(),
             color(shared, format_number(input_tokens), Color::Grey),
-            color(shared, format_number(usage.output_tokens), Color::Grey),
+            color(
+                shared,
+                format_number(usage.usage.output_tokens),
+                Color::Grey,
+            ),
             color(
                 shared,
                 format_number(usage.reasoning_output_tokens),
@@ -604,12 +514,12 @@ fn codex_breakdown_rows(
             ),
             color(
                 shared,
-                format_number(usage.cache_creation_tokens),
+                format_number(usage.usage.cache_creation_tokens),
                 Color::Grey,
             ),
             color(
                 shared,
-                format_number(usage.cached_input_tokens),
+                format_number(usage.usage.cached_input_tokens),
                 Color::Grey,
             ),
             color(shared, format_number(usage.total_tokens), Color::Grey),
@@ -660,10 +570,11 @@ fn codex_table_total_row(
 pub(super) fn print_table_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Result<()> {
+    let pricing = pricing.filter(|_| shared.mode != CostMode::Display);
     if groups.is_empty() {
         eprintln!("No Codex usage data found.");
         return Ok(());
@@ -687,21 +598,17 @@ pub(super) fn print_table_from_groups(
         shared,
     );
     let terminal_width = crate::terminal_width();
-    let (headers, aligns) = codex_table_columns(first_column, shared.no_cost);
-    let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
+    let (headers, columns) = codex_table_columns(first_column, shared.no_cost);
+    let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
+    if kind == AgentReportKind::Daily {
+        table = table.with_date_compaction_at(120);
+    }
     let mut totals = CodexTableTotals::default();
     for (label, group) in groups {
-        let (row, input_tokens, cost) = codex_table_row(
-            label,
-            kind,
-            group,
-            pricing,
-            speed,
-            shared.no_cost,
-            terminal_width,
-        );
+        let (row, input_tokens, cost) =
+            codex_table_row(label, group, pricing, speed, shared.no_cost);
         totals.add(group, input_tokens, cost);
         table.push(row);
         push_codex_breakdown_rows(&mut table, group, pricing, speed, shared);
@@ -724,7 +631,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn report_totals_saturate_across_periods() {
+        let group = CodexGroup {
+            input_tokens: u64::MAX,
+            output_tokens: u64::MAX,
+            reasoning_output_tokens: u64::MAX,
+            total_tokens: u64::MAX,
+            ..CodexGroup::default()
+        };
+        let totals = totals_json(
+            [&group, &group].into_iter(),
+            Some(&PricingMap::default()),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        );
+        for field in [
+            "inputTokens",
+            "outputTokens",
+            "reasoningOutputTokens",
+            "totalTokens",
+        ] {
+            assert_eq!(totals[field], u64::MAX);
+        }
+        let mut table = CodexTableTotals::default();
+        table.add(&group, u64::MAX, 0.0);
+        table.add(&group, u64::MAX, 0.0);
+        assert_eq!(table.input_tokens, u64::MAX);
+        assert_eq!(table.output_tokens, u64::MAX);
+        assert_eq!(table.reasoning_output_tokens, u64::MAX);
+        assert_eq!(table.total_tokens, u64::MAX);
+    }
+
+    #[test]
     fn report_totals_list_unpriced_codex_models_only_when_present() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut group = CodexGroup {
             input_tokens: 100,
             output_tokens: 5,
@@ -734,10 +673,15 @@ mod tests {
         group.models.insert(
             "gpt-unknown-preview".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
@@ -745,7 +689,7 @@ mod tests {
         let report = report_from_groups(
             &groups,
             AgentReportKind::Daily,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Calculate,
         );
@@ -760,7 +704,7 @@ mod tests {
 
         let mut pricing = PricingMap::default();
         pricing.load_json(
-            r#"{ "gpt-free": { "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
+            r#"{ "gpt-free": { "litellm_provider": "openai", "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
         );
         let mut free_group = CodexGroup {
             input_tokens: 100,
@@ -771,17 +715,22 @@ mod tests {
         free_group.models.insert(
             "gpt-free".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let free = BTreeMap::from([("2026-08-20".to_string(), free_group)]);
         let report = report_from_groups(
             &free,
             AgentReportKind::Daily,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
             CostMode::Calculate,
         );
@@ -809,17 +758,22 @@ mod tests {
         priced_group.models.insert(
             "gpt-priced".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let priced = BTreeMap::from([("2026-08-20".to_string(), priced_group)]);
         let report = report_from_groups(
             &priced,
             AgentReportKind::Daily,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Calculate,
         );
@@ -828,27 +782,39 @@ mod tests {
     }
 
     #[test]
-    fn display_mode_omits_missing_pricing_metadata() {
+    fn display_mode_ignores_even_supplied_pricing_and_omits_price_metadata() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut group = CodexGroup::default();
         group.models.insert(
             "gpt-unknown-preview".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
                 total_tokens: 100,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-unknown-preview":{"input_cost_per_token":1,"output_cost_per_token":2}}"#,
+        );
 
         let report = report_from_groups(
             &groups,
             AgentReportKind::Daily,
-            &PricingMap::default(),
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Display,
         );
 
         assert!(report["totals"].get("unpricedModels").is_none());
+        assert_eq!(report["totals"]["costUSD"], 0.0);
+        assert_eq!(report["daily"][0]["costUSD"], 0.0);
         assert!(
             report["daily"][0]["models"]["gpt-unknown-preview"]
                 .get("missingPricing")
@@ -874,31 +840,29 @@ mod tests {
             ..CodexGroup::default()
         };
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", false);
+        let (headers, columns) = codex_table_columns("Date", false);
         let (row, input_tokens, cost) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            160,
         );
         let mut totals = CodexTableTotals::default();
         totals.add(&group, input_tokens, cost);
         let total_row = codex_table_total_row(&totals, &shared, false);
 
         assert_eq!(headers[5], "Cache Create");
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
         assert_eq!(row[5], "30");
         assert_eq!(total_row[5], "30");
     }
 
     #[test]
-    fn standard_cost_table_at_120_columns_renders_distinguishable_daily_dates() {
+    fn daily_rows_leave_date_compaction_to_the_table() {
         let group = CodexGroup {
             input_tokens: 100,
             cached_input_tokens: 60,
@@ -908,37 +872,33 @@ mod tests {
             total_tokens: 105,
             ..CodexGroup::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", false);
+        let (headers, columns) = codex_table_columns("Date", false);
         let (row, _, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            120,
         );
-        let (no_cost_headers, no_cost_aligns) = codex_table_columns("Date", true);
+        let (no_cost_headers, no_cost_columns) = codex_table_columns("Date", true);
         let (no_cost_row, _, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
-            120,
         );
 
         assert_eq!(headers[5], "Cache Create");
-        assert_eq!(headers.len(), aligns.len());
-        assert_eq!(row[0], "2026\n08-20");
+        assert_eq!(headers.len(), columns.len());
+        assert_eq!(row[0], "2026-08-20");
         assert_eq!(no_cost_headers.last(), Some(&"Total Tokens"));
-        assert_eq!(no_cost_headers.len(), no_cost_aligns.len());
-        assert_eq!(no_cost_row[0], "2026\n08-20");
+        assert_eq!(no_cost_headers.len(), no_cost_columns.len());
+        assert_eq!(no_cost_row[0], "2026-08-20");
     }
 
     #[test]
-    fn no_cost_table_at_120_columns_renders_distinguishable_daily_dates() {
+    fn no_cost_daily_columns_match_detail_and_total_rows() {
         let group = CodexGroup {
             input_tokens: 100,
             cached_input_tokens: 60,
@@ -949,27 +909,23 @@ mod tests {
             ..CodexGroup::default()
         };
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", true);
+        let (headers, columns) = codex_table_columns("Date", true);
         let (first_row, first_input, first_cost) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
-            120,
         );
         let (second_row, second_input, second_cost) = codex_table_row(
             "2026-08-21",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
-            120,
         );
         let mut totals = CodexTableTotals::default();
         totals.add(&group, first_input, first_cost);
@@ -978,12 +934,12 @@ mod tests {
 
         assert_eq!(headers[5], "Cache Create");
         assert_eq!(headers.last(), Some(&"Total Tokens"));
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
         assert_eq!(first_row.len(), headers.len());
         assert_eq!(second_row.len(), headers.len());
         assert_eq!(total_row.len(), headers.len());
-        assert_eq!(first_row[0], "2026\n08-20");
-        assert_eq!(second_row[0], "2026\n08-21");
+        assert_eq!(first_row[0], "2026-08-20");
+        assert_eq!(second_row[0], "2026-08-21");
         assert_ne!(first_row[0], second_row[0]);
         assert_eq!(first_row[5], "30");
         assert_eq!(total_row[5], "60");
@@ -1002,25 +958,35 @@ mod tests {
         group.models.insert(
             "gpt-5.3-codex".to_string(),
             CodexModelUsage {
-                input_tokens: 70,
-                cached_input_tokens: 40,
-                cache_creation_tokens: 20,
-                output_tokens: 3,
                 reasoning_output_tokens: 1,
                 total_tokens: 73,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 70,
+                        cached_input_tokens: 40,
+                        cache_creation_tokens: 20,
+                        output_tokens: 3,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         group.models.insert(
             "gpt-5-mini".to_string(),
             CodexModelUsage {
-                input_tokens: 30,
-                cached_input_tokens: 20,
-                cache_creation_tokens: 10,
-                output_tokens: 2,
                 reasoning_output_tokens: 0,
                 total_tokens: 32,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 30,
+                        cached_input_tokens: 20,
+                        cache_creation_tokens: 10,
+                        output_tokens: 2,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         group
@@ -1031,12 +997,12 @@ mod tests {
         let group = breakdown_group();
         let shared = SharedArgs {
             breakdown: true,
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let rows = enabled_codex_breakdown_rows(
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             &shared,
         );
@@ -1055,20 +1021,18 @@ mod tests {
             .values()
             .map(|usage| {
                 non_cached_input_tokens(
-                    usage.input_tokens,
-                    usage.cached_input_tokens,
-                    usage.cache_creation_tokens,
+                    usage.usage.input_tokens,
+                    usage.usage.cached_input_tokens,
+                    usage.usage.cache_creation_tokens,
                 )
             })
             .sum();
         let (row, group_input, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            160,
         );
         assert_eq!(input, group_input);
         assert_eq!(row[2], format_number(group_input));
@@ -1080,31 +1044,29 @@ mod tests {
     fn table_pushes_no_extra_rows_without_breakdown_flag() {
         let group = breakdown_group();
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", false);
+        let (headers, columns) = codex_table_columns("Date", false);
         let (row, _, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            160,
         );
 
         assert!(!shared.breakdown);
         assert!(
             enabled_codex_breakdown_rows(
                 &group,
-                &PricingMap::default(),
+                Some(&PricingMap::default()),
                 CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
                 &shared,
             )
             .is_empty()
         );
         assert_eq!(row.len(), headers.len());
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
     }
 }

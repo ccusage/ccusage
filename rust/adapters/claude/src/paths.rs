@@ -1,24 +1,25 @@
 use std::{
     fs,
-    io::{BufRead as _, BufReader},
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
-use memchr::memmem;
 use serde::Deserialize;
 
 use crate::{
-    Diagnostics, MILLIS_PER_DAY, Result,
-    cli::SharedArgs,
+    Diagnostics, MILLIS_PER_DAY, Result, TimestampMs,
+    cli::{SharedArgs, home},
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
-    home, resolve_tz,
+    resolve_tz,
 };
-use crate::{TimestampMs, parse_ts_timestamp};
-use ccusage_adapter_common::visit_usage_files as visit_usage_files_in;
+use ccusage_adapter_common::{
+    jsonl::{self, ReadPolicy},
+    visit_usage_files as visit_usage_files_in,
+};
 
-pub fn claude_paths() -> Result<Vec<PathBuf>> {
+pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
         home::ClaudeConfigDirs::Env { value, dirs } => (Some(value), dirs),
         home::ClaudeConfigDirs::Default(dirs) => (None, dirs),
@@ -38,7 +39,7 @@ pub fn claude_paths() -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-pub fn usage_files(
+pub(crate) fn usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
@@ -54,104 +55,105 @@ pub fn usage_files(
     files
 }
 
-/// Hands each usage file to `visit` as the walk finds it, unsorted.
 pub(crate) fn visit_usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     visit: &mut dyn FnMut(PathBuf),
     diagnostics: &Diagnostics,
 ) {
+    let mut filtered_visit = |path: PathBuf| {
+        if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
+            visit(path);
+        }
+    };
     for path in paths {
         let projects_dir = path.join("projects");
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
-            visit_usage_files_in(&projects_dir.join(project_filter), visit, diagnostics);
+            visit_usage_files_in(
+                &projects_dir.join(project_filter),
+                &mut filtered_visit,
+                diagnostics,
+            );
         } else {
-            visit_usage_files_in(&projects_dir, visit, diagnostics);
+            visit_usage_files_in(&projects_dir, &mut filtered_visit, diagnostics);
         }
     }
 }
 
-/// The order [`usage_files`] lists files in, which deduplication depends on.
 pub(crate) fn usage_file_order(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Margin subtracted from the `--since` lower bound before comparing it with
-/// file mtimes. It absorbs the gap between the timezone-resolved bound and
-/// wall-clock mtimes, plus sessions flushed well after the entries they hold.
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 
-/// Usage files split by whether they can hold entries inside a `--since`
-/// window.
 pub(super) struct SinceFiles {
-    /// Files that may hold entries inside the window, in discovery order.
     pub(super) kept: Vec<PathBuf>,
-    /// Files skipped because their whole session was last written before it.
     pub(super) pruned: Vec<PathBuf>,
 }
 
-/// Drops sessions whose files were all last written before the `--since`
-/// window.
-///
-/// Claude session JSONL files are append-only, so a file last written before
-/// the window opened cannot hold an entry inside it. Deduplication matches
-/// sidechain replays against their parent messages by session ID, which spans
-/// files (subagent and workflow transcripts, legacy flat `agent-*.jsonl`
-/// files, copies in another config root), so files are kept or dropped per
-/// connected group of session IDs: dropping a parent file alone would let its
-/// replay count twice. Copies of a message in other sessions, such as resumed
-/// transcripts, keep the original timestamp, so they fall on the same side of
-/// the window as the original.
-///
-/// Only the file list is narrowed; entries parsed from a surviving file are
-/// untouched. Every file is kept when `since` is unset or unparsable, when the
-/// window opens ahead of the current clock, or when a file's mtime cannot be
-/// read.
-///
-/// @param files Discovered usage files.
-/// @param shared Report arguments providing `since` and `timezone`.
-/// @param now Current wall-clock time.
-/// @returns The kept files and the pruned ones, each in discovery order.
-pub(super) fn split_files_before_since(
-    files: Vec<PathBuf>,
+// NOTE(2026-09-25, #1794): Claude Code appends session JSONL, and a transcript can record a session ID different from its directory. Keep related transcripts together when pruning by mtime so a replay still has its parent.
+pub(super) fn usage_files_before_since(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
     shared: &SharedArgs,
     now: TimestampMs,
 ) -> SinceFiles {
-    let keep_all = |files| SinceFiles {
-        kept: files,
-        pruned: Vec::new(),
+    let files = usage_files(paths, project_filter, diagnostics);
+    let Some(threshold) = prune_threshold(shared, now) else {
+        return SinceFiles {
+            kept: files,
+            pruned: Vec::new(),
+        };
     };
-    let timezone = resolve_tz(shared.timezone.as_deref());
-    let (Some(since_ms), _) = date_range_bounds_ms(shared.since.as_deref(), None, &timezone) else {
-        return keep_all(files);
-    };
-    // Entry timestamps can outrun any mtime the filesystem reports when the
-    // window starts in the future, so an mtime cannot rule a file out.
-    if since_ms > now.as_millis() {
-        return keep_all(files);
-    }
-    let threshold = since_ms.saturating_sub(MTIME_PRUNE_MARGIN_MS);
+    split_files(files, threshold)
+}
 
-    // Union every file's session IDs so files sharing any ID share a group.
+fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
+    let timezone = resolve_tz(shared.timezone.as_ref());
+    let (since, _) = date_range_bounds_ms(shared.since, None, &timezone);
+    since
+        .filter(|since| *since <= now.as_millis())
+        .map(|since| since.saturating_sub(MTIME_PRUNE_MARGIN_MS))
+}
+
+fn split_files(files: Vec<PathBuf>, threshold: i64) -> SinceFiles {
+    let live = files
+        .iter()
+        .map(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
+        .collect::<Vec<_>>();
+    if live.iter().all(|&live| live) {
+        return SinceFiles {
+            kept: files,
+            pruned: Vec::new(),
+        };
+    }
+    if live.iter().all(|&live| !live) {
+        return SinceFiles {
+            kept: Vec::new(),
+            pruned: files,
+        };
+    }
+
     let mut sessions = SessionGroups::default();
     let file_groups = files
         .iter()
         .map(|file| {
             let (path_session, _) = extract_session_parts(file);
             let group = sessions.id(&path_session);
-            if let Some(recorded) = recorded_session_id(file) {
+            if let Some(recorded) = first_recorded_session_id(file) {
                 let recorded = sessions.id(&recorded);
                 sessions.union(group, recorded);
             }
             group
         })
         .collect::<Vec<_>>();
-    let live_groups = files
-        .iter()
+    let live_groups = live
+        .into_iter()
         .zip(&file_groups)
-        .filter(|(file, _)| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
+        .filter(|(live, _)| *live)
         .map(|(_, &group)| sessions.root(group))
         .collect::<FxHashSet<_>>();
 
@@ -169,7 +171,6 @@ pub(super) fn split_files_before_since(
     split
 }
 
-/// Union-find over session IDs.
 #[derive(Default)]
 struct SessionGroups {
     ids: FxHashMap<String, usize>,
@@ -189,7 +190,6 @@ impl SessionGroups {
 
     fn root(&mut self, mut id: usize) -> usize {
         while self.parents[id] != id {
-            // Path halving: point each visited node at its grandparent.
             self.parents[id] = self.parents[self.parents[id]];
             id = self.parents[id];
         }
@@ -202,34 +202,26 @@ impl SessionGroups {
     }
 }
 
-/// Returns the first `sessionId` a transcript records, which is the session
-/// the loaders attribute its entries to. Transcripts record a single session,
-/// so reading stops at the first line that names one.
-fn recorded_session_id(path: &Path) -> Option<String> {
+fn first_recorded_session_id(path: &Path) -> Option<String> {
     #[derive(Deserialize)]
     struct SessionIdProbe {
         #[serde(rename = "sessionId")]
         session_id: Option<String>,
     }
 
-    let mut reader = BufReader::new(fs::File::open(path).ok()?);
-    let session_id_marker = LinePrefilter::all(&[br#""sessionId""#]);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        if reader.read_until(b'\n', &mut line).ok()? == 0 {
-            return None;
-        }
-        if !session_id_marker.matches(&line) {
-            continue;
-        }
-        if let Ok(SessionIdProbe {
-            session_id: Some(session_id),
-        }) = serde_json::from_slice(&line)
+    let marker = LinePrefilter::all(&[br#""sessionId""#]);
+    jsonl::read(path, None, ReadPolicy::PLAIN, |line, _, _| {
+        if marker.matches(line.raw)
+            && let Ok(SessionIdProbe {
+                session_id: Some(session_id),
+            }) = line.decode()
         {
-            return Some(session_id);
+            return ControlFlow::Break(session_id);
         }
-    }
+        ControlFlow::Continue(())
+    })
+    .ok()
+    .flatten()
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
@@ -252,20 +244,7 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-#[doc(hidden)]
-pub fn timestamp_from_line(line: &str) -> Option<TimestampMs> {
-    timestamp_from_line_bytes(line.as_bytes())
-}
-
-fn timestamp_from_line_bytes(line: &[u8]) -> Option<TimestampMs> {
-    let marker = br#""timestamp":""#;
-    let start = memmem::find(line, marker)? + marker.len();
-    let end = memchr::memchr(b'"', &line[start..])? + start;
-    let timestamp = std::str::from_utf8(&line[start..end]).ok()?;
-    parse_ts_timestamp(timestamp)
-}
-
-pub fn extract_project(path: &Path) -> String {
+pub(crate) fn extract_project(path: &Path) -> String {
     let mut saw_projects = false;
     for part in path
         .components()
@@ -286,7 +265,7 @@ pub fn extract_project(path: &Path) -> String {
     "unknown".to_string()
 }
 
-pub fn extract_session_parts(path: &Path) -> (String, String) {
+pub(crate) fn extract_session_parts(path: &Path) -> (String, String) {
     let parts = path
         .components()
         .filter_map(|component| component.as_os_str().to_str())
@@ -337,37 +316,28 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{File, FileTimes},
-        path::{Path, PathBuf},
-        time::{Duration, UNIX_EPOCH},
-    };
+    use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs};
+    use ccusage_test_support::{fs_fixture, instant, set_modified};
+    use std::path::{Path, PathBuf};
 
-    use ccusage_test_support::fs_fixture;
-
-    use super::{extract_session_parts, split_files_before_since};
-    use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
-
-    fn set_file_modified(path: &Path, timestamp: TimestampMs) {
-        let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
-        File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_times(
-                FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)),
-            )
-            .unwrap();
-    }
-
-    fn ts(value: &str) -> TimestampMs {
-        parse_ts_timestamp(value).unwrap()
+    fn split_files_before_since(
+        files: Vec<PathBuf>,
+        shared: &SharedArgs,
+        now: TimestampMs,
+    ) -> super::SinceFiles {
+        let Some(threshold) = super::prune_threshold(shared, now) else {
+            return super::SinceFiles {
+                kept: files,
+                pruned: Vec::new(),
+            };
+        };
+        super::split_files(files, threshold)
     }
 
     fn shared_since(since: Option<&str>) -> SharedArgs {
         SharedArgs {
-            since: since.map(str::to_string),
-            timezone: Some("UTC".to_string()),
+            since: since.map(|date| date.parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         }
     }
@@ -383,9 +353,9 @@ mod tests {
         let old = root.join("projects/p/old.jsonl");
         let margin = root.join("projects/p/margin.jsonl");
         let fresh = root.join("projects/p/fresh.jsonl");
-        set_file_modified(&old, ts("2026-09-18T12:00:00Z"));
-        set_file_modified(&margin, ts("2026-09-19T12:00:00Z"));
-        set_file_modified(&fresh, ts("2026-09-20T12:00:00Z"));
+        set_modified(&old, instant("2026-09-18T12:00:00Z"));
+        set_modified(&margin, instant("2026-09-19T12:00:00Z"));
+        set_modified(&fresh, instant("2026-09-20T12:00:00Z"));
         vec![fresh, margin, old]
     }
 
@@ -446,6 +416,28 @@ mod tests {
     }
 
     #[test]
+    fn lists_a_parent_transcript_before_its_subagent_transcripts() {
+        let fixture = fs_fixture!({
+            "projects/project1/session-a.jsonl": "",
+            "projects/project1/session-a/subagents/agent-a.jsonl": "",
+        });
+
+        let files = super::usage_files(
+            &[fixture.root().to_path_buf()],
+            None,
+            &crate::Diagnostics::new("claude"),
+        );
+
+        assert_eq!(
+            files,
+            [
+                fixture.path("projects/project1/session-a.jsonl"),
+                fixture.path("projects/project1/session-a/subagents/agent-a.jsonl"),
+            ]
+        );
+    }
+
+    #[test]
     fn prunes_files_last_written_before_the_since_margin() {
         let fixture = fs_fixture!({
             "projects/p/old.jsonl": "{}",
@@ -457,7 +449,7 @@ mod tests {
         let kept = split_files_before_since(
             files,
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         )
         .kept;
 
@@ -473,8 +465,12 @@ mod tests {
         });
         let files = fixture_files(fixture.root());
 
-        let kept =
-            split_files_before_since(files, &shared_since(None), ts("2026-09-24T00:00:00Z")).kept;
+        let kept = split_files_before_since(
+            files,
+            &shared_since(None),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+        )
+        .kept;
 
         assert_eq!(kept.len(), 3);
     }
@@ -487,7 +483,8 @@ mod tests {
             "projects/p/fresh.jsonl": "{}",
         });
         let files = fixture_files(fixture.root());
-        let now = TimestampMs::from_millis(ts("2026-09-30T00:00:00Z").as_millis() - MILLIS_PER_DAY);
+        let now =
+            TimestampMs::from_millis(instant("2026-09-30T00:00:00Z").millis() - MILLIS_PER_DAY);
 
         let kept = split_files_before_since(files, &shared_since(Some("20260930")), now).kept;
 
@@ -501,7 +498,7 @@ mod tests {
         let kept = split_files_before_since(
             vec![missing.clone()],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         )
         .kept;
 
@@ -521,11 +518,10 @@ mod tests {
         let live_agent = root.join("projects/p/live/subagents/agent-a.jsonl");
         let stale_parent = root.join("projects/p/stale.jsonl");
         let stale_agent = root.join("projects/p/stale/subagents/agent-b.jsonl");
-        // Only the live session's subagent was written inside the window.
-        set_file_modified(&live_parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&live_agent, ts("2026-09-21T12:00:00Z"));
-        set_file_modified(&stale_parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&stale_agent, ts("2026-09-02T12:00:00Z"));
+        set_modified(&live_parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&live_agent, instant("2026-09-21T12:00:00Z"));
+        set_modified(&stale_parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&stale_agent, instant("2026-09-02T12:00:00Z"));
 
         let split = split_files_before_since(
             vec![
@@ -535,7 +531,7 @@ mod tests {
                 stale_agent.clone(),
             ],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         );
 
         assert_eq!(split.kept, [live_parent, live_agent]);
@@ -555,9 +551,9 @@ mod tests {
         let live_agent = root.join("a/projects/p/agent-1234.jsonl");
         let stale_agent = root.join("a/projects/p/agent-5678.jsonl");
         let other_root_copy = root.join("b/projects/p/live.jsonl");
-        set_file_modified(&live, ts("2026-09-21T12:00:00Z"));
+        set_modified(&live, instant("2026-09-21T12:00:00Z"));
         for stale in [&live_agent, &stale_agent, &other_root_copy] {
-            set_file_modified(stale, ts("2026-09-01T12:00:00Z"));
+            set_modified(stale, instant("2026-09-01T12:00:00Z"));
         }
 
         let split = split_files_before_since(
@@ -568,21 +564,11 @@ mod tests {
                 other_root_copy.clone(),
             ],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         );
 
         assert_eq!(split.kept, [live_agent, live, other_root_copy]);
         assert_eq!(split.pruned, [stale_agent]);
-    }
-
-    #[test]
-    fn extracts_parent_session_from_claude_workflow_run_path() {
-        let (session_id, project_path) = extract_session_parts(Path::new(
-            "/home/me/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
-        ));
-
-        assert_eq!(session_id, "session-a");
-        assert_eq!(project_path, "project-a");
     }
 
     #[test]
@@ -595,13 +581,13 @@ mod tests {
         let parent = root.join("projects/p/session-y.jsonl");
         let workflow_agent =
             root.join("projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl");
-        set_file_modified(&parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&workflow_agent, ts("2026-09-21T12:00:00Z"));
+        set_modified(&parent, instant("2026-09-01T12:00:00Z"));
+        set_modified(&workflow_agent, instant("2026-09-21T12:00:00Z"));
 
         let split = split_files_before_since(
             vec![parent.clone(), workflow_agent.clone()],
             &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
         );
 
         assert_eq!(split.kept, [parent, workflow_agent]);
@@ -615,7 +601,8 @@ mod tests {
         });
 
         assert_eq!(
-            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            super::first_recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl"))
+                .as_deref(),
             Some("parent")
         );
     }
@@ -631,7 +618,8 @@ mod tests {
         });
 
         assert_eq!(
-            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            super::first_recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl"))
+                .as_deref(),
             Some("parent")
         );
     }

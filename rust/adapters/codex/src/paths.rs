@@ -1,35 +1,29 @@
 use std::{
-    env, fs,
+    fs,
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
-#[cfg(test)]
-use std::{
-    fs::{File, FileTimes},
-    time::Duration,
+use ccusage_adapter_common::{
+    roots::{self, RootsEnv},
+    visit_files_matching,
 };
-
-use ccusage_adapter_common::collect_files_matching;
 use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
 use crate::{
-    Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet, home, resolve_tz,
+    Result,
+    cli::{SharedArgs, home},
+    date_range_bounds_ms,
+    fast::FxHashSet,
+    resolve_tz,
 };
 
 use super::reader::{is_rollout_file, uncompressed_rollout_path};
 
 pub(super) fn codex_usage_sources() -> Result<Vec<CodexUsageSource>> {
     Ok(codex_usage_sources_from_homes(codex_home_paths()?))
-}
-
-#[cfg(test)]
-fn codex_usage_paths_from_homes(homes: Vec<PathBuf>) -> Vec<PathBuf> {
-    codex_usage_sources_from_homes(homes)
-        .into_iter()
-        .map(|source| source.dir)
-        .collect()
 }
 
 fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> {
@@ -41,27 +35,18 @@ fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> 
         let mut found_usage_dir = false;
         if sessions.is_dir() {
             if seen.insert(sessions.clone()) {
-                paths.push(CodexUsageSource {
-                    dir: sessions,
-                    dedupe_scope: path.clone(),
-                });
+                paths.push(CodexUsageSource::new(sessions, path.clone()));
             }
             found_usage_dir = true;
         }
         if archived_sessions.is_dir() {
             if seen.insert(archived_sessions.clone()) {
-                paths.push(CodexUsageSource {
-                    dir: archived_sessions,
-                    dedupe_scope: path.clone(),
-                });
+                paths.push(CodexUsageSource::new(archived_sessions, path.clone()));
             }
             found_usage_dir = true;
         }
         if !found_usage_dir && seen.insert(path.clone()) {
-            paths.push(CodexUsageSource {
-                dir: path.clone(),
-                dedupe_scope: path,
-            });
+            paths.push(CodexUsageSource::new(path.clone(), path));
         }
     }
     paths
@@ -69,14 +54,17 @@ fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> 
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CodexUsageSource {
-    pub(super) dir: PathBuf,
+    dir: PathBuf,
     dedupe_scope: PathBuf,
 }
 
-#[cfg(test)]
 impl CodexUsageSource {
-    pub(super) fn new_for_test(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
+    pub(super) fn new(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
         Self { dir, dedupe_scope }
+    }
+
+    pub(super) fn dir(&self) -> &Path {
+        &self.dir
     }
 }
 
@@ -86,33 +74,42 @@ pub(super) struct CodexUsageFileGroup {
     pub(super) files: Vec<PathBuf>,
 }
 
-pub(super) fn collect_codex_usage_files(dir: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_files_matching(dir, &is_rollout_file, &mut files, diagnostics);
-    files.sort();
-    // Sorting puts `x.jsonl` before `x.jsonl.zst`. Codex also prefers the plain
-    // copy: resuming a compressed rollout restores it before removing the `.zst`.
+pub(super) fn visit_deduped_codex_usage_files(
+    sources: &[CodexUsageSource],
+    diagnostics: &Diagnostics,
+    mut visit: impl FnMut(usize, PathBuf),
+) {
     let mut seen = FxHashSet::default();
-    files.retain(|path| seen.insert(uncompressed_rollout_path(path)));
-    files
+    for (group, source) in sources.iter().enumerate() {
+        let _ = visit_files_matching(
+            &source.dir,
+            &is_rollout_file,
+            &mut |path| {
+                // NOTE(2026-10-14, #1890): Codex restores the plain `.jsonl` before deleting the compressed copy on resume. Prefer the plain rollout while both exist.
+                if seen.insert(codex_usage_file_key(source, &path)) {
+                    visit(group, path);
+                }
+                ControlFlow::Continue(())
+            },
+            diagnostics,
+        );
+    }
 }
 
 pub(super) fn collect_deduped_codex_usage_files(
     sources: &[CodexUsageSource],
     diagnostics: &Diagnostics,
 ) -> Vec<CodexUsageFileGroup> {
-    let mut seen = FxHashSet::default();
-    let mut groups = Vec::new();
-    for source in sources {
-        let files = collect_codex_usage_files(&source.dir, diagnostics)
-            .into_iter()
-            .filter(|file| seen.insert(codex_usage_file_key(source, file)))
-            .collect::<Vec<_>>();
-        groups.push(CodexUsageFileGroup {
+    let mut groups = sources
+        .iter()
+        .map(|source| CodexUsageFileGroup {
             dir: source.dir.clone(),
-            files,
-        });
-    }
+            files: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    visit_deduped_codex_usage_files(sources, diagnostics, |group, path| {
+        groups[group].files.push(path);
+    });
     groups
 }
 
@@ -126,41 +123,40 @@ pub(super) fn filter_codex_usage_files(
     };
     files
         .iter()
-        .filter(|file| {
-            eligibility.contains(
-                codex_file_date(sessions_dir, file),
-                file_modified_millis(file),
-            )
-        })
+        .filter(|file| eligibility.contains_file(sessions_dir, file))
         .cloned()
         .collect()
 }
 
 #[derive(Clone, Copy)]
-struct CodexFileEligibility {
+pub(super) struct CodexFileEligibility {
     since_date: Option<Date>,
     until_path_date: Option<Date>,
     since_millis: Option<i64>,
 }
 
 impl CodexFileEligibility {
-    fn from_shared(shared: &SharedArgs) -> Option<Self> {
-        let timezone = resolve_tz(shared.timezone.as_deref());
-        let since_date = shared.since.as_deref().and_then(parse_compact_date);
-        let until_date = shared.until.as_deref().and_then(parse_compact_date);
+    pub(super) fn from_shared(shared: &SharedArgs) -> Option<Self> {
+        let timezone = resolve_tz(shared.timezone.as_ref());
+        let since_date = shared.since.and_then(|date| date.day().civil());
+        let until_date = shared.until.and_then(|date| date.day().civil());
         let (since_millis, until_millis) =
-            date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), &timezone);
+            date_range_bounds_ms(shared.since, shared.until, &timezone);
         if since_date.is_none() && until_date.is_none() {
             return None;
         }
         Some(Self {
             since_date,
-            // Codex's local date can be a day ahead of the last included instant.
+            // NOTE(2026-11-18, #2097): Codex names rollout paths in its local calendar. A later path day can still contain events before the UTC cutoff.
             until_path_date: until_millis
                 .and_then(|end| end.checked_add(crate::MILLIS_PER_DAY - 1))
                 .and_then(utc_path_date),
             since_millis,
         })
+    }
+
+    pub(super) fn contains_file(self, dir: &Path, file: &Path) -> bool {
+        self.contains(codex_file_date(dir, file), file_modified_millis(file))
     }
 
     fn contains(self, start_date: Option<Date>, modified_millis: Option<i64>) -> bool {
@@ -208,16 +204,6 @@ fn codex_file_date(sessions_dir: &Path, file: &Path) -> Option<Date> {
     })
 }
 
-fn parse_compact_date(value: &str) -> Option<Date> {
-    if value.len() != 8 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let year = parse_date_part(&value[..4], 4)?;
-    let month = parse_date_part(&value[4..6], 2)?;
-    let day = parse_date_part(&value[6..], 2)?;
-    Date::new(year as i16, month as i8, day as i8).ok()
-}
-
 fn parse_date_part(value: &str, length: usize) -> Option<u16> {
     (value.len() == length && value.bytes().all(|byte| byte.is_ascii_digit())).then(|| {
         value
@@ -235,42 +221,59 @@ fn codex_usage_file_key(source: &CodexUsageSource, file: &Path) -> (PathBuf, Pat
 }
 
 pub(super) fn codex_home_paths() -> Result<Vec<PathBuf>> {
-    if let Ok(env_paths) = env::var("CODEX_HOME") {
-        return Ok(env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect());
-    }
-
-    let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
-    Ok(vec![home.join(".codex")])
-}
-
-#[cfg(test)]
-pub(super) fn set_file_modified(path: &Path, timestamp: crate::TimestampMs) {
-    let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
-    File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
-        .unwrap();
+    Ok(roots::resolve(RootsEnv::List("CODEX_HOME"), || {
+        home::home_dir()
+            .map(|home| home.join(".codex"))
+            .into_iter()
+            .collect()
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn codex_usage_paths_from_homes(homes: Vec<PathBuf>) -> Vec<PathBuf> {
+        codex_usage_sources_from_homes(homes)
+            .into_iter()
+            .map(|source| source.dir)
+            .collect()
+    }
+
     use ccusage_core::SkipKind;
     use ccusage_test_support::Fixture;
 
     #[test]
+    fn configured_codex_roots_share_list_normalization() {
+        let fixture = Fixture::new();
+        let first = fixture.create_dir_all("first");
+        let second = fixture.create_dir_all("second");
+        let _guard = ccusage_test_support::EnvGuard::set_many([
+            ("HOME", Some(fixture.root().into())),
+            (
+                "CODEX_HOME",
+                Some(" ~/first, ~/second, ~/first/., , ".into()),
+            ),
+        ]);
+        assert_eq!(codex_home_paths().unwrap(), vec![first, second]);
+    }
+
+    #[test]
+    fn blank_codex_list_uses_the_default_home() {
+        let fixture = Fixture::new();
+        let root = fixture.create_dir_all(".codex");
+        let _guard = ccusage_test_support::EnvGuard::set_many([
+            ("HOME", Some(fixture.root().into())),
+            ("CODEX_HOME", Some(" , , ".into())),
+        ]);
+        assert_eq!(codex_home_paths().unwrap(), vec![root]);
+    }
+
+    #[test]
     fn includes_archived_sessions_next_to_sessions() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/sessions");
-        let _ = fixture.create_dir_all("codex/archived_sessions");
+        fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/archived_sessions");
 
         let paths = codex_usage_paths_from_homes(vec![fixture.path("codex")]);
 
@@ -286,7 +289,7 @@ mod tests {
     #[test]
     fn uses_sessions_without_missing_archived_sessions_path() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/sessions");
 
         let paths = codex_usage_paths_from_homes(vec![fixture.path("codex")]);
 
@@ -296,7 +299,7 @@ mod tests {
     #[test]
     fn uses_archived_sessions_without_direct_path_fallback() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/archived_sessions");
+        fixture.create_dir_all("codex/archived_sessions");
 
         let paths = codex_usage_paths_from_homes(vec![fixture.path("codex")]);
 
@@ -317,7 +320,7 @@ mod tests {
     fn deduplicates_usage_paths_across_repeated_homes() {
         let fixture = Fixture::new();
         let home = fixture.create_dir_all("codex");
-        let _ = fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/sessions");
 
         let paths = codex_usage_paths_from_homes(vec![home.clone(), home]);
 
@@ -327,11 +330,11 @@ mod tests {
     #[test]
     fn keeps_active_session_file_when_archived_file_has_same_relative_path() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/sessions");
-        let _ = fixture.create_dir_all("codex/archived_sessions");
-        let _ = fixture.write_file("codex/sessions/session.jsonl", "");
-        let _ = fixture.write_file("codex/archived_sessions/session.jsonl", "");
-        let _ = fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
+        fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/archived_sessions");
+        fixture.write_file("codex/sessions/session.jsonl", "");
+        fixture.write_file("codex/archived_sessions/session.jsonl", "");
+        fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
         let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
@@ -359,7 +362,7 @@ mod tests {
         let fixture = Fixture::new();
         let kept = fixture.write_file("codex/sessions/2026/01/01/kept.jsonl", "");
         let blocked = fixture.create_dir_all("codex/sessions/2026/01/02");
-        let _ = fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
+        fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let diagnostics = Diagnostics::new("codex");
 
@@ -380,13 +383,13 @@ mod tests {
     #[test]
     fn deduplicates_rollouts_across_encodings_and_session_directories() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("codex/sessions/both.jsonl", "");
-        let _ = fixture.write_file("codex/sessions/both.jsonl.zst", "");
-        let _ = fixture.write_file("codex/sessions/compressed.jsonl.zst", "");
-        let _ = fixture.write_file("codex/sessions/other.zst", "");
-        let _ = fixture.write_file("codex/archived_sessions/compressed.jsonl", "");
-        let _ = fixture.write_file("codex/archived_sessions/both.jsonl.zst", "");
-        let _ = fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
+        fixture.write_file("codex/sessions/both.jsonl", "");
+        fixture.write_file("codex/sessions/both.jsonl.zst", "");
+        fixture.write_file("codex/sessions/compressed.jsonl.zst", "");
+        fixture.write_file("codex/sessions/other.zst", "");
+        fixture.write_file("codex/archived_sessions/compressed.jsonl", "");
+        fixture.write_file("codex/archived_sessions/both.jsonl.zst", "");
+        fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
         let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
@@ -412,10 +415,10 @@ mod tests {
     #[test]
     fn keeps_same_relative_session_file_across_different_homes() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("work/sessions");
-        let _ = fixture.create_dir_all("personal/sessions");
-        let _ = fixture.write_file("work/sessions/session.jsonl", "");
-        let _ = fixture.write_file("personal/sessions/session.jsonl", "");
+        fixture.create_dir_all("work/sessions");
+        fixture.create_dir_all("personal/sessions");
+        fixture.write_file("work/sessions/session.jsonl", "");
+        fixture.write_file("personal/sessions/session.jsonl", "");
 
         let sources =
             codex_usage_sources_from_homes(vec![fixture.path("work"), fixture.path("personal")]);
@@ -442,10 +445,8 @@ mod tests {
         use std::{ffi::OsString, os::unix::ffi::OsStringExt};
 
         let file_name = PathBuf::from(OsString::from_vec(b"session-\xFF.jsonl".to_vec()));
-        let source = CodexUsageSource::new_for_test(
-            PathBuf::from("/codex/sessions"),
-            PathBuf::from("/codex"),
-        );
+        let source =
+            CodexUsageSource::new(PathBuf::from("/codex/sessions"), PathBuf::from("/codex"));
 
         assert_eq!(
             codex_usage_file_key(&source, &source.dir.join(&file_name)),
@@ -460,17 +461,17 @@ mod tests {
         let historical = fixture.write_file("codex/sessions/2025/01/01/historical.jsonl", "");
         let resumed = fixture.write_file("codex/sessions/2026/01/01/resumed.jsonl", "");
         let current = fixture.write_file("codex/sessions/2026/03/15/current.jsonl", "");
-        set_file_modified(
+        crate::test_support::set_file_modified(
             &historical,
             crate::parse_ts_timestamp("2025-01-01T00:00:00.000Z").unwrap(),
         );
-        set_file_modified(
+        crate::test_support::set_file_modified(
             &resumed,
             crate::parse_ts_timestamp("2026-03-15T12:00:00.000Z").unwrap(),
         );
         let shared = SharedArgs {
-            since: Some("20260315".to_string()),
-            until: Some("20260315".to_string()),
+            since: Some("20260315".parse().unwrap()),
+            until: Some("20260315".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -489,7 +490,7 @@ mod tests {
         let sessions_dir = fixture.create_dir_all("codex/sessions");
         let file = fixture.write_file("codex/sessions/custom.jsonl", "");
         let shared = SharedArgs {
-            since: Some("20260131".to_string()),
+            since: Some("20260131".parse().unwrap()),
             ..SharedArgs::default()
         };
 

@@ -8,7 +8,6 @@ pub mod fast;
 pub mod logger;
 pub mod model_aliases;
 pub mod output;
-pub mod path_utils;
 pub mod pricing;
 pub mod progress;
 pub mod project_names;
@@ -17,44 +16,36 @@ pub mod types;
 pub mod utils;
 pub mod window;
 
+#[cfg(test)]
+mod test_support;
+
 pub mod cli {
     pub use ccusage_cli::*;
 }
 
-// Defined in ccusage-cli so the config and parser crates can use them without
-// depending on this crate; re-exported so existing callers keep one import path.
-pub use ccusage_cli::{BUILT_IN_AGENT_NAMES, DEFAULT_SESSION_DURATION_HOURS, home};
-
 pub use agent_report::{agent_summary_json, first_column, summary_period};
-pub use cost::{
-    calculate_cost, calculate_cost_for_usage_at, calculate_cost_from_pricing,
-    missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
-    missing_pricing_model_for_usage, stored_cost_for_mode, sum_costs,
-};
+pub use cost::{missing_pricing_model_for_token_total, stored_cost_for_mode, sum_costs};
 pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use logger::{debug_log, log_level};
 pub use output::{
     UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
-    format_number, json_float, print_json_or_jq, print_missing_pricing_warnings,
-    print_missing_pricing_warnings_for_models, print_usage_table, print_usage_table_with_options,
-    sanitize_terminal_text, should_use_compact_layout, totals_json, unpriced_models, wants_json,
+    format_number, json_float, print_json_or_jq, print_missing_pricing_warnings_for_models,
+    print_usage_table, print_usage_table_with_options, sanitize_terminal_text,
+    should_use_compact_layout, totals_json, wants_json,
 };
-pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
+pub use pricing::{Pricing, PricingMap};
 pub(crate) use project_names::parse_project_aliases;
 pub(crate) use project_names::short_model_name;
 pub use project_names::{format_breakdown_model_label, format_project_name};
-pub use summary::{
-    BucketKind, SessionAccumulator, sort_summaries, summarize_by_key,
-    summarize_summaries_by_bucket, week_start,
-};
+pub use summary::{SessionAccumulator, sort_summaries, summarize_by_key_target, week_start};
 pub use types::*;
 pub use utils::{
     apply_total_token_fallback, json_value_u64, non_empty_json_string, total_usage_tokens,
 };
 pub use window::ReportWindow;
 
-pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_width};
+pub use ccusage_terminal::{Align, Color, ColumnKind, SimpleTable, TerminalStyle, terminal_width};
 
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
@@ -88,9 +79,9 @@ pub fn cli_error(message: impl Into<String>) -> CliError {
 
 pub fn terminal_style(shared: &cli::SharedArgs) -> TerminalStyle {
     TerminalStyle {
-        color: shared.color,
+        color: shared.color == cli::ColorChoice::Always,
         log_level: log_level(),
-        no_color: shared.no_color,
+        no_color: shared.color == cli::ColorChoice::Never,
     }
 }
 

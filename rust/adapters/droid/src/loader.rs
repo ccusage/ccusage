@@ -1,37 +1,23 @@
-use std::{collections::HashSet, sync::Arc};
+use ccusage_core::cost::PriceTable;
+use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{DroidEntry, calculate_droid_cost, load_settings_file, missing_droid_pricing},
+    parser::{DroidEntry, load_settings_file, price_droid},
     paths::discover_settings_files,
 };
-use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
+use ccusage_adapter_common::{
+    dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
+};
 
-use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
-
-#[cfg(test)]
-fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
+use crate::{LoadedEntry, Result, format_date_tz};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
     let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
-    // Read files in parallel, reassembled in the original (sorted) file order so
-    // the subsequent stable sort and reverse latest-wins dedup pick the same
-    // snapshot per session as the single-threaded read.
     let mut parsed = read_units_flat(
         &files,
         cx.shared.single_thread,
@@ -39,34 +25,15 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         load_settings_file,
     );
     parsed.sort_by_key(|entry| entry.timestamp);
-    let mut seen_sessions = HashSet::new();
-    let mut entries = Vec::new();
-    for entry in parsed.into_iter().rev() {
-        if !seen_sessions.insert(entry.session_id.clone()) {
-            continue;
-        }
-        entries.push(to_loaded_entry(entry, tz, pricing));
-    }
-    Ok(entries)
+    Ok(dedupe_last_wins(parsed, |entry| entry.session_id.clone())
+        .into_iter()
+        .rev()
+        .map(|entry| to_loaded_entry(entry, tz, pricing))
+        .collect())
 }
 
-fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -> LoadedEntry {
-    let cost = calculate_droid_cost(&entry, pricing);
-    let missing_pricing_model = missing_droid_pricing(&entry, pricing);
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text.clone(),
-        version: None,
-        message: UsageMessage {
-            usage: entry.usage,
-            model: Some(entry.model.clone()),
-            id: Some(format!("droid:{}", entry.session_id)),
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
+fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>) -> LoadedEntry {
+    let (cost, missing_pricing_model) = price_droid(&entry, pricing);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -80,21 +47,56 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -
         usage_limit_reset_time: None,
         missing_pricing_model,
         message_count: None,
-        data,
+        usage: entry.usage,
+        message_id: Some(format!("droid:{}", entry.session_id)),
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }
 
 #[cfg(test)]
-use super::report::{report_from_rows, summarize_entries};
-
-#[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_cost_modes_do_not_calculate_in_display() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({"session.settings.json": r#"{"model":"sample","providerLockTimestamp":"2026-05-01T01:02:03Z","tokenUsage":{"inputTokens":100,"outputTokens":50}}"#});
+        let _guard = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+        );
+        for (mode, expected) in [
+            (crate::cli::CostMode::Auto, 0.2),
+            (crate::cli::CostMode::Calculate, 0.2),
+            (crate::cli::CostMode::Display, 0.0),
+        ] {
+            let shared = SharedArgs {
+                mode,
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                (entries[0].cost - expected).abs() < 1e-12,
+                "{mode:?}: {} vs {expected}",
+                entries[0].cost
+            );
+            assert_eq!(entries[0].missing_pricing_model, None);
+        }
+    }
+
     use crate::cli::SharedArgs;
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use serde_json::json;
 
     use super::super::{
@@ -102,9 +104,7 @@ mod tests {
         paths::DROID_SESSIONS_DIR_ENV,
     };
     use super::*;
-    use crate::{
-        TokenUsageRaw, UsageEntry, UsageMessage, cli::AgentReportKind, parse_ts_timestamp,
-    };
+    use crate::{TokenUsageRaw, cli::AgentReportKind, parse_ts_timestamp};
     #[test]
     fn normalizes_droid_model_names() {
         assert_eq!(
@@ -134,6 +134,7 @@ mod tests {
 
     #[test]
     fn loads_usage_from_droid_settings_files() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -149,31 +150,35 @@ mod tests {
             }"#,
             "zero.settings.json": r#"{"model":"gpt-5","tokenUsage":{"inputTokens":0}}"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &pricing).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("claude-sonnet-4"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 5);
     }
 
     #[test]
     fn malformed_settings_file_is_reported_and_an_unwritten_one_is_not() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -184,16 +189,16 @@ mod tests {
             "session-b.settings.json": "{broken",
             "session-c.settings.json": "",
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
         let diagnostics = Diagnostics::new("droid");
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };
@@ -206,6 +211,7 @@ mod tests {
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -214,18 +220,19 @@ mod tests {
                 "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
             }"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Droid, &shared);
     }
 
     #[test]
     fn falls_back_to_sidecar_jsonl_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-b.settings.json": r#"{
                 "providerLock": "anthropic",
@@ -234,20 +241,27 @@ mod tests {
             }"#,
             "session-b.jsonl": r#"{"content":"Model: Claude Opus 4.5 Thinking [Anthropic]"}"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
-        let pricing = PricingMap::load_embedded();
-        let entries = load_entries(&SharedArgs::default(), &pricing).unwrap();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-opus-4-5-thinking")
         );
     }
 
     #[test]
     fn keeps_latest_snapshot_for_duplicate_session_ids() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "archive/session-c.settings.json": r#"{
                 "model": "gpt-5",
@@ -262,41 +276,37 @@ mod tests {
                 "tokenUsage": {"inputTokens": 100, "outputTokens": 200}
             }"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
-        let pricing = PricingMap::load_embedded();
-        let entries = load_entries(&SharedArgs::default(), &pricing).unwrap();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            Default::default(),
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-c");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 200);
     }
 
     #[test]
     fn report_total_includes_thinking_tokens() {
         let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session-a".to_string()),
-                timestamp: "2026-05-01T01:02:03.000Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 100,
-                        output_tokens: 50,
-                        cache_creation_input_tokens: 20,
-                        cache_read_input_tokens: 10,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("claude-sonnet-4".to_string()),
-                    id: Some("droid:session-a".to_string()),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_input_tokens: 20,
+                cache_read_input_tokens: 10,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some("droid:session-a".to_string()),
+            version: None,
+            recorded_cost: None,
             timestamp: parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
             date: "2026-05-01".to_string(),
             project: Arc::from("droid"),
@@ -311,8 +321,20 @@ mod tests {
             message_count: None,
             stored_cost: None,
         };
-        let rows = summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
-        let report = report_from_rows(&rows, AgentReportKind::Daily);
+        let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            &crate::SOURCE,
+            &[entry],
+            ccusage_adapter_common::source::SummaryKind::for_report(
+                AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
+            ),
+        )
+        .unwrap();
+        let report = ccusage_adapter_common::source::EntrySource::report_json(
+            &crate::SOURCE,
+            &rows,
+            AgentReportKind::Daily,
+        );
 
         assert_eq!(report["daily"][0]["totalTokens"], json!(185));
         assert_eq!(report["totals"]["totalTokens"], json!(185));

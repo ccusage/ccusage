@@ -34,7 +34,7 @@ exit: 0
   "reasoningOutputTokens": 9,
   "sessionFile": "headless-run",
   "sessionId": "exec/headless-run",
-  "totalCost": 0.003687375,
+  "totalCost": 0.0036405,
   "totalTokens": 2629
 }
 

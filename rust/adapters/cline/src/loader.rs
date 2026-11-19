@@ -1,55 +1,17 @@
-use std::{collections::HashMap, sync::Arc};
-
-use jiff::tz::TimeZone as JiffTimeZone;
-
-use crate::{LoadedEntry, PricingMap, Result};
-use ccusage_adapter_common::{read_units_flat, source::LoadContext};
+use crate::{LoadedEntry, Result};
+use ccusage_adapter_common::{source::LoadContext, units::read_typed_units_flat};
 
 use super::paths::discover_files;
 
-pub(super) struct EntryInput {
-    pub timestamp: crate::TimestampMs,
-    pub model: String,
-    pub provider: Option<String>,
-    pub usage: crate::TokenUsageRaw,
-    pub reported_cost: Option<f64>,
-    pub request_id: Option<String>,
-}
-
-#[cfg(test)]
-fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> crate::Result<Vec<crate::LoadedEntry>> {
-    ccusage_adapter_common::testing::load_entries(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-    .map(|(entries, _)| entries)
-}
-
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let sources = discover_files(cx.diagnostics)?;
     let timezone = cx.window.timezone();
-    let files = sources
-        .iter()
-        .map(|source| source.path.clone())
-        .collect::<Vec<_>>();
-    let source_by_path = sources
-        .iter()
-        .map(|source| (source.path.as_path(), source))
-        .collect::<HashMap<_, _>>();
-    let mut entries = read_units_flat(&files, shared.single_thread, cx.diagnostics, |path| {
-        let source = source_by_path
-            .get(path)
-            .copied()
-            .expect("discovered Cline file has source metadata");
-        super::parser::read_file(source, shared.mode, pricing, timezone)
-    });
+    let mut entries =
+        read_typed_units_flat(&sources, shared.single_thread, cx.diagnostics, |source| {
+            super::parser::read_file(source, shared.mode, pricing, timezone, cx.diagnostics)
+        });
     entries.sort_by(|left, right| {
         left.timestamp
             .cmp(&right.timestamp)
@@ -58,109 +20,44 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     Ok(entries)
 }
 
-pub(super) fn loaded_entry(
-    source: &super::paths::SourceFile,
-    input: EntryInput,
-    mode: crate::cli::CostMode,
-    pricing: &PricingMap,
-    timezone: &JiffTimeZone,
-) -> LoadedEntry {
-    use crate::{
-        UsageEntry, UsageMessage, calculate_cost_for_usage_at, format_date_tz,
-        missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
-    };
-
-    let EntryInput {
-        timestamp,
-        model,
-        provider,
-        usage,
-        reported_cost,
-        request_id,
-    } = input;
-    let timestamp_text = crate::format_rfc3339_millis(timestamp);
-    let session_id = match source.kind {
-        super::paths::SourceKind::Extension | super::paths::SourceKind::CliTask => {
-            format!("task:{}", source.session_id)
-        }
-        super::paths::SourceKind::Cli => format!("cli:{}", source.session_id),
-    };
-    let provider_model = provider
-        .as_deref()
-        .filter(|_| !model.contains('/'))
-        .map(|provider| format!("{provider}/{model}"));
-    let model_for_pricing = if pricing.find(&model).is_some() {
-        model.as_str()
-    } else {
-        provider_model
-            .as_deref()
-            .filter(|model| pricing.find(model).is_some())
-            .unwrap_or(model.as_str())
-    };
-    let cost = calculate_cost_for_usage_at(
-        Some(model_for_pricing),
-        usage,
-        reported_cost,
-        Some(timestamp),
-        mode,
-        Some(pricing),
-    );
-    let missing_pricing_model = if mode == crate::cli::CostMode::Display
-        || (mode == crate::cli::CostMode::Auto && reported_cost.is_some())
-        || total_usage_tokens(usage) == 0
-    {
-        None
-    } else {
-        let candidates = std::iter::once(model.clone()).chain(provider_model);
-        missing_pricing_model_for_candidates(
-            &model,
-            candidates,
-            total_usage_tokens(usage),
-            Some(pricing),
-        )
-    };
-    let data = UsageEntry {
-        session_id: Some(session_id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(model.clone()),
-            id: request_id.clone(),
-        },
-        cost_usd: reported_cost,
-        request_id,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-
-    LoadedEntry {
-        date: format_date_tz(timestamp, timezone),
-        timestamp,
-        project: Arc::from("cline"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from("Cline"),
-        cost,
-        credits: None,
-        model: Some(model),
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        extra_total_tokens: 0,
-        message_count: None,
-        data,
-        stored_cost: stored_cost_for_mode(reported_cost, mode),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
-    use ccusage_test_support::{EnvVarGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
+
+    #[test]
+    fn diagnoses_untimed_extension_and_cli_usage() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "tasks/task-a/ui_messages.json": r#"[
+                {"type":"say","say":"api_req_started","modelInfo":{"modelId":"test-model"},"text":"{\"tokensIn\":1,\"tokensOut\":0,\"cacheReads\":0,\"cacheWrites\":0}"},
+                {"type":"say","say":"api_req_started","ts":0,"modelInfo":{"modelId":"test-model"},"text":"{\"tokensIn\":1,\"tokensOut\":0,\"cacheReads\":0,\"cacheWrites\":0}"}
+            ]"#,
+            "data/sessions/session-a/session-a.messages.json": r#"{"messages":[
+                {"role":"assistant","modelInfo":{"id":"test-model"},"metrics":{"inputTokens":1,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0}},
+                {"role":"assistant","metrics":{}}
+            ]}"#
+        });
+        let _guard = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&PricingMap::default()),
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            2
+        );
+    }
 
     #[test]
     fn loads_extension_and_cli_fixture_records_with_source_namespaced_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         assert!(
             fixture
@@ -202,7 +99,7 @@ mod tests {
                 )
                 .is_file()
         );
-        let _env = EnvVarGuard::set(
+        let _env = EnvGuard::set(
             super::super::paths::CLINE_DATA_DIR_ENV,
             format!(
                 "{},{}",
@@ -213,12 +110,18 @@ mod tests {
         let shared = SharedArgs {
             json: true,
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             mode: CostMode::Auto,
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            &shared,
+            Default::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(
             entries.len(),
@@ -252,21 +155,18 @@ mod tests {
             entries[1].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[1].data.message.usage.cache_read_input_tokens, 25);
-        assert_eq!(
-            entries[1].data.message.usage.cache_creation_input_tokens,
-            10
-        );
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("assistant-1"));
-        assert_eq!(entries[1].data.message.usage.input_tokens, 65);
-        assert_eq!(entries[1].data.cost_usd, Some(0.0));
+        assert_eq!(entries[1].usage.cache_read_input_tokens, 25);
+        assert_eq!(entries[1].usage.cache_creation_input_tokens, 10);
+        assert_eq!(entries[1].message_id.as_deref(), Some("assistant-1"));
+        assert_eq!(entries[1].usage.input_tokens, 65);
+        assert_eq!(entries[1].recorded_cost, Some(0.0));
         assert_eq!(entries[1].stored_cost, Some(0.0));
-        assert_eq!(entries[2].data.message.id.as_deref(), Some("assistant-2"));
-        assert_eq!(entries[2].data.message.usage.input_tokens, 90);
-        assert_eq!(entries[2].data.message.usage.output_tokens, 16);
-        assert_eq!(entries[2].data.cost_usd, Some(0.0002));
-        assert_eq!(entries[3].data.message.usage.input_tokens, 8);
-        assert_eq!(entries[3].data.message.usage.output_tokens, 4);
+        assert_eq!(entries[2].message_id.as_deref(), Some("assistant-2"));
+        assert_eq!(entries[2].usage.input_tokens, 90);
+        assert_eq!(entries[2].usage.output_tokens, 16);
+        assert_eq!(entries[2].recorded_cost, Some(0.0002));
+        assert_eq!(entries[3].usage.input_tokens, 8);
+        assert_eq!(entries[3].usage.output_tokens, 4);
         assert_eq!(entries[3].model.as_deref(), Some("vendor/legacy-model"));
         assert_eq!(
             entries[3].missing_pricing_model.as_deref(),
@@ -276,17 +176,18 @@ mod tests {
 
     #[test]
     fn keeps_healthy_cline_files_when_another_file_is_invalid_json() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "tasks/healthy/ui_messages.json",
             include_str!("../tests/fixtures/extension/ui_messages.json"),
         );
-        let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":}");
-        let _ = fixture.write_file("tasks/unwritten/ui_messages.json", "");
-        let _env = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
+        fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":}");
+        fixture.write_file("tasks/unwritten/ui_messages.json", "");
+        let _env = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 

@@ -25,15 +25,6 @@ exit: 0
       "timestamp": "2025-12-30T10:05:00.000Z"
     },
     {
-      "cacheCreationTokens": 600,
-      "cacheReadTokens": 9000,
-      "costUSD": 0.0,
-      "inputTokens": 500,
-      "model": "claude-opus-4-20250514",
-      "outputTokens": 800,
-      "timestamp": "2025-12-30T10:06:00.000Z"
-    },
-    {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
       "costUSD": 0.0,
@@ -134,12 +125,12 @@ exit: 0
     },
     {
       "cacheCreation1hTokens": 400,
-      "cacheCreationTokens": 1200,
-      "cacheReadTokens": 18500,
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 9500,
       "cost": 0.0,
-      "inputTokens": 1250,
+      "inputTokens": 750,
       "modelName": "claude-opus-4-20250514",
-      "outputTokens": 1660
+      "outputTokens": 860
     },
     {
       "cacheCreationTokens": 0,
@@ -167,7 +158,7 @@ exit: 0
   ],
   "sessionId": "sess-alpha-1",
   "totalCost": 0.077,
-  "totalTokens": 40155
+  "totalTokens": 29255
 }
 
 --- stderr ---

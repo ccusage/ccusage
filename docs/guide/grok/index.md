@@ -66,10 +66,10 @@ contain a non-zero value; [JSON output](/guide/json-output) keeps
 
 ## Environment Variables
 
-| Variable    | Description                                  |
-| ----------- | -------------------------------------------- |
-| `GROK_HOME` | Official Grok config/data home (single root) |
-| `LOG_LEVEL` | Adjust verbosity (0 silent ... 5 trace)      |
+| Variable    | Description                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `GROK_HOME` | Official Grok config/data home (single root)                                                                  |
+| `LOG_LEVEL` | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Configuration
 

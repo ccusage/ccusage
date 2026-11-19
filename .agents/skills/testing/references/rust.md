@@ -18,7 +18,7 @@ A fixture owns an `assert_fs::TempDir` and deletes it when the fixture variable
 drops, so keep that variable alive as long as paths under it are used — returning
 only a `PathBuf` out of an inner scope loses the directory.
 
-Working examples: `rust/adapters/codex/src/loader.rs`,
+Working examples: `rust/adapters/codex/src/loader_tests.rs`,
 `rust/adapters/gemini/src/paths.rs`.
 
 ## Snapshots
@@ -45,18 +45,9 @@ doubles as documentation, not for broad CLI behavior.
 
 ## Pricing And Model Names
 
-Pricing resolves against two embedded snapshots, both compiled by
-`ccusage-pricing-snapshots`: the LiteLLM one generated into `OUT_DIR` at build time,
-and the committed `models-dev-pricing.json`. A crate whose tests load pricing enables
-`ccusage-core = { workspace = true, features = ["test-snapshots"] }` in its
-`[dev-dependencies]`; without it, loading pricing panics because only the binary
-installs the snapshots.
-`PricingMap::load_embedded()` reads only those and touches no network, so tests use it;
-`load_with_overrides(offline: false, ..)` is the path that fetches. Lookup is not plain
-equality — alias and separator handling means the tests in
-`rust/crates/ccusage-core/src/pricing.rs` are the reference for what a new model name
-should resolve to. A pricing failure usually means the upstream snapshot moved or the
-name is genuinely unsupported.
+Call `ccusage_test_support::install_pricing_snapshots()` before loading embedded
+pricing. In `ccusage-core` tests, use the crate-local `test_support` equivalent.
+Use `PricingMap::load_embedded()` for tests that need offline pricing.
 
 Use model IDs that resolve in the embedded snapshots, matching the forms the
 tests in `rust/crates/ccusage-core/src/pricing.rs` already cover (dated

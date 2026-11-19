@@ -1,168 +1,8 @@
-use std::{fmt, fs::File, io::Read, path::Path};
+use std::path::Path;
 
-use ccusage_adapter_common::UnitError;
-use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LineReader};
-use serde::{
-    Deserialize, Deserializer,
-    de::{MapAccess, SeqAccess, Visitor},
-};
+use ccusage_adapter_common::jsonl::Line;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-const READ_BUFFER_SIZE: usize = 256 * 1024;
-
-/// One line of a transcript, without its `\n`.
-#[derive(Clone, Copy)]
-pub(super) struct Line<'a> {
-    pub(super) index: usize,
-    pub(super) bytes: &'a [u8],
-    /// The file ends inside this line, so its record may still be being written.
-    unterminated: bool,
-}
-
-/// Visits every line of `path` in order.
-///
-/// A read failure still visits the bytes received before it as a final line,
-/// so a valid unterminated record survives an interrupted read.
-pub(super) fn for_each_line(path: &Path, diagnostics: &Diagnostics, visit: impl FnMut(Line<'_>)) {
-    let Ok(file) = File::open(path) else {
-        UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
-        return;
-    };
-    for_each_line_from(file, path, diagnostics, visit);
-}
-
-fn for_each_line_from(
-    reader: impl Read,
-    path: &Path,
-    diagnostics: &Diagnostics,
-    mut visit: impl FnMut(Line<'_>),
-) {
-    let mut lines = LineReader::with_capacity(READ_BUFFER_SIZE, reader);
-    let mut index = 0;
-    loop {
-        match lines.next_line() {
-            Ok(Some(line)) => {
-                let (bytes, unterminated) = match line.strip_suffix(b"\n") {
-                    Some(bytes) => (bytes, false),
-                    None => (line, true),
-                };
-                visit(Line {
-                    index,
-                    bytes,
-                    unterminated,
-                });
-            }
-            Ok(None) => return,
-            Err(_) => {
-                diagnostics.record(Skip::unit(
-                    path,
-                    SkipKind::ReadInterrupted,
-                    "file read failed",
-                ));
-                if !lines.rest().is_empty() {
-                    visit(Line {
-                        index,
-                        bytes: lines.rest(),
-                        unterminated: true,
-                    });
-                }
-                return;
-            }
-        }
-        index += 1;
-    }
-}
-
-struct DirectEnvelope {
-    message: Option<CheckedValue>,
-}
-
-impl<'de> Deserialize<'de> for DirectEnvelope {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct EnvelopeVisitor;
-        impl<'de> Visitor<'de> for EnvelopeVisitor {
-            type Value = DirectEnvelope;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a JSON object")
-            }
-
-            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
-                #[derive(Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "message")]
-                    Message,
-                    #[serde(other)]
-                    Other,
-                }
-
-                let mut message = None;
-                while let Some(field) = map.next_key::<Field>()? {
-                    let value = map.next_value::<Option<CheckedValue>>()?;
-                    if matches!(field, Field::Message) {
-                        message = value;
-                    }
-                }
-                Ok(DirectEnvelope { message })
-            }
-        }
-        deserializer.deserialize_map(EnvelopeVisitor)
-    }
-}
-
-// IgnoredAny skips string and number validation that Value decoding performs.
-// Discard through deserialize_any so diagnostics retain those decoding failures.
-struct CheckedValue;
-
-impl<'de> Deserialize<'de> for CheckedValue {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(Self)
-    }
-}
-
-impl<'de> Visitor<'de> for CheckedValue {
-    type Value = Self;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a JSON value")
-    }
-
-    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_unit<E: serde::de::Error>(self) -> Result<Self, E> {
-        Ok(Self)
-    }
-
-    fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Self, S::Error> {
-        while seq.next_element::<Self>()?.is_some() {}
-        Ok(Self)
-    }
-
-    fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self, M::Error> {
-        while map.next_entry::<Self, Self>()?.is_some() {}
-        Ok(Self)
-    }
-}
-
-/// Records that line `index` of `path` carried a timestamp no day holds.
 pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
     diagnostics.record(Skip::record(
         path,
@@ -172,34 +12,19 @@ pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnos
     ));
 }
 
-/// Records why `line` of `path` was not counted.
 #[cold]
-pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics, progress: bool) {
-    if !progress
-        && serde_json::from_slice::<DirectEnvelope>(line.bytes)
-            .is_ok_and(|envelope| envelope.message.is_none())
-    {
-        return;
-    }
+pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
     let number = Skip::line_number(line.index);
-    let Some(value) = ccusage_adapter_common::jsonl::decode_streamed_line::<serde_json::Value>(
-        line.bytes,
-        line.unterminated,
-        path,
-        number,
-        diagnostics,
-        None,
-    ) else {
+    let Some(value) = line.record::<serde_json::Value>(path, diagnostics, None) else {
         return;
     };
     let direct = value
         .get("message")
         .and_then(|message| message.get("usage"))
         .is_some_and(serde_json::Value::is_object);
-    let wrapped = progress
-        && value
-            .pointer("/data/message/message/usage")
-            .is_some_and(serde_json::Value::is_object);
+    let wrapped = value
+        .pointer("/data/message/message/usage")
+        .is_some_and(serde_json::Value::is_object);
     if !direct && !wrapped {
         return;
     }
@@ -214,18 +39,25 @@ pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics, p
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{self, Cursor};
+    use std::{fs::File, ops::ControlFlow};
+
+    use ccusage_adapter_common::jsonl::{self, ReadPolicy};
+    use ccusage_core::{cli::CostMode, cost::PriceTable};
 
     #[test]
     fn a_file_removed_after_discovery_is_not_a_skip() {
         let fixture = ccusage_test_support::Fixture::new();
         let diagnostics = Diagnostics::new("claude");
 
-        let mut visited = false;
-        for_each_line(&fixture.path("missing.jsonl"), &diagnostics, |_| {
-            visited = true;
-        });
-        assert!(!visited);
+        let pricing = ccusage_core::PricingMap::default();
+        let entries = crate::daily::read_usage_file(
+            &fixture.path("missing.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::for_map(CostMode::Auto, &pricing),
+            &diagnostics,
+            |_, _| (),
+        );
+        assert!(entries.is_empty());
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         assert!(
@@ -240,88 +72,35 @@ mod tests {
         let diagnostics = Diagnostics::new("claude");
 
         let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
-        rejected(
-            Path::new("session.jsonl"),
-            terminated(0, line),
-            &diagnostics,
-            false,
-        );
+        reject_terminated(line, &diagnostics);
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
-    fn terminated(index: usize, bytes: &[u8]) -> Line<'_> {
-        Line {
-            index,
-            bytes,
-            unterminated: false,
-        }
+    fn reject_terminated(bytes: &[u8], diagnostics: &Diagnostics) {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("session.jsonl");
+        std::fs::write(&path, [bytes, b"\n"].concat()).unwrap();
+        jsonl::read(&path, Some(diagnostics), ReadPolicy::PLAIN, |line, _, _| {
+            rejected(&path, line, diagnostics);
+            ControlFlow::<()>::Continue(())
+        })
+        .unwrap();
     }
 
-    fn read_lines(reader: impl Read, diagnostics: &Diagnostics) -> Vec<(usize, Vec<u8>, bool)> {
-        let mut lines = Vec::new();
-        for_each_line_from(reader, Path::new("session.jsonl"), diagnostics, |line| {
-            lines.push((line.index, line.bytes.to_vec(), line.unterminated));
-        });
-        lines
-    }
-
-    struct Interrupted;
-    impl Read for Interrupted {
-        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::other("SECRET_CANARY"))
-        }
-    }
-    #[test]
-    fn retains_valid_unterminated_usage_before_a_read_interruption() {
-        let diagnostics = Diagnostics::new("claude");
-        let line = br#"{"timestamp":"2026-09-01T00:00:01Z","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#;
-        let lines = read_lines(Cursor::new(line).chain(Interrupted), &diagnostics);
-        assert_eq!(lines.len(), 1);
-        let entry = crate::deserialize_usage_line::<crate::UsageEntry>(&lines[0].1).unwrap();
-        assert_eq!(entry.message.usage.input_tokens, 10);
-        assert_eq!(entry.message.usage.output_tokens, 2);
-        assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
-    }
-
-    #[test]
-    fn preserves_received_bytes_before_a_read_interruption() {
-        let diagnostics = Diagnostics::new("claude");
-        let lines = read_lines(
-            Cursor::new(b"complete\npartial").chain(Interrupted),
-            &diagnostics,
-        );
-        assert_eq!(
-            lines,
-            [
-                (0, b"complete".to_vec(), false),
-                (1, b"partial".to_vec(), true)
-            ]
-        );
-        assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
-        assert!(
-            !diagnostics
-                .warnings(&ccusage_core::cli::SharedArgs {
-                    debug: true,
-                    ..Default::default()
-                })
-                .join("\n")
-                .contains("SECRET_CANARY")
-        );
-    }
     const CUT_LAST_LINE: &str = r#"{"message":{"usage":{"input_tokens":10}}}
 {"message":{"usage":{"input_tok"#;
 
-    /// Streams `path` and rejects its unterminated last line the way the
-    /// loaders do.
     fn reject_last_line(path: &Path, diagnostics: &Diagnostics) {
         let mut rejected_lines = 0;
-        for_each_line(path, diagnostics, |line| {
-            if line.unterminated {
+        jsonl::read(path, Some(diagnostics), ReadPolicy::PLAIN, |line, _, _| {
+            if line.unterminated() {
                 rejected_lines += 1;
-                rejected(path, line, diagnostics, false);
+                rejected(path, line, diagnostics);
             }
-        });
+            ControlFlow::<()>::Continue(())
+        })
+        .unwrap();
         assert_eq!(rejected_lines, 1);
     }
 
@@ -358,19 +137,23 @@ mod tests {
         let diagnostics = Diagnostics::new("claude");
         for line in [
             br#"{"metadata":{"usage":{}}}"#.as_slice(),
-            br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
             br#"{"data":{"usage":{},"content":[{"text":"\uD83D\uDE00"},true,false,null,-1,2,3.5]}}"#,
             br#"{"m\u0065ssage":null,"data":{"usage":{}}}"#,
         ] {
-            rejected(
-                Path::new("session.jsonl"),
-                terminated(0, line),
-                &diagnostics,
-                false,
-            );
+            reject_terminated(line, &diagnostics);
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
+    }
+
+    #[test]
+    fn a_rejected_wrapped_usage_record_is_invalid_data() {
+        let diagnostics = Diagnostics::new("claude");
+        reject_terminated(
+            br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
+            &diagnostics,
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]
@@ -382,12 +165,7 @@ mod tests {
             br#"{"data":{"usage":{},"value":1e400}}"#,
         ] {
             let diagnostics = Diagnostics::new("claude");
-            rejected(
-                Path::new("session.jsonl"),
-                terminated(0, line),
-                &diagnostics,
-                false,
-            );
+            reject_terminated(line, &diagnostics);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         }
     }

@@ -51,9 +51,9 @@ exit: 0
     {
       "actualEndTime": "2025-12-30T10:07:00.000Z",
       "burnRate": null,
-      "costUSD": 0.197485,
+      "costUSD": 0.105235,
       "endTime": "2025-12-30T15:00:00.000Z",
-      "entries": 4,
+      "entries": 3,
       "id": "2025-12-30T10:00:00.000Z",
       "isActive": false,
       "isGap": false,
@@ -65,12 +65,12 @@ exit: 0
       "projection": null,
       "startTime": "2025-12-30T10:00:00.000Z",
       "tokenCounts": {
-        "cacheCreationInputTokens": 1500,
-        "cacheReadInputTokens": 22100,
-        "inputTokens": 2050,
-        "outputTokens": 1820
+        "cacheCreationInputTokens": 900,
+        "cacheReadInputTokens": 13100,
+        "inputTokens": 1550,
+        "outputTokens": 1020
       },
-      "totalTokens": 27470
+      "totalTokens": 16570
     },
     {
       "actualEndTime": null,
@@ -180,9 +180,9 @@ exit: 0
     {
       "actualEndTime": "2026-01-01T03:00:00.000Z",
       "burnRate": null,
-      "costUSD": 0.0882595,
+      "costUSD": 0.0890185,
       "endTime": "2026-01-01T04:00:00.000Z",
-      "entries": 6,
+      "entries": 7,
       "id": "2025-12-31T23:00:00.000Z",
       "isActive": false,
       "isGap": false,
@@ -196,10 +196,10 @@ exit: 0
       "tokenCounts": {
         "cacheCreationInputTokens": 1450,
         "cacheReadInputTokens": 13000,
-        "inputTokens": 3524,
-        "outputTokens": 860
+        "inputTokens": 3557,
+        "outputTokens": 904
       },
-      "totalTokens": 18834
+      "totalTokens": 18911
     },
     {
       "actualEndTime": null,

@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli-parser/src/tests.rs
 expression: cases
 ---
 [
@@ -42,7 +42,7 @@ expression: cases
       "--session-length",
       "abc"
     ],
-    "error": "Invalid value for --session-length"
+    "error": "Invalid value for --session-length: Expected a number of hours"
   },
   {
     "args": [

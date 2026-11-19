@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
+    time::Duration,
 };
 
 use assert_fs::{
@@ -11,72 +12,115 @@ use assert_fs::{
 };
 
 pub mod mutation;
-pub mod zcode;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Instant(jiff::Timestamp);
+
+pub fn instant(timestamp: &str) -> Instant {
+    Instant(
+        timestamp
+            .parse()
+            .expect("fixture instant is valid RFC 3339"),
+    )
+}
+
+impl Instant {
+    pub fn secs(self) -> i64 {
+        self.0.as_second()
+    }
+
+    pub fn millis(self) -> i64 {
+        self.0.as_millisecond()
+    }
+
+    pub fn secs_f64(self) -> f64 {
+        self.0
+            .duration_since(jiff::Timestamp::UNIX_EPOCH)
+            .as_secs_f64()
+    }
+
+    pub fn millis_f64(self) -> f64 {
+        self.0
+            .duration_since(jiff::Timestamp::UNIX_EPOCH)
+            .as_millis_f64()
+    }
+
+    pub fn rfc3339_millis(self) -> String {
+        format!("{:.3}", self.0)
+    }
+
+    pub fn plus(self, duration: Duration) -> Self {
+        Instant(
+            self.0
+                .checked_add(duration)
+                .expect("fixture instant stays in range"),
+        )
+    }
+
+    pub fn minus(self, duration: Duration) -> Self {
+        Instant(
+            self.0
+                .checked_sub(duration)
+                .expect("fixture instant stays in range"),
+        )
+    }
+}
+
+pub fn set_modified(path: &Path, modified: Instant) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("failed to open fixture file")
+        .set_modified(std::time::SystemTime::from(modified.0))
+        .expect("failed to set fixture file mtime");
+}
+
+pub fn install_pricing_snapshots() {
+    ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
+        litellm_sources: ccusage_pricing_snapshots::LITELLM_SOURCES,
+        litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
+        models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
+        models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
+    });
+}
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-fn env_lock() -> MutexGuard<'static, ()> {
-    ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner())
-}
-
-pub struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<OsString>,
-    _guard: MutexGuard<'static, ()>,
-}
-
-impl EnvVarGuard {
-    pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
-        let guard = env_lock();
-        let previous = std::env::var_os(key);
-        unsafe { std::env::set_var(key, value) };
-        Self {
-            key,
-            previous,
-            _guard: guard,
-        }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.previous.take() {
-            Some(value) => unsafe { std::env::set_var(self.key, value) },
-            None => unsafe { std::env::remove_var(self.key) },
-        }
-    }
-}
-
-pub struct EnvVarsGuard {
+pub struct EnvGuard {
     previous: Vec<(&'static str, Option<OsString>)>,
-    _guard: MutexGuard<'static, ()>,
+    lock: MutexGuard<'static, ()>,
 }
 
-impl EnvVarsGuard {
+impl EnvGuard {
+    pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        Self::set_many([(key, Some(value.as_ref().to_os_string()))])
+    }
+
     pub fn set_many(vars: impl IntoIterator<Item = (&'static str, Option<OsString>)>) -> Self {
-        let guard = env_lock();
+        let lock = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let mut previous = Vec::new();
         for (key, value) in vars {
             previous.push((key, std::env::var_os(key)));
-            match value {
-                Some(value) => unsafe { std::env::set_var(key, value) },
-                None => unsafe { std::env::remove_var(key) },
-            }
+            set_process_var(&lock, key, value);
         }
-        Self {
-            previous,
-            _guard: guard,
+        Self { previous, lock }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (key, value) in self.previous.drain(..).rev() {
+            set_process_var(&self.lock, key, value);
         }
     }
 }
 
-impl Drop for EnvVarsGuard {
-    fn drop(&mut self) {
-        for (key, value) in self.previous.drain(..).rev() {
-            match value {
-                Some(value) => unsafe { std::env::set_var(key, value) },
-                None => unsafe { std::env::remove_var(key) },
-            }
+fn set_process_var(_lock: &MutexGuard<'static, ()>, key: &'static str, value: Option<OsString>) {
+    // SAFETY: The guard serializes test mutations and restoration; callers must avoid concurrent environment access outside Rust's std::env.
+    unsafe {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
         }
     }
 }
@@ -105,7 +149,6 @@ impl Fixture {
         self.dir.child(path)
     }
 
-    #[must_use]
     pub fn write_file(&self, path: impl AsRef<Path>, contents: impl AsRef<str>) -> PathBuf {
         let child = self.child(path);
         if let Some(parent) = child.path().parent() {
@@ -117,7 +160,6 @@ impl Fixture {
         child.path().to_path_buf()
     }
 
-    #[must_use]
     pub fn create_dir_all(&self, path: impl AsRef<Path>) -> PathBuf {
         let child = self.child(path);
         child
@@ -138,7 +180,7 @@ macro_rules! fs_fixture {
     ({ $($path:literal : $contents:expr_2021),* $(,)? }) => {{
         let fixture = $crate::Fixture::new();
         $(
-            let _ = fixture.write_file($path, $contents);
+            fixture.write_file($path, $contents);
         )*
         fixture
     }};
@@ -146,6 +188,48 @@ macro_rules! fs_fixture {
 
 #[cfg(test)]
 mod tests {
+    use super::{Fixture, instant, set_modified};
+
+    #[test]
+    fn fixture_instant_preserves_epoch_units_and_fractional_seconds() {
+        let timestamp = instant("2026-01-02T08:31:00.125Z");
+
+        assert_eq!(timestamp.secs(), 1_767_342_660);
+        assert_eq!(timestamp.millis(), 1_767_342_660_125);
+        assert_eq!(timestamp.secs_f64(), 1_767_342_660.125);
+        assert_eq!(timestamp.millis_f64(), 1_767_342_660_125.0);
+        assert_eq!(timestamp, instant("2026-01-02T17:31:00.125+09:00"));
+    }
+
+    #[test]
+    fn fixture_instant_steps_by_durations_and_prints_milliseconds() {
+        let timestamp = instant("2026-01-02T08:31:00Z");
+        let hour = std::time::Duration::from_secs(60 * 60);
+
+        assert_eq!(timestamp.plus(hour), instant("2026-01-02T09:31:00Z"));
+        assert_eq!(timestamp.minus(hour * 9), instant("2026-01-01T23:31:00Z"));
+        assert_eq!(timestamp.rfc3339_millis(), "2026-01-02T08:31:00.000Z");
+        assert_eq!(
+            instant("2026-01-02T08:31:00.125Z").rfc3339_millis(),
+            "2026-01-02T08:31:00.125Z"
+        );
+    }
+
+    #[test]
+    fn fixture_file_mtime_preserves_the_instant() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("fixture.jsonl", "{}");
+        let timestamp = instant("2026-01-02T08:31:00.125Z");
+
+        set_modified(&path, timestamp);
+
+        let modified = std::fs::metadata(path).unwrap().modified().unwrap();
+        assert_eq!(
+            modified.duration_since(std::time::UNIX_EPOCH).unwrap(),
+            std::time::Duration::from_millis(1_767_342_660_125)
+        );
+    }
+
     #[test]
     fn creates_inline_fixture_tree() {
         let fixture = fs_fixture!({
@@ -161,7 +245,7 @@ mod tests {
     #[test]
     fn creates_incremental_fixture_tree() {
         let fixture = fs_fixture!({});
-        let _ = fixture.write_file("projects/example/session/chat.jsonl", "{}\n");
+        fixture.write_file("projects/example/session/chat.jsonl", "{}\n");
 
         assert!(
             fixture

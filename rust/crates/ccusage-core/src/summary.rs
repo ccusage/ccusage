@@ -8,19 +8,27 @@ use crate::{
     cli::{SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
-    format_naive_date, format_rfc3339_millis, parse_iso_date,
+    format_rfc3339_millis,
 };
 
-pub fn summarize_by_key<F, M>(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyTarget {
+    Date,
+    Session,
+}
+
+pub fn summarize_by_key_target<K, F, M>(
     entries: &[LoadedEntry],
     key_fn: F,
     meta_fn: M,
+    target: KeyTarget,
 ) -> Result<Vec<UsageSummary>>
 where
-    F: Fn(&LoadedEntry) -> String,
-    M: Fn(&str) -> (String, Option<String>),
+    K: Ord,
+    F: Fn(&LoadedEntry) -> K,
+    M: Fn(&K) -> (String, Option<String>),
 {
-    let mut groups: BTreeMap<String, UsageAccumulator> = BTreeMap::new();
+    let mut groups: BTreeMap<K, UsageAccumulator> = BTreeMap::new();
     for entry in entries {
         groups.entry(key_fn(entry)).or_default().add_entry(entry);
     }
@@ -29,7 +37,10 @@ where
     for (key, group) in groups {
         let (date, project) = meta_fn(&key);
         let mut summary = group.into_summary();
-        summary.date = Some(date);
+        match target {
+            KeyTarget::Date => summary.date = Some(date),
+            KeyTarget::Session => summary.session_id = Some(date),
+        }
         summary.project = project;
         rows.push(summary);
     }
@@ -49,7 +60,7 @@ struct UsageAccumulator {
 
 impl UsageAccumulator {
     fn add_entry(&mut self, entry: &LoadedEntry) {
-        let usage = entry.data.message.usage;
+        let usage = entry.usage;
         self.counts.add_usage(usage);
         self.counts.extra_total_tokens = self
             .counts
@@ -144,7 +155,7 @@ impl SessionAccumulator {
         {
             self.earliest = Some(entry.timestamp);
         }
-        if let Some(version) = &entry.data.version {
+        if let Some(version) = &entry.version {
             self.versions.insert(version.clone());
         }
     }
@@ -163,36 +174,32 @@ impl SessionAccumulator {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum BucketKind {
+#[derive(Clone, Copy, Debug)]
+pub enum Bucket {
     Monthly,
-    Weekly,
+    Weekly(WeekDay),
 }
 
-pub fn summarize_summaries_by_bucket(
-    rows: &[UsageSummary],
-    kind: BucketKind,
-    start: WeekDay,
-) -> Vec<UsageSummary> {
+pub fn summarize_bucket(rows: &[UsageSummary], bucket: Bucket) -> Vec<UsageSummary> {
     let mut groups: BTreeMap<String, Vec<&UsageSummary>> = BTreeMap::new();
     for row in rows {
         let Some(date) = row.date.as_deref() else {
             continue;
         };
-        let bucket = match kind {
-            BucketKind::Monthly => date.get(..7).unwrap_or(date).to_string(),
-            BucketKind::Weekly => week_start(date, start).unwrap_or_else(|| date.to_string()),
+        let key = match bucket {
+            Bucket::Monthly => date.get(..7).unwrap_or(date).to_string(),
+            Bucket::Weekly(start) => week_start(date, start).unwrap_or_else(|| date.to_string()),
         };
-        groups.entry(bucket).or_default().push(row);
+        groups.entry(key).or_default().push(row);
     }
 
     groups
         .into_iter()
-        .map(|(bucket, rows)| {
+        .map(|(key, rows)| {
             let mut summary = aggregate_summaries(&rows);
-            match kind {
-                BucketKind::Monthly => summary.month = Some(bucket),
-                BucketKind::Weekly => summary.week = Some(bucket),
+            match bucket {
+                Bucket::Monthly => summary.month = Some(key),
+                Bucket::Weekly(_) => summary.week = Some(key),
             }
             summary
         })
@@ -280,19 +287,8 @@ where
 }
 
 pub fn week_start(date: &str, start: WeekDay) -> Option<String> {
-    let date = parse_iso_date(date)?;
-    let start_num = match start {
-        WeekDay::Sunday => 0,
-        WeekDay::Monday => 1,
-        WeekDay::Tuesday => 2,
-        WeekDay::Wednesday => 3,
-        WeekDay::Thursday => 4,
-        WeekDay::Friday => 5,
-        WeekDay::Saturday => 6,
-    };
-    let day = date.weekday_from_sunday() as i64;
-    let shift = (day - start_num + 7) % 7;
-    Some(format_naive_date(date.checked_add_days(-shift)?))
+    let date = ccusage_cli::IsoDate::parse(date)?;
+    Some(date.week_start(start).to_string())
 }
 
 #[cfg(test)]
@@ -300,7 +296,60 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{ModelBreakdown, TokenUsageRaw, UsageEntry, UsageMessage, format_rfc3339_millis};
+    use crate::{ModelBreakdown, TokenUsageRaw};
+
+    #[test]
+    fn key_target_keeps_project_sessions_separate_without_activity_metadata() {
+        let entries = vec![
+            loaded_entry(LoadedEntryFixture {
+                date: "2026-01-02",
+                timestamp: 1_767_316_800_000,
+                session_id: "shared",
+                project_path: "/a",
+                model: None,
+                input_tokens: 10,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.1,
+                credits: None,
+                message_count: None,
+                version: None,
+                missing_pricing_model: None,
+            }),
+            loaded_entry(LoadedEntryFixture {
+                date: "2026-01-02",
+                timestamp: 1_767_316_800_000,
+                session_id: "shared",
+                project_path: "/b",
+                model: None,
+                input_tokens: 20,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.2,
+                credits: None,
+                message_count: None,
+                version: None,
+                missing_pricing_model: None,
+            }),
+        ];
+        let rows = summarize_by_key_target(
+            &entries,
+            |entry| (entry.project_path.clone(), entry.session_id.clone()),
+            |(_, session)| (session.to_string(), None),
+            KeyTarget::Session,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].input_tokens, 10);
+        assert_eq!(rows[1].input_tokens, 20);
+        assert!(rows.iter().all(|row| row.date.is_none()
+            && row.session_id.as_deref() == Some("shared")
+            && row.last_activity.is_none()));
+    }
 
     #[test]
     fn snapshots_summarize_by_key_aggregates_counts_costs_and_breakdowns() {
@@ -358,13 +407,14 @@ mod tests {
             }),
         ];
 
-        let rows = summarize_by_key(
+        let rows = summarize_by_key_target(
             &entries,
             |entry| format!("{}|{}", entry.date, entry.project_path),
             |key| {
                 let (date, project) = key.split_once('|').unwrap();
                 (date.to_string(), Some(project.to_string()))
             },
+            KeyTarget::Date,
         )
         .unwrap();
 
@@ -449,8 +499,8 @@ mod tests {
             }),
         ];
 
-        let weekly = summarize_summaries_by_bucket(&rows, BucketKind::Weekly, WeekDay::Monday);
-        let monthly = summarize_summaries_by_bucket(&rows, BucketKind::Monthly, WeekDay::Sunday);
+        let weekly = summarize_bucket(&rows, Bucket::Weekly(WeekDay::Monday));
+        let monthly = summarize_bucket(&rows, Bucket::Monthly);
 
         insta::assert_json_snapshot!(serde_json::json!({
             "weekly": weekly,
@@ -511,10 +561,11 @@ mod tests {
         let calculated = loaded_entry(fixture(1_767_316_801_000, "claude-sonnet-4-20250514", 0.25));
         let other = loaded_entry(fixture(1_767_316_802_000, "gpt-5", 0.125));
 
-        let rows = summarize_by_key(
+        let rows = summarize_by_key_target(
             &[stored.clone(), calculated, other, stored],
             |entry| entry.date.clone(),
             |key| (key.to_string(), None),
+            KeyTarget::Date,
         )
         .unwrap();
 
@@ -532,11 +583,7 @@ mod tests {
             input_tokens: 100,
         });
         next_day.model_breakdowns[0].stored_cost = Some(0.25);
-        let monthly = summarize_summaries_by_bucket(
-            &[rows[0].clone(), next_day],
-            BucketKind::Monthly,
-            WeekDay::Sunday,
-        );
+        let monthly = summarize_bucket(&[rows[0].clone(), next_day], Bucket::Monthly);
 
         assert_eq!(monthly[0].model_breakdowns[0].stored_cost, Some(1.25));
         assert_eq!(monthly[0].model_breakdowns[1].stored_cost, None);
@@ -623,20 +670,10 @@ mod tests {
         };
         let timestamp = TimestampMs::from_millis(fixture.timestamp);
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(fixture.session_id.to_string()),
-                timestamp: format_rfc3339_millis(timestamp),
-                version: fixture.version.map(str::to_string),
-                message: UsageMessage {
-                    usage,
-                    model: fixture.model.map(str::to_string),
-                    id: Some(format!("msg-{}", fixture.timestamp)),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
-            },
+            usage,
+            message_id: Some(format!("msg-{}", fixture.timestamp)),
+            version: fixture.version.map(str::to_string),
+            recorded_cost: None,
             timestamp,
             date: fixture.date.to_string(),
             project: Arc::from(fixture.project_path),

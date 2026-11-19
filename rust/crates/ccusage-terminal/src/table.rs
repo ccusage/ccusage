@@ -19,13 +19,37 @@ pub enum Align {
     Right,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ColumnKind {
+    Primary,
+    Detail,
+    Models,
+    Text,
+    Numeric,
+}
+
+impl ColumnKind {
+    fn alignment(self) -> Align {
+        match self {
+            Self::Numeric => Align::Right,
+            Self::Primary | Self::Detail | Self::Models | Self::Text => Align::Left,
+        }
+    }
+}
+
 pub struct SimpleTable {
     headers: Vec<String>,
-    aligns: Vec<Align>,
-    rows: Vec<Option<Vec<String>>>,
+    columns: Vec<ColumnKind>,
+    rows: Vec<Option<TableRow>>,
     style: TerminalStyle,
     terminal_width: usize,
     compact_dates: bool,
+    date_compaction_width: Option<usize>,
+}
+
+struct TableRow {
+    cells: Vec<String>,
+    first_align: Option<Align>,
 }
 
 struct ContentWidths<'a> {
@@ -34,14 +58,19 @@ struct ContentWidths<'a> {
 }
 
 impl SimpleTable {
-    pub fn new(headers: Vec<&str>, aligns: Vec<Align>, style: impl Into<TerminalStyle>) -> Self {
+    pub fn new(
+        headers: Vec<&str>,
+        columns: Vec<ColumnKind>,
+        style: impl Into<TerminalStyle>,
+    ) -> Self {
         Self {
             headers: headers.into_iter().map(str::to_string).collect(),
-            aligns,
+            columns,
             rows: Vec::new(),
             style: style.into(),
             terminal_width: DEFAULT_TERMINAL_WIDTH,
             compact_dates: false,
+            date_compaction_width: None,
         }
     }
 
@@ -55,8 +84,27 @@ impl SimpleTable {
         self
     }
 
+    pub fn with_date_compaction_at(mut self, terminal_width: usize) -> Self {
+        self.date_compaction_width = Some(terminal_width);
+        self
+    }
+
     pub fn push(&mut self, row: Vec<String>) {
-        self.rows.push(Some(row));
+        self.push_row(row, None);
+    }
+
+    pub fn push_aligned(&mut self, row: Vec<String>, first_align: Align) {
+        self.push_row(row, Some(first_align));
+    }
+
+    fn push_row(&mut self, mut cells: Vec<String>, first_align: Option<Align>) {
+        if self
+            .date_compaction_width
+            .is_some_and(|width| self.terminal_width <= width)
+        {
+            compact_first_cell(&mut cells);
+        }
+        self.rows.push(Some(TableRow { cells, first_align }));
     }
 
     pub fn separator(&mut self) {
@@ -85,15 +133,20 @@ impl SimpleTable {
                 .iter()
                 .map(|header| color(self.style, header, Color::Blue))
                 .collect::<Vec<_>>();
-            lines.push(table_line(&header_row, &self.aligns, &widths));
+            lines.push(table_line(&header_row, &self.columns, &widths, None));
         }
         lines.push(border('├', '┼', '┤', &widths));
         for (row_index, row) in self.rows.iter().enumerate() {
             match row {
                 Some(row) => {
-                    let row = self.compact_date_row(row, &widths);
-                    for physical_row in expand_multiline_row(&row, self.headers.len(), &widths) {
-                        lines.push(table_line(&physical_row, &self.aligns, &widths));
+                    let cells = self.compact_date_row(&row.cells, &widths);
+                    for physical_row in expand_multiline_row(&cells, self.headers.len(), &widths) {
+                        lines.push(table_line(
+                            &physical_row,
+                            &self.columns,
+                            &widths,
+                            row.first_align,
+                        ));
                     }
                 }
                 None => lines.push(border('├', '┼', '┤', &widths)),
@@ -110,36 +163,39 @@ impl SimpleTable {
     }
 
     fn column_widths(&self) -> Vec<usize> {
-        let model_column = self.headers.iter().position(|header| header == "Models");
+        let model_column = self
+            .columns
+            .iter()
+            .position(|role| *role == ColumnKind::Models);
         let numeric_content_widths = self
-            .aligns
+            .columns
             .iter()
             .enumerate()
-            .map(|(index, align)| {
-                if *align != Align::Right {
+            .map(|(index, role)| {
+                if *role != ColumnKind::Numeric {
                     return 0;
                 }
                 self.rows
                     .iter()
                     .flatten()
-                    .filter_map(|row| row.get(index))
+                    .filter_map(|row| row.cells.get(index))
                     .map(|cell| visible_width_max_line(cell))
                     .max()
                     .unwrap_or_default()
             })
             .collect::<Vec<_>>();
         let text_content_widths = self
-            .aligns
+            .columns
             .iter()
             .enumerate()
-            .map(|(index, align)| {
-                if *align == Align::Right {
+            .map(|(index, role)| {
+                if *role == ColumnKind::Numeric {
                     return 0;
                 }
                 self.rows
                     .iter()
                     .flatten()
-                    .filter_map(|row| row.get(index))
+                    .filter_map(|row| row.cells.get(index))
                     .map(|cell| visible_width_max_line(cell))
                     .max()
                     .unwrap_or_default()
@@ -160,7 +216,7 @@ impl SimpleTable {
             .collect::<Vec<_>>();
         let mut content_widths = content_widths;
         for row in self.rows.iter().flatten() {
-            for (index, cell) in row.iter().enumerate() {
+            for (index, cell) in row.cells.iter().enumerate() {
                 let cell_width = visible_width_max_line(cell);
                 let cell_width = if model_column == Some(index) {
                     cell_width.min(MAX_MODELS_CONTENT_WIDTH)
@@ -178,9 +234,9 @@ impl SimpleTable {
             .map(|(index, width)| {
                 if model_column == Some(index) {
                     (width + 2).clamp(15, MAX_MODELS_CONTENT_WIDTH + 2)
-                } else if self.aligns.get(index) == Some(&Align::Right) {
+                } else if self.columns.get(index) == Some(&ColumnKind::Numeric) {
                     (width + 3).max(11)
-                } else if index == 1 {
+                } else if self.columns.get(index) == Some(&ColumnKind::Detail) {
                     (width + 2).max(15)
                 } else {
                     (width + 2).max(10)
@@ -195,10 +251,10 @@ impl SimpleTable {
         };
         fit_widths_to_terminal(
             widths,
-            &self.aligns,
+            &self.columns,
             self.terminal_width,
             first_column_min,
-            model_column,
+            model_column.is_some(),
             ContentWidths {
                 numeric: &numeric_content_widths,
                 text: &text_content_widths,
@@ -219,11 +275,7 @@ impl SimpleTable {
             return row.to_vec();
         }
         let mut row = row.to_vec();
-        if let Some(first) = row.first_mut()
-            && let Some(compact) = compact_date_cell(first)
-        {
-            *first = compact;
-        }
+        compact_first_cell(&mut row);
         row
     }
 }
@@ -255,10 +307,10 @@ fn expand_multiline_row(row: &[String], column_count: usize, widths: &[usize]) -
 
 fn fit_widths_to_terminal(
     mut widths: Vec<usize>,
-    aligns: &[Align],
+    columns: &[ColumnKind],
     terminal_width: usize,
     first_column_min: usize,
-    model_column: Option<usize>,
+    has_model_column: bool,
     content_widths: ContentWidths<'_>,
     compact_dates: bool,
 ) -> Vec<usize> {
@@ -270,11 +322,11 @@ fn fit_widths_to_terminal(
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            if aligns.get(index) == Some(&Align::Right) {
+            if columns.get(index) == Some(&ColumnKind::Numeric) {
                 10
-            } else if index == 0 {
+            } else if columns.get(index) == Some(&ColumnKind::Primary) {
                 first_column_min
-            } else if model_column == Some(index) || (model_column.is_none() && index == 1) {
+            } else if preferred_wrap_column(columns.get(index).copied(), has_model_column) {
                 12
             } else {
                 content_widths
@@ -292,7 +344,7 @@ fn fit_widths_to_terminal(
         .iter()
         .enumerate()
         .map(|(index, minimum)| {
-            if aligns.get(index) == Some(&Align::Right) {
+            if columns.get(index) == Some(&ColumnKind::Numeric) {
                 (*minimum).max(
                     content_widths
                         .numeric
@@ -311,11 +363,11 @@ fn fit_widths_to_terminal(
             .iter()
             .enumerate()
             .filter(|(index, width)| {
-                aligns.get(*index) != Some(&Align::Right) && **width > MIN_WRAP_COLUMN_WIDTH
+                columns.get(*index) != Some(&ColumnKind::Numeric) && **width > MIN_WRAP_COLUMN_WIDTH
             })
             .max_by_key(|(index, width)| {
                 (
-                    model_column == Some(*index) || (model_column.is_none() && *index == 1),
+                    preferred_wrap_column(columns.get(*index).copied(), has_model_column),
                     **width,
                 )
             })
@@ -353,7 +405,9 @@ fn fit_widths_to_terminal(
             .iter()
             .enumerate()
             .filter(|(index, width)| **width > minimums[*index])
-            .max_by_key(|(index, width)| (aligns.get(*index) != Some(&Align::Right), **width))
+            .max_by_key(|(index, width)| {
+                (columns.get(*index) != Some(&ColumnKind::Numeric), **width)
+            })
             .map(|(index, _)| index)
         else {
             break;
@@ -364,6 +418,14 @@ fn fit_widths_to_terminal(
     let spare = terminal_width.saturating_sub(cli_table_required_width(&widths));
     distribute_spare_width(&mut widths, &expansion_limits, spare);
     widths
+}
+
+fn preferred_wrap_column(kind: Option<ColumnKind>, has_model_column: bool) -> bool {
+    match kind {
+        Some(ColumnKind::Models) => true,
+        Some(ColumnKind::Detail) => !has_model_column,
+        _ => false,
+    }
 }
 
 fn distribute_spare_width(widths: &mut [usize], natural_widths: &[usize], mut spare: usize) {
@@ -472,6 +534,14 @@ fn is_list_marker(word: &str) -> bool {
     visible_width(word) == 1 && word.contains('-')
 }
 
+fn compact_first_cell(cells: &mut [String]) {
+    if let Some(first) = cells.first_mut()
+        && let Some(compact) = compact_date_cell(first)
+    {
+        *first = compact;
+    }
+}
+
 fn compact_date_cell(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     if bytes.len() == 10
@@ -487,15 +557,19 @@ fn compact_date_cell(value: &str) -> Option<String> {
     }
 }
 
-fn table_line(cells: &[String], aligns: &[Align], widths: &[usize]) -> String {
+fn table_line(
+    cells: &[String],
+    columns: &[ColumnKind],
+    widths: &[usize],
+    first_align: Option<Align>,
+) -> String {
     let mut line = String::from("│");
     for (index, width) in widths.iter().enumerate() {
         let cell = cells.get(index).map(String::as_str).unwrap_or("");
-        let align = if index == 0 && cell.starts_with("(assuming ") {
-            Align::Right
-        } else {
-            aligns.get(index).copied().unwrap_or(Align::Left)
-        };
+        let align = first_align
+            .filter(|_| index == 0)
+            .or_else(|| columns.get(index).copied().map(ColumnKind::alignment))
+            .unwrap_or(Align::Left);
         line.push(' ');
         line.push_str(&pad_cell(cell, width.saturating_sub(2), align));
         line.push(' ');
@@ -548,10 +622,15 @@ mod tests {
     fn width_fitting_keeps_table_within_terminal_when_possible() {
         let widths = fit_widths_to_terminal(
             vec![20, 40, 14, 14],
-            &[Align::Left, Align::Left, Align::Right, Align::Right],
+            &[
+                ColumnKind::Primary,
+                ColumnKind::Detail,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+            ],
             60,
             12,
-            None,
+            false,
             ContentWidths {
                 numeric: &[],
                 text: &[],
@@ -566,10 +645,15 @@ mod tests {
     fn numeric_columns_keep_the_reverted_minimum_when_space_is_tight() {
         let widths = fit_widths_to_terminal(
             vec![20, 40, 14, 14],
-            &[Align::Left, Align::Left, Align::Right, Align::Right],
+            &[
+                ColumnKind::Primary,
+                ColumnKind::Detail,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+            ],
             49,
             12,
-            None,
+            false,
             ContentWidths {
                 numeric: &[],
                 text: &[],
@@ -586,11 +670,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -605,13 +689,16 @@ mod tests {
             "56".to_string(),
             "$0.42".to_string(),
         ]);
-        table.push(vec![
-            "(assuming cache warmup)".to_string(),
-            String::new(),
-            "0".to_string(),
-            "0".to_string(),
-            "$0.00".to_string(),
-        ]);
+        table.push_aligned(
+            vec![
+                "(assuming cache warmup)".to_string(),
+                String::new(),
+                "0".to_string(),
+                "0".to_string(),
+                "$0.00".to_string(),
+            ],
+            Align::Right,
+        );
         table.separator();
         table.push(vec![
             "Total".to_string(),
@@ -625,15 +712,32 @@ mod tests {
     }
 
     #[test]
+    fn right_aligns_every_line_of_a_wrapped_label() {
+        let mut table = SimpleTable::new(
+            vec!["Label"],
+            vec![ColumnKind::Primary],
+            TerminalStyle::default(),
+        )
+        .with_terminal_width(12);
+        table.push_aligned(vec!["longer small tiny".to_string()], Align::Right);
+
+        let rendered = table.render_lines();
+        assert_eq!(
+            &rendered[3..rendered.len() - 1],
+            ["│   longer │", "│    small │", "│     tiny │"]
+        );
+    }
+
+    #[test]
     fn snapshots_narrow_table_with_wrapping_truncation_and_compact_dates() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -658,11 +762,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -670,7 +774,6 @@ mod tests {
             },
         )
         .with_terminal_width(200);
-        // 5 models — a realistic single-agent scenario where the bug would be severe
         table.push(vec![
             "2026-05-18".to_string(),
             "- claude-sonnet-4-20250514 (self-serve)\n- claude-opus-4-5\n- gpt-5.2-codex\n- gemini-3.0-pro-wildly-long\n- claude-haiku-3-5-sonnet".to_string(),
@@ -683,8 +786,6 @@ mod tests {
         let cell = "- claude-sonnet-4-20250514 (self-serve)\n- claude-opus-4-5\n- gpt-5.2-codex\n- gemini-3.0-pro-wildly-long\n- claude-haiku-3-5-sonnet";
         let widest_line = visible_width_max_line(cell);
         let sum_of_lines = cell.lines().map(visible_width).sum::<usize>();
-        // If visible_width_sum were still used, models_width would be ~180
-        // With visible_width_max_line, it should be ~widest_line + padding
         assert!(
             models_width < sum_of_lines,
             "Models column width ({models_width}) should be based on widest line ({widest_line}), not sum of all lines ({sum_of_lines})"
@@ -700,11 +801,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Total Tokens"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -747,12 +848,12 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Agent", "Models", "Input", "Output", "Total Tokens"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Detail,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -788,14 +889,14 @@ mod tests {
                 "Cost (USD)",
             ],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -858,15 +959,15 @@ mod tests {
                 "Cost (USD)",
             ],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -931,15 +1032,15 @@ mod tests {
                 "Cost (USD)",
             ],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -997,7 +1098,7 @@ mod tests {
     fn resets_colored_models_before_each_physical_cell_border() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input"],
-            vec![Align::Left, Align::Left, Align::Right],
+            vec![ColumnKind::Primary, ColumnKind::Models, ColumnKind::Numeric],
             TerminalStyle {
                 color: true,
                 ..TerminalStyle::default()
@@ -1035,11 +1136,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Total Tokens"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -1079,7 +1180,7 @@ mod tests {
     fn caps_ansi_multiline_models_by_visible_width() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input"],
-            vec![Align::Left, Align::Left, Align::Right],
+            vec![ColumnKind::Primary, ColumnKind::Models, ColumnKind::Numeric],
             TerminalStyle {
                 no_color: true,
                 ..TerminalStyle::default()
@@ -1105,11 +1206,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -1139,11 +1240,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Block Start", "Duration/Status", "Models", "Tokens", "Cost"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Detail,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,
@@ -1176,7 +1277,7 @@ mod tests {
     fn resets_ansi_continuation_at_explicit_newlines() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input"],
-            vec![Align::Left, Align::Left, Align::Right],
+            vec![ColumnKind::Primary, ColumnKind::Models, ColumnKind::Numeric],
             TerminalStyle {
                 no_color: true,
                 ..TerminalStyle::default()
@@ -1212,7 +1313,7 @@ mod tests {
     fn keeps_list_markers_attached_to_truncated_models() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input"],
-            vec![Align::Left, Align::Left, Align::Right],
+            vec![ColumnKind::Primary, ColumnKind::Models, ColumnKind::Numeric],
             TerminalStyle {
                 no_color: true,
                 ..TerminalStyle::default()
@@ -1245,7 +1346,7 @@ mod tests {
     fn preserves_ansi_continuation_across_word_wrapped_fragments_without_leaking() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input"],
-            vec![Align::Left, Align::Left, Align::Right],
+            vec![ColumnKind::Primary, ColumnKind::Models, ColumnKind::Numeric],
             TerminalStyle {
                 no_color: true,
                 ..TerminalStyle::default()
@@ -1283,11 +1384,11 @@ mod tests {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
             TerminalStyle {
                 no_color: true,

@@ -1,7 +1,7 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#gh --command nu
 
-use ./contribution-gate/access.nu [issue-access pr-access]
+use ./contribution-gate/access.nu [issue-access pr-access approve-contributor approve-contributor-comment]
 use ./contribution-gate/coauthor.nu [verify-coauthor]
 use ./contribution-gate/context.nu [issue-context]
 use ./contribution-gate/mutations.nu [issue-verdict pr-verdict]
@@ -9,13 +9,17 @@ use ./contribution-gate/requests.nu [
     issue-implementation-guard
     issue-implementation-request
     issue-request
+    implementation-artifact
     publish-implementation
     pr-request
 ]
 
 def main [operation: string]: nothing -> nothing {
     match $operation {
+        'implementation-artifact' => implementation-artifact
         'issue-context' => issue-context
+        'approve-contributor' => approve-contributor
+        'approve-contributor-comment' => approve-contributor-comment
         'issue-access' => issue-access
         'pr-access' => pr-access
         'issue-request' => issue-request

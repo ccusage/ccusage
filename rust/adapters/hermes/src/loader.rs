@@ -1,10 +1,12 @@
-use std::{collections::HashSet, path::Path};
+use std::path::PathBuf;
 
 use ccusage_adapter_common::{
+    dedupe::dedupe_first_wins,
     source::LoadContext,
-    units::{SqliteStage, UnitError, read_units_flat},
+    sqlite::sqlite_units,
+    units::{SqliteStage, UnitError},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, Result, Skip};
+use ccusage_core::{Diagnostics, LoadedEntry, Result};
 
 use super::{
     parser::{HermesEntry, read_session_row, to_loaded_entry},
@@ -12,40 +14,31 @@ use super::{
 };
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pipeline_pricing()?;
+    let pricing = cx.pricing.table(cx.shared.mode);
     let tz = cx.window.timezone();
     let db_paths = hermes_state_db_paths()?;
-    // Load each state database in parallel (a fresh read-only connection per DB),
-    // then run the sequential session dedup over the original path order so the
-    // surviving session matches the single-threaded read.
-    let loaded = read_units_flat(
-        &db_paths,
-        cx.shared.single_thread,
-        cx.diagnostics,
-        |db_path| load_state_db_entries(db_path, cx.diagnostics),
-    );
-    let mut entries = Vec::new();
-    let mut seen_sessions = HashSet::new();
-    for entry in loaded {
-        if !seen_sessions.insert(entry.session_id.clone()) {
-            continue;
-        }
-        entries.push(to_loaded_entry(entry, tz, cx.shared.mode, pricing));
-    }
+    let loaded = load_state_db_entries(&db_paths, cx.shared.single_thread, cx.diagnostics);
+    let mut entries: Vec<_> = dedupe_first_wins(loaded, |entry| entry.session_id.clone())
+        .into_iter()
+        .map(|entry| to_loaded_entry(entry, tz, cx.shared.mode, pricing))
+        .collect();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
 fn load_state_db_entries(
-    db_path: &Path,
+    db_paths: &[PathBuf],
+    single_thread: bool,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<HermesEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut statement = connection
-        .prepare(
-            "
+) -> Vec<HermesEntry> {
+    sqlite_units(
+        db_paths,
+        single_thread,
+        diagnostics,
+        |connection, _| {
+            connection
+                .prepare(
+                    "
             SELECT
                 id,
                 model,
@@ -63,33 +56,14 @@ fn load_state_db_entries(
             WHERE model IS NOT NULL
                 AND TRIM(model) != ''
         ",
-        )
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                match read_session_row(&statement) {
-                    Ok(Some(entry)) => entries.push(entry),
-                    Ok(None) => {}
-                    Err(error) => diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        error.kind(),
-                        error.detail(),
-                    )),
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+                )
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, _, _| {
+            read_session_row(statement)
+                .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
+        },
+    )
 }
 
 #[cfg(test)]
@@ -103,7 +77,7 @@ mod tests {
         PricingMap, ReportWindow, SkipKind,
         cli::{AgentReportKind, SharedArgs},
     };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn create_state_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -131,6 +105,7 @@ mod tests {
 
     #[test]
     fn loads_billable_hermes_sessions_from_state_db() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let db_path = fixture.path("state.db");
         create_state_db(&db_path);
@@ -163,15 +138,21 @@ mod tests {
 
         let pricing = PricingMap::load_embedded();
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let tz = crate::resolve_tz(shared.timezone.as_deref());
+        let tz = crate::resolve_tz(shared.timezone.as_ref());
         let diagnostics = Diagnostics::new("hermes");
-        let entries = load_state_db_entries(&db_path, &diagnostics)
-            .unwrap()
+        let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics)
             .into_iter()
-            .map(|entry| to_loaded_entry(entry, &tz, shared.mode, &pricing))
+            .map(|entry| {
+                to_loaded_entry(
+                    entry,
+                    &tz,
+                    shared.mode,
+                    ccusage_core::cost::PriceTable::for_map(shared.mode, &pricing),
+                )
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);
@@ -181,13 +162,10 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1200);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 300);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 1200);
+        assert_eq!(entries[0].usage.output_tokens, 300);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].message_count, Some(42));
         assert_eq!(entries[0].cost, 0.34);
@@ -195,6 +173,7 @@ mod tests {
 
     #[test]
     fn classifies_state_database_query_failures_and_keeps_healthy_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "good/state.db": "",
             "broken/state.db": "not a SQLite database",
@@ -218,7 +197,7 @@ mod tests {
             fixture.root().join("broken").display(),
             fixture.root().join("schema").display()
         );
-        let _cleanup = EnvVarGuard::set("HERMES_HOME", homes);
+        let _cleanup = EnvGuard::set("HERMES_HOME", homes);
         let shared = SharedArgs::default();
         let pricing = PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
@@ -227,7 +206,7 @@ mod tests {
             shared: &shared,
             kind: AgentReportKind::Daily,
             window: &window,
-            pricing: Some(&pricing),
+            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
             options: SourceOptions::default(),
             diagnostics: &diagnostics,
         };
@@ -253,7 +232,7 @@ mod tests {
             .unwrap();
         let diagnostics = Diagnostics::new("hermes");
 
-        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+        let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].session_id, "before");
@@ -284,7 +263,7 @@ mod tests {
             .unwrap();
         let diagnostics = Diagnostics::new("hermes");
 
-        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+        let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id, " ");
@@ -293,6 +272,7 @@ mod tests {
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"state.db": ""});
         let db_path = fixture.path("state.db");
         create_state_db(&db_path);
@@ -302,13 +282,13 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('session-a', 'cli', 'gpt-5', 1750000000, 100, 50)",
             )
             .unwrap();
-        let _cleanup = EnvVarGuard::set("HERMES_HOME", fixture.root());
+        let _cleanup = EnvGuard::set("HERMES_HOME", fixture.root());
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Hermes, &shared);
     }
 }

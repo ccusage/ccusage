@@ -48,24 +48,16 @@ exit: 0
     },
     {
       "cacheCreationTokens": 50,
-      "cacheReadTokens": 9000,
-      "inputTokens": 2760,
+      "cacheReadTokens": 6000,
+      "inputTokens": 1900,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0,
-          "inputTokens": 1100,
-          "modelName": "gpt-5",
-          "outputTokens": 200
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 120,
-          "modelName": "kimi-k2.5",
-          "outputTokens": 30
+          "inputTokens": 500,
+          "modelName": "gpt-5",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -79,9 +71,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 240,
+          "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 542
+          "outputTokens": 482
         },
         {
           "cacheCreationTokens": 50,
@@ -94,15 +86,14 @@ exit: 0
       ],
       "modelsUsed": [
         "gpt-5",
-        "kimi-k2.5",
         "kimi-mystery-1",
         "kimi-k2-thinking",
         "kimi-for-coding"
       ],
       "month": "2026-01",
-      "outputTokens": 1187,
+      "outputTokens": 997,
       "totalCost": 0.0,
-      "totalTokens": 13247
+      "totalTokens": 9197
     },
     {
       "cacheCreationTokens": 0,
@@ -129,11 +120,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 1570,
-    "cacheReadTokens": 66000,
-    "inputTokens": 15621,
-    "outputTokens": 4616,
+    "cacheReadTokens": 63000,
+    "inputTokens": 14761,
+    "outputTokens": 4426,
     "totalCost": 0.0,
-    "totalTokens": 88057
+    "totalTokens": 84007
   }
 }
 

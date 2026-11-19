@@ -3,12 +3,6 @@ name: commit
 description: Creates atomic Conventional Commits. Use when committing code changes, splitting a diff into independently revertable hunks, staging precise patches non-interactively, or writing commit messages.
 ---
 
-<!--
-Example prompts:
-  /commit
-  /commit push=true
--->
-
 # Commit
 
 Arguments:
@@ -22,7 +16,7 @@ Arguments:
 3. Stage each unit with `git apply --cached -v <patch>`. `git add -p` and `git add --interactive` hang in this environment, so a patch is the only way to stage part of a file. Read `references/git-apply.md` when one fails to apply.
 4. Commit, then confirm with `git show HEAD`.
 
-## Revertability
+## Reversibility
 
 Every commit answers "if I revert this alone, does anything else break?". Tiny commits are expected: one review comment, one wording correction, one reference-file extraction.
 

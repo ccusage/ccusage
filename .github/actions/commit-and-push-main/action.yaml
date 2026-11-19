@@ -25,7 +25,6 @@ runs:
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         gh auth setup-git
 
-        # PATHS is word-split on purpose: it carries a list of paths.
         # shellcheck disable=SC2086
         git commit --message "$MESSAGE" -- $PATHS
 
