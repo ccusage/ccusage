@@ -3,6 +3,7 @@ mod report;
 mod sources;
 mod types;
 
+use ccusage_cli::{AgentCommand, StandardAgent};
 use ccusage_core::*;
 
 mod adapter {
@@ -34,34 +35,40 @@ use crate::{
     print_json_or_jq, wants_json,
 };
 
-pub fn runner(agent: ccusage_cli::StandardAgent, command: ccusage_cli::AgentCommand) -> Result<()> {
-    match command {
-        ccusage_cli::AgentCommand::Report(args) => report_runner(agent)(args),
-        ccusage_cli::AgentCommand::Statusline(args) => adapter::codex::run_statusline(args),
+pub fn runner(agent: StandardAgent, command: AgentCommand) -> Result<()> {
+    match (agent, command) {
+        (StandardAgent::Codex, AgentCommand::Statusline(args)) => {
+            adapter::codex::run_statusline(args)
+        }
+        (agent, AgentCommand::Statusline(_)) => Err(cli_error(format!(
+            "The statusline runner is unavailable for {}.",
+            agent.spec().name
+        ))),
+        (agent, AgentCommand::Report(args)) => report_runner(agent)(args),
     }
 }
 
-fn report_runner(agent: ccusage_cli::StandardAgent) -> fn(AgentCommandArgs) -> Result<()> {
+fn report_runner(agent: StandardAgent) -> fn(AgentCommandArgs) -> Result<()> {
     match agent {
-        ccusage_cli::StandardAgent::Codex => adapter::codex::run,
-        ccusage_cli::StandardAgent::Amp => adapter::amp::run,
-        ccusage_cli::StandardAgent::Droid => adapter::droid::run,
-        ccusage_cli::StandardAgent::Codebuff => adapter::codebuff::run,
-        ccusage_cli::StandardAgent::Hermes => adapter::hermes::run,
-        ccusage_cli::StandardAgent::Pi => adapter::pi::run,
-        ccusage_cli::StandardAgent::Goose => adapter::goose::run,
-        ccusage_cli::StandardAgent::Kilo => adapter::kilo::run,
-        ccusage_cli::StandardAgent::Copilot => adapter::copilot::run,
-        ccusage_cli::StandardAgent::Gemini => adapter::gemini::run,
-        ccusage_cli::StandardAgent::Antigravity => adapter::antigravity::run,
-        ccusage_cli::StandardAgent::Kimi => adapter::kimi::run,
-        ccusage_cli::StandardAgent::Qwen => adapter::qwen::run,
-        ccusage_cli::StandardAgent::OpenClaw => adapter::openclaw::run,
-        ccusage_cli::StandardAgent::Grok => adapter::grok::run,
-        ccusage_cli::StandardAgent::ZCode => adapter::zcode::run,
-        ccusage_cli::StandardAgent::Cline => adapter::cline::run,
-        ccusage_cli::StandardAgent::Dsh => adapter::dsh::run,
-        ccusage_cli::StandardAgent::OpenCode => run_opencode,
+        StandardAgent::Codex => adapter::codex::run,
+        StandardAgent::Amp => adapter::amp::run,
+        StandardAgent::Droid => adapter::droid::run,
+        StandardAgent::Codebuff => adapter::codebuff::run,
+        StandardAgent::Hermes => adapter::hermes::run,
+        StandardAgent::Pi => adapter::pi::run,
+        StandardAgent::Goose => adapter::goose::run,
+        StandardAgent::Kilo => adapter::kilo::run,
+        StandardAgent::Copilot => adapter::copilot::run,
+        StandardAgent::Gemini => adapter::gemini::run,
+        StandardAgent::Antigravity => adapter::antigravity::run,
+        StandardAgent::Kimi => adapter::kimi::run,
+        StandardAgent::Qwen => adapter::qwen::run,
+        StandardAgent::OpenClaw => adapter::openclaw::run,
+        StandardAgent::Grok => adapter::grok::run,
+        StandardAgent::ZCode => adapter::zcode::run,
+        StandardAgent::Cline => adapter::cline::run,
+        StandardAgent::Dsh => adapter::dsh::run,
+        StandardAgent::OpenCode => run_opencode,
     }
 }
 

@@ -13,26 +13,125 @@ pub struct AgentSpec {
 #[derive(Debug)]
 pub struct AgentCommandSpec {
     pub name: &'static str,
-    pub offline_by_default: bool,
-    pub options: &'static [&'static str],
+    pub kind: AgentCommandKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum AgentCommandKind {
+    Blocks(&'static [(&'static str, BlocksOption)]),
+    ClaudeStatusline {
+        offline_by_default: bool,
+        options: &'static [(&'static str, ClaudeStatuslineOption)],
+    },
+    CodexStatusline {
+        offline_by_default: bool,
+        options: &'static [(&'static str, CodexStatuslineOption)],
+    },
+}
+
+impl AgentCommandSpec {
+    pub(crate) const fn offline_by_default(&self) -> bool {
+        match self.kind {
+            AgentCommandKind::Blocks(_) => false,
+            AgentCommandKind::ClaudeStatusline {
+                offline_by_default, ..
+            }
+            | AgentCommandKind::CodexStatusline {
+                offline_by_default, ..
+            } => offline_by_default,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum BlocksOption {
+    Active,
+    Recent,
+    TokenLimit,
+    SessionLength,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ClaudeStatuslineOption {
+    Offline,
+    NoOffline,
+    VisualBurnRate,
+    CostSource,
+    Cache,
+    NoCache,
+    RefreshInterval,
+    ContextLowThreshold,
+    ContextMediumThreshold,
+    Timezone,
+    Config,
+    Debug,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CodexStatuslineOption {
+    Id,
+    Speed,
+    Mcp,
 }
 
 const CLAUDE_BLOCKS: AgentCommandSpec = AgentCommandSpec {
     name: "blocks",
-    offline_by_default: false,
-    options: &[],
+    kind: AgentCommandKind::Blocks(&[
+        ("-a", BlocksOption::Active),
+        ("--active", BlocksOption::Active),
+        ("-r", BlocksOption::Recent),
+        ("--recent", BlocksOption::Recent),
+        ("-t", BlocksOption::TokenLimit),
+        ("--token-limit", BlocksOption::TokenLimit),
+        ("-n", BlocksOption::SessionLength),
+        ("--session-length", BlocksOption::SessionLength),
+    ]),
 };
 
-const CLAUDE_STATUSLINE: AgentCommandSpec = AgentCommandSpec {
+pub(crate) const CLAUDE_STATUSLINE: AgentCommandSpec = AgentCommandSpec {
     name: "statusline",
-    offline_by_default: false,
-    options: &[],
+    kind: AgentCommandKind::ClaudeStatusline {
+        offline_by_default: true,
+        options: &[
+            ("-O", ClaudeStatuslineOption::Offline),
+            ("--offline", ClaudeStatuslineOption::Offline),
+            ("--no-offline", ClaudeStatuslineOption::NoOffline),
+            ("-B", ClaudeStatuslineOption::VisualBurnRate),
+            ("--visual-burn-rate", ClaudeStatuslineOption::VisualBurnRate),
+            ("--cost-source", ClaudeStatuslineOption::CostSource),
+            ("--cache", ClaudeStatuslineOption::Cache),
+            ("--no-cache", ClaudeStatuslineOption::NoCache),
+            (
+                "--refresh-interval",
+                ClaudeStatuslineOption::RefreshInterval,
+            ),
+            (
+                "--context-low-threshold",
+                ClaudeStatuslineOption::ContextLowThreshold,
+            ),
+            (
+                "--context-medium-threshold",
+                ClaudeStatuslineOption::ContextMediumThreshold,
+            ),
+            ("-z", ClaudeStatuslineOption::Timezone),
+            ("--timezone", ClaudeStatuslineOption::Timezone),
+            ("--config", ClaudeStatuslineOption::Config),
+            ("--debug", ClaudeStatuslineOption::Debug),
+        ],
+    },
 };
 
 const CODEX_STATUSLINE: AgentCommandSpec = AgentCommandSpec {
     name: "statusline",
-    offline_by_default: true,
-    options: &["-i", "--id", "--speed", "--mcp"],
+    kind: AgentCommandKind::CodexStatusline {
+        offline_by_default: true,
+        options: &[
+            ("-i", CodexStatuslineOption::Id),
+            ("--id", CodexStatuslineOption::Id),
+            ("--speed", CodexStatuslineOption::Speed),
+            ("--mcp", CodexStatuslineOption::Mcp),
+        ],
+    },
 };
 
 impl AgentSpec {

@@ -356,7 +356,7 @@ fn codex_statusline_date_range_matches_daily_totals() {
 fn codex_statusline_recovers_discovered_config_and_keeps_valid_settings() {
     let fixture = fs_fixture!({
         "cwd/.ccusage/ccusage.json": r#"{
-            "defaults":{"since":"20261119","timezone":"Pacific/Kiritimati"},
+            "defaults":{"since":"20261119","until":"20261119","timezone":"Pacific/Kiritimati"},
             "codex":{"commands":{"statusline":{
                 "json":true, "timezone":"Invalid/Zone",
                 "since":"20990101", "until":"20261119"
@@ -381,6 +381,173 @@ fn codex_statusline_recovers_discovered_config_and_keeps_valid_settings() {
     let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(summary["scope"], "range");
     assert_eq!(summary["totalTokens"], 150);
+}
+
+#[test]
+fn codex_statusline_recovers_reversed_discovered_windows_as_a_pair() {
+    for (config, until_path, expected_scope, expected_tokens) in [
+        (
+            r#"{
+                "codex":{"commands":{"statusline":{"since":"20261118","until":"20000101"}}},
+                "defaults":{"since":"19990101","until":"20261118"}
+            }"#,
+            "codex.commands.statusline.until",
+            "range",
+            300,
+        ),
+        (
+            r#"{"codex":{"defaults":{"until":"20000101"},"commands":{"statusline":{"since":"20261118"}}}}"#,
+            "codex.defaults.until",
+            "today",
+            150,
+        ),
+    ] {
+        let fixture = fs_fixture!({
+            "cwd/.ccusage/ccusage.json": config,
+            "codex/sessions/today.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+            "codex/sessions/previous-day.jsonl": usage("2026-11-17T12:00:00Z", 100, 50),
+        });
+        let output = support::hermetic_command(fixture.root())
+            .args(["codex", "statusline", "--json", "--timezone", "UTC"])
+            .env("CODEX_HOME", fixture.path("codex"))
+            .env("CCUSAGE_TEST_NOW", "2026-11-18T13:00:00Z")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stderr}");
+        assert!(
+            stderr.lines().any(|line| {
+                line.contains("codex.commands.statusline.since")
+                    && line.contains(until_path)
+                    && line.contains("later than")
+            }),
+            "{stderr}"
+        );
+        let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(summary["scope"], expected_scope);
+        assert_eq!(summary["totalTokens"], expected_tokens);
+    }
+}
+
+#[test]
+fn codex_statusline_names_the_config_field_before_the_paired_flag() {
+    for (field, config_bound, flag) in [
+        ("until", "20000101", "--since"),
+        ("since", "20990101", "--until"),
+    ] {
+        let fixture = fs_fixture!({
+            "codex/sessions/today.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+        });
+        let path = fixture.write_file(
+            "cwd/.ccusage/ccusage.json",
+            json!({"codex":{"commands":{"statusline":{field:config_bound}}}}).to_string(),
+        );
+        let path = path.canonicalize().unwrap();
+        let output = support::hermetic_command(fixture.root())
+            .args(["codex", "statusline", flag, "20261118", "--no-cost"])
+            .env("CODEX_HOME", fixture.path("codex"))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stderr}");
+        let prefix = format!(
+            "WARN Invalid ccusage config field: {}: codex.commands.statusline.{field}: ",
+            path.display()
+        );
+        assert!(
+            stderr.lines().any(|line| {
+                line.starts_with(&prefix) && line.ends_with(&format!(" (paired with {flag})"))
+            }),
+            "{stderr}"
+        );
+        assert_eq!(output.stdout, b"Codex | Usage: 150 tokens\n");
+    }
+}
+
+#[test]
+fn invalid_discovered_statusline_bounds_warn_in_every_mode() {
+    for (config, field, daily_exit) in [
+        (
+            json!({"defaults":{"since":"invalid-date"}}),
+            "defaults.since",
+            2,
+        ),
+        (
+            json!({"codex":{"commands":{"statusline":{"until":"invalid-date"}}}}),
+            "codex.commands.statusline.until",
+            0,
+        ),
+    ] {
+        let fixture = codex_fixture();
+        let path = fixture.write_file("cwd/.ccusage/ccusage.json", config.to_string());
+        let run = |args: &[&str]| {
+            support::hermetic_command(fixture.root())
+                .args(args)
+                .env("CODEX_HOME", fixture.path("codex"))
+                .env("CCUSAGE_TEST_NOW", "2026-09-19T23:30:00Z")
+                .output()
+                .unwrap()
+        };
+        let warning = format!(
+            "{}: Invalid ccusage config field: {field}: not a valid date",
+            path.display()
+        );
+        for (args, expected) in [
+            (
+                &["codex", "statusline", "--no-cost"][..],
+                "Codex | Today: 150 tokens\n",
+            ),
+            (
+                &["codex", "statusline", "--id", SESSION_UUID, "--no-cost"],
+                "Codex | Session: 150 tokens\n",
+            ),
+            (&["codex", "statusline", "--mcp"], ""),
+        ] {
+            let output = run(args);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{stderr}");
+            assert!(stderr.contains(&warning), "{stderr}");
+            assert_eq!(output.stdout, expected.as_bytes());
+        }
+
+        let output = run(&["codex", "daily", "--offline", "--json"]);
+        assert_eq!(output.status.code(), Some(daily_exit));
+    }
+}
+
+#[test]
+fn invalid_explicit_statusline_bounds_are_errors_in_every_mode() {
+    let fixture = fs_fixture!({
+        "bad-config.json": r#"{"defaults":{"since":"invalid-date"}}"#,
+    });
+    let path = fixture.path("bad-config.json");
+    let config_error = format!("{}: defaults.since: not a valid date", path.display());
+    for mode in [&[][..], &["--id", SESSION_UUID], &["--mcp"]] {
+        for (bound, expected_error) in [
+            (
+                ["--since", "invalid-date"],
+                "Invalid value for --since 'invalid-date'",
+            ),
+            (
+                ["--until", "invalid-date"],
+                "Invalid value for --until 'invalid-date'",
+            ),
+            (["--config", path.to_str().unwrap()], config_error.as_str()),
+        ] {
+            let output = run_cli_output(
+                &fixture,
+                &["codex", "statusline"]
+                    .into_iter()
+                    .chain(mode.iter().copied())
+                    .chain(bound)
+                    .collect::<Vec<_>>(),
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(2), "{stderr}");
+            assert!(stderr.contains(expected_error), "{stderr}");
+            assert!(output.stdout.is_empty());
+        }
+    }
 }
 
 #[test]

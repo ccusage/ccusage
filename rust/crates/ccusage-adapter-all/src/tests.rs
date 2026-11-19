@@ -67,6 +67,34 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
 }
 
 #[test]
+fn statusline_dispatch_rejects_a_non_codex_agent() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({"sessions/.keep": ""});
+    let _env = EnvVarsGuard::set_many([(
+        "CODEX_HOME",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )]);
+    let args = ccusage_cli::CodexStatuslineArgs {
+        shared: SharedArgs {
+            offline: true,
+            ..SharedArgs::with_defaults()
+        },
+        session_id: None,
+        codex_speed: ccusage_cli::CodexSpeed::Auto,
+        mcp: false,
+    };
+    let error = runner(
+        ccusage_cli::StandardAgent::Amp,
+        ccusage_cli::AgentCommand::Statusline(args),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "The statusline runner is unavailable for amp."
+    );
+}
+
+#[test]
 fn loads_agent_rows_concurrently() {
     let active_loaders = Arc::new(AtomicUsize::new(0));
     let specs = [

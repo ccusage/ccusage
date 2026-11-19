@@ -12,30 +12,51 @@ fn claude_command(fixture: &Fixture) -> std::process::Command {
 
 #[test]
 fn calculate_mode_uses_primary_mythos_prices_from_the_embedded_snapshot() {
-    let fixture = Fixture::new();
-    let _ = fixture.write_file(
-        "projects/project-a/session-a.jsonl",
-        r#"{"timestamp":"2026-09-15T12:00:00Z","sessionId":"session-a","message":{"id":"message-a","model":"claude-mythos-5-1","usage":{"input_tokens":100,"output_tokens":20,"cache_creation_input_tokens":10,"cache_read_input_tokens":200}}}"#,
-    );
-    let output = claude_command(&fixture)
-        .args([
-            "claude",
-            "session",
-            "--json",
-            "--mode",
-            "calculate",
-            "--offline",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let cost = report["sessions"][0]["totalCost"].as_f64().unwrap();
-    assert!((cost - 0.002175).abs() < 1e-12, "{cost}");
+    for (model, expected) in [
+        ("claude-mythos-5-1", 0.002175),
+        ("claude-mythos-5-2", 0.00174),
+        ("claude-mythos-preview", 0.002325),
+    ] {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file(
+            "projects/project-a/session-a.jsonl",
+            serde_json::json!({
+                "timestamp": "2026-09-15T12:00:00Z",
+                "sessionId": "session-a",
+                "message": {
+                    "id": "message-a",
+                    "model": model,
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "cache_creation_input_tokens": 10,
+                        "cache_read_input_tokens": 200,
+                    },
+                },
+            })
+            .to_string(),
+        );
+        let output = claude_command(&fixture)
+            .args([
+                "claude",
+                "session",
+                "--json",
+                "--mode",
+                "calculate",
+                "--offline",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}: {}",
+            model,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let cost = report["sessions"][0]["totalCost"].as_f64().unwrap();
+        assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
+    }
 }
 
 #[test]

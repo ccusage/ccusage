@@ -256,7 +256,7 @@ env | grep -E "CLAUDE|CODEX|LOG_LEVEL"
 LOG_LEVEL=4 ccusage daily
 ```
 
-Configuration diagnostics name the selected file and JSON path. In a discovered file, invalid optional fields warn while valid settings remain effective; ccusage does not fall through to another file. Invalid dates, invalid named Pi stores, unreadable files and invalid JSON are errors. An explicit `--config` file is strict. Unknown keys warn, and `LOG_LEVEL=0` suppresses warnings. Check the [search order](/guide/config-files#configuration-file-locations) when a different file shadows the one you edited.
+Configuration diagnostics name the selected file and JSON path. In a discovered file, invalid optional fields warn while valid settings remain effective; ccusage does not fall through to another file. Invalid dates are errors for reports that use them. Statusline commands warn about invalid discovered date bounds and drop the affected bounds. Invalid named Pi stores, unreadable files and invalid JSON may also produce errors. An explicit `--config` file is strict. Unknown keys warn, and `LOG_LEVEL=0` suppresses warnings. Check the [search order](/guide/config-files#configuration-file-locations) when a different file shadows the one you edited.
 
 ## Best Practices
 

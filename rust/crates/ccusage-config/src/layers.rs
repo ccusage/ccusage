@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 use crate::config_schema::{
     BlocksSpecificOptions, CodexOptions, DailySpecificOptions, OpenClawOptions, PiOptions,
     PiStoreConfig, SharedOptions, StatuslineSpecificOptions, WeeklySpecificOptions,
+    legacy_all_schema,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -190,6 +191,14 @@ fn layer(
             }
         }
     }
+    if let Some(all) = retained.get("all")
+        && let Err(error) = decode::<Option<bool>>(all, &format!("{path}.all"))
+    {
+        if strict {
+            return Err(error);
+        }
+        warnings.push(format!("Invalid ccusage config field: {error}"));
+    }
     let layer = Layer {
         date_error,
         shared: decode_options(&mut retained, path, strict, warnings)?,
@@ -326,10 +335,11 @@ fn layer_schema() -> Result<Value, String> {
         PiOptions,
         OpenClawOptions
     );
+    properties.insert("all".to_string(), legacy_all_schema());
     Ok(serde_json::json!({ "properties": properties, "definitions": generator.definitions() }))
 }
 
-fn unknown_fields(
+pub(crate) fn unknown_fields(
     value: &Value,
     schema: &Value,
     root: &Value,

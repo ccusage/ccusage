@@ -10,10 +10,8 @@
 pub const LITELLM_SOURCES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/litellm-sources.json.deflate"));
 
-pub const LITELLM_PRICING: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/litellm-primary-pricing.json.deflate"
-));
+pub const LITELLM_PRICING: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/litellm-pricing.json.deflate"));
 
 /// The committed models.dev pricing snapshot.
 pub const MODELS_DEV_PRICING: &[u8] =

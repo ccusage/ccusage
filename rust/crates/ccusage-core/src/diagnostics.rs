@@ -25,16 +25,18 @@ pub enum SkipKind {
     Invariant,
     /// Input was malformed, or a confirmed usage record did not decode.
     InvalidData,
+    UnreadableForkParent,
 }
 
 impl SkipKind {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Unreadable,
         Self::ReadInterrupted,
         Self::UndecodedUsage,
         Self::InvalidTimestamp,
         Self::Invariant,
         Self::InvalidData,
+        Self::UnreadableForkParent,
     ];
 
     fn label(self) -> &'static str {
@@ -45,7 +47,18 @@ impl SkipKind {
             Self::InvalidTimestamp => "invalid timestamp",
             Self::Invariant => "unexpected shape",
             Self::InvalidData => "invalid data",
+            Self::UnreadableForkParent => "unreadable fork parent",
         }
+    }
+
+    fn summary(self, tally: &Tally) -> String {
+        if self == Self::UnreadableForkParent {
+            let sessions = counted(tally.whole_units(), "forked session");
+            return format!(
+                "could not read the parent rollout for {sessions}. Replayed usage may be counted twice."
+            );
+        }
+        format!("skipped {} ({})", tally.skipped_description(), self.label())
     }
 }
 
@@ -201,6 +214,23 @@ impl Tally {
     fn skips(&self) -> u64 {
         self.whole_units() + self.records()
     }
+
+    fn skipped_description(&self) -> String {
+        let inputs = counted(self.units.len() as u64, "input");
+        let whole_inputs = self.whole_units();
+        let records = self.records();
+        if records == 0 {
+            inputs
+        } else if whole_inputs == 0 {
+            format!("{} in {inputs}", counted(records, "record"))
+        } else {
+            format!(
+                "{} and {} in {inputs}",
+                counted(whole_inputs, "input"),
+                counted(records, "record")
+            )
+        }
+    }
 }
 
 #[derive(Default)]
@@ -335,7 +365,7 @@ impl Diagnostics {
                 continue;
             }
             if warn && (kind != SkipKind::UndecodedUsage || debug) {
-                lines.push(self.summary_line(kind, tally));
+                lines.push(format!("WARN  {}: {}", self.source, kind.summary(tally)));
             }
             if debug {
                 lines.extend(tally.samples.iter().map(|skip| self.sample_line(skip)));
@@ -353,28 +383,6 @@ impl Diagnostics {
             .into_iter()
             .map(|line| sanitize_terminal_text(&line))
             .collect()
-    }
-
-    fn summary_line(&self, kind: SkipKind, tally: &Tally) -> String {
-        let inputs = counted(tally.units.len() as u64, "input");
-        let whole_inputs = tally.whole_units();
-        let records = tally.records();
-        let skipped = if records == 0 {
-            inputs
-        } else if whole_inputs == 0 {
-            format!("{} in {inputs}", counted(records, "record"))
-        } else {
-            format!(
-                "{} and {} in {inputs}",
-                counted(whole_inputs, "input"),
-                counted(records, "record")
-            )
-        };
-        format!(
-            "WARN  {}: skipped {skipped} ({})",
-            self.source,
-            kind.label()
-        )
     }
 
     fn sample_line(&self, skip: &Skip) -> String {

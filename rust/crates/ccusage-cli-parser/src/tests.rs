@@ -32,6 +32,34 @@ fn parse_error(args: &[&str]) -> String {
 }
 
 #[test]
+fn misplaced_short_active_is_an_unknown_root_option_for_blocks() {
+    assert_eq!(
+        parse_error(&["ccusage", "-a", "blocks"]),
+        "Unknown option '-a'"
+    );
+}
+
+#[test]
+fn unsupported_agent_report_guidance_precedes_a_config_error() {
+    let fixture = fs_fixture!({"cwd/.keep": ""});
+    let path = fixture.path("missing.json");
+    let args = ["codex", "blocks", "--config", path.to_str().unwrap()];
+    let config = ccusage_config::ConfigContext::from_args(&args.map(str::to_string));
+    let result = parse_from_with_config(
+        std::iter::once(OsString::from("ccusage")).chain(args.map(OsString::from)),
+        &config,
+        env!("CARGO_PKG_VERSION"),
+    );
+    let Err(error) = result else {
+        panic!("expected the unsupported report to be rejected");
+    };
+    assert_eq!(
+        error,
+        "The \"blocks\" report is only available for Claude Code usage.\nUse \"ccusage codex daily\" for Codex usage reports."
+    );
+}
+
+#[test]
 fn blocks_reject_invalid_token_limits() {
     for value in ["abc", "0"] {
         assert!(

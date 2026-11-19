@@ -32,6 +32,53 @@ fn native_resource_keeps_valid_usage_when_another_rollout_is_corrupt() {
 }
 
 #[test]
+fn native_fork_parent_warning_stays_off_stdout() {
+    let fixture = fs_fixture!({
+        "codex/sessions/unrelated.jsonl.zst": "corrupt rollout",
+    });
+    let _ = fixture.write_file(
+        format!("codex/sessions/rollout-2000-01-01T12-00-00-{THREAD_UUID}.jsonl"),
+        [
+            json!({
+                "type":"session_meta",
+                "timestamp":"2000-01-01T12:00:00Z",
+                "payload":{"id":THREAD_UUID,"forked_from_id":OTHER_THREAD_UUID}
+            })
+            .to_string(),
+            usage("2000-01-01T11:59:00Z", 100, 50),
+            usage("2000-01-01T12:01:00Z", 100, 50),
+        ]
+        .join("\n"),
+    );
+    let _ = fixture.write_file(
+        format!("codex/sessions/rollout-2000-01-01T11-00-00-{OTHER_THREAD_UUID}.jsonl.zst"),
+        "corrupt parent",
+    );
+    let stderr = fixture.path("stderr.log");
+    let mut process = McpProcess::start_with_stderr(
+        &fixture,
+        &["--no-cost"],
+        fs::File::create(&stderr).unwrap().into(),
+    );
+
+    assert_eq!(
+        process.read_resource_line(1, THREAD_UUID),
+        "Codex | Session: 300 tokens | Today: 0 tokens"
+    );
+    process.finish();
+    assert!(matches!(
+        process.stdout.recv_timeout(Duration::from_secs(5)),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    ));
+    let stderr = fs::read_to_string(stderr).unwrap();
+    assert_eq!(
+        stderr.lines().filter(|line| *line == "WARN  codex: could not read the parent rollout for 1 forked session. Replayed usage may be counted twice.").count(),
+        1,
+        "{stderr}"
+    );
+}
+
+#[test]
 fn native_resource_emits_warnings_when_they_change() {
     let fixture = native_usage_fixture();
     let corrupt = fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt rollout");

@@ -6,7 +6,7 @@ use serde_json::Value;
 mod litellm_filter;
 
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
-const OUT_PRICING_JSON: &str = "litellm-primary-pricing.json.deflate";
+const OUT_PRICING_JSON: &str = "litellm-pricing.json.deflate";
 const MODELS_DEV_PRICING_JSON: &str = "src/models-dev-pricing.json";
 const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
 const MODELS_DEV_CATALOG_RULES_JSON: &str = "src/models-dev-catalog-rules.json";
@@ -17,9 +17,6 @@ const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
 fn main() {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/litellm_filter.rs");
-    println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
 
     let out_path = out_dir_path(OUT_PRICING_JSON);
     let pricing_json = if let Some(path) = env::var_os(PRICING_JSON_PATH_ENV) {
@@ -27,6 +24,7 @@ fn main() {
         println!("cargo:rerun-if-changed={}", path.display());
         fs::read_to_string(path).expect("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH")
     } else {
+        println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
         fetch_pricing_json()
     };
     let pricing_json =

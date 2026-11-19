@@ -318,7 +318,7 @@ impl Default for StatuslineArgs {
         Self {
             color: ColorChoice::Auto,
             mode: CostMode::Auto,
-            offline: true,
+            offline: crate::agents::CLAUDE_STATUSLINE.offline_by_default(),
             visual_burn_rate: VisualBurnRate::Off,
             cost_source: CostSource::Auto,
             cache: true,
