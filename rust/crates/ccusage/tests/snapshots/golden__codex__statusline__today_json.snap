@@ -6,13 +6,13 @@ exit: 0
 --- stdout ---
 {
   "cacheCreationTokens": 0,
-  "cacheReadTokens": 450300,
-  "costUSD": 0.5835699999999999,
-  "inputTokens": 101950,
-  "outputTokens": 1725,
+  "cacheReadTokens": 450400,
+  "costUSD": 0.58407625,
+  "inputTokens": 102350,
+  "outputTokens": 1775,
   "reasoningOutputTokens": 0,
   "scope": "today",
-  "totalTokens": 553975
+  "totalTokens": 554525
 }
 
 --- stderr ---

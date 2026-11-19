@@ -22,6 +22,7 @@ const LEGACY_FORK: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const COMPACTING_FORK: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ARCHIVED_COPY: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const MISSING_PARENT: &str = "99999999-9999-4999-8999-999999999999";
+const REPLACEMENT: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 const NEW_YEAR: u64 = 1_767_225_600; // 2026-01-01T00:00:00Z
 
@@ -697,6 +698,21 @@ service_tier = "fast"
         utc(-1, 8, 1),
     );
 
+    let replacement = rollout("2026-01-02", "10-30-00", &format!("{MAIN}_{REPLACEMENT}"));
+    write(
+        &format!("work/sessions/{replacement}"),
+        &[
+            meta("2026-01-02T10:30:00.000Z", MAIN, ""),
+            turn("2026-01-02T10:30:00.001Z", &format!(r#""model":"{GPT5}""#)),
+            count(
+                "2026-01-02T10:31:00.000Z",
+                Some(&usage(500, 100, 50, 0)),
+                None,
+            ),
+        ],
+        utc(1, 10, 32),
+    );
+
     let homes = format!(
         "{},{}",
         root.join("codex/work").display(),
@@ -709,7 +725,13 @@ service_tier = "fast"
 /// loader.
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
     let thread_url = format!("codex://threads/{SUBAGENT}");
+    let physical = rollout("2025-12-30", "10-00-00", MAIN).replace(".jsonl", "");
     vec![
+        Case::new(
+            "statusline",
+            "session_physical_json",
+            &["codex", "statusline", "--offline", "--json", "--id", &physical],
+        ),
         Case::new("statusline", "today_json", &["codex", "statusline", "--offline", "--json"]),
         Case::new("statusline", "today_table", &["codex", "statusline", "--offline"]),
         Case::new("statusline", "today_no_cost", &["codex", "statusline", "--offline", "--no-cost"]),

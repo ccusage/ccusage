@@ -4,6 +4,6 @@ description: COLUMNS=200 ccusage codex statusline --offline
 ---
 exit: 0
 --- stdout ---
-Codex | Today: 553,975 tokens | Est. $0.58
+Codex | Today: 554,525 tokens | Est. $0.58
 
 --- stderr ---
