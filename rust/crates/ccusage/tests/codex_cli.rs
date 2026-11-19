@@ -958,6 +958,105 @@ fn reports_issue_2184_spawned_siblings_with_identical_usage_separately() {
     assert_eq!(totals["totalTokens"], 40_400);
 }
 
+#[test]
+fn session_reports_credit_a_replaced_stand_in_once() {
+    let timestamp = "2026-11-01T09:00:00Z";
+    let fixture = fs_fixture!({
+        "codex/sessions/child.jsonl": [
+            usage(timestamp, 1_000, 10),
+            usage("2026-11-01T09:01:00Z", 300, 3),
+        ].join("\n"),
+        "codex/sessions/parent.jsonl": recorded_request(timestamp),
+    });
+
+    let reports = [
+        ("sessions", "sessionId", &["codex", "session"][..]),
+        (
+            "sessions",
+            "sessionId",
+            &[
+                "codex", "session", "--since", "20261101", "--until", "20261101",
+            ],
+        ),
+        ("session", "period", &["session"]),
+        (
+            "session",
+            "period",
+            &["session", "--since", "20261101", "--until", "20261101"],
+        ),
+    ];
+    let actual = [&[][..], &["--single-thread"]].map(|threading| {
+        reports.map(|(rows, session_id, report)| {
+            let args = [report, &["--json"], threading].concat();
+            let output: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
+            let mut session_tokens = output[rows]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        row[session_id].as_str().unwrap().to_owned(),
+                        row["totalTokens"].as_u64().unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            session_tokens.sort_unstable();
+            (
+                output["totals"]["totalTokens"].as_u64().unwrap(),
+                session_tokens,
+            )
+        })
+    });
+    let expected = (
+        1_313,
+        vec![("child".to_owned(), 303), ("parent".to_owned(), 1_010)],
+    );
+    assert_eq!(
+        actual,
+        std::array::from_fn(|_| std::array::from_fn(|_| expected.clone())),
+        "parallel then serial, for {reports:?}"
+    );
+}
+
+#[test]
+fn session_and_daily_reports_dedupe_copied_records_across_sessions() {
+    let request = recorded_request("2026-11-01T09:00:00Z");
+    let fixture = fs_fixture!({
+        "codex/sessions/original.jsonl": &request,
+        "codex/sessions/copy.jsonl": &request,
+    });
+
+    let totals = [&[][..], &["--single-thread"]].map(|threading| {
+        ["session", "daily"].map(|report| {
+            let args = [&["codex", report, "--json"][..], threading].concat();
+            let output: Value = serde_json::from_str(&run_cli(&fixture, &args)).unwrap();
+            output["totals"]["totalTokens"].as_u64().unwrap()
+        })
+    });
+    assert_eq!(totals, [[1_010, 1_010]; 2], "parallel then serial");
+}
+
+fn recorded_request(timestamp: &str) -> String {
+    [
+        json!({
+            "timestamp": timestamp,
+            "type": "token_usage_record",
+            "payload": {
+                "response_id": "resp_parent",
+                "usage": {
+                    "input_tokens": 1_000,
+                    "cached_input_tokens": 10,
+                    "output_tokens": 10,
+                    "total_tokens": 1_010,
+                },
+            },
+        })
+        .to_string(),
+        usage(timestamp, 1_000, 10),
+    ]
+    .join("\n")
+}
+
 fn issue_1970_codex_fixture() -> Fixture {
     fs_fixture!({
         "codex/sessions/2026/01/05/child.jsonl":

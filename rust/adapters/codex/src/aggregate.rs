@@ -62,7 +62,6 @@ impl<T> StringInterner<T> {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 struct CodexUsageKey {
-    session: Option<StringId>,
     timestamp: crate::TimestampMs,
     model: StringId,
     usage: crate::CodexRawUsage,
@@ -90,7 +89,7 @@ struct CodexEventProvenance {
     file_index: usize,
     occurrences: FxHashMap<CodexUsageKey, CodexFileOccurrences>,
     models: FxHashMap<CompactString, StringId>,
-    sessions: FxHashMap<CompactString, StringId>,
+    session: Option<StringId>,
 }
 
 impl CodexEventProvenance {
@@ -99,39 +98,22 @@ impl CodexEventProvenance {
             file_index,
             occurrences: FxHashMap::default(),
             models: FxHashMap::default(),
-            sessions: FxHashMap::default(),
+            session: None,
         }
-    }
-
-    fn intern<T>(
-        cache: &mut FxHashMap<CompactString, StringId>,
-        strings: &Mutex<StringInterner<T>>,
-        value: &str,
-        create: impl FnOnce() -> T,
-    ) -> Result<StringId> {
-        if let Some(id) = cache.get(value) {
-            return Ok(*id);
-        }
-        let id = strings
-            .lock()
-            .map_err(|_| crate::cli_error("codex interner poisoned"))?
-            .intern(value, create)?;
-        cache.insert(CompactString::new(value), id);
-        Ok(id)
     }
 }
 
 struct CodexAttribution {
     file_index: usize,
     rollout_count: u32,
-    session: Option<StringId>,
+    session: StringId,
     last_activity: CompactString,
     is_fallback: bool,
     service_tier: Option<CodexServiceTier>,
 }
 
 impl CodexAttribution {
-    fn new(event: &CodexTokenUsageEvent, file_index: usize, session: Option<StringId>) -> Self {
+    fn new(event: &CodexTokenUsageEvent, file_index: usize, session: StringId) -> Self {
         Self {
             file_index,
             rollout_count: 0,
@@ -170,16 +152,39 @@ struct CodexDedupeMap {
     usage: FxHashMap<CodexUsageKey, CodexAttribution>,
     responses: FxHashMap<CompactString, CodexResponseUsage>,
     recorded: FxHashMap<CodexUsageKey, SmallVec<[CodexRecordedUsage; 1]>>,
-    session_usage: FxHashMap<CodexUsageKey, SmallVec<[CodexAttribution; 1]>>,
+    other_sessions: FxHashMap<CodexUsageKey, Vec<CodexAttribution>>,
 }
 
 impl CodexDedupeMap {
-    fn into_usage(self) -> impl Iterator<Item = (CodexUsageKey, CodexAttribution)> {
+    fn record_legacy(&mut self, key: CodexUsageKey, attribution: CodexAttribution) {
+        let Some(existing) = self.usage.get_mut(&key) else {
+            self.usage.insert(key, attribution);
+            return;
+        };
+        if existing.session == attribution.session {
+            existing.merge(attribution);
+        } else {
+            let sessions = self.other_sessions.entry(key).or_default();
+            if let Some(session) = sessions
+                .iter_mut()
+                .find(|session| session.session == attribution.session)
+            {
+                session.merge(attribution);
+            } else {
+                sessions.push(attribution);
+            }
+        }
+    }
+
+    fn into_usage(
+        self,
+        kind: AgentReportKind,
+    ) -> impl Iterator<Item = (CodexUsageKey, CodexAttribution)> {
         let Self {
             mut usage,
             responses,
             recorded,
-            mut session_usage,
+            mut other_sessions,
         } = self;
         for (&signature, requests) in &recorded {
             let mut max_in_rollout = requests
@@ -188,17 +193,13 @@ impl CodexDedupeMap {
                 .max()
                 .unwrap_or_default();
             let mut stand_in = signature;
-            loop {
-                let count = usage
-                    .get(&stand_in)
-                    .map(|item| item.rollout_count)
-                    .or_else(|| {
-                        session_usage.get(&stand_in).and_then(|sessions| {
-                            sessions.iter().map(|item| item.rollout_count).max()
-                        })
-                    });
-                let Some(count) = count else { break };
-                max_in_rollout = max_in_rollout.max(count);
+            while let Some(item) = usage.get(&stand_in) {
+                max_in_rollout = max_in_rollout.max(item.rollout_count);
+                if let Some(sessions) = other_sessions.get(&stand_in) {
+                    for session in sessions {
+                        max_in_rollout = max_in_rollout.max(session.rollout_count);
+                    }
+                }
                 stand_in.occurrence += 1;
             }
             // Copies can account for at most the distinct requests named by the
@@ -210,20 +211,29 @@ impl CodexDedupeMap {
             for occurrence in 0..paired {
                 stand_in.occurrence = occurrence;
                 usage.remove(&stand_in);
-                session_usage.remove(&stand_in);
+                other_sessions.remove(&stand_in);
             }
         }
+        if kind != AgentReportKind::Session {
+            for (key, sessions) in other_sessions.drain() {
+                if let Some(primary) = usage.get_mut(&key) {
+                    for session in sessions {
+                        primary.merge(session);
+                    }
+                }
+            }
+        }
+        let legacy_sessions = other_sessions.into_iter().flat_map(|(key, sessions)| {
+            sessions
+                .into_iter()
+                .map(move |attribution| (key, attribution))
+        });
         let named = recorded.into_iter().flat_map(|(signature, requests)| {
             requests
                 .into_iter()
                 .map(move |request| (signature, request.attribution))
         });
-        let session_usage = session_usage.into_iter().flat_map(|(signature, sessions)| {
-            sessions
-                .into_iter()
-                .map(move |attribution| (signature, attribution))
-        });
-        usage.into_iter().chain(session_usage).chain(named).chain(
+        usage.into_iter().chain(legacy_sessions).chain(named).chain(
             responses
                 .into_values()
                 .map(|record| (record.key, record.attribution)),
@@ -262,15 +272,7 @@ impl CodexModels {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(super) enum SessionDedupe {
-    #[default]
-    WithinSession,
-    AcrossSessions,
-}
-
 struct CodexDedupe<'a> {
-    session_dedupe: SessionDedupe,
     pricing: Option<&'a PricingMap>,
     shards: Vec<Mutex<CodexDedupeMap>>,
     models: Mutex<CodexModels>,
@@ -282,7 +284,6 @@ impl<'a> CodexDedupe<'a> {
         let count = ccusage_adapter_common::worker_count(false, files);
         Self {
             pricing,
-            session_dedupe: SessionDedupe::WithinSession,
             shards: (0..count)
                 .map(|_| Mutex::new(CodexDedupeMap::default()))
                 .collect(),
@@ -304,21 +305,20 @@ impl<'a> CodexDedupe<'a> {
     fn record(
         &self,
         event: &CodexTokenUsageEvent,
-        kind: AgentReportKind,
         provenance: &mut CodexEventProvenance,
     ) -> Result<()> {
-        let session = if kind == AgentReportKind::Session {
-            Some(CodexEventProvenance::intern(
-                &mut provenance.sessions,
-                &self.sessions,
-                &event.session_id,
-                || CompactString::new(&event.session_id),
-            )?)
+        let session = if let Some(session) = provenance.session {
+            session
         } else {
-            None
+            let session = self
+                .sessions
+                .lock()
+                .map_err(|_| crate::cli_error("codex interner poisoned"))?
+                .intern(&event.session_id, || CompactString::new(&event.session_id))?;
+            provenance.session = Some(session);
+            session
         };
         let mut key = CodexUsageKey {
-            session: session.filter(|_| self.session_dedupe == SessionDedupe::WithinSession),
             timestamp: event.timestamp,
             model: self.intern_model(provenance, &event.model)?,
             usage: event.raw_usage(),
@@ -362,19 +362,8 @@ impl<'a> CodexDedupe<'a> {
                         attribution,
                     });
                 }
-            } else if session.is_some() && self.session_dedupe == SessionDedupe::AcrossSessions {
-                let sessions = shard.session_usage.entry(key).or_default();
-                if let Some(existing) = sessions.iter_mut().find(|item| item.session == session) {
-                    existing.merge(attribution);
-                } else {
-                    sessions.push(attribution);
-                }
             } else {
-                if let Some(record) = shard.usage.get_mut(&key) {
-                    record.merge(attribution);
-                } else {
-                    shard.usage.insert(key, attribution);
-                }
+                shard.record_legacy(key, attribution);
             }
         }
         Ok(())
@@ -418,17 +407,15 @@ impl<'a> CodexDedupe<'a> {
             let records = shard
                 .into_inner()
                 .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
-            for (key, attribution) in records.into_usage() {
+            for (key, attribution) in records.into_usage(kind) {
                 let model = models
                     .resolved
                     .values
                     .get(key.model.0.get() - 1)
                     .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
-                let session = attribution
-                    .session
-                    .map(|id| sessions.values[id.0.get() - 1].as_str());
+                let session = sessions.values[attribution.session.0.get() - 1].as_str();
                 let Some(period) =
-                    codex_period_for(key.timestamp, session, kind, &timezone, shared)
+                    codex_period_for(key.timestamp, Some(session), kind, &timezone, shared)
                 else {
                     continue;
                 };
@@ -465,7 +452,6 @@ struct CodexAggregateRun<'a> {
     sessions_dir: &'a Path,
     files: &'a [PathBuf],
     shared: &'a SharedArgs,
-    kind: AgentReportKind,
     replay: CodexReplay<'a>,
     /// Indexes into `files` this run reads; `None` reads all of them.
     selection: Option<&'a [usize]>,
@@ -541,38 +527,19 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    load_groups_from_sources_with_session_dedupe(
-        sources,
-        shared,
-        kind,
-        pricing,
-        diagnostics,
-        SessionDedupe::WithinSession,
-    )
-}
-
-pub(super) fn load_groups_from_sources_with_session_dedupe(
-    sources: &[paths::CodexUsageSource],
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-    pricing: Option<&PricingMap>,
-    diagnostics: &Diagnostics,
-    session_dedupe: SessionDedupe,
-) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
     let detected = file_groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = file_groups
         .iter()
         .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
         .collect::<Vec<_>>();
-    aggregate_file_selection(
+    load_groups_from_file_selection(
         &file_groups,
         &files_by_group,
         shared,
         kind,
         pricing,
         diagnostics,
-        session_dedupe,
     )
     .map(|groups| (groups, detected))
 }
@@ -622,26 +589,6 @@ pub(super) fn load_groups_from_file_selection(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    aggregate_file_selection(
-        file_groups,
-        files_by_group,
-        shared,
-        kind,
-        pricing,
-        diagnostics,
-        SessionDedupe::WithinSession,
-    )
-}
-
-fn aggregate_file_selection(
-    file_groups: &[paths::CodexUsageFileGroup],
-    files_by_group: &[Vec<PathBuf>],
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-    pricing: Option<&PricingMap>,
-    diagnostics: &Diagnostics,
-    session_dedupe: SessionDedupe,
-) -> Result<BTreeMap<String, CodexGroup>> {
     let all_files = file_groups
         .iter()
         .map(|group| (group.dir.as_path(), group.files.as_slice()))
@@ -658,7 +605,6 @@ fn aggregate_file_selection(
         kind,
         pricing,
         diagnostics,
-        session_dedupe,
     )
 }
 
@@ -671,7 +617,6 @@ fn aggregate_file_groups(
     kind: AgentReportKind,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
-    session_dedupe: SessionDedupe,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let filtered = selected
         .iter()
@@ -688,8 +633,7 @@ fn aggregate_file_groups(
     let replay = bounded_plan
         .as_ref()
         .map_or(CodexReplay::Discover, CodexReplay::Planned);
-    let mut seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum(), pricing);
-    seen.session_dedupe = session_dedupe;
+    let seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum(), pricing);
     let mut metadata_by_group = Vec::with_capacity(selected.len());
     let mut file_offset = 0;
     for &(sessions_dir, files) in selected {
@@ -697,7 +641,6 @@ fn aggregate_file_groups(
             sessions_dir,
             files,
             shared,
-            kind,
             replay,
             selection: None,
             file_offset,
@@ -722,7 +665,6 @@ fn aggregate_file_groups(
                     sessions_dir,
                     files,
                     shared,
-                    kind,
                     replay: CodexReplay::Planned(&plan),
                     selection: Some(forks),
                     file_offset,
@@ -756,7 +698,7 @@ fn aggregate_files_with_dedupe(
                 let mut result = Ok(());
                 visit_run_file(run, file_index, &mut metadata, |event| {
                     if result.is_ok() {
-                        result = seen.record(event, run.kind, &mut provenance);
+                        result = seen.record(event, &mut provenance);
                     }
                 });
                 result?;
@@ -950,11 +892,9 @@ mod tests {
         };
         let seen = CodexDedupe::new(1, Some(&pricing));
         let mut provenance = CodexEventProvenance::new(0);
-        seen.record(&event, AgentReportKind::Session, &mut provenance)
-            .unwrap();
+        seen.record(&event, &mut provenance).unwrap();
         event.model = "alias-model".into();
-        seen.record(&event, AgentReportKind::Session, &mut provenance)
-            .unwrap();
+        seen.record(&event, &mut provenance).unwrap();
         let groups = seen
             .fold(&SharedArgs::default(), AgentReportKind::Session)
             .unwrap();
@@ -996,12 +936,8 @@ mod tests {
             service_tier: None,
         };
         let seen = CodexDedupe::new(1, Some(&pricing));
-        seen.record(
-            &event,
-            AgentReportKind::Session,
-            &mut CodexEventProvenance::new(0),
-        )
-        .unwrap();
+        seen.record(&event, &mut CodexEventProvenance::new(0))
+            .unwrap();
         let groups = seen
             .fold(&SharedArgs::default(), AgentReportKind::Session)
             .unwrap();
@@ -1119,12 +1055,8 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let seen = CodexDedupe::new(2, Some(&pricing));
         for (event, file_index) in [(&copied, 1), (&first, 0)] {
-            seen.record(
-                event,
-                AgentReportKind::Session,
-                &mut CodexEventProvenance::new(file_index),
-            )
-            .unwrap();
+            seen.record(event, &mut CodexEventProvenance::new(file_index))
+                .unwrap();
         }
         let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
 
@@ -1173,12 +1105,8 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let seen = CodexDedupe::new(2, Some(&pricing));
         for (event, file_index) in [(&copied, 1), (&first, 0)] {
-            seen.record(
-                event,
-                AgentReportKind::Session,
-                &mut CodexEventProvenance::new(file_index),
-            )
-            .unwrap();
+            seen.record(event, &mut CodexEventProvenance::new(file_index))
+                .unwrap();
         }
         let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
 
@@ -2549,13 +2477,12 @@ mod tests {
                     until: Some("20261101".into()),
                     ..SharedArgs::default()
                 };
-                let (groups, _) = load_groups_from_sources_with_session_dedupe(
+                let (groups, _) = load_groups_from_sources_with_diagnostics(
                     &[directory_source(&sessions)],
                     &shared,
                     AgentReportKind::Session,
                     None,
                     &Diagnostics::new("codex"),
-                    SessionDedupe::AcrossSessions,
                 )
                 .unwrap();
                 assert_eq!(
@@ -2603,12 +2530,10 @@ mod tests {
         };
         let events = [stand_in, recorded];
         for order in [[0, 1], [1, 0]] {
-            let mut seen = CodexDedupe::new(2, None);
-            seen.session_dedupe = SessionDedupe::AcrossSessions;
+            let seen = CodexDedupe::new(2, None);
             for file_index in order {
                 seen.record(
                     &events[file_index],
-                    AgentReportKind::Session,
                     &mut CodexEventProvenance::new(file_index),
                 )
                 .unwrap();

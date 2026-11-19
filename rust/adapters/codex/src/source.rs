@@ -44,20 +44,12 @@ fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let pricing = report_pricing.get();
     let speed = resolve_codex_speed(request.options.codex_speed);
 
-    use crate::aggregate::SessionDedupe;
-
-    let session_dedupe = if shared.since.is_some() || shared.until.is_some() {
-        SessionDedupe::AcrossSessions
-    } else {
-        SessionDedupe::WithinSession
-    };
-    let (groups, detected) = crate::aggregate::load_groups_from_sources_with_session_dedupe(
+    let (groups, detected) = crate::aggregate::load_groups_from_sources_with_diagnostics(
         &sources,
         shared,
         request.kind.report_kind(),
         pricing,
         &diagnostics,
-        session_dedupe,
     )?;
     let rows = groups
         .iter()

@@ -7440,33 +7440,6 @@ exit: 0
         "gpt-5-codex"
       ],
       "outputTokens": 75,
-      "period": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
-      "totalCost": 0.0015187500000000001,
-      "totalTokens": 825
-    },
-    {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 150,
-      "inputTokens": 600,
-      "metadata": {
-        "lastActivity": "2026-01-01T12:06:00.000Z",
-        "reasoningOutputTokens": 5
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 150,
-          "cost": 0.0015187500000000001,
-          "inputTokens": 600,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 75
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5-codex"
-      ],
-      "outputTokens": 75,
       "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
       "totalCost": 0.0015187500000000001,
       "totalTokens": 825
@@ -7822,6 +7795,33 @@ exit: 0
       "period": "task:task-stale",
       "totalCost": 0.0010500000000000002,
       "totalTokens": 150
+    },
+    {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 400,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:05:00.500Z",
+        "reasoningOutputTokens": 0
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0010125,
+          "inputTokens": 400,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5-codex"
+      ],
+      "outputTokens": 50,
+      "period": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
+      "totalCost": 0.0010125,
+      "totalTokens": 550
     },
     {
       "agent": "grok",
