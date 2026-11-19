@@ -14,7 +14,7 @@ use crate::{
 };
 use ccusage_adapter_common::{
     UnitError,
-    jsonl::{self, DEFAULT_BUFFER_SIZE, JsonLines, Line, Tail},
+    jsonl::{self, Interruption, Line, ReadFailure, ReadPolicy},
 };
 
 use super::paths::is_compressed;
@@ -159,56 +159,64 @@ pub(super) fn read_session_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<DshUsageEntry>, UnitError> {
-    let compressed = is_compressed(path);
-    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, compressed)?;
-    let local = Diagnostics::new(diagnostics.source());
     let mut session = SessionFold::default();
     let prefilter = LinePrefilter::any(&EVENT_MARKERS);
-    let tail = if compressed {
-        Tail::KeepUnlessUnexpectedEof
+    let policy = if is_compressed(path) {
+        ReadPolicy {
+            compressed: true,
+            keep_interrupted_tail: |kind| kind != io::ErrorKind::UnexpectedEof,
+            interrupted: compressed_interruption,
+            ..ReadPolicy::PLAIN
+        }
     } else {
-        Tail::Discard
+        ReadPolicy::PLAIN
     };
-    let result = lines.scan(tail, |line| {
-        session.record(line, path, &local, &prefilter);
-        ControlFlow::<()>::Continue(())
-    });
-    if let Some(failure) = result.failure {
-        if !compressed {
-            return Err(failure.error.into());
-        }
-        let has_complete_lines = failure.complete_lines != 0;
-        let has_content = has_complete_lines
-            || (failure.tail_bytes != 0 && failure.error.kind() != io::ErrorKind::UnexpectedEof);
-        let error = match failure.error.kind() {
-            // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
-            io::ErrorKind::UnexpectedEof => UnitError::unfinished(if has_content {
-                "zstd stream ends inside a frame; earlier records were kept"
+    jsonl::read(
+        path,
+        Some(diagnostics),
+        ReadPolicy {
+            stage_diagnostics: true,
+            ..policy
+        },
+        |line, _, local| {
+            if let Some(local) = local {
+                session.record(line, path, local, &prefilter);
+            }
+            ControlFlow::<()>::Continue(())
+        },
+    )?;
+    Ok(session.finish(path, diagnostics))
+}
+
+fn compressed_interruption(failure: ReadFailure) -> Interruption {
+    let has_content = failure.complete_lines != 0
+        || (failure.tail_bytes != 0 && failure.error.kind() != io::ErrorKind::UnexpectedEof);
+    let error = match failure.error.kind() {
+        // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
+        io::ErrorKind::UnexpectedEof => UnitError::unfinished(if has_content {
+            "zstd stream ends inside a frame; earlier records were kept"
+        } else {
+            "zstd stream ends inside its first frame"
+        }),
+        io::ErrorKind::Other => UnitError::new(
+            SkipKind::InvalidData,
+            if has_content {
+                "zstd stream is corrupt; earlier records were kept"
             } else {
-                "zstd stream ends inside its first frame"
-            }),
-            io::ErrorKind::Other => UnitError::new(
-                SkipKind::InvalidData,
-                if has_content {
-                    "zstd stream is corrupt; earlier records were kept"
-                } else {
-                    "not a valid zstd stream"
-                },
-            ),
-            _ if has_content => UnitError::new(
-                SkipKind::ReadInterrupted,
-                "zstd stream read stopped early; earlier records were kept",
-            ),
-            _ => UnitError::from(failure.error),
-        };
-        if !has_content {
-            return Err(error);
-        }
-        error.record(path, diagnostics);
+                "not a valid zstd stream"
+            },
+        ),
+        _ if has_content => UnitError::new(
+            SkipKind::ReadInterrupted,
+            "zstd stream read stopped early; earlier records were kept",
+        ),
+        _ => UnitError::from(failure.error),
+    };
+    if has_content {
+        Interruption::KeepUnit(error)
+    } else {
+        Interruption::Reject(error)
     }
-    let entries = session.finish(path, &local);
-    diagnostics.merge(&local);
-    Ok(entries)
 }
 
 const EVENT_MARKERS: [&[u8]; 6] = [

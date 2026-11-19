@@ -6,7 +6,7 @@ use ccusage_core::{
 use std::{ops::ControlFlow, path::Path};
 
 use ccusage_adapter_common::{
-    jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail},
+    jsonl::{self, ReadPolicy},
     units::{UnitError, read_json},
 };
 use serde_json::Value;
@@ -321,11 +321,8 @@ fn extract_model_from_sidecar_jsonl(settings_path: &Path) -> Result<Option<Strin
         return Ok(None);
     };
     let sidecar = settings_path.with_file_name(format!("{prefix}.jsonl"));
-    let Ok(lines) = JsonLines::open(&sidecar, DEFAULT_BUFFER_SIZE, false) else {
-        return Ok(None);
-    };
     let mut model = None;
-    let result = lines.scan(Tail::Discard, |line| {
+    let result = jsonl::read(&sidecar, None, ReadPolicy::PLAIN, |line, _, _| {
         let Ok(text) = std::str::from_utf8(line.bytes()) else {
             return ControlFlow::Break(());
         };
@@ -338,7 +335,7 @@ fn extract_model_from_sidecar_jsonl(settings_path: &Path) -> Result<Option<Strin
         }
         ControlFlow::Continue(())
     });
-    if result.failure.is_some() || result.found.is_some() {
+    if !matches!(result, Ok(None)) {
         return Ok(None);
     }
     Ok(model)

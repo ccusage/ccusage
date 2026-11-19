@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl::{self, JsonLines, Tail};
+use ccusage_adapter_common::jsonl;
 use std::{
     collections::{HashMap, HashSet},
     ops::ControlFlow,
@@ -13,7 +13,7 @@ use super::{
     parser::{
         CodexForkReplay, codex_timestamp_instant, visit_codex_session_file_with_compaction_history,
     },
-    reader::{PROBE_BUFFER_SIZE, is_compressed_rollout, other_encoding_path},
+    reader::{PROBE_BUFFER_SIZE, rollout_policy},
     types::CodexSessionMeta,
 };
 
@@ -370,31 +370,14 @@ pub(super) fn read_codex_session_metadata(
     path: &Path,
     diagnostics: Option<&Diagnostics>,
 ) -> Option<CodexSessionMetadata> {
-    let (lines, _) = match JsonLines::open_alternate(
+    jsonl::read(
         path,
-        PROBE_BUFFER_SIZE,
-        is_compressed_rollout(path),
-        || other_encoding_path(path),
-    ) {
-        Ok(opened) => opened,
-        Err(failed) => {
-            if let Some(diagnostics) = diagnostics {
-                ccusage_adapter_common::UnitError::new(SkipKind::Unreadable, "rollout open failed")
-                    .record(&failed, diagnostics);
-            }
-            return None;
-        }
-    };
-    let result = lines.scan(Tail::Discard, |line| {
-        ControlFlow::Break(session_metadata_from_line(path, line.raw))
-    });
-    if result.failure.is_some() {
-        if let Some(diagnostics) = diagnostics {
-            super::reader::record_rollout_read_failure(path, diagnostics);
-        }
-        return None;
-    }
-    Some(result.found.unwrap_or_default())
+        diagnostics,
+        rollout_policy(path, PROBE_BUFFER_SIZE, false),
+        |line, _, _| ControlFlow::Break(session_metadata_from_line(path, line.raw)),
+    )
+    .ok()
+    .map(Option::unwrap_or_default)
 }
 
 pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {

@@ -1,3 +1,5 @@
+use ccusage_adapter_common::jsonl::{Interruption, ReadPolicy};
+use ccusage_core::SkipKind;
 use std::path::{Path, PathBuf};
 
 pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
@@ -35,12 +37,26 @@ pub(super) fn other_encoding_path(path: &Path) -> PathBuf {
     }
 }
 
-pub(super) fn record_rollout_read_failure(path: &Path, diagnostics: &ccusage_core::Diagnostics) {
-    diagnostics.record(ccusage_core::Skip::unit(
-        path,
-        ccusage_core::SkipKind::ReadInterrupted,
-        "rollout read failed",
-    ));
+pub(super) fn rollout_policy(path: &Path, capacity: usize, keep_records: bool) -> ReadPolicy {
+    ReadPolicy {
+        capacity,
+        compressed: is_compressed_rollout(path),
+        // NOTE(2026-10-14, #1890): Codex can compress or restore a rollout after discovery. The other encoding can still hold the same rollout.
+        retry_missing: Some(other_encoding_path),
+        open_failure: Some("rollout open failed"),
+        interrupted: if keep_records {
+            |_| Interruption::KeepRecords(SkipKind::ReadInterrupted, "rollout read failed")
+        } else {
+            |failure| {
+                Interruption::RejectRecords(
+                    SkipKind::ReadInterrupted,
+                    "rollout read failed",
+                    failure.error.into(),
+                )
+            }
+        },
+        ..ReadPolicy::PLAIN
+    }
 }
 
 #[cfg(test)]

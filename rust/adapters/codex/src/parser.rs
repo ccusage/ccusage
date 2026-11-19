@@ -1,7 +1,4 @@
-use ccusage_adapter_common::{
-    UnitError,
-    jsonl::{self, JsonLines, Tail},
-};
+use ccusage_adapter_common::jsonl;
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     borrow::Cow,
@@ -19,9 +16,7 @@ use crate::{
 };
 
 use super::{
-    reader::{
-        READ_BUFFER_SIZE, is_compressed_rollout, other_encoding_path, uncompressed_rollout_path,
-    },
+    reader::{READ_BUFFER_SIZE, rollout_policy, uncompressed_rollout_path},
     replay::{CodexSessionMetadata, session_metadata_from_line},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
@@ -326,23 +321,12 @@ fn visit_codex_session_file_inner(
     diagnostics: &Diagnostics,
     mut stop_at_fork: Option<&mut CodexSessionMetadata>,
 ) {
-    let (lines, opened_path) =
-        match JsonLines::open_alternate(path, READ_BUFFER_SIZE, is_compressed_rollout(path), || {
-            other_encoding_path(path)
-        }) {
-            Ok(opened) => opened,
-            Err(failed_path) => {
-                UnitError::new(SkipKind::Unreadable, "rollout open failed")
-                    .record(&failed_path, diagnostics);
-                return;
-            }
-        };
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
     }
-    let fallback_timestamp = file_modified_timestamp(&opened_path);
+    let mut fallback_timestamp = None;
     let mut replay = CodexReplayFilter {
         state: fork_replay.map_or(CodexReplayState::Done, |fork_replay| {
             CodexReplayState::MatchingParent {
@@ -356,95 +340,100 @@ fn visit_codex_session_file_inner(
             .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
     };
 
-    let result = lines.scan(Tail::Discard, |current| {
-        let line = current.raw;
-        let first_metadata = stop_at_fork.take().map(|metadata| {
-            *metadata = session_metadata_from_line(path, line);
-            metadata.clone()
-        });
-        if first_metadata
-            .as_ref()
-            .is_some_and(CodexSessionMetadata::is_fork)
-        {
-            return ControlFlow::Break(());
-        }
-        let has_metadata = first_metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.is_session_meta);
-        if has_metadata
-            || (replay.burst.session_start.is_none()
-                && !matches!(replay.state, CodexReplayState::Done)
-                && SESSION_META_MARKER.matches(line))
-        {
-            let metadata = first_metadata.unwrap_or_else(|| session_metadata_from_line(path, line));
-            if metadata.is_session_meta {
-                if replay.burst.session_start.is_none() {
-                    replay.burst.session_start = metadata.timestamp;
-                }
-                return ControlFlow::Continue(());
+    let result = jsonl::read(
+        path,
+        Some(diagnostics),
+        rollout_policy(path, READ_BUFFER_SIZE, true),
+        |current, opened_path, _| {
+            let line = current.raw;
+            let first_metadata = stop_at_fork.take().map(|metadata| {
+                *metadata = session_metadata_from_line(path, line);
+                metadata.clone()
+            });
+            if first_metadata
+                .as_ref()
+                .is_some_and(CodexSessionMetadata::is_fork)
+            {
+                return ControlFlow::Break(());
             }
-        }
-        let Some(line_kind) = codex_line_usage_kind(line) else {
-            return ControlFlow::Continue(());
-        };
-        let value = match jsonl::parse::<CodexLogEntry<'_>>(line) {
-            Ok(value) => value,
-            Err(error) => {
-                if line_kind == CodexLineKind::Escaped && verbatim_line_usage_kind(line).is_none() {
+            let has_metadata = first_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.is_session_meta);
+            if has_metadata
+                || (replay.burst.session_start.is_none()
+                    && !matches!(replay.state, CodexReplayState::Done)
+                    && SESSION_META_MARKER.matches(line))
+            {
+                let metadata =
+                    first_metadata.unwrap_or_else(|| session_metadata_from_line(path, line));
+                if metadata.is_session_meta {
+                    if replay.burst.session_start.is_none() {
+                        replay.burst.session_start = metadata.timestamp;
+                    }
                     return ControlFlow::Continue(());
                 }
-                record_decode_failure(
-                    path,
-                    current.number(),
-                    line,
-                    error,
-                    diagnostics,
-                    Some(&mut state.previous_totals),
-                );
+            }
+            let Some(line_kind) = codex_line_usage_kind(line) else {
                 return ControlFlow::Continue(());
+            };
+            let value = match jsonl::parse::<CodexLogEntry<'_>>(line) {
+                Ok(value) => value,
+                Err(error) => {
+                    if line_kind == CodexLineKind::Escaped
+                        && verbatim_line_usage_kind(line).is_none()
+                    {
+                        return ControlFlow::Continue(());
+                    }
+                    record_decode_failure(
+                        path,
+                        current.number(),
+                        line,
+                        error,
+                        diagnostics,
+                        Some(&mut state.previous_totals),
+                    );
+                    return ControlFlow::Continue(());
+                }
+            };
+            let location = RecordLocation {
+                path,
+                line: current.number(),
+                diagnostics,
+            };
+            if is_session_usage_type(
+                value.entry_type.as_deref(),
+                value
+                    .payload
+                    .as_ref()
+                    .and_then(|payload| payload.payload_type.as_deref()),
+            ) {
+                if value.entry_type.as_deref() == Some("token_usage_record") {
+                    replay.observe_usage_record();
+                }
+                visit_codex_session_entry(
+                    &session_id,
+                    value,
+                    &mut state,
+                    &mut replay,
+                    &mut visit,
+                    &location,
+                );
+            } else {
+                add_codex_exec_event(
+                    &session_id,
+                    &value,
+                    *fallback_timestamp.get_or_insert_with(|| file_modified_timestamp(opened_path)),
+                    &mut state.current_model,
+                    &mut state.current_model_is_fallback,
+                    &mut |event| replay.visit(event, &mut visit),
+                    &location,
+                );
             }
-        };
-        let location = RecordLocation {
-            path,
-            line: current.number(),
-            diagnostics,
-        };
-        if is_session_usage_type(
-            value.entry_type.as_deref(),
-            value
-                .payload
-                .as_ref()
-                .and_then(|payload| payload.payload_type.as_deref()),
-        ) {
-            if value.entry_type.as_deref() == Some("token_usage_record") {
-                replay.observe_usage_record();
-            }
-            visit_codex_session_entry(
-                &session_id,
-                value,
-                &mut state,
-                &mut replay,
-                &mut visit,
-                &location,
-            );
-        } else {
-            add_codex_exec_event(
-                &session_id,
-                &value,
-                fallback_timestamp,
-                &mut state.current_model,
-                &mut state.current_model_is_fallback,
-                &mut |event| replay.visit(event, &mut visit),
-                &location,
-            );
-        }
-        ControlFlow::Continue(())
-    });
-    if result.found.is_some() {
+            ControlFlow::Continue(())
+        },
+    );
+    if !matches!(result, Ok(None)) {
         return;
-    }
-    if result.failure.is_some() {
-        super::reader::record_rollout_read_failure(path, diagnostics);
     }
 
     replay.finish(&mut visit);

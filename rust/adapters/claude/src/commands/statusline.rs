@@ -8,7 +8,7 @@ use std::{
 };
 
 use ccusage_adapter_common::{
-    jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail},
+    jsonl::{self, ReadPolicy},
     units::read_json,
 };
 use ccusage_core::{
@@ -408,10 +408,9 @@ fn calculate_context_tokens_from_transcript(
     offline: bool,
     shared: &SharedArgs,
 ) -> Option<HookContext> {
-    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false).ok()?;
     let marker = ccusage_core::fast::LinePrefilter::all(&[br#""assistant""#]);
     let mut input = None;
-    let result = lines.scan(Tail::Discard, |line| {
+    let result = jsonl::read(path, None, ReadPolicy::PLAIN, |line, _, _| {
         let Ok(text) = std::str::from_utf8(line.bytes()) else {
             return ControlFlow::Break(());
         };
@@ -422,7 +421,7 @@ fn calculate_context_tokens_from_transcript(
         }
         ControlFlow::Continue(())
     });
-    if result.failure.is_some() || result.found.is_some() {
+    if !matches!(result, Ok(None)) {
         return None;
     }
     let (input, creation, read) = input?;

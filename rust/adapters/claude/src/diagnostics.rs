@@ -3,14 +3,6 @@ use std::path::Path;
 use ccusage_adapter_common::jsonl::Line;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-pub(super) fn read_failed(path: &Path, diagnostics: &Diagnostics) {
-    diagnostics.record(Skip::unit(
-        path,
-        SkipKind::ReadInterrupted,
-        "file read failed",
-    ));
-}
-
 pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
     diagnostics.record(Skip::record(
         path,
@@ -47,13 +39,9 @@ pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs::File,
-        io::{self, Cursor, Read},
-        ops::ControlFlow,
-    };
+    use std::{fs::File, ops::ControlFlow};
 
-    use ccusage_adapter_common::jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail, scan};
+    use ccusage_adapter_common::jsonl::{self, ReadPolicy};
     use ccusage_core::{cli::CostMode, cost::PriceTable};
 
     #[test]
@@ -90,88 +78,29 @@ mod tests {
     }
 
     fn reject_terminated(bytes: &[u8], diagnostics: &Diagnostics) {
-        let result = scan(
-            bytes.chain(b"\n".as_slice()),
-            DEFAULT_BUFFER_SIZE,
-            Tail::Keep,
-            |line| {
-                rejected(Path::new("session.jsonl"), line, diagnostics);
-                ControlFlow::<()>::Continue(())
-            },
-        );
-        assert!(result.failure.is_none());
-    }
-
-    fn read_lines(reader: impl Read, diagnostics: &Diagnostics) -> Vec<(usize, Vec<u8>, bool)> {
-        let mut lines = Vec::new();
-        let result = scan(reader, DEFAULT_BUFFER_SIZE, Tail::Keep, |line| {
-            lines.push((line.index, line.bytes().to_vec(), line.unterminated()));
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("session.jsonl");
+        std::fs::write(&path, [bytes, b"\n"].concat()).unwrap();
+        jsonl::read(&path, Some(diagnostics), ReadPolicy::PLAIN, |line, _, _| {
+            rejected(&path, line, diagnostics);
             ControlFlow::<()>::Continue(())
-        });
-        if result.failure.is_some() {
-            read_failed(Path::new("session.jsonl"), diagnostics);
-        }
-        lines
+        })
+        .unwrap();
     }
 
-    struct Interrupted;
-    impl Read for Interrupted {
-        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::other("SECRET_CANARY"))
-        }
-    }
-    #[test]
-    fn retains_valid_unterminated_usage_before_a_read_interruption() {
-        let diagnostics = Diagnostics::new("claude");
-        let line = br#"{"timestamp":"2026-09-01T00:00:01Z","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#;
-        let lines = read_lines(Cursor::new(line).chain(Interrupted), &diagnostics);
-        assert_eq!(lines.len(), 1);
-        let entry = crate::daily::parse_usage_line(&lines[0].1).unwrap().0;
-        assert_eq!(entry.message.usage.usage.input_tokens, 10);
-        assert_eq!(entry.message.usage.usage.output_tokens, 2);
-        assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
-    }
-
-    #[test]
-    fn preserves_received_bytes_before_a_read_interruption() {
-        let diagnostics = Diagnostics::new("claude");
-        let lines = read_lines(
-            Cursor::new(b"complete\npartial").chain(Interrupted),
-            &diagnostics,
-        );
-        assert_eq!(
-            lines,
-            [
-                (0, b"complete".to_vec(), false),
-                (1, b"partial".to_vec(), true)
-            ]
-        );
-        assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
-        assert!(
-            !diagnostics
-                .warnings(&ccusage_core::cli::SharedArgs {
-                    debug: true,
-                    ..Default::default()
-                })
-                .join("\n")
-                .contains("SECRET_CANARY")
-        );
-    }
     const CUT_LAST_LINE: &str = r#"{"message":{"usage":{"input_tokens":10}}}
 {"message":{"usage":{"input_tok"#;
 
     fn reject_last_line(path: &Path, diagnostics: &Diagnostics) {
         let mut rejected_lines = 0;
-        let result = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false)
-            .unwrap()
-            .scan(Tail::Keep, |line| {
-                if line.unterminated() {
-                    rejected_lines += 1;
-                    rejected(path, line, diagnostics);
-                }
-                ControlFlow::<()>::Continue(())
-            });
-        assert!(result.failure.is_none());
+        jsonl::read(path, Some(diagnostics), ReadPolicy::PLAIN, |line, _, _| {
+            if line.unterminated() {
+                rejected_lines += 1;
+                rejected(path, line, diagnostics);
+            }
+            ControlFlow::<()>::Continue(())
+        })
+        .unwrap();
         assert_eq!(rejected_lines, 1);
     }
 

@@ -19,7 +19,7 @@ use ccusage_core::{
 
 use crate::{UnitError, units::being_written};
 
-pub const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
+const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 
 enum Input {
     Plain(File),
@@ -35,69 +35,137 @@ impl Read for Input {
     }
 }
 
-pub struct JsonLines {
-    input: Input,
-    capacity: usize,
+#[derive(Clone, Copy)]
+pub struct ReadPolicy {
+    pub capacity: usize,
+    pub compressed: bool,
+    pub retry_missing: Option<fn(&Path) -> PathBuf>,
+    pub keep_interrupted_tail: fn(io::ErrorKind) -> bool,
+    pub open_failure: Option<&'static str>,
+    pub interrupted: fn(ReadFailure) -> Interruption,
+    pub stage_diagnostics: bool,
 }
 
-#[derive(Debug)]
+impl ReadPolicy {
+    pub const PLAIN: Self = Self {
+        capacity: DEFAULT_BUFFER_SIZE,
+        compressed: false,
+        retry_missing: None,
+        keep_interrupted_tail: |_| false,
+        open_failure: None,
+        interrupted: |failure| Interruption::Reject(failure.error.into()),
+        stage_diagnostics: false,
+    };
+}
+
 pub struct ReadFailure {
     pub error: io::Error,
     pub complete_lines: usize,
     pub tail_bytes: usize,
 }
 
-pub struct Scan<B> {
-    pub found: Option<B>,
-    pub failure: Option<ReadFailure>,
+pub enum Interruption {
+    Reject(UnitError),
+    KeepUnit(UnitError),
+    KeepRecords(SkipKind, &'static str),
+    RejectRecords(SkipKind, &'static str, UnitError),
 }
 
-#[derive(Clone, Copy)]
-pub enum Tail {
-    Discard,
-    Keep,
-    KeepUnlessUnexpectedEof,
-}
-
-impl JsonLines {
-    pub fn open(path: &Path, capacity: usize, compressed: bool) -> io::Result<Self> {
-        let file = File::open(path)?;
-        let input = if compressed {
-            Input::Zstd(zstd::stream::read::Decoder::with_buffer(
-                BufReader::with_capacity(capacity, file),
-            )?)
-        } else {
-            Input::Plain(file)
-        };
-        Ok(Self { input, capacity })
+fn open_input(path: &Path, capacity: usize, compressed: bool) -> io::Result<Input> {
+    let file = File::open(path)?;
+    if compressed {
+        zstd::stream::read::Decoder::with_buffer(BufReader::with_capacity(capacity, file))
+            .map(Input::Zstd)
+    } else {
+        Ok(Input::Plain(file))
     }
+}
 
-    pub fn open_alternate(
-        path: &Path,
-        capacity: usize,
-        compressed: bool,
-        alternate: impl FnOnce() -> PathBuf,
-    ) -> Result<(Self, PathBuf), PathBuf> {
-        match Self::open(path, capacity, compressed) {
-            Ok(lines) => Ok((lines, path.to_path_buf())),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                let alternate = alternate();
-                match Self::open(&alternate, capacity, !compressed) {
-                    Ok(lines) => Ok((lines, alternate)),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        Err(path.to_path_buf())
-                    }
-                    Err(_) => Err(alternate),
+#[inline(never)]
+fn open<'a>(
+    path: &'a Path,
+    policy: ReadPolicy,
+    diagnostics: Option<&Diagnostics>,
+) -> Result<(Input, std::borrow::Cow<'a, Path>), UnitError> {
+    use std::borrow::Cow;
+    let (failure, error) = match (
+        open_input(path, policy.capacity, policy.compressed),
+        policy.retry_missing,
+    ) {
+        (Ok(input), _) => return Ok((input, Cow::Borrowed(path))),
+        (Err(error), Some(retry)) if error.kind() == io::ErrorKind::NotFound => {
+            let alternate = retry(path);
+            match open_input(&alternate, policy.capacity, !policy.compressed) {
+                Ok(input) => return Ok((input, Cow::Owned(alternate))),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    (Cow::Borrowed(path), error)
+                }
+                Err(error) => (Cow::Owned(alternate), error),
+            }
+        }
+        (Err(error), _) => (Cow::Borrowed(path), error),
+    };
+    if let (Some(detail), Some(diagnostics)) = (policy.open_failure, diagnostics) {
+        UnitError::new(SkipKind::Unreadable, detail).record(&failure, diagnostics);
+    }
+    Err(error.into())
+}
+
+#[inline(never)]
+fn finish(
+    path: &Path,
+    diagnostics: Option<&Diagnostics>,
+    staged: Option<&Diagnostics>,
+    policy: ReadPolicy,
+    failure: Option<ReadFailure>,
+) -> Result<(), UnitError> {
+    if let Some(failure) = failure {
+        match (policy.interrupted)(failure) {
+            Interruption::Reject(error) => return Err(error),
+            Interruption::KeepUnit(error) => {
+                if let Some(diagnostics) = diagnostics {
+                    error.record(path, diagnostics);
                 }
             }
-            Err(_) => Err(path.to_path_buf()),
+            Interruption::RejectRecords(kind, detail, error) => {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.record(Skip::unit(path, kind, detail));
+                }
+                return Err(error);
+            }
+            Interruption::KeepRecords(kind, detail) => {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.record(Skip::unit(path, kind, detail));
+                }
+            }
         }
     }
-
-    #[inline]
-    pub fn scan<B>(self, tail: Tail, visit: impl FnMut(Line<'_>) -> ControlFlow<B>) -> Scan<B> {
-        scan(self.input, self.capacity, tail, visit)
+    if let (Some(diagnostics), Some(staged)) = (diagnostics, staged) {
+        diagnostics.merge(staged);
     }
+    Ok(())
+}
+
+/// Reads one JSONL unit with the source's open, interruption and diagnostic policy.
+pub fn read<B>(
+    path: &Path,
+    diagnostics: Option<&Diagnostics>,
+    policy: ReadPolicy,
+    mut visit: impl FnMut(Line<'_>, &Path, Option<&Diagnostics>) -> ControlFlow<B>,
+) -> Result<Option<B>, UnitError> {
+    let (input, opened_path) = open(path, policy, diagnostics)?;
+    let staged = if policy.stage_diagnostics {
+        diagnostics.map(|diagnostics| Diagnostics::new(diagnostics.source()))
+    } else {
+        None
+    };
+    let local = staged.as_ref().or(diagnostics);
+    let mut reader = LineReader::with_capacity(policy.capacity, input);
+    let (found, failure) = fold(&mut reader, policy.keep_interrupted_tail, |line| {
+        visit(line, &opened_path, local)
+    });
+    finish(path, diagnostics, staged.as_ref(), policy, failure)?;
+    Ok(found)
 }
 
 #[derive(Clone, Copy)]
@@ -162,39 +230,23 @@ pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
     serde_json::from_slice(bytes)
 }
 
-#[inline]
-pub fn scan<R: Read, B>(
-    reader: R,
-    capacity: usize,
-    tail: Tail,
+fn fold<B>(
+    lines: &mut LineReader<Input>,
+    keep_interrupted_tail: fn(io::ErrorKind) -> bool,
     mut visit: impl FnMut(Line<'_>) -> ControlFlow<B>,
-) -> Scan<B> {
-    let mut lines = LineReader::with_capacity(capacity, reader);
+) -> (Option<B>, Option<ReadFailure>) {
     let mut index = 0;
     loop {
         match lines.next_line() {
             Ok(Some(raw)) => {
                 if let ControlFlow::Break(value) = visit(Line { index, raw }) {
-                    return Scan {
-                        found: Some(value),
-                        failure: None,
-                    };
+                    return (Some(value), None);
                 }
             }
-            Ok(None) => {
-                return Scan {
-                    found: None,
-                    failure: None,
-                };
-            }
+            Ok(None) => return (None, None),
             Err(error) => {
                 let remaining = lines.rest();
-                let keep = match tail {
-                    Tail::Discard => false,
-                    Tail::Keep => true,
-                    Tail::KeepUnlessUnexpectedEof => error.kind() != io::ErrorKind::UnexpectedEof,
-                };
-                let found = if keep && !remaining.is_empty() {
+                let found = if !remaining.is_empty() && keep_interrupted_tail(error.kind()) {
                     visit(Line {
                         index,
                         raw: remaining,
@@ -203,14 +255,14 @@ pub fn scan<R: Read, B>(
                 } else {
                     None
                 };
-                return Scan {
+                return (
                     found,
-                    failure: Some(ReadFailure {
+                    Some(ReadFailure {
                         error,
                         complete_lines: index,
                         tail_bytes: remaining.len(),
                     }),
-                };
+                );
             }
         }
         index += 1;
@@ -238,16 +290,20 @@ pub fn read_file(
     diagnostics: &Diagnostics,
     mut fold: impl FnMut(Line<'_>, &Diagnostics),
 ) -> Result<(), UnitError> {
-    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false)?;
-    let local = Diagnostics::new(diagnostics.source());
-    let result = lines.scan(Tail::Discard, |line| {
-        fold(line, &local);
-        ControlFlow::<()>::Continue(())
-    });
-    if let Some(failure) = result.failure {
-        return Err(failure.error.into());
-    }
-    diagnostics.merge(&local);
+    read(
+        path,
+        Some(diagnostics),
+        ReadPolicy {
+            stage_diagnostics: true,
+            ..ReadPolicy::PLAIN
+        },
+        |line, _, local| {
+            if let Some(local) = local {
+                fold(line, local);
+            }
+            ControlFlow::<()>::Continue(())
+        },
+    )?;
     Ok(())
 }
 
@@ -622,8 +678,8 @@ mod tests {
     use crate::units::tests::age_past_write_window;
 
     use super::{
-        FieldName, FirstField, LenientSeq, LenientString, Tail, lenient_array, lenient_f64,
-        lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string, scan,
+        FieldName, FirstField, LenientSeq, LenientString, ReadPolicy, lenient_array, lenient_f64,
+        lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string, read,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -635,16 +691,64 @@ mod tests {
         is_usage: Option<fn(&serde_json::Value) -> bool>,
     ) -> impl Iterator<Item = (u32, T)> {
         let mut output = Vec::new();
-        let result = scan(bytes, 7, Tail::Discard, |line| {
-            if line.selected(prefilter)
-                && let Some(record) = line.record(path, diagnostics, is_usage)
-            {
-                output.push((line.number(), record));
-            }
-            ControlFlow::<()>::Continue(())
-        });
-        assert!(result.failure.is_none());
+        let fixture = Fixture::new();
+        let file = fixture.path("input.jsonl");
+        std::fs::write(&file, bytes).unwrap();
+        read(
+            &file,
+            Some(diagnostics),
+            ReadPolicy {
+                capacity: 7,
+                ..ReadPolicy::PLAIN
+            },
+            |line, _, _| {
+                if line.selected(prefilter)
+                    && let Some(record) = line.record(path, diagnostics, is_usage)
+                {
+                    output.push((line.number(), record));
+                }
+                ControlFlow::<()>::Continue(())
+            },
+        )
+        .unwrap();
         output.into_iter()
+    }
+
+    #[test]
+    fn an_interruption_can_keep_the_buffered_unterminated_line() {
+        let fixture = Fixture::new();
+        let path = fixture.path("interrupted.jsonl.zst");
+        let mut compressed = zstd::stream::encode_all(b"complete\npartial".as_slice(), 0).unwrap();
+        compressed.extend_from_slice(b"invalid next frame");
+        std::fs::write(&path, compressed).unwrap();
+        let diagnostics = Diagnostics::new("test");
+        let mut lines = Vec::new();
+        read(
+            &path,
+            Some(&diagnostics),
+            ReadPolicy {
+                compressed: true,
+                keep_interrupted_tail: |_| true,
+                interrupted: |_| {
+                    super::Interruption::KeepRecords(SkipKind::ReadInterrupted, "file read failed")
+                },
+                ..ReadPolicy::PLAIN
+            },
+            |line, _, _| {
+                lines.push((line.index, line.bytes().to_vec(), line.unterminated()));
+                ControlFlow::<()>::Continue(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            lines,
+            [
+                (0, b"complete".to_vec(), false),
+                (1, b"partial".to_vec(), true)
+            ]
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
     }
 
     #[derive(Debug, PartialEq, Deserialize)]

@@ -1,7 +1,4 @@
-use ccusage_adapter_common::{
-    UnitError,
-    jsonl::{JsonLines, Tail},
-};
+use ccusage_adapter_common::jsonl::{self, Interruption, ReadPolicy};
 use ccusage_core::{Diagnostics, SkipKind};
 use std::{
     collections::BTreeMap,
@@ -86,22 +83,23 @@ pub(super) fn load_daily_entries(
     Ok(DailyEntries { deduped, detected })
 }
 
-const READ_BUFFER_SIZE: usize = 256 * 1024;
+const READ_POLICY: ReadPolicy = ReadPolicy {
+    capacity: 256 * 1024,
+    keep_interrupted_tail: |_| true,
+    open_failure: Some("file open failed"),
+    interrupted: |_| Interruption::KeepRecords(SkipKind::ReadInterrupted, "file read failed"),
+    ..ReadPolicy::PLAIN
+};
 
 pub(super) fn has_usage(path: &Path) -> bool {
-    let Ok(lines) = JsonLines::open(path, READ_BUFFER_SIZE, false) else {
-        return false;
-    };
-    lines
-        .scan(Tail::Keep, |line| {
-            if admit(line.bytes()).is_ok() {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        })
-        .found
-        .is_some()
+    jsonl::read(path, None, READ_POLICY, |line, _, _| {
+        if admit(line.bytes()).is_ok() {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .is_ok_and(|found| found.is_some())
 }
 
 enum Refusal {
@@ -614,11 +612,7 @@ pub(super) fn read_usage_file<E>(
         table: pricing,
         models: smallvec::SmallVec::new(),
     };
-    let Ok(lines) = JsonLines::open(path, READ_BUFFER_SIZE, false) else {
-        UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
-        return entries;
-    };
-    let result = lines.scan(Tail::Keep, |current| {
+    let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |current, _, _| {
         let line = current.bytes();
         let Admitted {
             record: data,
@@ -719,9 +713,6 @@ pub(super) fn read_usage_file<E>(
         entries.extend(advisors.into_iter().map(|advisor| build(advisor, line)));
         ControlFlow::<()>::Continue(())
     });
-    if result.failure.is_some() {
-        super::diagnostics::read_failed(path, diagnostics);
-    }
     entries
 }
 

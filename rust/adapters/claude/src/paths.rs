@@ -15,7 +15,7 @@ use crate::{
     home, resolve_tz,
 };
 use ccusage_adapter_common::{
-    jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail},
+    jsonl::{self, ReadPolicy},
     read_discovered_files, visit_usage_files as visit_usage_files_in,
 };
 
@@ -199,20 +199,19 @@ fn first_recorded_session_id(path: &Path) -> Option<String> {
         session_id: Option<String>,
     }
 
-    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false).ok()?;
     let marker = LinePrefilter::all(&[br#""sessionId""#]);
-    lines
-        .scan(Tail::Discard, |line| {
-            if marker.matches(line.raw)
-                && let Ok(SessionIdProbe {
-                    session_id: Some(session_id),
-                }) = line.decode()
-            {
-                return ControlFlow::Break(session_id);
-            }
-            ControlFlow::Continue(())
-        })
-        .found
+    jsonl::read(path, None, ReadPolicy::PLAIN, |line, _, _| {
+        if marker.matches(line.raw)
+            && let Ok(SessionIdProbe {
+                session_id: Some(session_id),
+            }) = line.decode()
+        {
+            return ControlFlow::Break(session_id);
+        }
+        ControlFlow::Continue(())
+    })
+    .ok()
+    .flatten()
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
