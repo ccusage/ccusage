@@ -1313,6 +1313,7 @@ mod tests {
 
     #[test]
     fn calculates_advisor_cost_with_the_advisor_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg-parent","model":"main-model","usage":{"input_tokens":1,"output_tokens":2,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}]}},"requestId":"req-parent","costUSD":1.23}"#,
         });

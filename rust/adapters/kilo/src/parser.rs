@@ -383,6 +383,7 @@ mod tests {
 
     #[test]
     fn uses_exact_provider_qualified_pricing_when_available() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = deepseek_pricing();
         pricing.load_json(
             r#"{

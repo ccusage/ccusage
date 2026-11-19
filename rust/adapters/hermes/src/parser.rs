@@ -257,6 +257,7 @@ mod tests {
 
     #[test]
     fn uniform_cost_modes_use_recorded_cost_only_in_auto_and_display() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
@@ -432,6 +433,7 @@ mod tests {
 
     #[test]
     fn tries_provider_qualified_model_candidate_first() {
+        ccusage_test_support::install_pricing_snapshots();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
             timestamp_text: "2026-05-19T00:00:00.000Z".to_string(),

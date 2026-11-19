@@ -173,6 +173,7 @@ mod tests {
 
     #[test]
     fn reuses_resolution_slots_across_ten_thousand_requests() {
+        crate::test_support::install_pricing_snapshots();
         for multi in [false, true] {
             let mut table = PricingMap::default();
             let rows: serde_json::Map<String, serde_json::Value> = (0..20)
@@ -227,6 +228,7 @@ mod tests {
 
     #[test]
     fn literal_hits_leave_the_identity_indexes_uninitialised() {
+        crate::test_support::install_pricing_snapshots();
         let mut table = PricingMap::default();
         table.load_json(
             r#"{"provider/literal":{"input_cost_per_token":3,"output_cost_per_token":4}}"#,

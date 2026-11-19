@@ -2794,6 +2794,7 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
 
 #[test]
 fn includes_codex_model_breakdowns_in_all_rows() {
+    ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
     pricing.load_json(
         r#"{

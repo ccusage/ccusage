@@ -110,12 +110,10 @@ struct LiteLlmSources {
 fn litellm_sources() -> Option<&'static LiteLlmSources> {
     static JSON: OnceLock<String> = OnceLock::new();
     static SOURCES: OnceLock<Option<LiteLlmSources>> = OnceLock::new();
+    let snapshots = EMBEDDED_SNAPSHOTS.get()?;
     SOURCES
         .get_or_init(|| {
-            match serde_json::from_str(inflate_snapshot(
-                &JSON,
-                embedded_snapshots().litellm_sources,
-            )) {
+            match serde_json::from_str(inflate_snapshot(&JSON, snapshots.litellm_sources)) {
                 Ok(sources) => Some(sources),
                 Err(error) => {
                     eprintln!("WARN  Failed to parse embedded pricing source rules ({error}).");
@@ -1322,6 +1320,9 @@ impl PricingMap {
     }
 
     pub fn load_json(&mut self, json: &str) -> usize {
+        let Some(sources) = litellm_sources() else {
+            return 0;
+        };
         let Ok(raw) = serde_json::from_str::<FxHashMap<String, serde_json::Value>>(json) else {
             return 0;
         };
@@ -1339,14 +1340,11 @@ impl PricingMap {
             };
             let provider = pricing.litellm_provider.as_deref();
             let (scope, vendor_id) = if let Some(provider) = provider {
-                let Some(sources) = litellm_sources() else {
-                    return 0;
-                };
                 row_scope(&model, provider, &sources.direct_providers)
             } else {
                 (Scope::Hosted, None)
             };
-            if scope == Scope::Hosted && input == 0.0 && output == 0.0 {
+            if scope == Scope::Hosted && !model.contains('/') && input == 0.0 && output == 0.0 {
                 continue;
             }
 
@@ -1775,7 +1773,9 @@ impl PricingMap {
                                 if free {
                                     row.scope == Scope::Direct && row.is_free()
                                 } else {
-                                    matches!(lookup, Lookup::Context) || !row.is_free()
+                                    !row.is_free()
+                                        || (matches!(lookup, Lookup::Context)
+                                            && row.scope == Scope::Direct)
                                 }
                             })
                         })
@@ -1902,7 +1902,8 @@ impl PricingMap {
         let pool = rows.filter(|(key, identity, found)| {
             !found.row.exact_only
                 && lookup.includes(found.row)
-                && (matches!(lookup, Lookup::Context) || !found.row.is_free())
+                && (!found.row.is_free()
+                    || (matches!(lookup, Lookup::Context) && found.row.scope == Scope::Direct))
                 && pricing_key_matches(key, identity, name, normalized)
         });
         let mut best = None;
@@ -2526,6 +2527,7 @@ mod tests {
 
     #[test]
     fn all_match_kinds_prefer_the_same_id_over_longer_primary_keys() {
+        crate::test_support::install_pricing_snapshots();
         use super::MatchKind;
         let mut primary = PricingMap::default();
         primary.load_json(
@@ -2573,6 +2575,7 @@ mod tests {
 
     #[test]
     fn strict_candidates_only_admit_literal_primary_keys() {
+        crate::test_support::install_pricing_snapshots();
         use super::MatchKind;
         let mut pricing = PricingMap::default();
         let mut embedded = PricingMap::default();
@@ -2617,6 +2620,7 @@ mod tests {
 
     #[test]
     fn direct_pricing_keeps_the_fallback_row_for_distinct_variants() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -2642,6 +2646,7 @@ mod tests {
 
     #[test]
     fn normalized_model_id_keeps_provider_qualification() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let mut embedded = PricingMap::default();
         embedded.load_json(
@@ -2719,6 +2724,35 @@ mod tests {
             );
             let rate = pricing.find("hostx/acme-1").unwrap();
             assert_eq!((rate.input, rate.output), (7e-6, 7e-6));
+        }
+    }
+
+    #[test]
+    fn free_hosted_rows_answer_only_their_qualified_identity() {
+        crate::test_support::install_pricing_snapshots();
+        let mut table = PricingMap::default();
+        assert_eq!(table.load_json(r#"{
+            "host/free-1.5": {"litellm_provider":"host","input_cost_per_token":0,"output_cost_per_token":0,"max_input_tokens":123},
+            "bare-free": {"litellm_provider":"host","input_cost_per_token":0,"output_cost_per_token":0},
+            "unnamed-free": {"input_cost_per_token":0,"output_cost_per_token":0}
+        }"#), 1);
+        for name in ["host/free-1.5", "host/free-1-5"] {
+            let (model, rate) = table
+                .resolve_at(Some(name), &[(name, MatchKind::Fuzzy)], None)
+                .unwrap();
+            assert_eq!(model, name);
+            assert_eq!((rate.input, rate.output), (0.0, 0.0));
+            assert_eq!(table.context_limit(name), Some(123));
+        }
+        for name in [
+            "bare-free",
+            "unnamed-free",
+            "free-1.5",
+            "nest/host/free-1.5",
+            "host/free-1.5-extra",
+        ] {
+            assert!(table.find(name).is_none(), "{name}");
+            assert_eq!(table.context_limit(name), None, "{name}");
         }
     }
 
@@ -2924,6 +2958,7 @@ mod tests {
 
     #[test]
     fn provider_candidates_cannot_bypass_a_reported_override() {
+        crate::test_support::install_pricing_snapshots();
         use super::MatchKind;
         let mut primary = PricingMap::default();
         primary.load_json(
@@ -2953,6 +2988,7 @@ mod tests {
 
     #[test]
     fn live_catalogue_is_selected_once_after_authoritative_misses() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
         assert_eq!(pricing.find("sample-special").unwrap().input, 1.0);
@@ -3069,6 +3105,7 @@ mod tests {
 
     #[test]
     fn every_curated_row_fills_only_the_rates_a_loaded_row_leaves_out() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -3098,6 +3135,7 @@ mod tests {
 
     #[test]
     fn curated_context_limits_fill_litellm_gaps_ahead_of_models_dev() {
+        crate::test_support::install_pricing_snapshots();
         let mut live = PricingMap::default();
         live.insert_test_limit("gpt-5.6-sol", 654_321);
         let lookups = AtomicUsize::new(0);
@@ -3157,6 +3195,7 @@ mod tests {
 
     #[test]
     fn supplements_preserve_all_published_prices_and_context_metadata() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{"gpt-5.2-codex": {
@@ -3527,6 +3566,7 @@ mod tests {
     }
 
     fn exact_only_fast_fallback_fixture() -> (PricingMap, PricingMap, PricingMap) {
+        crate::test_support::install_pricing_snapshots();
         let mut primary = PricingMap::default();
         assert_eq!(
             primary.load_json(
@@ -3969,6 +4009,7 @@ mod tests {
 
     #[test]
     fn long_context_view_names_the_existing_source_billing_modes() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -4735,6 +4776,7 @@ mod tests {
 
     #[test]
     fn exact_fallback_lookup_sees_rates_patched_after_a_lookup() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -4888,6 +4930,7 @@ mod tests {
 
     #[test]
     fn glm_cache_patch_keeps_an_explicitly_published_cache_write_rate() {
+        crate::test_support::install_pricing_snapshots();
         // A published cache-write rate survives the z.ai patch even when it
         // happens to equal the derived `input * 1.25` default: explicitness is
         // tracked, not inferred from the value.
@@ -4944,6 +4987,7 @@ mod tests {
 
     #[test]
     fn keeps_absent_litellm_cache_rates_absent() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -4971,6 +5015,7 @@ mod tests {
 
     #[test]
     fn skips_invalid_litellm_entries_without_discarding_valid_pricing() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let loaded = pricing.load_json(
             r#"{
@@ -4992,6 +5037,7 @@ mod tests {
 
     #[test]
     fn loads_every_litellm_rate_field() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let loaded = pricing.load_json(
             r#"{
@@ -6396,6 +6442,7 @@ mod tests {
 
     #[test]
     fn builtin_gpt_5_6_fallbacks_preserve_source_precedence() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -6804,6 +6851,7 @@ mod tests {
 
     #[test]
     fn pricing_lookup_prefers_an_exact_alias_target_over_a_fuzzy_original_match() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
             "claude-opus-5-turbo",
             "sentinel-exact-target",
@@ -6845,6 +6893,7 @@ mod tests {
 
     #[test]
     fn pricing_lookup_preserves_a_live_exact_only_builtin_alias_target() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         assert_eq!(
             pricing.load_json(
@@ -6934,6 +6983,7 @@ mod tests {
 
     #[test]
     fn dated_openai_models_inherit_published_fast_multipliers() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
 
         for (model, expected) in [
@@ -6992,6 +7042,7 @@ mod tests {
 
     #[test]
     fn resolves_ultrafast_multiplier_through_model_aliases() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("private-sol", "gpt-6.1-sol"),
             ("gpt-6.1-terra", "gpt-6.1-sol"),
@@ -7150,6 +7201,7 @@ mod tests {
 
     #[test]
     fn fills_flex_multiplier_only_for_supported_openai_model_names() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
 
         for (model, expected) in [
@@ -7354,6 +7406,7 @@ mod tests {
 
     #[test]
     fn same_last_segment_wins_over_a_longer_fuzzy_key() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{
             "short/model-2.5": {"input_cost_per_token": 3, "output_cost_per_token": 4},
@@ -7391,15 +7444,14 @@ mod tests {
             let rates = map.find(name).expect(case);
             assert_eq!((rates.input, rates.output), expected, "{case}");
         }
-        assert!(
-            map.resolve_at(
+        let (_, hosted) = map
+            .resolve_at(
                 None,
                 &[("host/plan-2.5-flash", MatchKind::StrictExact)],
-                None
+                None,
             )
-            .map(|(_, rates)| rates)
-            .is_none()
-        );
+            .unwrap();
+        assert_eq!((hosted.input, hosted.output), (0.0, 0.0));
     }
 
     #[test]
@@ -7653,6 +7705,7 @@ mod tests {
 
     #[test]
     fn fills_codex_fast_multiplier_when_litellm_pricing_omits_it() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -7694,6 +7747,7 @@ mod tests {
 
     #[test]
     fn fills_claude_fast_multiplier_when_litellm_pricing_omits_it() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{

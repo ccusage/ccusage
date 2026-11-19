@@ -656,6 +656,7 @@ mod tests {
 
     #[test]
     fn bills_long_context_codex_requests_at_long_context_rates() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -705,6 +706,7 @@ mod tests {
 
     #[test]
     fn prices_mixed_speed_and_long_context_buckets_independently() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -768,6 +770,7 @@ mod tests {
 
     #[test]
     fn long_context_split_without_tier_rates_matches_flat_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -817,6 +820,7 @@ mod tests {
 
     #[test]
     fn applies_speed_option_to_codex_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -930,6 +934,7 @@ mod tests {
 
     #[test]
     fn uses_recorded_service_tiers_in_auto_mode() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -988,6 +993,7 @@ mod tests {
 
     #[test]
     fn prices_recorded_flex_usage_at_flex_rate() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1130,6 +1136,7 @@ mod tests {
     /// does not depend on which LiteLLM snapshot the build embedded. Only
     /// `gpt-6.1-sol` carries a published Ultrafast multiplier.
     fn ultrafast_test_pricing() -> PricingMap {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let entry = |input: f64, output: f64| {
             json!({
@@ -1342,6 +1349,7 @@ mod tests {
 
     #[test]
     fn config_fallback_applies_only_to_unclassified_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1374,6 +1382,7 @@ mod tests {
 
     #[test]
     fn standard_config_fallback_leaves_unclassified_usage_at_standard_rate() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1406,6 +1415,7 @@ mod tests {
 
     #[test]
     fn does_not_assume_fast_pricing_without_a_model_multiplier() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1447,6 +1457,7 @@ mod tests {
 
     #[test]
     fn identifies_codex_models_missing_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{

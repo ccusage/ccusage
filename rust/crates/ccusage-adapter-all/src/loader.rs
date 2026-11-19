@@ -1068,6 +1068,7 @@ mod tests {
 
     #[test]
     fn unified_row_matches_focused_cost_for_mixed_recorded_tiers() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{

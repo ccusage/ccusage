@@ -280,6 +280,7 @@ mod tests {
 
     #[test]
     fn candidate_entry_pricing_adds_only_the_supplied_extra_tokens() {
+        crate::test_support::install_pricing_snapshots();
         let mut map = PricingMap::default();
         map.load_json(
             r#"{"priced": {
@@ -440,6 +441,7 @@ mod tests {
 
     #[test]
     fn published_one_hour_cache_rate_prices_the_duration_bucket() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{"claude-test": {
@@ -463,6 +465,7 @@ mod tests {
 
     #[test]
     fn a_flat_one_hour_rate_keeps_the_long_context_premium_on_the_tier() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -594,6 +597,7 @@ mod tests {
     use super::calculate_cost_for_usage_at;
 
     fn pricing() -> PricingMap {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{

@@ -904,6 +904,7 @@ mod tests {
 
     #[test]
     fn does_not_double_count_reasoning_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "copilot.jsonl":
             format!(
@@ -982,6 +983,7 @@ mod tests {
 
     #[test]
     fn includes_separate_otel_reasoning_tokens_in_total_and_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "copilot.jsonl": format!(
                 "{}\n",
@@ -1142,6 +1144,7 @@ mod tests {
 
     #[test]
     fn loads_session_state_tokens_and_calculates_token_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": format!(
                 "{}\n",
@@ -2906,6 +2909,7 @@ mod tests {
 
     /// `test-model` costs $1 per input token and $2 per output token.
     fn test_model_pricing() -> crate::PricingMap {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = crate::PricingMap::default();
         pricing.load_json(
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,

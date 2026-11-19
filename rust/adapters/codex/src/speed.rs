@@ -200,6 +200,7 @@ mod tests {
 
     #[test]
     fn inactive_flex_profile_does_not_discount_unclassified_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "config.toml": r#"
                 service_tier = "standard"

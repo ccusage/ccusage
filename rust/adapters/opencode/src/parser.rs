@@ -632,6 +632,7 @@ mod tests {
 
     #[test]
     fn calculates_cost_when_opencode_stores_zero_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
@@ -670,6 +671,7 @@ mod tests {
 
     #[test]
     fn resolves_a_provider_identity_before_fuzzy_matches_for_both_token_sides() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{
             "azure/us-gov/text-embedding-3-small": {"input_cost_per_token": 0.025, "output_cost_per_token": 0},
@@ -703,6 +705,7 @@ mod tests {
 
     #[test]
     fn keeps_the_same_model_when_its_output_rate_is_zero() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
@@ -762,6 +765,7 @@ mod tests {
 
     #[test]
     fn honors_cost_modes_for_recorded_and_unrecorded_costs() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"gpt-test":{"input_cost_per_token":0.001,"output_cost_per_token":0.01}}"#,
@@ -883,6 +887,7 @@ mod tests {
 
     #[test]
     fn preserves_existing_reasoning_and_residual_billing() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"gpt-test":{"input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
@@ -1114,6 +1119,7 @@ mod tests {
 
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
+        ccusage_test_support::install_pricing_snapshots();
         let tz = crate::resolve_tz(Some("UTC"));
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(

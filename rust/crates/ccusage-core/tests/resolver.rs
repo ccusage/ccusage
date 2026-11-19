@@ -2,6 +2,7 @@ use ccusage_core::pricing::{Explanation, MatchKind, PricingMap, ResolutionStep, 
 
 #[test]
 fn explanation_identifies_the_row_used_to_price_the_request() {
+    ccusage_test_support::install_pricing_snapshots();
     let mut table = PricingMap::default();
     table.load_json(
         r#"{

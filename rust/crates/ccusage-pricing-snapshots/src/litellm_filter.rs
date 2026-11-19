@@ -133,6 +133,12 @@ mod tests {
 
     #[test]
     fn keeps_service_tier_multipliers_in_embedded_pricing() {
+        ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
+            litellm_sources: crate::LITELLM_SOURCES,
+            litellm_pricing: crate::LITELLM_PRICING,
+            models_dev_pricing: crate::MODELS_DEV_PRICING,
+            models_dev_catalog_rules: crate::MODELS_DEV_CATALOG_RULES,
+        });
         let filtered = filter_pricing_json(
             r#"{
                 "gpt-test": {

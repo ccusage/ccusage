@@ -175,6 +175,7 @@ mod tests {
     }
 
     fn snapshot_pricing() -> PricingMap {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         assert_eq!(
             pricing.load_json(

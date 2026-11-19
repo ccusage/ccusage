@@ -70,6 +70,7 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>
 mod tests {
     #[test]
     fn uniform_cost_modes_do_not_calculate_in_display() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"session.settings.json": r#"{"model":"sample","providerLockTimestamp":"2026-05-01T01:02:03Z","tokenUsage":{"inputTokens":100,"outputTokens":50}}"#});
         let _guard = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let mut pricing = ccusage_core::PricingMap::default();

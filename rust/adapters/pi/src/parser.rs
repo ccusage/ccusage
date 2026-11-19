@@ -624,6 +624,7 @@ mod tests {
     }
 
     fn pricing_for_cost_tests() -> ccusage_core::PricingMap {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
@@ -841,6 +842,7 @@ mod tests {
 
     #[test]
     fn named_store_name_does_not_price_unknown_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"totally-unknown-model","usage":{"input":1000000,"output":1000000}}}"#,
         });
@@ -875,6 +877,7 @@ mod tests {
 
     #[test]
     fn named_store_name_does_not_outmatch_real_model_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"o3","usage":{"input":1000,"output":2000}}}"#,
         });
@@ -910,6 +913,7 @@ mod tests {
 
     #[test]
     fn named_store_prefixed_pricing_override_wins_before_unprefixed_lookup() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5.4","usage":{"input":1000,"output":2000}}}"#,
         });

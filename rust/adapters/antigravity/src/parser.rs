@@ -1825,6 +1825,7 @@ mod tests {
 
     #[test]
     fn provider_specific_variant_pricing_precedes_base_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
@@ -1863,6 +1864,7 @@ mod tests {
 
     #[test]
     fn sibling_effort_variant_does_not_satisfy_base_pricing_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         assert_eq!(
             pricing.load_json(
@@ -1911,6 +1913,7 @@ mod tests {
 
     #[test]
     fn effort_variant_honors_explicit_model_alias() {
+        ccusage_test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("gemini-3.6-flash-medium", "custom-flash-medium"),
             ("gemini-3.8-flash-low", "custom-unpriced-flash-low"),
@@ -2002,6 +2005,7 @@ mod pricing_identity_tests {
 
     #[test]
     fn adapter_pricing_identity() {
+        ccusage_test_support::install_pricing_snapshots();
         let model = normalize_antigravity_model("gemini-3.6-flash-high").unwrap();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"gemini-3.6-flash":{"input_cost_per_token":0.00000075,"output_cost_per_token":0.00000375},"gemini/gemini-3.6-flash-lite":{"input_cost_per_token":0.0000001,"output_cost_per_token":0.0000004}}"#);

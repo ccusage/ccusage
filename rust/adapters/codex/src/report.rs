@@ -809,6 +809,7 @@ mod tests {
 
     #[test]
     fn display_mode_ignores_even_supplied_pricing_and_omits_price_metadata() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut group = CodexGroup::default();
         group.models.insert(
             "gpt-unknown-preview".to_string(),

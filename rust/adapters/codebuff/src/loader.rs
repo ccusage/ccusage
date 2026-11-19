@@ -73,6 +73,7 @@ fn to_loaded_entry(
 mod tests {
     #[test]
     fn uniform_cost_modes_do_not_calculate_in_display() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"projects/p/chats/c/chat-messages.json": r#"[{"role":"assistant","timestamp":"2026-05-01T01:02:03Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":50}}}]"#});
         let _guard = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let mut pricing = ccusage_core::PricingMap::default();

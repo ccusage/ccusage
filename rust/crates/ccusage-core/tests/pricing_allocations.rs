@@ -10,6 +10,7 @@ static ALLOCATOR: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
 #[test]
 fn repeated_pricing_neither_allocates_nor_reallocates() {
+    ccusage_test_support::install_pricing_snapshots();
     for multiple_candidates in [false, true] {
         let mut pricing = PricingMap::default();
         let rows: serde_json::Map<String, serde_json::Value> = (0..20)

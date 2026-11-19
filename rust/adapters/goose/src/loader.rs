@@ -67,6 +67,7 @@ fn load_entries_from_dbs(
 mod tests {
     #[test]
     fn uniform_cost_modes_do_not_calculate_in_display() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let _sessions = fixture.create_dir_all("data/sessions");
         let db_path = fixture.path("data/sessions/sessions.db");

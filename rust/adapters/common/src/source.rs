@@ -421,6 +421,7 @@ mod pricing_tests {
 
     #[test]
     fn display_does_not_consult_even_supplied_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let shared = SharedArgs {
             mode: CostMode::Display,
             ..Default::default()
