@@ -157,10 +157,9 @@ fn read_model_from_config(root: Option<&Path>) -> String {
     let Some(root) = root else {
         return DEFAULT_MODEL.to_string();
     };
-    let Ok(Some(config)) = ccusage_adapter_common::units::read_filtered_json::<KimiConfig>(
-        &root.join("config.json"),
-        |content| std::str::from_utf8(content).is_ok(),
-    ) else {
+    let Ok(config) =
+        ccusage_adapter_common::units::read_utf8_json::<KimiConfig>(&root.join("config.json"))
+    else {
         return DEFAULT_MODEL.to_string();
     };
     config.model.unwrap_or_else(|| DEFAULT_MODEL.to_string())

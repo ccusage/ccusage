@@ -157,6 +157,13 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
     decode_json(&fs::read(path)?)
 }
 
+pub fn read_utf8_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
+    let content = fs::read(path)?;
+    std::str::from_utf8(&content)
+        .map_err(|_| UnitError::new(SkipKind::InvalidData, "JSON document is not UTF-8"))?;
+    decode_json(&content)
+}
+
 pub fn read_filtered_json<T: DeserializeOwned>(
     path: &Path,
     accept: impl FnOnce(&[u8]) -> bool,
