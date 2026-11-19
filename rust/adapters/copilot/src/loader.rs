@@ -1992,6 +1992,139 @@ mod tests {
     }
 
     #[test]
+    fn reconciles_partial_and_complete_exports_against_shutdown_credits() {
+        for (complete, total, expected_gap) in [(false, 30, 20), (true, 10, 0)] {
+            let mut summary: serde_json::Value = serde_json::from_str(&shutdown_with_requests(
+                "shutdown-1",
+                "2026-01-03T10:00:00Z",
+                2,
+            ))
+            .unwrap();
+            summary["data"]["totalNanoAiu"] = json!(total * NANO_AIU_PER_CREDIT);
+            summary["data"]["modelMetrics"]["test-model"]["totalNanoAiu"] =
+                json!(10 * NANO_AIU_PER_CREDIT);
+            let mut spans = vec![
+                otel_call("span-1", "2026-01-03T09:00:00Z"),
+                otel_call("resumed-span", "2026-01-04T09:00:00Z"),
+            ];
+            if complete {
+                spans.push(otel_call("span-2", "2026-01-03T09:30:00Z"));
+            }
+            let fixture = fs_fixture!({
+                "home/.copilot/session-state/session-1/events.jsonl": [
+                    checkpoint("initial", "2026-01-02T10:00:00Z", total),
+                    summary.to_string(),
+                    checkpoint("resumed", "2026-01-04T10:00:00Z", total + 5),
+                ].join("\n"),
+                "home/.copilot/otel/otel.jsonl": spans.join("\n"),
+            });
+
+            let all = load_copilot_home(&fixture, &utc_args());
+            let bounded = load_copilot_home(
+                &fixture,
+                &crate::cli::SharedArgs {
+                    since: Some("20260103".parse().unwrap()),
+                    until: Some("20260103".parse().unwrap()),
+                    ..utc_args()
+                },
+            );
+
+            let mut expected = vec![("2026-01-03".to_string(), "test-model".to_string(), 220, 10)];
+            if expected_gap > 0 {
+                expected.push((
+                    "2026-01-03".to_string(),
+                    "unknown".to_string(),
+                    0,
+                    expected_gap,
+                ));
+            }
+            assert_eq!(
+                credit_rows(&bounded),
+                expected,
+                "complete export: {complete}"
+            );
+            expected.push(("2026-01-04".to_string(), "test-model".to_string(), 2, 0));
+            assert_eq!(credit_rows(&all), expected, "complete export: {complete}");
+        }
+    }
+
+    #[test]
+    fn reconciles_watermarked_receipts_once_before_reporting_checkpoint_residuals() {
+        let receipt = |id: &str, timestamp: &str, sequence: u64, credits: Option<u64>| {
+            usage_record(
+                id,
+                timestamp,
+                json!({
+                    "apiCallId": id,
+                    "accounting": {"sourceSessionId": "session-1", "sequence": sequence},
+                    "copilotUsage": {"totalNanoAiu": credits.map(|value| value * NANO_AIU_PER_CREDIT)},
+                }),
+            )
+        };
+        let checkpoint_with_watermark = |id, timestamp, total, sequence| {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&checkpoint(id, timestamp, total)).unwrap();
+            value["data"]["usageAccountingWatermarks"] = json!({"session-1": sequence});
+            value.to_string()
+        };
+        for (second_credit, watermark, expected_gap) in
+            [(Some(5), 2, 20), (None, 2, 0), (Some(5), 3, 0)]
+        {
+            let first = receipt("response-a", "2026-01-02T09:00:00Z", 1, Some(10));
+            let second = receipt("response-b", "2026-01-03T09:00:00Z", 2, second_credit);
+            let fixture = fs_fixture!({
+                "home/.copilot/session-state/session-1/events.jsonl": [
+                    first.clone(),
+                    checkpoint_with_watermark("first", "2026-01-02T10:00:00Z", 10, 1),
+                    second,
+                    checkpoint_with_watermark("second", "2026-01-03T10:00:00Z", 35, watermark),
+                ].join("\n"),
+                "home/.copilot/session-state/copy/events.jsonl": first,
+                "home/.copilot/otel/otel.jsonl": otel_call_with(
+                    "span-1", "2026-01-02T09:00:00Z", ("gen_ai.response.id", "response-a"),
+                ),
+            });
+            let all = load_copilot_home(&fixture, &utc_args());
+            let bounded = load_copilot_home(
+                &fixture,
+                &crate::cli::SharedArgs {
+                    since: Some("20260103".parse().unwrap()),
+                    ..utc_args()
+                },
+            );
+
+            let mut expected = vec![(
+                "2026-01-03".to_string(),
+                "test-model".to_string(),
+                100,
+                second_credit.unwrap_or_default(),
+            )];
+            if expected_gap > 0 {
+                expected.push((
+                    "2026-01-03".to_string(),
+                    "unknown".to_string(),
+                    0,
+                    expected_gap,
+                ));
+            }
+            assert_eq!(
+                credit_rows(&bounded),
+                expected,
+                "watermark {watermark}, credits {second_credit:?}"
+            );
+            expected.insert(
+                0,
+                ("2026-01-02".to_string(), "test-model".to_string(), 100, 10),
+            );
+            assert_eq!(
+                credit_rows(&all),
+                expected,
+                "watermark {watermark}, credits {second_credit:?}"
+            );
+        }
+    }
+
+    #[test]
     fn leaves_credit_gaps_to_otel_when_a_session_has_otel_rows() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl":
