@@ -345,3 +345,22 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     .collect::<Vec<_>>();
     vec![("KILO_DATA_DIR", data_dirs)]
 }
+
+pub fn extra_cases(root: &Path) -> Vec<super::Case> {
+    drop(create_db(
+        &root.join("cwd/kilo-zero/kilo.db"),
+        &[row(
+            "row-zero",
+            "ses-zero",
+            &json!({"id":"msg-zero","role":"assistant","providerID":"kilo","modelID":"kilo-mystery-9","time":{"created":instant("2026-01-01T12:00:00Z").millis()},"tokens":{"input":100,"output":50},"cost":0}),
+        )],
+    ));
+    vec![
+        super::Case::new(
+            "daily",
+            "json_recorded_zero",
+            &["kilo", "daily", "--json", "--offline"],
+        )
+        .env("KILO_DATA_DIR", "kilo-zero"),
+    ]
+}

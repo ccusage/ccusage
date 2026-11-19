@@ -115,7 +115,7 @@ agent_matrix! {
     hermes => golden::no_extras,
     pi => golden::pi::extra_cases,
     goose => golden::no_extras,
-    kilo => golden::no_extras,
+    kilo => golden::kilo::extra_cases,
     copilot => golden::no_extras,
     gemini => golden::no_extras,
     antigravity => golden::antigravity::extra_cases,

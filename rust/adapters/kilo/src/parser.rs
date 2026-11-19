@@ -157,17 +157,17 @@ pub(super) fn message_value_to_entry(
             reasoning_tokens: 0,
             residual_tokens: extra_total_tokens,
             candidates: &candidates,
-            stored_cost: cost_usd,
+            stored_cost: cost_usd.filter(|cost| mode != CostMode::Auto || *cost > 0.0),
             mode,
             timestamp: Some(timestamp),
         },
         pricing,
     );
-    let cost = priced.cost;
+    let stored_cost = stored_cost_for_mode(cost_usd, mode);
+    let cost = stored_cost.unwrap_or(priced.cost);
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
-    let stored_cost = stored_cost_for_mode(cost_usd, mode);
     Ok(Some((
         message_id,
         LoadedEntry {
@@ -425,7 +425,9 @@ mod cost_mode_warnings {
     #[test]
     fn missing_pricing_tracks_whether_the_mode_uses_recorded_cost() {
         for (mode, stored, expected) in [
-            (CostMode::Auto, 0.0, None),
+            (CostMode::Auto, 0.0, Some("kilo-unpriced-xyz")),
+            (CostMode::Auto, -0.01, Some("kilo-unpriced-xyz")),
+            (CostMode::Auto, 0.42, None),
             (CostMode::Calculate, 0.42, Some("kilo-unpriced-xyz")),
         ] {
             let value: KiloMessage = serde_json::from_value(serde_json::json!({
@@ -445,7 +447,10 @@ mod cost_mode_warnings {
             )
             .unwrap()
             .unwrap();
-            assert_eq!(entry.cost, 0.0);
+            assert_eq!(
+                entry.cost,
+                if mode == CostMode::Auto { stored } else { 0.0 }
+            );
             assert_eq!(entry.missing_pricing_model.as_deref(), expected, "{mode:?}");
         }
     }
