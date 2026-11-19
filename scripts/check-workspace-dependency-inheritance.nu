@@ -15,16 +15,19 @@ def dependency-tables [manifest: record]: nothing -> list<record> {
 
 def main [workspace: path]: nothing -> nothing {
     let root = $workspace | path expand
-    let members = glob ($root | path join 'adapters/*/Cargo.toml')
-    | append (glob ($root | path join 'crates/*/Cargo.toml'))
+    let manifest = open --raw ($root | path join 'Cargo.toml') | from toml
+    let members = $manifest.workspace.members
+    | default []
+    | each {|member| glob ($root | path join $member 'Cargo.toml') }
+    | flatten
     let violations = $members | each {|member|
         let parsed = open --raw $member | from toml
         dependency-tables $parsed | each {|table|
             $table | transpose name spec | each {|dependency|
-                let pins_version = if ($dependency.spec | describe | str starts-with 'record') {
-                    ($dependency.spec | get --optional version | default '') != ''
-                } else {
-                    true
+                let pins_version = match $dependency.spec {
+                    {version: $_} => true
+                    {} => false
+                    _ => true
                 }
                 if $pins_version {
                     $"($member | path relative-to $root): ($dependency.name) must inherit its version from [workspace.dependencies]"

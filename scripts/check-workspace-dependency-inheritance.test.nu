@@ -6,15 +6,24 @@ use std/assert
 def main []: nothing -> nothing {
     let fixture = mktemp -d
     try {
-        mkdir ($fixture | path join crates/inline)
-        mkdir ($fixture | path join adapters/inherited)
+        '[workspace]
+members = ["crates/*", "extras/inline"]
+
+[workspace.dependencies]
+rustix = { version = "1.1.6", features = ["process"] }
+stats_alloc = "0.1.10"
+'
+        | save ($fixture | path join Cargo.toml)
+        mkdir ($fixture | path join extras/inline)
+        mkdir ($fixture | path join crates/inherited)
+        mkdir ($fixture | path join adapters/skipped)
         '[dev-dependencies]
 stats_alloc = "0.1.10"
 
 [target.unix.dependencies]
 rustix = { version = "1.1.6", features = ["process"] }
 '
-        | save ($fixture | path join crates/inline/Cargo.toml)
+        | save ($fixture | path join extras/inline/Cargo.toml)
         '[dependencies]
 rustix.workspace = true
 
@@ -22,26 +31,31 @@ rustix.workspace = true
 stats_alloc = { workspace = true, features = [] }
 self = { path = "." }
 '
-        | save ($fixture | path join adapters/inherited/Cargo.toml)
+        | save ($fixture | path join crates/inherited/Cargo.toml)
+        '[dependencies]
+stats_alloc = "0.1.10"
+'
+        | save ($fixture | path join adapters/skipped/Cargo.toml)
         let check = $env.FILE_PWD | path join check-workspace-dependency-inheritance.nu
         let failing = nu $check $fixture | complete
         assert equal $failing.exit_code 1 $failing.stderr
         assert equal (
             $failing.stderr
-            | str contains 'crates/inline/Cargo.toml: stats_alloc must inherit'
+            | str contains 'extras/inline/Cargo.toml: stats_alloc must inherit'
         ) true
         assert equal (
             $failing.stderr
-            | str contains 'crates/inline/Cargo.toml: rustix must inherit'
+            | str contains 'extras/inline/Cargo.toml: rustix must inherit'
         ) true
-        assert equal ($failing.stderr | str contains 'adapters/inherited') false
+        assert equal ($failing.stderr | str contains 'crates/inherited') false
+        assert equal ($failing.stderr | str contains 'adapters/skipped') false
         '[dev-dependencies]
 stats_alloc.workspace = true
 
 [target.unix.dependencies]
 rustix.workspace = true
 '
-        | save --force ($fixture | path join crates/inline/Cargo.toml)
+        | save --force ($fixture | path join extras/inline/Cargo.toml)
         let passing = nu $check $fixture | complete
         assert equal $passing.exit_code 0 $passing.stderr
     } catch {|err|
