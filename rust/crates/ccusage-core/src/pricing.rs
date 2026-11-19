@@ -729,7 +729,7 @@ impl PricingRows {
     fn exact_only_by_identity(&self) -> &FxHashMap<Box<str>, Option<usize>> {
         self.exact_only_by_identity.get_or_init(|| {
             let mut index = FxHashMap::default();
-            for found in self.matches().filter(|found| found.row.is_exact_only()) {
+            for found in self.matches().filter(|found| found.row.exact_only) {
                 index
                     .entry(
                         normalized_pricing_key(found.key)
@@ -744,7 +744,7 @@ impl PricingRows {
     }
 
     fn contains_exact_only_identity(&self, key: &str, identity: &str) -> bool {
-        self.entries.get(key).is_some_and(|row| row.is_exact_only())
+        self.entries.get(key).is_some_and(|row| row.exact_only)
             || self.exact_only_by_identity().contains_key(identity)
     }
 
@@ -1570,7 +1570,7 @@ impl PricingMap {
                         cache_defaults: cache_defaults(&model_id, None),
                         ..Pricing::empty()
                     }),
-                    exact_only: OnceLock::from(exact_only),
+                    exact_only,
                     context_limit,
                     key: Arc::default(),
                     source: Source::ModelsDev,
@@ -1685,13 +1685,13 @@ impl PricingMap {
         }
         self.overrides
             .id_identity(model.identity())
-            .and_then(|id| project(self.resolve_override(id, models_dev)))
+            .and_then(|id| project(self.resolve_override(id, models_dev, false)))
             .or_else(|| {
                 self.rows.authoritative(model, hosted, |found| {
                     let found = self
                         .overrides
                         .shadow(found)
-                        .map_or(found, |id| self.resolve_override(id, models_dev));
+                        .map_or(found, |id| self.resolve_override(id, models_dev, false));
                     project(found)
                 })
             })
@@ -1757,7 +1757,7 @@ impl PricingMap {
         match pass {
             Pass::Label => {
                 let id = self.overrides.label_id(model, slot)?;
-                let found = self.resolve_override(id, models_dev);
+                let found = self.resolve_override(id, models_dev, false);
                 lookup
                     .includes(found.row)
                     .then(|| CachedHit::new(found, ResolutionStep::ReportedOverride))
@@ -1804,7 +1804,7 @@ impl PricingMap {
         lookup: Lookup,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
-        let secondary = self.available_models_dev();
+        let secondary = models_dev();
         let normalized = name.identity();
         if secondary.is_some_and(|rows| rows.contains_exact_only_identity(name.raw(), normalized)) {
             return None;
@@ -1826,19 +1826,10 @@ impl PricingMap {
             });
             let matches =
                 |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
-            let resolve = |id| {
-                let found = self.resolve_override(id, models_dev);
-                let exact_only = *found.row.exact_only.get_or_init(|| {
-                    secondary.is_some_and(|rows| {
-                        let identity = normalized_pricing_key(found.key);
-                        rows.contains_exact_only_identity(found.key, &identity)
-                    })
-                });
-                (!exact_only).then_some(found)
-            };
+            let resolve = |id| self.resolve_override(id, models_dev, true);
             let base = base.filter_map(|(raw, identity)| {
                 let found = match self.overrides.shadow(raw) {
-                    Some(id) if matches(raw.key, identity) => resolve(id)?,
+                    Some(id) if matches(raw.key, identity) => resolve(id),
                     Some(_) => return None,
                     None => raw,
                 };
@@ -1852,7 +1843,7 @@ impl PricingMap {
                         if shadowed.contains(&id) || !matches(key, identity) {
                             return None;
                         }
-                        Some((key, identity, resolve(id)?))
+                        Some((key, identity, resolve(id)))
                     });
             Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
         };
@@ -1897,7 +1888,7 @@ impl PricingMap {
     ) -> Option<RowMatch<'a>> {
         let segment = last_segment(normalized);
         let pool = rows.filter(|(key, identity, found)| {
-            !found.row.is_exact_only()
+            !found.row.exact_only
                 && lookup.includes(found.row)
                 && (matches!(lookup, Lookup::Context) || !found.row.is_free())
                 && pricing_key_matches(key, identity, name, normalized)
@@ -2443,7 +2434,7 @@ mod tests {
             self.rows_mut()
                 .entries
                 .get_or_insert(key.to_string(), Row::default)
-                .exact_only = std::sync::OnceLock::from(true);
+                .exact_only = true;
         }
 
         fn find_entry(&self, model: &str, kind: MatchKind) -> Option<Pricing> {
@@ -3347,6 +3338,56 @@ mod tests {
         assert!(rate.long_context.is_none());
         assert_eq!(map.context_limit(&id), Some(300_000));
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn fuzzy_override_uses_the_live_exact_only_flag() {
+        crate::test_support::install_pricing_snapshots();
+        let mut primary = PricingMap::default();
+        assert_eq!(
+            primary.load_json(
+                r#"{
+            "sample-fast": {"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2}
+        }"#
+            ),
+            1
+        );
+        let mut embedded = PricingMap::default();
+        let mut live = PricingMap::default();
+        assert_eq!(
+            embedded.load_models_dev_json_for_tests(
+                r#"{
+            "sample-fast":{"cost":{"input":3,"output":4}}
+        }"#
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            live.load_models_dev_json_for_tests(
+                r#"{
+            "sample-fast":{"cost":{"input":5,"output":6},"exactOnly":true}
+        }"#
+            ),
+            Some(1)
+        );
+        let fields = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(8.0),
+            ..Default::default()
+        };
+        let key = "sample-fast".to_owned();
+        let map = layered(&primary, Some(&embedded)).with_user_overrides([(&key, &fields)]);
+        let attempts = AtomicUsize::new(0);
+        let load = || {
+            attempts.fetch_add(1, Ordering::Relaxed);
+            Some(&live)
+        };
+
+        assert_eq!(map.find_with_live(&key, load).unwrap().input, 8.0);
+        assert_eq!(attempts.load(Ordering::Relaxed), 0);
+        assert!(map.find_with_live("sample-fast-preview", load).is_none());
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        assert!(map.overrides.resolved(0).unwrap().row.exact_only);
+        assert_eq!(map.find_with_live(&key, load).unwrap().input, 8.0);
     }
 
     #[test]
@@ -4444,7 +4485,7 @@ mod tests {
                 .rows
                 .entries
                 .get("kimi-k2.7-code-highspeed")
-                .is_some_and(|row| row.is_exact_only())
+                .is_some_and(|row| row.exact_only)
         );
 
         let pricing = layered(&primary, None);
@@ -4487,7 +4528,7 @@ mod tests {
                     .rows
                     .entries
                     .get(model)
-                    .is_some_and(|row| row.is_exact_only()),
+                    .is_some_and(|row| row.exact_only),
                 "{model}"
             );
             assert!(pricing.find(model).is_some(), "{model}");
@@ -5462,14 +5503,14 @@ mod tests {
                 .rows
                 .entries
                 .get("claude-opus-5-fast")
-                .is_some_and(|row| row.is_exact_only())
+                .is_some_and(|row| row.exact_only)
         );
         assert!(
             !pricing
                 .rows
                 .entries
                 .get("claude-3-haiku-20240307")
-                .is_some_and(|row| row.is_exact_only())
+                .is_some_and(|row| row.exact_only)
         );
     }
 
@@ -5989,7 +6030,7 @@ mod tests {
                 .rows
                 .entries
                 .get("claude-opus-5@eu")
-                .is_some_and(|row| row.is_exact_only())
+                .is_some_and(|row| row.exact_only)
         );
     }
 
