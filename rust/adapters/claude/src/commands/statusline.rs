@@ -2,10 +2,15 @@ use std::{
     collections::HashMap,
     env, fs,
     io::{self, Read},
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ccusage_adapter_common::{
+    jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail},
+    units::read_json,
+};
 use ccusage_core::{
     Color, Context, Diagnostics, LoadedEntry, MILLIS_PER_DAY, MILLIS_PER_MINUTE, ReportWindow,
     Result, TimestampMs,
@@ -403,51 +408,54 @@ fn calculate_context_tokens_from_transcript(
     offline: bool,
     shared: &SharedArgs,
 ) -> Option<HookContext> {
-    let content = fs::read_to_string(path).ok()?;
-    for line in content.lines().rev() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false).ok()?;
+    let marker = ccusage_core::fast::LinePrefilter::all(&[br#""assistant""#]);
+    let mut input = None;
+    let result = lines.scan(Tail::Discard, |line| {
+        let Ok(text) = std::str::from_utf8(line.bytes()) else {
+            return ControlFlow::Break(());
+        };
+        if marker.matches(line.bytes())
+            && let Some(tokens) = context_input_tokens(text.trim().as_bytes())
+        {
+            input = Some(tokens);
         }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
-            continue;
-        }
-        let Some(usage) = value
-            .get("message")
-            .and_then(|message| message.get("usage"))
-        else {
-            continue;
-        };
-        let Some(input_tokens) = usage
-            .get("input_tokens")
-            .and_then(serde_json::Value::as_u64)
-        else {
-            continue;
-        };
-        let cache_creation = usage
-            .get("cache_creation_input_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_default();
-        let cache_read = usage
-            .get("cache_read_input_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_default();
-        let context_window_size = model_id
-            .filter(|model_id| !model_id.is_empty())
-            .and_then(|model_id| {
-                PricingMap::load_with_overrides(offline, false, shared.pricing_overrides.iter())
-                    .context_limit(model_id)
-            })
-            .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
-        return Some(HookContext {
-            total_input_tokens: input_tokens + cache_creation + cache_read,
-            context_window_size,
-        });
+        ControlFlow::Continue(())
+    });
+    if result.failure.is_some() || result.found.is_some() {
+        return None;
     }
-    None
+    let (input, creation, read) = input?;
+    let total_input_tokens = input + creation + read;
+    let context_window_size = model_id
+        .filter(|model_id| !model_id.is_empty())
+        .and_then(|model_id| {
+            PricingMap::load_with_overrides(offline, false, shared.pricing_overrides.iter())
+                .context_limit(model_id)
+        })
+        .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
+    Some(HookContext {
+        total_input_tokens,
+        context_window_size,
+    })
+}
+
+fn context_input_tokens(bytes: &[u8]) -> Option<(u64, u64, u64)> {
+    let value = ccusage_adapter_common::jsonl::parse::<serde_json::Value>(bytes).ok()?;
+    if value.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
+        return None;
+    }
+    let usage = value.get("message")?.get("usage")?;
+    let input = usage.get("input_tokens")?.as_u64()?;
+    let creation = usage
+        .get("cache_creation_input_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_default();
+    let read = usage
+        .get("cache_read_input_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_default();
+    Some((input, creation, read))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -548,7 +556,7 @@ fn statusline_cache_path(session_id: &str) -> PathBuf {
 }
 
 fn read_statusline_cache(path: &Path) -> Option<StatuslineCache> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+    read_json(path).ok()
 }
 
 fn write_statusline_cache(path: &Path, cache: StatuslineCache) {

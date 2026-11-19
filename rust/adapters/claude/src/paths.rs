@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{BufRead as _, BufReader},
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -14,7 +14,10 @@ use crate::{
     fast::{FxHashMap, FxHashSet, LinePrefilter},
     home, resolve_tz,
 };
-use ccusage_adapter_common::visit_usage_files as visit_usage_files_in;
+use ccusage_adapter_common::{
+    jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail},
+    visit_usage_files as visit_usage_files_in,
+};
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
@@ -181,24 +184,20 @@ fn first_recorded_session_id(path: &Path) -> Option<String> {
         session_id: Option<String>,
     }
 
-    let mut reader = BufReader::new(fs::File::open(path).ok()?);
-    let session_id_marker = LinePrefilter::all(&[br#""sessionId""#]);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        if reader.read_until(b'\n', &mut line).ok()? == 0 {
-            return None;
-        }
-        if !session_id_marker.matches(&line) {
-            continue;
-        }
-        if let Ok(SessionIdProbe {
-            session_id: Some(session_id),
-        }) = serde_json::from_slice(&line)
-        {
-            return Some(session_id);
-        }
-    }
+    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false).ok()?;
+    let marker = LinePrefilter::all(&[br#""sessionId""#]);
+    lines
+        .scan(Tail::Discard, |line| {
+            if marker.matches(line.raw)
+                && let Ok(SessionIdProbe {
+                    session_id: Some(session_id),
+                }) = line.decode()
+            {
+                return ControlFlow::Break(session_id);
+            }
+            ControlFlow::Continue(())
+        })
+        .found
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {

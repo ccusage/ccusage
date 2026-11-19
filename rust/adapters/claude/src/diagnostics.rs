@@ -1,92 +1,14 @@
-use std::{fs::File, io::Read, ops::ControlFlow, path::Path};
+use std::path::Path;
 
-use ccusage_adapter_common::UnitError;
-use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LineReader};
+use ccusage_adapter_common::jsonl::Line;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-const READ_BUFFER_SIZE: usize = 256 * 1024;
-
-#[derive(Clone, Copy)]
-pub(super) struct Line<'a> {
-    pub(super) index: usize,
-    pub(super) bytes: &'a [u8],
-    // NOTE(2026-11-16): Claude Code appends to the transcript while it runs. An unterminated final line can still be in flight, so defer its malformed-record warning.
-    unterminated: bool,
-}
-
-pub(super) fn for_each_line(path: &Path, diagnostics: &Diagnostics, visit: impl FnMut(Line<'_>)) {
-    let Ok(file) = File::open(path) else {
-        UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
-        return;
-    };
-    for_each_line_from(file, path, diagnostics, visit);
-}
-
-fn for_each_line_from(
-    reader: impl Read,
-    path: &Path,
-    diagnostics: &Diagnostics,
-    mut visit: impl FnMut(Line<'_>),
-) {
-    let read = visit_lines(reader, |line| {
-        visit(line);
-        ControlFlow::Continue(())
-    });
-    if read.interrupted {
-        diagnostics.record(Skip::unit(
-            path,
-            SkipKind::ReadInterrupted,
-            "file read failed",
-        ));
-    }
-}
-
-pub(super) struct LinesRead {
-    pub(super) stopped: bool,
-    interrupted: bool,
-}
-
-pub(super) fn visit_lines(
-    reader: impl Read,
-    mut visit: impl FnMut(Line<'_>) -> ControlFlow<()>,
-) -> LinesRead {
-    let end = |flow: ControlFlow<()>, interrupted| LinesRead {
-        stopped: flow.is_break(),
-        interrupted,
-    };
-    let mut lines = LineReader::with_capacity(READ_BUFFER_SIZE, reader);
-    let mut index = 0;
-    loop {
-        match lines.next_line() {
-            Ok(Some(line)) => {
-                let (bytes, unterminated) = match line.strip_suffix(b"\n") {
-                    Some(bytes) => (bytes, false),
-                    None => (line, true),
-                };
-                let flow = visit(Line {
-                    index,
-                    bytes,
-                    unterminated,
-                });
-                if flow.is_break() {
-                    return end(flow, false);
-                }
-            }
-            Ok(None) => return end(ControlFlow::Continue(()), false),
-            Err(_) => {
-                let flow = if lines.rest().is_empty() {
-                    ControlFlow::Continue(())
-                } else {
-                    visit(Line {
-                        index,
-                        bytes: lines.rest(),
-                        unterminated: true,
-                    })
-                };
-                return end(flow, true);
-            }
-        }
-        index += 1;
-    }
+pub(super) fn read_failed(path: &Path, diagnostics: &Diagnostics) {
+    diagnostics.record(Skip::unit(
+        path,
+        SkipKind::ReadInterrupted,
+        "file read failed",
+    ));
 }
 
 pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
@@ -101,14 +23,7 @@ pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnos
 #[cold]
 pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
     let number = Skip::line_number(line.index);
-    let Some(value) = ccusage_adapter_common::jsonl::decode_streamed_line::<serde_json::Value>(
-        line.bytes,
-        line.unterminated,
-        path,
-        number,
-        diagnostics,
-        None,
-    ) else {
+    let Some(value) = line.record::<serde_json::Value>(path, diagnostics, None) else {
         return;
     };
     let direct = value
@@ -132,18 +47,29 @@ pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{self, Cursor};
+    use std::{
+        fs::File,
+        io::{self, Cursor, Read},
+        ops::ControlFlow,
+    };
+
+    use ccusage_adapter_common::jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail, scan};
+    use ccusage_core::{cli::CostMode, cost::PriceTable};
 
     #[test]
     fn a_file_removed_after_discovery_is_not_a_skip() {
         let fixture = ccusage_test_support::Fixture::new();
         let diagnostics = Diagnostics::new("claude");
 
-        let mut visited = false;
-        for_each_line(&fixture.path("missing.jsonl"), &diagnostics, |_| {
-            visited = true;
-        });
-        assert!(!visited);
+        let pricing = ccusage_core::PricingMap::default();
+        let entries = crate::daily::read_usage_file(
+            &fixture.path("missing.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::for_map(CostMode::Auto, &pricing),
+            &diagnostics,
+            |_, _| (),
+        );
+        assert!(entries.is_empty());
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         assert!(
@@ -158,28 +84,33 @@ mod tests {
         let diagnostics = Diagnostics::new("claude");
 
         let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
-        rejected(
-            Path::new("session.jsonl"),
-            terminated(0, line),
-            &diagnostics,
-        );
+        reject_terminated(line, &diagnostics);
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
-    fn terminated(index: usize, bytes: &[u8]) -> Line<'_> {
-        Line {
-            index,
-            bytes,
-            unterminated: false,
-        }
+    fn reject_terminated(bytes: &[u8], diagnostics: &Diagnostics) {
+        let result = scan(
+            bytes.chain(b"\n".as_slice()),
+            DEFAULT_BUFFER_SIZE,
+            Tail::Keep,
+            |line| {
+                rejected(Path::new("session.jsonl"), line, diagnostics);
+                ControlFlow::<()>::Continue(())
+            },
+        );
+        assert!(result.failure.is_none());
     }
 
     fn read_lines(reader: impl Read, diagnostics: &Diagnostics) -> Vec<(usize, Vec<u8>, bool)> {
         let mut lines = Vec::new();
-        for_each_line_from(reader, Path::new("session.jsonl"), diagnostics, |line| {
-            lines.push((line.index, line.bytes.to_vec(), line.unterminated));
+        let result = scan(reader, DEFAULT_BUFFER_SIZE, Tail::Keep, |line| {
+            lines.push((line.index, line.bytes().to_vec(), line.unterminated()));
+            ControlFlow::<()>::Continue(())
         });
+        if result.failure.is_some() {
+            read_failed(Path::new("session.jsonl"), diagnostics);
+        }
         lines
     }
 
@@ -231,12 +162,16 @@ mod tests {
 
     fn reject_last_line(path: &Path, diagnostics: &Diagnostics) {
         let mut rejected_lines = 0;
-        for_each_line(path, diagnostics, |line| {
-            if line.unterminated {
-                rejected_lines += 1;
-                rejected(path, line, diagnostics);
-            }
-        });
+        let result = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false)
+            .unwrap()
+            .scan(Tail::Keep, |line| {
+                if line.unterminated() {
+                    rejected_lines += 1;
+                    rejected(path, line, diagnostics);
+                }
+                ControlFlow::<()>::Continue(())
+            });
+        assert!(result.failure.is_none());
         assert_eq!(rejected_lines, 1);
     }
 
@@ -276,11 +211,7 @@ mod tests {
             br#"{"data":{"usage":{},"content":[{"text":"\uD83D\uDE00"},true,false,null,-1,2,3.5]}}"#,
             br#"{"m\u0065ssage":null,"data":{"usage":{}}}"#,
         ] {
-            rejected(
-                Path::new("session.jsonl"),
-                terminated(0, line),
-                &diagnostics,
-            );
+            reject_terminated(line, &diagnostics);
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
@@ -289,9 +220,8 @@ mod tests {
     #[test]
     fn a_rejected_wrapped_usage_record_is_invalid_data() {
         let diagnostics = Diagnostics::new("claude");
-        rejected(
-            Path::new("session.jsonl"),
-            terminated(0, br#"{"data":{"message":{"message":{"usage":{}}}}}"#),
+        reject_terminated(
+            br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
             &diagnostics,
         );
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
@@ -306,11 +236,7 @@ mod tests {
             br#"{"data":{"usage":{},"value":1e400}}"#,
         ] {
             let diagnostics = Diagnostics::new("claude");
-            rejected(
-                Path::new("session.jsonl"),
-                terminated(0, line),
-                &diagnostics,
-            );
+            reject_terminated(line, &diagnostics);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         }
     }

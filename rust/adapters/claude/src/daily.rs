@@ -1,4 +1,8 @@
-use ccusage_core::Diagnostics;
+use ccusage_adapter_common::{
+    UnitError,
+    jsonl::{JsonLines, Tail},
+};
+use ccusage_core::{Diagnostics, SkipKind};
 use std::{
     collections::BTreeMap,
     ops::ControlFlow,
@@ -85,18 +89,22 @@ pub(super) fn load_daily_entries(
     Ok(DailyEntries { deduped, detected })
 }
 
+const READ_BUFFER_SIZE: usize = 256 * 1024;
+
 pub(super) fn has_usage(path: &Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else {
+    let Ok(lines) = JsonLines::open(path, READ_BUFFER_SIZE, false) else {
         return false;
     };
-    super::diagnostics::visit_lines(file, |line| {
-        if admit(line.bytes).is_ok() {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
-    })
-    .stopped
+    lines
+        .scan(Tail::Keep, |line| {
+            if admit(line.bytes()).is_ok() {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })
+        .found
+        .is_some()
 }
 
 enum Refusal {
@@ -609,22 +617,28 @@ pub(super) fn read_usage_file<E>(
         table: pricing,
         models: smallvec::SmallVec::new(),
     };
-    super::diagnostics::for_each_line(path, diagnostics, |current| {
-        let line = current.bytes;
+    let Ok(lines) = JsonLines::open(path, READ_BUFFER_SIZE, false) else {
+        UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
+        return entries;
+    };
+    let result = lines.scan(Tail::Keep, |current| {
+        let line = current.bytes();
         let Admitted {
             record: data,
             timestamp,
             advisors,
         } = match admit(line) {
             Ok(admitted) => admitted,
-            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::NullContract)) => return,
+            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::NullContract)) => {
+                return ControlFlow::Continue(());
+            }
             Err(Refusal::Rejected(Rejection::Malformed)) => {
                 super::diagnostics::rejected(path, current, diagnostics);
-                return;
+                return ControlFlow::Continue(());
             }
             Err(Refusal::InvalidTimestamp) => {
                 super::diagnostics::invalid_timestamp(path, current.index, diagnostics);
-                return;
+                return ControlFlow::Continue(());
             }
         };
         for _ in 0..advisors.malformed {
@@ -706,7 +720,11 @@ pub(super) fn read_usage_file<E>(
             .collect::<Vec<_>>();
         entries.push(build(parent, line));
         entries.extend(advisors.into_iter().map(|advisor| build(advisor, line)));
+        ControlFlow::<()>::Continue(())
     });
+    if result.failure.is_some() {
+        super::diagnostics::read_failed(path, diagnostics);
+    }
     entries
 }
 
