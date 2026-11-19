@@ -1316,6 +1316,28 @@ mod tests {
     }
 
     #[test]
+    fn unknown_pi_store_fields_warn_without_discarding_stores() {
+        let value = json!({
+            "pi": {
+                "stores": [
+                    { "name": "work", "path": "/tmp/work", "alias": "w" },
+                    { "name": "side", "path": "/tmp/side", "enabled": true }
+                ]
+            }
+        });
+        let expected = [
+            "Unknown ccusage config key: pi.stores[0].alias",
+            "Unknown ccusage config key: pi.stores[1].enabled",
+        ];
+        let strict = crate::layers::ConfigFile::parse(value.clone()).unwrap();
+        let discovered = crate::layers::ConfigFile::parse_discovered(value.clone()).unwrap();
+
+        assert_eq!(strict.warnings, expected);
+        assert_eq!(discovered.warnings, expected);
+        assert_eq!(parse_named_pi_stores(&value).unwrap().len(), 2);
+    }
+
+    #[test]
     fn unknown_keys_warn_without_discarding_valid_options() {
         let config = config_context_from_json(
             r#"{"defaults":{"json":true,"jsoon":true,"pricingOverrides":{"model":{"inputCostPerToken":0.1,"inputPrice":9}}},"commands":{"blocks":{"live":true}},"cluade":{}}"#,
