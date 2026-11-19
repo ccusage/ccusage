@@ -24,7 +24,7 @@ pub fn report_json(
     ))
 }
 
-pub fn summarize_entries(
+pub(crate) fn summarize_entries(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
     start_of_week: WeekDay,

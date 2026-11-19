@@ -95,19 +95,13 @@ fn load_directories(
         let mut files = Vec::new();
         collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
 
-        // Message files are stored as `storage/message/<sessionID>/<messageID>.json`,
-        // so a stem an earlier source already claimed names a file the id dedup
-        // would discard; skipping it saves the read. Files without a usable stem
-        // are parsed normally.
+        // NOTE(2026-06-15, #1332): Legacy OpenCode stores messages as storage/message/<sessionID>/<messageID>.json. A claimed file stem lets the loader skip reading the duplicate.
         files.retain(|file| {
             file.file_stem()
                 .and_then(|stem| stem.to_str())
                 .is_none_or(|stem| !collector.has_claimed(stem))
         });
 
-        // Read the surviving files in parallel, then run the sequential id dedup
-        // over the results in their original file order so parallelism never changes
-        // which duplicate survives.
         let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
             read_message_file(file, tz, shared.mode, context.table(), window)
         });
@@ -152,9 +146,7 @@ impl EntryCollector {
         self.aggregates.push(entry);
     }
 
-    /// Adds session aggregates for sessions without assistant or legacy message
-    /// usage, then compaction rows for sessions no aggregate covered. A session
-    /// aggregate already includes the session's compaction usage.
+    // NOTE(2026-11-09, #2050): OpenCode session counters include compaction usage and retain usage after a revert deletes message rows. Use the aggregate to recover missing assistant usage without adding the compaction again.
     fn finish(mut self) -> Vec<LinkedEntry> {
         let mut entries = std::mem::take(&mut self.messages);
         let mut aggregate_sessions = HashSet::new();
@@ -175,13 +167,6 @@ impl EntryCollector {
     }
 }
 
-/// Reports whether `opencode_dir` holds any usage source at all: the SQLite
-/// database, or at least one message file.
-///
-/// Detection has to ignore `--since`/`--until` because the loader applies the
-/// window while reading, so an out-of-range query returns no entries even on an
-/// install full of logs. Stops at the first message file rather than collecting
-/// them all, so this stays cheap next to a large legacy dump.
 pub(crate) fn has_source(opencode_dir: &Path) -> bool {
     if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
         return true;
@@ -280,8 +265,6 @@ fn load_entries_from_database(
     }
 
     if allow_aggregate_fallback && !has_temporal_filter(shared) {
-        // Session aggregates are cumulative and cannot be sliced safely for a
-        // bounded report, so only unbounded reports may use this fallback.
         let session = session_message
             .is_some()
             .then(|| probe(Table::Session))
@@ -381,7 +364,7 @@ impl TableSchema {
             return DateWindow::UNBOUNDED;
         }
         if self.millis_scaled {
-            return context.window.widened_for_pushdown();
+            return context.window.with_sql_timestamp_margin();
         }
         debug_log(
             context.shared,
@@ -594,10 +577,7 @@ fn load_session_message_rows(
         COLUMN_READ_FAILED,
         SessionMessageRecord::read,
         |row, record, statement| {
-            // Copies neither count nor mark the fork as covered:
-            // the fork's `session_v2` counters start at zero and
-            // only hold fork-local usage, so they stay a valid
-            // fallback when every fork-local row is gone.
+            // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode starts fork session counters at zero, with only fork-local usage. Copied rows must leave the aggregate fallback available.
             if fork_copies
                 .get(&record.session_id)
                 .is_some_and(|cutoff| record.seq.is_some_and(|seq| seq <= *cutoff))
@@ -680,8 +660,6 @@ fn read_message_file(
     window: DateWindow,
 ) -> std::result::Result<Option<LoadedEntry>, UnitError> {
     let content = fs::read(path)?;
-    // Skip out-of-range entries before the full parse. Extraction works on the
-    // raw text and fails open (non-UTF-8 or missing timestamp -> full parse).
     if !window.is_unbounded()
         && let Ok(text) = std::str::from_utf8(&content)
         && let Some(millis) = extract_message_timestamp(text)
@@ -717,13 +695,6 @@ fn table_exists(
     }
 }
 
-/// Fork sessions whose leading `seq` range is a copy of the parent history.
-///
-/// Returns the largest `seq` that is still copied history for each fork
-/// session, so the v2 row scan can drop inherited usage while
-/// keeping what the fork generated itself. `session_v2` carries the fork
-/// link (`fork_session_id`) plus the boundary message; `session_message`
-/// carries the `seq` the fork kept when it copied the parent's rows.
 fn fork_copy_cutoffs(
     connection: &sqlite::Connection,
     session_v2: &TableSchema,
@@ -761,13 +732,6 @@ fn fork_copy_cutoffs(
     cutoffs
 }
 
-/// Largest copied `seq` for one fork: the parent's boundary `seq` for a
-/// `through` fork, or the parent's last `seq` below the boundary for a
-/// `before` fork.
-///
-/// Returns `None` when the boundary cannot be resolved — a missing parent
-/// row, a missing boundary row, or an unparsable boundary payload — so the
-/// fork keeps all of its rows instead of being dropped on a guess.
 fn fork_copy_cutoff(
     connection: &sqlite::Connection,
     parent_id: &str,
@@ -775,9 +739,7 @@ fn fork_copy_cutoff(
 ) -> Option<i64> {
     let boundary: serde_json::Value = serde_json::from_str(boundary).ok()?;
     let boundary_type = boundary.get("type")?.as_str()?;
-    // The boundary names the parent's message id, which the fork copy does
-    // not reuse (every copy gets a new id), so the lookup has to run against
-    // the parent session's rows and then compare by the preserved `seq`.
+    // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode fork copies get new message IDs and preserve seq. Resolve the boundary ID in the parent session.
     let parent_message_id = boundary.get("messageID")?.as_str()?;
     let Ok(mut statement) = connection
         .prepare("SELECT seq FROM session_message WHERE session_id = ?1 AND id = ?2 LIMIT 1")
@@ -792,8 +754,7 @@ fn fork_copy_cutoff(
     };
     match boundary_type {
         "through" => Some(boundary_seq),
-        // `seq` is sparse and the fork's own rows continue right after the
-        // last copied row, so `boundary_seq - 1` could swallow them.
+        // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode seq values can be sparse, and fork-local rows follow the last copy. Use the preceding parent seq so the cutoff keeps fork-local rows.
         "before" => last_parent_seq_before(connection, parent_id, boundary_seq),
         _ => None,
     }
@@ -812,7 +773,6 @@ fn last_parent_seq_before(
     statement.bind((1, parent_id)).ok()?;
     statement.bind((2, boundary_seq)).ok()?;
     match statement.next() {
-        // `MAX` over no rows is NULL: nothing was copied, so nothing is skipped.
         Ok(sqlite::State::Row) => statement.read::<Option<i64>, _>(0).ok()?,
         _ => None,
     }
@@ -987,14 +947,6 @@ fn entry_id(entry: &LoadedEntry) -> Option<&str> {
     entry.data.message.id.as_deref().filter(|id| !id.is_empty())
 }
 
-/// Pulls `time.created` millis from raw JSON to skip rows before a full parse.
-///
-/// Only the canonical `"time": { ... "created": <digits> ... }` shape is
-/// recognized, and the search for `created` never leaves that object, so a
-/// `time` object belonging to something else in the payload cannot contribute a
-/// number. Everything else returns `None` and the caller falls back to a full
-/// parse: a scan that gives up costs time, whereas a scan that guesses wrong
-/// would silently drop an in-range entry.
 fn extract_message_timestamp(data: &str) -> Option<i64> {
     const TIME_KEY: &str = "\"time\":";
     const CREATED_KEY: &str = "\"created\":";
@@ -1013,14 +965,6 @@ fn extract_message_timestamp(data: &str) -> Option<i64> {
         .filter(|millis| *millis > 0)
 }
 
-/// Half-open millisecond window derived from `--since`/`--until`, used to skip
-/// rows and files before they are parsed.
-///
-/// A `None` bound is not narrowed, either because the option was absent or
-/// because it is not a full date. The window is deliberately equivalent to the
-/// authoritative ReportWindow check applied to loaded entries: both
-/// resolve the bounds in the reporting timezone, so pre-filtering can never drop
-/// an entry the report would have kept.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct DateWindow {
     start: Option<i64>,
@@ -1047,17 +991,7 @@ impl DateWindow {
         self == Self::UNBOUNDED
     }
 
-    /// Same window, widened by a day on each side for the SQL push-down.
-    ///
-    /// SQL filters on `message.time_created` while the report filters on the
-    /// payload's `time.created`. They hold the same value on every OpenCode
-    /// build checked here, but the column is only a proxy for the payload, so
-    /// the pushed-down window is kept loose: a column drifting from its payload
-    /// by up to a day costs a few extra rows to scan instead of excluding a row
-    /// the report wanted. Drift past a day is still excluded — ruling that out
-    /// would take the full-column scan this push-down exists to avoid. The exact
-    /// window is applied per row either way.
-    fn widened_for_pushdown(self) -> Self {
+    fn with_sql_timestamp_margin(self) -> Self {
         Self {
             start: self.start.map(|start| start - crate::MILLIS_PER_DAY),
             end: self.end.map(|end| end + crate::MILLIS_PER_DAY),
@@ -1069,14 +1003,7 @@ impl DateWindow {
     }
 }
 
-/// Prepares the `message` scan, narrowed to `window` where its bounds are set.
-///
-/// The bounds are applied through a subquery that selects only `id`. OpenCode's
-/// index is `(session_id, time_created, id)`, so a bare `time_created` range
-/// cannot seek it and scans the table, reading every `data` blob on the way. The
-/// subquery is answered from that index alone, leaving only in-range rows to be
-/// fetched by primary key — the difference is what keeps a narrow window off the
-/// gigabytes of payload it does not need.
+// NOTE(2026-07-27, #1492): OpenCode indexes message IDs with (session_id, time_created, id). Select IDs from the covering index before fetching payload blobs.
 fn prepare_message_query(
     connection: &sqlite::Connection,
     window: DateWindow,
@@ -1093,19 +1020,8 @@ fn prepare_message_query(
     Ok(statement)
 }
 
-/// Smallest value treated as millisecond scale: any Unix timestamp after 1973
-/// needs at least 12 digits, while second-scale values stay far below it.
 const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 
-/// Reports whether a sample of `table.time_created` looks like Unix
-/// milliseconds, the scale the payload's `time.created` uses.
-///
-/// Sampling keeps this cheap on databases tens of gigabytes in size, and proves
-/// nothing about the rows it did not read: a column with mixed scales can still
-/// slip through, and matching scales say nothing about matching values. What it
-/// does catch is a build that stored seconds, or left the column at zero, where
-/// millisecond bounds would otherwise exclude every row — those disable the
-/// push-down and leave the payload check to filter.
 fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table) -> bool {
     let Ok(mut statement) = connection.prepare(format!(
         "SELECT max(time_created) FROM (SELECT time_created FROM {} LIMIT 8)",
@@ -1590,8 +1506,6 @@ mod tests {
         );
     }
 
-    // Mirrors the real OpenCode schema, where `time_created` repeats the
-    // payload's `time.created`, so tests exercise the range push-down.
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
         let created = serde_json::from_str::<serde_json::Value>(data)
             .ok()
@@ -1600,8 +1514,6 @@ mod tests {
         create_db_message_with_time(path, id, session_id, created, data);
     }
 
-    // Schema with `time_created` set independently of the payload, for the cases
-    // where the column and the payload have to disagree.
     fn create_db_message_with_time(
         path: &Path,
         id: &str,
@@ -1627,8 +1539,6 @@ mod tests {
         statement.next().unwrap();
     }
 
-    // Pre-SQLite-era layout: no `time_created` column, so the loader cannot
-    // push the window into SQL and scans unfiltered.
     fn create_db_message_legacy_schema(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
         db.execute("CREATE TABLE IF NOT EXISTS message (id TEXT, session_id TEXT, data TEXT)")
@@ -2081,8 +1991,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_assistant_and_compaction(&db_path, "v2-session", "msg");
-        // A running compaction carries no usage and a failed one has no model,
-        // so neither can be attributed.
         insert_db_session_message(
             &db_path,
             "msg-compaction-running",
@@ -2101,7 +2009,6 @@ mod tests {
             r#"{"status":"failed","reason":"auto","error":{"type":"unknown","message":"x"},"time":{"created":1767312000000},"tokens":{"input":50,"output":0},"cost":0.5}"#,
             true,
         );
-        // Only the status keeps these out: each has a model and usage.
         for (id, status) in [
             ("msg-compaction-failed-with-model", "failed"),
             ("msg-compaction-running-with-usage", "running"),
@@ -2151,8 +2058,6 @@ mod tests {
         let fixture = fs_fixture!({});
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
-        // The assistant rows are gone (for example after a revert), but the
-        // session counters still hold them alongside the compaction usage.
         insert_db_session_message(
             &db_path,
             "msg-compaction",
@@ -2197,8 +2102,6 @@ mod tests {
         assert_eq!(total_tokens(&session_entries), 174);
         assert!((session_entries[0].cost - 0.03).abs() < 1e-9);
 
-        // Period reports never use cumulative session counters, so the
-        // compaction row is the only usage they can attribute.
         let daily_entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(daily_entries.len(), 1);
         assert_eq!(
@@ -2258,8 +2161,6 @@ mod tests {
         boundary_type: &str,
         boundary_message_id: &str,
     ) {
-        // Parent history: two assistant turns, then the boundary assistant
-        // turn, then a later assistant turn the fork never copies.
         for (id, seq, input) in [
             ("parent-msg-1", 0, 100),
             ("parent-msg-2", 1, 200),
@@ -2277,8 +2178,6 @@ mod tests {
             );
             set_db_session_message_seq(db_path, id, seq);
         }
-        // Fork copies: same `seq`, new ids, and the fork's own turn at seq 4.
-        // The boundary copy keeps usage so `through` vs `before` is observable.
         for (copy_id, seq, input) in [
             ("fork-copy-1", 0, 100),
             ("fork-copy-2", 1, 200),
@@ -2336,8 +2235,6 @@ mod tests {
 
         let entries = fork_entries(&db_path);
 
-        // Parent keeps its four turns; the fork keeps only its own turn.
-        // `through` drops the copied boundary turn (seq 2) with the rest.
         assert_eq!(entries.len(), 5);
         let parent_input: u64 = entries
             .iter()
@@ -2363,8 +2260,6 @@ mod tests {
 
         let entries = fork_entries(&db_path);
 
-        // `before` keeps the copied boundary turn (seq 2) alongside the
-        // fork's own turn; everything at or below seq 1 is still dropped.
         let mut fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
@@ -2380,7 +2275,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // Point the fork at a boundary message the parent never had.
         let db = sqlite::open(&db_path).unwrap();
         db.execute(
             "UPDATE session_v2 SET fork_boundary = '{\"type\":\"through\",\"messageID\":\"missing\"}' \
@@ -2406,7 +2300,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // Drop the fork link: no `session_v2` row means no exclusion.
         let db = sqlite::open(&db_path).unwrap();
         db.execute("DROP TABLE session_v2").unwrap();
 
@@ -2451,7 +2344,6 @@ mod tests {
 
         let entries = fork_entries(&db_path);
 
-        // Pre-`seq` schemas cannot tell copies apart, so every row stays.
         assert_eq!(entries.len(), 3);
     }
 
@@ -2461,8 +2353,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // The grandchild copies the fork's rows (including the fork's own
-        // turn) and names the fork's own message as its boundary.
         for (copy_id, seq) in [
             ("grand-copy-1", 0),
             ("grand-copy-2", 1),
@@ -2506,7 +2396,6 @@ mod tests {
             .filter_map(|entry| entry.data.message.id.as_deref())
             .collect();
         assert_eq!(grandchild_ids, vec!["grand-own"]);
-        // Parent (4) + fork's own turn (1) + grandchild's own turn (1).
         assert_eq!(entries.len(), 6);
     }
 
@@ -2516,13 +2405,10 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // The fork's own turn was reverted, leaving only copied rows.
         sqlite::open(&db_path)
             .unwrap()
             .execute("DELETE FROM session_message WHERE id = 'fork-own'")
             .unwrap();
-        // OpenCode v2 starts fork counters at zero, so the aggregate holds only
-        // the fork-local usage that survived the revert.
         sqlite::open(&db_path)
             .unwrap()
             .execute(
@@ -2559,8 +2445,6 @@ mod tests {
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
-        // Parent seqs have gaps; the fork copies rows 0 and 10, and its own row
-        // continues right after the last copy instead of below the boundary.
         for (session_id, id, seq, input) in [
             ("parent", "parent-a", 0, 100),
             ("parent", "parent-b", 10, 200),
@@ -2705,8 +2589,6 @@ mod tests {
             },
         );
 
-        // The cumulative aggregate includes usage outside this window, so it
-        // cannot be attributed safely to the requested date range.
         let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &SharedArgs {
@@ -3062,11 +2944,6 @@ mod tests {
 
     #[test]
     fn skips_message_files_already_covered_by_database() {
-        // Real OpenCode message files live at
-        // `storage/message/<sessionID>/<messageID>.json`, so the file stem is
-        // the message id. The DB pass contributes `msg-db`, so the matching
-        // file must be dropped (DB wins) while the file that the DB does not
-        // cover is still loaded.
         let fixture = fs_fixture!({
             "storage/message/ses_a/msg-db.json": r#"{"id":"msg-db","sessionID":"json-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":999,"output":999},"cost":0.99}"#,
             "storage/message/ses_a/msg-file.json": r#"{"id":"msg-file","sessionID":"file-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000001},"tokens":{"input":50,"output":25},"cost":0.01}"#,
@@ -3085,14 +2962,12 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 2);
-        // The DB-covered id keeps the DB row, not the file's inflated tokens.
         let db_entry = entries
             .iter()
             .find(|entry| entry.data.message.id.as_deref() == Some("msg-db"))
             .expect("db-covered message present");
         assert_eq!(db_entry.session_id.as_ref(), "db-session");
         assert_eq!(db_entry.data.message.usage.input_tokens, 120);
-        // The file the DB does not cover is still read and parsed.
         let file_entry = entries
             .iter()
             .find(|entry| entry.data.message.id.as_deref() == Some("msg-file"))
@@ -3103,10 +2978,6 @@ mod tests {
 
     #[test]
     fn dedup_is_stable_across_thread_counts() {
-        // Build a directory with many files spread over several sessions, some
-        // sharing ids with each other and with the DB, so the file pass has to
-        // dedup. Parallel reads must not change which duplicate survives or the
-        // final ordering compared to the single-threaded read.
         let fixture = ccusage_test_support::Fixture::new();
         for session in 0..4 {
             for message in 0..15 {
@@ -3120,8 +2991,6 @@ mod tests {
                 let _ = fixture.write_file(path, data);
             }
         }
-        // A duplicate file (same id, later timestamp) to force the file-vs-file
-        // dedup path under both thread counts.
         let _ = fixture.write_file(
             "storage/message/ses_dup/msg-0-0.json",
             r#"{"id":"msg-0-0","sessionID":"ses_dup","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312999999},"tokens":{"input":7777,"output":10}}"#,
@@ -3168,7 +3037,6 @@ mod tests {
     #[test]
     fn since_filter_drops_db_rows_older_than_lower_bound() {
         let fixture = fs_fixture!({});
-        // 2025-12-31 00:00 UTC
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-old",
@@ -3176,7 +3044,6 @@ mod tests {
             1_767_139_200_000,
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767139200000},"tokens":{"input":1,"output":1}}"#,
         );
-        // 2026-01-04 00:00 UTC, in range for since=20260103
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-new",
@@ -3200,7 +3067,6 @@ mod tests {
     #[test]
     fn until_filter_drops_db_rows_at_or_after_upper_bound() {
         let fixture = fs_fixture!({});
-        // 2026-01-02 00:00 UTC, in range for until=20260105
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-early",
@@ -3208,7 +3074,6 @@ mod tests {
             1_767_312_000_000,
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
         );
-        // 2026-01-11 00:00 UTC, out of range for until=20260105
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-late",
@@ -3236,7 +3101,6 @@ mod tests {
             &fixture.path("opencode.db"),
             "msg-in-range",
             "session-a",
-            // payload date 2026-01-05, inside the requested window
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767571200000},"tokens":{"input":3,"output":3}}"#,
         );
 
@@ -3260,7 +3124,6 @@ mod tests {
             &fixture.path("opencode.db"),
             "msg-out-of-range",
             "session-a",
-            // payload date 2026-01-02, before since=20260103
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":3,"output":3}}"#,
         );
 
@@ -3378,9 +3241,7 @@ mod tests {
         );
     }
 
-    // Real OpenCode message files are pretty-printed (newlines + indentation),
-    // unlike the minified fixtures above. Pins `extract_message_timestamp`
-    // against the real on-disk shape.
+    // NOTE(2026-07-27, #1492): Legacy OpenCode pretty-prints message files. Exercise the timestamp scan with the whitespace it encounters on disk.
     const PRETTY_PRINTED_MESSAGE: &str = r#"{
   "id": "msg-pretty",
   "sessionID": "session-a",
@@ -3435,11 +3296,8 @@ mod tests {
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-pretty"));
     }
 
-    // 2026-01-01 12:00 UTC, which is 2026-01-02 in UTC+14 and therefore only
-    // kept when the lower bound is resolved in the reporting timezone.
     const NOON_UTC_2026_01_01: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
 
-    // 2026-01-02 06:00 UTC, which is still 2026-01-01 in UTC-12.
     const EARLY_UTC_2026_01_02: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767333600000},"tokens":{"input":1,"output":1}}"#;
 
     #[test]
@@ -3498,8 +3356,6 @@ mod tests {
     #[test]
     fn pushdown_margin_keeps_rows_whose_column_drifts_from_the_payload() {
         let fixture = fs_fixture!({});
-        // Payload lands on 2026-01-02, but the column sits 26 hours later, which
-        // an exact SQL window would push past its upper bound.
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-drifted",
@@ -3528,8 +3384,6 @@ mod tests {
     #[test]
     fn second_scale_time_created_disables_the_range_pushdown() {
         let fixture = fs_fixture!({});
-        // The payload is on 2026-01-02, but the column holds seconds. Comparing
-        // it against millisecond bounds would exclude the row outright.
         create_db_message_with_time(
             &fixture.path("opencode.db"),
             "msg-seconds",
@@ -3568,7 +3422,6 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
-            // Multi-byte bound: 8 bytes long, but not 8 ASCII digits.
             since: Some("abあcde".to_string()),
             ..SharedArgs::default()
         };
@@ -3601,8 +3454,6 @@ mod tests {
         let empty = fs_fixture!({});
         assert!(!super::has_source(empty.root()));
 
-        // A window that excludes every entry must not make the source vanish;
-        // that is what keeps OpenCode in the aggregate report's detected list.
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
@@ -3624,7 +3475,6 @@ mod tests {
             super::extract_message_timestamp(PRETTY_PRINTED_MESSAGE),
             Some(1_767_312_000_000)
         );
-        // Digits running to the end of the object, without a trailing comma.
         assert_eq!(
             super::extract_message_timestamp(r#"{"time":{"created": 42}}"#),
             Some(42)
@@ -3633,17 +3483,12 @@ mod tests {
 
     #[test]
     fn ignores_a_time_object_that_is_not_the_messages_own() {
-        // The scan must not reach past the first `time` object for a `created`
-        // key: guessing wrong here would drop an in-range message, while giving
-        // up only costs a full parse.
         assert_eq!(
             super::extract_message_timestamp(
                 r#"{"parts":[{"time":{"start":1}}],"time":{"created":1767312000000}}"#
             ),
             None
         );
-        // A quoted `"time"` that is a value rather than a key is not followed by
-        // a colon, so it cannot start a match either.
         assert_eq!(
             super::extract_message_timestamp(r#"{"unit":"time","created":1767312000000}"#),
             None
@@ -3652,8 +3497,6 @@ mod tests {
 
     #[test]
     fn declines_to_extract_timestamps_it_cannot_trust() {
-        // Quoted numbers, negative values and missing keys all fail open so the
-        // full parse decides.
         assert_eq!(
             super::extract_message_timestamp(r#"{"time":{"created":"1767312000000"}}"#),
             None

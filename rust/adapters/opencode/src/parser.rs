@@ -14,10 +14,8 @@ use crate::{
 };
 use ccusage_adapter_common::jsonl;
 
-/// A single parsed OpenCode message. Only the fields ccusage consumes are
-/// declared; serde skips everything else.
 #[derive(Debug, Default, Deserialize)]
-pub struct OpenCodeMessage {
+pub(crate) struct OpenCodeMessage {
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     tokens: Option<OpenCodeTokens>,
     #[serde(
@@ -46,7 +44,6 @@ pub struct OpenCodeMessage {
     cost: Option<f64>,
 }
 
-/// Token usage block carried by OpenCode messages.
 #[derive(Debug, Default, Deserialize)]
 struct OpenCodeTokens {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -61,7 +58,6 @@ struct OpenCodeTokens {
     total: u64,
 }
 
-/// Cache read/write counts nested under OpenCode token usage.
 #[derive(Debug, Default, Deserialize)]
 struct OpenCodeCache {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -70,7 +66,6 @@ struct OpenCodeCache {
     write: u64,
 }
 
-/// Creation timestamp block carried by OpenCode messages.
 #[derive(Debug, Default, Deserialize)]
 struct OpenCodeTime {
     #[serde(default, deserialize_with = "jsonl::lenient_i64")]
@@ -124,7 +119,6 @@ struct OpenCodeV2Message {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SessionMessageKind {
     Assistant,
-    /// A compaction request, billed apart from assistant steps.
     Compaction,
 }
 
@@ -153,10 +147,6 @@ impl jsonl::FieldName for SessionIdField {
     const NAME: &'static str = "sessionID";
 }
 
-/// Reads only `content[].native.sessionID`. Every other field, such as message
-/// text, is skipped without being built, and a repeated field or a part,
-/// `native`, or `sessionID` of another shape reads as absent, so one malformed
-/// part cannot unlink the row.
 type OpenCodeNativeLinks = jsonl::FirstField<
     ContentField,
     jsonl::LenientSeq<
@@ -164,8 +154,7 @@ type OpenCodeNativeLinks = jsonl::FirstField<
     >,
 >;
 
-/// The Claude Code session a `claude-agent` row ran in, which names the
-/// Claude transcript holding the same turns.
+// NOTE(2026-11-01, #2007): OpenCode claude-agent stores the Claude transcript's session ID in content[].native.sessionID. Use that ID to match usage across the two sources.
 fn native_session_id(data: &str) -> Option<Arc<str>> {
     serde_json::from_str::<OpenCodeNativeLinks>(data)
         .ok()?
@@ -288,7 +277,7 @@ impl OpenCodeUsage {
         };
         let (usage, extra_total_tokens) =
             apply_total_token_fallback(usage, self.tokens.reasoning, self.tokens.total);
-        // NOTE(2026-11-17): OpenCode records zero when its model price is unknown.
+        // NOTE(2026-11-17): OpenCode writes cost: 0 when its model price is unknown. Treat that value as absent so token-based pricing can fill it in.
         let recorded_cost = self.stored_cost.filter(|cost| *cost > 0.0);
         let cost_only = self.kind == UsageKind::Aggregate && recorded_cost.is_some();
         if usage.input_tokens == 0
@@ -381,7 +370,7 @@ pub(crate) enum SessionMessageError {
     MissingTimestamp,
 }
 
-pub fn message_value_to_entry(
+pub(crate) fn message_value_to_entry(
     value: OpenCodeMessage,
     id: Option<String>,
     session_id: Option<String>,
@@ -416,8 +405,7 @@ pub(crate) fn session_message_value_to_entry_checked(
     } = row;
     let value =
         serde_json::from_str::<OpenCodeV2Message>(data).map_err(SessionMessageError::Decode)?;
-    // Running and failed compactions are out of scope: a failed one records
-    // the usage it was billed but no model to attribute it to.
+    // NOTE(2026-11-09, #2050): OpenCode failed compactions can record billed usage without the model. Require a completed compaction before attributing the usage.
     if kind == SessionMessageKind::Compaction && value.status.as_deref() != Some("completed") {
         return Ok(None);
     }
@@ -1148,9 +1136,6 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        // The rate comes from LiteLLM's per-token prices or, when models.dev
-        // marks the id exact-only, from its per-million prices, and the two
-        // round differently in the last bit.
         assert!(
             (entry.cost - 0.000143).abs() < 1e-12,
             "k2p6 cost was {}",
