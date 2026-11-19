@@ -18,6 +18,7 @@
   pname,
   # Extra packages the CLI shells out to at runtime.
   runtimeInputs ? [ ],
+  wrapperArgs ? "",
   meta ? { },
 }:
 let
@@ -58,6 +59,7 @@ stdenvNoCC.mkDerivation {
     # keeps working whatever bun2nix decides to write there.
     makeWrapper ${lib.getExe nodejs} "$out/bin/${pname}" \
       --add-flags "$toolRoot/node_modules/.bin/${pname}" \
+      ${wrapperArgs} \
       ${lib.optionalString (runtimeInputs != [ ]) ''
         --prefix PATH : ${lib.makeBinPath runtimeInputs}
       ''}
