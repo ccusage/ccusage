@@ -52,6 +52,7 @@ memchr = "2.8.3"
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
+percent-encoding = "2.3.2"
 ring = { version = "0.17.14", default-features = false }
 rustc-hash = "2.1.3"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }

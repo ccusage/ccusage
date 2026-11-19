@@ -8,6 +8,7 @@ publish.workspace = true
 ccusage-adapter-common.workspace = true
 ccusage-core.workspace = true
 jiff.workspace = true
+percent-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
