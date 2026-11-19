@@ -529,7 +529,12 @@ fn aggregate_file_groups(
         .zip(available)
         .any(|((_, files), (_, all_files))| files.len() != all_files.len());
     let bounded_plan = (filtered || has_date_bounds(shared)).then(|| {
-        CodexReplayPlan::for_selection(selected, available, shared.single_thread, diagnostics)
+        CodexReplayPlan::for_selection(
+            selected,
+            available.iter().copied(),
+            shared.single_thread,
+            diagnostics,
+        )
     });
     let replay = bounded_plan
         .as_ref()

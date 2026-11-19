@@ -42,11 +42,15 @@ pub(super) struct CodexReplayFile<'a> {
 impl CodexReplayPlan {
     pub(super) fn for_selection<'a>(
         selected: &[(&'a Path, &'a [PathBuf])],
-        available: &[(&'a Path, &'a [PathBuf])],
+        available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
         diagnostics: &Diagnostics,
     ) -> Self {
-        let mut files = read_session_metadata(selected.iter().copied(), single_thread, diagnostics);
+        let mut files = read_replay_files(
+            &collect_replay_files(selected.iter().copied()),
+            single_thread,
+            Some(diagnostics),
+        );
         let children = files
             .iter()
             .filter(|file| file.metadata.is_fork())
@@ -62,11 +66,12 @@ impl CodexReplayPlan {
             .drain(..)
             .map(|file| (file.path.clone(), file))
             .collect::<HashMap<_, _>>();
+        let available = available.into_iter().collect::<Vec<_>>();
         let missing = collect_replay_files(available.iter().copied())
             .into_iter()
             .filter(|(path, _)| !metadata.contains_key(path))
             .collect::<Vec<_>>();
-        for file in read_replay_files(&missing, single_thread, diagnostics) {
+        for file in read_replay_files(&missing, single_thread, None) {
             metadata.insert(file.path.clone(), file);
         }
         let files = available
@@ -201,18 +206,10 @@ fn collect_replay_files<'a>(
         .collect()
 }
 
-fn read_session_metadata<'a>(
-    groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
-    single_thread: bool,
-    diagnostics: &Diagnostics,
-) -> Vec<CodexReplayFile<'a>> {
-    read_replay_files(&collect_replay_files(groups), single_thread, diagnostics)
-}
-
 fn read_replay_files<'a>(
     files: &[(PathBuf, &'a Path)],
     single_thread: bool,
-    diagnostics: &Diagnostics,
+    diagnostics: Option<&Diagnostics>,
 ) -> Vec<CodexReplayFile<'a>> {
     let read = |(path, sessions_dir): &(PathBuf, &'a Path)| CodexReplayFile {
         path: path.clone(),
@@ -304,15 +301,20 @@ impl CodexSessionMetadata {
     }
 }
 
-fn read_codex_session_metadata(path: &Path, diagnostics: &Diagnostics) -> CodexSessionMetadata {
+fn read_codex_session_metadata(
+    path: &Path,
+    diagnostics: Option<&Diagnostics>,
+) -> CodexSessionMetadata {
     let (mut lines, _) = match open_rollout_lines(path, PROBE_BUFFER_SIZE) {
         Ok(opened) => opened,
         Err(failed) => {
-            ccusage_adapter_common::UnitError::new(
-                ccusage_core::SkipKind::Unreadable,
-                "rollout open failed",
-            )
-            .record(&failed, diagnostics);
+            if let Some(diagnostics) = diagnostics {
+                ccusage_adapter_common::UnitError::new(
+                    ccusage_core::SkipKind::Unreadable,
+                    "rollout open failed",
+                )
+                .record(&failed, diagnostics);
+            }
             return CodexSessionMetadata::default();
         }
     };
@@ -321,7 +323,9 @@ fn read_codex_session_metadata(path: &Path, diagnostics: &Diagnostics) -> CodexS
             session_metadata_from_line(path, line)
         }),
         Err(_) => {
-            super::reader::record_rollout_read_failure(path, diagnostics);
+            if let Some(diagnostics) = diagnostics {
+                super::reader::record_rollout_read_failure(path, diagnostics);
+            }
             CodexSessionMetadata::default()
         }
     }
@@ -369,6 +373,8 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
 
 #[cfg(test)]
 mod tests {
+    use ccusage_test_support::fs_fixture;
+
     use super::*;
 
     #[test]
@@ -404,5 +410,126 @@ mod tests {
         }"#);
         assert_eq!(metadata.session_id.as_deref(), Some("last"));
         assert_eq!(metadata.parent_id.as_deref(), Some("parent"));
+    }
+    #[test]
+    fn reference_backed_history_keeps_usage_while_physical_forks_dedupe() {
+        ccusage_test_support::install_pricing_snapshots();
+        let parent_id = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
+        let child_id = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
+        let replacement_id = "01a0ddae-e9e2-7852-bfa4-a82da97152b2";
+        for (child_file, history_base, expected) in [
+            (
+                "child.jsonl".to_string(),
+                serde_json::json!({"thread_id":parent_id,"end_ordinal_exclusive":2}),
+                300,
+            ),
+            (
+                "non-object-history.jsonl".to_string(),
+                serde_json::json!("parent"),
+                150,
+            ),
+            (
+                format!("rollout-2026-09-19T12-01-00-{child_id}_{replacement_id}.jsonl"),
+                serde_json::Value::Null,
+                300,
+            ),
+            (
+                format!("backup-{child_id}_{replacement_id}.jsonl"),
+                serde_json::Value::Null,
+                150,
+            ),
+            (
+                format!("rollout-backup-{child_id}_{replacement_id}.jsonl"),
+                serde_json::Value::Null,
+                150,
+            ),
+        ] {
+            let usage = |timestamp: &str| {
+                serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
+                "type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
+            }}).to_string()
+            };
+            let fixture = fs_fixture!({
+                "parent.jsonl": [
+                    serde_json::json!({"timestamp":"2026-09-19T12:00:00Z","type":"session_meta","payload":{"id":parent_id}}).to_string(),
+                    usage("2026-09-19T12:00:01Z"),
+                ].join("\n"),
+            });
+            let _ = fixture.write_file(child_file, [
+                    serde_json::json!({"timestamp":"2026-09-19T12:01:00Z","type":"session_meta","payload":{"id":child_id,"forked_from_id":parent_id,"history_base":history_base}}).to_string(),
+                    usage("2026-09-19T12:02:00Z"),
+                ].join("\n"));
+            for single_thread in [false, true] {
+                let groups = crate::test_support::load_groups_from_directory(
+                    fixture.root(),
+                    &crate::cli::SharedArgs {
+                        single_thread,
+                        timezone: Some("UTC".to_string()),
+                        ..Default::default()
+                    },
+                    crate::cli::AgentReportKind::Daily,
+                )
+                .unwrap();
+                assert_eq!(
+                    groups.values().map(|group| group.total_tokens).sum::<u64>(),
+                    expected,
+                    "single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_regular_sessions_do_not_open_unrelated_rollouts() {
+        let fixture = fs_fixture!({
+            "current.jsonl": r#"{"type":"session_meta","payload":{"id":"current"}}"#,
+            "other.jsonl.zst": "invalid zstd",
+        });
+        let selected = [fixture.path("current.jsonl")];
+        let available = [selected[0].clone(), fixture.path("other.jsonl.zst")];
+        let diagnostics = Diagnostics::new("codex");
+        let mut visited = false;
+        let plan = CodexReplayPlan::for_selection(
+            &[(fixture.root(), selected.as_slice())],
+            std::iter::once((fixture.root(), available.as_slice())).inspect(|_| visited = true),
+            true,
+            &diagnostics,
+        );
+        assert!(!visited);
+        assert!(plan.parent_by_child.is_empty());
+    }
+
+    #[test]
+    fn bounded_forks_probe_each_rollout_metadata_once() {
+        let fixture = fs_fixture!({
+            "child.jsonl": r#"{"type":"session_meta","payload":{"id":"child","forked_from_id":"parent"}}"#,
+            "parent.jsonl": r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
+            "other.jsonl.zst": "invalid zstd",
+        });
+        let selected = [fixture.path("child.jsonl")];
+        let parent = fixture.path("parent.jsonl");
+        let available = [
+            selected[0].clone(),
+            parent.clone(),
+            fixture.path("other.jsonl.zst"),
+        ];
+        let diagnostics = Diagnostics::new("codex");
+        let plan = CodexReplayPlan::for_selection(
+            &[(fixture.root(), selected.as_slice())],
+            std::iter::once((fixture.root(), available.as_slice()))
+                .inspect(|_| std::fs::remove_file(&selected[0]).unwrap()),
+            true,
+            &diagnostics,
+        );
+        assert_eq!(
+            plan.parent_by_child[&selected[0]].path.as_ref(),
+            Some(&parent)
+        );
+        assert!(plan.usage_by_parent.contains_key(&parent));
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::ReadInterrupted),
+            0
+        );
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
     }
 }

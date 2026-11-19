@@ -2746,7 +2746,7 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
     let diagnostics = Diagnostics::new("codex");
 
     let plan_files = [(sessions.as_path(), files.as_slice())];
-    let plan = CodexReplayPlan::for_selection(&plan_files, &plan_files, true, &diagnostics);
+    let plan = CodexReplayPlan::for_selection(&plan_files, plan_files, true, &diagnostics);
 
     assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
     for file in &files {
@@ -2758,7 +2758,7 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
             &diagnostics,
         );
     }
-    let _ = CodexReplayPlan::for_selection(&plan_files, &plan_files, true, &diagnostics);
+    let _ = CodexReplayPlan::for_selection(&plan_files, plan_files, true, &diagnostics);
     assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
 }
 
