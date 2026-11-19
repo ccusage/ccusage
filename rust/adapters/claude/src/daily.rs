@@ -26,7 +26,7 @@ use super::{
     advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
     main_thread_sessions, non_null,
     paths::{
-        claude_paths, extract_project, read_usage_files, usage_file_order, usage_files,
+        claude_paths, discover_usage_files, extract_project, read_usage_files, usage_file_order,
         usage_files_before_since,
     },
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
@@ -61,7 +61,10 @@ pub(super) fn load_daily_entries(
             usage_files_before_since(&paths, project_filter, diagnostics, shared, utc_now());
         (since_files.kept, since_files.pruned)
     } else {
-        (usage_files(&paths, project_filter, diagnostics), Vec::new())
+        (
+            discover_usage_files(&paths, project_filter, diagnostics),
+            Vec::new(),
+        )
     };
     let deduped = load_deduped_daily_entries(files, &context, diagnostics);
     let mut deduped = deduped.unwrap_or(DedupedDailyEntries {

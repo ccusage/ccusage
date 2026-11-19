@@ -42,7 +42,8 @@ use crate::{
 };
 
 pub(crate) use paths::{
-    claude_paths, extract_session_parts, read_usage_files, usage_files, usage_files_before_since,
+    claude_paths, discover_usage_files, extract_session_parts, read_usage_files,
+    usage_files_before_since,
 };
 
 struct DedupeIndex {
@@ -291,7 +292,7 @@ fn load_entries_with_mode(
         );
         read_usage_files(files, shared.single_thread, read)
     } else {
-        let files = usage_files(&paths, project_filter, diagnostics);
+        let files = discover_usage_files(&paths, project_filter, diagnostics);
         let loaded_files = read_usage_files(files, shared.single_thread, read);
         debug_log(
             shared,

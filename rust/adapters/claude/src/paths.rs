@@ -44,6 +44,16 @@ pub(crate) fn usage_files(
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
 ) -> Vec<PathBuf> {
+    let mut files = discover_usage_files(paths, project_filter, diagnostics);
+    files.sort_by_cached_key(|path| usage_file_order(path));
+    files
+}
+
+pub(super) fn discover_usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Vec<PathBuf> {
     let mut files = Vec::new();
     visit_usage_files(
         paths,
@@ -51,7 +61,6 @@ pub(crate) fn usage_files(
         &mut |path| files.push(path),
         diagnostics,
     );
-    files.sort_by_cached_key(|path| usage_file_order(path));
     files
 }
 
