@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fs,
     path::PathBuf,
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex, PoisonError},
     thread,
     time::SystemTime,
 };
@@ -10,8 +10,9 @@ use std::{
 use ccusage_adapter_common::{source::ReportPricing, units::UnitError};
 use ccusage_core::{
     Diagnostics, Result,
-    cli::{AgentReportKind, CodexStatuslineArgs},
-    format_currency, format_date_tz, format_number, resolve_tz, utc_now,
+    cli::{AgentReportKind, CodexStatuslineArgs, SharedArgs},
+    format_currency, format_date_tz, format_number, log_level, resolve_tz, sanitize_terminal_text,
+    utc_now,
 };
 use serde_json::Value;
 
@@ -43,11 +44,10 @@ impl NativeUsageReader {
             loop {
                 let thread_id = {
                     let (lock, ready) = &*worker;
-                    let Ok(mut state) = lock.lock().and_then(|state| {
-                        ready.wait_while(state, |state| state.pending.is_empty() && !state.stopped)
-                    }) else {
-                        return;
-                    };
+                    let state = lock.lock().unwrap_or_else(PoisonError::into_inner);
+                    let mut state = ready
+                        .wait_while(state, |state| state.pending.is_empty() && !state.stopped)
+                        .unwrap_or_else(PoisonError::into_inner);
                     if state.stopped {
                         return;
                     }
@@ -57,22 +57,13 @@ impl NativeUsageReader {
                     thread_id
                 };
                 let diagnostics = Diagnostics::new("codex");
-                let output = match refresh(&args, &pricing, &thread_id, &mut cached, &diagnostics) {
-                    Ok(output) => {
-                        let warnings = diagnostics.warnings(&args.shared);
-                        if warnings != last_warnings {
-                            for warning in &warnings {
-                                eprintln!("{warning}");
-                            }
-                            last_warnings = warnings;
-                        }
-                        output
-                    }
-                    Err(_) => "Codex | Usage unavailable".to_string(),
-                };
-                let Ok(mut state) = worker.0.lock() else {
-                    return;
-                };
+                let result = refresh(&args, &pricing, &thread_id, &mut cached, &diagnostics);
+                let (output, warnings) =
+                    refresh_output(result, &diagnostics, &args.shared, &mut last_warnings);
+                for warning in warnings {
+                    eprintln!("{warning}");
+                }
+                let mut state = worker.0.lock().unwrap_or_else(PoisonError::into_inner);
                 state.output.insert(thread_id, output);
             }
         });
@@ -80,9 +71,7 @@ impl NativeUsageReader {
     }
 
     pub(super) fn read(&self, thread_id: &str) -> String {
-        let Ok(mut state) = self.state.0.lock() else {
-            return "Codex | Usage unavailable".to_string();
-        };
+        let mut state = self.state.0.lock().unwrap_or_else(PoisonError::into_inner);
         if !state.pending.iter().any(|id| id == thread_id) {
             state.pending.push_back(thread_id.to_string());
         }
@@ -97,10 +86,37 @@ impl NativeUsageReader {
 
 impl Drop for NativeUsageReader {
     fn drop(&mut self) {
-        if let Ok(mut state) = self.state.0.lock() {
-            state.stopped = true;
-        }
+        self.state
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stopped = true;
         self.state.1.notify_one();
+    }
+}
+
+fn refresh_output<'a>(
+    result: Result<String>,
+    diagnostics: &Diagnostics,
+    shared: &SharedArgs,
+    last_warnings: &'a mut Vec<String>,
+) -> (String, &'a [String]) {
+    let mut warnings = diagnostics.warnings(shared);
+    let output = match result {
+        Ok(output) => output,
+        Err(error) => {
+            if log_level() != Some(0) || shared.debug {
+                let message = sanitize_terminal_text(&error.to_string());
+                warnings.push(format!("WARN  codex: statusline refresh failed: {message}"));
+            }
+            "Codex | Usage unavailable".to_string()
+        }
+    };
+    if warnings == *last_warnings {
+        (output, &[])
+    } else {
+        *last_warnings = warnings;
+        (output, last_warnings)
     }
 }
 
@@ -233,4 +249,69 @@ fn format_native(session: &Value, today: &Value, no_cost: bool) -> String {
         text.push_str(" (incomplete pricing)");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refresh_failure_is_reported_once_until_the_warning_changes() {
+        let diagnostics = Diagnostics::new("codex");
+        let shared = SharedArgs {
+            debug: true,
+            ..Default::default()
+        };
+        let mut last = Vec::new();
+        for expected in [1, 0] {
+            let (output, warnings) = refresh_output(
+                Err(ccusage_core::cli_error("fake refresh failure")),
+                &diagnostics,
+                &shared,
+                &mut last,
+            );
+            assert_eq!(output, "Codex | Usage unavailable");
+            assert_eq!(warnings.len(), expected);
+            if let Some(warning) = warnings.first() {
+                assert!(warning.ends_with("fake refresh failure"), "{warning}");
+            }
+        }
+        let (_, warnings) =
+            refresh_output(Ok("usage".to_string()), &diagnostics, &shared, &mut last);
+        assert!(warnings.is_empty());
+        let (_, warnings) = refresh_output(
+            Err(ccusage_core::cli_error("fake refresh failure")),
+            &diagnostics,
+            &shared,
+            &mut last,
+        );
+        assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn a_poisoned_state_still_serves_cached_usage_and_shuts_down() {
+        let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
+        let reader = NativeUsageReader {
+            state: state.clone(),
+        };
+        let poisoned = state.clone();
+        let result = thread::spawn(move || {
+            let mut state = poisoned.0.lock().unwrap();
+            state
+                .output
+                .insert("thread".to_string(), "usage".to_string());
+            panic!("poison the state");
+        })
+        .join();
+        assert!(result.is_err());
+        assert_eq!(reader.read("thread"), "usage");
+        drop(reader);
+        assert!(
+            state
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .stopped
+        );
+    }
 }
