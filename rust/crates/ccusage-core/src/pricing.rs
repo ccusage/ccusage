@@ -341,6 +341,7 @@ impl ScheduleId {
     }
 
     fn for_model(model: &str) -> Option<Self> {
+        let model = direct_deepseek_id(model).unwrap_or(model);
         [Self::DeepSeekV4Flash, Self::DeepSeekV4Pro]
             .into_iter()
             .find(|schedule| {
@@ -647,6 +648,7 @@ struct TablePart<'a, T> {
     exact_only: &'a ExactOnlyKeys,
     excluded: Option<&'a FxHashSet<String>>,
     excluded_exact_only: Option<&'a FxHashSet<String>>,
+    pricing_rows: Option<&'a PricingRows>,
 }
 impl<T> Clone for TablePart<'_, T> {
     fn clone(&self) -> Self {
@@ -665,8 +667,41 @@ impl<'a, T> TablePart<'a, T> {
             .filter(|key| self.contains(key))
     }
 }
+impl<'a, T> TablePart<'a, T> {
+    fn same_id(self, model: &str) -> Option<&'a str> {
+        if let Some(key) = self.key(model) {
+            return Some(key);
+        }
+        let rows = self.pricing_rows?;
+        let id = pricing_identity(model);
+        self.key(id.as_ref())
+            .filter(|key| !rows.literal_pricing_keys.contains(*key))
+            .or_else(|| {
+                let key = rows
+                    .respelled_keys
+                    .get_or_init(|| {
+                        let mut keys = FxHashMap::default();
+                        for key in rows
+                            .entries
+                            .keys()
+                            .filter(|key| !rows.literal_pricing_keys.contains(*key))
+                        {
+                            let id = pricing_identity(key);
+                            if id != key.as_str() {
+                                keys.entry(id.into_owned())
+                                    .and_modify(|current| *current = None)
+                                    .or_insert_with(|| Some(key.clone()));
+                            }
+                        }
+                        keys
+                    })
+                    .get(id.as_ref())?;
+                self.key(key.as_deref()?)
+            })
+    }
+}
+
 struct Table<'a, T> {
-    prefer_same_id: bool,
     primary: TablePart<'a, T>,
     models_dev: [Option<TablePart<'a, T>>; 2],
 }
@@ -700,7 +735,12 @@ impl<'a, T> Table<'a, T> {
             part.rows
                 .keys()
                 .map(String::as_str)
-                .filter(move |key| part.contains(key))
+                .filter(move |key| {
+                    part.contains(key)
+                        && part
+                            .pricing_rows
+                            .is_none_or(|rows| !rows.literal_pricing_keys.contains(*key))
+                })
                 .map(move |key| {
                     (
                         key,
@@ -756,21 +796,14 @@ pub struct PricingMap {
     live_merged: OnceLock<Box<PricingMap>>,
     enable_models_dev_fallback: bool,
     find_cache: OnceLock<FindCache>,
-    /// Every entry key under its normalized spelling, mapped to the one key
-    /// carrying that spelling, or `None` when several keys share it.
-    ///
-    /// Built on the first normalized lookup so [`Self::find_exact_normalized`]
-    /// does not rescan the whole table per call; parsers that price every
-    /// event through it would otherwise spend most of a report there. Keys
-    /// rather than rates are stored, so only a change to the key set has to
-    /// drop it.
-    normalized_keys: OnceLock<FxHashMap<String, Option<String>>>,
 }
 
 #[derive(Clone, Debug, Default)]
 struct PricingRows {
     entries: FxHashMap<String, Pricing>,
     override_keys: FxHashMap<String, String>,
+    literal_pricing_keys: FxHashSet<String>,
+    respelled_keys: OnceLock<FxHashMap<String, Option<String>>>,
     /// Entries that only a request recording that exact id may use.
     ///
     /// A separately priced tier such as `kimi-k2.7-code-highspeed` is the right
@@ -870,7 +903,6 @@ impl Default for PricingMap {
             live_merged: OnceLock::new(),
             enable_models_dev_fallback: false,
             find_cache: OnceLock::new(),
-            normalized_keys: OnceLock::new(),
         }
     }
 }
@@ -1396,7 +1428,9 @@ impl PricingMap {
     }
 
     fn rows_mut(&mut self) -> &mut PricingRows {
-        Arc::make_mut(&mut self.rows)
+        let rows = Arc::make_mut(&mut self.rows);
+        rows.respelled_keys.take();
+        rows
     }
 
     fn build_embedded() -> Self {
@@ -1412,6 +1446,12 @@ impl PricingMap {
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
+        if let Some(&rates) = embedded_models_dev.rows.entries.get("deepseek-v3.2") {
+            let rows = self.rows_mut();
+            rows.entries.insert("deepseek-v3.2".to_string(), rates);
+            rows.entries
+                .insert("deepseek/deepseek-v3.2".to_string(), rates);
+        }
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
         self.models_dev[1] = Some(ModelsDevLayer {
             rows: Arc::clone(&embedded_models_dev.rows),
@@ -1461,7 +1501,6 @@ impl PricingMap {
             enable_models_dev_fallback: self.enable_models_dev_fallback
                 && self.live_merged.get().is_none(),
             find_cache: OnceLock::new(),
-            normalized_keys: OnceLock::new(),
         };
         map.apply_overrides(overrides);
         map
@@ -1513,6 +1552,15 @@ impl PricingMap {
             let Some(output) = pricing.output_cost_per_token else {
                 continue;
             };
+            if input == 0.0 && output == 0.0 && model.starts_with("deepseek-") {
+                continue;
+            }
+            if matches!(
+                pricing.litellm_provider.as_deref(),
+                Some("bedrock" | "bedrock_converse")
+            ) {
+                self.rows_mut().literal_pricing_keys.insert(model.clone());
+            }
             let context_limit = pricing.max_input_tokens;
 
             let provider_specific = pricing
@@ -1812,22 +1860,30 @@ impl PricingMap {
     }
 
     pub fn resolve<'a>(&self, candidates: &[(&'a str, MatchKind)]) -> Option<(&'a str, Pricing)> {
+        if !self.rows.override_keys.is_empty()
+            && let Some(priced) = candidates
+                .iter()
+                .find_map(|&(model, _)| self.overridden(model).map(|pricing| (model, pricing)))
+        {
+            return Some(priced);
+        }
         candidates.iter().find_map(|&(model, kind)| {
             let pricing = match kind {
-                MatchKind::StrictExact => self.find_exact(model).and_then(|_| {
-                    let map = self.for_lookup(model, Lookup::Pricing);
-                    map.overridden(model)
-                        .or_else(|| map.lookup(map.prices(), model, Fuzzy::ShorterKeys))
-                }),
-                MatchKind::Exact => self.find_exact_with_fallback(model).and_then(|_| {
-                    let map = self.for_lookup(model, Lookup::Pricing);
-                    map.overridden(model)
-                        .or_else(|| map.lookup(map.prices(), model, Fuzzy::ShorterKeys))
-                }),
+                MatchKind::StrictExact => self
+                    .find_exact(model)
+                    .and_then(|_| self.exact_candidate_price(model)),
+                MatchKind::Exact => self
+                    .for_lookup(model, Lookup::Exact)
+                    .exact_candidate_price(model),
                 MatchKind::Fuzzy => self.find(model),
             }?;
             Some((model, pricing))
         })
+    }
+
+    fn exact_candidate_price(&self, model: &str) -> Option<Pricing> {
+        self.exact_normalized_key(model)?;
+        self.lookup(self.prices(), model, Fuzzy::ShorterKeys)
     }
 
     pub fn resolve_at<'a>(
@@ -1849,12 +1905,12 @@ impl PricingMap {
 
     fn prices(&self) -> Table<'_, Pricing> {
         Table {
-            prefer_same_id: true,
             primary: TablePart {
                 rows: &self.rows.entries,
                 exact_only: &self.rows.exact_only,
                 excluded: None,
                 excluded_exact_only: None,
+                pricing_rows: Some(&self.rows),
             },
             models_dev: self.models_dev.each_ref().map(|layer| {
                 layer.as_ref().map(|layer| TablePart {
@@ -1862,18 +1918,19 @@ impl PricingMap {
                     exact_only: &layer.rows.exact_only,
                     excluded: Some(&layer.excluded_prices),
                     excluded_exact_only: Some(&layer.excluded_prices),
+                    pricing_rows: Some(&layer.rows),
                 })
             }),
         }
     }
     fn limits(&self) -> Table<'_, u64> {
         Table {
-            prefer_same_id: false,
             primary: TablePart {
                 rows: &self.rows.context_limits,
                 exact_only: &self.rows.exact_only,
                 excluded: None,
                 excluded_exact_only: None,
+                pricing_rows: None,
             },
             models_dev: self.models_dev.each_ref().map(|layer| {
                 layer.as_ref().map(|layer| TablePart {
@@ -1881,6 +1938,7 @@ impl PricingMap {
                     exact_only: &layer.rows.exact_only,
                     excluded: Some(&layer.excluded_limits),
                     excluded_exact_only: Some(&layer.excluded_limits),
+                    pricing_rows: None,
                 })
             }),
         }
@@ -1898,7 +1956,9 @@ impl PricingMap {
             .rows
             .entries
             .iter()
-            .filter(|(_, pricing)| !pricing.overridden)
+            .filter(|(key, pricing)| {
+                !pricing.overridden && !self.rows.literal_pricing_keys.contains(key.as_str())
+            })
             .map(|(key, _)| normalized_pricing_key(key))
             .collect();
         let mut limits: FxHashSet<_> = self
@@ -1960,10 +2020,16 @@ impl PricingMap {
         }
         let primary_hit = match lookup {
             Lookup::Context => self.primary_key(self.limits(), model).is_some(),
-            Lookup::Pricing => self.primary_key(self.prices(), model).is_some(),
-            Lookup::Exact => self
-                .exact_normalized_key(model)
-                .is_some_and(|key| self.rows.entries.contains_key(key)),
+            Lookup::Pricing => {
+                let primary = self.prices().primary;
+                let resolved = crate::model_aliases::resolve_model_name(model);
+                [model, resolved.as_ref()].into_iter().any(|candidate| {
+                    primary.same_id(candidate).is_some()
+                        || pricing_alias(candidate)
+                            .is_some_and(|alias| primary.same_id(alias).is_some())
+                })
+            }
+            Lookup::Exact => self.prices().primary.same_id(model).is_some(),
         };
         if primary_hit {
             return self;
@@ -2005,6 +2071,16 @@ impl PricingMap {
     ) -> Option<&'a str> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved = alias.as_ref();
+        let same_id = |part: TablePart<'a, T>| {
+            [model, resolved].into_iter().find_map(|candidate| {
+                part.same_id(candidate)
+                    .or_else(|| pricing_alias(candidate).and_then(|id| part.same_id(id)))
+            })
+        };
+        if let Some(key) = same_id(table.primary) {
+            return Some(key);
+        }
+        let models_dev_exact = table.models_dev.into_iter().flatten().find_map(same_id);
         let fuzzy = if fuzzy != Fuzzy::Denied
             && ![model, resolved].into_iter().any(|candidate| {
                 table.is_exact_only(candidate)
@@ -2014,15 +2090,24 @@ impl PricingMap {
         } else {
             Fuzzy::Denied
         };
+        if table.primary.pricing_rows.is_some() {
+            if let Some(exact) = models_dev_exact {
+                let shorter_primary = (fuzzy != Fuzzy::Denied && resolved.contains('/'))
+                    .then(|| {
+                        self.layer_key(table, model, resolved, Layer::Primary, Fuzzy::ShorterKeys)
+                    })
+                    .flatten();
+                return shorter_primary.or(Some(exact));
+            }
+            return [Layer::Primary, Layer::ModelsDev]
+                .into_iter()
+                .find_map(|layer| self.layer_key(table, model, resolved, layer, fuzzy));
+        }
         [Layer::Primary, Layer::ModelsDev]
             .into_iter()
             .find_map(|layer| {
                 self.layer_key(table, model, resolved, layer, Fuzzy::Denied)
-                    .or_else(|| {
-                        (fuzzy != Fuzzy::Denied)
-                            .then(|| self.layer_key(table, model, resolved, layer, fuzzy))
-                            .flatten()
-                    })
+                    .or_else(|| self.layer_key(table, model, resolved, layer, fuzzy))
             })
     }
 
@@ -2084,23 +2169,14 @@ impl PricingMap {
                             normalized_pricing_key(key).as_ref(),
                         )
                 })
-                .max_by(|left, right| {
-                    let same_id = |key: &str| {
-                        table.prefer_same_id && normalized_pricing_key(key) == normalized
-                    };
-                    same_id(left)
-                        .cmp(&same_id(right))
-                        .then_with(|| left.len().cmp(&right.len()))
-                        .then_with(|| right.cmp(left))
-                })
+                .max_by(|left, right| left.len().cmp(&right.len()).then_with(|| right.cmp(left)))
         })
     }
 
     /// Finds the pricing that applies to one usage event.
     ///
     /// The timestamp-aware DeepSeek schedule is applied to the two direct model
-    /// ids and aliases that resolve to them. Provider and reseller names
-    /// continue through static lookup.
+    /// ids and aliases that resolve to them.
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
         let Some((schedule, resolved)) = ScheduleId::for_request(model) else {
             return self.find(model);
@@ -2179,36 +2255,9 @@ impl PricingMap {
     }
 
     fn exact_normalized_key(&self, model: &str) -> Option<&str> {
-        let table = self.prices();
-        for layer in [Layer::Primary, Layer::ModelsDev] {
-            if let Some(key) = table.key_in(model, layer) {
-                return Some(key);
-            }
-        }
-        if table.is_exact_only(model) {
-            return table.exact_only_id(model);
-        }
-        self.normalized_keys()
-            .get(normalized_pricing_key(model).as_ref())?
-            .as_deref()
-    }
-    fn normalized_keys(&self) -> &FxHashMap<String, Option<String>> {
-        self.normalized_keys.get_or_init(|| {
-            let mut index = FxHashMap::default();
-            for key in self
-                .prices()
-                .all_parts()
-                .flat_map(|part| part.rows.keys().filter(move |key| part.contains(key)))
-            {
-                index
-                    .entry(normalized_pricing_key(key).into_owned())
-                    // A second key with the same spelling makes it name
-                    // neither entry.
-                    .and_modify(|slot| *slot = None)
-                    .or_insert_with(|| Some(key.clone()));
-            }
-            index
-        })
+        self.prices()
+            .all_parts()
+            .find_map(|part| part.same_id(model))
     }
 
     pub fn context_limit(&self, model: &str) -> Option<u64> {
@@ -2346,7 +2395,6 @@ impl PricingMap {
                 .unwrap_or_else(|error| error.into_inner())
                 .clear();
         }
-        self.normalized_keys.take();
     }
 
     #[cfg(test)]
@@ -2587,6 +2635,16 @@ fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     }
 }
 
+fn direct_deepseek_id(value: &str) -> Option<&str> {
+    value
+        .strip_prefix("deepseek/")
+        .filter(|model| model.starts_with("deepseek-") || model.starts_with("deepseek."))
+}
+
+fn pricing_identity(value: &str) -> Cow<'_, str> {
+    normalized_pricing_key(direct_deepseek_id(value).unwrap_or(value))
+}
+
 /// Long-context tier rates (per token) for a base model, parsed from a
 /// models.dev `cost.tiers` band and applied on top of loaded pricing entries
 /// by `fill_long_context_rates_from_models_dev`.
@@ -2794,6 +2852,79 @@ mod tests {
         let mut map = online(primary);
         map.complete_layers(embedded_models_dev.unwrap_or(&empty));
         map
+    }
+
+    #[test]
+    fn all_match_kinds_prefer_the_same_id_over_longer_primary_keys() {
+        use super::MatchKind;
+        let mut primary = PricingMap::default();
+        primary.load_json(
+            r#"{
+            "sample-1.5-pro": {"input_cost_per_token": 9, "output_cost_per_token": 9},
+            "sample-1.5": {"input_cost_per_token": 1, "output_cost_per_token": 1}
+        }"#,
+        );
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{
+            "o1": {"input_cost_per_token": 15, "output_cost_per_token": 60}
+        }"#,
+        );
+        primary.load_json(
+            r#"{"azure/o1-mini": {"input_cost_per_token": 1.21, "output_cost_per_token": 4.84}}"#,
+        );
+        primary.complete_layers(&embedded);
+        for kind in [MatchKind::StrictExact, MatchKind::Exact, MatchKind::Fuzzy] {
+            let model = if kind == MatchKind::StrictExact {
+                "sample-1.5"
+            } else {
+                "sample-1-5"
+            };
+            assert_eq!(primary.resolve(&[(model, kind)]).unwrap().1.input, 1.0);
+            assert_eq!(primary.resolve(&[("o1", kind)]).unwrap().1.input, 15.0);
+        }
+    }
+
+    #[test]
+    fn bedrock_dotted_keys_are_distinct_from_vendor_ids() {
+        let mut primary = PricingMap::default();
+        primary.load_json(r#"{
+            "deepseek.v3.2": {"litellm_provider":"bedrock_converse","input_cost_per_token": 0.62, "output_cost_per_token": 1.85}
+        }"#);
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{
+            "deepseek-v3.2": {"input_cost_per_token": 0.28, "output_cost_per_token": 0.42}
+        }"#,
+        );
+        primary.complete_layers(&embedded);
+        assert_eq!(primary.find("deepseek-v3-2").unwrap().input, 0.28);
+        assert_eq!(primary.find("deepseek.v3.2").unwrap().input, 0.62);
+    }
+
+    #[test]
+    fn provider_candidates_cannot_bypass_a_reported_override() {
+        use super::MatchKind;
+        let mut primary = PricingMap::default();
+        primary.load_json(
+            r#"{
+            "vendor/sample-4.7": {"input_cost_per_token": 2, "output_cost_per_token": 3}
+        }"#,
+        );
+        let override_id = "sample.4-7".to_string();
+        let rates = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(5.0),
+            output_cost_per_token: Some(6.0),
+            ..ccusage_cli::PricingOverride::default()
+        };
+        let pricing = primary.with_user_overrides([(&override_id, &rates)]);
+        let (_, entry) = pricing
+            .resolve(&[
+                ("vendor/sample-4.7", MatchKind::Exact),
+                ("sample-4.7", MatchKind::Fuzzy),
+            ])
+            .unwrap();
+        assert_eq!((entry.input, entry.output), (5.0, 6.0));
     }
 
     #[test]
@@ -3394,7 +3525,7 @@ mod tests {
     }
 
     #[test]
-    fn time_dependent_pricing_excludes_provider_qualified_models() {
+    fn time_dependent_pricing_excludes_reseller_models() {
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
             "deepseek-latest",
             "deepseek-v4-flash",
@@ -3405,6 +3536,7 @@ mod tests {
             "deepseek.v4.flash",
             "deepseek@v4@flash",
             "deepseek-latest",
+            "deepseek/deepseek-v4-flash",
         ] {
             assert!(super::has_time_dependent_pricing(model));
         }

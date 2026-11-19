@@ -1571,14 +1571,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
           "cost": 0.0002732,
           "inputTokens": 610,
@@ -1592,6 +1584,14 @@ exit: 0
           "inputTokens": 500,
           "modelName": "grok-code-fast-1",
           "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -1708,7 +1708,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 3.2674966999999997,
+      "totalCost": 3.2673215,
       "totalTokens": 670468
     },
     {
@@ -2379,14 +2379,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00025,
           "inputTokens": 500,
@@ -2416,6 +2408,14 @@ exit: 0
           "inputTokens": 310,
           "modelName": "qwen-3-235b",
           "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -2711,7 +2711,7 @@ exit: 0
       ],
       "outputTokens": 56328,
       "period": "2025-12-29",
-      "totalCost": 24.305729049999997,
+      "totalCost": 24.305553849999995,
       "totalTokens": 2719790
     },
     {
@@ -3626,14 +3626,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 33,
           "cost": 0.000275045,
           "inputTokens": 622,
@@ -3671,6 +3663,14 @@ exit: 0
           "inputTokens": 51,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 30
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -3928,7 +3928,7 @@ exit: 0
       ],
       "outputTokens": 28192,
       "period": "2026-01",
-      "totalCost": 6.972495270000001,
+      "totalCost": 6.972320070000002,
       "totalTokens": 2278740
     },
     {
@@ -8164,29 +8164,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 1000,
-      "inputTokens": 500,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        }
-      ],
-      "modelsUsed": [
-        "deepseek-v4-flash"
-      ],
-      "outputTokens": 100,
-      "period": "b-deepseek",
-      "totalCost": 0.00027599999999999993,
-      "totalTokens": 1600
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
@@ -8356,6 +8333,29 @@ exit: 0
       "period": "ses-v2-misc",
       "totalCost": 0.00010625000000000001,
       "totalTokens": 50
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1000,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-flash"
+      ],
+      "outputTokens": 100,
+      "period": "b-deepseek",
+      "totalCost": 0.00010080000000000001,
+      "totalTokens": 1600
     },
     {
       "agent": "opencode",
@@ -9481,7 +9481,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.140457300000005,
+    "totalCost": 28.140282100000007,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

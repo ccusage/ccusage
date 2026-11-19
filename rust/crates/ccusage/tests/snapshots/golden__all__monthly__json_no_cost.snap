@@ -769,13 +769,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 33,
           "inputTokens": 622,
           "modelName": "gemini-2.5-flash",
@@ -808,6 +801,13 @@ exit: 0
           "inputTokens": 51,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 30
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,

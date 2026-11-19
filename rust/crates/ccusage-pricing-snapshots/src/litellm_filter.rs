@@ -27,6 +27,14 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
         let Value::Object(pricing) = pricing else {
             continue;
         };
+        if (model.starts_with("deepseek-") || model.starts_with("deepseek/"))
+            && (pricing.get("litellm_provider").and_then(Value::as_str) != Some("deepseek")
+                || ["input_cost_per_token", "output_cost_per_token"]
+                    .into_iter()
+                    .all(|field| pricing.get(field).and_then(Value::as_f64) == Some(0.0)))
+        {
+            continue;
+        }
         let mut fields = Map::new();
         for field in LOADED_FIELDS {
             if let Some(value) = pricing.get(field).filter(|value| !value.is_null()) {
@@ -72,7 +80,8 @@ fn is_embedded_model(model: &str) -> bool {
         || model.starts_with("openai/")
         || model.starts_with("azure/")
         || model.starts_with("zai/")
-        || model.starts_with("deepseek")
+        || model.starts_with("deepseek-")
+        || model.starts_with("deepseek/")
         || model.starts_with("openrouter/openai/")
 }
 
@@ -80,6 +89,29 @@ fn is_embedded_model(model: &str) -> bool {
 mod tests {
     use super::filter_pricing_json;
     use ccusage_core::PricingMap;
+
+    #[test]
+    fn retains_only_paid_direct_deepseek_rows() {
+        let json = serde_json::json!({
+            "deepseek-chat": {"litellm_provider":"deepseek","input_cost_per_token":0.00000028,"output_cost_per_token":0.00000042},
+            "deepseek/deepseek-v3": {"litellm_provider":"deepseek","input_cost_per_token":0.00000027,"output_cost_per_token":0.0000011},
+            "deepseek.v3.2": {"litellm_provider":"bedrock_converse","input_cost_per_token":0.00000062,"output_cost_per_token":0.00000185},
+            "deepseek-v3-2-251201": {"litellm_provider":"volcengine","input_cost_per_token":0,"output_cost_per_token":0},
+            "deepseek/deepseek-test": {"litellm_provider":"deepseek","input_cost_per_token":0,"output_cost_per_token":0},
+            "deepseek-vendor-test": {"litellm_provider":"reseller","input_cost_per_token":0.000001,"output_cost_per_token":0.000002}
+        });
+        let filtered: serde_json::Value =
+            serde_json::from_str(&filter_pricing_json(&json.to_string()).unwrap()).unwrap();
+        assert_eq!(
+            filtered
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["deepseek-chat", "deepseek/deepseek-v3"]
+        );
+    }
 
     #[test]
     fn retains_published_one_hour_cache_rates() {

@@ -383,7 +383,7 @@ mod tests {
         let mut pricing = deepseek_pricing();
         pricing.load_json(
             r#"{
-                "deepseek/deepseek-v4-flash": {
+                "reseller/deepseek-v4-flash": {
                     "input_cost_per_token": 0.000009,
                     "output_cost_per_token": 0.000010
                 }
@@ -394,7 +394,7 @@ mod tests {
         assert_eq!(
             {
                 let candidates =
-                    model_candidates(data.message.model.as_deref().unwrap(), Some("deepseek"));
+                    model_candidates(data.message.model.as_deref().unwrap(), Some("reseller"));
                 let candidates: Vec<_> = candidates
                     .iter()
                     .map(|(name, kind)| (name.as_str(), *kind))

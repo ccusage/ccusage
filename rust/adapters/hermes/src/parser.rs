@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_raw_model_for_timestamped_pricing_when_provider_match_is_fuzzy() {
+    fn scheduled_price_is_the_same_for_direct_provider_and_bare_ids() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -496,12 +496,12 @@ mod tests {
                     || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
-            vec!["deepseek-v4-flash"]
+            vec!["deepseek/deepseek-v4-flash", "deepseek-v4-flash"]
         );
     }
 
     #[test]
-    fn uses_exact_provider_pricing_from_embedded_fallback_before_timestamped_raw_model() {
+    fn applies_the_schedule_to_an_embedded_direct_provider_row() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let entry = HermesEntry {
@@ -531,11 +531,6 @@ mod tests {
                 "deepseek-v4-flash".to_string()
             ]
         );
-        let provider_cost = pricing
-            .find_exact_with_fallback("deepseek/deepseek-v4-flash")
-            .unwrap()
-            .input
-            * 1_000_000.0;
         let raw_model_cost = ccusage_core::calculate_cost_for_usage_at(
             Some("deepseek-v4-flash"),
             entry.usage,
@@ -544,9 +539,9 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
-        assert!((provider_cost - raw_model_cost).abs() > 1e-12);
+        assert!((raw_model_cost - 0.44).abs() < 1e-12);
         assert!(
-            (price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - provider_cost).abs() < 1e-12
+            (price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - raw_model_cost).abs() < 1e-12
         );
     }
 
@@ -588,7 +583,7 @@ mod tests {
                 "deepseek.v4.flash".to_string()
             ]
         );
-        assert!((price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - 0.14).abs() < 1e-12);
+        assert!((price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - 0.44).abs() < 1e-12);
 
         let longer_entry = HermesEntry {
             model: "deepseek.v4.flash-preview".to_string(),
@@ -610,6 +605,43 @@ mod tests {
 #[cfg(test)]
 mod pricing_identity_tests {
     use super::*;
+
+    #[test]
+    fn override_on_the_reported_id_beats_provider_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (provider, reported, configured) in [
+            ("deepseek", "deepseek.v4.flash", "deepseek-v4-flash"),
+            ("zai", "glm-4.7", "glm-4.7"),
+        ] {
+            let id = configured.to_string();
+            let rates = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(50e-6),
+                output_cost_per_token: Some(50e-6),
+                ..Default::default()
+            };
+            let pricing = pricing.with_user_overrides([(&id, &rates)]);
+            let entry = HermesEntry {
+                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                timestamp_text: String::new(),
+                session_id: "s".into(),
+                model: reported.into(),
+                provider: provider.into(),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..Default::default()
+                },
+                reasoning_tokens: 0,
+                message_count: 1,
+                cost_usd: None,
+            };
+            assert_eq!(
+                price_hermes(&entry, CostMode::Auto, Some(&pricing)),
+                (0.1, None)
+            );
+        }
+    }
 
     #[test]
     fn adapter_pricing_identity() {
@@ -639,7 +671,7 @@ mod pricing_identity_tests {
             ]
         );
         assert!(
-            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.0015).abs() < 1e-12
+            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.00088).abs() < 1e-12
         );
         entry.model = "deepseek.v4.pro".into();
         assert_eq!(
@@ -650,7 +682,7 @@ mod pricing_identity_tests {
             ]
         );
         assert!(
-            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.00528).abs() < 1e-12
+            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.00264).abs() < 1e-12
         );
     }
 }

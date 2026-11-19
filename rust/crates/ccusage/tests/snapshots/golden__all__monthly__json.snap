@@ -888,14 +888,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 33,
           "cost": 0.000275045,
           "inputTokens": 622,
@@ -933,6 +925,14 @@ exit: 0
           "inputTokens": 51,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 30
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -1190,7 +1190,7 @@ exit: 0
       ],
       "outputTokens": 28192,
       "period": "2026-01",
-      "totalCost": 6.972495270000001,
+      "totalCost": 6.972320070000002,
       "totalTokens": 2278740
     },
     {
@@ -1227,7 +1227,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.140457299999994,
+    "totalCost": 28.140282099999997,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

@@ -2,7 +2,7 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{collections::HashSet, fs, path::Path};
+use std::{fs, path::Path};
 
 use ccusage_adapter_common::units::{UnitError, read_json};
 use serde_json::Value;
@@ -20,6 +20,7 @@ pub(super) struct DroidEntry {
     pub(super) session_id: String,
     pub(super) model: String,
     provider: String,
+    provider_locked: bool,
     pub(super) usage: TokenUsageRaw,
     pub(super) reasoning_tokens: u64,
 }
@@ -44,6 +45,7 @@ pub(super) fn load_settings_file(
         return Ok(None);
     };
     let provider = normalize_droid_provider(string_field(settings, "providerLock").as_deref());
+    let provider_locked = provider != "unknown";
     let model = if let Some(model) = string_field(settings, "model") {
         normalize_droid_model_name(&model)
     } else {
@@ -80,6 +82,7 @@ pub(super) fn load_settings_file(
         session_id,
         model,
         provider,
+        provider_locked,
         usage: TokenUsageRaw {
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
@@ -140,10 +143,20 @@ pub(super) fn price_droid(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> (f64, Option<String>) {
-    let candidates = droid_model_candidates(entry);
-    let candidates: Vec<_> = candidates
+    let qualified: Vec<_> = provider_prefixes(&entry.provider)
+        .into_iter()
+        .map(|prefix| format!("{prefix}{}", entry.model))
+        .collect();
+    let candidates: Vec<_> = qualified
         .iter()
-        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .filter(|_| entry.provider_locked)
+        .map(|name| (name.as_str(), MatchKind::Exact))
+        .chain(std::iter::once((entry.model.as_str(), MatchKind::Fuzzy)))
+        .chain(
+            qualified
+                .iter()
+                .map(|name| (name.as_str(), MatchKind::Fuzzy)),
+        )
         .collect();
     let priced = price_entry(
         EntryPricing {
@@ -163,18 +176,6 @@ pub(super) fn price_droid(
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
     )
-}
-
-fn droid_model_candidates(entry: &DroidEntry) -> Vec<String> {
-    let mut candidates = vec![entry.model.clone()];
-    for prefix in provider_prefixes(&entry.provider) {
-        candidates.push(format!("{prefix}{}", entry.model));
-    }
-    let mut seen = HashSet::new();
-    candidates
-        .into_iter()
-        .filter(|candidate| seen.insert(candidate.clone()))
-        .collect()
 }
 
 fn provider_prefixes(provider: &str) -> Vec<String> {
@@ -329,6 +330,7 @@ mod tests {
             session_id: "s".into(),
             model: "sample".into(),
             provider: "vendor".into(),
+            provider_locked: false,
             usage: TokenUsageRaw {
                 input_tokens: 100,
                 ..TokenUsageRaw::default()
@@ -392,6 +394,7 @@ mod tests {
             session_id: "session".to_string(),
             model: "deepseek-v4-flash".to_string(),
             provider: "deepseek".to_string(),
+            provider_locked: false,
             usage: TokenUsageRaw {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
@@ -445,6 +448,21 @@ mod pricing_identity_tests {
     use super::*;
 
     #[test]
+    fn locked_zai_glm_uses_the_provider_rate_above_32k() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "s.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":150000}}"#
+        });
+        let entry = load_settings_file(&fixture.path("s.settings.json"))
+            .unwrap()
+            .unwrap();
+        let (cost, missing) = price_droid(&entry, CostMode::Calculate, Some(&pricing));
+        assert!((cost - 0.09).abs() < 1e-12, "{cost}");
+        assert_eq!(missing, None);
+    }
+
+    #[test]
     fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
@@ -459,6 +477,14 @@ mod pricing_identity_tests {
             ("gemini-2.5-flash", "gemini-2-5-flash", 0.3, 2.5),
             ("gemini-3.5-flash", "gemini-3-5-flash", 1.5, 9.0),
             ("glm-4.7", "glm-4-7", 0.6, 2.2),
+            ("o1", "o1", 15.0, 60.0),
+            ("deepseek-v3.2", "deepseek-v3-2", 0.28, 0.42),
+            (
+                "deepseek-v3-2-251201",
+                "deepseek-v3-2-251201",
+                0.28985507,
+                0.43478261,
+            ),
         ] {
             let fixture = ccusage_test_support::fs_fixture!({
                 "s.settings.json": serde_json::json!({"model":raw,"providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":1000,"outputTokens":1000}}).to_string()

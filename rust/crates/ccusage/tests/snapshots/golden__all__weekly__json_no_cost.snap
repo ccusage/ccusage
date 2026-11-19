@@ -593,13 +593,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 500,
           "modelName": "qwen/qwen3-coder",
@@ -625,6 +618,13 @@ exit: 0
           "inputTokens": 310,
           "modelName": "qwen-3-235b",
           "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,

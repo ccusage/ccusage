@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.140457299999998,
+    "totalCost": 28.140282099999997,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",
@@ -683,14 +683,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00025,
           "inputTokens": 500,
@@ -720,6 +712,14 @@ exit: 0
           "inputTokens": 310,
           "modelName": "qwen-3-235b",
           "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -1015,7 +1015,7 @@ exit: 0
       ],
       "outputTokens": 56328,
       "period": "2025-12-28",
-      "totalCost": 24.305729049999997,
+      "totalCost": 24.305553849999995,
       "totalTokens": 2719790
     },
     {

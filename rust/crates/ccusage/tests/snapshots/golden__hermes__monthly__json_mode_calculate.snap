@@ -80,7 +80,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
+          "cost": 0.00010080000000000001,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
@@ -104,7 +104,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 600,
-      "totalCost": 0.027819125000000004,
+      "totalCost": 0.027643925000000003,
       "totalTokens": 13065
     }
   ],
@@ -113,7 +113,7 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 0.05558162500000001,
+    "totalCost": 0.05540642500000001,
     "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"

@@ -1571,14 +1571,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "cost": 0.00027599999999999993,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
           "cost": 0.0002732,
           "inputTokens": 610,
@@ -1592,6 +1584,14 @@ exit: 0
           "inputTokens": 500,
           "modelName": "grok-code-fast-1",
           "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -1708,7 +1708,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 3.2674966999999997,
+      "totalCost": 3.2673215,
       "totalTokens": 670468
     },
     {
@@ -1745,7 +1745,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.140457300000005,
+    "totalCost": 28.140282100000007,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

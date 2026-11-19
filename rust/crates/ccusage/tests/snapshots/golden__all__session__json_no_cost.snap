@@ -3795,27 +3795,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 1000,
-      "inputTokens": 500,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 1000,
-          "inputTokens": 500,
-          "modelName": "deepseek-v4-flash",
-          "outputTokens": 100
-        }
-      ],
-      "modelsUsed": [
-        "deepseek-v4-flash"
-      ],
-      "outputTokens": 100,
-      "period": "b-deepseek",
-      "totalTokens": 1600
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
@@ -3971,6 +3950,27 @@ exit: 0
       "outputTokens": 5,
       "period": "ses-v2-misc",
       "totalTokens": 50
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1000,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-flash"
+      ],
+      "outputTokens": 100,
+      "period": "b-deepseek",
+      "totalTokens": 1600
     },
     {
       "agent": "opencode",
