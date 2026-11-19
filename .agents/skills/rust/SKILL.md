@@ -20,9 +20,11 @@ with a historical release, compare against the matching tag or commit.
 
 ## Visibility
 
-Reserve `pub` for consumers in other crates. Run `just hawk` and check
-`rust/hawk.toml` before narrowing a shipped entry point. Update the Hawk archive
-pins in `nix/cargo-hawk.nix` with the compiler in `rust-toolchain.toml`.
+Reserve `pub` for consumers in other crates. `just hawk` fails on every Hawk
+finding, and `nix flake check` runs the same gate. When a finding is reachable
+from a shipped binary, declare that binary in `rust/hawk.toml` instead of
+narrowing the item. Update the Hawk archive pins in `nix/cargo-hawk.nix` with
+the compiler in `rust-toolchain.toml`.
 
 ## Pricing embedding
 
