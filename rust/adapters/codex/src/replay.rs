@@ -1,5 +1,7 @@
+use ccusage_adapter_common::jsonl::{self, JsonLines, Tail};
 use std::{
     collections::{HashMap, HashSet},
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
@@ -11,7 +13,7 @@ use super::{
     parser::{
         CodexForkReplay, codex_timestamp_instant, visit_codex_session_file_with_compaction_history,
     },
-    reader::{PROBE_BUFFER_SIZE, open_rollout_lines},
+    reader::{PROBE_BUFFER_SIZE, is_compressed_rollout, other_encoding_path},
     types::CodexSessionMeta,
 };
 
@@ -325,7 +327,12 @@ fn read_codex_session_metadata(
     path: &Path,
     diagnostics: Option<&Diagnostics>,
 ) -> Option<CodexSessionMetadata> {
-    let (mut lines, _) = match open_rollout_lines(path, PROBE_BUFFER_SIZE) {
+    let (lines, _) = match JsonLines::open_alternate(
+        path,
+        PROBE_BUFFER_SIZE,
+        is_compressed_rollout(path),
+        || other_encoding_path(path),
+    ) {
         Ok(opened) => opened,
         Err(failed) => {
             if let Some(diagnostics) = diagnostics {
@@ -335,21 +342,20 @@ fn read_codex_session_metadata(
             return None;
         }
     };
-    match lines.next_line() {
-        Ok(line) => Some(line.map_or_else(CodexSessionMetadata::default, |line| {
-            session_metadata_from_line(path, line)
-        })),
-        Err(_) => {
-            if let Some(diagnostics) = diagnostics {
-                super::reader::record_rollout_read_failure(path, diagnostics);
-            }
-            None
+    let result = lines.scan(Tail::Discard, |line| {
+        ControlFlow::Break(session_metadata_from_line(path, line.raw))
+    });
+    if result.failure.is_some() {
+        if let Some(diagnostics) = diagnostics {
+            super::reader::record_rollout_read_failure(path, diagnostics);
         }
+        return None;
     }
+    Some(result.found.unwrap_or_default())
 }
 
 pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
-    let Ok(value) = serde_json::from_slice::<CodexSessionMeta<'_>>(line) else {
+    let Ok(value) = jsonl::parse::<CodexSessionMeta<'_>>(line) else {
         return CodexSessionMetadata::default();
     };
     let payload = (value.entry_type.as_deref() == Some("session_meta"))
