@@ -11,11 +11,11 @@ use serde::Deserialize;
 
 use crate::{
     IteratedTokenUsage, ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts,
-    TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
+    TokenUsageRaw, UsageSummary,
     cli::{CostMode, SharedArgs},
+    cost::price_reported_usage,
     fast::{FxHashMap, LinePrefilter, suffix_string},
-    format_date_tz, missing_pricing_model_for_usage, parse_ts_timestamp, stored_cost_for_mode,
-    utc_now,
+    format_date_tz, parse_ts_timestamp, stored_cost_for_mode, utc_now,
 };
 
 use super::{
@@ -613,18 +613,11 @@ pub(super) fn read_usage_file<E>(
         }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
         let raw_model = data.message.model;
-        let cost = calculate_cost_for_usage_at(
+        let (cost, missing_pricing_model) = price_reported_usage(
             raw_model.as_deref(),
             usage,
             data.cost_usd,
-            Some(timestamp),
-            mode,
-            pricing,
-        );
-        let missing_pricing_model = missing_pricing_model_for_usage(
-            raw_model.as_deref(),
-            usage,
-            data.cost_usd,
+            timestamp,
             mode,
             pricing,
         );
@@ -661,43 +654,40 @@ pub(super) fn read_usage_file<E>(
             .usages
             .into_iter()
             .enumerate()
-            .map(|(index, advisor)| ParsedUsage {
-                key: DedupKey {
+            .map(|(index, advisor)| {
+                let (cost, missing_pricing_model) = price_reported_usage(
+                    Some(&advisor.model),
+                    advisor.usage,
+                    None,
                     timestamp,
-                    session_id: Arc::clone(&parent.key.session_id),
-                    message_id: parent
-                        .key
-                        .message_id
-                        .as_ref()
-                        .map(|id| format!("{id}:advisor:{index}")),
-                    request_id: parent.key.request_id.clone(),
-                    is_sidechain: parent.key.is_sidechain,
-                },
-                date: parent.date.clone(),
-                project: Arc::clone(&project),
-                usage: advisor.usage,
-                cost: calculate_cost_for_usage_at(
-                    Some(&advisor.model),
-                    advisor.usage,
-                    None,
-                    Some(timestamp),
                     mode,
                     pricing,
-                ),
-                missing_pricing_model: missing_pricing_model_for_usage(
-                    Some(&advisor.model),
-                    advisor.usage,
-                    None,
-                    mode,
-                    pricing,
-                ),
-                stored_cost: None,
-                raw_model: Some(advisor.model),
-                timestamp_text: parent.timestamp_text.clone(),
-                version: parent.version.clone(),
-                recorded_session_id: parent.recorded_session_id.clone(),
-                cost_usd: None,
-                is_api_error_message: parent.is_api_error_message,
+                );
+                ParsedUsage {
+                    key: DedupKey {
+                        timestamp,
+                        session_id: Arc::clone(&parent.key.session_id),
+                        message_id: parent
+                            .key
+                            .message_id
+                            .as_ref()
+                            .map(|id| format!("{id}:advisor:{index}")),
+                        request_id: parent.key.request_id.clone(),
+                        is_sidechain: parent.key.is_sidechain,
+                    },
+                    date: parent.date.clone(),
+                    project: Arc::clone(&project),
+                    usage: advisor.usage,
+                    cost,
+                    missing_pricing_model,
+                    stored_cost: None,
+                    raw_model: Some(advisor.model),
+                    timestamp_text: parent.timestamp_text.clone(),
+                    version: parent.version.clone(),
+                    recorded_session_id: parent.recorded_session_id.clone(),
+                    cost_usd: None,
+                    is_api_error_message: parent.is_api_error_message,
+                }
             })
             .collect::<Vec<_>>();
         entries.push(build(parent, line));

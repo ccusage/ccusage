@@ -783,7 +783,13 @@ enum Lookup {
 
 /// One slot per looked-up model, so concurrent first lookups of a model share
 /// a single fuzzy search instead of each running it.
-type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<Pricing>>>>>;
+type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<ResolvedPricing>>>>>;
+
+#[derive(Clone, Copy, Debug)]
+struct ResolvedPricing {
+    rates: Pricing,
+    schedule: Option<ScheduleId>,
+}
 
 #[derive(Debug)]
 pub struct PricingMap {
@@ -1761,6 +1767,10 @@ impl PricingMap {
     }
 
     pub fn find(&self, model: &str) -> Option<Pricing> {
+        self.find_resolved(model).map(|resolved| resolved.rates)
+    }
+
+    fn find_resolved(&self, model: &str) -> Option<ResolvedPricing> {
         let cache = self
             .find_cache
             .get_or_init(|| RwLock::new(FxHashMap::default()));
@@ -1781,8 +1791,11 @@ impl PricingMap {
         );
         *slot.get_or_init(|| {
             let map = self.for_lookup(model, Lookup::Pricing);
-            map.overridden(model)
-                .or_else(|| map.lookup(map.prices(), model, Fuzzy::Allowed))
+            let rates = map
+                .overridden(model)
+                .or_else(|| map.lookup(map.prices(), model, Fuzzy::Allowed))?;
+            let schedule = ScheduleId::for_request(model).map(|(schedule, _)| schedule);
+            Some(ResolvedPricing { rates, schedule })
         })
     }
 
@@ -1819,6 +1832,15 @@ impl PricingMap {
         candidates: &[(&'a str, MatchKind)],
         timestamp: Option<TimestampMs>,
     ) -> Option<(&'a str, Pricing)> {
+        if let [(model, MatchKind::Fuzzy)] = candidates
+            && reported_model.is_none_or(|reported| reported == *model)
+        {
+            let rates = match timestamp {
+                Some(timestamp) => self.find_at(model, timestamp),
+                None => self.find(model),
+            }?;
+            return Some((model, rates));
+        }
         let (model, pricing) = reported_model
             .filter(|_| !self.rows.override_keys.is_empty())
             .and_then(|model| self.overridden(model).map(|pricing| (model, pricing)))
@@ -2120,16 +2142,14 @@ impl PricingMap {
     /// The timestamp-aware DeepSeek schedule is applied to the two direct model
     /// ids and aliases that resolve to them.
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
-        let Some((schedule, resolved)) = ScheduleId::for_request(model) else {
-            return self.find(model);
-        };
-        Some(self.scheduled_at(
-            model,
-            resolved.as_ref(),
-            schedule,
-            timestamp,
-            self.find(model)?,
-        ))
+        let resolved = self.find_resolved(model)?;
+        Some(match resolved.schedule {
+            Some(schedule) => {
+                let alias = crate::model_aliases::resolve_model_name(model);
+                self.scheduled_at(model, alias.as_ref(), schedule, timestamp, resolved.rates)
+            }
+            None => resolved.rates,
+        })
     }
 
     fn scheduled_at(

@@ -72,24 +72,52 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> Entr
     };
     let resolved = map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp);
     match resolved {
-        Some((model, rates)) => {
-            let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
-                rates.fast_multiplier
-            } else {
-                1.0
-            };
-            EntryPrice {
-                cost: calculate_cost_from_pricing(usage, rates) * multiplier,
-                matched: Some(model),
-                missing_pricing: false,
-            }
-        }
+        Some((model, rates)) => EntryPrice {
+            cost: cost_at_speed(usage, rates),
+            matched: Some(model),
+            missing_pricing: false,
+        },
         None => EntryPrice {
             cost: 0.0,
             matched: None,
             missing_pricing: !entry.candidates.is_empty() && crate::total_usage_tokens(usage) != 0,
         },
     }
+}
+
+pub fn price_reported_usage(
+    model: Option<&str>,
+    usage: crate::TokenUsageRaw,
+    stored_cost: Option<f64>,
+    timestamp: crate::TimestampMs,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> (f64, Option<String>) {
+    match mode {
+        CostMode::Display => return (stored_cost.unwrap_or_default(), None),
+        CostMode::Auto if stored_cost.is_some() => return (stored_cost.unwrap_or_default(), None),
+        CostMode::Auto | CostMode::Calculate => {}
+    }
+    let Some((model, map)) = model.zip(pricing) else {
+        return (0.0, None);
+    };
+    match map.find_at(model, timestamp) {
+        Some(rates) => (cost_at_speed(usage, rates), None),
+        None => {
+            let missing = (crate::total_usage_tokens(usage) != 0)
+                .then(|| crate::model_aliases::resolve_model_name(model).into_owned());
+            (0.0, missing)
+        }
+    }
+}
+
+fn cost_at_speed(usage: crate::TokenUsageRaw, rates: Pricing) -> f64 {
+    let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
+        rates.fast_multiplier
+    } else {
+        1.0
+    };
+    calculate_cost_from_pricing(usage, rates) * multiplier
 }
 
 pub fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
@@ -197,12 +225,7 @@ fn calculate_cost_from_tokens(
     }) else {
         return 0.0;
     };
-    let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
-        pricing.fast_multiplier
-    } else {
-        1.0
-    };
-    calculate_cost_from_pricing(usage, pricing) * multiplier
+    cost_at_speed(usage, pricing)
 }
 
 pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing) -> f64 {
