@@ -430,6 +430,41 @@ fn codex_statusline_recovers_reversed_discovered_windows_as_a_pair() {
 }
 
 #[test]
+fn codex_statusline_names_the_config_field_before_the_paired_flag() {
+    for (field, config_bound, flag) in [
+        ("until", "20000101", "--since"),
+        ("since", "20990101", "--until"),
+    ] {
+        let fixture = fs_fixture!({
+            "codex/sessions/today.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+        });
+        let path = fixture.write_file(
+            "cwd/.ccusage/ccusage.json",
+            json!({"codex":{"commands":{"statusline":{field:config_bound}}}}).to_string(),
+        );
+        let path = path.canonicalize().unwrap();
+        let output = support::hermetic_command(fixture.root())
+            .args(["codex", "statusline", flag, "20261118", "--no-cost"])
+            .env("CODEX_HOME", fixture.path("codex"))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stderr}");
+        let prefix = format!(
+            "WARN Invalid ccusage config field: {}: codex.commands.statusline.{field}: ",
+            path.display()
+        );
+        assert!(
+            stderr.lines().any(|line| {
+                line.starts_with(&prefix) && line.ends_with(&format!(" (paired with {flag})"))
+            }),
+            "{stderr}"
+        );
+        assert_eq!(output.stdout, b"Codex | Usage: 150 tokens\n");
+    }
+}
+
+#[test]
 fn invalid_discovered_statusline_bounds_warn_in_every_mode() {
     for (config, field, daily_exit) in [
         (

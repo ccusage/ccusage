@@ -669,13 +669,18 @@ impl ccusage_cli::CliConfig for ConfigContext {
             || "--until".to_string(),
             |index| format!("{}.until", layers[index].0),
         );
-        let warn = |since: &str, until: &str, message: &str| {
+        let warn = |field: &str, paired_with: &str, message: &str| {
             self.warnings.borrow_mut().push(format!(
-                "Invalid ccusage config field: {}: {since}: {message} (paired with {until})",
+                "Invalid ccusage config field: {}: {field}: {message} (paired with {paired_with})",
                 file.display()
             ));
         };
-        warn(&since_path, &until_path, message);
+        let (field, paired_with) = if since_flag {
+            (&until_path, &since_path)
+        } else {
+            (&since_path, &until_path)
+        };
+        warn(field, paired_with, message);
 
         let fallback = layers[..first_source]
             .iter()
