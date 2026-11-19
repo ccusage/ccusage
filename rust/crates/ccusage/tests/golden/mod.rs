@@ -181,8 +181,8 @@ impl Case {
 /// The variants each agent runs for its supported `kind`, decided from the parser:
 /// `daily`, `weekly`, `monthly`, `session`, and `blocks` take the shared
 /// options (`--json`, `--breakdown`, `--since`, `--until`, `--mode`,
-/// `--timezone`), while `statusline` takes none of them and
-/// needs a hook payload on stdin, so it is covered by agent-specific cases.
+/// `--timezone`). Agent-specific cases cover `statusline` because Claude needs
+/// a hook payload on stdin and Codex takes its own set of options.
 pub fn matrix_cases(agent: &'static str, kind: &'static str) -> Vec<Case> {
     if kind == "statusline" {
         return Vec::new();

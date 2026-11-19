@@ -5,10 +5,10 @@ use crate::golden::set_modified;
 const CODER: &str = "qwen3-coder-plus";
 const SONNET: &str = "claude-sonnet-4-20250514";
 const UNPRICED: &str = "qwen-mystery-1";
-// Priced only under a provider prefix, so they resolve through the
-// `qwen/<model>` and `alibaba/<model>` candidates rather than the bare name.
+// These models require the respective `qwen/<model>` and `alibaba/<model>`
+// lookup candidates in the embedded pricing tables.
 const QWEN_PREFIXED: &str = "qwen-2.5-72b-instruct";
-const ALIBABA_PREFIXED: &str = "qwen-3-235b";
+const ALIBABA_PREFIXED: &str = "qwen-3-30b";
 
 // 2025-12-27T22:00:00Z, 2025-12-31T16:00:00Z, 2026-01-01T09:00:00Z,
 // 2026-01-02T12:00:00Z, 2026-01-02T23:30:00Z

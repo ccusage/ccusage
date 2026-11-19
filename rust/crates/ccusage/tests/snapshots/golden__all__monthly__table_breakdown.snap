@@ -334,7 +334,7 @@ exit: 0
 │          │              │ pi-mystery-2 │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │ - Qwen       │ - qwen-2.5-… │      7,043 │     2,031 │          0 │       3,360 │      12,684 │     $0.02 │
-│          │              │ - qwen-3-23… │            │           │            │             │             │           │
+│          │              │ - qwen-3-30b │            │           │            │             │             │           │
 │          │              │ - qwen-myst… │            │           │            │             │             │           │
 │          │              │ - qwen3-cod… │            │           │            │             │             │           │
 │          │              │ - sonnet-4   │            │           │            │             │             │           │
@@ -347,11 +347,11 @@ exit: 0
 │          │              │ └─           │        300 │        60 │          0 │           0 │         360 │     $0.00 │
 │          │              │ qwen-2.5-72b │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─           │        310 │        65 │          0 │           0 │         375 │     $0.00 │
+│          │              │ qwen-3-30b   │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─           │         33 │       665 │          0 │         500 │       1,198 │     $0.00 │
 │          │              │ qwen-myster… │            │           │            │             │             │           │
-├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│          │              │ └─           │        310 │        65 │          0 │           0 │         375 │     $0.00 │
-│          │              │ qwen-3-235b  │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │ - ZCode      │ - GLM-5.2    │      4,470 │     1,245 │        530 │       1,350 │       7,595 │     $0.02 │
 │          │              │ - GLM-5.3    │            │           │            │             │             │           │
@@ -811,7 +811,6 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
-WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

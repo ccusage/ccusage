@@ -735,7 +735,8 @@ pub fn extra_cases(_root: &Path) -> Vec<Case> {
         Case::new("statusline", "today_json", &["codex", "statusline", "--offline", "--json"]),
         Case::new("statusline", "today_table", &["codex", "statusline", "--offline"]),
         Case::new("statusline", "today_no_cost", &["codex", "statusline", "--offline", "--no-cost"]),
-        Case::new("statusline", "today_tokyo", &["codex", "statusline", "--offline", "--json", "--timezone", "Asia/Tokyo"]),
+        // At the fixed clock it is already January 3 in Kiritimati.
+        Case::new("statusline", "today_kiritimati", &["codex", "statusline", "--offline", "--json", "--timezone", "Pacific/Kiritimati"]),
         Case::new("statusline", "range_json", &["codex", "statusline", "--offline", "--json", "--since", "20251231", "--until", "20260101"]),
         Case::new("statusline", "session_json", &["codex", "statusline", "--offline", "--json", "--id", MAIN]),
         Case::new("statusline", "session_outside_window", &["codex", "statusline", "--offline", "--json", "--id", MAIN, "--since", "20990101", "--until", "20990101"]),
