@@ -9,7 +9,7 @@ use compact_str::CompactString;
 
 use crate::{
     CodexTokenUsageEvent, Result, chunk_file_indexes_by_size, cli::SharedArgs, fast::FxHashMap,
-    progress,
+    merge_codex_service_tiers, progress,
 };
 
 use super::{
@@ -695,7 +695,7 @@ mod tests {
     fn credits_a_replaced_stand_in_to_the_recording_session() {
         let stand_in = codex_event("session-b");
         let mut recorded = codex_event("session-a");
-        recorded.record_response_id = Some("resp-a".to_string());
+        recorded.record_response_id = Some("resp-a".into());
 
         for files in [
             [vec![stand_in.clone()], vec![recorded.clone()]],
