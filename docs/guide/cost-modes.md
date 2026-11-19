@@ -67,11 +67,11 @@ For pricing entries with a context threshold, the request input context (includi
 
 Pricing comes from LiteLLM, models.dev, built-in model data, and configured [pricing overrides](/guide/config-files#pricing-overrides). Timestamp-aware historical rates use the entry timestamp where supported. `--offline` uses embedded pricing without network requests; `--no-offline` enables online pricing retrieval, including its cache.
 
-When ccusage calculates a cost, it checks for a pricing override on the reported model label first. The adapter supplies the model names and any provider information from its logs. Dots, at signs, and dashes are interchangeable in a pricing ID. Case and provider paths remain significant.
+When ccusage calculates a cost, it first looks for a pricing override on the reported model label, its configured alias, or the model ID behind its provider path. A full-label override takes precedence over overrides on shorter paths. The adapter supplies the model names and any provider information from its logs. Dots, at signs, and dashes are interchangeable in a pricing ID. Case and provider paths remain significant.
 
-ccusage checks LiteLLM and its built-in entries for each candidate's identity. It then tries a model ID behind the candidate's provider path and checks models.dev for the candidate itself. These checks finish before fuzzy matching starts. Fuzzy matching prefers a row with the same final path segment and skips separately priced models.dev tiers.
+ccusage checks LiteLLM and its built-in entries for every candidate's identity. It then tries paid entries for the model ID behind a candidate's provider path, followed by the candidate's own entry in models.dev. A vendor's free listing can answer behind the path when neither catalogue has the requested listing. A free hosted listing with a provider path applies only to its full pricing ID.
 
-A vendor's free model can match its full ID or final path segment. A free price stays zero in the calculated report. Historical schedules apply to direct model IDs and their pricing overrides when the lookup matches by identity.
+If these checks find no price, ccusage uses the longest matching pricing key it can find, checking LiteLLM and built-in entries before models.dev. When the matches include the requested model ID, entries for longer model IDs are removed from consideration. Separately priced models.dev tiers are eligible through exact identity matches. Historical schedules apply to direct model IDs and their pricing overrides when the lookup matches by identity.
 
 ## Comparing Stored and Calculated Costs
 
