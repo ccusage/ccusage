@@ -11,6 +11,7 @@
   stdenv,
   stdenvNoCC,
   autoPatchelfHook,
+  makeWrapper,
   rustToolchain,
 }:
 let
@@ -49,7 +50,9 @@ stdenvNoCC.mkDerivation {
 
   # The prebuilt Linux archives are ordinary glibc binaries, so they need the loader
   # and rpath fixups; the Darwin ones resolve through @rpath as shipped.
-  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  nativeBuildInputs =
+    lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ]
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [ makeWrapper ];
   # cargo-hawk-driver has a hard dependency on the compiler's librustc_driver, which
   # is the concrete form of "only runs on the toolchain it was built against". The
   # pinned toolchain carries the matching file because rust-overlay repackages the
@@ -67,6 +70,19 @@ stdenvNoCC.mkDerivation {
     mkdir -p "$out/bin"
     # cargo-hawk invokes both helpers from its own directory.
     install -m555 cargo-hawk cargo-hawk-driver cargo-hawk-rustdoc "$out/bin/"
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
+      mkdir -p "$out/libexec/hawk-tools"
+      for tool in cc c++ clang clang++; do
+        makeWrapper "${stdenv.cc}/bin/$tool" "$out/libexec/hawk-tools/$tool" \
+          --unset DYLD_LIBRARY_PATH --unset DYLD_FALLBACK_LIBRARY_PATH
+      done
+      for tool in ar ranlib; do
+        makeWrapper "${stdenv.cc.bintools}/bin/$tool" "$out/libexec/hawk-tools/$tool" \
+          --unset DYLD_LIBRARY_PATH --unset DYLD_FALLBACK_LIBRARY_PATH
+      done
+      wrapProgram "$out/bin/cargo-hawk" \
+        --prefix PATH : "$out/libexec/hawk-tools"
+    ''}
     runHook postInstall
   '';
 
