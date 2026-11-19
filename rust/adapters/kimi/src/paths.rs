@@ -136,17 +136,18 @@ mod tests {
             "backup/sessions/kimi/sessions/wire.jsonl": "{}\n",
             "backup/sessions/kimi/sessions/group/session/wire.jsonl": "{}\n",
         });
-        let _guard = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.path("backup/sessions/kimi"));
-        let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
-        assert_eq!(
-            files
-                .iter()
-                .map(|file| file.path.clone())
-                .collect::<Vec<_>>(),
-            vec![fixture.path("backup/sessions/kimi/sessions/group/session/wire.jsonl")]
-        );
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.path("backup/sessions/kimi")).run(|| {
+            let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
+            assert_eq!(
+                files
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>(),
+                vec![fixture.path("backup/sessions/kimi/sessions/group/session/wire.jsonl")]
+            );
+        })
     }
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn discovers_wire_jsonl_files_under_sessions_group_session() {
@@ -155,17 +156,18 @@ mod tests {
             "sessions/group/session/other.jsonl": "{}\n",
             "sessions/nested/path/session/wire.jsonl": "{}\n",
         });
-        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let files = discover_wire_files(&Diagnostics::new("kimi"))
-            .unwrap()
-            .into_iter()
-            .map(|file| file.path)
-            .collect::<Vec<_>>();
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let files = discover_wire_files(&Diagnostics::new("kimi"))
+                .unwrap()
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>();
 
-        assert_eq!(
-            files,
-            vec![fixture.path("sessions/group/session/wire.jsonl")]
-        );
+            assert_eq!(
+                files,
+                vec![fixture.path("sessions/group/session/wire.jsonl")]
+            );
+        })
     }
 
     #[test]
@@ -175,19 +177,20 @@ mod tests {
             "sessions/ws/session-c/agents/agent-1/other.jsonl": "{}\n",
             "sessions/group/session-d/wire.jsonl": "{}\n",
         });
-        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let files = discover_wire_files(&Diagnostics::new("kimi"))
-            .unwrap()
-            .into_iter()
-            .map(|file| file.path)
-            .collect::<Vec<_>>();
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let files = discover_wire_files(&Diagnostics::new("kimi"))
+                .unwrap()
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>();
 
-        assert_eq!(
-            files,
-            vec![
-                fixture.path("sessions/group/session-d/wire.jsonl"),
-                fixture.path("sessions/ws/session-c/agents/agent-1/wire.jsonl"),
-            ]
-        );
+            assert_eq!(
+                files,
+                vec![
+                    fixture.path("sessions/group/session-d/wire.jsonl"),
+                    fixture.path("sessions/ws/session-c/agents/agent-1/wire.jsonl"),
+                ]
+            );
+        })
     }
 }

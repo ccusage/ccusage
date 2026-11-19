@@ -2,7 +2,7 @@ use ccusage_cli::ReportClock;
 
 pub fn report_clock() -> Result<ReportClock, String> {
     #[cfg(feature = "test-clock")]
-    if let Some(now) = std::env::var_os("CCUSAGE_TEST_NOW") {
+    if let Some(now) = ccusage_cli::environment::Environment::current().var_os("CCUSAGE_TEST_NOW") {
         return parse_test_now(&now.to_string_lossy());
     }
     Ok(ReportClock::System)

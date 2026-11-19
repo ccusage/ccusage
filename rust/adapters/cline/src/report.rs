@@ -196,7 +196,7 @@ mod tests {
     ) -> LoadedEntry {
         let timestamp = crate::parse_ts_timestamp(timestamp).expect("valid snapshot timestamp");
 
-        let date = crate::format_date_tz(timestamp, &jiff::tz::TimeZone::system());
+        let date = crate::format_date_tz(timestamp, &jiff::tz::TimeZone::UTC);
         LoadedEntry {
             usage,
             message_id: Some(format!("request-{date}")),

@@ -76,19 +76,21 @@ mod tests {
             second.display(),
             first.display()
         );
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (ZCODE_HOME_ENV, Some(raw.into())),
             ("HOME", None),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
             ("HOMEPATH", None),
-        ]);
-        assert_eq!(paths(&shared()).unwrap(), vec![first, second]);
+        ])
+        .run(|| {
+            assert_eq!(paths(&shared()).unwrap(), vec![first, second]);
+        })
     }
 
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -104,7 +106,7 @@ mod tests {
         let fixture = fs_fixture!({});
         let first = fixture.create_dir_all("first");
         let second = fixture.create_dir_all("second");
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (
                 ZCODE_HOME_ENV,
                 Some(
@@ -121,8 +123,10 @@ mod tests {
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
             ("HOMEPATH", None),
-        ]);
-        assert_eq!(paths(&shared()).unwrap(), vec![first, second]);
+        ])
+        .run(|| {
+            assert_eq!(paths(&shared()).unwrap(), vec![first, second]);
+        })
     }
 
     #[test]
@@ -130,7 +134,7 @@ mod tests {
         let fixture = fs_fixture!({
             ".zcode/cli/db/db.sqlite": "not a database",
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (
                 ZCODE_HOME_ENV,
                 Some(fixture.path("missing").into_os_string()),
@@ -139,9 +143,10 @@ mod tests {
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
             ("HOMEPATH", None),
-        ]);
-
-        assert!(paths(&shared()).unwrap().is_empty());
+        ])
+        .run(|| {
+            assert!(paths(&shared()).unwrap().is_empty());
+        })
     }
 
     #[test]
@@ -149,14 +154,15 @@ mod tests {
         let fixture = fs_fixture!({
             ".zcode/cli/db/db.sqlite": "not a database",
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (ZCODE_HOME_ENV, Some(OsString::new())),
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
             ("HOMEPATH", None),
-        ]);
-
-        assert_eq!(paths(&shared()).unwrap(), vec![fixture.path(".zcode")]);
+        ])
+        .run(|| {
+            assert_eq!(paths(&shared()).unwrap(), vec![fixture.path(".zcode")]);
+        })
     }
 }

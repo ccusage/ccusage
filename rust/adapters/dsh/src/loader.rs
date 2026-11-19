@@ -35,7 +35,7 @@ mod tests {
 
     use super::super::paths::DSH_HOME_ENV;
     use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     const SESSION: &str = concat!(
         r#"{"type":"session","version":4,"id":"sid-1","createdAt":1785015039278,"cwd":"/home/u/proj"}"#,
@@ -67,18 +67,19 @@ mod tests {
     }
 
     fn load(fixture: &ccusage_test_support::Fixture) -> (Vec<LoadedEntry>, Diagnostics) {
-        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
-        let shared = SharedArgs {
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap()
+        Environment::with_var(DSH_HOME_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap()
+        })
     }
 
     fn debug_warnings(diagnostics: &Diagnostics) -> String {
@@ -185,16 +186,16 @@ mod tests {
         });
         let second = fs_fixture!({ "sessions/p/sid-1/session.v4.jsonl": SESSION });
         let value = format!("{},{}", first.root().display(), second.root().display());
-        let _cleanup = EnvGuard::set(DSH_HOME_ENV, &value);
+        Environment::with_var(DSH_HOME_ENV, &value).run(|| {
+            let (entries, _) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        let (entries, _) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
-
-        assert_eq!(entries.len(), 1);
+            assert_eq!(entries.len(), 1);
+        })
     }
 }

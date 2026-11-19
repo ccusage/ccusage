@@ -39,7 +39,7 @@ fn store_root(path: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn default_store_keeps_a_project_named_sessions() {
@@ -47,22 +47,24 @@ mod tests {
         let store = fixture.create_dir_all(".pi/agent/sessions");
         fixture.create_dir_all(".pi/agent/sessions/sessions");
         fixture.create_dir_all(".pi/agent/sessions/another-project");
-        let _guard = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             (PI_AGENT_DIR_ENV, None),
-        ]);
-        assert_eq!(paths(None).unwrap(), vec![store]);
+        ])
+        .run(|| {
+            assert_eq!(paths(None).unwrap(), vec![store]);
+        })
     }
 
     #[test]
     fn named_store_path_expands_home_directory() {
         let fixture = fs_fixture!({});
         let store = fixture.create_dir_all(".omp/agent/sessions");
-        let _home = EnvGuard::set("HOME", fixture.root());
+        Environment::with_var("HOME", fixture.root()).run(|| {
+            let paths = named_store_paths("~/.omp/agent/sessions").unwrap();
 
-        let paths = named_store_paths("~/.omp/agent/sessions").unwrap();
-
-        assert_eq!(paths, vec![store]);
+            assert_eq!(paths, vec![store]);
+        })
     }
 
     #[test]
@@ -102,13 +104,14 @@ mod tests {
         let fixture = fs_fixture!({});
         let store = fixture.create_dir_all(".pi/agent/sessions/project-a");
         let store = store.parent().unwrap().to_path_buf();
-        let _guard = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             (PI_AGENT_DIR_ENV, Some(" ~/.pi/agent ".into())),
-        ]);
-
-        assert_eq!(paths(None).unwrap(), vec![store.clone()]);
-        assert_eq!(paths(Some(" , , ")).unwrap(), vec![store.clone()]);
-        assert_eq!(paths(Some("~/.pi/agent")).unwrap(), vec![store]);
+        ])
+        .run(|| {
+            assert_eq!(paths(None).unwrap(), vec![store.clone()]);
+            assert_eq!(paths(Some(" , , ")).unwrap(), vec![store.clone()]);
+            assert_eq!(paths(Some("~/.pi/agent")).unwrap(), vec![store]);
+        })
     }
 }

@@ -239,12 +239,12 @@ fn parse_named_pi_stores(value: &Value) -> std::result::Result<Vec<NamedPiStore>
                 "pi.stores name '{name}' collides with a built-in agent"
             )),
         })?;
-        if !names.insert(name.to_string()) {
+        if !names.insert(name.clone()) {
             return Err(config_error(format!("duplicate pi.stores name '{name}'")));
         }
         parsed.push(NamedPiStore {
-            name: name.to_string(),
-            path: path.to_string(),
+            name: name.clone(),
+            path: path.clone(),
         });
     }
     Ok(parsed)
@@ -986,40 +986,43 @@ mod tests {
             r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
         ] {
             let fixture = fs_fixture!({"ccusage.json": raw});
-            let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-            for command in [
-                vec!["statusline"],
-                vec!["claude", "blocks"],
-                vec!["claude", "session"],
-                vec!["codex", "daily"],
-                vec!["pi", "daily"],
-                vec!["pi", "session"],
-                vec!["pi:daily"],
-            ] {
-                let args = command
-                    .iter()
-                    .map(|arg| arg.to_string())
-                    .collect::<Vec<_>>();
-                assert!(
-                    ConfigContext::from_args(&args).config_error().is_none(),
-                    "{command:?}"
-                );
-            }
-            for command in [
-                vec!["daily"],
-                vec!["weekly"],
-                vec!["monthly"],
-                vec!["session"],
-            ] {
-                let args = command
-                    .iter()
-                    .map(|arg| arg.to_string())
-                    .collect::<Vec<_>>();
-                assert!(
-                    ConfigContext::from_args(&args).config_error().is_some(),
-                    "{command:?}"
-                );
-            }
+            ccusage_test_support::Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(
+                || {
+                    for command in [
+                        vec!["statusline"],
+                        vec!["claude", "blocks"],
+                        vec!["claude", "session"],
+                        vec!["codex", "daily"],
+                        vec!["pi", "daily"],
+                        vec!["pi", "session"],
+                        vec!["pi:daily"],
+                    ] {
+                        let args = command
+                            .iter()
+                            .map(|arg| arg.to_string())
+                            .collect::<Vec<_>>();
+                        assert!(
+                            ConfigContext::from_args(&args).config_error().is_none(),
+                            "{command:?}"
+                        );
+                    }
+                    for command in [
+                        vec!["daily"],
+                        vec!["weekly"],
+                        vec!["monthly"],
+                        vec!["session"],
+                    ] {
+                        let args = command
+                            .iter()
+                            .map(|arg| arg.to_string())
+                            .collect::<Vec<_>>();
+                        assert!(
+                            ConfigContext::from_args(&args).config_error().is_some(),
+                            "{command:?}"
+                        );
+                    }
+                },
+            )
         }
     }
 
@@ -1028,42 +1031,43 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "ccusage.json": r#"{"defaults":{"mode":"a.since:","json":true},"commands":{"weekly":{"since":"nope"}}}"#,
         });
-        let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-        for command in [
-            vec!["daily"],
-            vec!["monthly"],
-            vec!["session"],
-            vec!["claude", "session"],
-            vec!["codex", "daily"],
-            vec!["statusline"],
-        ] {
-            let args = command
-                .iter()
-                .map(|arg| arg.to_string())
-                .collect::<Vec<_>>();
-            let context = ConfigContext::from_args(&args);
-            assert!(
-                context.config_error().is_none(),
-                "{command:?}: {:?}",
-                context.config_error()
-            );
-            let mut shared = SharedArgs::default();
-            context.apply_shared(&mut shared);
-            assert!(shared.json);
-        }
-        for command in [vec!["weekly"], vec!["codex", "weekly"]] {
-            let args = command
-                .iter()
-                .map(|arg| arg.to_string())
-                .collect::<Vec<_>>();
-            let context = ConfigContext::from_args(&args);
-            assert!(
-                context
-                    .config_error()
-                    .unwrap()
-                    .contains("commands.weekly.since")
-            );
-        }
+        ccusage_test_support::Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+            for command in [
+                vec!["daily"],
+                vec!["monthly"],
+                vec!["session"],
+                vec!["claude", "session"],
+                vec!["codex", "daily"],
+                vec!["statusline"],
+            ] {
+                let args = command
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                let context = ConfigContext::from_args(&args);
+                assert!(
+                    context.config_error().is_none(),
+                    "{command:?}: {:?}",
+                    context.config_error()
+                );
+                let mut shared = SharedArgs::default();
+                context.apply_shared(&mut shared);
+                assert!(shared.json);
+            }
+            for command in [vec!["weekly"], vec!["codex", "weekly"]] {
+                let args = command
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                let context = ConfigContext::from_args(&args);
+                assert!(
+                    context
+                        .config_error()
+                        .unwrap()
+                        .contains("commands.weekly.since")
+                );
+            }
+        })
     }
 
     #[test]
@@ -1301,17 +1305,20 @@ mod tests {
         for field in ["since", "until"] {
             let fixture =
                 fs_fixture!({"ccusage.json": json!({"defaults": {field: "nope"}}).to_string()});
-            let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-            assert!(
-                ConfigContext::from_args(&["daily".into()])
-                    .config_error()
-                    .is_some()
-            );
-            assert!(
-                ConfigContext::from_args(&["statusline".into()])
-                    .config_error()
-                    .is_none()
-            );
+            ccusage_test_support::Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(
+                || {
+                    assert!(
+                        ConfigContext::from_args(&["daily".into()])
+                            .config_error()
+                            .is_some()
+                    );
+                    assert!(
+                        ConfigContext::from_args(&["statusline".into()])
+                            .config_error()
+                            .is_none()
+                    );
+                },
+            )
         }
     }
 
@@ -1430,7 +1437,7 @@ mod tests {
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn applies_schema_backed_shared_options() {
@@ -2270,13 +2277,14 @@ mod tests {
         let fixture = fs_fixture!({
             "xdg/claude/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
         });
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CLAUDE_CONFIG_DIR", None),
             ("HOME", Some(fixture.path("home").into())),
             ("XDG_CONFIG_HOME", Some(fixture.path("xdg").into())),
-        ]);
-
-        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+        ])
+        .run(|| {
+            assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+        })
     }
 
     #[test]
@@ -2285,12 +2293,13 @@ mod tests {
             "home/claude-a/.keep": "",
             "home/claude-b/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
         });
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(fixture.path("home").into())),
             ("CLAUDE_CONFIG_DIR", Some("~/claude-a, ~/claude-b".into())),
-        ]);
-
-        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+        ])
+        .run(|| {
+            assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+        })
     }
 
     #[test]
@@ -2299,12 +2308,13 @@ mod tests {
             "archive/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
             "archive/projects/project/session.jsonl": "",
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.path("archive/projects").into()),
-        )]);
-
-        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+        )])
+        .run(|| {
+            assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+        })
     }
 
     fn assert_config_error(config: &ConfigContext, detail: &str) {

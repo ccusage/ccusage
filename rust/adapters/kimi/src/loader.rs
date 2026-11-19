@@ -27,7 +27,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 mod tests {
     use super::super::paths::KIMI_DATA_DIR_ENV;
     use ccusage_core::{Diagnostics, PricingMap, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn loads_status_update_token_usage_from_wire_files() {
@@ -41,27 +41,28 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs {
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-02-13");
-        assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(entries[0].model.as_deref(), Some("kimi-k2"));
-        assert_eq!(entries[0].usage.input_tokens, 100);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].date, "2026-02-13");
+            assert_eq!(entries[0].session_id.as_ref(), "session-a");
+            assert_eq!(entries[0].model.as_deref(), Some("kimi-k2"));
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+        })
     }
 
     #[test]
@@ -74,26 +75,27 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs {
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
-        assert_eq!(entries[0].session_id.as_ref(), "session-b");
-        assert_eq!(entries[0].model.as_deref(), Some("kimi-for-coding"));
-        assert_eq!(entries[0].usage.input_tokens, 3064);
-        assert_eq!(entries[0].usage.output_tokens, 76);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 14848);
-        assert_eq!(entries[0].usage.cache_creation_input_tokens, 0);
+            assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
+            assert_eq!(entries[0].session_id.as_ref(), "session-b");
+            assert_eq!(entries[0].model.as_deref(), Some("kimi-for-coding"));
+            assert_eq!(entries[0].usage.input_tokens, 3064);
+            assert_eq!(entries[0].usage.output_tokens, 76);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 14848);
+            assert_eq!(entries[0].usage.cache_creation_input_tokens, 0);
+        })
     }
 
     #[test]
@@ -106,16 +108,17 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert!(entries.is_empty());
+            assert!(entries.is_empty());
+        })
     }
 
     #[test]

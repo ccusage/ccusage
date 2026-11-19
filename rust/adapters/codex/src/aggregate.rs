@@ -354,7 +354,7 @@ impl<'a> CodexDedupe<'a> {
                     request.attribution.merge(attribution);
                 } else {
                     requests.push(CodexRecordedUsage {
-                        id: id.clone(),
+                        id: Arc::clone(id),
                         attribution,
                     });
                 }
@@ -693,7 +693,7 @@ fn aggregate_discovered(
     seen.fold(shared, kind).map(|groups| (groups, detected))
 }
 
-fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe) -> Result<()> {
+fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe<'_>) -> Result<()> {
     let workers = ccusage_adapter_common::worker_count(run.shared.single_thread, run.files.len());
     let chunks = if workers == 1 {
         vec![(0..run.files.len()).collect()]
@@ -1486,7 +1486,11 @@ mod tests {
                 ));
             }
         }
-        assert!(costs.windows(2).all(|pair| pair[0] == pair[1]));
+        assert!(
+            costs
+                .windows(2)
+                .all(|pair| pair[0].to_bits() == pair[1].to_bits())
+        );
     }
 
     #[test]

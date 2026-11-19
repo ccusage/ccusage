@@ -229,7 +229,7 @@ mod tests {
             "row-1",
             "session-a",
             Path::new("/tmp/kilo.db"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
         )
@@ -259,7 +259,7 @@ mod tests {
             "row-1",
             "session-a",
             Path::new("/tmp/kilo.db"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             ccusage_core::cost::PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
         )

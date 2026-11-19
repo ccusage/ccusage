@@ -2898,6 +2898,7 @@ mod tests {
 
     #[test]
     fn a_map_derived_after_the_live_merge_does_not_merge_it_again() {
+        crate::test_support::install_pricing_snapshots();
         let mut live = PricingMap::default();
         live.load_models_dev_json_for_tests(
             r#"{"md-only-1": { "cost": { "input": 3000000, "output": 4000000 } }}"#,
@@ -3151,6 +3152,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_replaces_the_embedded_snapshot_for_a_models_dev_only_id() {
+        crate::test_support::install_pricing_snapshots();
         let mut embedded = PricingMap::default();
         embedded.load_models_dev_json_for_tests(
             r#"{"md-only-1": { "cost": { "input": 1000000, "output": 2000000 }, "limit": { "context": 1000 } }}"#,

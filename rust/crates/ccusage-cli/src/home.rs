@@ -1,15 +1,20 @@
 use std::{
-    env,
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
 };
 
+use crate::environment::Environment;
+
 pub fn home_dir() -> Option<PathBuf> {
+    home_dir_in(&Environment::current())
+}
+
+pub fn home_dir_in(environment: &Environment) -> Option<PathBuf> {
     home_dir_from_env(
-        env::var_os("HOME"),
-        env::var_os("USERPROFILE"),
-        env::var_os("HOMEDRIVE"),
-        env::var_os("HOMEPATH"),
+        environment.var_os("HOME"),
+        environment.var_os("USERPROFILE"),
+        environment.var_os("HOMEDRIVE"),
+        environment.var_os("HOMEPATH"),
     )
 }
 
@@ -97,10 +102,13 @@ impl ClaudeConfigDirs {
 }
 
 pub fn claude_config_dirs() -> ClaudeConfigDirs {
+    let environment = Environment::current();
     claude_config_dirs_from(
-        env::var("CLAUDE_CONFIG_DIR").ok(),
-        env::var_os("XDG_CONFIG_HOME"),
-        home_dir(),
+        environment
+            .var_os("CLAUDE_CONFIG_DIR")
+            .and_then(|value| value.into_string().ok()),
+        environment.var_os("XDG_CONFIG_HOME"),
+        home_dir_in(&environment),
     )
 }
 

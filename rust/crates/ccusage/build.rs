@@ -1,4 +1,6 @@
-use std::{env, fs};
+use std::fs;
+
+use ccusage_environment::Environment;
 
 use serde_json::Value;
 
@@ -8,7 +10,7 @@ const VERSION_ENV: &str = "CCUSAGE_VERSION";
 fn main() {
     println!("cargo:rerun-if-env-changed={VERSION_ENV}");
     println!("cargo:rerun-if-changed={PACKAGE_JSON}");
-    let version = env::var(VERSION_ENV).unwrap_or_else(|_| {
+    let version = Environment::current().var(VERSION_ENV).unwrap_or_else(|_| {
         let package_json = fs::read_to_string(PACKAGE_JSON).expect("read root package.json");
         serde_json::from_str::<Value>(&package_json)
             .ok()

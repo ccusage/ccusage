@@ -264,6 +264,37 @@ fn daily_since_totals_match_after_pruning_stale_files() {
 }
 
 #[test]
+fn daily_uses_the_process_timezone_for_default_and_local_buckets() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        r#"{"timestamp":"2026-09-11T23:30:00Z","sessionId":"session-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}}}"#,
+    );
+
+    for (timezone, expected_date) in [
+        (&[][..], "2026-09-12"),
+        (&["--timezone", "local"][..], "2026-09-12"),
+        (&["--timezone", "UTC"][..], "2026-09-11"),
+    ] {
+        let output = claude_command(&fixture)
+            .env("TZ", "Asia/Tokyo")
+            .args(["claude", "daily", "--offline", "--json"])
+            .args(timezone)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let days = json["daily"].as_array().unwrap();
+        assert_eq!(days.len(), 1);
+        assert_eq!(days[0]["date"], expected_date, "{timezone:?}");
+    }
+}
+
+#[test]
 fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
     let fixture = Fixture::new();
     fixture.write_file(
@@ -305,7 +336,8 @@ fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String 
 }
 
 fn run_command(command: std::process::Command, args: &[&str], stdin: Option<&str>) -> String {
-    String::from_utf8(run_command_output(command, args, stdin).stdout).unwrap()
+    String::from_utf8(run_command_output(command, args, stdin).stdout)
+        .expect("ccusage stdout is UTF-8")
 }
 
 fn run_ccusage_output(
@@ -330,12 +362,12 @@ fn run_command_output(
         .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("failed to run ccusage");
-    let mut child_stdin = child.stdin.take().unwrap();
+    let mut child_stdin = child.stdin.take().expect("piped ccusage stdin");
     child_stdin
         .write_all(stdin.unwrap_or_default().as_bytes())
-        .unwrap();
+        .expect("write ccusage input");
     drop(child_stdin);
-    let output = child.wait_with_output().unwrap();
+    let output = child.wait_with_output().expect("wait for ccusage output");
     assert!(
         output.status.success(),
         "ccusage {args:?} failed: {}",
@@ -801,7 +833,10 @@ fn write_block_chain(
             .collect::<Vec<_>>()
             .join("\n");
         let file = fixture.write_file(format!("projects/chain/part-{index:03}.jsonl"), lines);
-        set_modified(&file, *chunk.last().unwrap());
+        set_modified(
+            &file,
+            *chunk.last().expect("the log batch has a last instant"),
+        );
         files.push(file);
     }
     files
@@ -1047,8 +1082,14 @@ fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
                 ],
                 None,
             );
-            let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-            (command, json["totals"]["totalTokens"].as_u64().unwrap())
+            let json: serde_json::Value =
+                serde_json::from_str(&output).expect("ccusage emitted JSON");
+            (
+                command,
+                json["totals"]["totalTokens"]
+                    .as_u64()
+                    .expect("report has total tokens"),
+            )
         })
         .collect()
 }

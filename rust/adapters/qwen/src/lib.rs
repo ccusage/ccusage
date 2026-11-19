@@ -49,7 +49,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
     use serde_json::json;
 
     use super::*;
@@ -70,24 +70,25 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            None,
-        )
-        .unwrap();
+        Environment::with_var("QWEN_DATA_DIR", fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                None,
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-02-23");
-        assert_eq!(entries[0].session_id.as_ref(), "session-json");
-        assert_eq!(entries[0].project_path.as_ref(), "myProject");
-        assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));
-        assert_eq!(entries[0].usage.input_tokens, 100);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 5);
-        assert_eq!(entries[0].extra_total_tokens, 10);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].date, "2026-02-23");
+            assert_eq!(entries[0].session_id.as_ref(), "session-json");
+            assert_eq!(entries[0].project_path.as_ref(), "myProject");
+            assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 5);
+            assert_eq!(entries[0].extra_total_tokens, 10);
+        })
     }
 
     #[test]
@@ -104,37 +105,38 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            None,
-        )
-        .unwrap();
-        let rows = ccusage_adapter_common::source::EntrySource::summarize(
-            &crate::SOURCE,
-            &entries,
-            ccusage_adapter_common::source::SummaryKind::for_report(
-                AgentReportKind::Daily,
-                ccusage_core::cli::WeekDay::Monday,
-            ),
-        )
-        .unwrap();
-        let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
+        Environment::with_var("QWEN_DATA_DIR", fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                None,
+            )
+            .unwrap();
+            let rows = ccusage_adapter_common::source::EntrySource::summarize(
+                &crate::SOURCE,
+                &entries,
+                ccusage_adapter_common::source::SummaryKind::for_report(
+                    AgentReportKind::Daily,
+                    ccusage_core::cli::WeekDay::Monday,
+                ),
+            )
+            .unwrap();
+            let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
-        assert_eq!(entries.len(), 2);
-        assert!(
-            entries
-                .iter()
-                .all(|entry| entry.project_path.as_ref() == "myProject"),
-            "archived entries keep their project, got: {:?}",
-            entries
-                .iter()
-                .map(|entry| entry.project_path.as_ref())
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(report["daily"][0]["totalTokens"], 165);
+            assert_eq!(entries.len(), 2);
+            assert!(
+                entries
+                    .iter()
+                    .all(|entry| entry.project_path.as_ref() == "myProject"),
+                "archived entries keep their project, got: {:?}",
+                entries
+                    .iter()
+                    .map(|entry| entry.project_path.as_ref())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(report["daily"][0]["totalTokens"], 165);
+        })
     }
 
     #[test]
@@ -154,25 +156,26 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            None,
-        )
-        .unwrap();
+        Environment::with_var("QWEN_DATA_DIR", fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                None,
+            )
+            .unwrap();
 
-        assert_eq!(
-            entries
-                .iter()
-                .map(|entry| (entry.session_id.as_ref(), entry.project_path.as_ref()))
-                .collect::<Vec<_>>(),
-            [
-                ("session-a", "myProject"),
-                ("myProject-session-a", "myProject")
-            ]
-        );
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| (entry.session_id.as_ref(), entry.project_path.as_ref()))
+                    .collect::<Vec<_>>(),
+                [
+                    ("session-a", "myProject"),
+                    ("myProject-session-a", "myProject")
+                ]
+            );
+        })
     }
 
     #[test]
@@ -186,44 +189,45 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            None,
-        )
-        .unwrap();
-        let rows = ccusage_adapter_common::source::EntrySource::summarize(
-            &crate::SOURCE,
-            &entries,
-            ccusage_adapter_common::source::SummaryKind::for_report(
-                AgentReportKind::Daily,
-                ccusage_core::cli::WeekDay::Monday,
-            ),
-        )
-        .unwrap();
-        let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
+        Environment::with_var("QWEN_DATA_DIR", fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                None,
+            )
+            .unwrap();
+            let rows = ccusage_adapter_common::source::EntrySource::summarize(
+                &crate::SOURCE,
+                &entries,
+                ccusage_adapter_common::source::SummaryKind::for_report(
+                    AgentReportKind::Daily,
+                    ccusage_core::cli::WeekDay::Monday,
+                ),
+            )
+            .unwrap();
+            let report = SOURCE.report_json(&rows, AgentReportKind::Daily);
 
-        assert_eq!(report["daily"][0]["date"], "2026-02-23");
-        assert_eq!(report["daily"][0]["outputTokens"], 50);
-        assert_eq!(report["daily"][0]["cacheReadTokens"], 5);
-        assert_eq!(report["daily"][0]["totalTokens"], 165);
-        assert_eq!(
-            report["daily"][0]["modelsUsed"],
-            json!(["qwen3-coder-plus"])
-        );
-        assert_eq!(
-            report["daily"][0]["modelBreakdowns"],
-            json!([{
-                "modelName": "qwen3-coder-plus",
-                "inputTokens": 100,
-                "outputTokens": 50,
-                "cacheCreationTokens": 0,
-                "cacheReadTokens": 5,
-                "cost": 0.0
-            }])
-        );
+            assert_eq!(report["daily"][0]["date"], "2026-02-23");
+            assert_eq!(report["daily"][0]["outputTokens"], 50);
+            assert_eq!(report["daily"][0]["cacheReadTokens"], 5);
+            assert_eq!(report["daily"][0]["totalTokens"], 165);
+            assert_eq!(
+                report["daily"][0]["modelsUsed"],
+                json!(["qwen3-coder-plus"])
+            );
+            assert_eq!(
+                report["daily"][0]["modelBreakdowns"],
+                json!([{
+                    "modelName": "qwen3-coder-plus",
+                    "inputTokens": 100,
+                    "outputTokens": 50,
+                    "cacheCreationTokens": 0,
+                    "cacheReadTokens": 5,
+                    "cost": 0.0
+                }])
+            );
+        })
     }
 
     #[test]
@@ -235,33 +239,36 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            since: Some("20260131".parse().unwrap()),
-            until: Some("20260131".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            ..SharedArgs::default()
-        };
+        Environment::with_var("QWEN_DATA_DIR", fixture.root()).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                since: Some("20260131".parse().unwrap()),
+                until: Some("20260131".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                ..SharedArgs::default()
+            };
 
-        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared);
+            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared);
 
-        let outside_window = SharedArgs {
-            since: Some("20270101".parse().unwrap()),
-            ..shared.clone()
-        };
-        let rows = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &outside_window,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
-        assert!(rows.detected);
-        assert!(rows.rows.is_empty());
+            let outside_window = SharedArgs {
+                since: Some("20270101".parse().unwrap()),
+                ..shared.clone()
+            };
+            let rows = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &outside_window,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
+            assert!(rows.detected);
+            assert!(rows.rows.is_empty());
+        })
     }
 
     #[test]
@@ -274,35 +281,38 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            debug: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            ..SharedArgs::default()
-        };
+        Environment::with_var("QWEN_DATA_DIR", fixture.root()).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                debug: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                ..SharedArgs::default()
+            };
 
-        let rows = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &shared,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
+            let rows = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
 
-        assert_eq!(rows.rows.len(), 1);
-        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
-            warning.contains("invalid data")
-                && warning.contains("chat.jsonl:2")
-                && !warning.contains("SECRET_CANARY")
-        }));
-        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
-            warning.contains("undecoded usage")
-                && warning.contains("chat.jsonl:3")
-                && !warning.contains("SECRET_CANARY")
-        }));
+            assert_eq!(rows.rows.len(), 1);
+            assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
+                warning.contains("invalid data")
+                    && warning.contains("chat.jsonl:2")
+                    && !warning.contains("SECRET_CANARY")
+            }));
+            assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
+                warning.contains("undecoded usage")
+                    && warning.contains("chat.jsonl:3")
+                    && !warning.contains("SECRET_CANARY")
+            }));
+        })
     }
 }

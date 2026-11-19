@@ -116,26 +116,28 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
-    let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
-    for single_thread in [true, false] {
-        let shared = SharedArgs {
-            since: Some("20260902".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread,
-            ..SharedArgs::default()
-        };
-        let groups =
-            load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily).unwrap();
-        assert_eq!(groups["2026-09-02"].total_tokens, 110);
-        let (_, detected) = crate::aggregate::load_groups_with_diagnostics(
-            &shared,
-            AgentReportKind::Daily,
-            Some(&crate::PricingMap::load_embedded()),
-            &ccusage_core::Diagnostics::new("codex"),
-        )
-        .unwrap();
-        assert!(detected);
-    }
+    ccusage_test_support::Environment::with_var("CODEX_HOME", fixture.root()).run(|| {
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                since: Some("20260902".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread,
+                ..SharedArgs::default()
+            };
+            let groups =
+                load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily)
+                    .unwrap();
+            assert_eq!(groups["2026-09-02"].total_tokens, 110);
+            let (_, detected) = crate::aggregate::load_groups_with_diagnostics(
+                &shared,
+                AgentReportKind::Daily,
+                Some(&crate::PricingMap::load_embedded()),
+                &ccusage_core::Diagnostics::new("codex"),
+            )
+            .unwrap();
+            assert!(detected);
+        }
+    })
 }
 
 #[test]
@@ -162,18 +164,20 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
-    let _guard = ccusage_test_support::EnvGuard::set("CODEX_HOME", fixture.root());
-    for single_thread in [true, false] {
-        let shared = SharedArgs {
-            since: Some("20260902".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread,
-            ..SharedArgs::default()
-        };
-        let groups =
-            load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily).unwrap();
-        assert_eq!(groups["2026-09-02"].total_tokens, 120);
-    }
+    ccusage_test_support::Environment::with_var("CODEX_HOME", fixture.root()).run(|| {
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                since: Some("20260902".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread,
+                ..SharedArgs::default()
+            };
+            let groups =
+                load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily)
+                    .unwrap();
+            assert_eq!(groups["2026-09-02"].total_tokens, 120);
+        }
+    })
 }
 
 #[test]

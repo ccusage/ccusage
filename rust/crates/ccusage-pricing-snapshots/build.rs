@@ -1,4 +1,6 @@
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
+
+use ccusage_environment::Environment;
 
 use serde_json::Value;
 
@@ -19,7 +21,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
 
     let out_path = out_dir_path(OUT_PRICING_JSON);
-    let pricing_json = if let Some(path) = env::var_os(PRICING_JSON_PATH_ENV) {
+    let pricing_json = if let Some(path) = Environment::current().var_os(PRICING_JSON_PATH_ENV) {
         let path = PathBuf::from(path);
         println!("cargo:rerun-if-changed={}", path.display());
         fs::read_to_string(path).expect("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH")
@@ -58,7 +60,12 @@ fn deflate(bytes: &[u8]) -> Vec<u8> {
 }
 
 fn out_dir_path(file_name: &str) -> PathBuf {
-    PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by cargo")).join(file_name)
+    PathBuf::from(
+        Environment::current()
+            .var_os("OUT_DIR")
+            .expect("OUT_DIR is set by cargo"),
+    )
+    .join(file_name)
 }
 
 #[cfg(not(feature = "fetch-litellm-pricing"))]

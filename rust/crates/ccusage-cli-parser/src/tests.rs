@@ -12,20 +12,11 @@ fn parse(args: &[&str]) -> Command {
 }
 
 fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Command {
-    parse_from_with_config(
-        args.iter().map(OsString::from),
-        config,
-        env!("CARGO_PKG_VERSION"),
-    )
-    .unwrap()
+    parse_from_with_config(args.iter().map(OsString::from), config).unwrap()
 }
 
 fn parse_error(args: &[&str]) -> String {
-    match parse_from_with_config(
-        args.iter().map(OsString::from),
-        &NoConfig,
-        env!("CARGO_PKG_VERSION"),
-    ) {
+    match parse_from_with_config(args.iter().map(OsString::from), &NoConfig) {
         Ok(_) => panic!("expected parse error"),
         Err(error) => error,
     }
@@ -48,7 +39,6 @@ fn unsupported_agent_report_guidance_precedes_a_config_error() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.map(OsString::from)),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected the unsupported report to be rejected");
@@ -111,12 +101,12 @@ fn statusline_threshold_overrides_are_validated_together() {
 #[test]
 fn statusline_merges_config_thresholds_before_validation() {
     use ccusage_config::ConfigContext;
-    use ccusage_test_support::EnvGuard;
+    use ccusage_test_support::Environment;
     let fixture = fs_fixture!({
         "home/.claude/ccusage.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
         "explicit.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
     });
-    let _env = EnvGuard::set_many([
+    Environment::with_vars([
         ("HOME", Some(fixture.path("home").into_os_string())),
         (
             "CLAUDE_CONFIG_DIR",
@@ -126,28 +116,30 @@ fn statusline_merges_config_thresholds_before_validation() {
             "XDG_CONFIG_HOME",
             Some(fixture.path("home/.config").into_os_string()),
         ),
-    ]);
-    for explicit in [false, true] {
-        let path = fixture.path("explicit.json").display().to_string();
-        let mut args = vec!["ccusage", "statusline", "--context-medium-threshold", "95"];
-        if explicit {
-            args.extend(["--config", &path]);
+    ])
+    .run(|| {
+        for explicit in [false, true] {
+            let path = fixture.path("explicit.json").display().to_string();
+            let mut args = vec!["ccusage", "statusline", "--context-medium-threshold", "95"];
+            if explicit {
+                args.extend(["--config", &path]);
+            }
+            let config = ConfigContext::from_args(
+                &args[1..]
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>(),
+            );
+            let Command::Statusline(statusline) = parse_with_config(&args, &config) else {
+                panic!("expected statusline");
+            };
+            assert_eq!(
+                statusline.context_thresholds,
+                ContextThresholds::new(85, 95).unwrap()
+            );
+            assert!(config.warnings().is_empty(), "{:?}", config.warnings());
         }
-        let config = ConfigContext::from_args(
-            &args[1..]
-                .iter()
-                .map(|arg| arg.to_string())
-                .collect::<Vec<_>>(),
-        );
-        let Command::Statusline(statusline) = parse_with_config(&args, &config) else {
-            panic!("expected statusline");
-        };
-        assert_eq!(
-            statusline.context_thresholds,
-            ContextThresholds::new(85, 95).unwrap()
-        );
-        assert!(config.warnings().is_empty(), "{:?}", config.warnings());
-    }
+    })
 }
 
 #[derive(Default)]
@@ -370,7 +362,6 @@ fn source_reparse_keeps_the_unified_week_start() {
             weekly_start: Some(WeekDay::Sunday),
             ..TestConfig::default()
         },
-        "test",
         WeekDay::Wednesday,
         None,
     )
@@ -386,7 +377,6 @@ fn report_reparse_carries_focused_agent_options() {
             .into_iter()
             .map(OsString::from),
         &TestConfig::default(),
-        "test",
         WeekDay::Monday,
         None,
     )
@@ -742,7 +732,6 @@ fn rejects_a_config_since_date_later_than_the_until_flag() {
             .iter()
             .map(OsString::from),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected parse error");
@@ -771,7 +760,6 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
             std::iter::once(OsString::from("ccusage"))
                 .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
             &config,
-            env!("CARGO_PKG_VERSION"),
         )
     };
 
@@ -810,7 +798,6 @@ fn invalid_config_timezone_names_the_file_and_effective_field() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Err(error) = result else {
@@ -839,7 +826,6 @@ fn statusline_ignores_reversed_default_date_window() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Ok(cli) = result else {
@@ -1607,7 +1593,6 @@ fn rejects_removed_locale_option() {
             .into_iter()
             .map(OsString::from),
         &NoConfig,
-        env!("CARGO_PKG_VERSION"),
     );
     assert!(result.is_err());
 }
@@ -2066,7 +2051,6 @@ fn invalid_explicit_named_stores_fail_statusline() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Err(error) = parsed else {
@@ -2090,16 +2074,16 @@ fn assert_invalid_discovered_stores_allow(args: &[&str]) {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/omp"}]}}"#,
     });
-    let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
-    let config = ccusage_config::ConfigContext::from_args(&args);
-    let parsed = parse_from_with_config(
-        std::iter::once(std::ffi::OsString::from("ccusage"))
-            .chain(args.iter().map(std::ffi::OsString::from)),
-        &config,
-        env!("CARGO_PKG_VERSION"),
-    );
-    assert!(parsed.is_ok(), "{:?}", parsed.err());
+    ccusage_test_support::Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+        let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&args);
+        let parsed = parse_from_with_config(
+            std::iter::once(std::ffi::OsString::from("ccusage"))
+                .chain(args.iter().map(std::ffi::OsString::from)),
+            &config,
+        );
+        assert!(parsed.is_ok(), "{:?}", parsed.err());
+    })
 }
 
 #[test]
@@ -2121,7 +2105,6 @@ fn invalid_explicit_named_stores_fail_agent_commands() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Err(error) = parsed else {
@@ -2149,7 +2132,6 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
                 .map(|arg| std::ffi::OsString::from(arg.as_str())),
         ),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
     let Err(error) = result else {
         panic!("expected config error");

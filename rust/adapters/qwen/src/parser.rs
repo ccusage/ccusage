@@ -306,7 +306,7 @@ mod tests {
         let entry = parse_line(
             Path::new("/tmp/project/chat.jsonl"),
             &record,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             PriceTable::for_map(
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),

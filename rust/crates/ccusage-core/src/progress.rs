@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     io::{self, IsTerminal, Write},
     sync::{Arc, Condvar, Mutex},
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -136,7 +136,7 @@ impl UsageLoadProgress {
         let running = Arc::new((Mutex::new(true), Condvar::new()));
         let worker = {
             let running = Arc::clone(&running);
-            Some(thread::spawn(move || {
+            Some(crate::parallel::spawn_worker(move || {
                 loop {
                     if let Ok(mut state) = state.lock()
                         && state.has_content()

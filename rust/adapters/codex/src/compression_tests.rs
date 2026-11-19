@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use ccusage_core::Diagnostics;
-use ccusage_test_support::{EnvGuard, Fixture};
+use ccusage_test_support::{Environment, Fixture};
 use serde_json::json;
 
 use crate::{
@@ -47,22 +47,23 @@ fn cumulative_count(timestamp: &str, input: u64, cached: u64, output: u64) -> St
 }
 
 fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTreeMap<String, u64> {
-    let _guard = EnvGuard::set("CODEX_HOME", fixture.path("codex"));
-    let (groups, detected) = load_groups_with_diagnostics(
-        &SharedArgs {
-            single_thread,
-            ..SharedArgs::default()
-        },
-        AgentReportKind::Session,
-        Some(&crate::PricingMap::load_embedded()),
-        &Diagnostics::new("codex"),
-    )
-    .unwrap();
-    assert!(detected);
-    groups
-        .into_iter()
-        .map(|(session, group)| (session, group.total_tokens))
-        .collect()
+    Environment::with_var("CODEX_HOME", fixture.path("codex")).run(|| {
+        let (groups, detected) = load_groups_with_diagnostics(
+            &SharedArgs {
+                single_thread,
+                ..SharedArgs::default()
+            },
+            AgentReportKind::Session,
+            Some(&crate::PricingMap::load_embedded()),
+            &Diagnostics::new("codex"),
+        )
+        .unwrap();
+        assert!(detected);
+        groups
+            .into_iter()
+            .map(|(session, group)| (session, group.total_tokens))
+            .collect()
+    })
 }
 
 fn total_tokens(events: &[crate::CodexTokenUsageEvent]) -> u64 {
@@ -350,24 +351,24 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
         ]
         .join("\n"),
     );
-    let _guard = EnvGuard::set("CODEX_HOME", fixture.path("codex"));
-
-    for single_thread in [true, false] {
-        let shared = SharedArgs {
-            since: Some("20261014".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread,
-            ..SharedArgs::default()
-        };
-        let (groups, _) = load_groups_with_diagnostics(
-            &shared,
-            AgentReportKind::Monthly,
-            None,
-            &Diagnostics::new("codex"),
-        )
-        .unwrap();
-        assert_eq!(groups["2026-10"].total_tokens, 70);
-    }
+    Environment::with_var("CODEX_HOME", fixture.path("codex")).run(|| {
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                since: Some("20261014".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread,
+                ..SharedArgs::default()
+            };
+            let (groups, _) = load_groups_with_diagnostics(
+                &shared,
+                AgentReportKind::Monthly,
+                None,
+                &Diagnostics::new("codex"),
+            )
+            .unwrap();
+            assert_eq!(groups["2026-10"].total_tokens, 70);
+        }
+    })
 }
 
 #[test]

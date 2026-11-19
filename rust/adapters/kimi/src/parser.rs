@@ -629,7 +629,7 @@ mod tests {
         let at_cost = price_kimi_usage(&at_cutoff, PriceTable::Calculate(&pricing), usage).0;
         let loaded = kimi_entry_to_loaded(
             at_cutoff,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             PriceTable::Calculate(&pricing),
         );
 

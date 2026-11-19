@@ -10,7 +10,6 @@ fn validated(args: &[&str]) -> Result<(), String> {
         std::iter::once(OsString::from("ccusage"))
             .chain(args.iter().map(|arg| OsString::from(arg.as_str()))),
         &config,
-        "test",
     )
     .map(|_| ())
 }

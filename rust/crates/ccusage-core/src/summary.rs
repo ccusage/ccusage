@@ -338,7 +338,12 @@ mod tests {
         ];
         let rows = summarize_by_key_target(
             &entries,
-            |entry| (entry.project_path.clone(), entry.session_id.clone()),
+            |entry| {
+                (
+                    std::sync::Arc::clone(&entry.project_path),
+                    std::sync::Arc::clone(&entry.session_id),
+                )
+            },
             |(_, session)| (session.to_string(), None),
             KeyTarget::Session,
         )
@@ -564,7 +569,7 @@ mod tests {
         let rows = summarize_by_key_target(
             &[stored.clone(), calculated, other, stored],
             |entry| entry.date.clone(),
-            |key| (key.to_string(), None),
+            |key| (key.clone(), None),
             KeyTarget::Date,
         )
         .unwrap();

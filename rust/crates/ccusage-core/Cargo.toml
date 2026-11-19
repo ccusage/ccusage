@@ -6,6 +6,7 @@ publish.workspace = true
 
 [features]
 resolver-trace = []
+test-environment = ["ccusage-cli/test-environment"]
 
 [dependencies]
 ccusage-cli.workspace = true

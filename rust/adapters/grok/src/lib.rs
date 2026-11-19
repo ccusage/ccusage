@@ -62,7 +62,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
     use std::ffi::OsString;
 
     use super::*;
@@ -114,18 +114,20 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/project-a/session-a/updates.jsonl": line,
         });
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             crate::paths::GROK_HOME_ENV,
             Some(OsString::from(fixture.root().as_os_str())),
-        )]);
-        let shared = crate::cli::SharedArgs {
-            mode: crate::cli::CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            ..crate::cli::SharedArgs::default()
-        };
+        )])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                mode: crate::cli::CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                ..crate::cli::SharedArgs::default()
+            };
 
-        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Grok, &shared);
+            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Grok, &shared);
+        })
     }
 
     #[test]
@@ -151,36 +153,40 @@ mod tests {
                 "{{\"params\":{{\"update\":{{\"sessionUpdate\":\"turn_completed\",\"usage\":{{\"modelUsage\":\"SECRET_CANARY\"}}}}}}}}\n{good}"
             ),
         });
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             crate::paths::GROK_HOME_ENV,
             Some(OsString::from(fixture.root().as_os_str())),
-        )]);
-        let shared = crate::cli::SharedArgs {
-            mode: crate::cli::CostMode::Display,
-            debug: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            since: Some("20270101".parse().unwrap()),
-            ..crate::cli::SharedArgs::default()
-        };
+        )])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                mode: crate::cli::CostMode::Display,
+                debug: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                since: Some("20270101".parse().unwrap()),
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let rows = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &shared,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
+            let rows = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
 
-        assert!(rows.detected);
-        assert!(rows.rows.is_empty());
-        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
-            warning.contains("invalid data")
-                && warning.contains("updates.jsonl:1")
-                && !warning.contains("SECRET_CANARY")
-        }));
+            assert!(rows.detected);
+            assert!(rows.rows.is_empty());
+            assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
+                warning.contains("invalid data")
+                    && warning.contains("updates.jsonl:1")
+                    && !warning.contains("SECRET_CANARY")
+            }));
+        })
     }
 
     fn summary(cache_creation_tokens: u64) -> UsageSummary {

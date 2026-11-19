@@ -80,8 +80,11 @@ comments:
     nu --no-config-file scripts/comments/check.nu
 
 # Run every flake check (treefmt, oxlint, clippy, schema drift, gitleaks)
-check: check-pricing-data
+check: check-pricing-data check-clippy-config
     nix flake check
+
+check-clippy-config:
+    nu --no-config-file scripts/check-clippy-config.nu rust
 
 [script('bash')]
 check-pricing-data:

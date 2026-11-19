@@ -5,6 +5,8 @@ use std::{
     thread,
 };
 
+use ccusage_core::parallel::spawn_scoped_worker;
+
 const PLAIN_PATH_BACKLOG: usize = 1024;
 
 #[derive(Clone, Copy)]
@@ -117,7 +119,7 @@ fn read_discovered_in_parallel(
         let mut started = 0;
         index_discovered(discover, &mut |file| {
             if started < workers {
-                scope.spawn(|| {
+                spawn_scoped_worker(scope, || {
                     let _worker = QueueLifetime {
                         queue,
                         producer: false,

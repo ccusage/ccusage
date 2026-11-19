@@ -639,7 +639,7 @@ impl<'de, N: FieldName> Deserialize<'de> for IsField<N> {
         impl<N: FieldName> Visitor<'_> for KeyVisitor<N> {
             type Value = IsField<N>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an object key")
             }
 
@@ -659,7 +659,7 @@ impl<'de, N: FieldName, T: Deserialize<'de> + Present> Deserialize<'de> for Firs
         impl<'de, N: FieldName, T: Deserialize<'de> + Present> Visitor<'de> for FieldVisitor<N, T> {
             type Value = FirstField<N, T>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 
@@ -715,7 +715,7 @@ impl<'de> Deserialize<'de> for LenientString {
         impl<'de> Visitor<'de> for StringVisitor {
             type Value = LenientString;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 
@@ -763,7 +763,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
         impl<'de, T: Deserialize<'de>> Visitor<'de> for SeqVisitor<T> {
             type Value = LenientSeq<T>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 
@@ -795,7 +795,7 @@ mod tests {
     use serde::{Deserialize, de::DeserializeOwned};
 
     use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvGuard, Fixture};
+    use ccusage_test_support::{Environment, Fixture};
 
     use crate::units::tests::age_past_write_window;
 
@@ -926,18 +926,19 @@ mod tests {
                 .collect::<Vec<_>>();
 
         assert_eq!(records, [1]);
-        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
-        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
-        assert_eq!(
-            diagnostics.warnings(&SharedArgs {
-                debug: true,
-                ..SharedArgs::default()
-            }),
-            [format!(
-                "test: {}:2: last line is incomplete, read as still being written",
-                live.display()
-            )]
-        );
+        Environment::with_var("LOG_LEVEL", "1").run(|| {
+            assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
+            assert_eq!(
+                diagnostics.warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                }),
+                [format!(
+                    "test: {}:2: last line is incomplete, read as still being written",
+                    live.display()
+                )]
+            );
+        })
     }
 
     #[test]
@@ -953,21 +954,22 @@ mod tests {
 
         assert_eq!(records, [1]);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
-        let warnings = diagnostics
-            .warnings(&SharedArgs {
-                debug: true,
-                ..SharedArgs::default()
-            })
-            .join("\n");
-        assert!(
-            warnings.contains(&format!(
-                "{}:2: last line is truncated at column 16",
-                stale.display()
-            )),
-            "{warnings}"
-        );
-        assert!(!warnings.contains("still being written"), "{warnings}");
+        Environment::with_var("LOG_LEVEL", "1").run(|| {
+            let warnings = diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .join("\n");
+            assert!(
+                warnings.contains(&format!(
+                    "{}:2: last line is truncated at column 16",
+                    stale.display()
+                )),
+                "{warnings}"
+            );
+            assert!(!warnings.contains("still being written"), "{warnings}");
+        })
     }
 
     #[test]
@@ -1041,15 +1043,16 @@ mod tests {
         );
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
 
-        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
-        let warnings = diagnostics
-            .warnings(&SharedArgs {
-                debug: true,
-                ..SharedArgs::default()
-            })
-            .join("\n");
-        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at column"));
-        assert!(!warnings.contains("SECRET_CANARY"));
+        Environment::with_var("LOG_LEVEL", "1").run(|| {
+            let warnings = diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .join("\n");
+            assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at column"));
+            assert!(!warnings.contains("SECRET_CANARY"));
+        })
     }
 
     #[test]
@@ -1101,35 +1104,36 @@ mod tests {
         assert_eq!(records, [1, 2]);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
 
-        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
-        let warnings = diagnostics
-            .warnings(&SharedArgs {
-                debug: true,
-                ..SharedArgs::default()
-            })
-            .join("\n");
-        assert!(warnings.contains("skipped 1 record in 1 input (invalid data)"));
-        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error"));
-        assert!(!warnings.contains("/logs/session.jsonl:2:"));
-        assert!(!warnings.contains("SECRET_CANARY"));
+        Environment::with_var("LOG_LEVEL", "1").run(|| {
+            let warnings = diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .join("\n");
+            assert!(warnings.contains("skipped 1 record in 1 input (invalid data)"));
+            assert!(warnings.contains("/logs/session.jsonl:3: JSON data error"));
+            assert!(!warnings.contains("/logs/session.jsonl:2:"));
+            assert!(!warnings.contains("SECRET_CANARY"));
 
-        let database_diagnostics = Diagnostics::new("test");
-        assert!(
-            super::decode_record::<UsageRecord>(
-                b" \t\r",
-                Path::new("/logs/state.db"),
+            let database_diagnostics = Diagnostics::new("test");
+            assert!(
+                super::decode_record::<UsageRecord>(
+                    b" \t\r",
+                    Path::new("/logs/state.db"),
+                    1,
+                    None,
+                    &database_diagnostics,
+                    Some(|_| true),
+                )
+                .is_none()
+            );
+            assert_eq!(
+                database_diagnostics.skipped(SkipKind::InvalidData),
                 1,
-                None,
-                &database_diagnostics,
-                Some(|_| true),
-            )
-            .is_none()
-        );
-        assert_eq!(
-            database_diagnostics.skipped(SkipKind::InvalidData),
-            1,
-            "blank database cells are not JSONL blank lines"
-        );
+                "blank database cells are not JSONL blank lines"
+            );
+        })
     }
 
     #[test]

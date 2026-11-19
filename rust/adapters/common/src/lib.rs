@@ -5,7 +5,10 @@ use std::{
     thread,
 };
 
-use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs};
+use ccusage_core::{
+    Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs,
+    parallel::spawn_scoped_worker,
+};
 
 mod discovery;
 
@@ -224,7 +227,7 @@ where
         chunks
             .into_iter()
             .map(|chunk| {
-                scope.spawn(move || {
+                spawn_scoped_worker(scope, move || {
                     chunk
                         .into_iter()
                         .map(|index| (index, map(&items[index])))

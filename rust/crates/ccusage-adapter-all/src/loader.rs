@@ -10,6 +10,7 @@ use ccusage_adapter_common::{
     rows::SourceRow,
     source::{LoadKind, LoadRequest, ProgressOwner, SourceOptions, UsageSource},
 };
+use ccusage_core::parallel::spawn_scoped_worker;
 
 use crate::{
     Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind,
@@ -406,7 +407,7 @@ pub(super) fn load_agent_rows_parallel(
             handles.push((
                 spec.index,
                 spec.progress_agent,
-                scope.spawn(move || {
+                spawn_scoped_worker(scope, move || {
                     let result = (spec.load)();
                     let _ = sender.send((spec.index, spec.agent, spec.progress_agent, result));
                 }),
@@ -563,7 +564,7 @@ mod tests {
     use ccusage_adapter_common::source::LoadRequest;
     use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     fn load_pi_format_agent_rows(
         custom_path: Option<&str>,
@@ -707,20 +708,21 @@ mod tests {
     fn named_stores_share_the_builtin_pricing_cache() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            offline: true,
-            pi_stores: vec![NamedPiStore {
-                name: "work".to_owned(),
-                path: fixture.path("work-store").to_string_lossy().into_owned(),
-            }],
-            ..Default::default()
-        };
-        let source_args = BTreeMap::new();
-        let sources = run_sources(&shared, &source_args).unwrap();
-        let pricing = load_pricing(&sources);
-        assert_eq!(sources.len(), SOURCES.len() + 1);
-        assert!(Arc::ptr_eq(&pricing["work"], &pricing["amp"]));
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                pi_stores: vec![NamedPiStore {
+                    name: "work".to_owned(),
+                    path: fixture.path("work-store").to_string_lossy().into_owned(),
+                }],
+                ..Default::default()
+            };
+            let source_args = BTreeMap::new();
+            let sources = run_sources(&shared, &source_args).unwrap();
+            let pricing = load_pricing(&sources);
+            assert_eq!(sources.len(), SOURCES.len() + 1);
+            assert!(Arc::ptr_eq(&pricing["work"], &pricing["amp"]));
+        })
     }
 
     #[test]
@@ -747,7 +749,7 @@ mod tests {
         statement.bind((1, created)).unwrap();
         statement.bind((2, data.as_str())).unwrap();
         statement.next().unwrap();
-        let _environment = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             (
                 "CLAUDE_CONFIG_DIR",
@@ -757,29 +759,32 @@ mod tests {
                 "OPENCODE_DATA_DIR",
                 Some(fixture.path("opencode").into_os_string()),
             ),
-        ]);
-        let shared = SharedArgs {
-            offline: true,
-            json: true,
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            ..SharedArgs::with_defaults()
-        };
-        let source = SourceArgs {
-            shared: SharedArgs {
-                timezone: Some("Asia/Tokyo".parse().unwrap()),
-                ..shared.clone()
-            },
-            ..SourceArgs::default()
-        };
-        let (entries, _) =
-            load_opencode_entries(&shared, AgentReportKind::Daily, false, Some(&source)).unwrap();
-        assert_eq!(entries.len(), 1);
-        let (entries, _) =
-            load_opencode_entries(&shared, AgentReportKind::Daily, false, None).unwrap();
-        assert!(entries.is_empty());
+        ])
+        .run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                json: true,
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                ..SharedArgs::with_defaults()
+            };
+            let source = SourceArgs {
+                shared: SharedArgs {
+                    timezone: Some("Asia/Tokyo".parse().unwrap()),
+                    ..shared.clone()
+                },
+                ..SourceArgs::default()
+            };
+            let (entries, _) =
+                load_opencode_entries(&shared, AgentReportKind::Daily, false, Some(&source))
+                    .unwrap();
+            assert_eq!(entries.len(), 1);
+            let (entries, _) =
+                load_opencode_entries(&shared, AgentReportKind::Daily, false, None).unwrap();
+            assert!(entries.is_empty());
+        })
     }
 
     #[test]
@@ -790,73 +795,75 @@ mod tests {
             "claude-config/projects/project-b/session-b.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-b","costUSD":0.02,"message":{"usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-b"}}"#,
             "pi/sessions/project-pi/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":7,"output":3}}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            json: true,
-            mode: CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "claude".to_string(),
-            SourceArgs {
-                options: ccusage_core::cli::AgentOptions {
-                    claude_project: Some("project-a".to_string()),
-                    ..Default::default()
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "claude".to_string(),
+                SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        claude_project: Some("project-a".to_string()),
+                        ..Default::default()
+                    },
+                    shared: shared.clone(),
                 },
-                shared: shared.clone(),
-            },
-        )]);
+            )]);
 
-        let daily = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let daily =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert_eq!(daily.rows.len(), 1);
-        assert_eq!(daily.rows[0].period, "2099-01-02");
-        assert_eq!(
-            daily.rows[0].agents().map(<[_]>::to_vec),
-            Some(vec!["claude", "pi"])
-        );
-        assert_eq!(daily.rows[0].input_tokens, 17);
-        assert_eq!(daily.rows[0].output_tokens, 8);
-        assert!((daily.rows[0].total_cost - 0.01).abs() < f64::EPSILON);
+            assert_eq!(daily.rows.len(), 1);
+            assert_eq!(daily.rows[0].period, "2099-01-02");
+            assert_eq!(
+                daily.rows[0].agents().map(<[_]>::to_vec),
+                Some(vec!["claude", "pi"])
+            );
+            assert_eq!(daily.rows[0].input_tokens, 17);
+            assert_eq!(daily.rows[0].output_tokens, 8);
+            assert!((daily.rows[0].total_cost - 0.01).abs() < f64::EPSILON);
 
-        let sessions =
-            load_rows(AgentReportKind::Session, &shared, &sources, WeekDay::Monday).unwrap();
+            let sessions =
+                load_rows(AgentReportKind::Session, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert!(
-            sessions
-                .rows
-                .iter()
-                .any(|row| row.agent() == "claude" && row.period == "session-a")
-        );
-        assert!(
-            !sessions
-                .rows
-                .iter()
-                .any(|row| row.agent() == "claude" && row.period == "session-b")
-        );
-        assert!(
-            sessions
-                .rows
-                .iter()
-                .any(|row| row.agent() == "pi" && row.period == "pi-session")
-        );
+            assert!(
+                sessions
+                    .rows
+                    .iter()
+                    .any(|row| row.agent() == "claude" && row.period == "session-a")
+            );
+            assert!(
+                !sessions
+                    .rows
+                    .iter()
+                    .any(|row| row.agent() == "claude" && row.period == "session-b")
+            );
+            assert!(
+                sessions
+                    .rows
+                    .iter()
+                    .any(|row| row.agent() == "pi" && row.period == "pi-session")
+            );
+        })
     }
 
-    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvGuard {
+    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> Environment {
         isolated_source_environment_with_pi_agent_dir(fixture, "pi/sessions")
     }
 
     fn isolated_source_environment_with_pi_agent_dir(
         fixture: &ccusage_test_support::Fixture,
         pi_agent_dir: &str,
-    ) -> EnvGuard {
+    ) -> Environment {
         fixture.create_dir_all("claude-config/projects");
         fixture.create_dir_all("pi/sessions");
         fixture.create_dir_all("empty-xdg-config");
         fixture.create_dir_all("empty-xdg-data");
-        EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             (
                 "USERPROFILE",
@@ -1215,50 +1222,51 @@ mod tests {
             "omp/sessions/project-a/agent_inside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "omp/sessions/project-a/agent_outside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
         });
-        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
-        let store_path = fixture.path("omp/sessions").to_string_lossy().into_owned();
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260704".parse().unwrap()),
-            until: Some("20260704".parse().unwrap()),
-            pi_stores: vec![NamedPiStore {
-                name: "omp".to_string(),
-                path: store_path.clone(),
-            }],
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default").run(|| {
+            let store_path = fixture.path("omp/sessions").to_string_lossy().into_owned();
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some("America/Boise".parse().unwrap()),
+                since: Some("20260704".parse().unwrap()),
+                until: Some("20260704".parse().unwrap()),
+                pi_stores: vec![NamedPiStore {
+                    name: "omp".to_string(),
+                    path: store_path.clone(),
+                }],
+                ..SharedArgs::default()
+            };
 
-        let result = load_rows(
-            AgentReportKind::Session,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        )
-        .unwrap();
-        let omp_rows = result
-            .rows
-            .iter()
-            .filter(|row| row.agent() == "omp")
-            .collect::<Vec<_>>();
-        let pi_rows = pi_path_subcommand_rows(
-            &store_path,
-            AgentReportKind::Session,
-            &shared,
-            &PricingMap::default(),
-        )
-        .unwrap();
+            let result = load_rows(
+                AgentReportKind::Session,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            )
+            .unwrap();
+            let omp_rows = result
+                .rows
+                .iter()
+                .filter(|row| row.agent() == "omp")
+                .collect::<Vec<_>>();
+            let pi_rows = pi_path_subcommand_rows(
+                &store_path,
+                AgentReportKind::Session,
+                &shared,
+                &PricingMap::default(),
+            )
+            .unwrap();
 
-        assert_eq!(omp_rows.len(), 1);
-        assert_eq!(omp_rows[0].period, "inside-session");
-        assert_eq!(omp_rows[0].input_tokens, 10);
-        assert_eq!(omp_rows[0].output_tokens, 1);
-        assert_eq!(
-            usage_fingerprint(&pi_rows),
-            vec![("inside-session".to_string(), 10, 1, 0, 0, 11)]
-        );
+            assert_eq!(omp_rows.len(), 1);
+            assert_eq!(omp_rows[0].period, "inside-session");
+            assert_eq!(omp_rows[0].input_tokens, 10);
+            assert_eq!(omp_rows[0].output_tokens, 1);
+            assert_eq!(
+                usage_fingerprint(&pi_rows),
+                vec![("inside-session".to_string(), 10, 1, 0, 0, 11)]
+            );
+        })
     }
 
     #[test]
@@ -1343,46 +1351,47 @@ mod tests {
             "pi/sessions/project-a/agent_until-day.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "pi/sessions/project-a/agent_after-day.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
         });
-        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "pi/sessions");
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260704".parse().unwrap()),
-            until: Some("20260704".parse().unwrap()),
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, "pi/sessions").run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some("America/Boise".parse().unwrap()),
+                since: Some("20260704".parse().unwrap()),
+                until: Some("20260704".parse().unwrap()),
+                ..SharedArgs::default()
+            };
 
-        let result = load_rows(
-            AgentReportKind::Session,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        )
-        .unwrap();
-        let pi_rows = result
-            .rows
-            .iter()
-            .filter(|row| row.agent() == "pi")
-            .cloned()
-            .collect::<Vec<_>>();
-        let pi_path_rows = pi_path_subcommand_rows(
-            fixture.path("pi/sessions").to_str().unwrap(),
-            AgentReportKind::Session,
-            &shared,
-            &PricingMap::default(),
-        )
-        .unwrap();
+            let result = load_rows(
+                AgentReportKind::Session,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            )
+            .unwrap();
+            let pi_rows = result
+                .rows
+                .iter()
+                .filter(|row| row.agent() == "pi")
+                .cloned()
+                .collect::<Vec<_>>();
+            let pi_path_rows = pi_path_subcommand_rows(
+                fixture.path("pi/sessions").to_str().unwrap(),
+                AgentReportKind::Session,
+                &shared,
+                &PricingMap::default(),
+            )
+            .unwrap();
 
-        assert_eq!(
-            usage_fingerprint(&pi_rows),
-            usage_fingerprint(&pi_path_rows)
-        );
-        assert_eq!(
-            usage_fingerprint(&pi_rows),
-            vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
-        );
+            assert_eq!(
+                usage_fingerprint(&pi_rows),
+                usage_fingerprint(&pi_path_rows)
+            );
+            assert_eq!(
+                usage_fingerprint(&pi_rows),
+                vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
+            );
+        })
     }
 
     #[test]
@@ -1392,35 +1401,36 @@ mod tests {
             "claude-config/projects/project-a/until-day.jsonl": r#"{"timestamp":"2026-07-05T03:00:00.000Z","sessionId":"until-day","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":1},"model":"claude-sonnet-4-20250514","id":"msg-until"}}"#,
             "claude-config/projects/project-a/after-day.jsonl": r#"{"timestamp":"2026-07-06T03:00:00.000Z","sessionId":"after-day","costUSD":0.02,"message":{"usage":{"input_tokens":20,"output_tokens":2},"model":"claude-sonnet-4-20250514","id":"msg-after"}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            json: true,
-            mode: CostMode::Display,
-            offline: true,
-            timezone: Some("America/Boise".parse().unwrap()),
-            since: Some("20260704".parse().unwrap()),
-            until: Some("20260704".parse().unwrap()),
-            ..SharedArgs::default()
-        };
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: CostMode::Display,
+                offline: true,
+                timezone: Some("America/Boise".parse().unwrap()),
+                since: Some("20260704".parse().unwrap()),
+                until: Some("20260704".parse().unwrap()),
+                ..SharedArgs::default()
+            };
 
-        let result = load_rows(
-            AgentReportKind::Session,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        )
-        .unwrap();
-        let claude_rows = result
-            .rows
-            .iter()
-            .filter(|row| row.agent() == "claude")
-            .cloned()
-            .collect::<Vec<_>>();
+            let result = load_rows(
+                AgentReportKind::Session,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            )
+            .unwrap();
+            let claude_rows = result
+                .rows
+                .iter()
+                .filter(|row| row.agent() == "claude")
+                .cloned()
+                .collect::<Vec<_>>();
 
-        assert_eq!(
-            usage_fingerprint(&claude_rows),
-            vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
-        );
+            assert_eq!(
+                usage_fingerprint(&claude_rows),
+                vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
+            );
+        })
     }
 
     #[test]
@@ -1628,37 +1638,37 @@ mod tests {
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _environment =
-            isolated_source_environment_with_pi_agent_dir(&fixture, ".pi/agent/sessions");
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![NamedPiStore {
-                name: "omp".to_string(),
-                path: fixture
-                    .path(".pi/agent/sessions")
-                    .to_string_lossy()
-                    .into_owned(),
-            }],
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, ".pi/agent/sessions").run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![NamedPiStore {
+                    name: "omp".to_string(),
+                    path: fixture
+                        .path(".pi/agent/sessions")
+                        .to_string_lossy()
+                        .into_owned(),
+                }],
+                ..SharedArgs::default()
+            };
 
-        let Err(error) = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        ) else {
-            panic!("expected default pi path collision");
-        };
+            let Err(error) = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            ) else {
+                panic!("expected default pi path collision");
+            };
 
-        assert!(error.to_string().contains("Invalid ccusage config"));
-        assert!(error.to_string().contains("omp"));
-        assert!(error.to_string().contains("default pi"));
+            assert!(error.to_string().contains("Invalid ccusage config"));
+            assert!(error.to_string().contains("omp"));
+            assert!(error.to_string().contains("default pi"));
+        })
     }
 
     #[test]
@@ -1667,42 +1677,43 @@ mod tests {
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
-        let path = fixture
-            .path("shared/sessions")
-            .to_string_lossy()
-            .into_owned();
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![
-                NamedPiStore {
-                    name: "omp".to_string(),
-                    path: path.clone(),
-                },
-                NamedPiStore {
-                    name: "fork".to_string(),
-                    path,
-                },
-            ],
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default").run(|| {
+            let path = fixture
+                .path("shared/sessions")
+                .to_string_lossy()
+                .into_owned();
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![
+                    NamedPiStore {
+                        name: "omp".to_string(),
+                        path: path.clone(),
+                    },
+                    NamedPiStore {
+                        name: "fork".to_string(),
+                        path,
+                    },
+                ],
+                ..SharedArgs::default()
+            };
 
-        let Err(error) = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        ) else {
-            panic!("expected named pi store path collision");
-        };
+            let Err(error) = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            ) else {
+                panic!("expected named pi store path collision");
+            };
 
-        assert!(error.to_string().contains("Invalid ccusage config"));
-        assert!(error.to_string().contains("fork"));
-        assert!(error.to_string().contains("omp"));
+            assert!(error.to_string().contains("Invalid ccusage config"));
+            assert!(error.to_string().contains("fork"));
+            assert!(error.to_string().contains("omp"));
+        })
     }
 
     #[test]
@@ -1711,37 +1722,37 @@ mod tests {
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _environment =
-            isolated_source_environment_with_pi_agent_dir(&fixture, ".pi/agent/sessions");
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![NamedPiStore {
-                name: "omp".to_string(),
-                path: fixture
-                    .path(".pi/agent/sessions/project-a")
-                    .to_string_lossy()
-                    .into_owned(),
-            }],
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, ".pi/agent/sessions").run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![NamedPiStore {
+                    name: "omp".to_string(),
+                    path: fixture
+                        .path(".pi/agent/sessions/project-a")
+                        .to_string_lossy()
+                        .into_owned(),
+                }],
+                ..SharedArgs::default()
+            };
 
-        let Err(error) = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        ) else {
-            panic!("expected nested default pi path collision");
-        };
+            let Err(error) = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            ) else {
+                panic!("expected nested default pi path collision");
+            };
 
-        assert!(error.to_string().contains("Invalid ccusage config"));
-        assert!(error.to_string().contains("omp"));
-        assert!(error.to_string().contains("default pi"));
+            assert!(error.to_string().contains("Invalid ccusage config"));
+            assert!(error.to_string().contains("omp"));
+            assert!(error.to_string().contains("default pi"));
+        })
     }
 
     #[test]
@@ -1750,43 +1761,44 @@ mod tests {
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
-        let shared_path = fixture
-            .path("shared/sessions")
-            .to_string_lossy()
-            .into_owned();
-        let distinct = fixture.create_dir_all("fork-only/sessions");
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![
-                NamedPiStore {
-                    name: "omp".to_string(),
-                    path: shared_path.clone(),
-                },
-                NamedPiStore {
-                    name: "fork".to_string(),
-                    path: format!("{}, {}", distinct.display(), shared_path),
-                },
-            ],
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default").run(|| {
+            let shared_path = fixture
+                .path("shared/sessions")
+                .to_string_lossy()
+                .into_owned();
+            let distinct = fixture.create_dir_all("fork-only/sessions");
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![
+                    NamedPiStore {
+                        name: "omp".to_string(),
+                        path: shared_path.clone(),
+                    },
+                    NamedPiStore {
+                        name: "fork".to_string(),
+                        path: format!("{}, {}", distinct.display(), shared_path),
+                    },
+                ],
+                ..SharedArgs::default()
+            };
 
-        let Err(error) = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        ) else {
-            panic!("expected partial named pi store path collision");
-        };
+            let Err(error) = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            ) else {
+                panic!("expected partial named pi store path collision");
+            };
 
-        assert!(error.to_string().contains("Invalid ccusage config"));
-        assert!(error.to_string().contains("fork"));
-        assert!(error.to_string().contains("omp"));
+            assert!(error.to_string().contains("Invalid ccusage config"));
+            assert!(error.to_string().contains("fork"));
+            assert!(error.to_string().contains("omp"));
+        })
     }
 
     #[test]
@@ -1795,38 +1807,39 @@ mod tests {
         let fixture = fs_fixture!({
             "omp/sessions/project-a/agent_omp-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![NamedPiStore {
-                name: "omp".to_string(),
-                path: fixture.path("omp/sessions").to_string_lossy().into_owned(),
-            }],
-            ..SharedArgs::default()
-        };
+        isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default").run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![NamedPiStore {
+                    name: "omp".to_string(),
+                    path: fixture.path("omp/sessions").to_string_lossy().into_owned(),
+                }],
+                ..SharedArgs::default()
+            };
 
-        let result = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        )
-        .unwrap();
+            let result = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            )
+            .unwrap();
 
-        assert!(result.detected_agents.contains(&"omp"));
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(
-            result.rows[0].agents().map(<[_]>::to_vec),
-            Some(vec!["omp"])
-        );
-        assert_eq!(result.rows[0].models_used, vec!["[omp] gpt-5"]);
-        assert_eq!(result.rows[0].input_tokens, 30);
-        assert_eq!(result.rows[0].output_tokens, 40);
+            assert!(result.detected_agents.contains(&"omp"));
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(
+                result.rows[0].agents().map(<[_]>::to_vec),
+                Some(vec!["omp"])
+            );
+            assert_eq!(result.rows[0].models_used, vec!["[omp] gpt-5"]);
+            assert_eq!(result.rows[0].input_tokens, 30);
+            assert_eq!(result.rows[0].output_tokens, 40);
+        })
     }
 
     #[test]
@@ -1835,42 +1848,44 @@ mod tests {
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "pi".to_string(),
-            SourceArgs {
-                options: ccusage_core::cli::AgentOptions {
-                    pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
-                    ..Default::default()
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "pi".to_string(),
+                SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                        ..Default::default()
+                    },
+                    shared: shared.clone(),
                 },
-                shared: shared.clone(),
-            },
-        )]);
+            )]);
 
-        let unified = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        )
-        .unwrap();
-        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let unified = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            )
+            .unwrap();
+            let result =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert!(!unified.detected_agents.contains(&"pi"));
-        assert!(result.detected_agents.contains(&"pi"));
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].agents().map(<[_]>::to_vec), Some(vec!["pi"]));
-        assert_eq!(result.rows[0].input_tokens, 30);
-        assert_eq!(result.rows[0].output_tokens, 40);
+            assert!(!unified.detected_agents.contains(&"pi"));
+            assert!(result.detected_agents.contains(&"pi"));
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.rows[0].agents().map(<[_]>::to_vec), Some(vec!["pi"]));
+            assert_eq!(result.rows[0].input_tokens, 30);
+            assert_eq!(result.rows[0].output_tokens, 40);
+        })
     }
 
     #[test]
@@ -1879,40 +1894,42 @@ mod tests {
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            json: true,
-            mode: crate::cli::CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990101".parse().unwrap()),
-            until: Some("20990103".parse().unwrap()),
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "pi".to_string(),
-            SourceArgs {
-                shared: SharedArgs {
-                    since: Some("20990105".parse().unwrap()),
-                    until: Some("20990106".parse().unwrap()),
-                    ..shared.clone()
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                json: true,
+                mode: crate::cli::CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990101".parse().unwrap()),
+                until: Some("20990103".parse().unwrap()),
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "pi".to_string(),
+                SourceArgs {
+                    shared: SharedArgs {
+                        since: Some("20990105".parse().unwrap()),
+                        until: Some("20990106".parse().unwrap()),
+                        ..shared.clone()
+                    },
+                    ..SourceArgs::default()
                 },
-                ..SourceArgs::default()
-            },
-        )]);
+            )]);
 
-        let unified = load_rows(
-            AgentReportKind::Daily,
-            &shared,
-            &NO_SOURCES,
-            WeekDay::Monday,
-        )
-        .unwrap();
-        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let unified = load_rows(
+                AgentReportKind::Daily,
+                &shared,
+                &NO_SOURCES,
+                WeekDay::Monday,
+            )
+            .unwrap();
+            let result =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert_eq!(unified.rows.len(), 1);
-        assert!(result.rows.is_empty());
-        assert!(result.detected_agents.contains(&"pi"));
+            assert_eq!(unified.rows.len(), 1);
+            assert!(result.rows.is_empty());
+            assert!(result.detected_agents.contains(&"pi"));
+        })
     }
 
     #[test]
@@ -1933,81 +1950,83 @@ mod tests {
             ),
             "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2026-07-22T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            mode: CostMode::Calculate,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260720".parse().unwrap()),
-            until: Some("20260723".parse().unwrap()),
-            ..SharedArgs::default()
-        };
-        let pricing_overrides = BTreeMap::from([(
-            "gpt-source-config".to_string(),
-            crate::cli::PricingOverride {
-                input_cost_per_token: Some(1e-6),
-                output_cost_per_token: Some(2e-6),
-                fast_multiplier: Some(3.0),
-                ..Default::default()
-            },
-        )]);
-        let pi_pricing_overrides = BTreeMap::from([(
-            "gpt-source-config".to_string(),
-            crate::cli::PricingOverride {
-                input_cost_per_token: Some(5e-6),
-                output_cost_per_token: Some(10e-6),
-                ..Default::default()
-            },
-        )]);
-        let sources = BTreeMap::from([
-            (
-                "codex".to_string(),
-                SourceArgs {
-                    options: ccusage_core::cli::AgentOptions {
-                        codex_speed: CodexSpeed::Fast,
-                        ..Default::default()
-                    },
-                    shared: SharedArgs {
-                        since: Some("20260722".parse().unwrap()),
-                        until: Some("20260722".parse().unwrap()),
-                        pricing_overrides,
-                        ..shared.clone()
-                    },
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Calculate,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20260720".parse().unwrap()),
+                until: Some("20260723".parse().unwrap()),
+                ..SharedArgs::default()
+            };
+            let pricing_overrides = BTreeMap::from([(
+                "gpt-source-config".to_string(),
+                crate::cli::PricingOverride {
+                    input_cost_per_token: Some(1e-6),
+                    output_cost_per_token: Some(2e-6),
+                    fast_multiplier: Some(3.0),
+                    ..Default::default()
                 },
-            ),
-            (
-                "pi".to_string(),
-                SourceArgs {
-                    shared: SharedArgs {
-                        pricing_overrides: pi_pricing_overrides,
-                        ..shared.clone()
-                    },
-                    ..SourceArgs::default()
+            )]);
+            let pi_pricing_overrides = BTreeMap::from([(
+                "gpt-source-config".to_string(),
+                crate::cli::PricingOverride {
+                    input_cost_per_token: Some(5e-6),
+                    output_cost_per_token: Some(10e-6),
+                    ..Default::default()
                 },
-            ),
-        ]);
+            )]);
+            let sources = BTreeMap::from([
+                (
+                    "codex".to_string(),
+                    SourceArgs {
+                        options: ccusage_core::cli::AgentOptions {
+                            codex_speed: CodexSpeed::Fast,
+                            ..Default::default()
+                        },
+                        shared: SharedArgs {
+                            since: Some("20260722".parse().unwrap()),
+                            until: Some("20260722".parse().unwrap()),
+                            pricing_overrides,
+                            ..shared.clone()
+                        },
+                    },
+                ),
+                (
+                    "pi".to_string(),
+                    SourceArgs {
+                        shared: SharedArgs {
+                            pricing_overrides: pi_pricing_overrides,
+                            ..shared.clone()
+                        },
+                        ..SourceArgs::default()
+                    },
+                ),
+            ]);
 
-        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let result =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(
-            result.rows[0].agents().map(<[_]>::to_vec),
-            Some(vec!["codex", "pi"])
-        );
-        let breakdowns = result.rows[0].agent_breakdowns().unwrap();
-        let codex_row = breakdowns
-            .iter()
-            .find(|row| row.agent == "codex")
-            .expect("Codex fixture should produce a row");
-        assert_eq!(codex_row.period, "2026-07-22");
-        assert_eq!(codex_row.input_tokens, 1000);
-        assert_eq!(codex_row.output_tokens, 500);
-        assert!((codex_row.total_cost - 0.006).abs() < f64::EPSILON);
-        let pi_row = breakdowns
-            .iter()
-            .find(|row| row.agent == "pi")
-            .expect("Pi fixture should produce a row");
-        assert!((pi_row.total_cost - 0.01).abs() < f64::EPSILON);
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(
+                result.rows[0].agents().map(<[_]>::to_vec),
+                Some(vec!["codex", "pi"])
+            );
+            let breakdowns = result.rows[0].agent_breakdowns().unwrap();
+            let codex_row = breakdowns
+                .iter()
+                .find(|row| row.agent == "codex")
+                .expect("Codex fixture should produce a row");
+            assert_eq!(codex_row.period, "2026-07-22");
+            assert_eq!(codex_row.input_tokens, 1000);
+            assert_eq!(codex_row.output_tokens, 500);
+            assert!((codex_row.total_cost - 0.006).abs() < f64::EPSILON);
+            let pi_row = breakdowns
+                .iter()
+                .find(|row| row.agent == "pi")
+                .expect("Pi fixture should produce a row");
+            assert!((pi_row.total_cost - 0.01).abs() < f64::EPSILON);
+        })
     }
 
     #[test]
@@ -2021,41 +2040,43 @@ mod tests {
                 500,
             ),
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            mode: CostMode::Calculate,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "codex".to_string(),
-            SourceArgs {
-                options: ccusage_core::cli::AgentOptions {
-                    codex_speed: CodexSpeed::Fast,
-                    ..Default::default()
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Calculate,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "codex".to_string(),
+                SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        codex_speed: CodexSpeed::Fast,
+                        ..Default::default()
+                    },
+                    shared: SharedArgs {
+                        pricing_overrides: BTreeMap::from([(
+                            "gpt-source-config".to_string(),
+                            crate::cli::PricingOverride {
+                                input_cost_per_token: Some(1e-6),
+                                output_cost_per_token: Some(2e-6),
+                                fast_multiplier: Some(3.0),
+                                ..Default::default()
+                            },
+                        )]),
+                        ..shared.clone()
+                    },
                 },
-                shared: SharedArgs {
-                    pricing_overrides: BTreeMap::from([(
-                        "gpt-source-config".to_string(),
-                        crate::cli::PricingOverride {
-                            input_cost_per_token: Some(1e-6),
-                            output_cost_per_token: Some(2e-6),
-                            fast_multiplier: Some(3.0),
-                            ..Default::default()
-                        },
-                    )]),
-                    ..shared.clone()
-                },
-            },
-        )]);
+            )]);
 
-        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let result =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].input_tokens, 1000);
-        assert_eq!(result.rows[0].output_tokens, 500);
-        assert!((result.rows[0].total_cost - 0.006).abs() < f64::EPSILON);
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.rows[0].input_tokens, 1000);
+            assert_eq!(result.rows[0].output_tokens, 500);
+            assert!((result.rows[0].total_cost - 0.006).abs() < f64::EPSILON);
+        })
     }
 
     #[test]
@@ -2064,36 +2085,38 @@ mod tests {
         let fixture = fs_fixture!({
             "custom-openclaw/agents/main/sessions/custom.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1660,"output":55,"totalTokens":1715,"cost":{"total":0.02}},"timestamp":1769753935279}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "openclaw".to_string(),
-            SourceArgs {
-                options: ccusage_core::cli::AgentOptions {
-                    open_claw_path: Some(
-                        fixture
-                            .path("custom-openclaw")
-                            .to_string_lossy()
-                            .into_owned(),
-                    ),
-                    ..Default::default()
+        isolated_source_environment(&fixture).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "openclaw".to_string(),
+                SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        open_claw_path: Some(
+                            fixture
+                                .path("custom-openclaw")
+                                .to_string_lossy()
+                                .into_owned(),
+                        ),
+                        ..Default::default()
+                    },
+                    shared: shared.clone(),
                 },
-                shared: shared.clone(),
-            },
-        )]);
+            )]);
 
-        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let result =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert!(result.detected_agents.contains(&"openclaw"));
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].input_tokens, 1660);
-        assert_eq!(result.rows[0].output_tokens, 55);
-        assert!((result.rows[0].total_cost - 0.02).abs() < f64::EPSILON);
+            assert!(result.detected_agents.contains(&"openclaw"));
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.rows[0].input_tokens, 1660);
+            assert_eq!(result.rows[0].output_tokens, 55);
+            assert!((result.rows[0].total_cost - 0.02).abs() < f64::EPSILON);
+        })
     }
 
     #[test]
@@ -2102,37 +2125,38 @@ mod tests {
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let custom_pi_path = fixture.path("custom/pi").to_string_lossy().into_owned();
-        let shared = SharedArgs {
-            offline: true,
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![NamedPiStore {
-                name: "fork".to_string(),
-                path: custom_pi_path.clone(),
-            }],
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "pi".to_string(),
-            SourceArgs {
-                options: ccusage_core::cli::AgentOptions {
-                    pi_path: Some(custom_pi_path),
-                    ..Default::default()
+        isolated_source_environment(&fixture).run(|| {
+            let custom_pi_path = fixture.path("custom/pi").to_string_lossy().into_owned();
+            let shared = SharedArgs {
+                offline: true,
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![NamedPiStore {
+                    name: "fork".to_string(),
+                    path: custom_pi_path.clone(),
+                }],
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "pi".to_string(),
+                SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        pi_path: Some(custom_pi_path),
+                        ..Default::default()
+                    },
+                    shared: shared.clone(),
                 },
-                shared: shared.clone(),
-            },
-        )]);
+            )]);
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday)
-        else {
-            panic!("expected named pi store to collide with the configured pi path");
-        };
+            let Err(error) = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday)
+            else {
+                panic!("expected named pi store to collide with the configured pi path");
+            };
 
-        assert!(error.to_string().contains("Invalid ccusage config"));
-        assert!(error.to_string().contains("fork"));
-        assert!(error.to_string().contains("default pi store"));
+            assert!(error.to_string().contains("Invalid ccusage config"));
+            assert!(error.to_string().contains("fork"));
+            assert!(error.to_string().contains("default pi store"));
+        })
     }
 
     #[test]
@@ -2141,60 +2165,62 @@ mod tests {
         let fixture = fs_fixture!({
             "fork/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-named-source-config","usage":{"input":1000,"output":500}}}"#,
         });
-        let _environment = isolated_source_environment(&fixture);
-        let pricing_key = "[fork] gpt-named-source-config".to_string();
-        let shared = SharedArgs {
-            mode: CostMode::Calculate,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20990102".parse().unwrap()),
-            until: Some("20990102".parse().unwrap()),
-            pi_stores: vec![NamedPiStore {
-                name: "fork".to_string(),
-                path: fixture.path("fork/sessions").to_string_lossy().into_owned(),
-            }],
-            pricing_overrides: BTreeMap::from([(
-                pricing_key.clone(),
-                crate::cli::PricingOverride {
-                    input_cost_per_token: Some(1e-6),
-                    output_cost_per_token: Some(2e-6),
-                    ..Default::default()
+        isolated_source_environment(&fixture).run(|| {
+            let pricing_key = "[fork] gpt-named-source-config".to_string();
+            let shared = SharedArgs {
+                mode: CostMode::Calculate,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990102".parse().unwrap()),
+                until: Some("20990102".parse().unwrap()),
+                pi_stores: vec![NamedPiStore {
+                    name: "fork".to_string(),
+                    path: fixture.path("fork/sessions").to_string_lossy().into_owned(),
+                }],
+                pricing_overrides: BTreeMap::from([(
+                    pricing_key.clone(),
+                    crate::cli::PricingOverride {
+                        input_cost_per_token: Some(1e-6),
+                        output_cost_per_token: Some(2e-6),
+                        ..Default::default()
+                    },
+                )]),
+                ..SharedArgs::default()
+            };
+            let sources = BTreeMap::from([(
+                "pi".to_string(),
+                SourceArgs {
+                    shared: SharedArgs {
+                        since: Some("20990105".parse().unwrap()),
+                        until: Some("20990106".parse().unwrap()),
+                        pricing_overrides: BTreeMap::from([(
+                            pricing_key,
+                            crate::cli::PricingOverride {
+                                input_cost_per_token: Some(10e-6),
+                                output_cost_per_token: Some(20e-6),
+                                ..Default::default()
+                            },
+                        )]),
+                        ..shared.clone()
+                    },
+                    ..SourceArgs::default()
                 },
-            )]),
-            ..SharedArgs::default()
-        };
-        let sources = BTreeMap::from([(
-            "pi".to_string(),
-            SourceArgs {
-                shared: SharedArgs {
-                    since: Some("20990105".parse().unwrap()),
-                    until: Some("20990106".parse().unwrap()),
-                    pricing_overrides: BTreeMap::from([(
-                        pricing_key,
-                        crate::cli::PricingOverride {
-                            input_cost_per_token: Some(10e-6),
-                            output_cost_per_token: Some(20e-6),
-                            ..Default::default()
-                        },
-                    )]),
-                    ..shared.clone()
-                },
-                ..SourceArgs::default()
-            },
-        )]);
+            )]);
 
-        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+            let result =
+                load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
-        assert!(result.detected_agents.contains(&"fork"));
-        let named_store = result.rows[0]
-            .agent_breakdowns()
-            .unwrap()
-            .iter()
-            .find(|row| row.agent == "fork")
-            .expect("named store should use the unified date window");
-        assert_eq!(named_store.input_tokens, 1000);
-        assert_eq!(named_store.output_tokens, 500);
-        assert!((named_store.total_cost - 0.002).abs() < f64::EPSILON);
+            assert!(result.detected_agents.contains(&"fork"));
+            let named_store = result.rows[0]
+                .agent_breakdowns()
+                .unwrap()
+                .iter()
+                .find(|row| row.agent == "fork")
+                .expect("named store should use the unified date window");
+            assert_eq!(named_store.input_tokens, 1000);
+            assert_eq!(named_store.output_tokens, 500);
+            assert!((named_store.total_cost - 0.002).abs() < f64::EPSILON);
+        })
     }
 
     #[test]

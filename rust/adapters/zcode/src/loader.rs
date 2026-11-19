@@ -216,7 +216,7 @@ mod tests {
 
     use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
     use ccusage_core::{ReportWindow, cli::AgentReportKind};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
     use crate::cli::CostMode;
@@ -314,19 +314,20 @@ mod tests {
     }
 
     fn load_with_mode(root: &Path, mode: CostMode) -> Vec<LoadedEntry> {
-        let _guard = EnvGuard::set(super::super::paths::ZCODE_HOME_ENV, root);
-        let shared = SharedArgs {
-            mode,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
-        )
-        .unwrap()
+        Environment::with_var(super::super::paths::ZCODE_HOME_ENV, root).run(|| {
+            let shared = SharedArgs {
+                mode,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap()
+        })
     }
 
     fn load(root: &Path) -> Vec<LoadedEntry> {
@@ -372,27 +373,29 @@ mod tests {
             .unwrap();
         insert_current_usage(&database, "usage-1", "completed");
         drop(db);
-        let _env = EnvGuard::set(
+        Environment::with_var(
             super::super::paths::ZCODE_HOME_ENV,
             format!("{},{}", broken.root().display(), healthy.root().display()),
-        );
-        let shared = SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-
-        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &shared,
-            ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
         )
-        .unwrap();
+        .run(|| {
+            let shared = SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &shared,
+                ccusage_adapter_common::source::SourceOptions::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        })
     }
 
     #[test]
@@ -408,7 +411,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         let loaded = load_entries_from_databases(
             &[fixture.path("broken.db"), fixture.path("unsupported.db")],
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &shared,
             PriceTable::for_map(shared.mode, &pricing),
             &diagnostics,
@@ -433,7 +436,7 @@ mod tests {
         let diagnostics = Diagnostics::new("zcode");
         load_entries_from_databases(
             std::slice::from_ref(&path),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &SharedArgs::default(),
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &diagnostics,
@@ -470,7 +473,7 @@ mod tests {
         let diagnostics = Diagnostics::new("zcode");
         let entries = load_entries_from_databases(
             std::slice::from_ref(&path),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             &SharedArgs::default(),
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &diagnostics,
@@ -533,39 +536,40 @@ mod tests {
         .unwrap();
         drop(db);
 
-        let _home = EnvGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
-        let shared = SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let window = ReportWindow::from_shared(&shared);
-        let pricing = ccusage_core::PricingMap::load_embedded();
-        let diagnostics = Diagnostics::new("zcode");
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: SourceOptions::default(),
-            diagnostics: &diagnostics,
-        };
-
-        let entries = crate::SOURCE.load_entries(&cx).unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].message_id.as_deref(), Some("healthy"));
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
-        let warnings = diagnostics
-            .warnings(&SharedArgs {
-                debug: true,
+        Environment::with_var(super::super::paths::ZCODE_HOME_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
-            })
-            .join("\n");
-        assert!(!warnings.contains("blank-session"));
-        assert!(!warnings.contains("blank-model"));
-        assert!(!warnings.contains("bad-timestamp"));
+            };
+            let window = ReportWindow::from_shared(&shared);
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let diagnostics = Diagnostics::new("zcode");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
+
+            let entries = crate::SOURCE.load_entries(&cx).unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].message_id.as_deref(), Some("healthy"));
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+            let warnings = diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .join("\n");
+            assert!(!warnings.contains("blank-session"));
+            assert!(!warnings.contains("blank-model"));
+            assert!(!warnings.contains("bad-timestamp"));
+        })
     }
 
     #[test]
@@ -678,26 +682,27 @@ mod tests {
         drop(statement);
         drop(db);
 
-        let _guard = EnvGuard::set(
+        Environment::with_var(
             super::super::paths::ZCODE_HOME_ENV,
             format!("{},{}", first.root().display(), second.root().display()),
-        );
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
         )
-        .unwrap();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
-        assert_eq!(entries[1].message_id.as_deref(), Some("usage-2"));
-        drop(_guard);
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+            assert_eq!(entries[1].message_id.as_deref(), Some("usage-2"));
+        });
 
         let invalid = fs_fixture!({});
         invalid.create_dir_all("cli/db");

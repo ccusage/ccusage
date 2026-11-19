@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use ccusage_test_support::Fixture;
+use ccusage_test_support::{Environment, Fixture};
 
 mod golden;
 mod support;
@@ -342,7 +342,8 @@ fn all_agents_unified() {
 #[test]
 #[ignore = "writes into CCUSAGE_GOLDEN_FIXTURE_DIR; run by diff-refs.bb"]
 fn export_golden_fixture() {
-    let dir = std::env::var_os("CCUSAGE_GOLDEN_FIXTURE_DIR")
+    let dir = Environment::current()
+        .var_os("CCUSAGE_GOLDEN_FIXTURE_DIR")
         .expect("CCUSAGE_GOLDEN_FIXTURE_DIR names the directory to export into");
     golden::export_fixture(AGENTS, std::path::Path::new(&dir));
 }

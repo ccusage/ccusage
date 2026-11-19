@@ -94,7 +94,7 @@ fn deduplicate_events(
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvGuard, Fixture};
+    use ccusage_test_support::{Environment, Fixture};
     use serde_json::json;
 
     use std::path::Path;
@@ -164,11 +164,11 @@ mod tests {
         single_thread: bool,
         pricing: &PricingMap,
     ) -> Vec<LoadedEntry> {
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-        load_entries(&shared(single_thread), pricing).unwrap()
+        )])
+        .run(|| load_entries(&shared(single_thread), pricing).unwrap())
     }
 
     fn snapshot_pricing() -> PricingMap {
@@ -351,25 +351,27 @@ mod tests {
             fixture.path("one").display(),
             fixture.path("two").display()
         );
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
-        )]);
+        )])
+        .run(|| {
+            let single_threaded =
+                load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+            let default_mode = load_entries(&shared(false), &PricingMap::load_embedded()).unwrap();
 
-        let single_threaded = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
-        let default_mode = load_entries(&shared(false), &PricingMap::load_embedded()).unwrap();
-
-        assert_eq!(
-            single_threaded
-                .iter()
-                .map(|entry| entry.message_id.clone())
-                .collect::<Vec<_>>(),
-            default_mode
-                .iter()
-                .map(|entry| entry.message_id.clone())
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(single_threaded.len(), 2);
+            assert_eq!(
+                single_threaded
+                    .iter()
+                    .map(|entry| entry.message_id.clone())
+                    .collect::<Vec<_>>(),
+                default_mode
+                    .iter()
+                    .map(|entry| entry.message_id.clone())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(single_threaded.len(), 2);
+        })
     }
 
     #[test]
@@ -427,17 +429,18 @@ mod tests {
             fixture.path("first").display(),
             fixture.path("second").display()
         );
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
-        )]);
+        )])
+        .run(|| {
+            let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
 
-        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].message_id.as_deref(), Some("shared-response"));
-        assert_eq!(entries[0].usage.input_tokens, 200);
-        assert_eq!(entries[0].usage.output_tokens, 350);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].message_id.as_deref(), Some("shared-response"));
+            assert_eq!(entries[0].usage.input_tokens, 200);
+            assert_eq!(entries[0].usage.output_tokens, 350);
+        })
     }
 
     #[test]
@@ -688,32 +691,34 @@ mod tests {
             &[],
         );
 
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-        let pricing = PricingMap::load_embedded();
-        let entries = load_entries(&shared(true), &pricing).unwrap();
+        )])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
+            let entries = load_entries(&shared(true), &pricing).unwrap();
 
-        assert_eq!(entries.len(), 2);
-        let step = entries
-            .iter()
-            .find(|entry| entry.message_id.as_deref() == Some("step-pro"))
-            .unwrap();
-        let retry = entries
-            .iter()
-            .find(|entry| entry.message_id.as_deref() == Some("retry-opus"))
-            .unwrap();
-        assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
-        assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
-        let step_pricing = pricing.find("gemini-2.5-pro").unwrap();
-        let retry_pricing = pricing.find("claude-4-opus").unwrap();
-        let expected_step_cost = 10.0 * step_pricing.input + 5.0 * step_pricing.output;
-        let expected_retry_cost = 20.0 * retry_pricing.input + 4.0 * retry_pricing.output;
-        assert!((step.cost - expected_step_cost).abs() < 1e-15);
-        assert!((retry.cost - expected_retry_cost).abs() < 1e-15);
-        assert!(step.missing_pricing_model.is_none());
-        assert!(retry.missing_pricing_model.is_none());
+            assert_eq!(entries.len(), 2);
+            let step = entries
+                .iter()
+                .find(|entry| entry.message_id.as_deref() == Some("step-pro"))
+                .unwrap();
+            let retry = entries
+                .iter()
+                .find(|entry| entry.message_id.as_deref() == Some("retry-opus"))
+                .unwrap();
+            assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
+            assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
+            let step_pricing = pricing.find("gemini-2.5-pro").unwrap();
+            let retry_pricing = pricing.find("claude-4-opus").unwrap();
+            let expected_step_cost = 10.0 * step_pricing.input + 5.0 * step_pricing.output;
+            let expected_retry_cost = 20.0 * retry_pricing.input + 4.0 * retry_pricing.output;
+            assert!((step.cost - expected_step_cost).abs() < 1e-15);
+            assert!((retry.cost - expected_retry_cost).abs() < 1e-15);
+            assert!(step.missing_pricing_model.is_none());
+            assert!(retry.missing_pricing_model.is_none());
+        })
     }
 
     #[test]
@@ -838,15 +843,17 @@ mod tests {
             &[],
             &[],
         );
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-        let (entries, diagnostics) =
-            load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        )])
+        .run(|| {
+            let (entries, diagnostics) =
+                load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        })
     }
 
     #[test]
@@ -880,17 +887,19 @@ mod tests {
             )],
             &[],
         );
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-        let (entries, diagnostics) =
-            load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.input_tokens, 10);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 20);
-        assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
+        )])
+        .run(|| {
+            let (entries, diagnostics) =
+                load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].usage.input_tokens, 10);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 20);
+            assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
+        })
     }
 
     #[test]
@@ -1318,21 +1327,22 @@ mod tests {
         connection
             .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (super::super::paths::ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
-        ]);
+        ])
+        .run(|| {
+            assert!(
+                super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
+                    .unwrap()
+                    .is_empty()
+            );
 
-        assert!(
-            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
-                .unwrap()
-                .is_empty()
-        );
+            let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
 
-        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
-
-        assert!(entries.is_empty());
+            assert!(entries.is_empty());
+        })
     }
 
     #[test]
@@ -1346,30 +1356,31 @@ mod tests {
             &[],
             &[],
         );
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
+        )])
+        .run(|| {
+            let diagnostics = skipped_databases();
 
-        let diagnostics = skipped_databases();
-
-        assert!(
-            diagnostics
-                .warnings(&SharedArgs {
-                    debug: true,
-                    ..shared(true)
-                })
-                .contains(&format!(
-                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
-                    fixture.path("conversations/empty.db").display()
-                ))
-        );
-        assert_skipped(
-            &diagnostics,
-            SkipKind::InvalidData,
-            "invalid data",
-            &fixture.path("conversations/malformed.db"),
-        );
+            assert!(
+                diagnostics
+                    .warnings(&SharedArgs {
+                        debug: true,
+                        ..shared(true)
+                    })
+                    .contains(&format!(
+                        "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                        fixture.path("conversations/empty.db").display()
+                    ))
+            );
+            assert_skipped(
+                &diagnostics,
+                SkipKind::InvalidData,
+                "invalid data",
+                &fixture.path("conversations/malformed.db"),
+            );
+        })
     }
 
     #[test]
@@ -1377,17 +1388,18 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let not_a_database = fixture.write_file("conversations/not-a-db.db", "not sqlite");
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-
-        assert_skipped(
-            &skipped_databases(),
-            SkipKind::InvalidData,
-            "invalid data",
-            &not_a_database,
-        );
+        )])
+        .run(|| {
+            assert_skipped(
+                &skipped_databases(),
+                SkipKind::InvalidData,
+                "invalid data",
+                &not_a_database,
+            );
+        })
     }
 
     #[test]
@@ -1399,26 +1411,27 @@ mod tests {
         connection
             .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
+        )])
+        .run(|| {
+            let diagnostics = skipped_databases();
 
-        let diagnostics = skipped_databases();
-
-        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
-        assert!(diagnostics.warnings(&shared(true)).is_empty());
-        assert!(
-            diagnostics
-                .warnings(&SharedArgs {
-                    debug: true,
-                    ..shared(true)
-                })
-                .contains(&format!(
-                    "Skipping Antigravity database '{}': no gen_metadata table",
-                    db_path.display()
-                ))
-        );
+            assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
+            assert!(diagnostics.warnings(&shared(true)).is_empty());
+            assert!(
+                diagnostics
+                    .warnings(&SharedArgs {
+                        debug: true,
+                        ..shared(true)
+                    })
+                    .contains(&format!(
+                        "Skipping Antigravity database '{}': no gen_metadata table",
+                        db_path.display()
+                    ))
+            );
+        })
     }
 
     #[test]
@@ -1431,17 +1444,18 @@ mod tests {
         connection
             .execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB)")
             .unwrap();
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-
-        assert_skipped(
-            &skipped_databases(),
-            SkipKind::Invariant,
-            "unexpected shape",
-            &db_path,
-        );
+        )])
+        .run(|| {
+            assert_skipped(
+                &skipped_databases(),
+                SkipKind::Invariant,
+                "unexpected shape",
+                &db_path,
+            );
+        })
     }
 
     #[test]
@@ -1477,17 +1491,18 @@ mod tests {
         statement.bind((1, 1_i64)).unwrap();
         statement.bind((2, data.as_slice())).unwrap();
         statement.next().unwrap();
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-
-        assert_skipped(
-            &skipped_databases(),
-            SkipKind::Invariant,
-            "unexpected shape",
-            &db_path,
-        );
+        )])
+        .run(|| {
+            assert_skipped(
+                &skipped_databases(),
+                SkipKind::Invariant,
+                "unexpected shape",
+                &db_path,
+            );
+        })
     }
 
     #[test]
@@ -1500,17 +1515,18 @@ mod tests {
             &[],
             &[],
         );
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-
-        assert_skipped(
-            &skipped_databases(),
-            SkipKind::InvalidData,
-            "invalid data",
-            &fixture.path("conversations/malformed.db"),
-        );
+        )])
+        .run(|| {
+            assert_skipped(
+                &skipped_databases(),
+                SkipKind::InvalidData,
+                "invalid data",
+                &fixture.path("conversations/malformed.db"),
+            );
+        })
     }
 
     #[test]
@@ -1521,33 +1537,35 @@ mod tests {
 
         let fixture = Fixture::new();
         fixture.write_file("conversations/broken.db", "SECRET_CANARY");
-        let _guard = EnvGuard::set_many([(
+        Environment::with_vars([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
-        )]);
-        let shared = shared(true);
-        let pricing = PricingMap::load_embedded();
-        let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::new("antigravity");
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: SourceOptions::default(),
-            diagnostics: &diagnostics,
-        };
+        )])
+        .run(|| {
+            let shared = shared(true);
+            let pricing = PricingMap::load_embedded();
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("antigravity");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
 
-        assert!(load_entries_for_context(&cx).unwrap().is_empty());
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        assert!(
-            !diagnostics
-                .warnings(&SharedArgs {
-                    debug: true,
-                    ..shared
-                })
-                .join("\n")
-                .contains("SECRET_CANARY")
-        );
+            assert!(load_entries_for_context(&cx).unwrap().is_empty());
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+            assert!(
+                !diagnostics
+                    .warnings(&SharedArgs {
+                        debug: true,
+                        ..shared
+                    })
+                    .join("\n")
+                    .contains("SECRET_CANARY")
+            );
+        })
     }
 }

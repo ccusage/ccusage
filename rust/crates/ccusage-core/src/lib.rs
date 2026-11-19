@@ -8,6 +8,7 @@ pub mod fast;
 pub mod logger;
 pub mod model_aliases;
 pub mod output;
+pub mod parallel;
 pub mod pricing;
 pub mod progress;
 pub mod project_names;

@@ -64,35 +64,36 @@ mod tests {
     fn uniform_cost_modes_do_not_calculate_in_display() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"projects/p/chats/c/chat-messages.json": r#"[{"role":"assistant","timestamp":"2026-05-01T01:02:03Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":50}}}]"#});
-        let _guard = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
-        let mut pricing = ccusage_core::PricingMap::default();
-        pricing.load_json(
-            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
-        );
-        for (mode, expected) in [
-            (crate::cli::CostMode::Auto, 0.2),
-            (crate::cli::CostMode::Calculate, 0.2),
-            (crate::cli::CostMode::Display, 0.0),
-        ] {
-            let shared = SharedArgs {
-                mode,
-                ..SharedArgs::default()
-            };
-            let entries = ccusage_adapter_common::testing::entries(
-                &crate::SOURCE,
-                &shared,
-                Default::default(),
-                Some(&pricing),
-            )
-            .unwrap();
-            assert_eq!(entries.len(), 1);
-            assert!(
-                (entries[0].cost - expected).abs() < 1e-12,
-                "{mode:?}: {} vs {expected}",
-                entries[0].cost
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let mut pricing = ccusage_core::PricingMap::default();
+            pricing.load_json(
+                r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
             );
-            assert_eq!(entries[0].missing_pricing_model, None);
-        }
+            for (mode, expected) in [
+                (crate::cli::CostMode::Auto, 0.2),
+                (crate::cli::CostMode::Calculate, 0.2),
+                (crate::cli::CostMode::Display, 0.0),
+            ] {
+                let shared = SharedArgs {
+                    mode,
+                    ..SharedArgs::default()
+                };
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &shared,
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                assert_eq!(entries.len(), 1);
+                assert!(
+                    (entries[0].cost - expected).abs() < 1e-12,
+                    "{mode:?}: {} vs {expected}",
+                    entries[0].cost
+                );
+                assert_eq!(entries[0].missing_pricing_model, None);
+            }
+        })
     }
 
     use super::super::{parser::parse_usage_object, paths::CODEBUFF_DATA_DIR_ENV};
@@ -102,7 +103,7 @@ mod tests {
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn tied_timestamps_are_ordered_by_dedup_key_after_last_wins() {
@@ -125,39 +126,40 @@ mod tests {
             "metadata": {"model": "test-model", "usage": {"inputTokens": 99}}
         }));
         let _path = fixture.write_file(path, serde_json::to_string(&messages).unwrap());
-        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
-        let pricing = ccusage_core::PricingMap::default();
-        for single_thread in [true, false] {
-            let entries = ccusage_adapter_common::testing::entries(
-                &crate::SOURCE,
-                &SharedArgs {
-                    single_thread,
-                    ..SharedArgs::default()
-                },
-                Default::default(),
-                Some(&pricing),
-            )
-            .unwrap();
-            let ids = entries
-                .iter()
-                .map(|entry| {
-                    entry
-                        .message_id
-                        .as_deref()
-                        .unwrap()
-                        .rsplit(':')
-                        .next()
-                        .unwrap()
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(
-                ids,
-                (0..32)
-                    .map(|index| format!("message-{index:02}"))
-                    .collect::<Vec<_>>()
-            );
-            assert_eq!(entries[0].usage.input_tokens, 99);
-        }
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let pricing = ccusage_core::PricingMap::default();
+            for single_thread in [true, false] {
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &SharedArgs {
+                        single_thread,
+                        ..SharedArgs::default()
+                    },
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                let ids = entries
+                    .iter()
+                    .map(|entry| {
+                        entry
+                            .message_id
+                            .as_deref()
+                            .unwrap()
+                            .rsplit(':')
+                            .next()
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    ids,
+                    (0..32)
+                        .map(|index| format!("message-{index:02}"))
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(entries[0].usage.input_tokens, 99);
+            }
+        })
     }
 
     #[test]
@@ -170,17 +172,18 @@ mod tests {
                 {"role":"assistant","metadata":{"usage":{}}}
             ]"#
         });
-        let _guard = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
-        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            SourceOptions::default(),
-            Some(&ccusage_core::PricingMap::default()),
-        )
-        .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                SourceOptions::default(),
+                Some(&ccusage_core::PricingMap::default()),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+        })
     }
 
     #[test]
@@ -212,33 +215,33 @@ mod tests {
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50,"cacheCreationInputTokens":20,"cacheReadInputTokens":10}},"credits":1.25}
             ]"#,
         });
-        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let shared = SharedArgs {
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
 
-        let pricing = ccusage_core::PricingMap::load_embedded();
-        let shared = SharedArgs {
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&pricing),
-        )
-        .unwrap();
-
-        let channel = fixture.root().file_name().unwrap().to_str().unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-02");
-        assert_eq!(
-            entries[0].session_id.as_ref(),
-            format!("{channel}/project-a/2026-01-02T03-04-05.000Z")
-        );
-        assert_eq!(entries[0].usage.input_tokens, 100);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
-        assert_eq!(entries[0].credits, Some(1.25));
+            let channel = fixture.root().file_name().unwrap().to_str().unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(
+                entries[0].session_id.as_ref(),
+                format!("{channel}/project-a/2026-01-02T03-04-05.000Z")
+            );
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+            assert_eq!(entries[0].credits, Some(1.25));
+        })
     }
 
     #[test]
@@ -251,24 +254,25 @@ mod tests {
             "projects/project-b/chats/2026-01-03T03-04-05.000Z/chat-messages.json": "[broken",
             "projects/project-c/chats/2026-01-04T03-04-05.000Z/chat-messages.json": "",
         });
-        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs::default();
-        let pricing = ccusage_core::PricingMap::load_embedded();
-        let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::new("codebuff");
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: SourceOptions::default(),
-            diagnostics: &diagnostics,
-        };
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs::default();
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("codebuff");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
 
-        let entries = load_entries_with_context(&cx).unwrap();
+            let entries = load_entries_with_context(&cx).unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        })
     }
 
     #[test]
@@ -279,18 +283,19 @@ mod tests {
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
             ]"#,
         });
-        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs {
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
 
-        assert_focused_matches_unified(
-            &crate::SOURCE,
-            ccusage_core::cli::AgentId::Codebuff,
-            &shared,
-        );
+            assert_focused_matches_unified(
+                &crate::SOURCE,
+                ccusage_core::cli::AgentId::Codebuff,
+                &shared,
+            );
+        })
     }
 
     #[test]
@@ -304,22 +309,22 @@ mod tests {
                 ]}}}}}
             ]"#,
         });
-        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
 
-        let pricing = ccusage_core::PricingMap::load_embedded();
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            Default::default(),
-            Some(&pricing),
-        )
-        .unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].model.as_deref(), Some("openai/gpt-5"));
-        assert_eq!(entries[0].usage.input_tokens, 100);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].model.as_deref(), Some("openai/gpt-5"));
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+        })
     }
 
     #[test]

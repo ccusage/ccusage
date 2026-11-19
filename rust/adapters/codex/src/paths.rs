@@ -248,25 +248,29 @@ mod tests {
         let fixture = Fixture::new();
         let first = fixture.create_dir_all("first");
         let second = fixture.create_dir_all("second");
-        let _guard = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             (
                 "CODEX_HOME",
                 Some(" ~/first, ~/second, ~/first/., , ".into()),
             ),
-        ]);
-        assert_eq!(codex_home_paths().unwrap(), vec![first, second]);
+        ])
+        .run(|| {
+            assert_eq!(codex_home_paths().unwrap(), vec![first, second]);
+        })
     }
 
     #[test]
     fn blank_codex_list_uses_the_default_home() {
         let fixture = Fixture::new();
         let root = fixture.create_dir_all(".codex");
-        let _guard = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
             ("CODEX_HOME", Some(" , , ".into())),
-        ]);
-        assert_eq!(codex_home_paths().unwrap(), vec![root]);
+        ])
+        .run(|| {
+            assert_eq!(codex_home_paths().unwrap(), vec![root]);
+        })
     }
 
     #[test]

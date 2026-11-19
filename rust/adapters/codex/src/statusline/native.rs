@@ -3,7 +3,6 @@ use std::{
     fs,
     path::PathBuf,
     sync::{Arc, Condvar, Mutex, PoisonError},
-    thread,
     time::SystemTime,
 };
 
@@ -36,7 +35,7 @@ impl NativeUsageReader {
     pub(super) fn new(args: CodexStatuslineArgs) -> Self {
         let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let worker = Arc::clone(&state);
-        thread::spawn(move || {
+        ccusage_core::parallel::spawn_worker(move || {
             let pricing = ReportPricing::for_load(&args.shared, None);
             let mut cached = None;
             let mut last_warnings = Vec::new();
@@ -291,10 +290,10 @@ mod tests {
     fn a_poisoned_state_still_serves_cached_usage_and_shuts_down() {
         let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let reader = NativeUsageReader {
-            state: state.clone(),
+            state: Arc::clone(&state),
         };
-        let poisoned = state.clone();
-        let result = thread::spawn(move || {
+        let poisoned = Arc::clone(&state);
+        let result = ccusage_core::parallel::spawn_worker(move || {
             let mut state = poisoned.0.lock().unwrap();
             state
                 .output

@@ -578,7 +578,7 @@ mod tests {
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -613,7 +613,7 @@ mod tests {
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -645,7 +645,7 @@ mod tests {
 
         let entries = parse_session_file(
             &file,
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &Diagnostics::new("openclaw"),
@@ -672,7 +672,7 @@ mod tests {
         let diagnostics = Diagnostics::new("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
             &diagnostics,
@@ -763,7 +763,7 @@ mod tests {
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            &jiff::tz::TimeZone::system(),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             &Diagnostics::new("openclaw"),

@@ -32,7 +32,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvGuard, Fixture, fs_fixture};
+    use ccusage_test_support::{Environment, Fixture, fs_fixture};
 
     use super::*;
 
@@ -67,57 +67,58 @@ mod tests {
     fn focused_totals_match_the_unified_slice() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
-        let _guard = EnvGuard::set("AMP_DATA_DIR", fixture.root());
-
-        for shared in [
-            shared(None, None, "UTC"),
-            shared(Some("20260131"), Some("20260201"), "UTC"),
-            shared(Some("20260201"), Some("20260201"), "Asia/Tokyo"),
-            shared(Some("20260101"), Some("20260131"), "UTC"),
-            shared(Some("20270101"), None, "UTC"),
-        ] {
-            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared);
-        }
+        Environment::with_var("AMP_DATA_DIR", fixture.root()).run(|| {
+            for shared in [
+                shared(None, None, "UTC"),
+                shared(Some("20260131"), Some("20260201"), "UTC"),
+                shared(Some("20260201"), Some("20260201"), "Asia/Tokyo"),
+                shared(Some("20260101"), Some("20260131"), "UTC"),
+                shared(Some("20270101"), None, "UTC"),
+            ] {
+                assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared);
+            }
+        })
     }
 
     #[test]
     fn a_thread_file_cut_mid_write_is_noted_under_debug_and_the_rest_still_counts() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
-        let _guard = EnvGuard::set("AMP_DATA_DIR", fixture.root());
-        let quiet = shared(None, None, "UTC");
-        let shared = SharedArgs {
-            debug: true,
-            ..quiet.clone()
-        };
+        Environment::with_var("AMP_DATA_DIR", fixture.root()).run(|| {
+            let quiet = shared(None, None, "UTC");
+            let shared = SharedArgs {
+                debug: true,
+                ..quiet.clone()
+            };
 
-        let rows = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(
-                    AgentReportKind::Session,
-                ),
-                shared: &shared,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
+            let rows = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Session,
+                    ),
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
 
-        let sessions = rows
-            .rows
-            .iter()
-            .map(|row| row.period.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(sessions, ["T-ledger", "T-messages"]);
-        assert!(rows.detected);
-        let truncated = fixture.path("threads/T-truncated.json");
-        assert_eq!(
-            rows.diagnostics.warnings(&shared),
-            [format!(
-                "amp: {}: incomplete, read as still being written",
-                truncated.display()
-            )]
-        );
-        assert!(rows.diagnostics.warnings(&quiet).is_empty());
+            let sessions = rows
+                .rows
+                .iter()
+                .map(|row| row.period.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(sessions, ["T-ledger", "T-messages"]);
+            assert!(rows.detected);
+            let truncated = fixture.path("threads/T-truncated.json");
+            assert_eq!(
+                rows.diagnostics.warnings(&shared),
+                [format!(
+                    "amp: {}: incomplete, read as still being written",
+                    truncated.display()
+                )]
+            );
+            assert!(rows.diagnostics.warnings(&quiet).is_empty());
+        })
     }
 }

@@ -34,10 +34,11 @@ ccusage-cli = { path = "crates/ccusage-cli" }
 ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
+ccusage-environment = { path = "crates/ccusage-environment" }
 ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
 ccusage-report = { path = "crates/ccusage-report" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
-ccusage-test-support = { path = "crates/ccusage-test-support" }
+ccusage-test-support = { path = "crates/ccusage-test-support", features = ["test-environment"] }
 assert_fs = "1.1.4"
 compact_str = "0.10.0"
 insta = { version = "1.49.0", features = ["json"] }
@@ -92,3 +93,23 @@ opt-level = 3
 [workspace.lints.cargo]
 unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unfulfilled_lint_expectations = "deny"
+elided_lifetimes_in_paths = "deny"
+
+[workspace.lints.clippy]
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+match_wildcard_for_single_variants = "deny"
+mod_module_files = "deny"
+clone_on_ref_ptr = "deny"
+implicit_clone = "deny"
+cast_lossless = "deny"
+float_cmp = "deny"
+disallowed_methods = "deny"

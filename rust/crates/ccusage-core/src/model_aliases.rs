@@ -1,9 +1,10 @@
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    env,
     sync::{OnceLock, RwLock},
 };
+
+use crate::cli::environment::Environment;
 
 const MODEL_ALIASES_ENV: &str = "CCUSAGE_MODEL_ALIASES";
 
@@ -29,7 +30,8 @@ fn model_aliases() -> &'static RwLock<BTreeMap<String, String>> {
 }
 
 fn load_model_aliases_from_env() -> BTreeMap<String, String> {
-    env::var(MODEL_ALIASES_ENV)
+    Environment::current()
+        .var(MODEL_ALIASES_ENV)
         .ok()
         .map(|raw| parse_model_aliases(&raw))
         .unwrap_or_default()

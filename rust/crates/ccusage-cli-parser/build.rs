@@ -1,10 +1,11 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env, fs,
+    fs,
     path::PathBuf,
 };
 
 use ccusage_cli::AGENTS;
+use ccusage_environment::Environment;
 use serde_json::Value;
 
 #[path = "src/help_codegen.rs"]
@@ -20,7 +21,12 @@ fn main() {
 }
 
 fn out_dir_path(file_name: &str) -> PathBuf {
-    PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by cargo")).join(file_name)
+    PathBuf::from(
+        Environment::current()
+            .var_os("OUT_DIR")
+            .expect("OUT_DIR is set by cargo"),
+    )
+    .join(file_name)
 }
 
 fn generate_cli_help_rs() {

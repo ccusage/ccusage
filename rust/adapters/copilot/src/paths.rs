@@ -1,4 +1,6 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
+
+use ccusage_core::cli::environment::Environment;
 
 use ccusage_adapter_common::roots::{self, RootsEnv};
 
@@ -86,7 +88,10 @@ fn add_file(
 }
 
 fn copilot_exporter_path() -> Option<PathBuf> {
-    let path = env::var(COPILOT_OTEL_FILE_EXPORTER_PATH_ENV).ok()?;
+    let path = Environment::current()
+        .var_os(COPILOT_OTEL_FILE_EXPORTER_PATH_ENV)?
+        .into_string()
+        .ok()?;
     let path = path.trim();
     if path.is_empty() {
         return None;
@@ -105,7 +110,7 @@ impl AsRef<std::path::Path> for CopilotSourceFile {
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -118,27 +123,29 @@ mod tests {
             "session-state/blocked/events.jsonl": "{}",
             "session-state/healthy/events.jsonl": "{}",
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (COPILOT_HOME_ENV, Some(OsString::from(fixture.root()))),
             (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
-        ]);
-        let blocked = fixture.path("session-state/blocked");
-        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::metadata(blocked.join("events.jsonl")).is_err();
-        let diagnostics = Diagnostics::new("copilot");
-        let files = paths(&diagnostics);
-        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
-        let files = files.unwrap();
-        if !denied {
-            return;
-        }
+        ])
+        .run(|| {
+            let blocked = fixture.path("session-state/blocked");
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+            let denied = fs::metadata(blocked.join("events.jsonl")).is_err();
+            let diagnostics = Diagnostics::new("copilot");
+            let files = paths(&diagnostics);
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+            let files = files.unwrap();
+            if !denied {
+                return;
+            }
 
-        assert_eq!(files.len(), 1);
-        assert_eq!(
-            files[0].path,
-            fixture.path("session-state/healthy/events.jsonl")
-        );
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+            assert_eq!(files.len(), 1);
+            assert_eq!(
+                files[0].path,
+                fixture.path("session-state/healthy/events.jsonl")
+            );
+            assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        })
     }
 
     #[test]
@@ -151,7 +158,7 @@ mod tests {
             "home/.copilot/session-state/nested/session-c/events.jsonl": "{}\n",
             "explicit.jsonl": "{}\n",
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -161,31 +168,32 @@ mod tests {
                 COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 Some(OsString::from(fixture.path("explicit.jsonl"))),
             ),
-        ]);
+        ])
+        .run(|| {
+            let files = paths(&Diagnostics::new("copilot")).unwrap();
 
-        let files = paths(&Diagnostics::new("copilot")).unwrap();
-
-        assert_eq!(
-            files,
-            vec![
-                CopilotSourceFile {
-                    kind: CopilotSourceKind::Otel,
-                    path: fixture.path("explicit.jsonl"),
-                },
-                CopilotSourceFile {
-                    kind: CopilotSourceKind::Otel,
-                    path: fixture.path("home/.copilot/otel/otel.jsonl"),
-                },
-                CopilotSourceFile {
-                    kind: CopilotSourceKind::SessionState,
-                    path: fixture.path("home/.copilot/session-state/session-a/events.jsonl"),
-                },
-                CopilotSourceFile {
-                    kind: CopilotSourceKind::SessionState,
-                    path: fixture.path("home/.copilot/session-state/session-b/events.jsonl"),
-                },
-            ]
-        );
+            assert_eq!(
+                files,
+                vec![
+                    CopilotSourceFile {
+                        kind: CopilotSourceKind::Otel,
+                        path: fixture.path("explicit.jsonl"),
+                    },
+                    CopilotSourceFile {
+                        kind: CopilotSourceKind::Otel,
+                        path: fixture.path("home/.copilot/otel/otel.jsonl"),
+                    },
+                    CopilotSourceFile {
+                        kind: CopilotSourceKind::SessionState,
+                        path: fixture.path("home/.copilot/session-state/session-a/events.jsonl"),
+                    },
+                    CopilotSourceFile {
+                        kind: CopilotSourceKind::SessionState,
+                        path: fixture.path("home/.copilot/session-state/session-b/events.jsonl"),
+                    },
+                ]
+            );
+        })
     }
 
     #[test]
@@ -196,7 +204,7 @@ mod tests {
             "home/.copilot/otel/default.jsonl": "{}\n",
             "home/.copilot/session-state/session-2/events.jsonl": "{}\n"
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -206,22 +214,23 @@ mod tests {
                 Some(OsString::from(fixture.path("relocated"))),
             ),
             (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
-        ]);
+        ])
+        .run(|| {
+            let files = paths(&Diagnostics::new("copilot")).unwrap();
 
-        let files = paths(&Diagnostics::new("copilot")).unwrap();
-
-        assert_eq!(
-            files,
-            vec![
-                CopilotSourceFile {
-                    kind: CopilotSourceKind::Otel,
-                    path: fixture.path("relocated/otel/trace.jsonl"),
-                },
-                CopilotSourceFile {
-                    kind: CopilotSourceKind::SessionState,
-                    path: fixture.path("relocated/session-state/session-1/events.jsonl"),
-                },
-            ]
-        );
+            assert_eq!(
+                files,
+                vec![
+                    CopilotSourceFile {
+                        kind: CopilotSourceKind::Otel,
+                        path: fixture.path("relocated/otel/trace.jsonl"),
+                    },
+                    CopilotSourceFile {
+                        kind: CopilotSourceKind::SessionState,
+                        path: fixture.path("relocated/session-state/session-1/events.jsonl"),
+                    },
+                ]
+            );
+        })
     }
 }

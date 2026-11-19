@@ -1,5 +1,7 @@
 use std::{env, fs, path::Path, process::Command};
 
+use ccusage_cli::environment::Environment;
+
 pub(crate) fn hermetic_command(root: &Path) -> Command {
     hermetic_command_with_tools(root, &[])
 }
@@ -11,6 +13,7 @@ pub(crate) fn hermetic_command_with_tools(root: &Path, tools: &[&str]) -> Comman
         path
     };
 
+    let environment = Environment::current();
     let mut command = Command::new(env!("CARGO_BIN_EXE_ccusage"));
     command
         .env_clear()
@@ -22,10 +25,16 @@ pub(crate) fn hermetic_command_with_tools(root: &Path, tools: &[&str]) -> Comman
         .env("XDG_CACHE_HOME", dir("xdg-cache"))
         .env("TMPDIR", dir("tmp"))
         .env("TZ", "UTC")
-        .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
+        .envs(
+            environment
+                .var_os("TZDIR")
+                .map(|zoneinfo| ("TZDIR", zoneinfo)),
+        )
         .env("NO_COLOR", "1");
     if !tools.is_empty() {
-        let path = env::var_os("PATH").expect("external test tools require a PATH");
+        let path = environment
+            .var_os("PATH")
+            .expect("external test tools require a PATH");
         let directories = tools.iter().map(|tool| {
             let executable = format!("{tool}{}", env::consts::EXE_SUFFIX);
             env::split_paths(&path)

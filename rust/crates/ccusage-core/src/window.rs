@@ -26,7 +26,7 @@ impl ReportWindow {
         Self {
             since: None,
             until: None,
-            timezone: JiffTimeZone::system(),
+            timezone: resolve_tz(None),
         }
     }
 

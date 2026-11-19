@@ -120,6 +120,7 @@ dependencies = [
  "ccusage-cli-parser",
  "ccusage-config",
  "ccusage-core",
+ "ccusage-environment",
  "ccusage-pricing-snapshots",
  "ccusage-report",
  "ccusage-test-support",
@@ -448,6 +449,7 @@ dependencies = [
 name = "ccusage-cli"
 version = "0.0.0"
 dependencies = [
+ "ccusage-environment",
  "jiff",
 ]
 
@@ -457,6 +459,7 @@ version = "0.0.0"
 dependencies = [
  "ccusage-cli",
  "ccusage-config",
+ "ccusage-environment",
  "ccusage-test-support",
  "insta",
  "serde_json",
@@ -494,10 +497,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccusage-environment"
+version = "0.0.0"
+
+[[package]]
 name = "ccusage-pricing-snapshots"
 version = "0.0.0"
 dependencies = [
  "ccusage-core",
+ "ccusage-environment",
  "miniz_oxide",
  "minreq",
  "serde_json",
@@ -517,6 +525,7 @@ dependencies = [
 name = "ccusage-terminal"
 version = "0.0.0"
 dependencies = [
+ "ccusage-environment",
  "insta",
  "terminal_size",
  "unicode-width",

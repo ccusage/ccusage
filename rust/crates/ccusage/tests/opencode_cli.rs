@@ -8,7 +8,8 @@ const MODEL: &str = r#"{"id":"gpt-5","providerID":"openai"}"#;
 fn opencode_fixture() -> Fixture {
     let fixture = Fixture::new();
     fixture.create_dir_all("opencode");
-    let db = sqlite::open(fixture.path("opencode/opencode.db")).unwrap();
+    let db = sqlite::open(fixture.path("opencode/opencode.db"))
+        .expect("open the OpenCode fixture database");
     db.execute(
         "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, \
          seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER, data TEXT);
@@ -16,7 +17,7 @@ fn opencode_fixture() -> Fixture {
          tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, \
          tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT);",
     )
-    .unwrap();
+    .expect("create the OpenCode fixture schema");
     let assistant = format!(
         r#"{{"model":{MODEL},"time":{{"created":{created}}},"content":[],"tokens":{{"input":10,"output":2,"reasoning":0,"cache":{{"read":0,"write":0}}}},"cost":0.01}}"#,
         created = instant("2026-01-02T00:00:00Z").millis()
@@ -57,7 +58,7 @@ fn opencode_fixture() -> Fixture {
                 "INSERT INTO session_message (id, session_id, type, seq, time_created, data) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )
-            .unwrap();
+            .expect("prepare fixture message insert");
         statement
             .bind::<&[(_, sqlite::Value)]>(&[
                 (1, id.into()),
@@ -67,8 +68,8 @@ fn opencode_fixture() -> Fixture {
                 (5, created.into()),
                 (6, data.into()),
             ])
-            .unwrap();
-        while statement.next().unwrap() != sqlite::State::Done {}
+            .expect("bind fixture message values");
+        while statement.next().expect("insert fixture message") != sqlite::State::Done {}
     }
     db.execute(format!(
         "INSERT INTO session VALUES ('mixed-session', {mixed_created}, 9.99, 9999, 9999, 0, 0, 0, '{MODEL}');
@@ -76,7 +77,7 @@ fn opencode_fixture() -> Fixture {
         mixed_created = instant("2026-01-02T00:00:00Z").millis(),
         lone_created = instant("2026-02-02T00:00:00Z").millis()
     ))
-    .unwrap();
+    .expect("insert fixture sessions");
     fixture
 }
 
@@ -109,8 +110,12 @@ fn totals(json: &str) -> (u64, f64) {
     let report: Value = serde_json::from_str(json).expect("report JSON should parse");
     let totals = &report["totals"];
     (
-        totals["totalTokens"].as_u64().unwrap(),
-        totals["totalCost"].as_f64().unwrap(),
+        totals["totalTokens"]
+            .as_u64()
+            .expect("report has total tokens"),
+        totals["totalCost"]
+            .as_f64()
+            .expect("report has a total cost"),
     )
 }
 

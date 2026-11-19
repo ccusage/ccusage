@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn bounded_forks_warn_only_when_a_failed_probe_can_hide_the_parent() {
-        let _log_level = ccusage_test_support::EnvGuard::set("LOG_LEVEL", "1");
+        ccusage_test_support::Environment::with_var("LOG_LEVEL", "1").run(|| {
         let usage = |timestamp: &str| {
             serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
                 "type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
@@ -627,6 +627,7 @@ mod tests {
                 }
             }
         }
+        })
     }
 
     #[test]

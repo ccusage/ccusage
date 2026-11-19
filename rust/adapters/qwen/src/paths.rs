@@ -85,7 +85,7 @@ mod tests {
     use ccusage_adapter_common::source::{
         EntrySource, LoadRequest, ProgressOwner, SourceOptions, UsageSource,
     };
-    use ccusage_test_support::{EnvGuard, Fixture};
+    use ccusage_test_support::{Environment, Fixture};
 
     use super::{discover_chat_files, project_from_file};
     use crate::{
@@ -104,13 +104,13 @@ mod tests {
             "",
         );
         fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
-
-        assert_eq!(
-            discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
-            [archived.clone(), direct]
-        );
-        assert_eq!(project_from_file(&archived).as_deref(), Some("project-a"));
+        Environment::with_var("QWEN_DATA_DIR", fixture.path("qwen")).run(|| {
+            assert_eq!(
+                discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
+                [archived.clone(), direct]
+            );
+            assert_eq!(project_from_file(&archived).as_deref(), Some("project-a"));
+        })
     }
 
     #[test]
@@ -124,67 +124,70 @@ mod tests {
             "qwen/projects/project-a/chats/archive/file-stem.jsonl",
             r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
         );
-        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            ..SharedArgs::default()
-        };
+        Environment::with_var("QWEN_DATA_DIR", fixture.path("qwen")).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                ..SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].session_id.as_ref(), "arch-0002");
-        assert_eq!(entries[0].project_path.as_ref(), "project-a");
-        assert_eq!(entries[1].session_id.as_ref(), "project-a-file-stem");
-        assert_eq!(entries[1].project_path.as_ref(), "project-a");
-
-        ccusage_adapter_common::parity::assert_focused_matches_unified(
-            &SOURCE,
-            ccusage_core::cli::AgentId::Qwen,
-            &shared,
-        );
-        for kind in [
-            AgentReportKind::Daily,
-            AgentReportKind::Monthly,
-            AgentReportKind::Session,
-        ] {
-            let rows = ccusage_adapter_common::source::EntrySource::summarize(
+            let entries = ccusage_adapter_common::testing::entries(
                 &crate::SOURCE,
-                &entries,
-                ccusage_adapter_common::source::SummaryKind::for_report(
-                    kind,
-                    ccusage_core::cli::WeekDay::Monday,
-                ),
+                &shared,
+                Default::default(),
+                None,
             )
             .unwrap();
-            let report = crate::SOURCE.report_json(&rows, kind);
-            assert_eq!(report["totals"]["inputTokens"], 20);
-            assert_eq!(report["totals"]["outputTokens"], 10);
-        }
 
-        let outside_window = SharedArgs {
-            since: Some("20270101".parse().unwrap()),
-            ..shared
-        };
-        let report = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &outside_window,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].session_id.as_ref(), "arch-0002");
+            assert_eq!(entries[0].project_path.as_ref(), "project-a");
+            assert_eq!(entries[1].session_id.as_ref(), "project-a-file-stem");
+            assert_eq!(entries[1].project_path.as_ref(), "project-a");
 
-        assert!(report.detected);
-        assert!(report.rows.is_empty());
+            ccusage_adapter_common::parity::assert_focused_matches_unified(
+                &SOURCE,
+                ccusage_core::cli::AgentId::Qwen,
+                &shared,
+            );
+            for kind in [
+                AgentReportKind::Daily,
+                AgentReportKind::Monthly,
+                AgentReportKind::Session,
+            ] {
+                let rows = ccusage_adapter_common::source::EntrySource::summarize(
+                    &crate::SOURCE,
+                    &entries,
+                    ccusage_adapter_common::source::SummaryKind::for_report(
+                        kind,
+                        ccusage_core::cli::WeekDay::Monday,
+                    ),
+                )
+                .unwrap();
+                let report = crate::SOURCE.report_json(&rows, kind);
+                assert_eq!(report["totals"]["inputTokens"], 20);
+                assert_eq!(report["totals"]["outputTokens"], 10);
+            }
+
+            let outside_window = SharedArgs {
+                since: Some("20270101".parse().unwrap()),
+                ..shared
+            };
+            let report = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &outside_window,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
+
+            assert!(report.detected);
+            assert!(report.rows.is_empty());
+        })
     }
 }

@@ -1,6 +1,4 @@
-use std::env;
-
-use crate::cli::SharedArgs;
+use crate::cli::{SharedArgs, environment::Environment};
 
 pub fn debug_log(shared: &SharedArgs, message: impl AsRef<str>) {
     if shared.debug {
@@ -9,7 +7,8 @@ pub fn debug_log(shared: &SharedArgs, message: impl AsRef<str>) {
 }
 
 pub fn log_level() -> Option<u8> {
-    env::var("LOG_LEVEL")
-        .ok()
+    Environment::current()
+        .var_os("LOG_LEVEL")
+        .and_then(|value| value.into_string().ok())
         .and_then(|value| value.parse::<u8>().ok())
 }

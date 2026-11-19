@@ -9,6 +9,8 @@ use std::{
     time::Duration,
 };
 
+use ccusage_cli::environment::Environment;
+
 mod tls;
 
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
@@ -23,7 +25,9 @@ pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::R
 
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
-        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
+        Environment::current()
+            .var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from),
         ccusage_core::cli::home::home_dir(),
     )
 }
@@ -230,7 +234,7 @@ mod tests {
         CacheEntry, PRICING_FETCH_MAX_BYTES, cache_dir_under, cache_file_stem,
         fetch_json_with_cache_dir, read_bounded_body,
     };
-    use ccusage_test_support::Fixture;
+    use ccusage_test_support::{Fixture, read_fixture_dir};
     use std::{
         fs,
         io::{self, Cursor, Read as _, Write as _},
@@ -298,7 +302,7 @@ mod tests {
             "http://{}/pricing.json",
             listener.local_addr().expect("test server address")
         );
-        let handle = thread::spawn(move || {
+        let handle = ccusage_core::parallel::spawn_worker(move || {
             let mut requests = Vec::new();
             for response in responses {
                 let mut stream = accept_with_timeout(&listener)?;
@@ -319,7 +323,7 @@ mod tests {
             "http://{}/pricing.json",
             listener.local_addr().expect("test server address")
         );
-        let handle = thread::spawn(move || {
+        let handle = ccusage_core::parallel::spawn_worker(move || {
             let mut stream = accept_with_timeout(&listener)?;
             read_request(&mut stream)
         });
@@ -414,7 +418,9 @@ mod tests {
             .map(|(etag, body)| {
                 let dir = dir.clone();
                 let url = url.to_string();
-                thread::spawn(move || CacheEntry::for_url(&dir, &url).write(&etag, &body))
+                ccusage_core::parallel::spawn_worker(move || {
+                    CacheEntry::for_url(&dir, &url).write(&etag, &body)
+                })
             })
             .collect();
         for handle in handles {
@@ -430,11 +436,10 @@ mod tests {
             "read a torn cache pair: {:?}",
             (cached.etag, cached.body)
         );
-        let cache_path = entry.path.clone();
-        let leftovers: Vec<_> = fs::read_dir(&dir)
-            .expect("cache dir")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path() != cache_path)
+        let leftovers: Vec<_> = read_fixture_dir(&dir)
+            .expect("open HTTP cache directory")
+            .map(|result| result.expect("read HTTP cache directory entry").path())
+            .filter(|path| *path != entry.path)
             .collect();
         assert!(
             leftovers.is_empty(),

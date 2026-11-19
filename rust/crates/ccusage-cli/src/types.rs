@@ -20,6 +20,10 @@ impl ReportTimezone {
         zone: TimeZone::UTC,
     };
 
+    pub fn system_zone() -> TimeZone {
+        TimeZone::system()
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -37,7 +41,7 @@ impl std::str::FromStr for ReportTimezone {
             "UTC" => Ok(Self::UTC),
             "local" => Ok(Self {
                 name: Cow::Borrowed("local"),
-                zone: TimeZone::system(),
+                zone: Self::system_zone(),
             }),
             name => Ok(Self {
                 name: Cow::Owned(name.to_owned()),

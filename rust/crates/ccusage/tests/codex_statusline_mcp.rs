@@ -358,13 +358,13 @@ fn run_mcp_raw(fixture: &Fixture, requests: &[String], args: &[&str]) -> Vec<Val
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
+        .expect("start the MCP server");
+    let mut stdin = child.stdin.take().expect("piped MCP stdin");
     for request in requests {
-        writeln!(stdin, "{request}").unwrap();
+        writeln!(stdin, "{request}").expect("write MCP request");
     }
     drop(stdin);
-    let output = child.wait_with_output().unwrap();
+    let output = child.wait_with_output().expect("wait for MCP output");
     assert!(
         output.status.success(),
         "{}",
@@ -376,7 +376,7 @@ fn run_mcp_raw(fixture: &Fixture, requests: &[String], args: &[&str]) -> Vec<Val
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout)
-        .unwrap()
+        .expect("MCP stdout is UTF-8")
         .lines()
         .map(|line| serde_json::from_str(line).expect("stdout must contain only JSON-RPC"))
         .collect()
@@ -419,11 +419,11 @@ impl McpProcess {
             .stdout(Stdio::piped())
             .stderr(stderr)
             .spawn()
-            .unwrap();
-        let stdin = child.stdin.take().unwrap();
-        let stream = child.stdout.take().unwrap();
+            .expect("start the streaming MCP server");
+        let stdin = child.stdin.take().expect("piped MCP stdin");
+        let stream = child.stdout.take().expect("piped MCP stdout");
         let (sender, stdout) = mpsc::channel();
-        thread::spawn(move || {
+        ccusage_core::parallel::spawn_worker(move || {
             for line in BufReader::new(stream).lines() {
                 if sender.send(line).is_err() {
                     break;
@@ -503,8 +503,8 @@ impl McpProcess {
     }
 
     fn read_resource_value(&mut self, request: Value) -> Value {
-        let stdin = self.stdin.as_mut().unwrap();
-        writeln!(stdin, "{request}").unwrap();
+        let stdin = self.stdin.as_mut().expect("MCP stdin is still open");
+        writeln!(stdin, "{request}").expect("write MCP request");
         let line = self
             .stdout
             .recv_timeout(Duration::from_secs(5))
@@ -525,7 +525,7 @@ impl McpProcess {
         self.stdin.take();
         let started = Instant::now();
         loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
+            if let Some(status) = self.child.try_wait().expect("poll MCP status") {
                 assert!(status.success(), "MCP server exited with {status}");
                 return;
             }

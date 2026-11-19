@@ -29,7 +29,7 @@ mod tests {
             "first/state.db": "",
             "second/state.db": "",
         });
-        let _guard = ccusage_test_support::EnvGuard::set(
+        ccusage_test_support::Environment::with_var(
             HERMES_HOME_ENV,
             format!(
                 " {}, {}, {} ",
@@ -37,13 +37,15 @@ mod tests {
                 fixture.path("second").display(),
                 fixture.path("first/.").display()
             ),
-        );
-        assert_eq!(
-            hermes_state_db_paths().unwrap(),
-            vec![
-                fixture.path("first/state.db"),
-                fixture.path("second/state.db")
-            ]
-        );
+        )
+        .run(|| {
+            assert_eq!(
+                hermes_state_db_paths().unwrap(),
+                vec![
+                    fixture.path("first/state.db"),
+                    fixture.path("second/state.db")
+                ]
+            );
+        })
     }
 }
