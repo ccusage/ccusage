@@ -8,6 +8,7 @@ use std::{
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
+use memchr::memmem::Finder;
 use serde::Deserialize;
 
 use crate::{
@@ -118,10 +119,19 @@ struct Admitted {
     advisors: super::AdvisorUsages,
 }
 
+fn has_usage_marker(line: &[u8]) -> bool {
+    const MARKER: &[u8] = br#""usage":{"#;
+    static VERBATIM: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(MARKER));
+    static ASCII_UNICODE_ESCAPE: LazyLock<Finder<'static>> =
+        LazyLock::new(|| Finder::new(br"\u00"));
+    static FALLBACK: LazyLock<LinePrefilter> = LazyLock::new(|| LinePrefilter::all(&[MARKER]));
+
+    VERBATIM.find(line).is_some()
+        || (ASCII_UNICODE_ESCAPE.find(line).is_some() && FALLBACK.matches(line))
+}
+
 fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
-    static USAGE_MARKER: LazyLock<LinePrefilter> =
-        LazyLock::new(|| LinePrefilter::all(&[br#""usage":{"#]));
-    if !USAGE_MARKER.matches(line) {
+    if !has_usage_marker(line) {
         return Err(Refusal::NotUsage);
     }
     let (record, advisor_lookup) = parse_usage_line(line).map_err(Refusal::Rejected)?;
