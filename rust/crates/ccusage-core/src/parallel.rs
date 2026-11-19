@@ -1,5 +1,6 @@
 use std::thread::{self, JoinHandle};
 
+#[cfg(feature = "test-environment")]
 use crate::cli::environment::Environment;
 
 #[inline]
@@ -8,6 +9,10 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    let environment = Environment::current();
-    thread::spawn(move || environment.run(work))
+    #[cfg(feature = "test-environment")]
+    let work = {
+        let environment = Environment::current();
+        move || environment.run(work)
+    };
+    thread::spawn(work)
 }
