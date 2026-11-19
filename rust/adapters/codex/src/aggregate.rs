@@ -223,18 +223,20 @@ impl<'a> CodexDedupe<'a> {
                 &mut provenance.models,
                 &self.models,
                 &model,
-                || CodexModel {
-                    name: CompactString::new(&model),
-                    long_context_threshold: self
-                        .pricing
-                        .and_then(|pricing| pricing.find(&model))
-                        .map_or(
+                || {
+                    let price = self.pricing.and_then(|table| table.find_handle(&model));
+                    CodexModel {
+                        name: CompactString::new(&model),
+                        long_context_threshold: price.as_ref().map_or(
                             crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
-                            |entry| entry.long_context_split_threshold(),
+                            |handle| {
+                                handle.with_rates_at(None, |entry| {
+                                    entry.long_context_split_threshold()
+                                })
+                            },
                         ),
-                    time_dependent: self
-                        .pricing
-                        .is_some_and(|pricing| pricing.is_time_dependent(&model)),
+                        time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
+                    }
                 },
             )?,
             usage: event.raw_usage(),

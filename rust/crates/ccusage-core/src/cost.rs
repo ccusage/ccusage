@@ -1,6 +1,6 @@
 use crate::{
     cli::CostMode,
-    pricing::{Pricing, PricingMap},
+    pricing::{Pricing, PricingHandle, PricingMap},
     types::Speed,
 };
 
@@ -73,7 +73,7 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> Entr
     let resolved = map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp);
     match resolved {
         Some((model, rates)) => EntryPrice {
-            cost: cost_at_speed(usage, rates),
+            cost: cost_at_speed(usage, &rates),
             matched: Some(model),
             missing_pricing: false,
         },
@@ -85,25 +85,17 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> Entr
     }
 }
 
-pub fn price_reported_usage(
-    model: Option<&str>,
+pub fn price_resolved_usage(
+    model: &str,
     usage: crate::TokenUsageRaw,
-    stored_cost: Option<f64>,
     timestamp: crate::TimestampMs,
-    pricing: PriceTable<'_>,
+    rates: Option<&PricingHandle>,
 ) -> (f64, Option<String>) {
-    let map = match pricing {
-        PriceTable::Display => return (stored_cost.unwrap_or_default(), None),
-        PriceTable::Auto(_) if stored_cost.is_some() => {
-            return (stored_cost.unwrap_or_default(), None);
-        }
-        PriceTable::Auto(map) | PriceTable::Calculate(map) => map,
-    };
-    let Some(model) = model else {
-        return (0.0, None);
-    };
-    match map.find_at(model, timestamp) {
-        Some(rates) => (cost_at_speed(usage, rates), None),
+    match rates {
+        Some(handle) => (
+            handle.with_rates_at(Some(timestamp), |rates| cost_at_speed(usage, rates)),
+            None,
+        ),
         None => {
             let missing = (crate::total_usage_tokens(usage) != 0)
                 .then(|| crate::model_aliases::resolve_model_name(model).into_owned());
@@ -112,7 +104,7 @@ pub fn price_reported_usage(
     }
 }
 
-fn cost_at_speed(usage: crate::TokenUsageRaw, rates: Pricing) -> f64 {
+fn cost_at_speed(usage: crate::TokenUsageRaw, rates: &Pricing) -> f64 {
     let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
         rates.fast_multiplier
     } else {
@@ -141,7 +133,7 @@ pub fn missing_pricing_model_for_token_total(
         .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
 }
 
-fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing) -> f64 {
+fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: &Pricing) -> f64 {
     let (cache_create_5m_tokens, cache_create_1h_tokens) =
         if let Some(breakdown) = usage.cache_creation {
             (
@@ -262,7 +254,7 @@ mod tests {
         }) else {
             return 0.0;
         };
-        cost_at_speed(usage, pricing)
+        cost_at_speed(usage, &pricing)
     }
 
     fn calculate_cost_for_usage(
@@ -435,7 +427,7 @@ mod tests {
             cache_read_input_tokens: 200_001,
             ..Default::default()
         };
-        assert_eq!(calculate_cost_from_pricing(usage, entry), 1_440_012.0);
+        assert_eq!(calculate_cost_from_pricing(usage, &entry), 1_440_012.0);
     }
 
     #[test]
@@ -457,7 +449,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            calculate_cost_from_pricing(usage, pricing.find("claude-test").unwrap()),
+            calculate_cost_from_pricing(usage, &pricing.find("claude-test").unwrap()),
             110.0
         );
     }
@@ -491,11 +483,11 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            calculate_cost_from_pricing(usage, pricing.find("tier-published").unwrap()),
+            calculate_cost_from_pricing(usage, &pricing.find("tier-published").unwrap()),
             200_000.0 * 6.0 + 100_000.0 * 13.0
         );
         assert_eq!(
-            calculate_cost_from_pricing(usage, pricing.find("tier-derived").unwrap()),
+            calculate_cost_from_pricing(usage, &pricing.find("tier-derived").unwrap()),
             200_000.0 * 6.0 + 100_000.0 * 12.0
         );
     }
@@ -519,7 +511,7 @@ mod tests {
             cache_read_input_tokens: 100,
             ..Default::default()
         };
-        let cost = |model| calculate_cost_from_pricing(usage, pricing.find(model).unwrap());
+        let cost = |model| calculate_cost_from_pricing(usage, &pricing.find(model).unwrap());
         assert_eq!(cost("gpt-test"), 10.0 * 2.0 + 2.0 + 100.0 * 0.2);
         assert_eq!(cost("claude-test"), 10.0 * 2.5 + 4.0 + 100.0 * 0.2);
         assert_eq!(cost("other-test"), cost("claude-test"));

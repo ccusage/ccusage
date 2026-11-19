@@ -13,9 +13,11 @@ use crate::{
     IteratedTokenUsage, ModelBreakdown, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
     UsageSummary,
     cli::SharedArgs,
-    cost::{PriceTable, price_reported_usage},
+    cost::{PriceTable, price_resolved_usage},
     fast::{FxHashMap, LinePrefilter, suffix_string},
-    format_date_tz, parse_ts_timestamp, utc_now,
+    format_date_tz, parse_ts_timestamp,
+    pricing::PricingHandle,
+    utc_now,
 };
 
 use super::{
@@ -569,6 +571,39 @@ fn read_daily_usage_file_with_diagnostics(
     })
 }
 
+struct FilePricing<'a> {
+    table: PriceTable<'a>,
+    models: smallvec::SmallVec<[(Box<str>, Option<PricingHandle>); 1]>,
+}
+
+impl FilePricing<'_> {
+    fn price(
+        &mut self,
+        model: Option<&str>,
+        usage: TokenUsageRaw,
+        stored_cost: Option<f64>,
+        timestamp: TimestampMs,
+    ) -> (f64, Option<String>) {
+        let table = match self.table {
+            PriceTable::Display => return (stored_cost.unwrap_or_default(), None),
+            PriceTable::Auto(_) if stored_cost.is_some() => {
+                return (stored_cost.unwrap_or_default(), None);
+            }
+            PriceTable::Auto(table) | PriceTable::Calculate(table) => table,
+        };
+        let Some(model) = model else {
+            return (0.0, None);
+        };
+        if let Some((_, handle)) = self.models.iter().find(|(name, _)| name.as_ref() == model) {
+            return price_resolved_usage(model, usage, timestamp, handle.as_ref());
+        }
+        let handle = table.find_handle(model);
+        let price = price_resolved_usage(model, usage, timestamp, handle.as_ref());
+        self.models.push((model.into(), handle));
+        price
+    }
+}
+
 pub(super) fn read_usage_file<E>(
     path: &Path,
     tz: &JiffTimeZone,
@@ -581,6 +616,10 @@ pub(super) fn read_usage_file<E>(
     let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut entries = Vec::new();
+    let mut file_pricing = FilePricing {
+        table: pricing,
+        models: smallvec::SmallVec::new(),
+    };
     super::diagnostics::for_each_line(path, diagnostics, |current| {
         let line = current.bytes;
         let Admitted {
@@ -609,13 +648,8 @@ pub(super) fn read_usage_file<E>(
         }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
         let raw_model = data.message.model;
-        let (cost, missing_pricing_model) = price_reported_usage(
-            raw_model.as_deref(),
-            usage,
-            data.cost_usd,
-            timestamp,
-            pricing,
-        );
+        let (cost, missing_pricing_model) =
+            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let session_id = if let Some(session_id) = data.session_id.as_deref() {
             if recorded_session_id.as_ref() != session_id {
                 recorded_session_id = Arc::from(session_id);
@@ -652,13 +686,8 @@ pub(super) fn read_usage_file<E>(
             .into_iter()
             .enumerate()
             .map(|(index, advisor)| {
-                let (cost, missing_pricing_model) = price_reported_usage(
-                    Some(&advisor.model),
-                    advisor.usage,
-                    None,
-                    timestamp,
-                    pricing,
-                );
+                let (cost, missing_pricing_model) =
+                    file_pricing.price(Some(&advisor.model), advisor.usage, None, timestamp);
                 ParsedUsage {
                     key: DedupKey {
                         timestamp,

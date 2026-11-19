@@ -69,7 +69,7 @@ impl Overrides {
 
     pub(super) fn shadow(&self, found: RowMatch<'_>) -> Option<usize> {
         self.id(found.key)
-            .or_else(|| self.id(found.row.vendor_id.as_deref()?))
+            .or_else(|| self.id(found.row.vendor_id()?))
     }
 
     pub(super) fn names(&self) -> impl Iterator<Item = (&str, &str)> {
@@ -193,10 +193,12 @@ impl PricingMap {
                 };
             }
             let (mut pricing, mut context_limit, schedule) = match &slot.base {
-                Some(Base::Authority(row)) => (row.pricing, row.context_limit, row.schedule),
+                Some(Base::Authority(row)) => {
+                    (row.pricing.rates(), row.context_limit, row.schedule)
+                }
                 Some(Base::Override(id)) => {
                     let row = self.resolve_override(*id, models_dev, false).row;
-                    (row.pricing, row.context_limit, row.schedule)
+                    (row.pricing.rates(), row.context_limit, row.schedule)
                 }
                 None => {
                     let base = secondary.and_then(|rows| {
@@ -208,7 +210,7 @@ impl PricingMap {
                         Some(found) => (
                             Pricing {
                                 long_context: None,
-                                ..found.row.pricing
+                                ..found.row.pricing.rates()
                             },
                             found.row.context_limit,
                             None,
@@ -239,11 +241,11 @@ impl PricingMap {
                 key: Arc::clone(&slot.key),
                 source: Source::Override,
                 scope: Scope::Direct,
-                vendor_id: Some(slot.key.as_ref().into()),
+                vendor_start: super::vendor_start(&slot.key, &slot.key),
                 exact_only,
                 schedule,
                 context_limit,
-                pricing,
+                pricing: pricing.into(),
             }
         });
         RowMatch::new(id, row)

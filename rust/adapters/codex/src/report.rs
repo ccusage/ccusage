@@ -188,31 +188,32 @@ pub(super) fn calculate_codex_model_cost(
     pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
-    if !usage.timestamped_usage.is_empty() {
-        return sum_costs(usage.timestamped_usage.iter().filter_map(
-            |(timestamp, timestamped_usage)| {
-                let pricing =
-                    pricing?.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
-                Some(calculate_codex_usage_cost(
-                    *timestamped_usage,
-                    &pricing,
-                    speed,
-                ))
-            },
-        ));
-    }
-
-    let Some(pricing) = pricing.and_then(|pricing| pricing.find(model)) else {
+    let Some(handle) = pricing.and_then(|table| table.find_handle(model)) else {
         return 0.0;
     };
-    calculate_codex_usage_cost(
-        CodexTimestampedUsage {
-            usage: usage.usage,
-            recorded_usage: usage.recorded_usage,
-        },
-        &pricing,
-        speed,
-    )
+    if !usage.timestamped_usage.is_empty() {
+        return sum_costs(
+            usage
+                .timestamped_usage
+                .iter()
+                .map(|(timestamp, timestamped_usage)| {
+                    handle
+                        .with_rates_at(Some(crate::TimestampMs::from_millis(*timestamp)), |rates| {
+                            calculate_codex_usage_cost(*timestamped_usage, rates, speed)
+                        })
+                }),
+        );
+    }
+    handle.with_rates_at(None, |rates| {
+        calculate_codex_usage_cost(
+            CodexTimestampedUsage {
+                usage: usage.usage,
+                recorded_usage: usage.recorded_usage,
+            },
+            rates,
+            speed,
+        )
+    })
 }
 
 fn calculate_codex_usage_cost(

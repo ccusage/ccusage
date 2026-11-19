@@ -544,12 +544,11 @@ mod tests {
                 "deepseek-v4-flash".to_string()
             ]
         );
-        let raw_model_cost = ccusage_core::cost::price_reported_usage(
-            Some("deepseek-v4-flash"),
+        let raw_model_cost = ccusage_core::cost::price_resolved_usage(
+            "deepseek-v4-flash",
             entry.usage,
-            None,
             entry.timestamp,
-            PriceTable::Calculate(&pricing),
+            pricing.find_handle("deepseek-v4-flash").as_ref(),
         )
         .0;
         assert!((raw_model_cost - 0.44).abs() < 1e-12);

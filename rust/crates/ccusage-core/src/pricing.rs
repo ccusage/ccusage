@@ -15,13 +15,13 @@ use crate::{
 
 mod builtin_pricing;
 mod cache;
-use cache::{CachedHit, Candidate, Name, NameCache, Pass};
+use cache::{CachedHit, Candidate, Name, NameCache, Pass, RequestCache, RequestHit};
 mod data;
 mod overrides;
 use overrides::Overrides;
 mod row;
 pub use row::Source;
-use row::{Entries, Row, Scope, cache_defaults, row_scope, schedule_for, vendor_id};
+use row::{Entries, Row, Scope, cache_defaults, row_scope, schedule_for, vendor_id, vendor_start};
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -205,7 +205,7 @@ impl LongContextRates {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MatchKind {
     StrictExact,
     Exact,
@@ -543,6 +543,36 @@ pub struct Explanation<'a> {
     pub source: Source,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PricingHandle {
+    rates: Pricing,
+    schedule: Option<&'static PricingSchedule>,
+}
+
+impl PricingHandle {
+    fn new(row: &Row, hit: CachedHit) -> Self {
+        Self {
+            rates: row.pricing.rates(),
+            schedule: row.schedule.filter(|_| hit.scheduled()),
+        }
+    }
+
+    pub fn is_time_dependent(&self) -> bool {
+        self.schedule.is_some()
+    }
+
+    pub fn with_rates_at<T>(
+        &self,
+        timestamp: Option<TimestampMs>,
+        calculate: impl FnOnce(&Pricing) -> T,
+    ) -> T {
+        match (timestamp, self.schedule) {
+            (Some(timestamp), Some(schedule)) => calculate(&self.rates.at(schedule, timestamp)),
+            _ => calculate(&self.rates),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct RowMatch<'a> {
     key: &'a str,
@@ -569,6 +599,7 @@ pub struct PricingMap {
     live_models_dev: OnceLock<Option<Arc<PricingRows>>>,
     enable_models_dev_fallback: bool,
     find_cache: OnceLock<NameCache>,
+    requests: OnceLock<RequestCache>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -576,6 +607,7 @@ struct PricingRows {
     entries: Entries,
     indexes: OnceLock<RowIndexes>,
     exact_only_by_identity: OnceLock<FxHashMap<Box<str>, Option<usize>>>,
+    normalized_keys: OnceLock<Box<[Option<Box<str>>]>>,
 }
 
 type IdentityIndex = FxHashMap<Box<str>, smallvec::SmallVec<[usize; 1]>>;
@@ -585,7 +617,6 @@ struct RowIndexes {
     by_identity: IdentityIndex,
     by_vendor_id: IdentityIndex,
     bare_hosted: IdentityIndex,
-    normalized_keys: Vec<Option<Box<str>>>,
 }
 
 impl PricingRows {
@@ -608,7 +639,14 @@ impl PricingRows {
     }
 
     fn normalized_matches(&self) -> impl Iterator<Item = (RowMatch<'_>, &str)> {
-        let keys = &self.indexes().normalized_keys;
+        let keys = self.normalized_keys.get_or_init(|| {
+            self.matches()
+                .map(|found| match normalized_pricing_key(found.key) {
+                    Cow::Borrowed(_) => None,
+                    Cow::Owned(key) => Some(key.into_boxed_str()),
+                })
+                .collect()
+        });
         self.matches()
             .zip(keys)
             .map(|(found, key)| (found, key.as_deref().unwrap_or(found.key)))
@@ -692,19 +730,14 @@ impl PricingRows {
                 } else {
                     &mut indexes.by_identity
                 };
-                let normalized = normalized_pricing_key(key);
                 index
-                    .entry(normalized.as_ref().into())
+                    .entry(normalized_pricing_key(key).into_owned().into_boxed_str())
                     .or_default()
                     .push(found.id);
-                indexes.normalized_keys.push(match normalized {
-                    Cow::Borrowed(_) => None,
-                    Cow::Owned(normalized) => Some(normalized.into_boxed_str()),
-                });
                 let vendor_id = if row.scope == Scope::Direct && row.is_free() {
                     Some(last_segment(key))
                 } else {
-                    row.vendor_id.as_deref()
+                    row.vendor_id()
                 };
                 if let Some(id) = vendor_id.filter(|id| *id != key) {
                     indexes
@@ -757,6 +790,7 @@ impl Default for PricingMap {
             live_models_dev: OnceLock::new(),
             enable_models_dev_fallback: false,
             find_cache: OnceLock::new(),
+            requests: OnceLock::new(),
             override_shadows: OnceLock::new(),
         }
     }
@@ -1216,6 +1250,7 @@ impl PricingMap {
     fn rows_mut(&mut self) -> &mut PricingRows {
         let rows = Arc::make_mut(&mut self.rows);
         rows.indexes.take();
+        rows.normalized_keys.take();
         rows.exact_only_by_identity.take();
         rows
     }
@@ -1277,6 +1312,7 @@ impl PricingMap {
             live_models_dev: self.live_models_dev.clone(),
             enable_models_dev_fallback: self.enable_models_dev_fallback,
             find_cache: OnceLock::new(),
+            requests: OnceLock::new(),
             override_shadows: OnceLock::new(),
         };
         map.apply_overrides(overrides);
@@ -1353,30 +1389,34 @@ impl PricingMap {
                 .unwrap_or_default();
             let published_speed = provider_specific.or(speed.for_model(&model));
             let defaults = cache_defaults(&model, pricing.litellm_provider.as_deref());
+            let schedule = vendor_id.and_then(schedule_for);
+            let vendor_start = vendor_id.and_then(|id| vendor_start(&model, id));
             let row = self.rows_mut().entries.get_or_insert(model, Row::default);
             row.source = Source::LiteLlm;
             row.scope = scope;
-            row.schedule = vendor_id.as_deref().and_then(schedule_for);
-            row.vendor_id = vendor_id;
+            row.schedule = schedule;
+            row.vendor_start = vendor_start;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);
-            row.pricing = published_speed.applied_to(Pricing {
-                input,
-                output,
-                cache_create: pricing.cache_creation_input_token_cost,
-                cache_read: pricing.cache_read_input_token_cost,
-                cache_create_1h: pricing.cache_creation_input_token_cost_above_1hr,
-                long_context: LongContextRates {
-                    input: pricing.input_cost_per_token_above_200k_tokens,
-                    output: pricing.output_cost_per_token_above_200k_tokens,
-                    cache_create: pricing.cache_creation_input_token_cost_above_200k_tokens,
-                    cache_read: pricing.cache_read_input_token_cost_above_200k_tokens,
-                    cache_create_1h: pricing
-                        .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
-                }
-                .marginal(),
-                cache_defaults: defaults,
-                ..Pricing::empty()
-            });
+            row.pricing = published_speed
+                .applied_to(Pricing {
+                    input,
+                    output,
+                    cache_create: pricing.cache_creation_input_token_cost,
+                    cache_read: pricing.cache_read_input_token_cost,
+                    cache_create_1h: pricing.cache_creation_input_token_cost_above_1hr,
+                    long_context: LongContextRates {
+                        input: pricing.input_cost_per_token_above_200k_tokens,
+                        output: pricing.output_cost_per_token_above_200k_tokens,
+                        cache_create: pricing.cache_creation_input_token_cost_above_200k_tokens,
+                        cache_read: pricing.cache_read_input_token_cost_above_200k_tokens,
+                        cache_create_1h: pricing
+                            .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
+                    }
+                    .marginal(),
+                    cache_defaults: defaults,
+                    ..Pricing::empty()
+                })
+                .into();
             loaded_count += 1;
         }
         self.clear_find_cache();
@@ -1543,31 +1583,34 @@ impl PricingMap {
             self.rows_mut().entries.insert(
                 model_id.clone(),
                 Row {
-                    pricing: speed.for_model(&model_id).applied_to(Pricing {
-                        input,
-                        output,
-                        cache_create: cost.cache_write.map(|value| value / 1_000_000.0),
-                        cache_read: cost.cache_read.map(|value| value / 1_000_000.0),
-                        long_context: long_context.map(|rates| LongContext {
-                            threshold: rates.threshold,
-                            mode: LongContextMode::WholeRequest,
-                            rates: LongContextRates {
-                                input: rates.input,
-                                output: rates.output,
-                                cache_create: rates.cache_create,
-                                cache_read: rates.cache_read,
-                                cache_create_1h: None,
-                            },
-                        }),
-                        cache_defaults: cache_defaults(&model_id, None),
-                        ..Pricing::empty()
-                    }),
+                    pricing: speed
+                        .for_model(&model_id)
+                        .applied_to(Pricing {
+                            input,
+                            output,
+                            cache_create: cost.cache_write.map(|value| value / 1_000_000.0),
+                            cache_read: cost.cache_read.map(|value| value / 1_000_000.0),
+                            long_context: long_context.map(|rates| LongContext {
+                                threshold: rates.threshold,
+                                mode: LongContextMode::WholeRequest,
+                                rates: LongContextRates {
+                                    input: rates.input,
+                                    output: rates.output,
+                                    cache_create: rates.cache_create,
+                                    cache_read: rates.cache_read,
+                                    cache_create_1h: None,
+                                },
+                            }),
+                            cache_defaults: cache_defaults(&model_id, None),
+                            ..Pricing::empty()
+                        })
+                        .into(),
                     exact_only,
                     context_limit,
                     key: Arc::default(),
                     source: Source::ModelsDev,
                     scope: Scope::Direct,
-                    vendor_id: None,
+                    vendor_start: None,
                     schedule: None,
                 },
             );
@@ -1599,7 +1642,7 @@ impl PricingMap {
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        Some(found.row.pricing)
+        Some(found.row.pricing.rates())
     }
 
     pub fn explain<'a>(
@@ -1633,12 +1676,18 @@ impl PricingMap {
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        let pricing = found.row.pricing;
-        let rates = match (timestamp, found.row.schedule) {
-            (Some(timestamp), Some(schedule)) if hit.scheduled() => pricing.at(schedule, timestamp),
-            _ => pricing,
-        };
-        Some((model, rates))
+        let handle = PricingHandle::new(found.row, hit);
+        Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
+    }
+
+    pub fn find_handle(&self, model: &str) -> Option<PricingHandle> {
+        let (_, found, hit) = self.resolve_row_with(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(PricingHandle::new(found.row, hit))
     }
 
     fn available_models_dev(&self) -> Option<&PricingRows> {
@@ -1694,6 +1743,28 @@ impl PricingMap {
         lookup: Lookup,
         live: impl FnOnce() -> Option<&'live Self>,
     ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
+        let search = || self.search_request(reported, candidates, lookup, live);
+        let hit = match lookup {
+            Lookup::Pricing => self
+                .requests
+                .get_or_init(RequestCache::default)
+                .get_or_init(reported, candidates, search),
+            Lookup::Context => search(),
+        }?;
+        let model = match hit.candidate {
+            Some(index) => candidates.get(index)?.0,
+            None => reported?,
+        };
+        self.cached_row(model, hit.row)
+    }
+
+    fn search_request<'live>(
+        &self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        lookup: Lookup,
+        live: impl FnOnce() -> Option<&'live Self>,
+    ) -> Option<RequestHit> {
         let live = std::cell::Cell::new(Some(live));
         let models_dev = || self.select_models_dev(|| live.take().and_then(|load| load()));
         let cache = self.find_cache.get_or_init(NameCache::default);
@@ -1702,30 +1773,27 @@ impl PricingMap {
                 self.search_pass(name, slot, lookup, pass, &models_dev)
             })
         };
-        if let &[(model, MatchKind::Fuzzy)] = candidates
-            && (reported == Some(model) || (reported.is_none() && self.overrides.is_empty()))
-        {
-            let hit = cache.get_or_init(model, lookup, Pass::Find, |_| {
-                matching(model, Pass::Label)
-                    .or_else(|| matching(model, Pass::S2))
-                    .or_else(|| matching(model, Pass::S34))
-                    .or_else(|| matching(model, Pass::S3f))
-                    .or_else(|| matching(model, Pass::S56))
-            })?;
-            return self.cached_row(model, hit);
-        }
         if !self.overrides.is_empty()
             && let Some(model) = reported
-            && let Some(hit) = matching(model, Pass::Label)
+            && let Some(row) = matching(model, Pass::Label)
         {
-            return self.cached_row(model, hit);
+            return Some(RequestHit {
+                candidate: None,
+                row,
+            });
         }
         for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
-            for &(model, kind) in candidates {
+            if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
+                continue;
+            }
+            for (index, &(model, kind)) in candidates.iter().enumerate() {
                 if pass.allows(kind)
-                    && let Some(hit) = matching(model, pass)
+                    && let Some(row) = matching(model, pass)
                 {
-                    return self.cached_row(model, hit);
+                    return Some(RequestHit {
+                        candidate: Some(index),
+                        row,
+                    });
                 }
             }
         }
@@ -1797,7 +1865,6 @@ impl PricingMap {
                     self.search_fuzzy(name, lookup, secondary, models_dev)
                 })
             }
-            Pass::Find => None,
         }
     }
 
@@ -1915,21 +1982,6 @@ impl PricingMap {
         winner.map(|(_, found)| found)
     }
 
-    pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
-        self.resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], Some(timestamp))
-            .map(|(_, rates)| rates)
-    }
-
-    pub fn is_time_dependent(&self, model: &str) -> bool {
-        self.resolve_row_with(
-            Some(model),
-            &[(model, MatchKind::Fuzzy)],
-            Lookup::Pricing,
-            models_dev_pricing,
-        )
-        .is_some_and(|(_, found, hit)| hit.scheduled() && found.row.schedule.is_some())
-    }
-
     fn has_user_override(&self, model: &str) -> bool {
         self.overrides
             .label_id(model, &Candidate::default())
@@ -1948,6 +2000,7 @@ impl PricingMap {
 
     fn clear_find_cache(&mut self) {
         self.find_cache.take();
+        self.requests.take();
         self.override_shadows.take();
     }
 
@@ -1967,6 +2020,7 @@ impl PricingMap {
             let pricing = &mut row.pricing;
             let previous = pricing
                 .long_context
+                .as_deref()
                 .map(|context| context.rates)
                 .unwrap_or_default();
             if [
@@ -1987,7 +2041,7 @@ impl PricingMap {
                 continue;
             };
             context.rates.cache_create_1h = previous.cache_create_1h;
-            pricing.long_context = Some(context);
+            pricing.long_context = Some(Arc::new(context));
         }
         self.clear_find_cache();
     }
@@ -2005,7 +2059,7 @@ impl PricingMap {
                         let exact_only = self.rows.exact_only_id(key)?;
                         self.rows.entries.get(exact_only)
                     })
-                    .map(|row| row.pricing)
+                    .map(|row| row.pricing.rates())
             })
     }
 
@@ -2021,11 +2075,11 @@ impl PricingMap {
             .rows_mut()
             .entries
             .get_or_insert(model.to_string(), || Row {
-                pricing,
+                pricing: pricing.into(),
                 context_limit,
                 source: Source::Curated,
                 scope: Scope::Direct,
-                vendor_id: Some(vendor_id(model, provider).into()),
+                vendor_start: vendor_start(model, vendor_id(model, provider)),
                 schedule: schedule_for(vendor_id(model, provider)),
                 ..Row::default()
             });
@@ -2410,6 +2464,15 @@ mod tests {
     }
 
     impl PricingMap {
+        pub(crate) fn find_at(
+            &self,
+            model: &str,
+            timestamp: super::TimestampMs,
+        ) -> Option<Pricing> {
+            self.resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], Some(timestamp))
+                .map(|(_, rates)| rates)
+        }
+
         pub(crate) fn load_models_dev_json_for_tests(&mut self, json: &str) -> Option<usize> {
             self.load_models_dev_json_missing(json)
         }
@@ -2417,7 +2480,7 @@ mod tests {
         fn insert_test_pricing(&mut self, key: String, pricing: Pricing) {
             let row = self.rows_mut().entries.get_or_insert(key, Row::default);
             row.scope = super::Scope::Direct;
-            row.pricing = pricing;
+            row.pricing = pricing.into();
         }
 
         fn insert_test_limit(&mut self, key: &str, limit: u64) {
@@ -2457,7 +2520,7 @@ mod tests {
                 Lookup::Pricing,
                 live,
             )
-            .map(|(_, found, _)| found.row.pricing)
+            .map(|(_, found, _)| found.row.pricing.rates())
         }
 
         fn context_limit_with_live<'a>(
@@ -3808,14 +3871,22 @@ mod tests {
             "deepseek-latest",
             "deepseek/deepseek-v4-flash",
         ] {
-            assert!(pricing.is_time_dependent(model));
+            assert!(
+                pricing
+                    .find_handle(model)
+                    .is_some_and(|handle| handle.is_time_dependent())
+            );
         }
         for model in [
             "openrouter/deepseek-v4-flash",
             "openrouter/deepseek.v4.flash",
             "gpt-5",
         ] {
-            assert!(!pricing.is_time_dependent(model));
+            assert!(
+                !pricing
+                    .find_handle(model)
+                    .is_some_and(|handle| handle.is_time_dependent())
+            );
         }
     }
 

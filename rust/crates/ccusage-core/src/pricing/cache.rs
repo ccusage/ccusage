@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 use std::cell::OnceCell;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock, RwLock};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 
 use super::{
     Lookup, MatchKind, ResolutionStep, Row, RowMatch, Source, normalized_pricing_key, pricing_alias,
@@ -96,7 +97,6 @@ impl ResultCell {
 
 #[derive(Clone, Copy)]
 pub(super) enum Pass {
-    Find,
     Label,
     S2,
     S34,
@@ -110,7 +110,7 @@ impl Pass {
             Self::S2 => true,
             Self::S34 | Self::S3f => kind != MatchKind::StrictExact,
             Self::S56 => kind == MatchKind::Fuzzy,
-            Self::Find | Self::Label => false,
+            Self::Label => false,
         }
     }
 }
@@ -202,8 +202,8 @@ struct NameForms {
 #[derive(Debug, Default)]
 struct NameSlot {
     forms: Option<Option<Arc<NameForms>>>,
-    prices: [ResultCell; 6],
-    limits: Option<Box<[ResultCell; 6]>>,
+    prices: [ResultCell; 5],
+    limits: Option<Box<[ResultCell; 5]>>,
 }
 
 const _: () = assert!(size_of::<NameSlot>() <= 96);
@@ -350,6 +350,81 @@ impl NameCache {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RequestHit {
+    pub(super) candidate: Option<usize>,
+    pub(super) row: CachedHit,
+}
+
+#[derive(Debug)]
+struct RequestSlot {
+    reported: Option<Box<str>>,
+    candidates: Box<[(Box<str>, MatchKind)]>,
+    hit: Arc<OnceLock<Option<RequestHit>>>,
+}
+
+impl RequestSlot {
+    fn matches(&self, reported: Option<&str>, candidates: &[(&str, MatchKind)]) -> bool {
+        self.reported.as_deref() == reported
+            && self.candidates.len() == candidates.len()
+            && self
+                .candidates
+                .iter()
+                .zip(candidates)
+                .all(|((name, kind), candidate)| (name.as_ref(), *kind) == *candidate)
+    }
+}
+
+#[derive(Debug, Default)]
+pub(super) struct RequestCache(RwLock<FxHashMap<u64, Vec<RequestSlot>>>);
+
+impl RequestCache {
+    pub(super) fn get_or_init(
+        &self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        init: impl FnOnce() -> Option<RequestHit>,
+    ) -> Option<RequestHit> {
+        let mut hasher = FxHasher::default();
+        reported.hash(&mut hasher);
+        candidates.hash(&mut hasher);
+        let hash = hasher.finish();
+        let matches = |slot: &&RequestSlot| slot.matches(reported, candidates);
+        let pending = {
+            let table = self.0.read().unwrap_or_else(|error| error.into_inner());
+            if let Some(slot) = table
+                .get(&hash)
+                .and_then(|slots| slots.iter().find(matches))
+            {
+                if let Some(hit) = slot.hit.get() {
+                    return *hit;
+                }
+                Some(Arc::clone(&slot.hit))
+            } else {
+                None
+            }
+        };
+        let slot = pending.unwrap_or_else(|| {
+            let mut table = self.0.write().unwrap_or_else(|error| error.into_inner());
+            let slots = table.entry(hash).or_insert_with(|| Vec::with_capacity(1));
+            if let Some(slot) = slots.iter().find(matches) {
+                return Arc::clone(&slot.hit);
+            }
+            let hit = Arc::new(OnceLock::new());
+            slots.push(RequestSlot {
+                reported: reported.map(Into::into),
+                candidates: candidates
+                    .iter()
+                    .map(|(name, kind)| ((*name).into(), *kind))
+                    .collect(),
+                hit: Arc::clone(&hit),
+            });
+            hit
+        });
+        *slot.get_or_init(init)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::pricing::PricingMap;
@@ -424,6 +499,15 @@ mod tests {
                 let rates = table.resolve_at(Some(label), candidates, None).unwrap().1;
                 assert_eq!((rates.input, rates.output), (3.0, 4.0));
             }
+
+            let requests = table.requests.get().unwrap().0.read().unwrap();
+            assert_eq!(requests.values().map(Vec::len).sum::<usize>(), 20);
+            assert!(
+                requests
+                    .values()
+                    .flatten()
+                    .all(|slot| slot.hit.get().is_some())
+            );
 
             let cache = table.find_cache.get().unwrap().0.read().unwrap();
             assert_eq!(cache.len(), if multi { 60 } else { 20 });

@@ -1039,12 +1039,11 @@ mod tests {
                     let old_cost = open_code_model_candidates(&model, provider)
                         .into_iter()
                         .map(|candidate| {
-                            ccusage_core::cost::price_reported_usage(
-                                Some(&candidate),
+                            ccusage_core::cost::price_resolved_usage(
+                                &candidate,
                                 usage,
-                                None,
                                 timestamp,
-                                ccusage_core::cost::PriceTable::Calculate(&pricing),
+                                pricing.find_handle(&candidate).as_ref(),
                             )
                             .0
                         })

@@ -1,32 +1,83 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use rustc_hash::FxHashMap;
 
-use super::{CacheDefaults, Pricing, PricingSchedule, data, normalized_pricing_key};
+use super::{CacheDefaults, LongContext, Pricing, PricingSchedule, data, normalized_pricing_key};
 
 #[derive(Clone, Debug)]
 pub(super) struct Row {
     pub(super) key: Arc<str>,
-    pub(super) pricing: Pricing,
+    pub(super) pricing: RowPricing,
     pub(super) source: Source,
     pub(super) schedule: Option<&'static PricingSchedule>,
     pub(super) context_limit: Option<u64>,
     pub(super) exact_only: bool,
     pub(super) scope: Scope,
-    pub(super) vendor_id: Option<Box<str>>,
+    pub(super) vendor_start: Option<NonZeroUsize>,
 }
 
 impl Default for Row {
     fn default() -> Self {
         Self {
             key: Arc::from(""),
-            pricing: Pricing::empty(),
+            pricing: Pricing::empty().into(),
             source: Source::LiteLlm,
             schedule: None,
             context_limit: None,
             exact_only: false,
             scope: Scope::Hosted,
-            vendor_id: None,
+            vendor_start: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct RowPricing {
+    input: f64,
+    output: f64,
+    pub(super) cache_create: Option<f64>,
+    pub(super) cache_read: Option<f64>,
+    cache_create_1h: Option<f64>,
+    pub(super) long_context: Option<Arc<LongContext>>,
+    fast_multiplier: f64,
+    ultrafast_multiplier: f64,
+    flex_multiplier: f64,
+    cache_defaults: &'static CacheDefaults,
+    explicit_fields: u16,
+}
+
+impl From<Pricing> for RowPricing {
+    fn from(rates: Pricing) -> Self {
+        Self {
+            input: rates.input,
+            output: rates.output,
+            cache_create: rates.cache_create,
+            cache_read: rates.cache_read,
+            cache_create_1h: rates.cache_create_1h,
+            long_context: rates.long_context.map(Arc::new),
+            fast_multiplier: rates.fast_multiplier,
+            ultrafast_multiplier: rates.ultrafast_multiplier,
+            flex_multiplier: rates.flex_multiplier,
+            cache_defaults: rates.cache_defaults,
+            explicit_fields: rates.explicit_fields,
+        }
+    }
+}
+
+impl RowPricing {
+    pub(super) fn rates(&self) -> Pricing {
+        Pricing {
+            input: self.input,
+            output: self.output,
+            cache_create: self.cache_create,
+            cache_read: self.cache_read,
+            cache_create_1h: self.cache_create_1h,
+            long_context: self.long_context.as_deref().copied(),
+            fast_multiplier: self.fast_multiplier,
+            ultrafast_multiplier: self.ultrafast_multiplier,
+            flex_multiplier: self.flex_multiplier,
+            cache_defaults: self.cache_defaults,
+            explicit_fields: self.explicit_fields,
         }
     }
 }
@@ -50,6 +101,10 @@ impl Row {
         self.source != Source::Override && self.pricing.input == 0.0 && self.pricing.output == 0.0
     }
 
+    pub(super) fn vendor_id(&self) -> Option<&str> {
+        self.key.get(self.vendor_start?.get() - 1..)
+    }
+
     pub(super) fn is_bare_hosted(&self, key: &str) -> bool {
         self.scope == Scope::Hosted && !key.contains('/')
     }
@@ -61,12 +116,20 @@ pub(super) fn vendor_id<'a>(key: &'a str, provider: &str) -> &'a str {
         .unwrap_or(key)
 }
 
-pub(super) fn row_scope(key: &str, provider: &str, direct: &[String]) -> (Scope, Option<Box<str>>) {
+pub(super) fn row_scope<'a>(
+    key: &'a str,
+    provider: &str,
+    direct: &[String],
+) -> (Scope, Option<&'a str>) {
     if direct.iter().any(|id| id == provider) {
-        (Scope::Direct, Some(vendor_id(key, provider).into()))
+        (Scope::Direct, Some(vendor_id(key, provider)))
     } else {
         (Scope::Hosted, None)
     }
+}
+
+pub(super) fn vendor_start(key: &str, vendor_id: &str) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(key.len() - vendor_id.len() + 1)
 }
 
 pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static CacheDefaults {
