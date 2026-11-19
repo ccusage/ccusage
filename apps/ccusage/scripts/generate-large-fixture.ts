@@ -984,7 +984,10 @@ function* grokSessionLines(session: GrokSession): Generator<Line> {
 			sessionUpdate: 'user_message_chunk',
 			content: { type: 'text', text: text(random, around(random, 3000)) },
 		});
-		const tools = random.between(1, 40);
+		// Most real sessions are a few KiB yet still record a completed turn,
+		// so turns often answer without tools, the first one most of all.
+		const toolFree = random.chance(session.promptIndex === 1 ? 0.8 : 0.5);
+		const tools = toolFree ? 0 : random.between(1, 40);
 		for (let tool = 0; tool < tools; tool += 1) {
 			if (random.chance(0.2)) {
 				yield grokLine(
@@ -1226,8 +1229,14 @@ async function writeFile(
 			break;
 		}
 		const line = `${JSON.stringify(next.value)}\n`;
+		const lineBytes = Buffer.byteLength(line);
+		// Stop at whichever line boundary lands nearer the target; always
+		// appending the crossing line would inflate every small file.
+		if (lines > 0 && bytes + lineBytes - targetSize > targetSize - bytes) {
+			break;
+		}
 		chunks.push(line);
-		bytes += Buffer.byteLength(line);
+		bytes += lineBytes;
 		lines += 1;
 	}
 	const content = chunks.join('');
