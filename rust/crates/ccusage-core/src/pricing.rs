@@ -1831,8 +1831,10 @@ impl PricingMap {
     }
 
     fn exact_candidate_price(&self, model: &str) -> Option<Pricing> {
-        self.exact_normalized_key(model)?;
-        self.lookup(self.prices(), model, Fuzzy::ShorterKeys)
+        let prices = self.prices();
+        self.exact_normalized_key(model)
+            .or_else(|| direct_deepseek_id(model).and_then(|id| prices.primary.same_id(id)))?;
+        self.lookup(prices, model, Fuzzy::ShorterKeys)
     }
 
     pub fn resolve_at<'a>(
@@ -2144,7 +2146,7 @@ impl PricingMap {
                     if table.primary.pricing_rows.is_none() {
                         return true;
                     }
-                    matches_service_plan(row.key, model)
+                    matches_service_plan(row.key, model, table)
                         && (layer != Layer::Primary
                             || !requires_full_vendor_id(row.key)
                             || qualified_vendor_id_matches(row.key, normalized.as_ref()))
@@ -2572,27 +2574,41 @@ fn models_dev_entry_has_required_cost(value: &Value) -> bool {
         })
 }
 
-fn matches_service_plan(candidate: &str, request: &str) -> bool {
+fn matches_service_plan<T>(candidate: &str, request: &str, table: Table<'_, T>) -> bool {
     const PLANS: [&str; 10] = [
         "batch",
         "flex",
         "priority",
-        "fast",
         "ultrafast",
         "nitro",
         "highspeed",
         "free",
         "lightning",
         "economy",
+        "spot",
     ];
 
     fn segments(id: &str) -> impl Iterator<Item = &str> {
         id.split(['-', '.', '@', '/', ':', '_'])
     }
 
-    segments(candidate)
-        .filter(|part| PLANS.iter().any(|plan| part.eq_ignore_ascii_case(plan)))
-        .all(|plan| segments(request).any(|part| part.eq_ignore_ascii_case(plan)))
+    let names_plan = |plan: &str| segments(request).any(|part| part.eq_ignore_ascii_case(plan));
+    if segments(candidate)
+        .any(|part| PLANS.iter().any(|plan| part.eq_ignore_ascii_case(plan)) && !names_plan(part))
+    {
+        return false;
+    }
+    let base = model_without_date_suffix(candidate);
+    let Some((standard, _)) = base
+        .rsplit_once(['-', '.', '@', ':', '_'])
+        .filter(|(_, suffix)| suffix.eq_ignore_ascii_case("fast"))
+    else {
+        return true;
+    };
+    names_plan("fast")
+        || ![standard, standard.rsplit('/').next().unwrap_or(standard)]
+            .into_iter()
+            .any(|model| table.all_parts().any(|part| part.same_id(model).is_some()))
 }
 
 /// Matches pricing keys across provider/model aliases while preserving version boundaries.
@@ -2735,6 +2751,7 @@ fn model_without_date_suffix(model: &str) -> &str {
 /// Maps model aliases to canonical pricing keys before fuzzy matching.
 fn pricing_alias(model: &str) -> Option<&'static str> {
     match model {
+        "deepseek-v4p1-flash" => Some("accounts/fireworks/models/deepseek-v4p1-flash"),
         "gpt-reserve" => Some("gpt-5.6-luna"),
         "gpt-5.6" => Some("gpt-5.6-sol"),
         "gpt-5.3-spark" => Some("gpt-5.3-codex-spark"),
@@ -6957,6 +6974,24 @@ mod tests {
             7.0
         );
         assert_eq!(pricing.find("vendor/model-2.5-batch").unwrap().input, 9.0);
+    }
+
+    #[test]
+    fn fireworks_flash_label_uses_the_exact_standard_model_row() {
+        crate::test_support::install_pricing_snapshots();
+        let entry = PricingMap::load_embedded()
+            .find("deepseek-v4p1-flash")
+            .unwrap();
+        assert_eq!((entry.input, entry.output), (0.0000003, 0.0000012));
+    }
+
+    #[test]
+    fn preserves_a_fast_model_name_without_a_standard_sibling() {
+        crate::test_support::install_pricing_snapshots();
+        let entry = PricingMap::load_embedded()
+            .find("qwen2.5-coder-7b")
+            .unwrap();
+        assert_eq!((entry.input, entry.output), (0.00000003, 0.00000009));
     }
 
     #[test]
