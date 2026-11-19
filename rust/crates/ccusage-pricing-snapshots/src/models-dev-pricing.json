@@ -1743,6 +1743,16 @@
 			"context": 32768
 		}
 	},
+	"TEE/deepseek-v3.2": {
+		"cost": {
+			"cache_read": 0.5,
+			"input": 1,
+			"output": 1
+		},
+		"limit": {
+			"context": 164000
+		}
+	},
 	"TEE/deepseek-v4.1-flash": {
 		"cost": {
 			"cache_read": 0.01,
@@ -1793,6 +1803,46 @@
 			"context": 262144
 		}
 	},
+	"TEE/glm-5.1": {
+		"cost": {
+			"cache_read": 0.09,
+			"input": 0.9,
+			"output": 2.9
+		},
+		"limit": {
+			"context": 202752
+		}
+	},
+	"TEE/glm-5.1-thinking": {
+		"cost": {
+			"cache_read": 0.09,
+			"input": 0.9,
+			"output": 2.9
+		},
+		"limit": {
+			"context": 202752
+		}
+	},
+	"TEE/glm-5.2": {
+		"cost": {
+			"cache_read": 0.125,
+			"input": 1.25,
+			"output": 3.95
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"TEE/glm-5.2:thinking": {
+		"cost": {
+			"cache_read": 0.125,
+			"input": 1.25,
+			"output": 3.95
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"TEE/glm-5.3": {
 		"cost": {
 			"cache_read": 0.26,
@@ -1833,6 +1883,26 @@
 			"context": 524288
 		}
 	},
+	"TEE/kimi-k2.6": {
+		"cost": {
+			"cache_read": 0.039,
+			"input": 0.39,
+			"output": 1.8
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"TEE/kimi-k3": {
+		"cost": {
+			"cache_read": 0.185,
+			"input": 1.85,
+			"output": 9.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"TEE/kimi-k3.1-pro": {
 		"cost": {
 			"cache_read": 0.4,
@@ -1853,6 +1923,16 @@
 			"context": 128000
 		}
 	},
+	"TEE/qwen3.6-27b": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.32,
+			"output": 3.25
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"TEE/qwen3.6-35b-a3b": {
 		"cost": {
 			"cache_read": 0.056,
@@ -1871,6 +1951,26 @@
 		},
 		"limit": {
 			"context": 262144
+		}
+	},
+	"TheDrummer/Artemis-v1.1": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.1,
+			"output": 0.45
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"TheDrummer/artemis-31b-v1.2": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.1,
+			"output": 0.45
+		},
+		"limit": {
+			"context": 65536
 		}
 	},
 	"XiaomiMiMo/MiMo-V2.5": {
@@ -11935,9 +12035,9 @@
 	},
 	"deepseek/deepseek-v4-flash-0731:thinking": {
 		"cost": {
-			"cache_read": 0.013,
-			"input": 0.05,
-			"output": 0.16
+			"cache_read": 0.001484,
+			"input": 0.04664,
+			"output": 0.13992
 		},
 		"limit": {
 			"context": 1048576
@@ -12164,6 +12264,16 @@
 		},
 		"limit": {
 			"context": 1048576
+		}
+	},
+	"deepseek/deepseek-v4.1-flash-abliterated": {
+		"cost": {
+			"cache_read": 0.066,
+			"input": 0.297,
+			"output": 1.045
+		},
+		"limit": {
+			"context": 262144
 		}
 	},
 	"deepseek/deepseek-v4.1-flash-fast": {
@@ -14262,6 +14372,30 @@
 			"input": 3,
 			"output": 15
 		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-4-neon@eu": {
+		"cost": {
+			"cache_read": 0.165,
+			"cache_write": 3.3,
+			"input": 3.3,
+			"output": 16.5
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-4-neon@us": {
+		"cost": {
+			"cache_read": 0.165,
+			"cache_write": 3.3,
+			"input": 3.3,
+			"output": 16.5
+		},
+		"exactOnly": true,
 		"limit": {
 			"context": 1048576
 		}
@@ -37626,6 +37760,16 @@
 			"context": 1000000
 		}
 	},
+	"z-ai/glm-5.3-abliterated": {
+		"cost": {
+			"cache_read": 0.165,
+			"input": 0.429,
+			"output": 1.452
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"z-ai/glm-5.3-fast": {
 		"cost": {
 			"cache_read": 0.56,
@@ -37645,6 +37789,16 @@
 		},
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"z-ai/glm-5.3-flash-abliterated": {
+		"cost": {
+			"cache_read": 0.088,
+			"input": 0.242,
+			"output": 0.88
+		},
+		"limit": {
+			"context": 262144
 		}
 	},
 	"z-ai/glm-5.3-flash-apex": {
