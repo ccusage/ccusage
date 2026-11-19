@@ -3,9 +3,12 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{fs, path::Path};
+use std::{ops::ControlFlow, path::Path};
 
-use ccusage_adapter_common::units::{UnitError, read_json};
+use ccusage_adapter_common::{
+    jsonl::{DEFAULT_BUFFER_SIZE, JsonLines, Tail},
+    units::{UnitError, read_json},
+};
 use serde_json::Value;
 
 use crate::{
@@ -318,15 +321,27 @@ fn extract_model_from_sidecar_jsonl(settings_path: &Path) -> Result<Option<Strin
         return Ok(None);
     };
     let sidecar = settings_path.with_file_name(format!("{prefix}.jsonl"));
-    let Ok(content) = fs::read_to_string(sidecar) else {
+    let Ok(lines) = JsonLines::open(&sidecar, DEFAULT_BUFFER_SIZE, false) else {
         return Ok(None);
     };
-    for line in content.lines().take(500) {
-        if let Some(model) = extract_droid_model_from_line(line) {
-            return Ok(Some(model));
+    let mut model = None;
+    let result = lines.scan(Tail::Discard, |line| {
+        let Ok(text) = std::str::from_utf8(line.bytes()) else {
+            return ControlFlow::Break(());
+        };
+        if line.index < 500 && model.is_none() {
+            model = extract_droid_model_from_line(
+                text.strip_suffix('\r')
+                    .filter(|_| !line.unterminated())
+                    .unwrap_or(text),
+            );
         }
+        ControlFlow::Continue(())
+    });
+    if result.failure.is_some() || result.found.is_some() {
+        return Ok(None);
     }
-    Ok(None)
+    Ok(model)
 }
 
 fn extract_droid_model_from_line(line: &str) -> Option<String> {
