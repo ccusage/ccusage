@@ -15,6 +15,7 @@ skills below and loads when the task triggers them.
 - `rust-binary-size` - release profile, dependency features, native packaging size, executable bloat.
 - `reduce-similarities` - duplicate Rust code detection with `similarity-rs`.
 - `ast-grep` - structural searches in Rust or TypeScript.
+- `code-comments` - writing, reviewing, or deleting code comments in any repository language.
 - `nushell` - `.nu` scripts, Nix shebangs, and the recipes and workflows that call them.
 - `cmux-debug` - output that depends on real terminal geometry: responsive tables, progress, spinners.
 - `docs` - whether and where a change needs documentation updates; run it whenever a user-facing agent, command, option, report mode, config key, JSON field, or screenshot changes.
