@@ -110,6 +110,11 @@ in
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
+        workspace-dependency-inheritance =
+          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell ]
+            ''
+              nu --no-config-file scripts/check-workspace-dependency-inheritance.nu rust
+            '';
         comments = mkRepoCheck "comment-check" [ pkgs.nushell pkgs.ast-grep pkgs.just ] ''
           nu --no-config-file scripts/comments/check.nu --source-tree
         '';
@@ -126,6 +131,7 @@ in
               nu --no-config-file scripts/comments/tests/check.test.nu
               nu scripts/validate-commit-scope.test.nu
               nu scripts/check-models-dev-dependencies.test.nu
+              nu scripts/check-workspace-dependency-inheritance.test.nu
               nu scripts/check-nushell.test.nu
               nu .github/scripts/contribution-gate.test.nu
               nu .github/scripts/pricing-lock.test.nu
