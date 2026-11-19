@@ -3166,6 +3166,46 @@ mod tests {
     }
 
     #[test]
+    fn a_usage_record_claims_only_the_shutdown_covered_call_its_service_request_names() {
+        let call = |span_id: &str, timestamp: &str, session: &str, input_tokens: u64| {
+            let mut span: serde_json::Value =
+                serde_json::from_str(&otel_call(span_id, timestamp).replace("session-1", session))
+                    .unwrap();
+            span["attributes"]["gen_ai.response.id"] = json!("turn-response");
+            span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+            span
+        };
+        let mut named = call("named", "2026-01-02T10:00:00.000Z", "session-parent", 1);
+        named["attributes"]["github.copilot.service_request_id"] = json!("service-a");
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-parent/events.jsonl":
+                shutdown_with_requests("shutdown-1", "2026-01-02T11:00:00.000Z", 1),
+            "home/.copilot/session-state/session-child/events.jsonl": usage_record(
+                "record-a",
+                "2026-01-02T10:00:00.000Z",
+                json!({"apiCallId": "turn-response", "serviceRequestId": "service-a"}),
+            ),
+            "home/.copilot/otel/otel.jsonl": [
+                named,
+                call("sibling", "2026-01-02T10:05:00.000Z", "session-child", 2),
+            ]
+            .map(|span| span.to_string())
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T10:00:00.000Z".to_string(), 100),
+                ("2026-01-02T10:05:00.000Z".to_string(), 2),
+                ("2026-01-02T11:00:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
+    #[test]
     fn keeps_otel_calls_that_no_usage_record_covers() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": usage_record(
