@@ -1709,6 +1709,7 @@ impl PricingMap {
                 matching(model, Pass::Label)
                     .or_else(|| matching(model, Pass::S2))
                     .or_else(|| matching(model, Pass::S34))
+                    .or_else(|| matching(model, Pass::S3f))
                     .or_else(|| matching(model, Pass::S56))
             })?;
             return self.cached_row(model, hit);
@@ -1719,7 +1720,7 @@ impl PricingMap {
         {
             return self.cached_row(model, hit);
         }
-        for pass in [Pass::S2, Pass::S34, Pass::S56] {
+        for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
             for &(model, kind) in candidates {
                 if pass.allows(kind)
                     && let Some(hit) = matching(model, pass)
@@ -1752,33 +1753,33 @@ impl PricingMap {
                     self.authoritative(name, lookup, true, models_dev, |_| true)
                 })
                 .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeIdentity)),
-            Pass::S34 => {
-                let suffix = |free| {
-                    slot.names(model, |name| {
-                        name.suffixes().find_map(|suffix| {
-                            self.authoritative(suffix, lookup, false, models_dev, |row| {
-                                if free {
-                                    row.scope == Scope::Direct && row.is_free()
-                                } else {
-                                    !row.is_free()
-                                        || (matches!(lookup, Lookup::Context)
-                                            && row.scope == Scope::Direct)
-                                }
-                            })
+            Pass::S34 | Pass::S3f => {
+                let free = matches!(pass, Pass::S3f);
+                if free && matches!(lookup, Lookup::Context) {
+                    return None;
+                }
+                slot.names(model, |name| {
+                    name.suffixes().find_map(|suffix| {
+                        self.authoritative(suffix, lookup, false, models_dev, |row| {
+                            if free {
+                                row.scope == Scope::Direct && row.is_free()
+                            } else {
+                                !row.is_free()
+                                    || (matches!(lookup, Lookup::Context)
+                                        && row.scope == Scope::Direct)
+                            }
                         })
                     })
-                    .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeSuffix))
-                };
-                suffix(false)
-                    .or_else(|| {
-                        let rows = models_dev()?;
-                        slot.names(model, |name| rows.exact(name, lookup))
-                            .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevIdentity))
-                    })
-                    .or_else(|| match lookup {
-                        Lookup::Pricing => suffix(true),
-                        Lookup::Context => None,
-                    })
+                })
+                .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeSuffix))
+                .or_else(|| {
+                    if free {
+                        return None;
+                    }
+                    let rows = models_dev()?;
+                    slot.names(model, |name| rows.exact(name, lookup))
+                        .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevIdentity))
+                })
             }
             Pass::S56 => {
                 let secondary = models_dev();
@@ -2871,6 +2872,17 @@ mod tests {
         use super::ResolutionStep::{
             AuthoritativeIdentity, AuthoritativeSuffix, ModelsDevIdentity,
         };
+        let model = "novita/glm-4.7-flash";
+        let candidates = [
+            ("openrouter/novita/glm-4.7-flash", MatchKind::Exact),
+            (model, MatchKind::Fuzzy),
+        ];
+        let found = pricing.explain(Some(model), &candidates).unwrap();
+        assert_eq!((found.step, found.row_key), (ModelsDevIdentity, model));
+        let (_, rates) = pricing.resolve_at(Some(model), &candidates, None).unwrap();
+        assert!((rates.input - 0.0707e-6).abs() < 1e-15);
+        assert!((rates.output - 0.404e-6).abs() < 1e-15);
+
         for (model, input, output, step, row) in [
             (
                 "novita/glm-4.7-flash",

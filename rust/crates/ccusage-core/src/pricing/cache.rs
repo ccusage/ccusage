@@ -100,6 +100,7 @@ pub(super) enum Pass {
     Label,
     S2,
     S34,
+    S3f,
     S56,
 }
 
@@ -107,7 +108,7 @@ impl Pass {
     pub(super) fn allows(self, kind: MatchKind) -> bool {
         match self {
             Self::S2 => true,
-            Self::S34 => kind != MatchKind::StrictExact,
+            Self::S34 | Self::S3f => kind != MatchKind::StrictExact,
             Self::S56 => kind == MatchKind::Fuzzy,
             Self::Find | Self::Label => false,
         }
@@ -201,8 +202,8 @@ struct NameForms {
 #[derive(Debug, Default)]
 struct NameSlot {
     forms: Option<Option<Arc<NameForms>>>,
-    prices: [ResultCell; 5],
-    limits: Option<Box<[ResultCell; 5]>>,
+    prices: [ResultCell; 6],
+    limits: Option<Box<[ResultCell; 6]>>,
 }
 
 const _: () = assert!(size_of::<NameSlot>() <= 96);

@@ -735,6 +735,27 @@ mod pricing_identity_tests {
                 0.00088,
             ),
             ("46_glm_override", "glm-4.7", "zai", &with_override, 0.10),
+            (
+                "113_paid_listing_before_free_suffix",
+                "novita/glm-4.7-flash",
+                "openrouter",
+                &pricing,
+                0.0004747,
+            ),
+            (
+                "55_free_suffix",
+                "openrouter/z-ai/glm-4.7-flash",
+                "openrouter",
+                &pricing,
+                0.0,
+            ),
+            (
+                "54_free_identity",
+                "glm-4.7-flash",
+                "openrouter",
+                &pricing,
+                0.0,
+            ),
         ] {
             let entry = HermesEntry {
                 timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
