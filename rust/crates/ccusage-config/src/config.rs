@@ -636,47 +636,75 @@ impl ccusage_cli::CliConfig for ConfigContext {
         until_flag: bool,
         message: &str,
     ) -> bool {
+        let Some((file, false)) = &self.config_origin else {
+            return false;
+        };
         let paths = self.option_paths();
-        for (index, path) in paths.iter().enumerate().rev() {
-            let Some(layer) = self.layers.get(path) else {
-                continue;
-            };
-            let (field, bound, opposite, extract): (
-                _,
-                _,
-                _,
-                fn(&crate::layers::Layer) -> Option<&str>,
-            ) = if !since_flag && layer.shared.since.is_some() {
-                ("since", &mut shared.since, &shared.until, |layer| {
-                    layer.shared.since.as_ref().map(|bound| bound.0.as_str())
-                })
-            } else if !until_flag && layer.shared.until.is_some() {
-                ("until", &mut shared.until, &shared.since, |layer| {
-                    layer.shared.until.as_ref().map(|bound| bound.0.as_str())
-                })
-            } else {
-                continue;
-            };
-            if !self.warn_discovered_statusline_field(path, field, message) {
-                return false;
-            }
-            *bound = paths[..index]
+        let layers = paths
+            .iter()
+            .filter_map(|path| self.layers.get(path).map(|layer| (path, &layer.shared)))
+            .collect::<Vec<_>>();
+        let since_source = if since_flag {
+            None
+        } else {
+            layers
                 .iter()
-                .rev()
-                .filter_map(|path| self.layers.get(path).and_then(extract))
-                .find(|candidate| {
-                    opposite.as_deref().is_none_or(|opposite| {
-                        if field == "since" {
-                            *candidate <= opposite
-                        } else {
-                            *candidate >= opposite
-                        }
-                    })
-                })
-                .map(str::to_string);
-            return true;
+                .rposition(|(_, options)| options.since.is_some())
+        };
+        let until_source = if until_flag {
+            None
+        } else {
+            layers
+                .iter()
+                .rposition(|(_, options)| options.until.is_some())
+        };
+        let Some(first_source) = since_source.into_iter().chain(until_source).min() else {
+            return false;
+        };
+        let since_path = since_source.map_or_else(
+            || "--since".to_string(),
+            |index| format!("{}.since", layers[index].0),
+        );
+        let until_path = until_source.map_or_else(
+            || "--until".to_string(),
+            |index| format!("{}.until", layers[index].0),
+        );
+        let warn = |since: &str, until: &str, message: &str| {
+            self.warnings.borrow_mut().push(format!(
+                "Invalid ccusage config field: {}: {since}: {message} (paired with {until})",
+                file.display()
+            ));
+        };
+        warn(&since_path, &until_path, message);
+
+        let fallback = layers[..first_source]
+            .iter()
+            .rev()
+            .find_map(|(path, options)| {
+                let since = &options.since.as_ref()?.0;
+                let until = &options.until.as_ref()?.0;
+                if since > until {
+                    warn(
+                        &format!("{path}.since"),
+                        &format!("{path}.until"),
+                        &format!(
+                            "The --since date '{since}' is later than the --until date '{until}'."
+                        ),
+                    );
+                    return None;
+                }
+                let compatible_with_flags = (!since_flag
+                    || shared.since.as_ref().is_none_or(|flag| flag <= until))
+                    && (!until_flag || shared.until.as_ref().is_none_or(|flag| since <= flag));
+                compatible_with_flags.then_some((since, until))
+            });
+        if !since_flag {
+            shared.since = fallback.map(|(since, _)| since.clone());
         }
-        false
+        if !until_flag {
+            shared.until = fallback.map(|(_, until)| until.clone());
+        }
+        true
     }
 
     fn apply_shared(&self, shared: &mut SharedArgs) {

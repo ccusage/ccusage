@@ -356,7 +356,7 @@ fn codex_statusline_date_range_matches_daily_totals() {
 fn codex_statusline_recovers_discovered_config_and_keeps_valid_settings() {
     let fixture = fs_fixture!({
         "cwd/.ccusage/ccusage.json": r#"{
-            "defaults":{"since":"20261119","timezone":"Pacific/Kiritimati"},
+            "defaults":{"since":"20261119","until":"20261119","timezone":"Pacific/Kiritimati"},
             "codex":{"commands":{"statusline":{
                 "json":true, "timezone":"Invalid/Zone",
                 "since":"20990101", "until":"20261119"
@@ -381,6 +381,52 @@ fn codex_statusline_recovers_discovered_config_and_keeps_valid_settings() {
     let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(summary["scope"], "range");
     assert_eq!(summary["totalTokens"], 150);
+}
+
+#[test]
+fn codex_statusline_recovers_reversed_discovered_windows_as_a_pair() {
+    for (config, until_path, expected_scope, expected_tokens) in [
+        (
+            r#"{
+                "codex":{"commands":{"statusline":{"since":"20261118","until":"20000101"}}},
+                "defaults":{"since":"19990101","until":"20261118"}
+            }"#,
+            "codex.commands.statusline.until",
+            "range",
+            300,
+        ),
+        (
+            r#"{"codex":{"defaults":{"until":"20000101"},"commands":{"statusline":{"since":"20261118"}}}}"#,
+            "codex.defaults.until",
+            "today",
+            150,
+        ),
+    ] {
+        let fixture = fs_fixture!({
+            "cwd/.ccusage/ccusage.json": config,
+            "codex/sessions/today.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+            "codex/sessions/previous-day.jsonl": usage("2026-11-17T12:00:00Z", 100, 50),
+        });
+        let output = support::hermetic_command(fixture.root())
+            .args(["codex", "statusline", "--json", "--timezone", "UTC"])
+            .env("CODEX_HOME", fixture.path("codex"))
+            .env("CCUSAGE_TEST_NOW", "2026-11-18T13:00:00Z")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stderr}");
+        assert!(
+            stderr.lines().any(|line| {
+                line.contains("codex.commands.statusline.since")
+                    && line.contains(until_path)
+                    && line.contains("later than")
+            }),
+            "{stderr}"
+        );
+        let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(summary["scope"], expected_scope);
+        assert_eq!(summary["totalTokens"], expected_tokens);
+    }
 }
 
 #[test]
