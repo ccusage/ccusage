@@ -142,23 +142,15 @@ pub fn parse_report_args_with_config<I>(
 where
     I: IntoIterator<Item = OsString>,
 {
-    match parse_with_timezone(argument_parser(args)?, config, known_timezone)? {
-        Command::All(args) | Command::Agent(_, AgentCommand::Report(args)) => {
-            Ok(AgentCommandArgs {
-                start_of_week,
-                ..args
-            })
-        }
-        Command::Daily(_)
-        | Command::Monthly(_)
-        | Command::Weekly(_)
-        | Command::Session(_)
-        | Command::Blocks(_)
-        | Command::Statusline(_)
-        | Command::Agent(_, AgentCommand::Statusline(_)) => {
-            Err("Expected a report that loads agent sources".to_string())
-        }
-    }
+    let (Command::All(args) | Command::Agent(_, AgentCommand::Report(args))) =
+        parse_with_timezone(argument_parser(args)?, config, known_timezone)?
+    else {
+        return Err("Expected a report that loads agent sources".to_string());
+    };
+    Ok(AgentCommandArgs {
+        start_of_week,
+        ..args
+    })
 }
 
 fn control_arg(args: &[String]) -> Option<ControlArg> {

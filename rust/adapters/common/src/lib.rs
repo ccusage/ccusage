@@ -242,7 +242,7 @@ fn chunk_indexes_by_size<I>(
         let size = fs::metadata(path(item)).map_or(0, |metadata| metadata.len());
         weighted_indexes.push((index, size));
     }
-    weighted_indexes.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    weighted_indexes.sort_unstable_by(|a, b| (b.1, a.0).cmp(&(a.1, b.0)));
 
     let mut chunks = vec![Vec::new(); chunk_count];
     let mut chunk_sizes = vec![0_u64; chunk_count];
