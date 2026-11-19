@@ -210,13 +210,10 @@ fn daily_since_totals_match_after_pruning_stale_files() {
         )
     };
 
-    // Written long before --since: holds only pre-window history.
     let stale = fixture.write_file(
         "projects/project-a/stale.jsonl",
         entry("2026-09-01T12:00:00.000Z", "stale", 4.0),
     );
-    // Its mtime is inside the 24 hour margin, so it is still read even though
-    // its entry was flushed after it happened.
     let margin = fixture.write_file(
         "projects/project-a/margin.jsonl",
         entry("2026-09-10T08:00:00.000Z", "margin", 2.0),
@@ -485,8 +482,6 @@ fn statusline_debug_includes_sanitized_skip_samples() {
     assert!(!stderr.contains("SECRET_CANARY"), "{stderr}");
 }
 
-/// Runs `args` twice: once with the fixture's own mtimes and once with every
-/// file touched to a fresh mtime. mtime pruning must never change a report.
 fn assert_output_ignores_mtimes(
     command: impl Fn() -> std::process::Command,
     files: &[std::path::PathBuf],
@@ -631,7 +626,6 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
         None,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-    // Like `ccusage claude session`, the subagent's usage before `--since` is left out.
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
 }
 
@@ -779,9 +773,6 @@ fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
 }
 
-/// Writes a continuous chain of usage entries 4 hours apart, never idle long
-/// enough to reset a 5 hour block. Files pair entries so they straddle block
-/// boundaries: dropping whole early files re-anchors every later block.
 fn write_block_chain(
     fixture: &Fixture,
     last_entry: Instant,
@@ -792,8 +783,6 @@ fn write_block_chain(
         .map(|back| last_entry.minus(HOUR * 4 * back))
         .collect::<Vec<_>>();
     let mut files = Vec::new();
-    // The earliest entry opens block 0 alone in its file; later files each hold
-    // the second entry of one block and the first entry of the next.
     let mut chunks = vec![&timestamps[..1]];
     chunks.extend(timestamps[1..].chunks(2));
     for (index, chunk) in chunks.into_iter().enumerate() {
@@ -931,7 +920,6 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
 fn statusline_keeps_the_current_block_before_future_dated_entries() {
     let fixture = Fixture::new();
     let now = instant(NOW);
-    // A skewed clock wrote an entry eight hours ahead, after a long pause.
     let transcript = fixture.write_file(
         "projects/project-a/session-now.jsonl",
         [
@@ -978,7 +966,6 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
             1.0,
         ),
     );
-    // Workflow transcripts can live under one session and record another.
     let workflow = fixture.write_file(
         "projects/project-a/session-b/subagents/workflows/wf_1/agent-a.jsonl",
         [
@@ -1038,7 +1025,6 @@ fn requestless_line(
     )
 }
 
-/// Total tokens reported by each Claude report for the same window.
 fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
     ["daily", "weekly", "monthly", "session"]
         .into_iter()
@@ -1081,7 +1067,6 @@ fn requestless_sidechain_replays_are_counted_once_in_every_report() {
             false,
         ),
     );
-    // The /btw replay repeats the parent message, and its cache read, minutes later.
     fixture.write_file(
         "projects/project-a/session-a/subagents/agent-a.jsonl",
         requestless_line(
@@ -1102,8 +1087,6 @@ fn requestless_sidechain_replays_are_counted_once_in_every_report() {
 #[test]
 fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
     let fixture = Fixture::new();
-    // A relay that answers every response with the same message ID and no request ID; each
-    // timestamp is a separate API call.
     let lines = Vec::from_fn(3, |minute| {
         requestless_line(
             &format!("2026-09-1{}T12:0{minute}:00.000Z", minute + 1),
@@ -1124,8 +1107,6 @@ fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
 #[test]
 fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_report() {
     let fixture = Fixture::new();
-    // Claude Code writes one line per content block with the same real message ID, no
-    // request ID, and distinct timestamps for one response.
     let lines = [
         requestless_line(
             "2026-09-11T12:00:00.000Z",
@@ -1187,14 +1168,11 @@ fn requestless_anthropic_message_id_keeps_largest_usage_across_days_and_sessions
             r#"{{"timestamp":"{timestamp}","sessionId":"{session}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":{output_tokens}}}}}}}"#
         )
     };
-    // Content-block lines of one streamed response straddle midnight with growing output, so
-    // every report must keep only the final, largest line rather than one line per day.
     let session_a = [
         line("2026-09-11T23:59:59.900Z", "session-a", 5),
         line("2026-09-12T00:00:00.100Z", "session-a", 50),
     ];
     fixture.write_file("projects/project-a/session-a.jsonl", session_a.join("\n"));
-    // The same message ID in another session is a separate copy and stays counted.
     fixture.write_file(
         "projects/project-a/session-b.jsonl",
         line("2026-09-12T01:00:00.000Z", "session-b", 5),
@@ -1272,8 +1250,6 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
     ];
     fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
-    // Daily rows stop at 2026-09-15; weekly, monthly and session rows merge
-    // both days.
     let first_day = (450, 300, 70);
     let both_days = (550, 380, 100);
     let reports = [
@@ -1388,8 +1364,6 @@ fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
 #[test]
 fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_report() {
     let fixture = Fixture::new();
-    // The top-level split covers only the first `message` iteration; the
-    // second one's 1,181 5-minute writes appear only in `iterations`.
     let line = r#"{"isSidechain":false,"message":{"model":"claude-sonnet-4-20250514","id":"msg_advisor","type":"message","role":"assistant","content":[{"type":"text","text":"placeholder"}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":4,"cache_creation_input_tokens":12323,"cache_read_input_tokens":140030,"output_tokens":244,"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":11142,"ephemeral_5m_input_tokens":0},"iterations":[{"input_tokens":2,"output_tokens":58,"cache_read_input_tokens":64444,"cache_creation_input_tokens":11142,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":11142},"type":"message"},{"input_tokens":77025,"output_tokens":3427,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"advisor_message","model":"claude-opus-5"},{"input_tokens":2,"output_tokens":186,"cache_read_input_tokens":75586,"cache_creation_input_tokens":1181,"cache_creation":{"ephemeral_5m_input_tokens":1181,"ephemeral_1h_input_tokens":0},"type":"message"}],"speed":"standard"}},"requestId":"req_advisor","type":"assistant","uuid":"00000000-0000-4000-8000-000000000002","timestamp":"2026-09-15T12:00:00.000Z","cwd":"/tmp/demo","sessionId":"session-a","version":"2.1.323"}"#;
     fixture.write_file("projects/project-a/session-a.jsonl", line);
 

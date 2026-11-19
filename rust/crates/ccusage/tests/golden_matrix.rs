@@ -1,8 +1,4 @@
-//! Golden matrix over the `ccusage` binary: one test per agent, the unified
-//! reports over every agent at once, and a guard that fails when the CLI
-//! accepts an (agent, report) pair nothing here snapshots.
-//!
-//! Snapshots are `snapshots/golden__<agent|all>__<kind>__<variant>.snap`.
+//! Golden CLI snapshots for each usage source and unified report.
 
 use std::collections::BTreeSet;
 
@@ -79,9 +75,6 @@ fn seed_environment_preserves_non_utf8_paths() {
     );
 }
 
-/// Declares the agents of the matrix once, as both the table the coverage
-/// guard checks against the CLI and one `#[test]` per agent, so an agent
-/// cannot be in the table without being run.
 macro_rules! agent_matrix {
     ($($agent:ident => $extras:expr),* $(,)?) => {
         const AGENTS: &[AgentMatrix] = &[
@@ -346,8 +339,6 @@ fn all_agents_unified() {
     golden::all::run(AGENTS);
 }
 
-/// Entry point for `diff-refs.bb`, which compares two refs over the golden
-/// seeds instead of an empty store.
 #[test]
 #[ignore = "writes into CCUSAGE_GOLDEN_FIXTURE_DIR; run by diff-refs.bb"]
 fn export_golden_fixture() {
@@ -472,7 +463,6 @@ fn statusline_hook_paths_round_trip_as_json() {
     }
 }
 
-/// The names under `COMMANDS:` in a `--help` page.
 fn help_commands(help: &str) -> Vec<String> {
     help.lines()
         .skip_while(|line| line.trim() != "COMMANDS:")
@@ -511,8 +501,6 @@ fn every_accepted_agent_report_is_in_the_matrix() {
          a new agent needs a seed in tests/golden and an entry there"
     );
 
-    // diff-refs.bb builds its command list from these help pages, so they
-    // must name exactly the reports the parser accepts.
     for matrix in AGENTS {
         let listed: BTreeSet<String> = help_commands(&run(&[matrix.agent, "--help"]).stdout)
             .into_iter()

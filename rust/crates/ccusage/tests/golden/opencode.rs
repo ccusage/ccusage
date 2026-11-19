@@ -10,12 +10,10 @@ const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "opencode-mystery-1";
 
-/// The v1 and legacy-JSON model reference: flat members on the message.
 fn flat(model: &str, provider: &str) -> String {
     format!(r#""modelID":"{model}","providerID":"{provider}""#)
 }
 
-/// The v2 model reference: a nested `model` object.
 fn nested(model: &str, provider: &str) -> String {
     format!(r#""model":{{"id":"{model}","providerID":"{provider}"}}"#)
 }
@@ -26,8 +24,6 @@ fn tokens(input: u64, output: u64, cache_read: u64, cache_write: u64) -> String 
     )
 }
 
-/// One assistant payload. `created` is the payload's own `time.created`, and
-/// `extra` holds further top-level members, each with its leading comma.
 fn payload(model: &str, created: Option<i64>, tokens: &str, extra: &str) -> String {
     let time = created.map_or_else(String::new, |created| {
         format!(r#""time":{{"created":{created}}},"#)
@@ -35,7 +31,6 @@ fn payload(model: &str, created: Option<i64>, tokens: &str, extra: &str) -> Stri
     format!(r#"{{"role":"assistant",{model},{time}"tokens":{tokens}{extra}}}"#)
 }
 
-/// A `claude-agent` v2 payload linked to the Claude Code session it ran in.
 fn claude_agent(native_session: &str, created: i64, input: u64, output: u64) -> String {
     payload(
         &nested("opus", "claude-agent"),
@@ -74,7 +69,6 @@ impl Database {
             .expect("failed to insert OpenCode fixture row");
     }
 
-    /// A v1 `message` row.
     fn message(&self, id: &str, session: &str, created: i64, data: &str) {
         self.execute(&format!(
             "INSERT INTO message (id, session_id, time_created, data) VALUES ({}, {}, {created}, {})",
@@ -84,7 +78,6 @@ impl Database {
         ));
     }
 
-    /// A pre-`time_created` `message` row, in a table without a primary key.
     fn legacy_message(&self, id: &str, session: &str, data: &str) {
         self.execute(&format!(
             "INSERT INTO message (id, session_id, data) VALUES ({}, {}, {})",
@@ -94,7 +87,6 @@ impl Database {
         ));
     }
 
-    /// A v2 `session_message` row.
     fn session_message(
         &self,
         id: &str,
@@ -115,7 +107,6 @@ impl Database {
         ));
     }
 
-    /// Cumulative session counters in `session_v2` or the older `session`.
     fn aggregate(&self, table: &str, id: &str, created: Option<i64>, model: &str, counters: &str) {
         self.execute(&format!(
             "INSERT INTO {table} (id, time_created, model, cost, tokens_input, tokens_output, \
@@ -140,8 +131,6 @@ const AGGREGATE_COLUMNS: &str = "id TEXT PRIMARY KEY, time_created INTEGER, cost
     tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, \
     tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT";
 
-/// The primary data directory: one database holding every table generation
-/// (v1 `message`, v2 `session_message`, `session_v2`, and the older `session`).
 fn seed_main_database(path: &Path) {
     let session_v2 = format!(
         "CREATE TABLE session_v2 ({AGGREGATE_COLUMNS}, fork_session_id TEXT, fork_boundary TEXT)"
@@ -154,7 +143,6 @@ fn seed_main_database(path: &Path) {
             "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER, data TEXT)",
             &session_v2,
             &session,
-            // A table the loader has no use for.
             "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, data TEXT)",
         ],
     );
@@ -162,7 +150,6 @@ fn seed_main_database(path: &Path) {
         r#"INSERT INTO part VALUES ('part-1', 'msg-v1-a1', '{"type":"step-finish","tokens":{"input":9999,"output":9999}}')"#,
     );
 
-    // --- v1 `message` rows -------------------------------------------------
     let alpha = "ses-v1-alpha";
     db.message(
         "msg-v1-a1",
@@ -175,7 +162,6 @@ fn seed_main_database(path: &Path) {
             r#","cost":0.5"#,
         ),
     );
-    // 2026-01-01 in Asia/Tokyo; reasoning tokens are counted on top.
     db.message(
         "msg-v1-a2",
         alpha,
@@ -198,7 +184,6 @@ fn seed_main_database(path: &Path) {
             "",
         ),
     );
-    // Aliased model ID, resolved through the adapter's mapping table.
     db.message(
         "msg-v1-alias",
         alpha,
@@ -210,8 +195,6 @@ fn seed_main_database(path: &Path) {
             "",
         ),
     );
-    // Only a total: the remainder becomes output. The dotted model name is
-    // normalized for pricing, and a zero stored cost counts as absent.
     db.message(
         "msg-v1-total",
         alpha,
@@ -223,7 +206,6 @@ fn seed_main_database(path: &Path) {
             r#","cost":0"#,
         ),
     );
-    // Rows that must not be counted.
     let ignored_at = instant("2025-12-31T12:00:00Z").millis();
     db.message(
         "msg-v1-user",
@@ -270,7 +252,6 @@ fn seed_main_database(path: &Path) {
         &format!(r#"{{"role":"assistant","modelID":"{SONNET}","tokens":{{"input":9999,"outp"#),
     );
 
-    // --- v2 `session_message` rows -----------------------------------------
     let parent = "ses-v2-parent";
     let opus = nested(OPUS, "anthropic");
     let turn = |input: u64, output: u64, created: i64, extra: &str| {
@@ -302,7 +283,6 @@ fn seed_main_database(path: &Path) {
             r#","cost":0"#,
         ),
     );
-    // The fork boundary; 2026-01-01 in Asia/Tokyo.
     db.session_message(
         "msg-v2-p3",
         parent,
@@ -324,7 +304,6 @@ fn seed_main_database(path: &Path) {
             r#","status":"completed""#,
         ),
     );
-    // Flat model members on a v2 row.
     db.session_message(
         "msg-v2-p4",
         parent,
@@ -375,7 +354,6 @@ fn seed_main_database(path: &Path) {
         Some(ignored_at),
         r#"{"model":{"id":"gpt-5","providerID":"openai"},"tokens":{"input":9999,"#,
     );
-    // Same id as a v1 row: the v1 row wins.
     db.session_message(
         "msg-v1-a1",
         alpha,
@@ -385,8 +363,6 @@ fn seed_main_database(path: &Path) {
         &turn(9999, 9999, instant("2025-12-30T10:00:00Z").millis(), ""),
     );
 
-    // Forks copy the parent's rows under new ids but the same `seq`. The
-    // copies carry 9xxx tokens here so a leak is visible.
     let copy = |id: &str, session: &str, seq: i64, input: u64| {
         db.session_message(
             id,
@@ -409,8 +385,6 @@ fn seed_main_database(path: &Path) {
         Some(instant("2026-01-01T09:00:00Z").millis()),
         &turn(40, 4, instant("2026-01-01T09:00:00Z").millis(), ""),
     );
-    // A `before` fork stops one row short of the boundary, so its own row at
-    // the boundary's `seq` is counted.
     let before = "ses-v2-fork-before";
     copy("msg-v2-fb-copy-1", before, 0, 9004);
     copy("msg-v2-fb-copy-2", before, 1, 9005);
@@ -422,7 +396,6 @@ fn seed_main_database(path: &Path) {
         Some(instant("2026-01-01T09:30:00Z").millis()),
         &turn(33, 3, instant("2026-01-01T09:30:00Z").millis(), ""),
     );
-    // The boundary names a message the parent no longer has: every row stays.
     let lost = "ses-v2-fork-lost";
     db.session_message(
         "msg-v2-fl-kept",
@@ -432,12 +405,9 @@ fn seed_main_database(path: &Path) {
         Some(instant("2026-01-01T10:00:00Z").millis()),
         &turn(21, 2, instant("2026-01-01T10:00:00Z").millis(), ""),
     );
-    // Only copies: the fork-local `session_v2` counters are the fallback.
     let idle = "ses-v2-fork-idle";
     copy("msg-v2-fi-copy-1", idle, 1, 9006);
 
-    // Compaction is the session's only row, so session reports use the
-    // counters (which include it) and the other reports use the row.
     db.session_message(
         "msg-v2-compaction-only",
         "ses-v2-compact",
@@ -452,8 +422,6 @@ fn seed_main_database(path: &Path) {
         ),
     );
 
-    // No `time.created` in the payload: the column is the timestamp, and a
-    // row whose column is NULL is skipped as an invalid timestamp.
     let misc = "ses-v2-misc";
     db.session_message(
         "msg-v2-column-time",
@@ -477,8 +445,6 @@ fn seed_main_database(path: &Path) {
         &payload(&nested("gpt-5", "openai"), None, &tokens(11, 1, 0, 0), ""),
     );
 
-    // Claude Agent rows. The Claude store written by `seed_claude_store`
-    // counts `claude-native-a` on 2025-12-31 only.
     let agent = "ses-v2-agent";
     db.session_message(
         "msg-v2-agent-counted",
@@ -520,7 +486,6 @@ fn seed_main_database(path: &Path) {
         ),
     );
 
-    // --- Session counters (session reports only) ---------------------------
     let opus_model = format!(r#"{{"id":"{OPUS}","providerID":"anthropic"}}"#);
     let covered = "0.99, 9999, 9999, 9999, 9999, 0";
     for session in [
@@ -609,7 +574,6 @@ fn seed_main_database(path: &Path) {
         UNPRICED,
         "0, 70, 7, 0, 0, 0",
     );
-    // Already counted from `session_v2`, and covered by v1 rows.
     for session in ["ses-agg-only", alpha] {
         db.aggregate(
             "session",
@@ -621,8 +585,6 @@ fn seed_main_database(path: &Path) {
     }
 }
 
-/// A release-channel database in the pre-`time_created` schema, in a second
-/// data directory.
 fn seed_channel_database(directory: &Path) {
     let schema = ["CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)"];
     let db = Database::create(&directory.join("opencode-beta.db"), &schema);
@@ -637,7 +599,6 @@ fn seed_channel_database(directory: &Path) {
             "",
         ),
     );
-    // The same id twice in a table without a primary key: the first wins.
     db.legacy_message(
         "msg-ch-dup",
         gamma,
@@ -658,7 +619,6 @@ fn seed_channel_database(directory: &Path) {
             "",
         ),
     );
-    // Already loaded from the primary directory.
     db.legacy_message(
         "msg-v1-a3",
         "ses-v1-alpha",
@@ -669,7 +629,6 @@ fn seed_channel_database(directory: &Path) {
             "",
         ),
     );
-    // Covers a session whose counters live in the primary directory.
     db.legacy_message(
         "msg-ch-xdir",
         "ses-agg-xdir",
@@ -681,7 +640,6 @@ fn seed_channel_database(directory: &Path) {
         ),
     );
 
-    // Only the first channel database by name is read.
     let later = Database::create(&directory.join("opencode-zeta.db"), &schema);
     later.legacy_message(
         "msg-ch-later",
@@ -695,8 +653,6 @@ fn seed_channel_database(directory: &Path) {
     );
 }
 
-/// Legacy `storage/message/<session>/<message>.json` files beside the primary
-/// database.
 fn seed_message_files(directory: &Path) {
     let write = |relative: &str, contents: &str| {
         let path = directory.join("storage/message").join(relative);
@@ -709,7 +665,6 @@ fn seed_message_files(directory: &Path) {
     };
 
     let beta = "ses-json-beta";
-    // The stale day, pretty-printed as OpenCode wrote these files.
     write(
         &format!("{beta}/msg-json-1.json"),
         &format!(
@@ -732,7 +687,6 @@ fn seed_message_files(directory: &Path) {
             instant("2025-12-27T22:00:00Z").millis()
         ),
     );
-    // 2026-01-01 in Asia/Tokyo, with a stored cost.
     write(
         &format!("{beta}/msg-json-2.json"),
         &message(
@@ -746,7 +700,6 @@ fn seed_message_files(directory: &Path) {
             ),
         ),
     );
-    // Covers a session that also has `session_v2` counters.
     write(
         "ses-agg-json/msg-json-agg.json",
         &message(
@@ -760,7 +713,6 @@ fn seed_message_files(directory: &Path) {
             ),
         ),
     );
-    // Neither an id nor a session: never deduped, session "unknown".
     write(
         "ses-json-loose/no-id.json",
         &payload(
@@ -771,8 +723,6 @@ fn seed_message_files(directory: &Path) {
         ),
     );
 
-    // Already loaded from the database: skipped by file stem, and by the id
-    // inside the file when the stem differs.
     let replay = |id: &str| {
         message(
             id,
@@ -807,8 +757,6 @@ fn seed_message_files(directory: &Path) {
     write(&format!("{beta}/notes.txt"), "not a message\n");
 }
 
-/// The Claude Code transcript behind the `claude-agent` rows. `ccusage
-/// opencode` reads it to leave the turns Claude already counts to Claude.
 fn seed_claude_store(directory: &Path) {
     let project = directory.join("projects/-Users-dev-agent");
     std::fs::create_dir_all(&project).expect("failed to create Claude project directory");
@@ -824,7 +772,7 @@ fn seed_claude_store(directory: &Path) {
     set_modified(&transcript, instant("2026-01-03T00:00:00Z"));
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("opencode");
     let directory = |name: &str| {
         let path = store.join(name);
@@ -839,7 +787,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let channel = directory("channel");
     seed_channel_database(&channel);
 
-    // A database that is not SQLite does not hide the message files beside it.
     let broken = directory("broken");
     std::fs::write(broken.join("opencode.db"), "not a sqlite database\n")
         .expect("failed to write broken OpenCode database");
@@ -865,8 +812,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let claude = directory("claude");
     seed_claude_store(&claude);
 
-    // `OPENCODE_DATA_DIR` is a comma-separated list; the last entry does not
-    // exist and is skipped.
     let data_dirs = [main, channel, broken, empty, store.join("missing")]
         .map(PathBuf::into_os_string)
         .to_vec();
@@ -877,7 +822,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     ]
 }
 
-pub fn extra_cases(_root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(_root: &Path) -> Vec<Case> {
     vec![
         Case::new(
             "daily",

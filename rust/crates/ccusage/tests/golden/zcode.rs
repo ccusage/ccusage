@@ -12,28 +12,17 @@ const GPT5: &str = "'gpt-5'";
 const UNPRICED: &str = "'zcode-mystery-1'";
 
 const ZAI_PLAN: &str = "'builtin:zai-coding-plan'";
-/// An opaque custom-provider id: never treated as Z.ai, so even a model with a
-/// bare pricing entry stays unpriced under it.
 const CUSTOM_PROVIDER: &str = "'847d13c9-0568-4f2f-818e-8bd498e5d920'";
 
 const COMPLETED: &str = "'completed'";
 
-/// Which optional columns a fixture database has. The adapter probes for each
-/// of them separately.
 #[derive(Clone, Copy)]
 enum Layout {
-    /// `provider_id`, both cache columns, `computed_total_tokens`, and
-    /// `session.version`, plus columns and a table the adapter never reads.
     Current,
-    /// `cache_read_input_tokens` and `computed_total_tokens` only.
     Legacy,
-    /// Only the required columns.
     Minimal,
 }
 
-/// Every field is a raw SQL literal so rows can hold NULLs and odd types.
-/// `tokens` is (input, output, cache creation, cache read, computed total);
-/// input is inclusive of both cache slices, as ZCode records it.
 struct Row {
     id: &'static str,
     session: &'static str,
@@ -48,8 +37,6 @@ fn create_db(path: &Path, layout: Layout) -> sqlite::Connection {
     std::fs::create_dir_all(path.parent().expect("database path has a parent"))
         .expect("failed to create ZCode database directory");
     let db = sqlite::open(path).expect("failed to create ZCode database");
-    // `id` is not a primary key so a replayed usage row can exist in one
-    // database.
     let schema = match layout {
         Layout::Current => {
             "CREATE TABLE model_usage (
@@ -148,8 +135,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["1000", "200", "100", "300", "1200"],
         ),
-        // REAL timestamp, padded model id, text / REAL / negative / NULL
-        // token cells.
         counted(
             "'u-odd-types'",
             "'s-alpha'",
@@ -166,7 +151,6 @@ fn current_rows() -> Vec<Row> {
             CUSTOM_PROVIDER,
             ["500", "50", "0", "0", "550"],
         ),
-        // 2026-01-01 in Asia/Tokyo.
         counted(
             "'u-tokyo'",
             "'s-beta'",
@@ -175,7 +159,6 @@ fn current_rows() -> Vec<Row> {
             ZAI_PLAN,
             ["2000", "300", "400", "600", "2300"],
         ),
-        // An empty provider is a provider, and not a Z.ai one.
         counted(
             "'u-empty-provider'",
             "'s-beta'",
@@ -192,7 +175,6 @@ fn current_rows() -> Vec<Row> {
             "'account:zai-start-plan'",
             ["900", "400", "0", "100", "1300"],
         ),
-        // Same id again: only the first row of an id is kept.
         counted(
             "'u-replayed'",
             "'s-beta'",
@@ -201,7 +183,6 @@ fn current_rows() -> Vec<Row> {
             "'account:zai-start-plan'",
             ["9999", "7777", "0", "0", "17776"],
         ),
-        // Near miss of the replay: the same usage under another id is counted.
         counted(
             "'u-replayed-fork'",
             "'s-beta'",
@@ -218,7 +199,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["300", "70", "0", "0", "370"],
         ),
-        // No provider, lower-case GLM id, and no `session` row to join.
         counted(
             "'u-implicit-zai'",
             "'s-orphan'",
@@ -227,7 +207,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["500", "100", "50", "0", "600"],
         ),
-        // A Z.ai provider with a model that has no `zai/` pricing entry.
         counted(
             "'u-zai-haiku'",
             "'s-blank-dir'",
@@ -236,7 +215,6 @@ fn current_rows() -> Vec<Row> {
             "' ZAI '",
             ["800", "120", "200", "100", "920"],
         ),
-        // Computed total above the buckets, with output present.
         counted(
             "'u-extra-total'",
             "'s-alpha'",
@@ -245,7 +223,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["400", "100", "0", "0", "650"],
         ),
-        // Computed total above the buckets, with no output.
         counted(
             "'u-total-as-output'",
             "'s-alpha'",
@@ -262,8 +239,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["0", "0", "0", "0", "345"],
         ),
-        // Cache creation larger than what input leaves after cache read, and a
-        // computed total below the buckets.
         counted(
             "'u-clamped-creation'",
             "'s-beta'",
@@ -272,7 +247,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["100", "20", "500", "60", "90"],
         ),
-        // Cache read larger than input.
         counted(
             "'u-clamped-read'",
             "'s-beta'",
@@ -281,7 +255,6 @@ fn current_rows() -> Vec<Row> {
             "NULL",
             ["100", "10", "30", "250", "NULL"],
         ),
-        // Epoch seconds instead of milliseconds: read as a January 1970 instant.
         counted(
             "'u-seconds'",
             "'s-beta'",
@@ -293,8 +266,6 @@ fn current_rows() -> Vec<Row> {
     ]
 }
 
-/// Rows the adapter must drop. Most carry 9999/7777 so a leak is visible;
-/// `x-no-tokens` clamps to zero usage instead.
 fn ignored_rows() -> Vec<Row> {
     let leak = ["9999", "7777", "0", "0", "17776"];
     let noon = || instant("2025-12-31T12:00:00Z").millis().to_string();
@@ -374,7 +345,6 @@ fn ignored_rows() -> Vec<Row> {
 
 fn legacy_rows() -> Vec<Row> {
     vec![
-        // No provider column: GLM ids are priced as Z.ai models.
         counted(
             "'l-glm'",
             "'s-legacy'",
@@ -391,7 +361,6 @@ fn legacy_rows() -> Vec<Row> {
             "NULL",
             ["600", "80", "0", "100", "680"],
         ),
-        // Same id as a row of the first configured home: that home's row wins.
         counted(
             "'u-tokyo'",
             "'s-alpha'",
@@ -400,8 +369,6 @@ fn legacy_rows() -> Vec<Row> {
             "NULL",
             ["9999", "7777", "0", "0", "17776"],
         ),
-        // Near miss: the usage of `u-tokyo` under another id, in a session id
-        // the first home maps to a different directory.
         counted(
             "'l-tokyo-fork'",
             "'s-alpha'",
@@ -458,7 +425,7 @@ fn db_path(home: &Path) -> PathBuf {
     home.join("cli/db/db.sqlite")
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("zcode");
 
     let current = store.join("current");
@@ -474,8 +441,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         insert(&db, Layout::Current, row);
     }
     drop(db);
-    // Databases the adapter must not discover: outside `cli/db`, and under
-    // another file name.
     for path in [
         current.join("db.sqlite"),
         current.join("cli/db/archive.sqlite"),
@@ -497,8 +462,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     for row in &legacy_rows() {
         insert(&db, Layout::Legacy, row);
     }
-    // Closing the last connection would checkpoint the WAL into the database.
-    // Keeping it open leaves every row in the WAL, as while ZCode is running.
+    // NOTE(2026-11-15): SQLite checkpoints the WAL on the last connection close by default. Keep the fixture connection open so the test reads committed rows from the WAL.
     std::mem::forget(db);
 
     let minimal = store.join("minimal");
@@ -510,7 +474,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     }
     drop(db);
 
-    // Homes whose database is skipped as a whole.
     let unrelated = store.join("unrelated");
     let db = sqlite::open({
         let path = db_path(&unrelated);
@@ -526,7 +489,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     .expect("failed to fill unrelated database");
     drop(db);
 
-    // A required column (`status`) is missing.
     let incomplete = store.join("incomplete");
     let db = create_db(&db_path(&incomplete), Layout::Minimal);
     db.execute(format!(
@@ -557,9 +519,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .expect("failed to create directory in place of the database");
     std::fs::write(store.join("not-a-dir"), "").expect("failed to write file in place of a home");
 
-    // `ZCODE_HOME` is a comma-separated list whose order decides which copy of
-    // a duplicated usage id is kept. `current` is listed twice and `missing`
-    // does not exist.
     let homes = [
         "current",
         "current",
@@ -592,7 +551,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     vec![("ZCODE_HOME", entries)]
 }
 
-pub fn extra_cases(_root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(_root: &Path) -> Vec<Case> {
     let mut cases = vec![
         Case::new("daily", "table_warn", &["zcode", "daily", "--offline"]).env("LOG_LEVEL", "3"),
     ];

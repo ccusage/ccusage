@@ -2,11 +2,6 @@ use ccusage_cli::{Command, PeriodUnit, SharedArgs, WeekDay};
 use ccusage_core::utc_now;
 use ccusage_report::{format_date, last_periods_since};
 
-/// Turns `--last N` into the `--since` bound every loader already understands.
-///
-/// The count means "the most recent N periods of the report's own unit", so it
-/// can only be resolved once the command is known: `daily --last 1` is today,
-/// `weekly --last 1` is the current week, `monthly --last 1` is this month.
 pub(crate) fn resolve(command: &mut Command) -> Result<(), String> {
     let Some(period) = command.period() else {
         return Ok(());

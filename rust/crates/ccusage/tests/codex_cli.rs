@@ -865,8 +865,6 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
     ]
     .join("\n");
 
-    // Standard: $2 input, $0.10 cached input, $10 output per 1M tokens ($0.00252 here).
-    // Ultrafast: $12 input, $0.60 cached input, $60 output per 1M tokens ($0.01512 here).
     for (rollout, total_tokens, expected_cost) in [
         (ultrafast_only, 1250, 0.01512),
         (switched_back, 2500, 0.01512 + 0.00252),

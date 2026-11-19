@@ -5,16 +5,13 @@ const SONNET: &str = "claude-sonnet-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "amp-mystery-1";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let threads = root.join("amp/threads");
     std::fs::create_dir_all(&threads).expect("failed to create Amp threads directory");
     let write = |name: &str, contents: &str| {
         std::fs::write(threads.join(name), contents).expect("failed to write Amp thread file");
     };
 
-    // Ledger schema: the events are the usage, and the messages only supply
-    // the cache split per `toMessageId`. The message token counts repeat the
-    // ledger's usage under other numbers so counting both would be visible.
     let replayed_event = r#"{"id":"event-a2","timestamp":"2025-12-31T15:30:00.000Z","model":"gpt-5","tokens":{"input":700,"output":150},"toMessageId":3,"credits":0.75}"#;
     write(
         "T-aaaaaaaa-0000-4000-8000-000000000001.json",
@@ -40,7 +37,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ),
     );
 
-    // Message schema: no usable ledger, so assistant messages are the usage.
     write(
         "T-bbbbbbbb-0000-4000-8000-000000000002.json",
         &format!(
@@ -75,7 +71,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             r#"{{"id":"T-truncated","messages":[{{"role":"assistant","usage":{{"model":"{SONNET}","inputTokens":9999,"outp"#
         ),
     );
-    // Valid JSON files that are not threads: no `id`, and not an object.
     write(
         "settings.json",
         &format!(

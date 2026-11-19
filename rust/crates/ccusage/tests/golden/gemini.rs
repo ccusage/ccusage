@@ -9,7 +9,7 @@ const FLASH_PREVIEW: &str = "gemini-3-flash-preview";
 const SONNET: &str = "claude-sonnet-4-20250514";
 const UNPRICED: &str = "gemini-mystery-1";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("gemini");
     let write = |relative: &str, contents: &str| {
         let path = store.join(relative);
@@ -19,8 +19,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         path
     };
 
-    // Whole-file session JSON: only `messages[]` entries of type `gemini`
-    // count, and nothing dedupes them, so the repeated `a-m2` counts twice.
     write(
         "tmp/proj-alpha/chats/session-2025-12-30T09-00-aaaa1111.json",
         &format!(
@@ -50,9 +48,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ),
     );
 
-    // JSONL session: `b-m1` is rewritten in place by its later copy, while the
-    // id-less pair and the differently-named `b-m2` are all kept. The model and
-    // the session id are sticky across lines.
     let without_id = format!(
         r#"{{"type":"gemini","timestamp":"2025-12-31T23:59:59.999Z","model":"{FLASH_PREVIEW}","tokens":{{"input":40,"output":10}}}}"#
     );
@@ -83,9 +78,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     );
     set_modified(&jsonl, instant("2026-01-02T12:00:00Z"));
 
-    // Second project. The first line reuses the id `b-m1` from the other file,
-    // which is not deduplicated across files, and is large enough to reach the
-    // tiered pricing of the model.
     write(
         "tmp/proj-beta/chats/cccc3333.jsonl",
         &[
@@ -97,7 +89,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .join("\n"),
     );
 
-    // Whole-file single `gemini` records.
     write(
         "tmp/proj-beta/chats/session-dddd4444.json",
         &format!(
@@ -112,8 +103,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     );
     set_modified(&stale, instant("2025-12-27T22:00:00Z"));
 
-    // Headless `stats` output: per-model map, `result.stats`, and the flat
-    // fallback when no model in the map yields usage.
     write(
         "tmp/proj-beta/chats/headless-eeee5555.json",
         &format!(
@@ -149,8 +138,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ),
     );
 
-    // Discovery walks the whole store, so a session-shaped file outside
-    // `tmp/*/chats` is read as well.
     write(
         "settings-backup/shadow.json",
         &format!(

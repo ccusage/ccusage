@@ -5,9 +5,6 @@ mod support;
 
 const MODEL: &str = r#"{"id":"gpt-5","providerID":"openai"}"#;
 
-/// `mixed-session` has an assistant turn and a completed compaction, plus an
-/// inflated session aggregate that message rows must suppress. `lone-session`
-/// keeps only a compaction row; its aggregate already includes that usage.
 fn opencode_fixture() -> Fixture {
     let fixture = Fixture::new();
     fixture.create_dir_all("opencode");
@@ -121,8 +118,6 @@ fn totals(json: &str) -> (u64, f64) {
 fn opencode_period_reports_count_compaction_usage() {
     let fixture = opencode_fixture();
 
-    // Period reports never use cumulative session aggregates, so both
-    // compactions count: 12 + 162 + 162 tokens.
     for kind in ["daily", "weekly", "monthly"] {
         let (tokens, cost) = totals(&run_cli(&fixture, [kind, "--json"]));
         assert_eq!(tokens, 336, "{kind} total tokens");
@@ -134,9 +129,6 @@ fn opencode_period_reports_count_compaction_usage() {
 fn opencode_session_report_counts_compaction_once() {
     let fixture = opencode_fixture();
 
-    // `mixed-session` counts its rows (174 tokens) and ignores its aggregate;
-    // `lone-session` uses its aggregate (382 tokens), which already includes
-    // the compaction, instead of adding the compaction row on top.
     let json = run_cli(&fixture, ["session", "--json"]);
     let (tokens, cost) = totals(&json);
     assert_eq!(tokens, 556);

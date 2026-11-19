@@ -11,10 +11,9 @@ const SONNET: &str = "claude-sonnet-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "antigravity-mystery-1";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let ide = root.join("antigravity/ide");
     let conversations = ide.join("conversations");
-    // A root without `conversations/` is itself the conversation directory.
     let cli = root.join("antigravity/cli-conversations");
     std::fs::create_dir_all(conversations.join("archive"))
         .expect("failed to create Antigravity conversations directory");
@@ -26,13 +25,11 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     seed_delta(&conversations.join("archive/session-delta.db"));
     seed_ignored(&ide, &conversations);
 
-    // The paths sort `cli-conversations` before `ide`, so session-beta is
-    // loaded first and is the merge target for cross-database duplicates.
     let data_dirs = vec![ide.into_os_string(), cli.into_os_string()];
     vec![("ANTIGRAVITY_DATA_DIR", data_dirs)]
 }
 
-pub fn extra_cases(_root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(_root: &Path) -> Vec<Case> {
     vec![
         Case::new(
             "session",
@@ -54,12 +51,8 @@ pub fn extra_cases(_root: &Path) -> Vec<Case> {
     ]
 }
 
-/// Counted: 2,594 tokens in five events.
 fn seed_beta(path: &Path) {
     let generations = [
-        // Replays `resp-alpha-2` from session-alpha with smaller counts: one
-        // event with the per-field maximum (620), kept in this session and
-        // under this model, at session-alpha's earlier timestamp.
         Generation {
             model: Some(SONNET),
             timestamp: Some((instant("2025-12-31T16:00:00Z").secs(), 0)),
@@ -72,7 +65,6 @@ fn seed_beta(path: &Path) {
             }),
             ..Generation::default()
         },
-        // Near miss: the same counts under another response ID are counted.
         Generation {
             timestamp: Some((instant("2026-01-01T01:00:00Z").secs(), 0)),
             usage: Some(Usage {
@@ -84,8 +76,6 @@ fn seed_beta(path: &Path) {
             }),
             ..Generation::default()
         },
-        // Three rows that share no single identity: the third carries both IDs
-        // and folds the first two into one event (30 in, 9 out).
         Generation {
             model: Some("GPT 5"),
             timestamp: Some((instant("2026-01-01T02:00:00Z").secs(), 0)),
@@ -121,7 +111,6 @@ fn seed_beta(path: &Path) {
             }),
             ..Generation::default()
         },
-        // Unmapped model ID with no model name: stays a placeholder.
         Generation {
             timestamp: Some((instant("2026-01-02T08:00:00Z").secs(), 0)),
             usage: Some(Usage {
@@ -134,7 +123,6 @@ fn seed_beta(path: &Path) {
             }),
             ..Generation::default()
         },
-        // Unmapped model ID with a model name on the same row: the name wins.
         Generation {
             model: Some(UNPRICED),
             model_id: Some(77),
@@ -160,8 +148,6 @@ fn seed_beta(path: &Path) {
     );
 }
 
-/// Counted: 364,451 tokens in nine events (the `resp-alpha-2` primary is
-/// counted under session-beta).
 fn seed_alpha(path: &Path) {
     let first = Usage {
         input: 1_000,
@@ -197,8 +183,6 @@ fn seed_alpha(path: &Path) {
     };
 
     let steps = [
-        // Step copy of the first generation with a larger cache read and an
-        // earlier timestamp; the merge keeps both.
         (
             1,
             Some(
@@ -230,8 +214,6 @@ fn seed_alpha(path: &Path) {
                 .blob(),
             ),
         ),
-        // Retry-only step without model info: takes the database's last
-        // generation model.
         (
             4,
             Some(
@@ -272,8 +254,6 @@ fn seed_alpha(path: &Path) {
             usage: Some(first),
             ..Generation::default()
         },
-        // Continuation row after 15:00Z. The retry list repeats the primary
-        // (dropped) and holds one failed attempt under its own ID (counted).
         Generation {
             timestamp: Some((instant("2025-12-31T15:30:00Z").secs(), 0)),
             usage: Some(second),
@@ -289,7 +269,6 @@ fn seed_alpha(path: &Path) {
             ],
             ..Generation::default()
         },
-        // Unkeyed mirror of step 3, linked through its step index.
         Generation {
             model: Some("gemini-3-flash-agent"),
             model_in_field_21: true,
@@ -299,8 +278,6 @@ fn seed_alpha(path: &Path) {
             step_indices: vec![3],
             ..Generation::default()
         },
-        // Near misses: unkeyed usage linked to steps that do not exist, and
-        // the same counts again with no step link at all.
         Generation {
             timestamp: Some((instant("2025-12-31T11:00:00Z").secs(), 0)),
             usage: Some(unkeyed_small),
@@ -313,7 +290,6 @@ fn seed_alpha(path: &Path) {
             usage: Some(unkeyed_small),
             ..Generation::default()
         },
-        // Model known only by ID, with more than 200k input tokens.
         Generation {
             model_id: Some(246),
             timestamp: Some((instant("2026-01-01T12:00:00Z").secs(), 0)),
@@ -336,7 +312,6 @@ fn seed_alpha(path: &Path) {
             }),
             ..Generation::default()
         },
-        // A row without usage still switches the model for later rows.
         Generation {
             model: Some(SONNET),
             timestamp: Some((instant("2026-01-02T08:59:00Z").secs(), 0)),
@@ -392,7 +367,6 @@ fn seed_alpha(path: &Path) {
     set_modified(path, instant("2026-01-02T12:00:00Z"));
 }
 
-/// Counted: 21,156 tokens in four events.
 fn seed_gamma(path: &Path) {
     let first = Usage {
         input: 900,
@@ -416,7 +390,6 @@ fn seed_gamma(path: &Path) {
         ),
     )];
     let generations = [
-        // No timestamp: inherits the step copy's through the shared identity.
         Generation {
             model: Some(HAIKU),
             usage: Some(first),
@@ -461,7 +434,6 @@ fn seed_gamma(path: &Path) {
         instant("2026-01-02T12:00:00Z"),
         &generation_rows(&generations),
         Some(&steps),
-        // The first row that carries a timestamp wins.
         Some(&[
             trajectory_blob(None),
             trajectory_blob(Some((instant("2025-12-31T23:50:00Z").secs(), 500_000_000))),
@@ -470,9 +442,6 @@ fn seed_gamma(path: &Path) {
     );
 }
 
-/// Counted: 15 tokens in one event. Only `gen_metadata` exists, and no row
-/// names a model. The first generation has no timestamp and no trajectory to
-/// fall back on, so it is skipped as an invalid timestamp.
 fn seed_delta(path: &Path) {
     let generations = [
         Generation {
@@ -506,8 +475,6 @@ fn seed_delta(path: &Path) {
     );
 }
 
-/// Files that must contribute nothing. Their token counts are 9999, 8888,
-/// 7777, 6666, and 5555 so a leak is visible.
 fn seed_ignored(ide: &Path, conversations: &Path) {
     let leak = |tokens: u64, response_id: &'static str| {
         Generation {
@@ -531,7 +498,6 @@ fn seed_ignored(ide: &Path, conversations: &Path) {
         set_modified(&path, mtime);
     };
 
-    // One undecodable row discards the whole database, valid rows included.
     create_database(
         &conversations.join("malformed-blob.db"),
         mtime,
@@ -542,7 +508,6 @@ fn seed_ignored(ide: &Path, conversations: &Path) {
         Some(&[]),
         Some(&[]),
     );
-    // With `conversations/` present, databases beside it are not scanned.
     create_database(
         &ide.join("conversation_summaries.db"),
         mtime,
@@ -646,11 +611,9 @@ impl Usage {
     }
 }
 
-/// One `gen_metadata.data` blob (GeneratorMetadata).
 #[derive(Default)]
 struct Generation {
     model: Option<&'static str>,
-    /// Writes the model name to field 21 instead of field 19.
     model_in_field_21: bool,
     model_id: Option<u64>,
     usage: Option<Usage>,
@@ -700,17 +663,14 @@ impl Generation {
     }
 }
 
-/// One `steps.metadata` blob (CortexStepMetadata).
 #[derive(Default)]
 struct Step {
     model: Option<&'static str>,
-    /// Writes the model name to field 8 of the model info instead of field 12.
     model_in_field_8: bool,
     provider: Option<u64>,
     usage: Option<Usage>,
     retries: Vec<Usage>,
     timestamp: Option<(i64, u64)>,
-    /// Writes the timestamp to field 1 instead of field 8.
     timestamp_in_field_1: bool,
 }
 
@@ -770,8 +730,6 @@ fn trajectory_blob(timestamp: Option<(i64, u64)>) -> Vec<u8> {
     out
 }
 
-/// Fields the adapter does not know, in the two fixed-width wire types the
-/// known fields never use.
 fn put_unknown_fields(out: &mut Vec<u8>) {
     put_raw_varint(out, (98 << 3) | 5);
     out.extend_from_slice(&9_999_u32.to_le_bytes());
@@ -798,11 +756,8 @@ fn put_bytes(out: &mut Vec<u8>, field: u64, value: &[u8]) {
     out.extend_from_slice(value);
 }
 
-/// A `steps` row; `None` stores a NULL metadata blob.
 type StepRow = (i64, Option<Vec<u8>>);
 
-/// Creates a conversation database. `None` for `steps` or `trajectories`
-/// leaves that table out entirely.
 fn create_database(
     path: &Path,
     mtime: Instant,

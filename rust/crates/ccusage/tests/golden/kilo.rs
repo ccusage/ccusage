@@ -11,7 +11,6 @@ const HAIKU: &str = "claude-haiku-4-5-20251001";
 const GPT5: &str = "gpt-5";
 const UNPRICED: &str = "kilo-mystery-1";
 
-/// `(message.id, message.session_id, message.data)`; a `None` is stored as SQL NULL.
 type Row = (Option<&'static str>, &'static str, Option<String>);
 
 fn row(id: &'static str, session_id: &'static str, data: &Value) -> Row {
@@ -22,8 +21,6 @@ fn create_db(path: &Path, rows: &[Row]) -> sqlite::Connection {
     std::fs::create_dir_all(path.parent().expect("Kilo database path has a parent"))
         .expect("failed to create Kilo data directory");
     let db = sqlite::open(path).expect("failed to create Kilo database");
-    // No primary key on purpose: the adapter never relies on one, and the
-    // fixture repeats row ids to reach the fallback dedupe key.
     db.execute(
         "CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)",
     )
@@ -46,26 +43,21 @@ fn create_db(path: &Path, rows: &[Row]) -> sqlite::Connection {
 
 fn primary_rows() -> Vec<Row> {
     let counted = vec![
-        // Stale day, in an earlier week and (in Tokyo) on 2025-12-28.
         row(
             "row-stale",
             "ses-gamma",
             &json!({"id":"msg-stale","role":"assistant","providerID":"anthropic","modelID":SONNET,"time":{"created":instant("2025-12-27T22:00:00Z").millis()},"tokens":{"input":100,"output":50,"cache":{"read":0,"write":0}},"cost":0.01}),
         ),
-        // Stored cost that disagrees with the token-derived one, plus
-        // reasoning tokens, which count towards the total only.
         row(
             "row-a1",
             "ses-alpha",
             &json!({"id":"msg-a1","role":"assistant","providerID":"anthropic","modelID":SONNET,"time":{"created":instant("2025-12-30T10:00:00Z").millis(),"completed":instant("2025-12-30T10:01:00Z").millis()},"tokens":{"input":1000,"output":200,"reasoning":50,"cache":{"read":4000,"write":300}},"cost":0.5,"agent":"build","mode":"code"}),
         ),
-        // No stored cost.
         row(
             "row-a2",
             "ses-alpha",
             &json!({"id":"msg-a2","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2025-12-31T15:30:00Z").millis()},"tokens":{"input":700,"output":150,"cache":{"read":2500,"write":0}}}),
         ),
-        // Replay of msg-a2 under another row id: same embedded id, so dropped.
         row(
             "row-a2-replay",
             "ses-alpha",
@@ -76,7 +68,6 @@ fn primary_rows() -> Vec<Row> {
             "ses-beta",
             &json!({"id":"msg-b1","role":"assistant","providerID":"anthropic","modelID":HAIKU,"time":{"created":instant("2025-12-31T23:50:00Z").millis()},"tokens":{"input":900,"output":400,"cache":{"read":7000,"write":200}},"cost":2.0}),
         ),
-        // Stored cost of exactly zero on a priced model.
         row(
             "row-b2",
             "ses-beta",
@@ -92,51 +83,41 @@ fn primary_rows() -> Vec<Row> {
             "ses-alpha",
             &json!({"id":"msg-a4","role":"assistant","providerID":"kilo","modelID":UNPRICED,"time":{"created":instant("2026-01-01T12:10:00Z").millis()},"tokens":{"input":30,"output":7},"cost":0.2}),
         ),
-        // Only a total: it becomes output tokens.
         row(
             "row-a5",
             "ses-alpha",
             &json!({"id":"msg-a5","role":"assistant","providerID":"azure","modelID":GPT5,"time":{"created":instant("2026-01-01T12:30:00Z").millis()},"tokens":{"total":345}}),
         ),
-        // A total larger than its parts: the remainder is extra total tokens.
         row(
             "row-a6",
             "ses-alpha",
             &json!({"id":"msg-a6","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2026-01-01T13:00:00Z").millis()},"tokens":{"input":100,"output":20,"total":200}}),
         ),
-        // `session_id` inside the payload wins over the row's column.
         row(
             "row-b3",
             "ses-beta",
             &json!({"id":"msg-b3","session_id":"ses-delta","role":"assistant","providerID":"vertex-ai","modelID":OPUS,"time":{"created":instant("2026-01-02T10:00:00Z").millis()},"tokens":{"input":800,"output":300,"cache":{"read":6000,"write":50}},"cost":1.25}),
         ),
-        // Upstream's camelCase `sessionID` is not read; the row's column is.
-        // The model id is the gateway-style one Kilo's own provider reports.
         row(
             "row-b4",
             "ses-beta",
             &json!({"id":"msg-b4","sessionID":"ses-camel-ignored","role":"assistant","providerID":"kilo","modelID":"anthropic/claude-sonnet-4","time":{"created":instant("2026-01-02T11:00:00Z").millis()},"tokens":{"input":500,"output":100}}),
         ),
-        // Wrongly typed fields: cache is not an object, reasoning and cost are
-        // strings. The record survives with those fields read as absent.
         row(
             "row-b5",
             "ses-beta",
             &json!({"id":"msg-b5","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2026-01-02T12:00:00Z").millis()},"tokens":{"input":40,"output":10,"cache":0,"reasoning":"7777"},"cost":"9.99"}),
         ),
-        // No embedded id: the dedupe key falls back to `<db path>:<row id>`.
         row(
             "row-noid",
             "ses-beta",
             &json!({"role":"assistant","providerID":"anthropic","modelID":HAIKU,"time":{"created":instant("2025-12-30T11:00:00Z").millis()},"tokens":{"input":11,"output":4}}),
         ),
-        // Same row id in the same database, still no embedded id: dropped.
         row(
             "row-noid",
             "ses-beta",
             &json!({"role":"assistant","providerID":"anthropic","modelID":HAIKU,"time":{"created":instant("2025-12-30T11:01:00Z").millis()},"tokens":{"input":9999,"output":9999}}),
         ),
-        // NULL row id with an otherwise valid payload.
         (
             None,
             "ses-alpha",
@@ -209,8 +190,6 @@ fn primary_rows() -> Vec<Row> {
             "ses-alpha",
             &json!({"id":"msg-string-time","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":"2025-12-31T12:00:00.000Z"},"tokens":{"input":8888,"output":8888}}),
         ),
-        // Microseconds where Kilo writes milliseconds: past the last
-        // representable instant, so skipped.
         row(
             "row-micros-time",
             "ses-alpha",
@@ -221,7 +200,6 @@ fn primary_rows() -> Vec<Row> {
             "ses-alpha",
             &json!({"id":"msg-float-time","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2025-12-31T12:00:00.0005Z").millis_f64()},"tokens":{"input":8888,"output":8888}}),
         ),
-        // Unknown record shape.
         row(
             "row-unknown-shape",
             "ses-alpha",
@@ -244,14 +222,11 @@ fn primary_rows() -> Vec<Row> {
 
 fn secondary_rows() -> Vec<Row> {
     vec![
-        // Replay of the primary store's msg-a1 in a second data directory.
         row(
             "row-a1-copy",
             "ses-alpha",
             &json!({"id":"msg-a1","role":"assistant","providerID":"anthropic","modelID":SONNET,"time":{"created":instant("2025-12-30T10:00:00Z").millis()},"tokens":{"input":9999,"output":9999,"cache":{"read":9999,"write":9999}},"cost":99.0}),
         ),
-        // Near misses, both counted: the primary's row id with another embedded
-        // id, and the primary's id-less row id under another database path.
         row(
             "row-a1",
             "ses-alpha",
@@ -262,7 +237,6 @@ fn secondary_rows() -> Vec<Row> {
             "ses-beta",
             &json!({"role":"assistant","providerID":"anthropic","modelID":HAIKU,"time":{"created":instant("2025-12-30T11:00:00Z").millis()},"tokens":{"input":22,"output":8}}),
         ),
-        // One second before the Asia/Tokyo day boundary.
         row(
             "row-s1",
             "ses-alpha",
@@ -271,12 +245,11 @@ fn secondary_rows() -> Vec<Row> {
     ]
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("kilo");
     let db_file = |name: &str| store.join(name).join("kilo.db");
 
     let primary = create_db(&db_file("primary"), &primary_rows());
-    // A non-text payload, and tables the adapter does not read.
     primary
         .execute(
             format!("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('row-integer-data', 'ses-alpha', 0, 0, 7777);
@@ -292,7 +265,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 
     drop(create_db(&db_file("secondary"), &secondary_rows()));
 
-    // A valid database without the `message` table.
     let no_table = db_file("no-table");
     std::fs::create_dir_all(no_table.parent().expect("Kilo database path has a parent"))
         .expect("failed to create Kilo data directory");
@@ -319,8 +291,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     std::fs::write(store.join("no-db/notes.txt"), "not a database\n")
         .expect("failed to write Kilo note file");
 
-    // KILO_DATA_DIR is a comma-separated list. The primary store is listed
-    // twice and `missing` does not exist.
     let data_dirs = [
         "primary",
         "secondary",
@@ -346,7 +316,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     vec![("KILO_DATA_DIR", data_dirs)]
 }
 
-pub fn extra_cases(root: &Path) -> Vec<super::Case> {
+pub(crate) fn extra_cases(root: &Path) -> Vec<super::Case> {
     drop(create_db(
         &root.join("cwd/kilo-zero/kilo.db"),
         &[row(

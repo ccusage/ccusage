@@ -15,16 +15,11 @@ fn write_chat(data_root: &Path, project: &str, chat_id: &str, contents: &str) ->
     path
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
-    // The session id is `<channel>/<project>/<chat id>`, where the channel is
-    // the directory above `projects`. `backup/manicode` therefore produces the
-    // same session ids as `manicode`, which is what lets a record be replayed
-    // across files; it sorts first, so the `manicode` copy is the survivor.
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let manicode = root.join("codebuff/manicode");
     let backup = root.join("codebuff/backup/manicode");
     let dev = root.join("codebuff/manicode-dev");
 
-    // Message-level usage in every key spelling and timestamp encoding.
     let ledger_chat = write_chat(
         &manicode,
         "alpha",
@@ -52,12 +47,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .expect("failed to write sibling JSON file");
     std::fs::write(chat_dir.join("chat-messages.json.bak"), ignored_usage)
         .expect("failed to write backup file");
-    // Outside `projects`, so never discovered.
     std::fs::write(manicode.join("chat-messages.json"), ignored_usage)
         .expect("failed to write stray chat file");
 
-    // Same session as above: `a1` is a replay that loses to the `manicode`
-    // copy, `a9` is a new id and counts.
     write_chat(
         &backup,
         "alpha",
@@ -68,8 +60,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 ]"#,
     );
 
-    // Messages without an id are keyed by timestamp, model, position, and token
-    // counts. The first has no timestamp and takes the chat id's.
     write_chat(
         &manicode,
         "alpha",
@@ -89,8 +79,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 ]"#,
     );
 
-    // Neither the messages nor the chat id carry a usable timestamp, so both
-    // messages are skipped as invalid timestamps; the file's mtime is ignored.
     let mtime_chat = write_chat(
         &manicode,
         "alpha",
@@ -109,7 +97,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "truncated-chat",
         r#"[{"id":"t1","role":"assistant","timestamp":"2025-12-31T12:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":9999,"outp"#,
     );
-    // Valid JSON that is not a message array.
     write_chat(
         &manicode,
         "alpha",
@@ -117,8 +104,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         r#"{"version":2,"messages":[{"id":"o1","role":"assistant","timestamp":"2025-12-31T12:00:00.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":6666,"outputTokens":6666}}}]}"#,
     );
 
-    // Second channel and project. `a1` repeats an id from the `manicode`
-    // session, but ids are scoped to the session, so it counts.
     write_chat(
         &dev,
         "beta",
@@ -144,8 +129,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         r#"[{"role":"assistant","metadata":{"model":"claude-opus-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}]"#,
     );
 
-    // Comma-separated roots: one given as the channel directory, one already
-    // ending in `projects`, a repeat, an empty item, and a missing directory.
     let mut padded = OsString::from(" ");
     padded.push(dev.join("projects"));
     padded.push(" ");
@@ -160,7 +143,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     vec![("CODEBUFF_DATA_DIR", data_dirs)]
 }
 
-pub fn seed_timestamp_ties(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed_timestamp_ties(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("codebuff");
     write_chat(
         &store.join("manicode"),

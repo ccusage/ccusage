@@ -130,7 +130,6 @@ fn reports_the_credits_copilot_recorded_for_a_resumed_session() {
             ],
         )
     };
-    // The two calls recorded 371236500 and 31235400 nano-AIU; one AIU is $0.01.
     let recorded = 0.004_024_719;
     let tokens = [6, 16_517, 16_473, 10];
 
@@ -140,8 +139,6 @@ fn reports_the_credits_copilot_recorded_for_a_resumed_session() {
 
     assert!((auto_cost - recorded).abs() < 1e-12, "{auto_cost}");
     assert!((display_cost - recorded).abs() < 1e-12, "{display_cost}");
-    // Embedded gpt-5.4 rates per token: $2.5e-6 input, $2.5e-6 cache write
-    // (unpublished, so the OpenAI input rate), $2.5e-7 cache read, $1.5e-5 output.
     let token_priced = 6.0 * 2.5e-6 + 16_517.0 * 2.5e-6 + 16_473.0 * 2.5e-7 + 10.0 * 1.5e-5;
     assert!(
         (calculated_cost - token_priced).abs() < 1e-12,

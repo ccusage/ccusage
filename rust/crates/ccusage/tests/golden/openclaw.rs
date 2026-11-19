@@ -7,7 +7,7 @@ use crate::golden::Case;
 
 const TRANSCRIPT_EVENTS_SCHEMA: &str = "CREATE TABLE transcript_events (session_id TEXT NOT NULL, seq INTEGER NOT NULL, event_json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (session_id, seq))";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let state = root.join("openclaw/state");
     seed_legacy_sessions(&state);
     seed_agent_databases(&state);
@@ -15,7 +15,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     vec![("OPENCLAW_DIR", vec![state.into_os_string()])]
 }
 
-pub fn extra_cases(root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(root: &Path) -> Vec<Case> {
     let state = root.join("openclaw/state");
     let alt = root.join("openclaw/alt");
     let alt_only = alt.to_string_lossy().into_owned();
@@ -75,8 +75,6 @@ fn write_session(path: &Path, lines: &[&str], modified: Instant) {
 fn seed_legacy_sessions(state: &Path) {
     let sessions = state.join("agents/main/sessions");
 
-    // The replayed line is deduped. Its near miss differs only in the stored
-    // cost; the agent database's migrated copy of the event replaces both.
     let replayed = &format!(
         r#"{{"type":"message","id":"a-4","message":{{"role":"assistant","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.5}}}},"timestamp":{timestamp}}}}}"#,
         timestamp = instant("2025-12-30T10:00:00Z").millis()
@@ -85,7 +83,6 @@ fn seed_legacy_sessions(state: &Path) {
         &sessions.join("alpha.jsonl"),
         &[
             r#"{"type":"session","id":"alpha","usage":{"input":9999,"output":9999}}"#,
-            // No model yet: reported as "unknown".
             r#"{"type":"message","id":"a-1","message":{"role":"assistant","usage":{"input":11,"output":7},"timestamp":"2025-12-27T22:00:00.000Z"}}"#,
             r#"{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4-20250514"}"#,
             r#"{"type":"message","message":{"role":"user","usage":{"input":7777,"output":7777},"timestamp":"2025-12-30T09:59:00.000Z"}}"#,
@@ -99,7 +96,6 @@ fn seed_legacy_sessions(state: &Path) {
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":9999,"outp"#,
             r#"{"type":"custom","customType":"note","data":{"modelId":"openclaw-ignored-model"},"usage":{"input":9999}}"#,
             r#"{"type":"custom","customType":"model-snapshot","data":{"provider":"openai","modelId":"gpt-5"}}"#,
-            // Record-level timestamp; the agent database holds a migrated copy.
             r#"{"type":"message","timestamp":"2025-12-31T15:30:00.000Z","message":{"role":"assistant","usage":{"input":700,"output":150,"cacheRead":2500,"cost":{"total":0.02}}}}"#,
             &format!(
                 r#"{{"type":"message","message":{{"role":"assistant","usage":{{"totalTokens":345}},"timestamp":{timestamp}}}}}"#,
@@ -112,8 +108,6 @@ fn seed_legacy_sessions(state: &Path) {
         instant("2025-12-30T12:00:00Z"),
     );
 
-    // The live file and its reset archive share the session id, so the line
-    // present in both is a cross-file replay.
     let beta_model = r#"{"type":"model_change","model":"openclaw-mystery-1","provider":"mystery"}"#;
     let beta_replayed = r#"{"type":"message","message":{"role":"assistant","usage":{"input":300,"output":70,"cost":{"total":0.2}},"timestamp":"2025-12-31T23:50:00.000Z"}}"#;
     write_session(
@@ -131,14 +125,12 @@ fn seed_legacy_sessions(state: &Path) {
             beta_model,
             beta_replayed,
             r#"{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{"input":600,"output":100,"cacheRead":3000},"timestamp":"2026-01-01T00:10:00.000Z"}}"#,
-            // totalTokens exceeds the parts by 350.
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":800,"output":300,"cacheWrite":50,"cacheRead":6000,"totalTokens":7500,"cost":{"total":0.33}},"timestamp":"2026-01-02T10:00:00.000Z"}}"#,
             r#"{"type":"message","message":{"role":"assistant","modelId":"claude-sonnet-4-20250514","usage":{"input":50,"output":25},"timestamp":-5}}"#,
         ],
         instant("2026-01-02T10:00:00Z"),
     );
 
-    // Same content as alpha's replayed line, but in another session.
     write_session(
         &sessions.join(format!(
             "gamma.jsonl.deleted.{deleted_at}",
@@ -169,7 +161,6 @@ fn seed_legacy_sessions(state: &Path) {
         instant("2025-12-28T22:00:00Z"),
     );
 
-    // Names the session-file matcher rejects.
     let not_a_session = r#"{"type":"message","message":{"role":"assistant","model":"gpt-5","usage":{"input":7777,"output":7777},"timestamp":"2025-12-31T12:00:00.000Z"}}"#;
     write_session(
         &sessions.join("alpha.jsonl.bak"),
@@ -182,7 +173,6 @@ fn seed_legacy_sessions(state: &Path) {
         instant("2025-12-28T22:00:00Z"),
     );
 
-    // The walk is recursive from the store root, so this is read as a session.
     write_session(
         &state.join("logs/gateway.jsonl"),
         &[
@@ -220,9 +210,6 @@ fn seed_agent_databases(state: &Path) {
     create_agent_database(
         &database("main"),
         &[
-            // Migrated copies of legacy alpha events with corrected costs. The
-            // second one matches two legacy lines that differ only in cost and
-            // replaces both.
             (
                 "alpha",
                 0,
@@ -236,7 +223,6 @@ fn seed_agent_databases(state: &Path) {
                     timestamp = instant("2025-12-30T10:00:00Z").millis()
                 ),
             ),
-            // Same content and cost as a legacy beta line, but no event id.
             (
                 "beta",
                 0,
@@ -255,7 +241,6 @@ fn seed_agent_databases(state: &Path) {
                     timestamp = instant("2025-12-31T15:00:00Z").millis()
                 ),
             ),
-            // Reused event id within the session.
             (
                 "delta",
                 instant("2026-01-01T12:00:00Z").millis(),
@@ -269,7 +254,6 @@ fn seed_agent_databases(state: &Path) {
                 instant("2026-01-01T12:00:00Z").millis(),
                 "not json",
             ),
-            // No timestamp: falls back to `created_at`.
             (
                 "delta",
                 instant("2026-01-01T12:00:00Z").millis(),
@@ -290,8 +274,6 @@ fn seed_agent_databases(state: &Path) {
                 instant("2026-01-01T12:00:00Z").millis(),
                 r#"{"id":"evt-d10","type":"message","message":{"role":"user","usage":{"input":7777,"output":7777}}}"#,
             ),
-            // Same event id as delta's, in another session, and no model of
-            // its own: the tracked model must not carry over from delta.
             (
                 "epsilon",
                 0,
@@ -303,7 +285,6 @@ fn seed_agent_databases(state: &Path) {
     create_agent_database(
         &database("worker"),
         &[
-            // Same session and event id as a row in the main database.
             (
                 "delta",
                 instant("2026-01-01T12:00:00Z").millis(),
@@ -317,7 +298,6 @@ fn seed_agent_databases(state: &Path) {
                 0,
                 r#"{"id":"evt-z1","type":"message","message":{"role":"assistant","model":"gpt-5","usage":{"input":500,"output":250,"cacheRead":1500},"timestamp":"2026-01-01T23:30:00.000Z"}}"#,
             ),
-            // Same content as the migrated alpha event, but in another session.
             (
                 "zeta",
                 0,
@@ -346,8 +326,6 @@ fn seed_agent_databases(state: &Path) {
         .expect("failed to create unrelated table");
 }
 
-/// A second store for `--open-claw-path`: one line replays a beta line from
-/// the main store, the other exists only here.
 fn seed_alternate_store(alt: &Path) {
     write_session(
         &alt.join("agents/main/sessions/beta.jsonl"),

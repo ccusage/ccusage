@@ -7,10 +7,8 @@ const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "goose-mystery-1";
-/// A literal catalog key with the provider inferred from the `qwen` prefix.
 const PROVIDER_PREFIXED: &str = "qwen/qwen3-coder";
 
-/// The columns the adapter selects plus some it never reads.
 const SESSIONS_SCHEMA: &str = r"
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
@@ -28,8 +26,6 @@ CREATE TABLE sessions (
 );
 ";
 
-/// `tokens` is (total, input, output, accumulated total, accumulated input,
-/// accumulated output); every value is a raw SQL literal.
 struct Row {
     id: &'static str,
     model_config: String,
@@ -64,7 +60,6 @@ fn counted_rows() -> Vec<Row> {
             created_at: "'2025-12-27 22:00:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "180", "100", "50"],
         },
-        // No total in either generation of columns: it is input + output.
         Row {
             id: "s-before",
             model_config: model("gpt-5"),
@@ -72,8 +67,6 @@ fn counted_rows() -> Vec<Row> {
             created_at: "'2025-12-30T10:00:00.000Z'".into(),
             tokens: ["NULL", "NULL", "NULL", "NULL", "1000", "200"],
         },
-        // Only the non-accumulated columns, an integer epoch-seconds timestamp
-        // and no provider.
         Row {
             id: "s-tokyo",
             model_config: model(OPUS),
@@ -88,8 +81,6 @@ fn counted_rows() -> Vec<Row> {
             created_at: "'2025-12-31T23:50:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "1300", "900", "400"],
         },
-        // Near miss of `s-replayed`: the same usage under another id is counted.
-        // The non-positive accumulated values fall back to the plain columns one by one.
         Row {
             id: "s-replayed-fork",
             model_config: model(HAIKU),
@@ -111,7 +102,6 @@ fn counted_rows() -> Vec<Row> {
             created_at: "'2026-01-01T13:00:00+09:00'".into(),
             tokens: ["NULL", "NULL", "NULL", "600", "500", "100"],
         },
-        // Date-only timestamp, blank provider, and a total with no split.
         Row {
             id: "s-total-only",
             model_config: model("gpt-5"),
@@ -119,7 +109,6 @@ fn counted_rows() -> Vec<Row> {
             created_at: "'2026-01-02'".into(),
             tokens: ["NULL", "NULL", "NULL", "345", "NULL", "NULL"],
         },
-        // Total below input + output.
         Row {
             id: "s-total-short",
             model_config: model(SONNET),
@@ -130,8 +119,6 @@ fn counted_rows() -> Vec<Row> {
     ]
 }
 
-/// Rows the adapter must drop. Most carry 9999/7777 so a leak is visible;
-/// `x-no-tokens` clamps to zero usage instead.
 fn ignored_rows() -> Vec<Row> {
     let leak = ["NULL", "NULL", "NULL", "17776", "9999", "7777"];
     let ignored = |id, model_config: String, created_at: &str| Row {
@@ -187,7 +174,6 @@ fn create_db(path: &Path, rows: &[Row]) {
     let db = sqlite::open(path).expect("failed to create Goose database");
     db.execute(SESSIONS_SCHEMA)
         .expect("failed to create Goose sessions table");
-    // A table the adapter never queries, with usage that must not be counted.
     db.execute(
         "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, tokens INTEGER);
          INSERT INTO messages (session_id, tokens) VALUES ('s-before', 9999);
@@ -200,7 +186,7 @@ fn create_db(path: &Path, rows: &[Row]) {
     }
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("goose");
     let sessions = store.join("data/sessions");
     std::fs::create_dir_all(&sessions).expect("failed to create Goose sessions directory");
@@ -216,8 +202,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         created_at: "'2025-12-31 12:00:00'".into(),
         tokens: ["NULL", "NULL", "NULL", "17776", "9999", "7777"],
     };
-    // Databases the adapter must not discover: outside `data/sessions`, and
-    // under another file name.
     create_db(&store.join("sessions.db"), std::slice::from_ref(&leak));
     create_db(&sessions.join("archive.db"), std::slice::from_ref(&leak));
 
@@ -226,7 +210,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     };
     write("empty.db", "");
     write("sessions.db.bak", "SQLite format 3\u{0}truncated");
-    // The pre-SQLite Goose store kept one JSONL file per session.
     write(
         "20251231_120000.jsonl",
         &format!(

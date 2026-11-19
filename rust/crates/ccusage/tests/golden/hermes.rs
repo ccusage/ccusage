@@ -12,7 +12,7 @@ const SESSION_COLUMNS: &str = "id, source, model, billing_provider, started_at, 
      input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, \
      estimated_cost_usd, actual_cost_usd";
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("hermes");
     let home = |name: &str| {
         let path = store.join(name);
@@ -48,9 +48,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     std::fs::create_dir_all(directory.join("state.db"))
         .expect("failed to create Hermes state.db directory");
 
-    // HERMES_HOME is a comma-separated list. The primary home is listed twice
-    // and padded with blanks and an empty segment, and the homes after it are
-    // ones the loader has to skip without failing the report.
     let mut padded = OsString::from(" ");
     padded.push(&primary);
     padded.push(" ");
@@ -83,7 +80,6 @@ fn session(values: &str) -> String {
     format!("INSERT INTO sessions ({SESSION_COLUMNS}) VALUES ({values});")
 }
 
-/// Upstream's own schema, plus a column and a table the loader never reads.
 fn seed_primary(path: &Path) {
     create(
         path,
@@ -113,28 +109,22 @@ fn seed_primary(path: &Path) {
             );
         ",
         &[
-            // No stored cost at all.
             session(&format!(
                 "'p-stale', 'cli', '{SONNET}', 'anthropic', {started_at:.1}, 3, 100, 50, 0, 0, 0, NULL, NULL",
                 started_at = instant("2025-12-27T22:00:00Z").secs_f64()
             )),
-            // Both costs stored and disagreeing with each other and with the
-            // token-derived cost.
             session(&format!(
                 "'p-sonnet-stored', 'cli', '{SONNET}', 'claude', {started_at}, 12, 1000, 200, 4000, 300, 0, 0.11, 0.5",
                 started_at = instant("2025-12-30T10:00:00.25Z").secs_f64()
             )),
-            // 2026-01-01 in Asia/Tokyo, estimated cost only.
             session(&format!(
                 "'p-gpt5-estimated', 'telegram', 'gpt-5', 'openai-codex', {started_at:.1}, 8, 700, 150, 2500, 0, 60, 0.25, NULL",
                 started_at = instant("2025-12-31T15:30:00Z").secs_f64()
             )),
-            // A recorded zero cost and no provider.
             session(&format!(
                 "'p-haiku-zero-cost', 'cli', '{HAIKU}', NULL, {started_at:.1}, 5, 900, 400, 7000, 200, 0, NULL, 0.0",
                 started_at = instant("2025-12-31T23:50:00Z").secs_f64()
             )),
-            // Padded model name and a negative estimate.
             session(&format!(
                 "'p-opus-padded', 'cli', '  {OPUS}  ', ' Anthropic ', {started_at:.1}, 4, 600, 100, 3000, 50, 0, -1.0, NULL",
                 started_at = instant("2026-01-01T00:10:00Z").secs_f64()
@@ -143,17 +133,14 @@ fn seed_primary(path: &Path) {
                 "'p-mystery', 'cli', '{UNPRICED}', NULL, {started_at:.1}, 2, 300, 70, 0, 0, 10, NULL, NULL",
                 started_at = instant("2026-01-01T12:00:00Z").secs_f64()
             )),
-            // A cost with no tokens.
             session(&format!(
                 "'p-cost-only', 'cli', 'gpt-5', 'openai', {started_at:.1}, 1, 0, 0, 0, 0, 0, 0.2, 0.3",
                 started_at = instant("2026-01-02T10:00:00Z").secs_f64()
             )),
-            // A model that only resolves with its provider prefix.
             session(&format!(
                 "'p-openrouter', 'cli', 'openai/gpt-5', 'openrouter', {started_at:.1}, 6, 800, 300, 6000, 0, 40, NULL, NULL",
                 started_at = instant("2026-01-02T11:00:00Z").secs_f64()
             )),
-            // Rows the loader must drop.
             session(&format!(
                 "'p-no-model', 'cli', NULL, 'anthropic', {started_at:.1}, 1, 9999, 9999, 0, 0, 0, NULL, 9.99",
                 started_at = instant("2025-12-31T11:20:00Z").secs_f64()
@@ -184,8 +171,6 @@ fn seed_primary(path: &Path) {
     );
 }
 
-/// A second home whose table has no primary key or column types, so it can hold
-/// what upstream's schema forbids: repeated ids and values of the wrong type.
 fn seed_profile(path: &Path) {
     create(
         path,
@@ -197,18 +182,14 @@ fn seed_profile(path: &Path) {
             );
         ",
         &[
-            // Same id as a session of the primary home: the earlier home wins.
             session(&format!(
                 "'p-sonnet-stored', 'cli', '{SONNET}', 'claude', {started_at:.1}, 99, 9999, 9999, 9999, 9999, 9999, 9.99, 9.99",
                 started_at = instant("2025-12-31T11:20:00Z").secs_f64()
             )),
-            // Same content as that session under another id: counted.
             session(&format!(
                 "'p-sonnet-stored-2', 'cli', '{SONNET}', 'claude', {started_at}, 12, 1000, 200, 4000, 300, 0, 0.11, 0.5",
                 started_at = instant("2025-12-30T10:00:00.25Z").secs_f64()
             )),
-            // Integer seconds; the id repeats in the same table and only the
-            // first row counts.
             session(&format!(
                 "'b-twin', 'cli', '{SONNET}', 'anthropic', {started_at}, 2, 400, 80, 0, 0, 0, NULL, NULL",
                 started_at = instant("2025-12-31T16:00:00Z").secs()
@@ -217,18 +198,14 @@ fn seed_profile(path: &Path) {
                 "'b-twin', 'cli', '{SONNET}', 'anthropic', {started_at}, 77, 7777, 7777, 7777, 7777, 7777, 7.77, 7.77",
                 started_at = instant("2025-12-31T17:00:00Z").secs()
             )),
-            // The same day in Asia/Tokyo.
             session(&format!(
                 "'b-morning', 'cli', '{HAIKU}', 'anthropic', {started_at:.1}, 3, 250, 40, 500, 20, 0, NULL, NULL",
                 started_at = instant("2025-12-31T03:00:00Z").secs_f64()
             )),
-            // Integer seconds, with real, text and negative token counts and an
-            // unknown provider.
             session(&format!(
                 "'b-odd-types', 'cli', 'gpt-5', 'Weird-Provider', {started_at}, '3', 120.9, 30.2, '45', -5, 'many', 'free', NULL",
                 started_at = instant("2026-01-01T09:00:00Z").secs()
             )),
-            // A provider with its own pricing entries.
             session(&format!(
                 "'b-deepseek', 'cli', 'deepseek-v4-flash', 'deepseek', {started_at:.1}, 2, 500, 100, 1000, 0, 0, NULL, NULL",
                 started_at = instant("2026-01-02T08:00:00Z").secs_f64()
@@ -239,7 +216,6 @@ fn seed_profile(path: &Path) {
             session(&format!(
                 "'b-text-time', 'cli', '{SONNET}', 'anthropic', 'yesterday', 1, 6666, 6666, 0, 0, 0, NULL, 6.66"
             )),
-            // Milliseconds where Hermes writes seconds: past year 9999, so skipped.
             session(&format!(
                 "'b-millis-time', 'cli', '{SONNET}', 'anthropic', {started_at}, 1, 8888, 8888, 0, 0, 0, NULL, 8.88",
                 started_at = instant("2025-12-31T16:00:00Z").millis()
@@ -248,7 +224,6 @@ fn seed_profile(path: &Path) {
     );
 }
 
-/// An older sessions table without the cache, reasoning and cost columns.
 fn seed_legacy(path: &Path) {
     create(
         path,

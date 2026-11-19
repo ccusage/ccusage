@@ -16,21 +16,11 @@ const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const CACHE_ETAG_MAX_BYTES: u64 = 4096;
 const CACHE_FILE_MAX_BYTES: u64 = PRICING_FETCH_MAX_BYTES + CACHE_ETAG_MAX_BYTES + 1;
 
-/// Fetches a pricing document for the refresh and hands its body to `load`.
-///
-/// This lives in the binary so that `ureq` and its TLS stack are not dependencies
-/// of `ccusage-core`, which every adapter builds against; `main` installs it
-/// through `ccusage_core::pricing::set_json_fetcher`.
-///
-/// Each body `load` accepts is kept on disk next to its ETag, and later fetches
-/// revalidate with `If-None-Match`. A 304 hands the cached body to `load`, and a
-/// cached body it rejects is dropped so the next fetch is unconditional.
 pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::Result<()> {
     let cache_dir = default_cache_dir();
     fetch_json_with_cache_dir(url, cache_dir.as_deref(), load)
 }
 
-/// Returns a per-user cache directory, or `None` when no safe directory exists.
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
         std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
@@ -132,8 +122,6 @@ fn read_bounded_body(mut reader: impl Read, max_bytes: u64) -> io::Result<String
     Ok(body)
 }
 
-/// The ETag and body are replaced by one rename so concurrent readers never
-/// observe a mixed pair from different refreshes.
 struct CacheEntry {
     path: PathBuf,
 }
@@ -214,7 +202,6 @@ fn valid_etag(etag: &str) -> bool {
         && !etag.bytes().any(|byte| byte.is_ascii_control())
 }
 
-/// Derives a filesystem-safe, collision-resistant file stem from a URL.
 fn cache_file_stem(url: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in url.bytes() {

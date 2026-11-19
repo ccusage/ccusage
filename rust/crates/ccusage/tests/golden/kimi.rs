@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use ccusage_test_support::{Instant, instant, set_modified};
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let legacy = root.join("kimi/legacy");
     let code = root.join("kimi/code");
     let write = |path: PathBuf, modified: Instant, lines: &[&str]| {
@@ -13,14 +13,11 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         set_modified(&path, modified);
     };
 
-    // The legacy root names its model in config.json; old-format lines carry none.
     write(
         legacy.join("config.json"),
         instant("2025-12-28T00:00:00Z"),
         &[r#"{"model":"kimi-k2-thinking","default_thinking":true}"#],
     );
-    // The code root's config is unreadable, so its old-format lines fall back
-    // to `kimi-for-coding`.
     write(
         code.join("config.json"),
         instant("2025-12-28T00:00:00Z"),
@@ -47,24 +44,19 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             a1,
             "",
             a2,
-            // Replayed verbatim, then again with a timestamp that differs below
-            // the millisecond the dedupe key keeps: both collapse into `a2`.
             a2,
             &format!(
                 r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":700,"output":150,"input_cache_read":2500,"input_cache_creation":0}},"message_id":"msg-a2"}}}}}}"#,
                 timestamp = instant("2025-12-31T15:30:00.2504Z").secs_f64()
             ),
-            // Near miss: only the message id differs, so it is counted.
             &format!(
                 r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":700,"output":150,"input_cache_read":2500,"input_cache_creation":0}},"message_id":"msg-a2b"}}}}}}"#,
                 timestamp = instant("2025-12-31T15:30:00.25Z").secs_f64()
             ),
-            // Only a total: it becomes output tokens.
             &format!(
                 r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"total":432}},"message_id":"msg-a3"}}}}}}"#,
                 timestamp = instant("2026-01-01T12:00:00Z").secs()
             ),
-            // A total above the parts: the remainder is kept as extra tokens.
             &format!(
                 r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":100,"output":50,"total":400}},"message_id":"msg-a4"}}}}}}"#,
                 timestamp = instant("2026-01-01T12:01:00Z").secs()
@@ -76,7 +68,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             r#"{"timestamp":"2025-12-31T10:00:00Z","message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":80,"output":20},"message_id":"msg-a6"}}}"#,
             r#"{"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":60,"output":40}}}}"#,
             "not json but mentions \"token_usage\"",
-            // Counts that are not non-negative integers read as zero.
             &format!(
                 r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":"9999","output":7.5,"input_cache_read":-5}},"message_id":"msg-a7"}}}}}}"#,
                 timestamp = instant("2025-12-31T08:58:20Z").secs()
@@ -89,7 +80,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":"token_usage 9999"}}}}"#,
                 timestamp = instant("2025-12-31T09:01:40Z").secs()
             ),
-            // An unknown top-level type still takes the old-format path.
             &format!(
                 r#"{{"type":"wire.event","timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":11,"output":9}},"message_id":"msg-a9"}}}}}}"#,
                 timestamp = instant("2025-12-31T09:05:00Z").secs()
@@ -101,8 +91,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // The same session directory name under another group: `a1` replayed
-    // across files is dropped, the copy with one more output token is not.
     write(
         legacy.join("sessions/group-b/session-old-1/wire.jsonl"),
         instant("2026-01-02T08:00:00Z"),
@@ -115,7 +103,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // Another session: the same `a1` line is counted again.
     write(
         legacy.join("sessions/group-b/session-old-2/wire.jsonl"),
         instant("2025-12-28T00:00:00Z"),
@@ -135,9 +122,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         &[],
     );
 
-    // Five path components without an `agents` directory: accepted as a wire
-    // file, with the session named after the innermost directory and the
-    // config looked up four levels above the file.
     write(
         legacy.join("sessions/odd/config.json"),
         instant("2025-12-28T00:00:00Z"),
@@ -152,7 +136,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         )],
     );
 
-    // Not wire files: wrong name, wrong depth, or outside `sessions`.
     let not_a_wire_file: [&str; 1] = [&format!(
         r#"{{"timestamp":{timestamp},"message":{{"type":"StatusUpdate","payload":{{"token_usage":{{"input_other":5555,"output":5555}},"message_id":"msg-ignored"}}}}}}"#,
         timestamp = instant("2025-12-31T09:00:00Z").secs()
@@ -184,14 +167,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         &[
             r#"{"type":"metadata","protocol_version":"2.0"}"#,
             n1,
-            // Session-scoped records are cumulative totals of the turn records.
             &format!(
                 r#"{{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{{"inputOther":9999,"output":9999,"inputCacheRead":9999,"inputCacheCreation":9999}},"usageScope":"session","time":{time}}}"#,
                 time = instant("2025-12-30T23:30:00.5Z").millis()
             ),
             n2,
             n2,
-            // Near miss: one millisecond later, so it is counted.
             &format!(
                 r#"{{"type":"usage.record","model":"claude-sonnet-4-20250514","usage":{{"inputOther":900,"output":400,"inputCacheRead":7000,"inputCacheCreation":200}},"usageScope":"turn","time":{time},"costUSD":99.0}}"#,
                 time = instant("2025-12-31T23:50:00.001Z").millis()
@@ -229,8 +210,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"type":"usage.record","model":"gpt-5","usage":{{"inputOther":0,"output":0}},"usageScope":"turn","time":{time}}}"#,
                 time = instant("2026-01-01T12:01:40Z").millis()
             ),
-            // A turn record that also has a non-object `message` fails to parse
-            // as a whole.
             &format!(
                 r#"{{"type":"usage.record","model":"gpt-5","message":"turn finished","usage":{{"inputOther":6666,"output":6666}},"usageScope":"turn","time":{time}}}"#,
                 time = instant("2026-01-01T12:01:40Z").millis()
@@ -243,8 +222,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // A second agent of the same session. Its copy of `n1` is dropped because
-    // the dedupe key has no agent in it.
     write(
         code.join("sessions/ws-1/session-new-1/agents/sub-1/wire.jsonl"),
         instant("2026-01-01T06:00:00Z"),
@@ -254,9 +231,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{{"inputOther":800,"output":300,"inputCacheRead":6000,"inputCacheCreation":50}},"usageScope":"turn","time":{time}}}"#,
                 time = instant("2026-01-02T10:00:00Z").millis()
             ),
-            // After the cutoff at which `kimi-for-coding` is priced as K2.6
-            // instead of K2.5; the same token counts appear before it in
-            // session-new-2.
             &format!(
                 r#"{{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{{"inputOther":1000,"output":500,"inputCacheRead":2000}},"usageScope":"turn","time":{time}}}"#,
                 time = instant("2026-04-21T00:00:00Z").millis()
@@ -264,7 +238,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // Another session: the same `n2` line is counted again.
     write(
         code.join("sessions/ws-2/session-new-2/agents/main/wire.jsonl"),
         instant("2026-01-02T08:00:00Z"),
@@ -277,8 +250,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // Old layout and format beside the new one; one millisecond apart across
-    // the Asia/Tokyo midnight.
     write(
         code.join("sessions/group-c/session-old-3/wire.jsonl"),
         instant("2026-01-02T08:00:00Z"),
@@ -308,8 +279,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         )],
     );
 
-    // KIMI_DATA_DIR is a comma-separated list: padded, with an empty item, a
-    // directory that does not exist, and a repeated root.
     let mut padded = OsString::from(" ");
     padded.push(code);
     let data_dirs = vec![

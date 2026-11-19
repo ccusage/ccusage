@@ -36,8 +36,6 @@ pub(crate) fn parse() -> Command {
     command
 }
 
-/// Parses one command line against one view of the config, with the checks
-/// and resolutions that need the parsed command.
 fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
     let mut command = parse_from_with_config(args, config, env!("CCUSAGE_VERSION"))?;
     last_window::resolve(&mut command)?;

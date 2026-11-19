@@ -1,11 +1,3 @@
-//! The rustls crypto provider for the pricing refresh.
-//!
-//! rustls' own `ring` provider also carries everything a TLS server or a client
-//! presenting a certificate needs, and its key loader keeps ring's RSA, ECDSA,
-//! and Ed25519 signing code in the binary. The refresh only ever verifies a
-//! server, so this provider is assembled from the same ring primitives without
-//! a way to load private keys.
-
 use std::sync::Arc;
 
 use rustls::{
@@ -18,16 +10,6 @@ use rustls::{
 };
 use webpki::ring as algs;
 
-/// Builds the provider the pricing client hands to rustls.
-///
-/// Only TLS 1.3 suites are offered: both pricing hosts negotiate TLS 1.3, and
-/// the TLS 1.2 suites would keep their key schedule and AEAD glue in the binary.
-/// TLS-intercepting middleboxes already failed, because the client trusts no
-/// root beyond the embedded web PKI ones; an `https://` proxy with a publicly
-/// trusted certificate now needs TLS 1.3 as well.
-///
-/// X25519 is the only key exchange group, which both hosts pick on their own;
-/// the NIST curves stay for certificate signatures, not for key agreement.
 pub(super) fn provider() -> CryptoProvider {
     CryptoProvider {
         cipher_suites: vec![
@@ -42,9 +24,6 @@ pub(super) fn provider() -> CryptoProvider {
     }
 }
 
-/// The signature algorithms rustls' ring provider verifies, in its order, minus
-/// Ed25519: the CA/Browser Forum Baseline Requirements allow only RSA and ECDSA
-/// keys, so no publicly trusted chain or TLS 1.3 server signature can use it.
 static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[
         algs::ECDSA_P256_SHA256,
@@ -82,7 +61,7 @@ static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
             SignatureScheme::RSA_PSS_SHA256,
             &[algs::RSA_PSS_2048_8192_SHA256_LEGACY_KEY],
         ),
-        // NOTE(2026-11-17, rustls 0.23.46): the ClientHello signature_algorithms list is built from these schemes and no signature_algorithms_cert is sent, so in TLS 1.3 it also governs certificate-chain signatures. Keep the PKCS#1 schemes although TLS 1.3 CertificateVerify never uses them.
+        // NOTE(2026-11-16, rustls 0.23.46): The ClientHello advertises these schemes in signature_algorithms and omits signature_algorithms_cert. Keep the PKCS#1 schemes for certificate-chain signatures even though TLS 1.3 CertificateVerify excludes them.
         (
             SignatureScheme::RSA_PKCS1_SHA512,
             &[algs::RSA_PKCS1_2048_8192_SHA512],
@@ -98,7 +77,6 @@ static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
     ],
 };
 
-/// Supplies ring's system randomness and refuses to load private keys.
 #[derive(Debug)]
 struct VerifyOnly;
 

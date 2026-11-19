@@ -8,9 +8,6 @@ const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "cline-mystery-1";
 
-/// One `ui_messages.json` event. `ts` and `model_info` are raw JSON so a case
-/// can pass a wrongly typed value; `text` is the JSON document Cline stores as
-/// a string.
 fn say(say: &str, ts: &str, model_info: &str, text: &str) -> String {
     let text = text.replace('\\', "\\\\").replace('"', "\\\"");
     format!(r#"{{"ts":{ts},"type":"say","say":"{say}","modelInfo":{model_info},"text":"{text}"}}"#)
@@ -35,7 +32,7 @@ fn transcript(messages: &[String]) -> String {
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("cline");
     let write = |relative: &str, contents: &str| {
         let path = store.join(relative);
@@ -48,8 +45,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let ignored =
         r#"{"tokensIn":9999,"tokensOut":9999,"cacheReads":9999,"cacheWrites":9999,"cost":9.99}"#;
 
-    // Extension task. The adapter has no dedupe, so the replayed request below
-    // is expected to count twice.
     let replayed = request(
         instant("2025-12-31T15:30:00Z").millis(),
         &extension_model(OPUS, "anthropic"),
@@ -79,13 +74,11 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 &extension_model("gpt-5", "openai"),
                 r#"{"tokensIn":400,"tokensOut":45,"cacheReads":100,"cacheWrites":0,"cost":"0.25"}"#,
             ),
-            // A negative cost is not a reported cost, so this one is priced.
             request(
                 instant("2026-01-02T09:00:00Z").millis(),
                 &extension_model(HAIKU, "anthropic"),
                 r#"{"tokensIn":800,"tokensOut":300,"cacheReads":6000,"cacheWrites":50,"cost":-1}"#,
             ),
-            // Everything from here on must be skipped.
             format!(
                 r#"{{"ts":{},"type":"say","say":"api_req_started","partial":true,"modelInfo":{sonnet},"text":"{}"}}"#,
                 instant("2025-12-31T12:00:00Z").millis(),
@@ -172,7 +165,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             "\"garbage\"".to_string(),
         ]),
     );
-    // Neither sibling file may supply usage or model attribution.
     write(
         "tasks/task-alpha/task_metadata.json",
         &format!(
@@ -185,8 +177,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         r#"[{"role":"assistant","content":[],"metrics":{"inputTokens":9999,"outputTokens":9999,"cacheReadTokens":0,"cacheWriteTokens":0}}]"#,
     );
 
-    // Legacy CLI task with the same id as the extension task: both are
-    // `task:task-alpha`.
     write(
         "data/tasks/task-alpha/ui_messages.json",
         &document(&[request(
@@ -196,7 +186,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         )]),
     );
 
-    // CLI transcript with the same id again: namespaced as `cli:task-alpha`.
     let cli = |head: &str, model: &str, metrics: &str| {
         format!(r#"{{"role":"assistant",{head},"modelInfo":{model},"metrics":{metrics}}}"#)
     };
@@ -209,8 +198,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"role":"user","ts":{},"modelInfo":{cli_sonnet},"metrics":{cli_ignored}}}"#,
                 instant("2025-12-31T15:59:00Z").millis()
             ),
-            // `inputTokens` includes the cache counters; a reported zero cost
-            // is still a reported cost.
             cli(
                 &format!(
                     r#""ts":{},"id":"assistant-1""#,
@@ -229,7 +216,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 &format!(r#"{{"id":"{UNPRICED}"}}"#),
                 r#"{"inputTokens":250,"outputTokens":50,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":0.07}"#,
             ),
-            // Everything from here on must be skipped.
             cli(
                 r#""ts":"invalid","timestamp":"2025-12-31T12:00:00Z""#,
                 &cli_sonnet,
@@ -283,7 +269,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ]),
     );
 
-    // Second CLI session, in the other transcript layout.
     let first_beta = cli(
         &format!(
             r#""ts":{},"id":"beta-1""#,
@@ -296,7 +281,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "sessions/cli-beta/cli-beta.messages.json",
         &transcript(&[
             first_beta.clone(),
-            // LiteLLM lists this model only under its `mistral/` prefix.
             cli(
                 &format!(
                     r#""ts":{},"id":"beta-2""#,
@@ -305,7 +289,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{"id":"devstral-medium-latest","provider":"mistral"}"#,
                 r#"{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0}"#,
             ),
-            // Same message id as the previous record, different usage.
             cli(
                 &format!(
                     r#""ts":{},"id":"beta-2""#,
@@ -316,7 +299,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
         ]),
     );
-    // The same session id under `data/sessions`, replaying its first message.
     write(
         "data/sessions/cli-beta/cli-beta.messages.json",
         &transcript(&[first_beta]),
@@ -346,7 +328,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "tasks/task-truncated/ui_messages.json",
         &counted_if_discovered[..counted_if_discovered.len() - 20],
     );
-    // Valid JSON of the wrong shape for its layout.
     write(
         "tasks/task-object/ui_messages.json",
         &transcript_if_discovered,
@@ -356,7 +337,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         &counted_if_discovered,
     );
     write("sessions/cli-empty/cli-empty.messages.json", "");
-    // Paths the discovery must not classify as usage files.
     write(
         "tasks/nested/task-deep/ui_messages.json",
         &counted_if_discovered,
@@ -369,8 +349,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     write("ui_messages.json", &counted_if_discovered);
     write("data/settings/ui_messages.json", &counted_if_discovered);
 
-    // The same root listed twice, a blank entry, and a missing root: every
-    // file must still be read once.
     let roots = vec![
         store.clone().into_os_string(),
         store.clone().into_os_string(),

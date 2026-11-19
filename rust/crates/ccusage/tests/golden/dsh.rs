@@ -10,14 +10,10 @@ const FLASH: &str = "deepseek-flash";
 const SONNET: &str = "anthropic/claude-sonnet-4.5";
 const UNPRICED: &str = "dsh-mystery-1";
 
-/// The first line of a session log. `fields` is the raw JSON after
-/// `createdAt`.
 fn header(created_at: i64, fields: &str) -> String {
     format!(r#"{{"type":"session","version":4,"createdAt":{created_at}{fields}}}"#)
 }
 
-/// One event line; `seq` and `time` are raw JSON so a case can omit or
-/// mistype them.
 fn event(kind: &str, seq: Option<&str>, time: Option<&str>, data: &str) -> String {
     let seq = seq.map_or_else(String::new, |seq| format!(r#","seq":{seq}"#));
     let time = time.map_or_else(String::new, |time| format!(r#","time":{time}"#));
@@ -35,8 +31,6 @@ fn route(seq: i64, time: i64, provider: &str, model: &str) -> String {
     )
 }
 
-/// An `assistant/message` settled with `usage`, the body of dsh's
-/// `TokenUsage` object.
 fn message(seq: i64, time: i64, usage: &str) -> String {
     event(
         "assistant/message",
@@ -52,7 +46,7 @@ fn document(lines: &[String]) -> String {
     lines.join("\n")
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let write = |relative: &str, contents: &[u8]| {
         let path = root.join("dsh").join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
@@ -86,23 +80,19 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#"{{"provider":"deepseek-official","model":"{V4_PRO}","contextWindow":1048576}}"#
             ),
         ),
-        // The settled `usage` wins over the stream's usage chunks.
         event(
             "assistant/message",
             Some("3"),
             Some(&(instant("2025-12-30T10:00:00Z").millis() + 5_000).to_string()),
             r#"{"stream":[{"type":"chunk","chunk":{"type":"usage","usage":{"inputTokens":9999}}}],"usage":{"inputTokens":1200,"outputTokens":300,"cacheReadTokens":8000,"totalTokens":9500}}"#,
         ),
-        // A failed stream settles as an attempt: its last usage chunk counts.
         event(
             "assistant/attempt",
             Some("4"),
             Some(&instant("2025-12-31T10:00:00Z").millis().to_string()),
             r#"{"stream":[{"type":"chunk","chunk":{"type":"usage","usage":{"inputTokens":5,"outputTokens":0}}},{"type":"chunk","chunk":{"type":"text","text":"x"}},{"type":"chunk","chunk":{"type":"usage","usage":{"inputTokens":50,"outputTokens":3}}}]}"#,
         ),
-        // Already 2026-01-01 in Asia/Tokyo.
         alpha_tokyo.clone(),
-        // The same `seq` again collapses into it; another `seq` is counted.
         alpha_tokyo,
         message(
             6,
@@ -121,20 +111,17 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             instant("2026-01-01T00:10:00Z").millis(),
             r#""inputTokens":300,"outputTokens":80,"cacheWriteTokens":200"#,
         ),
-        // A route without a model leaves the current one in place.
         event(
             "request/context",
             Some("9"),
             Some(&instant("2026-01-01T00:10:00Z").millis().to_string()),
             r#"{"provider":"anthropic"}"#,
         ),
-        // Only a total: it becomes output tokens.
         message(
             10,
             instant("2026-01-01T12:00:00Z").millis(),
             r#""totalTokens":432"#,
         ),
-        // A total above the parts: the remainder is kept as extra tokens.
         message(
             11,
             instant("2026-01-01T12:00:00Z").millis() + 60_000,
@@ -145,7 +132,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             instant("2026-01-01T12:00:00Z").millis() + 120_000,
             r#""inputTokens":0,"outputTokens":0"#,
         ),
-        // Summarisation names its own route; one without a model is `unknown`.
         event(
             "compaction/summary",
             Some("13"),
@@ -160,7 +146,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             Some(&instant("2026-01-01T12:30:00Z").millis().to_string()),
             r#"{"provider":"deepseek-account","usage":{"inputTokens":90,"outputTokens":10}}"#,
         ),
-        // Usage on any other event type is not a model call.
         event(
             "user/message",
             Some("15"),
@@ -173,7 +158,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             Some(&instant("2026-01-01T12:30:00Z").millis().to_string()),
             "null",
         ),
-        // A missing, zero, or string `time` falls back to `createdAt`.
         message(17, 0, r#""inputTokens":70,"outputTokens":30"#),
         event(
             "assistant/message",
@@ -187,7 +171,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             Some(r#""2026-01-01T12:00:00Z""#),
             r#"{"usage":{"inputTokens":50,"outputTokens":10}}"#,
         ),
-        // Counts that are not non-negative integers read as zero.
         event(
             "assistant/message",
             Some("20"),
@@ -200,7 +183,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "home-a/sessions/--work-alpha--/sess-alpha/session.v4.jsonl",
         document(&alpha).as_bytes(),
     );
-    // An older generation dsh left behind after migrating the session.
     write(
         "home-a/sessions/--work-alpha--/sess-alpha/session.v3.jsonl",
         document(&[
@@ -220,8 +202,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         b"locked",
     );
 
-    // A second DSH_HOME root holding a copy of the same session with one more
-    // request: the shared `seq`s are read once.
     let mut alpha_copy = alpha[..alpha.len() - 1].to_vec();
     alpha_copy.push(message(
         30,
@@ -233,8 +213,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         document(&alpha_copy).as_bytes(),
     );
 
-    // Compressed one zstd frame per write batch, ending in a torn frame whose
-    // request is lost.
     let beta_head = header(
         instant("2025-12-31T23:50:00Z").millis(),
         r#","id":"sess-beta","cwd":"/work/beta""#,
@@ -275,8 +253,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         &beta,
     );
 
-    // A fork copies its parent's log up to the inherited marker; only what
-    // follows the last such marker is its own usage.
     write(
         "home-a/sessions/--work-beta--/fork-beta/session.v4.jsonl",
         document(&[
@@ -286,7 +262,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
             route(1, instant("2025-12-31T23:50:00Z").millis(), "deepseek-official", V4_PRO),
             beta_parent_call.clone(),
-            // Not inherited: the copied usage is still the parent's.
             event("session/end-seed", Some("3"), Some(&instant("2026-01-02T08:00:00Z").millis().to_string()), "{}"),
             event(
                 "session/end-seed",
@@ -294,7 +269,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 Some(&instant("2026-01-02T08:00:00Z").millis().to_string()),
                 r#"{"inherited":true}"#,
             ),
-            // The inherited route still prices the fork's first call.
             message(5, instant("2026-01-02T08:00:00Z").millis() + 5_000, r#""inputTokens":600,"outputTokens":60"#),
             route(6, instant("2026-01-02T10:00:00Z").millis(), "deepseek-account", FLASH),
             message(
@@ -305,7 +279,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ])
         .as_bytes(),
     );
-    // A fork torn before its inherited marker holds only parent usage.
     write(
         "home-a/sessions/--work-beta--/fork-torn/session.v4.jsonl",
         document(&[
@@ -324,9 +297,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .as_bytes(),
     );
 
-    // Generation 0 without an id, cwd, or route: the session is named after
-    // its directory, the model is `unknown`, and `createdAt` dates it on the
-    // stale day. Lines without `seq` dedupe on their content.
     let no_seq = event(
         "assistant/message",
         None,
@@ -349,7 +319,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .as_bytes(),
     );
 
-    // Any depth under `sessions/` is a session directory.
     write(
         "home-a/sessions/deep/a/b/sess-deep/session.v2.jsonl",
         document(&[
@@ -372,7 +341,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .as_bytes(),
     );
 
-    // Not readable sessions: no header, not zstd, empty, or not a session file.
     write(
         "home-a/sessions/bad/no-header/session.v4.jsonl",
         document(&[message(
@@ -405,8 +373,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         write(path, stray.as_bytes());
     }
 
-    // DSH_HOME is a comma-separated list: padded, with an empty item, a root
-    // that does not exist, and a repeated root.
     let dsh = root.join("dsh");
     let mut padded = OsString::from(" ");
     padded.push(dsh.join("home-a"));
@@ -420,8 +386,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     vec![("DSH_HOME", homes)]
 }
 
-/// What the adapter says under `--debug` about the logs it cannot read.
-pub fn extra_cases(_root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(_root: &Path) -> Vec<Case> {
     let mut cases = vec![
         Case::new(
             "session",

@@ -13,8 +13,6 @@ const ALPHA: &str = "claude/projects/-Users-dev-alpha";
 const BETA: &str = "claude/projects/-Users-dev-beta";
 const GAMMA: &str = "claude/projects/-Users-dev-gamma";
 
-/// One assistant transcript line. `usage` is the body of the usage object and
-/// `extra` holds further top-level members, each with its leading comma.
 fn entry(
     timestamp: &str,
     session: &str,
@@ -30,7 +28,7 @@ fn entry(
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let write = |relative: &str, lines: &[String], modified: Instant| {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
@@ -41,8 +39,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 
     let alpha = "sess-alpha-1";
     let copied_turn = |session: &str| {
-        // 2026-01-01 in Asia/Tokyo. Written to two transcripts with the same
-        // message and request IDs, as a resumed session does.
         entry(
             "2025-12-31T15:30:00.000Z",
             session,
@@ -54,7 +50,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         )
     };
 
-    // Flat transcript: the session ID is the file stem.
     write(
         &format!("{ALPHA}/{alpha}.jsonl"),
         &[
@@ -81,8 +76,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#""input_tokens":500,"output_tokens":800,"cache_creation_input_tokens":600,"cache_read_input_tokens":9000,"cache_creation":{"ephemeral_5m_input_tokens":200,"ephemeral_1h_input_tokens":400}"#,
                 "",
             ),
-            // One response written once per content block: same `msg_` ID, no
-            // request ID, distinct timestamps.
             entry(
                 "2025-12-31T09:00:00.000Z",
                 alpha,
@@ -102,8 +95,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "",
             ),
             copied_turn(alpha),
-            // Carries the `"usage":{` marker the loader scans for, but is not a
-            // usage entry.
             format!(
                 r#"{{"type":"user","timestamp":"2025-12-31T15:31:00.000Z","sessionId":"{alpha}","toolUseResult":{{"usage":{{"input_tokens":7777,"output_tokens":7777}}}}}}"#
             ),
@@ -155,12 +146,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2026-01-02T08:31:00Z"),
     );
 
-    // Subagent transcript: the session ID is the directory above `subagents/`.
     write(
         &format!("{ALPHA}/{alpha}/subagents/agent-btw.jsonl"),
         &[
-            // Replays of parent messages under new request IDs: the first at
-            // the parent's timestamp, the second a minute after it.
             entry(
                 "2025-12-30T10:00:00.000Z",
                 alpha,
@@ -217,7 +205,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2025-12-31T09:31:00Z"),
     );
 
-    // Nested transcript: the session ID is the directory name.
     let beta = "sess-beta-1";
     let gateway = |timestamp: &str| {
         entry(
@@ -233,7 +220,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     write(
         &format!("{BETA}/{beta}/chat.jsonl"),
         &[
-            // 2026-01-01 in Asia/Tokyo.
             entry(
                 "2025-12-31T23:50:00.000Z",
                 beta,
@@ -252,8 +238,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 r#""input_tokens":600,"output_tokens":100,"cache_read_input_tokens":3000"#,
                 r#","costUSD":0.5"#,
             ),
-            // A gateway placeholder ID reused per response: the repeat at the
-            // same timestamp is one write, the later one is another response.
             gateway("2026-01-01T01:00:00.000Z"),
             gateway("2026-01-01T01:00:00.000Z"),
             gateway("2026-01-01T01:00:05.000Z"),
@@ -278,9 +262,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         &format!("{BETA}/{resumed}.jsonl"),
         &[
             copied_turn(resumed),
-            // An advisor turn: the top-level cache-write split covers only the
-            // first `message` iteration, and the second one's 5-minute writes
-            // appear only in `iterations`.
             entry(
                 "2026-01-01T03:00:00.000Z",
                 resumed,
@@ -309,8 +290,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2025-12-30T00:00:00Z"),
     );
 
-    // Last written more than a day before the shared window opens, so the
-    // window variants prune the file by mtime.
     write(
         &format!("{GAMMA}/sess-gamma-old.jsonl"),
         &[entry(
@@ -331,9 +310,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     )]
 }
 
-/// Claude-only options, plus `statusline`, which reads a hook payload from
-/// stdin. The clock is pinned to `golden::FIXED_NOW`, inside the last block.
-pub fn extra_cases(root: &Path) -> Vec<Case> {
+pub(crate) fn extra_cases(root: &Path) -> Vec<Case> {
     let transcript = root.join(ALPHA).join("sess-alpha-1.jsonl");
     let hook = |context: &str| {
         format!(

@@ -15,7 +15,7 @@ fn assistant(session: &str, timestamp: &str, model: &str, usage: &str) -> String
     )
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let store = root.join("qwen");
     let primary = store.join("primary");
     let secondary = store.join("secondary");
@@ -33,16 +33,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let a2 = assistant("sess-a", "2025-12-31T15:30:00.000Z", SONNET, a2_usage);
     let a4_usage = r#""promptTokenCount":100,"candidatesTokenCount":40,"totalTokenCount":200"#;
 
-    // Records are deduplicated on (session, timestamp text, model, tokens),
-    // first one wins. String fields are trimmed before deduplication.
     write(
         primary.join("projects/alpha/chats/session-a.jsonl"),
         &[
             r#"{"type":"user","sessionId":"sess-a","timestamp":"2025-12-30T08:59:00.000Z","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":9999,"candidatesTokenCount":9999}}"#.to_string(),
             a1.clone(),
             a1.clone(),
-            // Near-misses of `a1`: the same instant spelt differently, and one
-            // token more.
             assistant("sess-a", "2025-12-30T09:00:00Z", CODER, a1_usage),
             assistant(
                 "sess-a",
@@ -89,8 +85,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2026-01-02T12:00:00Z"),
     );
 
-    // Second project. Dedupe spans files: the copy of `a2` under the same
-    // session id is dropped, the copy under this file's session id is kept.
     write(
         primary.join("projects/beta/chats/session-b.jsonl"),
         &[
@@ -151,8 +145,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2025-12-31T16:00:00Z"),
     );
 
-    // Qwen Code moves a finished session into the flat `chats/archive/`
-    // directory unchanged.
     write(
         primary.join("projects/beta/chats/archive/fallback-c.jsonl"),
         &fallback,
@@ -169,8 +161,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2026-01-01T09:00:00Z"),
     );
 
-    // Second data root with CRLF line endings; its copy of `a1` is a replay of
-    // the first root's.
     write(
         secondary.join("projects/alpha/chats/session-a.jsonl"),
         &[
@@ -187,8 +177,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2026-01-01T09:00:00Z"),
     );
 
-    // Only `projects/<project>/chats/<file>.jsonl` and
-    // `projects/<project>/chats/archive/<file>.jsonl` are chat files.
     let ignored = assistant(
         "sess-ignored",
         "2025-12-31T12:00:00.000Z",
@@ -224,8 +212,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2025-12-27T22:00:00Z"),
     );
 
-    // `QWEN_DATA_DIR` is a comma-separated list: a repeated root and a missing
-    // one are both dropped.
     let roots = [
         primary.clone(),
         secondary,

@@ -8,9 +8,6 @@ const UNPRICED: &str = "grok-mystery-1";
 const ALPHA: &str = "grok/sessions/%2Fwork%2Falpha";
 const BETA: &str = "grok/sessions/%2Fwork%2Fbeta";
 
-/// One `updates.jsonl` line. `envelope` is the raw JSON of the top-level
-/// `timestamp`, `usage` the body of the usage object, and `meta` the body of
-/// `params._meta`.
 fn update(
     kind: &str,
     envelope: Option<&str>,
@@ -27,7 +24,6 @@ fn update(
     )
 }
 
-/// A `turn_completed` line stamped with envelope seconds and an event ID.
 fn turn(seconds: i64, session: Option<&str>, event_id: &str, usage: &str) -> String {
     update(
         "turn_completed",
@@ -46,7 +42,7 @@ fn model_usage(rows: &[(&str, &str)]) -> String {
     format!(r#""modelUsage":{{{}}}"#, rows.join(","))
 }
 
-pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let dec_27_2200 = instant("2025-12-27T22:00:00Z").secs();
     let dec_30_1000 = instant("2025-12-30T10:00:00Z").secs();
     let dec_30_1030 = instant("2025-12-30T10:30:00Z").secs();
@@ -70,14 +66,11 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let gamma = "line-session-gamma";
     let never_counted = r#""inputTokens":9999,"outputTokens":9999"#;
 
-    // No summary.json: the project is the URL-decoded directory name.
     let session_a = format!("{ALPHA}/aaaaaaaa-0000-4000-8000-000000000001");
     let multi_model_turn = update(
         "turn_completed",
-        // The envelope says 2026-01-02; `agentTimestampMs` wins.
         Some(&jan_02_1000.to_string()),
         Some(alpha),
-        // The top-level counts are ignored once `modelUsage` has rows.
         Some(&format!(
             r#"{never_counted},"costUsdTicks":9999000000,{}"#,
             model_usage(&[
@@ -106,7 +99,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 Some(never_counted),
                 Some(r#""eventId":"evt-tool""#),
             ),
-            // Passes the byte prefilter but is not a completed turn.
             update(
                 "agent_message_chunk",
                 Some(&dec_30_1000.to_string()),
@@ -125,7 +117,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
             multi_model_turn.clone(),
             multi_model_turn,
-            // 2026-01-01 in Asia/Tokyo.
             turn(
                 dec_31_1530,
                 Some(alpha),
@@ -135,14 +126,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                     r#""inputTokens":3000,"outputTokens":500,"cachedReadTokens":1000,"reasoningTokens":200,"costUsdTicks":2000000000"#,
                 )]),
             ),
-            // Same event and model with other counts: the first one wins.
             turn(
                 dec_31_1600,
                 Some(alpha),
                 "evt-a3",
                 &model_usage(&[(GROK_45, r#""inputTokens":7777,"outputTokens":7777"#)]),
             ),
-            // Same event under another model is a separate row.
             turn(
                 dec_31_1600,
                 Some(alpha),
@@ -213,8 +202,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         )],
     );
 
-    // summary.json supplies the session ID, the project, and the model for
-    // turns that carry only top-level usage.
     let session_b = format!("{BETA}/bbbbbbbb-0000-4000-8000-000000000002");
     write(
         &format!("{session_b}/summary.json"),
@@ -241,8 +228,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "evt-b1",
                 r#""inputTokens":900,"outputTokens":400,"cachedReadTokens":700,"cacheCreationTokens":50,"reasoningTokens":30,"totalTokens":1300,"costUsdTicks":30000000"#,
             ),
-            // A line's own session ID beats the summary's; the cache read is
-            // clamped to the input.
             turn(
                 jan_01_0010,
                 Some(gamma),
@@ -252,12 +237,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                     r#""inputTokens":600,"outputTokens":100,"cachedReadTokens":3000"#,
                 )]),
             ),
-            // Without an event ID the whole record is the key: the second line
-            // repeats the first, the third differs only in reasoning tokens.
             turn_without_event_id(10, None),
             turn_without_event_id(10, Some(r#""eventId":"""#)),
             turn_without_event_id(20, None),
-            // The cache write is clamped to the uncached input.
             turn(
                 jan_02_1000,
                 None,
@@ -267,8 +249,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                     r#""inputTokens":800,"outputTokens":300,"cachedReadTokens":100,"cacheCreationTokens":5000,"costUsdTicks":10000000"#,
                 )]),
             ),
-            // A string `agentTimestampMs` is skipped and the fractional
-            // envelope seconds are truncated.
             update(
                 "turn_completed",
                 Some(&format!("{jan_02_1100}.9")),
@@ -295,8 +275,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         ],
     );
 
-    // Unreadable summary.json: session ID and project come from the path, and
-    // top-level usage has no model to fall back to.
     let session_c = format!("{BETA}/cccccccc-0000-4000-8000-000000000003");
     write(
         &format!("{session_c}/summary.json"),
@@ -305,15 +283,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     write_lines(
         &format!("{session_c}/updates.jsonl"),
         &[
-            // The same event as in the alpha session, exported a second time.
             turn(
                 dec_31_1530,
                 Some(alpha),
                 "evt-a3",
                 &model_usage(&[(GROK_45, r#""inputTokens":8888,"outputTokens":8888"#)]),
             ),
-            // Repeats a beta line that has no event ID; only event IDs are
-            // matched across files.
             turn_without_event_id(10, None),
             turn(
                 jan_01_1230,
@@ -342,7 +317,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         )],
     );
 
-    // Discovery is recursive, so a deeper tree still loads.
     write_lines(
         &format!("{ALPHA}/nested/deeper/eeeeeeee-0000-4000-8000-000000000005/updates.jsonl"),
         &[turn(

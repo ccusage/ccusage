@@ -3,8 +3,6 @@ use serde_json::Value;
 
 mod support;
 
-/// Two sessions in America/Los_Angeles (UTC-8): the first is last active at
-/// 2026-02-24T02:00Z, still 2026-02-23 locally, and the second a day later.
 fn qwen_fixture() -> Fixture {
     fs_fixture!({
         "qwen/projects/myProject/chats/until-day.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"until-day","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
@@ -52,8 +50,6 @@ fn qwen_session_window_keeps_sessions_last_active_on_the_until_day() {
     );
 }
 
-/// The Qwen daemon moves archived sessions into `chats/archive/`; their
-/// usage must keep counting in reports.
 #[test]
 fn qwen_session_includes_archived_chat_files() {
     let fixture = fs_fixture!({

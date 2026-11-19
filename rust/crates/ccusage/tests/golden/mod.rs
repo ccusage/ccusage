@@ -1,30 +1,24 @@
-//! Golden matrix: freezes what the `ccusage` binary prints for every agent
-//! across every report kind and a fixed set of flag variants, plus the unified
-//! reports over all agents at once.
-//!
-//! `tests/golden_matrix.rs` is the only test binary that includes this module.
-
-pub mod all;
-pub mod amp;
-pub mod antigravity;
-pub mod claude;
-pub mod cline;
-pub mod codebuff;
-pub mod codex;
-pub mod copilot;
-pub mod droid;
-pub mod dsh;
-pub mod gemini;
-pub mod goose;
-pub mod grok;
-pub mod hermes;
-pub mod kilo;
-pub mod kimi;
-pub mod openclaw;
-pub mod opencode;
-pub mod pi;
-pub mod qwen;
-pub mod zcode;
+pub(crate) mod all;
+pub(crate) mod amp;
+pub(crate) mod antigravity;
+pub(crate) mod claude;
+pub(crate) mod cline;
+pub(crate) mod codebuff;
+pub(crate) mod codex;
+pub(crate) mod copilot;
+pub(crate) mod droid;
+pub(crate) mod dsh;
+pub(crate) mod gemini;
+pub(crate) mod goose;
+pub(crate) mod grok;
+pub(crate) mod hermes;
+pub(crate) mod kilo;
+pub(crate) mod kimi;
+pub(crate) mod openclaw;
+pub(crate) mod opencode;
+pub(crate) mod pi;
+pub(crate) mod qwen;
+pub(crate) mod zcode;
 
 use std::{
     collections::BTreeMap,
@@ -37,22 +31,19 @@ use std::{
 
 use ccusage_test_support::Fixture;
 
-pub type Seed = fn(root: &Path) -> Vec<(&'static str, Vec<OsString>)>;
+pub(crate) type Seed = fn(root: &Path) -> Vec<(&'static str, Vec<OsString>)>;
 
-/// Builds the cases only one agent has (its own options, or reports that need
-/// stdin) from the fixture root.
-pub type Extras = fn(root: &Path) -> Vec<Case>;
+pub(crate) type Extras = fn(root: &Path) -> Vec<Case>;
 
-pub fn no_extras(_root: &Path) -> Vec<Case> {
+pub(crate) fn no_extras(_root: &Path) -> Vec<Case> {
     Vec::new()
 }
 
-pub fn json_path(path: &Path) -> String {
+pub(crate) fn json_path(path: &Path) -> String {
     serde_json::to_string(&path.to_string_lossy()).expect("fixture path is JSON serialisable")
 }
 
-/// Every report kind the parser knows, in snapshot order.
-pub const ALL_REPORT_KINDS: [&str; 6] = [
+pub(crate) const ALL_REPORT_KINDS: [&str; 6] = [
     "daily",
     "weekly",
     "monthly",
@@ -61,7 +52,7 @@ pub const ALL_REPORT_KINDS: [&str; 6] = [
     "statusline",
 ];
 
-pub fn report_kinds(agent: &str) -> Vec<&'static str> {
+pub(crate) fn report_kinds(agent: &str) -> Vec<&'static str> {
     let spec = ccusage_cli::AGENTS
         .iter()
         .find(|spec| spec.name == agent)
@@ -73,52 +64,34 @@ pub fn report_kinds(agent: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// One agent's entry in the matrix.
-pub struct AgentMatrix {
-    pub agent: &'static str,
-    pub seed: Seed,
-    pub extras: Extras,
+pub(crate) struct AgentMatrix {
+    pub(crate) agent: &'static str,
+    pub(crate) seed: Seed,
+    pub(crate) extras: Extras,
 }
 
-/// The shared fixture timeline. Every seed spreads its records over these UTC
-/// days so one `--since/--until` window cuts through the middle of all of them.
-///
-/// - `2025-12-27`: optional stale day, in an earlier week under both the Sunday
-///   and the Monday week start.
-/// - `2025-12-30`: first day, before the window.
-/// - `2025-12-31`: inside the window. A record at or after `15:00Z` is already
-///   `2026-01-01` in Asia/Tokyo, so it crosses the day, month, and year there.
-/// - `2026-01-01`: inside the window.
-/// - `2026-01-02`: last day, after the window.
-pub const WINDOW_SINCE: &str = "20251231";
-pub const WINDOW_UNTIL: &str = "20260101";
+// NOTE(2026-11-15): The shared UTC fixture window is bracketed by 2025-12-30 and 2026-01-02, with an optional stale day on 2025-12-27. Records on either side of 15:00Z on 2025-12-31 exercise the day, month, and year rollover in Asia/Tokyo.
+pub(crate) const WINDOW_SINCE: &str = "20251231";
+pub(crate) const WINDOW_UNTIL: &str = "20260101";
 
-/// "Now" for every case, on the last fixture day: Claude's `08:00Z` block is
-/// still active, `blocks --recent` keeps only the last three days, and the
-/// statusline has usage for today.
-pub const FIXED_NOW: &str = "2026-01-02T12:00:00Z";
+pub(crate) const FIXED_NOW: &str = "2026-01-02T12:00:00Z";
 
-/// Variant name of the case that pins how an unsupported kind is rejected.
-pub const UNSUPPORTED_VARIANT: &str = "unsupported";
+pub(crate) const UNSUPPORTED_VARIANT: &str = "unsupported";
 
-pub const WIDE_COLUMNS: u16 = 200;
-pub const NARROW_COLUMNS: u16 = 120;
+pub(crate) const WIDE_COLUMNS: u16 = 200;
+pub(crate) const NARROW_COLUMNS: u16 = 120;
 
-/// One CLI invocation whose output is snapshotted as
-/// `golden__<scope>__<kind>__<variant>`.
-pub struct Case {
-    pub kind: &'static str,
-    pub variant: &'static str,
-    /// Arguments after `ccusage`: the agent name first, or the report kind
-    /// for a unified report.
-    pub args: Vec<String>,
-    pub columns: u16,
-    pub stdin: Option<String>,
-    pub env: Vec<(&'static str, &'static str)>,
+pub(crate) struct Case {
+    pub(crate) kind: &'static str,
+    pub(crate) variant: &'static str,
+    pub(crate) args: Vec<String>,
+    pub(crate) columns: u16,
+    pub(crate) stdin: Option<String>,
+    pub(crate) env: Vec<(&'static str, &'static str)>,
 }
 
 impl Case {
-    pub fn new(kind: &'static str, variant: &'static str, args: &[&str]) -> Self {
+    pub(crate) fn new(kind: &'static str, variant: &'static str, args: &[&str]) -> Self {
         Self {
             kind,
             variant,
@@ -130,39 +103,32 @@ impl Case {
     }
 
     #[must_use]
-    pub fn env(mut self, name: &'static str, value: &'static str) -> Self {
+    pub(crate) fn env(mut self, name: &'static str, value: &'static str) -> Self {
         self.env.push((name, value));
         self
     }
 
     #[must_use]
-    pub fn columns(mut self, columns: u16) -> Self {
+    pub(crate) fn columns(mut self, columns: u16) -> Self {
         self.columns = columns;
         self
     }
 
     #[must_use]
-    pub fn stdin(mut self, stdin: impl Into<String>) -> Self {
+    pub(crate) fn stdin(mut self, stdin: impl Into<String>) -> Self {
         self.stdin = Some(stdin.into());
         self
     }
 }
 
-/// The variants each agent runs for its supported `kind`, decided from the parser:
-/// `daily`, `weekly`, `monthly`, `session`, and `blocks` take the shared
-/// options (`--json`, `--breakdown`, `--since`, `--until`, `--mode`,
-/// `--timezone`). Agent-specific cases cover the Claude hook payload and
-/// the Codex statusline options and MCP protocol.
-pub fn matrix_cases(agent: &'static str, kind: &'static str) -> Vec<Case> {
+pub(crate) fn matrix_cases(agent: &'static str, kind: &'static str) -> Vec<Case> {
     if kind == "statusline" {
         return Vec::new();
     }
     shared_variants(&[agent, kind], kind)
 }
 
-/// The shared variants for the command `command` (`[agent, kind]`, or `[kind]`
-/// for a unified report).
-pub fn shared_variants(command: &[&str], kind: &'static str) -> Vec<Case> {
+pub(crate) fn shared_variants(command: &[&str], kind: &'static str) -> Vec<Case> {
     let case = |variant, extra: &[&str]| {
         let mut args = command.to_vec();
         args.push("--offline");
@@ -198,10 +164,7 @@ fn windowed_table(kind: &'static str, agent: &'static str, options: &[&str]) -> 
     Case::new(kind, "table_window", &args).env("LOG_LEVEL", "3")
 }
 
-/// Every case the matrix runs for `agent`: the shared variants of each
-/// supported kind, the rejection of each unsupported one, and the agent's own
-/// extras.
-pub fn agent_cases(agent: &'static str, extras: Extras, root: &Path) -> Vec<Case> {
+pub(crate) fn agent_cases(agent: &'static str, extras: Extras, root: &Path) -> Vec<Case> {
     let supported = report_kinds(agent);
     let mut cases = Vec::new();
     for kind in ALL_REPORT_KINDS {
@@ -219,8 +182,7 @@ pub fn agent_cases(agent: &'static str, extras: Extras, root: &Path) -> Vec<Case
     cases
 }
 
-/// Runs the whole matrix for `agent` against the store `seed` writes.
-pub fn run_matrix(agent: &'static str, seed: Seed, extras: Extras) {
+pub(crate) fn run_matrix(agent: &'static str, seed: Seed, extras: Extras) {
     let fixture = Fixture::new();
     let root = fixture.root();
     let seeded = seed(root);
@@ -229,9 +191,7 @@ pub fn run_matrix(agent: &'static str, seed: Seed, extras: Extras) {
     }
 }
 
-/// Writes every agent's seed into one `root` and returns the variables that
-/// point the CLI at all of them.
-pub fn seed_all(agents: &[AgentMatrix], root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+pub(crate) fn seed_all(agents: &[AgentMatrix], root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let mut lists: BTreeMap<&'static str, Vec<OsString>> = BTreeMap::new();
     for matrix in agents {
         for (name, paths) in (matrix.seed)(root) {
@@ -241,15 +201,9 @@ pub fn seed_all(agents: &[AgentMatrix], root: &Path) -> Vec<(&'static str, Vec<O
     lists.into_iter().collect()
 }
 
-/// Name of the file `export_fixture` writes beside the seeds.
-pub const FIXTURE_MANIFEST: &str = "golden-env.json";
+pub(crate) const FIXTURE_MANIFEST: &str = "golden-env.json";
 
-/// Seeds every agent into `root` and writes `FIXTURE_MANIFEST` there: the
-/// working directory and environment `hermetic_command` runs the unified
-/// reports under, the variables in it that point at seeds, and the matrix's
-/// date window. `diff-refs.bb` replays
-/// commands from it, so both read the same stores the goldens do.
-pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
+pub(crate) fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     let seeded = seed_all(agents, root);
     let command = hermetic_command(root, &seeded, WIDE_COLUMNS);
     let env: serde_json::Map<String, serde_json::Value> = command
@@ -277,7 +231,7 @@ pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     .expect("failed to write golden fixture manifest");
 }
 
-pub fn hermetic_command(
+pub(crate) fn hermetic_command(
     root: &Path,
     seeded: &[(&'static str, Vec<OsString>)],
     columns: u16,
@@ -300,14 +254,17 @@ pub fn hermetic_command(
     command
 }
 
-/// What one invocation printed, with the fixture root redacted.
-pub struct Outcome {
-    pub exit: String,
-    pub stdout: String,
-    pub stderr: String,
+pub(crate) struct Outcome {
+    pub(crate) exit: String,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
-pub fn run_case(root: &Path, seeded: &[(&'static str, Vec<OsString>)], case: &Case) -> Outcome {
+pub(crate) fn run_case(
+    root: &Path,
+    seeded: &[(&'static str, Vec<OsString>)],
+    case: &Case,
+) -> Outcome {
     let mut child = hermetic_command(root, seeded, case.columns)
         .envs(case.env.iter().copied())
         .args(&case.args)
@@ -335,9 +292,7 @@ pub fn run_case(root: &Path, seeded: &[(&'static str, Vec<OsString>)], case: &Ca
     }
 }
 
-/// Snapshots one case as `golden__<scope>__<kind>__<variant>`, where `scope`
-/// is an agent name or `all` for the unified reports.
-pub fn assert_case(
+pub(crate) fn assert_case(
     scope: &str,
     root: &Path,
     seeded: &[(&'static str, Vec<OsString>)],
@@ -355,8 +310,6 @@ fn assert_outcome(scope: &str, root: &Path, case: &Case, outcome: Outcome) {
     let rendered = format!("exit: {exit}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
 
     let mut settings = insta::Settings::clone_current();
-    // Without these the snapshot name would carry the name of whichever test
-    // binary included this file, and the files would land beside it.
     settings.set_prepend_module_to_snapshot(false);
     settings.set_snapshot_path("../snapshots");
     settings.set_omit_expression(true);
@@ -381,9 +334,6 @@ fn assert_outcome(scope: &str, root: &Path, case: &Case, outcome: Outcome) {
     });
 }
 
-/// Replaces the temporary fixture root, which differs on every run, in both
-/// its given and its symlink-resolved spelling (`/var` vs `/private/var` on
-/// macOS).
 fn redact_root(root: &Path, text: &str) -> String {
     let mut spellings = vec![root.to_string_lossy().into_owned()];
     if let Ok(canonical) = root.canonicalize() {
