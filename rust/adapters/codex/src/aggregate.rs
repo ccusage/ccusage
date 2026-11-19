@@ -24,14 +24,14 @@ use super::{parser, paths, replay::CodexReplayPlan};
 enum CodexEventKey {
     Response(CompactString),
     Usage(CodexUsageKey),
+    /// A usage event whose request record names it, by that ID's hash and length.
+    Recorded(CodexUsageKey, u64, usize),
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct CodexUsageKey {
     session_hash: u64,
     session_len: usize,
-    record_hash: u64,
-    record_len: usize,
     timestamp: crate::TimestampMs,
     model_hash: u64,
     model_len: usize,
@@ -66,6 +66,54 @@ impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
         }
         self.0.insert(key.clone(), 1);
         0
+    }
+}
+
+/// The copies of one usage signature and ordinal seen across rollouts.
+///
+/// Requests with different record IDs are distinct, and a recordless event is a
+/// copy of one of them, since a spawned child replays its parent's counts
+/// without their records. Pairing one recordless event with one recorded event
+/// keeps the kept count independent of file order.
+pub(super) struct CodexUsageCopies<I, R> {
+    recordless: Option<R>,
+    records: Vec<(I, R)>,
+}
+
+impl<I, R> Default for CodexUsageCopies<I, R> {
+    fn default() -> Self {
+        Self {
+            recordless: None,
+            records: Vec::new(),
+        }
+    }
+}
+
+impl<I: PartialEq, R: Clone> CodexUsageCopies<I, R> {
+    /// Returns the retained event that `record` copies, or registers `kept` as
+    /// a new request and returns `None`.
+    pub(super) fn retain(&mut self, record: Option<I>, kept: R) -> Option<R> {
+        let Some(record) = record else {
+            let retained = self
+                .recordless
+                .clone()
+                .or_else(|| self.records.first().map(|(_, retained)| retained.clone()));
+            if retained.is_none() {
+                self.recordless = Some(kept);
+            }
+            return retained;
+        };
+        if let Some((_, retained)) = self.records.iter().find(|(seen, _)| *seen == record) {
+            return Some(retained.clone());
+        }
+        let retained = self
+            .records
+            .is_empty()
+            .then(|| self.recordless.clone())
+            .flatten();
+        self.records
+            .push((record, retained.clone().unwrap_or(kept)));
+        retained
     }
 }
 
@@ -112,7 +160,14 @@ struct CodexCompactionEvent {
     event: CodexTokenUsageEvent,
 }
 
-type CodexDedupeMap = FxHashMap<CodexEventKey, CodexDedupeRecord>;
+/// The retained events by key, and the copies of each usage signature that
+/// decide which events are retained.
+#[derive(Default)]
+struct CodexDedupeMap {
+    records: FxHashMap<CodexEventKey, CodexDedupeRecord>,
+    copies: FxHashMap<CodexUsageKey, CodexUsageCopies<(u64, usize), CodexEventKey>>,
+}
+
 type CodexDedupeShards = [Mutex<CodexDedupeMap>];
 
 struct CodexAggregation {
@@ -381,14 +436,14 @@ fn aggregate_file(
 
 fn aggregate_files_local(run: &CodexAggregateRun<'_>) -> Result<BTreeMap<String, CodexGroup>> {
     let CodexAggregation { mut groups, seen } = aggregate_files_local_with_seen(run)?;
-    apply_recorded_usage_entries(&mut groups, seen.iter(), run.shared, run.kind);
+    apply_recorded_usage_entries(&mut groups, seen.records.iter(), run.shared, run.kind);
     Ok(groups)
 }
 
 fn aggregate_files_local_with_seen(run: &CodexAggregateRun<'_>) -> Result<CodexAggregation> {
     let mut aggregation = CodexAggregation {
         groups: BTreeMap::new(),
-        seen: FxHashMap::default(),
+        seen: CodexDedupeMap::default(),
     };
     let timezone =
         parse_tz(run.shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
@@ -707,7 +762,7 @@ fn apply_recorded_usage_from_shards(
 ) {
     for shard in seen {
         let records = shard.lock().unwrap();
-        apply_recorded_usage_entries(groups, records.iter(), shared, kind);
+        apply_recorded_usage_entries(groups, records.records.iter(), shared, kind);
     }
 }
 
@@ -741,7 +796,7 @@ fn apply_recorded_usage_entries<'a>(
             }
             continue;
         }
-        let CodexEventKey::Usage(key) = key else {
+        let (CodexEventKey::Usage(key) | CodexEventKey::Recorded(key, ..)) = key else {
             continue;
         };
         let Some(service_tier) = record.service_tier else {
@@ -801,7 +856,7 @@ fn create_dedupe_shards() -> Vec<Mutex<CodexDedupeMap>> {
         .map(usize::from)
         .unwrap_or(1);
     (0..shard_count.max(1))
-        .map(|_| Mutex::new(FxHashMap::default()))
+        .map(|_| Mutex::new(CodexDedupeMap::default()))
         .collect()
 }
 
@@ -837,7 +892,29 @@ fn insert_dedupe_record(
     timestamp: crate::TimestampMs,
     file_index: usize,
 ) -> bool {
-    if let Some(record) = seen.get_mut(&key) {
+    let key = match key {
+        CodexEventKey::Usage(usage) => {
+            let record = event
+                .record_response_id
+                .as_deref()
+                .map(|record| (hash_text(record), record.len()));
+            let kept = record.map_or_else(
+                || CodexEventKey::Usage(usage.clone()),
+                |(hash, len)| CodexEventKey::Recorded(usage.clone(), hash, len),
+            );
+            match seen
+                .copies
+                .entry(usage)
+                .or_default()
+                .retain(record, kept.clone())
+            {
+                Some(retained) => retained,
+                None => kept,
+            }
+        }
+        key => key,
+    };
+    if let Some(record) = seen.records.get_mut(&key) {
         record.service_tier = merge_codex_service_tiers(record.service_tier, event.service_tier);
         if let Some(compaction) = record.compaction.as_mut()
             && file_index < compaction.file_index
@@ -851,7 +928,7 @@ fn insert_dedupe_record(
         }
         return false;
     }
-    seen.insert(
+    seen.records.insert(
         key,
         CodexDedupeRecord {
             service_tier: event.service_tier,
@@ -884,15 +961,9 @@ fn codex_event_key(
     } else {
         (0, 0)
     };
-    let (record_hash, record_len) = event
-        .record_response_id
-        .as_deref()
-        .map_or((0, 0), |record| (hash_text(record), record.len()));
     CodexEventKey::Usage(CodexUsageKey {
         session_hash,
         session_len,
-        record_hash,
-        record_len,
         timestamp,
         model_hash: hash_text(model),
         model_len: model.len(),
@@ -2164,6 +2235,83 @@ mod tests {
                         group.total_tokens,
                     ),
                     expected,
+                    "{name}, single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
+    /// Two requests with equal usage at distinct instants, each optionally preceded
+    /// by the `token_usage_record` Codex writes for it.
+    fn recorded_requests(response_ids: [Option<&str>; 2]) -> String {
+        let mut lines = vec![
+            json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}})
+                .to_string(),
+        ];
+        for (index, response_id) in response_ids.into_iter().enumerate() {
+            let timestamp = format!("2026-11-01T09:0{}:00.000Z", index + 1);
+            let usage = json!({"input_tokens": 1_000, "cached_input_tokens": 100, "output_tokens": 10, "total_tokens": 1_010});
+            let total = (index as u64 + 1) * 1_000;
+            if let Some(response_id) = response_id {
+                lines.push(
+                    json!({"timestamp": timestamp, "type": "token_usage_record", "payload": {"response_id": response_id, "usage": usage}})
+                        .to_string(),
+                );
+            }
+            lines.push(
+                json!({
+                    "timestamp": timestamp,
+                    "type": "event_msg",
+                    "payload": {"type": "token_count", "info": {
+                        "last_token_usage": usage,
+                        "total_token_usage": {"input_tokens": total, "cached_input_tokens": total / 10, "output_tokens": total / 100, "total_tokens": total + total / 100},
+                    }},
+                })
+                .to_string(),
+            );
+        }
+        lines.join("\n")
+    }
+
+    /// A copy can lack the records of the rollout it copied, as a spawned child
+    /// replays its parent's counts without them. The two still describe the
+    /// same requests, whichever file is read first, while a sibling that recorded
+    /// other requests stays distinct.
+    #[test]
+    fn matches_recordless_copies_to_recorded_requests_in_either_file_order() {
+        let original = recorded_requests([Some("resp_a1"), Some("resp_a2")]);
+        let sibling = recorded_requests([Some("resp_b1"), Some("resp_b2")]);
+        let copy = recorded_requests([None, None]);
+        let scenarios = [
+            ("recorded first", vec![&original, &copy], 2),
+            ("recordless first", vec![&copy, &original], 2),
+            ("siblings, then copy", vec![&original, &sibling, &copy], 4),
+            ("copy between siblings", vec![&original, &copy, &sibling], 4),
+            (
+                "copy first, then siblings",
+                vec![&copy, &original, &sibling],
+                4,
+            ),
+        ];
+
+        for (name, files, event_count) in scenarios {
+            let fixture = ccusage_test_support::Fixture::new();
+            for (index, contents) in files.iter().enumerate() {
+                let _ = fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
+            }
+            let sessions = fixture.path("sessions");
+
+            for single_thread in [true, false] {
+                let events =
+                    crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+                assert_eq!(
+                    events.len(),
+                    event_count,
+                    "{name}, single_thread={single_thread}"
+                );
+                assert_eq!(
+                    daily_input_tokens(&sessions, single_thread),
+                    [("2026-11-01".to_string(), 1_000 * event_count as u64)],
                     "{name}, single_thread={single_thread}"
                 );
             }
