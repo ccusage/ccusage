@@ -15,7 +15,7 @@ assert how a parsed command line and a config file combine.
 ## Public surface
 
 - `config::ConfigContext`
-- `config_schema::generate_config_schema_json`
+- `generate_config_schema_json`
 
 ## Depends on
 

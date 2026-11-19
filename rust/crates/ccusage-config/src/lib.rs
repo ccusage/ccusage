@@ -4,7 +4,7 @@
 //! schema derives pull `schemars` in: keeping them here means neither reaches the
 //! critical path of `ccusage-core` or any adapter.
 pub mod config;
-pub mod config_schema;
+mod config_schema;
 mod layers;
 
 pub use config::ConfigContext;
