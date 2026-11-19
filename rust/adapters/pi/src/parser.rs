@@ -5,7 +5,6 @@ use ccusage_core::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -209,29 +208,39 @@ fn read_session_file_data_with_context(
     context: PiStoreContext<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<PiSessionData, UnitError> {
-    let content = fs::read(path)?;
     let project = extract_project_for_store(path, context.root);
     let session_id = extract_session_id(path);
-    let header = parse_session_header(&content);
+    let mut header = None;
+    let mut links = Vec::new();
     let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
     let mut entries = Vec::new();
     let mut usage_records = Vec::new();
 
-    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<PiLine>(
-        &content,
-        Some(&prefilter),
-        path,
-        diagnostics,
-        is_pi_usage_envelope,
-    ) {
+    jsonl::read_file(path, diagnostics, |line, diagnostics| {
+        if line.index == 0 {
+            header = parse_session_header(line.bytes());
+        }
+        if let Ok(link) = line.decode::<PiEntryLink>()
+            && link.r#type.as_deref() != Some("session")
+        {
+            links.push(link);
+        }
+        if !line.selected(Some(&prefilter)) {
+            return;
+        }
+        let Some(record) = line.record::<PiLine>(path, diagnostics, Some(is_pi_usage_envelope))
+        else {
+            return;
+        };
+        let number = line.number();
         if !is_pi_message_usage(&record) {
-            continue;
+            return;
         }
         let Some(message) = record.message.as_ref() else {
-            continue;
+            return;
         };
         let Some(usage_value) = message.usage.as_ref() else {
-            continue;
+            return;
         };
         let input = usage_value.input;
         let output = usage_value.output;
@@ -248,7 +257,7 @@ fn read_session_file_data_with_context(
         };
         let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
         if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
-            continue;
+            return;
         }
         let Some((timestamp_text, timestamp)) = record.timestamp.as_ref().and_then(|text| {
             crate::parse_ts_timestamp(text).map(|timestamp| (text.clone(), timestamp))
@@ -259,7 +268,7 @@ fn read_session_file_data_with_context(
                 SkipKind::InvalidTimestamp,
                 "pi assistant usage has no valid timestamp",
             ));
-            continue;
+            return;
         };
         let raw_model = message.model.clone();
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
@@ -343,10 +352,10 @@ fn read_session_file_data_with_context(
             missing_pricing_model,
             stored_cost,
         });
-    }
+    })?;
     Ok(PiSessionData {
         header,
-        replay_usage_path: replay_usage_path(&content, &usage_records),
+        replay_usage_path: replay_usage_path(links, &usage_records),
         usage: usage_records,
         entries,
     })
@@ -363,10 +372,7 @@ fn matching_replay_prefix<'a>(
         .count()
 }
 
-fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePath {
-    let links = jsonl::records::<PiEntryLink>(content, None)
-        .filter(|link| link.r#type.as_deref() != Some("session"))
-        .collect::<Vec<_>>();
+fn replay_usage_path(links: Vec<PiEntryLink>, usage: &[PiUsageRecord]) -> PiReplayUsagePath {
     // NOTE(2026-08-29, #1662): Version 1 Pi sessions predate entry links. Their physical order is the only available replay history.
     if links
         .iter()
@@ -462,9 +468,8 @@ fn replay_billed_cost_bits(mode: CostMode, cost: f64) -> Option<u64> {
     })
 }
 
-fn parse_session_header(content: &[u8]) -> Option<PiSessionHeader> {
-    let first_line = content.split(|byte| *byte == b'\n').next()?;
-    let header = serde_json::from_slice::<PiHeaderLine>(first_line).ok()?;
+fn parse_session_header(line: &[u8]) -> Option<PiSessionHeader> {
+    let header = jsonl::parse::<PiHeaderLine>(line).ok()?;
     (header.r#type.as_deref() == Some("session")).then(|| PiSessionHeader {
         parent_session: header.parent_session,
         timestamp: header
