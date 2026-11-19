@@ -500,11 +500,9 @@ pub(super) fn parse_session_state_file(
                             }))
                         .then_some(local)
                     });
-            if data.covers_usage_records() {
-                covered_by_records = true;
-                unproven_receipt_coverage |= receipt_watermark.is_none() || timestamp.is_none();
-            }
+            covered_by_records |= data.covers_usage_records();
             if covered_by_records && (receipt_watermark.is_none() || timestamp.is_none()) {
+                unproven_receipt_coverage = true;
                 return;
             }
             let Some(timestamp) = timestamp else {
