@@ -1126,6 +1126,17 @@ mod tests {
     }
 
     #[test]
+    fn extracts_parent_session_from_claude_workflow_run_path() {
+        let (session, project) = extract_session_parts(Path::new(
+            "/home/user/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
+        ));
+        assert_eq!(
+            (session.as_str(), project.as_str()),
+            ("session-a", "project-a")
+        );
+    }
+
+    #[test]
     fn rejects_null_in_each_read_non_nullable_field() {
         for pointer in [
             "/sessionId",
