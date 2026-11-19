@@ -15,7 +15,7 @@ use crate::{
 
 mod builtin_pricing;
 mod cache;
-use cache::{CachedHit, Candidate, Name, NameCache, Pass, RequestCache, RequestHit};
+use cache::{CachedHit, Candidate, HitKind, Name, NameCache, Pass, RequestCache, RequestHit};
 mod data;
 mod overrides;
 use overrides::Overrides;
@@ -526,6 +526,7 @@ impl Lookup {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "test-clock")]
 pub enum ResolutionStep {
     ReportedOverride,
     AuthoritativeIdentity,
@@ -536,6 +537,7 @@ pub enum ResolutionStep {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "test-clock")]
 pub struct Explanation<'a> {
     pub candidate: &'a str,
     pub step: ResolutionStep,
@@ -1645,6 +1647,7 @@ impl PricingMap {
         Some(found.row.pricing.rates())
     }
 
+    #[cfg(feature = "test-clock")]
     pub fn explain<'a>(
         &'a self,
         reported_model: Option<&'a str>,
@@ -1814,13 +1817,13 @@ impl PricingMap {
                 let found = self.resolve_override(id, models_dev, false);
                 lookup
                     .includes(found.row)
-                    .then(|| CachedHit::new(found, ResolutionStep::ReportedOverride))
+                    .then(|| CachedHit::new(found, HitKind::ReportedOverride))
             }
             Pass::S2 => slot
                 .names(model, |name| {
                     self.authoritative(name, lookup, true, models_dev, |_| true)
                 })
-                .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeIdentity)),
+                .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity)),
             Pass::S34 | Pass::S3f => {
                 let free = matches!(pass, Pass::S3f);
                 if free && matches!(lookup, Lookup::Context) {
@@ -1839,14 +1842,14 @@ impl PricingMap {
                         })
                     })
                 })
-                .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeSuffix))
+                .map(|found| CachedHit::new(found, HitKind::AuthoritativeSuffix))
                 .or_else(|| {
                     if free {
                         return None;
                     }
                     let rows = models_dev()?;
                     slot.names(model, |name| rows.exact(name, lookup))
-                        .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevIdentity))
+                        .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
                 })
             }
             Pass::S56 => {
@@ -1915,7 +1918,7 @@ impl PricingMap {
             Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
         };
         primary
-            .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeFuzzy))
+            .map(|found| CachedHit::new(found, HitKind::AuthoritativeFuzzy))
             .or_else(|| {
                 Self::fuzzy(
                     secondary?
@@ -1925,7 +1928,7 @@ impl PricingMap {
                     normalized,
                     lookup,
                 )
-                .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevFuzzy))
+                .map(|found| CachedHit::new(found, HitKind::ModelsDevFuzzy))
             })
     }
 

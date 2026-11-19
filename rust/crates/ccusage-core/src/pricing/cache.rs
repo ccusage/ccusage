@@ -5,9 +5,18 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use rustc_hash::{FxHashMap, FxHasher};
 
-use super::{
-    Lookup, MatchKind, ResolutionStep, Row, RowMatch, Source, normalized_pricing_key, pricing_alias,
-};
+#[cfg(feature = "test-clock")]
+use super::ResolutionStep;
+use super::{Lookup, MatchKind, Row, RowMatch, Source, normalized_pricing_key, pricing_alias};
+
+pub(super) enum HitKind {
+    ReportedOverride,
+    AuthoritativeIdentity,
+    AuthoritativeSuffix,
+    ModelsDevIdentity,
+    AuthoritativeFuzzy,
+    ModelsDevFuzzy,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct CachedHit(usize);
@@ -18,6 +27,7 @@ impl CachedHit {
     const STEP_SHIFT: usize = 2;
     const ROW_SHIFT: usize = 5;
     const STEP_MASK: usize = 7;
+    #[cfg(feature = "test-clock")]
     const STEPS: [ResolutionStep; 6] = [
         ResolutionStep::ReportedOverride,
         ResolutionStep::AuthoritativeIdentity,
@@ -27,7 +37,7 @@ impl CachedHit {
         ResolutionStep::ModelsDevFuzzy,
     ];
 
-    pub(super) fn new(found: RowMatch<'_>, step: ResolutionStep) -> Self {
+    pub(super) fn new(found: RowMatch<'_>, kind: HitKind) -> Self {
         let overridden = if found.row.source == Source::Override {
             Self::OVERRIDDEN
         } else {
@@ -35,7 +45,7 @@ impl CachedHit {
         };
         Self(
             (found.id << Self::ROW_SHIFT)
-                | ((step as usize) << Self::STEP_SHIFT)
+                | ((kind as usize) << Self::STEP_SHIFT)
                 | Self::PRESENT
                 | overridden,
         )
@@ -49,18 +59,18 @@ impl CachedHit {
         (self.0 >> Self::STEP_SHIFT) & Self::STEP_MASK
     }
 
+    #[cfg(feature = "test-clock")]
     pub(super) fn step(self) -> Option<ResolutionStep> {
         Self::STEPS.get(self.step_index()).copied()
     }
 
     pub(super) fn scheduled(self) -> bool {
-        self.step_index() <= ResolutionStep::AuthoritativeIdentity as usize
+        self.step_index() <= HitKind::AuthoritativeIdentity as usize
     }
 
     pub(super) fn is_models_dev(self) -> bool {
         let step = self.step_index();
-        step == ResolutionStep::ModelsDevIdentity as usize
-            || step == ResolutionStep::ModelsDevFuzzy as usize
+        step == HitKind::ModelsDevIdentity as usize || step == HitKind::ModelsDevFuzzy as usize
     }
 
     pub(super) fn overridden(self) -> bool {

@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 assert_fs.workspace = true
-ccusage-core.workspace = true
+ccusage-core = { workspace = true, features = ["test-clock"] }
 ccusage-pricing-snapshots.workspace = true
 jiff.workspace = true
 
