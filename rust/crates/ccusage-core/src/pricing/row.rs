@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use super::{CacheDefaults, Pricing, PricingSchedule, data, normalized_pricing_key};
 
 #[derive(Clone, Debug)]
@@ -6,7 +8,7 @@ pub(super) struct Row {
     pub(super) source: Source,
     pub(super) schedule: Option<&'static PricingSchedule>,
     pub(super) context_limit: Option<u64>,
-    pub(super) exact_only: bool,
+    pub(super) exact_only: OnceLock<bool>,
     pub(super) scope: Scope,
     pub(super) vendor_id: Option<Box<str>>,
 }
@@ -18,7 +20,7 @@ impl Default for Row {
             source: Source::LiteLlm,
             schedule: None,
             context_limit: None,
-            exact_only: false,
+            exact_only: OnceLock::new(),
             scope: Scope::Hosted,
             vendor_id: None,
         }
@@ -40,6 +42,10 @@ pub(super) enum Scope {
 }
 
 impl Row {
+    pub(super) fn is_exact_only(&self) -> bool {
+        self.exact_only.get() == Some(&true)
+    }
+
     pub(super) fn is_free(&self) -> bool {
         self.source != Source::Override && self.pricing.input == 0.0 && self.pricing.output == 0.0
     }

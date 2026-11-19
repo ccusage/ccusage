@@ -410,9 +410,11 @@ mod tests {
 
     #[test]
     fn published_cache_rates_survive_an_input_override_without_a_cache_read_rate() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{"claude-test": {
+            "litellm_provider": "anthropic",
             "input_cost_per_token": 4,
             "output_cost_per_token": 8,
             "cache_creation_input_token_cost": 7,
