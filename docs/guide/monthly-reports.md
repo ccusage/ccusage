@@ -175,7 +175,7 @@ Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with
 		"cacheReadTokens": 1309867,
 		"inputTokens": 1347024,
 		"outputTokens": 58670,
-		"totalCost": 28.148514845,
+		"totalCost": 28.146135924999996,
 		"totalTokens": 2736743,
 		"unpricedModels": [
 			"GLM-5.3",

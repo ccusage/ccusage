@@ -429,7 +429,7 @@ ccusage blocks --config /path/to/team-config.json
 
 ## Pricing Overrides
 
-ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the binary, optionally refreshed at runtime (or skipped with `--offline`). When a model is missing from LiteLLM (private deployments, internal wrappers like Pi's `[pi] gpt-5.4`, custom proxies), or when the snapshot price differs from your contract, set `pricingOverrides` under `defaults` to supply per-model values.
+When a catalogue lacks your model or its price differs from your contract, set `pricingOverrides` under `defaults`. The [pricing lookup order](/guide/cost-modes) is shared by the adapters.
 
 ```json
 {
@@ -453,7 +453,7 @@ ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the bin
 
 ### Raw Model Names
 
-Keys in `pricingOverrides` should match the model label reported by ccusage, including any adapter prefix:
+Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to the vendor-qualified ID for the same direct model.
 
 | Adapter                                | Prefix    | Example key                    |
 | -------------------------------------- | --------- | ------------------------------ |
@@ -463,7 +463,7 @@ Keys in `pricingOverrides` should match the model label reported by ccusage, inc
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
-If a key has no pricing entry of its own but is a model alias, unspecified fields come from the alias target's entry.
+A model alias can inherit unspecified fields from its target. Overrides inherit published long-context rates from LiteLLM or built-in base entries. A models.dev base supplies its flat rates and context limit.
 
 ### Supported Fields
 

@@ -67,7 +67,11 @@ For pricing entries with a context threshold, the request input context (includi
 
 Pricing comes from LiteLLM, models.dev, built-in model data, and configured [pricing overrides](/guide/config-files#pricing-overrides). Timestamp-aware historical rates use the entry timestamp where supported. `--offline` uses embedded pricing without network requests; `--no-offline` enables online pricing retrieval, including its cache.
 
-LiteLLM and built-in model data take precedence over models.dev, which only prices models the primary sources do not. A model that models.dev marks as a separately priced tier is matched exactly, never by a fuzzy match to its base model. Explicit pricing overrides retain precedence over all sources.
+When ccusage calculates a cost, it checks for a pricing override on the reported model label first. The adapter supplies the model names and any provider information from its logs. Dots, at signs, and dashes are interchangeable in a pricing ID. Case and provider paths remain significant.
+
+ccusage checks LiteLLM and its built-in entries for each candidate's identity. It then tries a model ID behind the candidate's provider path and checks models.dev for the candidate itself. These checks finish before fuzzy matching starts. Fuzzy matching prefers a row with the same final path segment and skips separately priced models.dev tiers.
+
+A vendor's free model can match its full ID or final path segment. A free price stays zero in the calculated report. Historical schedules apply to direct model IDs and their pricing overrides when the lookup matches by identity.
 
 ## Comparing Stored and Calculated Costs
 

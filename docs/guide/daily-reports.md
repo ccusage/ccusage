@@ -180,7 +180,7 @@ Each row is one `period` (the date) with `agent: "all"`; `metadata.agents` lists
 		"cacheReadTokens": 1309867,
 		"inputTokens": 1347024,
 		"outputTokens": 58670,
-		"totalCost": 28.148514845000005,
+		"totalCost": 28.146135925000006,
 		"totalTokens": 2736743,
 		"unpricedModels": [
 			"GLM-5.3",

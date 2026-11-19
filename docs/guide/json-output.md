@@ -207,7 +207,7 @@ ccusage daily --by-agent --json
 		"cacheReadTokens": 1309867,
 		"inputTokens": 1347024,
 		"outputTokens": 58670,
-		"totalCost": 28.148514845000005,
+		"totalCost": 28.146135925000006,
 		"totalTokens": 2736743,
 		"unpricedModels": [
 			"GLM-5.3",
@@ -374,7 +374,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 		"cacheReadTokens": 1309867,
 		"inputTokens": 1347024,
 		"outputTokens": 58670,
-		"totalCost": 28.148514845000005,
+		"totalCost": 28.146135925000006,
 		"totalTokens": 2736743,
 		"unpricedModels": [
 			"GLM-5.3",
@@ -457,7 +457,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 		"cacheReadTokens": 1311467,
 		"inputTokens": 1348649,
 		"outputTokens": 58942,
-		"totalCost": 28.932664845000023,
+		"totalCost": 28.93028592500002,
 		"totalTokens": 2740360,
 		"unpricedModels": [
 			"GLM-5.3",
