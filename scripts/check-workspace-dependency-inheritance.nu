@@ -25,16 +25,13 @@ def main [workspace: path]: nothing -> nothing {
         let parsed = open --raw $member | from toml
         dependency-tables $parsed | each {|table|
             $table | transpose name spec | each {|dependency|
-                # `{}` matches any record, so a spec without `version` reaches
-                # the third arm: it only escapes the workspace when the name
-                # has a `[workspace.dependencies]` entry.
-                let finding = match $dependency.spec {
+                let escapes_workspace = match $dependency.spec {
                     {workspace: true} => false
                     {version: $_} => true
                     {} => ($dependency.name in $managed)
                     _ => true
                 }
-                if $finding {
+                if $escapes_workspace {
                     $"($member | path relative-to $root): ($dependency.name) must inherit from [workspace.dependencies] with workspace = true"
                 }
             }
