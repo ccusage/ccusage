@@ -513,21 +513,47 @@ mod pricing_identity_tests {
     fn locked_model_prefers_a_primary_provider_rate() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
-        for (model, provider, input_tokens, expected) in [
-            ("glm-4.7", "zai", 150_000, 0.09),
-            ("gemini-2.5-flash", "google", 1_000, 0.0003),
+        for (case, model, provider, input_tokens, output_tokens, expected) in [
+            ("locked_glm_base", "glm-4.7", "zai", 150_000, 0, 0.09),
+            (
+                "11_locked_gemini",
+                "gemini-2.5-flash",
+                "google",
+                1_000,
+                0,
+                0.0003,
+            ),
+            ("40_unlocked_glm", "glm-4.7", "", 1_000, 1_000, 0.0028),
+            (
+                "41_locked_glm_context",
+                "glm-4.7",
+                "zai",
+                300_000,
+                1_000,
+                0.1822,
+            ),
+            (
+                "49_locked_free_flash",
+                "glm-4.7-flash",
+                "zai",
+                1_000,
+                1_000,
+                0.0,
+            ),
         ] {
+            let lock = (!provider.is_empty()).then_some(provider);
             let fixture = ccusage_test_support::fs_fixture!({
-                "s.settings.json": serde_json::json!({"model": model, "providerLock": provider,
-                    "providerLockTimestamp": "2026-11-17T10:00:00Z", "tokenUsage": {"inputTokens": input_tokens}
+                "s.settings.json": serde_json::json!({"model": model, "providerLock": lock,
+                    "providerLockTimestamp": "2026-11-17T10:00:00Z",
+                    "tokenUsage": {"inputTokens": input_tokens, "outputTokens": output_tokens}
                 }).to_string()
             });
             let entry = load_settings_file(&fixture.path("s.settings.json"))
                 .unwrap()
                 .unwrap();
             let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
-            assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
-            assert_eq!(missing, None);
+            assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
+            assert_eq!(missing, None, "{case}");
         }
     }
 

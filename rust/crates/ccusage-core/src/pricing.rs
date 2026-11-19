@@ -7065,6 +7065,148 @@ mod tests {
     }
 
     #[test]
+    fn resolver_table() {
+        use super::ResolutionStep::{
+            AuthoritativeFuzzy, AuthoritativeIdentity, AuthoritativeSuffix, ModelsDevIdentity,
+            ReportedOverride,
+        };
+
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "fixture-2.5": {"input_cost_per_token":2,"output_cost_per_token":3},
+            "zai/desk-model-2.5": {"litellm_provider":"zai","input_cost_per_token":3,"output_cost_per_token":4},
+            "catalogue/same-longer": {"input_cost_per_token":4,"output_cost_per_token":5},
+            "standard/tiny-model-3": {"input_cost_per_token":5,"output_cost_per_token":6},
+            "other/catalogue/tiny-model-3-preview": {"input_cost_per_token":6,"output_cost_per_token":7},
+            "zai/free-niche-model": {"litellm_provider":"zai","input_cost_per_token":0,"output_cost_per_token":0},
+            "deepseek/deepseek-v4-flash": {"litellm_provider":"deepseek","input_cost_per_token":1,"output_cost_per_token":2},
+            "gpt-cache-fixture": {"input_cost_per_token":8,"output_cost_per_token":9},
+            "override-base": {"litellm_provider":"zai","input_cost_per_token":9,"output_cost_per_token":10},
+            "zai/override-base": {"litellm_provider":"zai","input_cost_per_token":10,"output_cost_per_token":11},
+            "embedding-only": {"input_cost_per_token":11,"output_cost_per_token":0},
+            "provider/embedding-with-output": {"input_cost_per_token":12,"output_cost_per_token":13}
+        }"#,
+        );
+        let mut models_dev = PricingMap::default();
+        models_dev
+            .load_models_dev_json_for_tests(r#"{"provider/same":{"cost":{"input":7,"output":8}}}"#)
+            .unwrap();
+        let keys = ["reported-model".to_owned(), "override-base".to_owned()];
+        let patch = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(50.0),
+            ..Default::default()
+        };
+        let pricing = layered(&pricing, Some(&models_dev))
+            .with_user_overrides(keys.iter().map(|key| (key, &patch)));
+        let fuzzy = MatchKind::Fuzzy;
+        let strict = MatchKind::StrictExact;
+        let cases = [
+            (
+                "R1_45_reported_override",
+                "reported-model",
+                &[("fixture-2.5", fuzzy)][..],
+                ReportedOverride,
+                (50.0, 0.0),
+            ),
+            (
+                "R2_10_separator_identity",
+                "fixture-2-5",
+                &[("fixture-2-5", fuzzy)][..],
+                AuthoritativeIdentity,
+                (2.0, 3.0),
+            ),
+            (
+                "R3_23_vendor_path",
+                "reseller/zai/desk-model-2-5",
+                &[("reseller/zai/desk-model-2-5", fuzzy)][..],
+                AuthoritativeSuffix,
+                (3.0, 4.0),
+            ),
+            (
+                "R4_73_later_identity_beats_fuzzy",
+                "same",
+                &[("same", fuzzy), ("provider/same", fuzzy)][..],
+                ModelsDevIdentity,
+                (7e-6, 8e-6),
+            ),
+            (
+                "R5_71_fuzzy_segment",
+                "tiny-model-3",
+                &[("tiny-model-3", fuzzy)][..],
+                AuthoritativeFuzzy,
+                (5.0, 6.0),
+            ),
+            (
+                "R6_55_free_final_segment",
+                "foreign/free-niche-model",
+                &[("foreign/free-niche-model", fuzzy)][..],
+                AuthoritativeSuffix,
+                (0.0, 0.0),
+            ),
+            (
+                "R7_34_vendor_schedule",
+                "deepseek-v4-flash",
+                &[("deepseek-v4-flash", fuzzy)][..],
+                AuthoritativeIdentity,
+                (0.22e-6, 0.66e-6),
+            ),
+            (
+                "R8_9_vendor_cache_default",
+                "gpt-cache-fixture",
+                &[("gpt-cache-fixture", fuzzy)][..],
+                AuthoritativeIdentity,
+                (8.0, 9.0),
+            ),
+            (
+                "R9_48_override_inherits_same_model",
+                "zai/override-base",
+                &[("zai/override-base", fuzzy)][..],
+                AuthoritativeIdentity,
+                (50.0, 10.0),
+            ),
+            (
+                "R10_94_zero_output_keeps_selected_row",
+                "embedding-only",
+                &[
+                    ("embedding-only", strict),
+                    ("provider/embedding-with-output", fuzzy),
+                ][..],
+                AuthoritativeIdentity,
+                (11.0, 0.0),
+            ),
+        ];
+        let instant = timestamp("2026-11-17T10:00:00Z");
+        for (case, label, candidates, step, expected) in cases {
+            let (_, rates) = pricing
+                .resolve_at(Some(label), candidates, Some(instant))
+                .expect(case);
+            assert!(
+                (rates.input - expected.0).abs() < 1e-12,
+                "{case}: {rates:?}"
+            );
+            assert!(
+                (rates.output - expected.1).abs() < 1e-12,
+                "{case}: {rates:?}"
+            );
+            assert_eq!(
+                pricing.explain(Some(label), candidates).expect(case).step,
+                step,
+                "{case}"
+            );
+        }
+        assert_eq!(
+            pricing
+                .find("gpt-cache-fixture")
+                .unwrap()
+                .cache_creation_rate(),
+            8.0,
+            "R8_9_vendor_cache_default"
+        );
+    }
+
+    #[test]
     fn preserves_a_fast_model_name_without_a_standard_sibling() {
         crate::test_support::install_pricing_snapshots();
         let entry = PricingMap::load_embedded()
@@ -7074,11 +7216,16 @@ mod tests {
     }
 
     #[test]
-    fn standard_google_flash_uses_the_primary_rate() {
+    fn resolver_table_14_qualified_google_flash_uses_the_models_dev_rate() {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
-        let entry = pricing.find("google/gemini-2.5-flash").unwrap();
+        let model = "google/gemini-2.5-flash";
+        let entry = pricing.find(model).unwrap();
         assert_eq!((entry.input, entry.output), (0.0000003, 0.0000025));
+        let resolved = pricing
+            .explain(Some(model), &[(model, MatchKind::Fuzzy)])
+            .unwrap();
+        assert_eq!(resolved.step, super::ResolutionStep::ModelsDevIdentity);
     }
 
     #[test]

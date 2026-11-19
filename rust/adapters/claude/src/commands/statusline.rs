@@ -822,6 +822,40 @@ mod tests {
     }
 
     #[test]
+    fn pricing_92_rate_only_override_keeps_the_statusline_context_limit() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "transcript.jsonl": r#"{"type":"assistant","message":{"usage":{"input_tokens":1000}}}"#,
+        });
+        let model = "claude-opus-4-8";
+        let mut shared = SharedArgs::default();
+        let base = calculate_context_tokens_from_transcript(
+            &fixture.path("transcript.jsonl"),
+            Some(model),
+            true,
+            &shared,
+        )
+        .unwrap();
+        shared.pricing_overrides.insert(
+            model.into(),
+            PricingOverride {
+                input_cost_per_token: Some(50e-6),
+                output_cost_per_token: Some(50e-6),
+                ..Default::default()
+            },
+        );
+        let overridden = calculate_context_tokens_from_transcript(
+            &fixture.path("transcript.jsonl"),
+            Some(model),
+            true,
+            &shared,
+        )
+        .unwrap();
+        assert_eq!(base.context_window_size, 1_000_000);
+        assert_eq!(overridden.context_window_size, base.context_window_size);
+    }
+
+    #[test]
     fn colors_statusline_context_percentage_by_threshold() {
         let shared = SharedArgs {
             color: ccusage_core::cli::ColorChoice::Always,

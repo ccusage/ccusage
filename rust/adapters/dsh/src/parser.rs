@@ -817,4 +817,55 @@ mod pricing_identity_tests {
             ["openai/gpt-5.2", "gpt-5.2"]
         );
     }
+
+    #[test]
+    fn prices_direct_identity_and_reported_override_through_foreign_routes() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let id = "deepseek-v4-flash".to_owned();
+        let patch = ccusage_core::cli::PricingOverride {
+            input_cost_per_token: Some(50e-6),
+            output_cost_per_token: Some(50e-6),
+            ..Default::default()
+        };
+        let with_override = pricing.with_user_overrides([(&id, &patch)]);
+        for (case, provider, model, map, expected) in [
+            (
+                "36_foreign_route",
+                "openrouter",
+                "deepseek-v4-flash",
+                &pricing,
+                0.00088,
+            ),
+            (
+                "81_qualified_override",
+                "anthropic",
+                "deepseek/deepseek-v4-flash",
+                &with_override,
+                0.10,
+            ),
+        ] {
+            let entry = DshUsageEntry {
+                timestamp: TimestampMs::from_millis(1_794_909_600_000),
+                session_id: "s".into(),
+                cwd: None,
+                seq: Some(1),
+                provider: Some(provider.into()),
+                model: model.into(),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..Default::default()
+                },
+                extra_total_tokens: 0,
+            };
+            let loaded = dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Calculate(map));
+            assert!(
+                (loaded.cost - expected).abs() < 1e-12,
+                "{case}: {}",
+                loaded.cost
+            );
+            assert_eq!(loaded.missing_pricing_model, None, "{case}");
+        }
+    }
 }

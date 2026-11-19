@@ -675,7 +675,10 @@ mod tests {
             "azure/us-gov/text-embedding-3-small": {"input_cost_per_token": 0.025, "output_cost_per_token": 0},
             "ambient/small": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.001}
         }"#);
-        for tokens in [json!({"input": 100}), json!({"output": 100})] {
+        for (case, tokens) in [
+            ("73_input_only", json!({"input": 100})),
+            ("74_output_only", json!({"output": 100})),
+        ] {
             let entry = message_value_to_entry(
                 message(json!({
                     "id": "message-a",
@@ -693,8 +696,8 @@ mod tests {
             )
             .unwrap()
             .unwrap();
-            assert_eq!(entry.cost, 0.1, "{tokens}");
-            assert_eq!(entry.missing_pricing_model, None);
+            assert_eq!(entry.cost, 0.1, "{case}");
+            assert_eq!(entry.missing_pricing_model, None, "{case}");
         }
     }
 

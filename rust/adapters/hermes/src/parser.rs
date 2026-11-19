@@ -705,4 +705,53 @@ mod pricing_identity_tests {
         );
         assert!((price_hermes(&entry, PriceTable::Calculate(&pricing)).0 - 0.00264).abs() < 1e-12);
     }
+
+    #[test]
+    fn prices_same_identity_and_overrides_in_provider_candidate_order() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let id = "glm-4.7".to_owned();
+        let patch = ccusage_core::cli::PricingOverride {
+            input_cost_per_token: Some(50e-6),
+            output_cost_per_token: Some(50e-6),
+            ..Default::default()
+        };
+        let with_override = pricing.with_user_overrides([(&id, &patch)]);
+        for (case, model, provider, map, expected) in [
+            (
+                "23_direct_v3_2",
+                "deepseek-v3.2",
+                "deepseek",
+                &pricing,
+                0.00068,
+            ),
+            (
+                "34_scheduled_flash",
+                "deepseek-v4-flash",
+                "deepseek",
+                &pricing,
+                0.00088,
+            ),
+            ("46_glm_override", "glm-4.7", "zai", &with_override, 0.10),
+        ] {
+            let entry = HermesEntry {
+                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                timestamp_text: String::new(),
+                session_id: "s".into(),
+                model: model.into(),
+                provider: normalize_provider(Some(provider), model),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..Default::default()
+                },
+                reasoning_tokens: 0,
+                message_count: 1,
+                cost_usd: None,
+            };
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(map));
+            assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
+            assert_eq!(missing, None, "{case}");
+        }
+    }
 }

@@ -473,4 +473,33 @@ mod pricing_identity_tests {
             ]
         );
     }
+
+    #[test]
+    fn adapter_pricing_33_applies_the_schedule_to_the_provider_identity() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let model = "deepseek-v4-flash";
+        let candidates = model_candidates(model, Some("deepseek"));
+        let candidates: Vec<_> = candidates
+            .iter()
+            .map(|(id, kind)| (id.as_str(), *kind))
+            .collect();
+        let entry = price_entry(
+            EntryPricing {
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..Default::default()
+                },
+                reasoning_tokens: 0,
+                residual_tokens: 0,
+                reported_model: Some(model),
+                candidates: &candidates,
+                stored_cost: None,
+                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z"),
+            },
+            PriceTable::Calculate(&pricing),
+        );
+        assert!((entry.cost - 0.00088).abs() < 1e-12);
+    }
 }
