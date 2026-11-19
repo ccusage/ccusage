@@ -2,11 +2,6 @@
 /*
 #! nix shell --inputs-from ../../.. nixpkgs#nodejs -c node
 */
-// Writes Claude Code and Codex logs whose line shapes, line-type mix, and
-// per-type byte share follow aggregate statistics of real logs, with every
-// value synthesized. Parser cost depends on those shapes (null-valued fields,
-// nested usage, escaped strings, non-usage lines), so a fixture made of
-// uniform padded usage lines hides regressions that real logs expose.
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
@@ -45,7 +40,7 @@ const CODEX_MODELS = [
 	'gpt-5.3-codex',
 	'gpt-5.1-codex-mini',
 ] as const;
-const WORDS = [
+const BMP_WORDS = [
 	'the',
 	'parser',
 	'returns',
@@ -185,7 +180,6 @@ function shuffledIndex(index: number, length: number): number {
 	return (index * (length - 1) + 17) % length;
 }
 
-/** Deterministic PRNG (mulberry32) so every run writes byte-identical fixtures. */
 class Random {
 	#state: number;
 
@@ -235,12 +229,12 @@ class Random {
 	}
 }
 
-function buildTextPool(): string {
+function buildBmpTextPool(): string {
 	const random = new Random(7);
 	const parts: string[] = [];
 	let length = 0;
 	while (length < 2 * MIB) {
-		const word = random.chance(0.08) ? '\n' : random.pick(WORDS);
+		const word = random.chance(0.08) ? '\n' : random.pick(BMP_WORDS);
 		parts.push(word, ' ');
 		length += word.length + 1;
 	}
@@ -253,14 +247,12 @@ function buildOpaquePool(): string {
 	return Array.from({ length: MIB }, () => alphabet[random.int(alphabet.length)]).join('');
 }
 
-const TEXT_POOL = buildTextPool();
+const BMP_TEXT_POOL = buildBmpTextPool();
 const OPAQUE_POOL = buildOpaquePool();
 
-// Pool slices stay within the Basic Multilingual Plane, so a slice boundary can
-// never split a surrogate pair into an invalid JSON escape.
 function text(random: Random, length: number): string {
-	const start = random.int(TEXT_POOL.length - length - 1);
-	return TEXT_POOL.slice(start, start + length);
+	const start = random.int(BMP_TEXT_POOL.length - length - 1);
+	return BMP_TEXT_POOL.slice(start, start + length);
 }
 
 function opaque(random: Random, length: number): string {
@@ -382,7 +374,6 @@ function claudeContentBlock(random: Random, kind: string): Line {
 	}
 }
 
-/** One API response, written by Claude Code as one line per content block that all repeat the usage. */
 function claudeAssistantResponse(
 	session: ClaudeSession,
 	messageId?: string,
@@ -564,8 +555,6 @@ function* claudeSessionLines(session: ClaudeSession): Generator<Line> {
 		sessionId: session.sessionId,
 	};
 	yield { type: 'custom-title', customTitle: text(random, 40), sessionId: session.sessionId };
-	// A sidechain transcript replays parent messages under new request IDs; the
-	// loaders must drop those copies, so the fixture exercises that path.
 	for (const messageId of session.parentMessageIds.slice(0, 2)) {
 		yield* claudeAssistantResponse(session, messageId).lines;
 	}
@@ -728,9 +717,6 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			});
 			const usage = codexUsage(random);
 			session.total = addUsage(session.total, usage);
-			// Codex writes the response's usage record before the token_count
-			// that advances the cumulative total, which is what lets the parser
-			// settle each record instead of keeping it pending.
 			yield codexLine(
 				session,
 				'token_usage_record',
@@ -764,8 +750,6 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			phase: 'final',
 		});
 		if (random.chance(CODEX_COMPACTION_CHANCE)) {
-			// A remote compaction's usage is missing from the cumulative total,
-			// so its record stays pending until the marker naming it arrives.
 			const latest = codexUsageRecordPayload(session, turnId, codexUsage(random));
 			yield codexLine(session, 'token_usage_record', latest);
 			yield codexLine(session, 'compacted', {
@@ -881,11 +865,6 @@ function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout
 	};
 	const name = `rollout-${stamp}-${sessionId}.jsonl`;
 	const day = fileIndex % FIXTURE_DAYS;
-	// Codex compresses rollouts once they age and moves some to
-	// archived_sessions, so most real Codex bytes are read through zstd. The
-	// legacy layout keeps every rollout plain under sessions/, which ccusage
-	// releases before Zstandard (#1890) and archived-session (#1230) support
-	// read in full, so they can be compared on the same input.
 	const compressed = layout === 'current' && day < FIXTURE_DAYS - CODEX_PLAIN_RECENT_DAYS;
 	const archived = compressed && fileIndex % CODEX_ARCHIVED_FILE_EVERY === 0;
 	return {

@@ -15,9 +15,8 @@
      :base (benchmark/variant-summary rounds "base") :head (benchmark/variant-summary rounds "PR")
      :comparison (benchmark/compare-variants rounds "base" "PR" (:threshold options))}))
 
+;; NOTE(2026-11-10, #2061): GitHub Actions reads workflow commands from stdout. Emit annotations there even though progress uses stderr.
 (defn github-warning!
-  "GitHub reads workflow commands only from stdout, so the annotation must not
-  go to stderr with the progress log."
   [verdict github-actions?]
   (when (and (:regression? verdict) github-actions?)
     (println (str "::warning title=ccusage performance::" (str/replace (:text verdict) "**" "")))))

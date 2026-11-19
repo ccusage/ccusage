@@ -25,7 +25,6 @@ const wrapperVersion = packageJson.version;
 /**
  * @param {string} [platform]
  * @param {string} [arch]
- * @returns {string | undefined}
  */
 function getNativePackageName(platform = process.platform, arch = process.arch) {
 	const packageName = `@ccusage/ccusage-${platform}-${arch}`;
@@ -34,7 +33,6 @@ function getNativePackageName(platform = process.platform, arch = process.arch) 
 
 /**
  * @param {string} [platform]
- * @returns {string}
  */
 function getNativeBinarySubpath(platform = process.platform) {
 	return platform === 'win32' ? 'bin/ccusage.exe' : 'bin/ccusage';
@@ -86,7 +84,6 @@ function resolveCliRuntime({
  * @param {string} packageName
  * @param {string} target
  * @param {unknown} error
- * @returns {string}
  */
 function cannotResolveMessage(packageName, target, error) {
 	return `Cannot resolve native package "${packageName}" for ${target}: ${errorMessage(error)}\n`;
@@ -94,7 +91,6 @@ function cannotResolveMessage(packageName, target, error) {
 
 /**
  * @param {unknown} error
- * @returns {boolean}
  */
 function isModuleNotFound(error) {
 	return error instanceof Error && 'code' in error && error.code === 'MODULE_NOT_FOUND';
@@ -102,7 +98,6 @@ function isModuleNotFound(error) {
 
 /**
  * @param {unknown} error
- * @returns {string}
  */
 function errorMessage(error) {
 	return error instanceof Error ? error.message : String(error);
@@ -110,7 +105,6 @@ function errorMessage(error) {
 
 /**
  * @param {{ binaryPath: string; chmodPath?: (path: string, mode: number) => void; platform?: string; statPath?: (path: string) => FileMode }} options
- * @returns {string | undefined}
  */
 function ensureNativeBinaryExecutable({
 	binaryPath,
@@ -136,7 +130,6 @@ function ensureNativeBinaryExecutable({
 
 /**
  * @param {MainModuleOptions} options
- * @returns {boolean}
  */
 function isMainModule({ argvEntry = process.argv[1], moduleUrl, realpathPath = realpathSync }) {
 	if (argvEntry == null) {
@@ -218,7 +211,6 @@ function createNativeSpawner({
 /**
  * @param {string[]} argv
  * @param {NativeSpawner} [spawnNative]
- * @returns {Promise<number>}
  */
 async function runCli(argv, spawnNative = createNativeSpawner()) {
 	const runtime = resolveCliRuntime({ argv });

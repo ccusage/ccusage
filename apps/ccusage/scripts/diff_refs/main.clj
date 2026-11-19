@@ -22,8 +22,6 @@
    :help {:alias :h :coerce :boolean}})
 
 (defn help-commands
-  "The names under `COMMANDS:` in a `--help` page, read the way
-  golden_matrix.rs reads them."
   [help]
   (->> (str/split-lines help)
        (drop-while #(not= "COMMANDS:" (str/trim %)))
@@ -32,12 +30,6 @@
        (map #(first (str/split (str/trim %) #"\s+")))))
 
 (defn report-commands
-  "Every report command `bin` lists in its help: the top-level reports, then
-  each agent's, an agent being a command whose own help lists commands.
-  golden_matrix.rs checks those help pages against the reports the parser
-  accepts. The comparison skips statusline because Claude needs a hook payload
-  on stdin and Codex takes its own set of options. The golden tests cover
-  those agent-specific cases."
   [bin]
   (let [help (fn [& command]
                (:out (system/run-checked (into [bin] (concat command ["--help"])) {}
@@ -62,15 +54,11 @@
    {:name "json-tz-tokyo" :args ["--json"] :timezone "Asia/Tokyo"}])
 
 (defn real-dates
-  "`--until yesterday` keeps files an agent is writing right now out of every
-  run, so two runs a moment apart read the same input."
   [^java.time.LocalDate today]
   (let [fmt #(.format ^java.time.LocalDate % java.time.format.DateTimeFormatter/BASIC_ISO_DATE)]
     {:until (fmt (.minusDays today 1)) :window-since (fmt (.minusDays today 30))}))
 
 (defn command-plan
-  "Every command line both binaries run. `dates` is {:since :until} for a
-  fixture run and (real-dates today) for a real one."
   [{:keys [real]} dates commands]
   (for [command commands
         {:keys [name args window? timezone] :or {timezone "UTC"}} output-variants]
@@ -83,12 +71,9 @@
                           window? ["--since" (:since dates) "--until" (:until dates)])))}))
 
 (def fixture-manifest
-  "Written by golden::export_fixture in rust/crates/ccusage/tests/golden/mod.rs."
   "golden-env.json")
 
 (defn export-golden-fixture!
-  "Writes the golden matrix seeds of the checkout at `repo` into `dir`, so
-  both refs read the stores the goldens snapshot instead of nothing."
   [repo dir]
   (system/write-progress (str "exporting the golden fixture to " dir))
   (system/run-checked ["cargo" "test" "--manifest-path" (system/path repo "rust" "Cargo.toml") "--package" "ccusage"
@@ -96,9 +81,6 @@
                {:env {"CCUSAGE_GOLDEN_FIXTURE_DIR" dir}} "golden fixture export"))
 
 (defn- manifest-problems
-  "Why `manifest` cannot point both binaries at the golden seeds. An entry of
-  a store list may be blank or missing on purpose, so a seeded variable only
-  needs one store that exists."
   [manifest]
   (let [env (get manifest "env")
         seeded (get manifest "seeded")
@@ -137,7 +119,6 @@
       parsed)))
 
 (defn prepare-golden-fixture!
-  "Reuses the export in `dir`, or exports into it when it is missing or empty."
   [repo dir]
   (when (or (not (fs/exists? dir)) (and (fs/directory? dir) (empty? (fs/list-dir dir))))
     (fs/create-dirs dir)
@@ -147,16 +128,12 @@
 (def test-clock-var "CCUSAGE_TEST_NOW")
 
 (def test-clock-feature
-  "Dev-only: the shipped binary never enables it, so a ref built without it
-  reads the wall clock whatever the golden environment pins."
   "ccusage-core/test-clock")
 
 (defn declares-test-clock? [core-cargo-toml]
   (boolean (and core-cargo-toml (re-find #"(?m)^test-clock\s*=" core-cargo-toml))))
 
 (defn clock-features
-  "The features that make `commit` honor the golden clock; none for a commit
-  whose ccusage-core predates the test clock."
   [repo commit]
   (let [manifest (system/run-process ["git" "show" (str commit ":rust/crates/ccusage-core/Cargo.toml")] {:dir repo})]
     (if (and (zero? (:exit manifest)) (declares-test-clock? (:out manifest))) [test-clock-feature] [])))
@@ -164,10 +141,6 @@
 (defn pins-clock? [variant] (boolean (some #{test-clock-feature} (:features variant))))
 
 (defn golden-env
-  "The environment the golden matrix runs under, at the default log level.
-  Without `pinned-clock?` the golden clock is left out for both binaries: a
-  binary that ignores it would otherwise compare clock-relative reports at a
-  different instant than one that honors it."
   [manifest pinned-clock?]
   {:clean? true
    :vars (merge (into (sorted-map) (cond-> (dissoc (get manifest "env") "LOG_LEVEL")
@@ -180,8 +153,6 @@
   (if clean? (into {} vars) (merge (dissoc (into {} inherited) "LOG_LEVEL" test-clock-var) vars)))
 
 (defn run-captured!
-  "Runs one binary and keeps stdout and stderr as files, so they are compared
-  as bytes and never decoded."
   [bin args env dir prefix cwd]
   (let [out (system/path dir (str prefix ".stdout")) err (system/path dir (str prefix ".stderr"))
         result @(process/process (into [bin] args)
@@ -198,7 +169,6 @@
     (and (not allow-stderr-diff) (not (java.util.Arrays/equals ^bytes (:err a) ^bytes (:err b)))) (conj :stderr)))
 
 (defn- first-differing
-  "The first run that differs from `reference`, with the streams that differ."
   [reference runs allow-stderr-diff]
   (first (for [run runs
                :let [streams (differing-streams reference run allow-stderr-diff)]
@@ -206,11 +176,6 @@
            {:run run :streams streams})))
 
 (defn classify
-  "Takes every run of each binary. A base that disagrees with itself cannot
-  tell the refs apart, so that command is unstable rather than different. A
-  head that disagrees with a reproducible base is different, even when only
-  some of its runs do: nondeterminism the head introduced is a change.
-  Matching failures cannot establish report equivalence."
   [{:keys [base head]} allow-stderr-diff]
   (let [reference (first base)
         verdict (fn [status found] {:status status :streams (:streams found) :pair [reference (:run found)]})]
@@ -250,9 +215,6 @@
       (let [sorted (str file ".sorted.json")] (spit sorted (:out result)) sorted))))
 
 (defn unified-diff
-  "At most `diff-line-limit` lines; JSON goes through `jq -S` first so a
-  reordered key does not bury the changed value. Raw bytes are shown when
-  normalization would hide the entire difference."
   [left right json?]
   (let [[a b] (or (when json?
                     (let [a (sorted-json! left) b (sorted-json! right)] (when (and a b) [a b])))

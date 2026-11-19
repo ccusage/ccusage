@@ -77,9 +77,6 @@
   {:median (median values) :min (apply min values) :max (apply max values) :samples (count values)})
 
 (defn classify-ratios
-  "Classifies paired variant/reference ratios from interleaved rounds. A change
-  counts only when the median moves past the threshold and at least four in
-  five rounds agree on its direction, so one noisy round cannot flip it."
   [ratios threshold]
   (let [n (count ratios)
         agreeing (- n (quot n 5))
@@ -96,9 +93,6 @@
   (let [text (str value)]
     (if (re-matches safe-arg-pattern text) text (json/generate-string text))))
 (defn benchmark-command-text
-  "Renders the command through `env`. With `clean?` it starts from an empty
-  environment, so no variable from the caller's shell (an agent's data-dir
-  override, for one) can point a fixture run at real logs."
   [{:keys [vars clean?]} argv]
   (->> (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)
        (map command-text-arg)

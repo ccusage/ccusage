@@ -220,7 +220,6 @@
 
 (deftest codex-fixture-compatibility
   (let [archived-pr "#1230" zstd-pr "#1890"
-        ;; v20.0.5 predates both inputs, v20.0.30 reads archived sessions only.
         support {"v20.0.5" #{} "v20.0.30" #{archived-pr} "main" #{archived-pr zstd-pr}}
         reads? (fn [variant input-class] (contains? (get support (:label variant) #{}) (:pr input-class)))
         v5 {:label "v20.0.5"} v30 {:label "v20.0.30"} main {:label "main"} binary {:label "/bin/ccusage"}

@@ -27,7 +27,6 @@
   {:clean? false :vars (assoc system/report-vars "LOG_LEVEL" "0")})
 
 (defn render-history-table
-  "One table per command: every ref against the previous one, judged like a PR."
   [{:keys [command rounds]} variants threshold]
   (let [rows (map-indexed
               (fn [index {:keys [label commit]}]
@@ -74,19 +73,15 @@
                                (str "Unknown git ref " ref)))))
 
 (defn with-file-lock
-  "Runs f while holding an exclusive lock on file, so runs sharing the cache
-  take turns instead of interleaving writes."
   [file f]
   (fs/create-dirs (fs/parent file))
   (with-open [channel (FileChannel/open (fs/path file)
                                         (into-array OpenOption [StandardOpenOption/CREATE StandardOpenOption/WRITE]))]
-    ;; Closing the channel at the end of with-open releases the lock.
+    ;; NOTE(2026-11-10, #2061): Closing a FileChannel releases its locks. Keep the channel open until the cache write completes.
     (.lock channel)
     (f)))
 
 (defn build-key
-  "The cache entry of `commit` built with cargo `features`; a plain release
-  build keeps the bare commit."
   [commit features]
   (str/join "+" (cons commit (map #(str/replace % "/" "-") features))))
 
@@ -105,9 +100,6 @@
       (fs/move partial bin {:atomic-move true :replace-existing true}))))
 
 (defn build-commit!
-  "Builds one commit into the cache, reusing a binary built earlier. A shared
-  target directory keeps dependency artifacts across refs, so building and
-  copying its binary out happen under one lock."
   [repo cache commit worktree features]
   (let [bin (system/path cache "bin" (build-key commit features) "ccusage")]
     (when-not (fs/exists? bin)
@@ -115,10 +107,6 @@
     bin))
 
 (defn resolve-variants
-  "Each run checks refs out into its own temporary worktree, so concurrent runs
-  sharing the cache cannot remove each other's checkout. `features-for` gives
-  the cargo features to build a commit with; an existing binary has none
-  known."
   ([repo cache refs] (resolve-variants repo cache refs (constantly [])))
   ([repo cache refs features-for]
    (let [scratch (system/temp-dir "ccusage-bench-src.")
@@ -142,11 +130,6 @@
     (format "%064x" (BigInteger. 1 (.digest digest (fs/read-all-bytes file))))))
 
 (def codex-input-classes
-  "Codex inputs that older releases skip, from the Codex loader's history
-  (`rust/adapters/codex/src/paths.rs` and `reader.rs`): each entry names the
-  commit that taught the reader that input. Claude discovery has scanned
-  `projects/` recursively throughout v20, and date-window skips (#1665,
-  #1794) do not apply to unbounded reports, so nothing else belongs here."
   [{:name "archived sessions (`archived_sessions/`)" :pr "#1230"
     :commit "a9b12c43ac608d308bb4a2c5f5673dc6b9e530c1"
     :matches? #(re-matches #"archived_sessions/.+\.jsonl(\.zst)?" %)}
@@ -155,17 +138,12 @@
     :matches? #(re-matches #"(archived_sessions|sessions)/.+\.jsonl\.zst" %)}])
 
 (defn codex-rollout-paths
-  "Fixture files relative to the Codex home, with `/` separators, which is
-  how the input classes match the directories and rollout names the Codex
-  loader reads."
   [codex-dir]
   (->> (file-seq (fs/file codex-dir))
        (filter fs/regular-file?)
        (map #(str/join "/" (map str (fs/relativize codex-dir %))))))
 
 (defn reads-input-class?
-  "A binary path cannot be checked, so only a commit that contains the
-  class's reader support counts as reading it."
   [repo {:keys [commit]} input-class]
   (and (some? commit)
        (zero? (:exit (system/run-process ["git" "merge-base" "--is-ancestor" (:commit input-class) commit] {:dir repo})))))
@@ -173,10 +151,6 @@
 (defn- refs-text [variants] (str/join ", " (map #(str "`" (:label %) "`") variants)))
 
 (defn codex-compatibility
-  "Picks the Codex layout every ref reads in full, and the report note that
-  goes with it. A ref that skips part of the input would otherwise look
-  faster, or its successor slower, only because the input it read changed.
-  `reads?` takes a variant and an input class."
   [reads? variants fixture-codex-dir]
   (let [skipped (into [] (keep (fn [input-class]
                                (when-let [refs (seq (remove #(reads? % input-class) variants))]
@@ -199,7 +173,6 @@
                                "Omit both fixture options to get a fixture every ref reads.")))))))
 
 (defn ensure-fixture!
-  "Generates the fixture once per generator revision, size, and Codex layout."
   [repo cache size-mib layout]
   (let [generator (system/path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
         dir (system/path cache "fixture" (str size-mib "-" layout "-" (subs (file-sha256 generator) 0 12)))

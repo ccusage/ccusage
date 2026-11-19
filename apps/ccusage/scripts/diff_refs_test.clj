@@ -31,7 +31,6 @@
                           (diff/parse-diff-cli ["--real" "--fixture" "/tmp" "a" "b"])))))
 
 (defn- stub-binary
-  "An executable /bin/sh script in `dir` running `body`."
   [dir name body]
   (let [file (system/path dir name)]
     (spit file (str "#!/bin/sh\nPATH=/no-such-path\n" body "\n"))
@@ -39,8 +38,6 @@
     file))
 
 (def stub-help
-  "Answers `--help` like the CLI: COMMANDS at the root and for each agent,
-  options only for a report."
   (str "case \"$*\" in\n"
        "  --help) printf 'USAGE:\\n  ccusage <COMMANDS>\\n\\nCOMMANDS:\\n  daily       Show\\n  blocks      Show\\n"
        "  statusline  Show\\n  claude      Show\\n  codex       Show\\n\\nOPTIONS:\\n  -j, --json  Output\\n'; exit 0;;\n"
@@ -130,8 +127,6 @@
     (is (not= (history/build-key "abc" []) (history/build-key "abc" [diff/test-clock-feature])))))
 
 (defn- run-diff-main
-  "diff-main over stub variants, returning the environment each command ran
-  under and the progress messages."
   [variants]
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-clock."})
         envs (atom []) progress (atom []) features-for (atom nil)]
@@ -161,7 +156,6 @@
       (is (some #(and (.contains ^String % "v18.0.0") (.contains ^String % "wall clock")) progress)))))
 
 (defn- golden-manifest
-  "What golden::export_fixture writes into `dir`, with a seeded store there."
   [dir]
   (let [store (doto (system/path dir "claude") babashka.fs/create-dirs)]
     {"cwd" (str dir)

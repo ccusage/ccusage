@@ -12,8 +12,6 @@
   {:wall :time_wall_clock :cpu :time_cpu :rss :memory_peak_resident :instructions :instructions})
 
 (defn run-sample
-  "Normalizes one hyperfine run: times in milliseconds, RSS in bytes.
-  Instructions stay nil where the platform exposes no hardware counters."
   [measurement]
   (let [value (fn [k] (get-in measurement [(metric-keys k) :value]))
         seconds (fn [k]
@@ -24,7 +22,6 @@
     {:wall (seconds :wall) :cpu (seconds :cpu) :rss (value :rss) :instructions (value :instructions)}))
 
 (defn read-hyperfine-runs
-  "Returns one sample per requested command name from a single-run hyperfine export."
   [export-path names]
   (let [data (try (json/parse-string (slurp export-path) true)
                   (catch Exception e (data/fail! (str "Malformed hyperfine output: " (ex-message e))
@@ -56,8 +53,6 @@
       (finally (fs/delete-tree dir)))))
 
 (defn measure-command
-  "Runs every variant once per round, rotating the order each round, so slow
-  drift on a shared runner hits all variants alike and per-round ratios pair up."
   [variants command env {:keys [runs warmup title]}]
   (let [label (str title " / " command)]
     (system/write-progress (str label " started"))
@@ -78,8 +73,6 @@
   (mapv #(/ (double (get-in % [variant metric])) (get-in % [reference metric])) rounds))
 
 (defn compare-variants
-  "Compares variant against reference on CPU time and peak RSS; wall time is
-  reported but not judged because it swings with runner load."
   [rounds reference variant threshold]
   (let [cpu (paired-ratios rounds :cpu reference variant)
         rss (paired-ratios rounds :rss reference variant)

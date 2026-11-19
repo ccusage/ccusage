@@ -37,8 +37,6 @@
 (def report-vars (sorted-map "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"))
 
 (defn fixture-env
-  "Points Claude and Codex at the fixture and every other agent at an empty
-  HOME, in an otherwise empty environment."
   [fixture-dir codex-fixture-dir empty-home]
   {:clean? true
    :vars (into (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home)
