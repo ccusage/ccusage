@@ -1,6 +1,7 @@
 (def history-spec
   {:fixture-dir {:ref "DIR" :desc "Claude fixture; pass with --codex-fixture-dir, or omit both to generate them"}
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture; pass with --fixture-dir"}
+   :grok-fixture-dir {:ref "DIR" :desc "Grok fixture; optional with --fixture-dir"}
    :size-mib {:coerce :long :ref "N" :desc "Size of each generated fixture (default: the real-log size the generator profiles)"}
    :real {:coerce :boolean :desc "Also measure the logs this environment points at (default dirs, CLAUDE_CONFIG_DIR, CODEX_HOME)"}
    :runs {:coerce :long :default 5 :ref "N" :desc "Interleaved measured rounds; at least 3"}
@@ -222,7 +223,7 @@
             custom-codex (some-> (:codex-fixture-dir options) expand)
             compatibility (codex-compatibility (partial reads-input-class? repo) variants custom-codex)
             fixture (if custom-codex
-                      {:claude (expand (:fixture-dir options)) :codex custom-codex}
+                      {:claude (expand (:fixture-dir options)) :codex custom-codex :grok (some-> (:grok-fixture-dir options) expand)}
                       (ensure-fixture! repo cache (:size-mib options) (:layout compatibility)))
             empty-home (temp-dir "ccusage-perf-home.")
             stats (fn [dir] (let [s (summarize-directory dir)] (format "%s, %d files" (format-data-size (:bytes s)) (:files s))))]

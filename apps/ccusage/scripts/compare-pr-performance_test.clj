@@ -52,7 +52,7 @@
           (command-argv "/tmp/ccusage" "claude daily"))))
   (testing "fixture runs start from an empty environment"
     (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
-           (benchmark-command-text (fixture-env "/f/c" "/f/x" "/e") (command-argv "/b" "daily")))))
+           (benchmark-command-text (fixture-env "/f/c" "/f/x" nil "/e") (command-argv "/b" "daily")))))
   (testing "a Grok fixture is pointed at through GROK_HOME"
     (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x GROK_HOME=/f/g HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
            (benchmark-command-text (fixture-env "/f/c" "/f/x" "/f/g" "/e") (command-argv "/b" "daily"))))))
