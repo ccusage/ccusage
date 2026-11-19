@@ -14,6 +14,9 @@ catalogs:
   types:
     '@types/node': ^26.6.6
     '@types/react': ^19.3.0
+  lint:
+    oxlint: ^1.94.0
+    tsrs: 7.1.0-beta.tsrs3
 
 enablePrePostScripts: true
 
@@ -23,12 +26,23 @@ minimumReleaseAgeExclude:
   - vitepress
   - vitepress-plugin-group-icons
   - vitepress-plugin-llms
+  # tsrs publishes beta tags that minimumReleaseAge would otherwise hold back
+  # for 48h, leaving type-aware lint without a backend after an update.
+  - tsrs
+  - '@tsrs/*'
 
 # Security settings for supply chain attack prevention
 strictDepBuilds: true
 blockExoticSubdeps: true
 
 trustPolicy: no-downgrade
+# pnpm flags tsrs as a possible takeover because the name predates oxc's port
+# (created 2023, snapshot versions from 2024). The 7.x betas are the official
+# backend from https://github.com/oxc-project/tsrs: SLSA provenance resolves
+# to oxc-project/tsrs and the maintainer matches oxlint/oxlint-tsgolint.
+# Keep this pinned per version so each tsrs update re-triggers the check.
+trustPolicyExclude:
+  - tsrs@7.1.0-beta.tsrs3
 
 # Explicitly allow build scripts for packages that require them
 # (replaces onlyBuiltDependencies)

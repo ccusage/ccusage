@@ -39,9 +39,11 @@ install:
 # Build every workspace package
 build: ccusage::build docs::build
 
-# Type-check and lint TypeScript with oxlint's type-aware checker
+# Type-check and lint TypeScript with oxlint's type-aware checker.
+# Uses the pnpm-managed oxlint + tsrs backend so the checked version stays in
+# the lockfile instead of drifting with the Nix channel.
 typecheck:
-    oxlint .
+    pnpm exec oxlint .
 
 # Run the full test suite (Rust workspace + Node test) in parallel
 [parallel]
