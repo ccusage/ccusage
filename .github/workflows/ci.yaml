@@ -127,8 +127,8 @@ jobs:
       - uses: ./.github/actions/setup-nix-cache
         with:
           save: ${{ env.PERSIST_CACHES }}
-      - name: Secret scan and workflow lint
-        run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
+      - name: Secret scan, formatting and comments
+        run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt .#checks.x86_64-linux.comments
 
   test:
     needs: [changes, tirith-scan]

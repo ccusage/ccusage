@@ -22,6 +22,10 @@ def check [work: path]: nothing -> nothing {
     let diagnostics = open --raw $expected | lines
     assert equal ($run.stdout | lines) $diagnostics
     rm untracked.js
+    let source = ^nu --no-config-file $checker --source-tree | complete
+    assert equal $source.exit_code 1 $source.stderr
+    assert equal $source.stderr ''
+    assert equal ($source.stdout | lines) $diagnostics
     let report = ^nu --no-config-file $checker --source-tree --report-only | complete
     assert equal $report.exit_code 0 $report.stderr
     assert equal $report.stderr ''

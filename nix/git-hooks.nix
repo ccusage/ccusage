@@ -110,6 +110,20 @@ in
               stages = [ "pre-push" ];
               priority = 0;
             };
+            ccusage-comments = {
+              enable = true;
+              name = "comments";
+              entry = hookCommand "comments" [
+                pkgs.nushell
+                pkgs.ast-grep
+                pkgs.just
+                pkgs.git
+              ] "nu --no-config-file scripts/comments/check.nu";
+              pass_filenames = false;
+              always_run = true;
+              stages = [ "pre-push" ];
+              priority = 0;
+            };
             node-test = {
               enable = true;
               name = "node test";

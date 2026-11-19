@@ -106,8 +106,8 @@ in
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
-        comments = mkRepoCheck "comment-report" [ pkgs.nushell pkgs.ast-grep pkgs.just ] ''
-          nu --no-config-file scripts/comments/check.nu --source-tree --report-only > "$out"
+        comments = mkRepoCheck "comment-check" [ pkgs.nushell pkgs.ast-grep pkgs.just ] ''
+          nu --no-config-file scripts/comments/check.nu --source-tree
         '';
         infra-scripts =
           mkRepoCheck "infra-script-tests"
