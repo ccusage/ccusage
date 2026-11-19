@@ -34,9 +34,6 @@ in
           hooks = {
             renovate-config-validator = {
               enable = true;
-              # `renovate config-validator` does not exist as a subcommand, and
-              # `--strict` is only understood by the standalone validator, so the
-              # hook silently failed with "unknown option" whenever it did run.
               entry = "${pkgs.renovate}/bin/renovate-config-validator --strict";
               files = "renovate\\.json5?$";
               pass_filenames = false;

@@ -97,12 +97,6 @@ in
           '';
     in
     {
-      # `nix flake check` deliberately omits a full `config.packages.ccusage`
-      # build: ccusage-clippy already compiles the entire workspace with
-      # `--all-targets` (catching any build break), and the build-native-packages
-      # CI job produces and verifies the actual release binary. Building the
-      # optimized native package here too only duplicated a ~70s release compile
-      # on cache-cold runners.
       checks = {
         clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo ] ''
           clj-kondo --lint apps/ccusage/scripts
@@ -164,8 +158,6 @@ in
               pkgs.nodejs
             ]
             ''
-              # nix/tools/*/package.json are dependency manifests for Nix-built
-              # JS tooling, not publishable packages, so they are out of scope.
               mapfile -t packageManifests < <(fd --type f '^package\.json$' . --exclude nix/tools)
 
               node - "''${packageManifests[@]}" <<'EOF'

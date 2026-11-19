@@ -1,9 +1,3 @@
-# Rust workspace test run as a Nix derivation so it shares the crane
-# `cargoArtifacts` cache (warm on the per-job Blacksmith sticky disk) instead of
-# recompiling into an uncached `rust/target` on every CI run. Built by the CI
-# test job via `nix build .#ccusage-tests`; the derivation succeeds only when
-# `cargo test --workspace` passes. It runs in the dev profile on a dedicated
-# dependency layer (nix/test-artifacts.nix) rather than recompiling in release.
 { lib, ... }:
 let
   root = ./..;
@@ -30,24 +24,11 @@ in
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
           nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ pkgs.jq ];
-          # Dev-profile layer holding dev-dependencies and the test feature
-          # set; the release layers would leave all of that to compile here.
           inherit (testArtifacts) cargoArtifacts;
-          # Exposed so CI can root the layer on the sticky disk, like the
-          # release layers, instead of letting GC drop it between runs.
           passthru = { inherit (testArtifacts) cargoArtifacts; };
-          # commonArgs disables checks for the release build; re-enable here so
-          # cargoTest actually runs the test suite rather than skipping it.
           doCheck = true;
           cargoExtraArgs = "--workspace";
-          # jiff resolves named time zones (e.g. Asia/Tokyo) from the system
-          # zoneinfo database, which the hermetic build sandbox lacks, so it
-          # would fall back to UTC and shift the timezone-dependent tests by a
-          # day. Point it at the nixpkgs tzdata; referencing the store path here
-          # also pulls it into the sandbox as a build input.
           TZDIR = "${pkgs.tzdata}/share/zoneinfo";
-          # The sandbox HOME is not writable, and tools such as insta may
-          # write under it.
           preBuild = ''
             export HOME=$(mktemp -d)
           '';

@@ -1,6 +1,4 @@
-# NOTE(2026-11-17, actionlint 1.7.12, rhysd/actionlint#650): shellcheck runs
-# deadlock on darwin; upstream fixed it in fd33e9f5 but has not released it.
-# Drop this override once nixpkgs ships a release containing that commit.
+# NOTE(2026-11-17): Actionlint 1.7.12 can deadlock before starting ShellCheck on Darwin (rhysd/actionlint#650). Patch it until nixpkgs includes fd33e9f5.
 { actionlint }:
 actionlint.overrideAttrs (old: {
   patches = (old.patches or [ ]) ++ [ ./patches/actionlint-stdin.patch ];

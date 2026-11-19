@@ -11,10 +11,6 @@
           inherit pkgs;
           root = ./..;
           target = "x86_64-apple-darwin";
-          # NOTE(2026-06-11, #1289): the native toolchain cross-builds Intel without
-          # a pkgsCross stdenv because Apple clang is multi-arch (the cc crate passes
-          # `-arch x86_64` for bundled C deps) and the Apple SDK ships multi-arch tbd
-          # stubs.
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (
             p:
             (p.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override {

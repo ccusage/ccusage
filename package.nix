@@ -11,12 +11,7 @@
   apple-sdk_15,
 }:
 let
-  # The root manifest is the version source of truth: rust/crates/ccusage/build.rs
-  # falls back to reading it when CCUSAGE_VERSION is unset, and a test in main.rs
-  # asserts the compiled version matches it.
   inherit (lib.importJSON (root + /package.json)) version;
-  # The published npm manifest owns the name and the user-facing metadata, so
-  # `meta` below derives from it instead of restating it in Nix.
   cliPackageJson = lib.importJSON (root + /apps/ccusage/package.json);
   src = lib.cleanSourceWith {
     src = root + /rust;
@@ -34,11 +29,6 @@ let
         && lib.hasSuffix ".json" path
       );
   };
-  # sqlite3-src's build script turns every SQLITE_* environment variable into a -D
-  # define for the bundled amalgamation, which is how .cargo/config.toml trims it.
-  # Cargo only reads that file when the working directory is the repository root, and
-  # no Nix build has that, so the same values are passed through here rather than
-  # duplicated.
   cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
   linkerRustflags =
     lib.optionalString stdenv.hostPlatform.isLinux "-C link-arg=-fuse-ld=mold"
@@ -46,7 +36,6 @@ let
   commonArgs = {
     pname = cliPackageJson.name;
     inherit version src;
-    # Vendoring from mkDummySrc would be import-from-derivation.
     cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
     strictDeps = true;
     doCheck = false;
@@ -59,15 +48,8 @@ let
     CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
     CCUSAGE_VERSION = version;
     RUSTFLAGS =
-      # NOTE(2026-11-17, libc 0.2.191, #1251): libc links -liconv on Apple
-      # targets; ccusage uses no iconv symbols, and a /nix/store libiconv
-      # crashes non-Nix Macs, so dead-strip unused dylibs.
+      # NOTE(2026-11-16, #1251): libc 0.2.191 links -liconv on Apple targets. Strip the unused dylib so the binary runs on Macs without a Nix store.
       lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs "
-      # NOTE(2026-07-27, #1428): each per-adapter crate instantiates the shared
-      # generics for its own types and stable Rust cannot share them, so many copies
-      # are byte-identical. --icf=all folds them; it is sound because nothing
-      # depends on distinct `fn` addresses. Darwin links with lld for this because
-      # ld64 has no identical-code folding.
       + linkerRustflags
       + " -C link-arg=-Wl,--icf=all";
     nativeBuildInputs = [
@@ -80,11 +62,6 @@ let
     ];
   }
   // cargoConfigEnv;
-  # Keep the dependency artifact keyed only by inputs that affect Cargo deps.
-  # Pricing snapshots and the npm release version are embedded by the final
-  # package. The Rust workspace packages intentionally stay at 0.0.0, and the
-  # dummy manifest filter makes that version metadata irrelevant to dependency
-  # resolution too.
   cargoTomlFilter =
     path:
     !lib.lists.hasPrefix [
@@ -118,8 +95,6 @@ let
     inherit (depsOnlyArgs) dummySrc;
   };
   cargoArtifacts = workspaceArtifacts.adapters;
-  # End-user Macs have no /nix/store, so fail the build if the binary links
-  # anything outside the macOS system paths.
   systemDylibsGate = ''
     if otool -L "$out/bin/ccusage" | awk '/^\t/ { print $1 }' | grep -Ev '^(/usr/lib/|/System/Library/)'; then
       echo "error: $out/bin/ccusage links dylibs that do not exist on end-user machines" >&2

@@ -18,9 +18,6 @@ in
     }:
     let
       inherit (config.packages.ccusage.passthru) commonArgs workspaceArtifacts;
-      # The generator only needs the config layer, so it starts from the foundation
-      # artifacts rather than the adapter ones: this derivation gates the CI
-      # preflight, and waiting for 15 adapters there would delay every build job.
       cargoArtifacts = workspaceArtifacts.foundation;
       generateConfigSchema = craneLib.buildPackage (
         commonArgs
@@ -42,8 +39,6 @@ in
           pkgs.oxfmt
           generateConfigSchema
         ];
-        # Rewriting an unchanged file bumps its mtime, which
-        # `treefmt --fail-on-change` reports as a change.
         text = ''
           tmp="$(mktemp --suffix=.json)"
           trap 'rm -f "$tmp"' EXIT
@@ -89,26 +84,11 @@ in
           };
         };
 
-        # The generated pricing snapshots carry upstream model ids verbatim, and
-        # some read as misspellings — one Gemini id ends in a clipped "no
-        # thinking". typos rewrites those to the word it expects, which silently
-        # stops the model from ever matching, and it rewrites them in this
-        # comment too if they are spelled out here. Only typos is excluded,
-        # because the JSON formatter is what keeps these files reviewable.
         settings.formatter.typos.excludes = [
           "rust/crates/ccusage-pricing-snapshots/src/models-dev-*.json"
-          # Narrow table snapshots clip cell text mid-word, and typos would
-          # "correct" the clipped fragments and so rewrite the expected output.
           "rust/crates/ccusage/tests/snapshots/golden__*table*.snap"
         ];
 
-        # The tagpr PR template is a Go text/template, and oxfmt's markdown
-        # rewrites break its <details> block and nested list structure.
-        #
-        # `bun.lock`/`bun.nix` under nix/tools are regenerated verbatim by `bun
-        # install` and `bun2nix`. Formatting them fights the generators: oxfmt
-        # rewrites the JSONC lockfile, and deadnix strips the unused arguments
-        # that bun.nix's `callPackage` signature requires.
         settings.global.excludes = [
           ".github/tagpr-template.md"
           "nix/tools/*/bun.lock"
@@ -161,11 +141,6 @@ in
               "--fix"
               "--config"
               "nix/oxlint-check.json"
-              # treefmt batches the files it matched and hands them over as
-              # arguments, so a batch can consist entirely of paths that
-              # oxlint-check.json ignores. oxlint treats "nothing left to lint"
-              # as an error, which surfaces as a formatter failure for a file
-              # that was deliberately excluded.
               "--no-error-on-unmatched-pattern"
             ];
             includes = [
@@ -191,18 +166,10 @@ in
         };
       };
 
-      # `nix run .#generate-schema` regenerates apps/ccusage/config-schema.json
-      # from the current Rust source with the script the treefmt formatter
-      # runs, so `checks.treefmt` fails when the committed file drifts. Run it
-      # from the repo root.
       apps.generate-schema = {
         type = "app";
         program = lib.getExe schemaGen;
       };
-      # `nix run .#generate-bun-nix` derives every committed bun.nix from its
-      # sibling bun.lock. autofix.ci runs it on every pull request, while
-      # contributors can use `just gen-bun-nix` when a manifest also needs Bun
-      # to resolve a new lockfile.
       apps.generate-bun-nix = {
         type = "app";
         program = lib.getExe generateBunNix;
