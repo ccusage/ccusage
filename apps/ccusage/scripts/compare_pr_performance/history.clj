@@ -46,6 +46,8 @@
         (fail! (str "Each ref or binary may appear once: " (str/join ", " duplicates)) {:kind :invalid-cli}))
       (when (not= (some? (:fixture-dir opts)) (some? (:codex-fixture-dir opts)))
         (fail! "Pass --fixture-dir and --codex-fixture-dir together" {:kind :invalid-cli}))
+      (when (and (:grok-fixture-dir opts) (not (:fixture-dir opts)))
+        (fail! "Pass --grok-fixture-dir with --fixture-dir and --codex-fixture-dir" {:kind :invalid-cli}))
       (assert-sample-options opts))
     (assoc opts :refs (vec args))))
 

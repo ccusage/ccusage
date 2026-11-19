@@ -33,6 +33,9 @@
                           (parse-history-cli ["--fixture-dir" "c" "main"])))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fixture-dir and --codex-fixture-dir together"
                           (parse-history-cli ["--codex-fixture-dir" "x" "main"]))))
+  (testing "a custom Grok fixture joins a custom Claude and Codex pair"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--grok-fixture-dir with --fixture-dir"
+                          (parse-history-cli ["--grok-fixture-dir" "g" "main"]))))
   (testing "history rejects too few rounds instead of measuring them"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
                           (parse-history-cli ["--runs" "2" "main"])))
