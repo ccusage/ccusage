@@ -8,10 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ccusage_adapter_common::{
-    jsonl::{self, ReadPolicy},
-    units::read_json,
-};
+use ccusage_adapter_common::{jsonl, units::read_json};
 use ccusage_core::{
     Color, Context, Diagnostics, LoadedEntry, MILLIS_PER_DAY, MILLIS_PER_MINUTE, ReportWindow,
     Result, TimestampMs,
@@ -410,24 +407,15 @@ fn calculate_context_tokens_from_transcript(
     shared: &SharedArgs,
 ) -> Option<HookContext> {
     let marker = ccusage_core::fast::LinePrefilter::all(&[br#""input_tokens""#]);
-    let usage = jsonl::read(
-        path,
-        None,
-        ReadPolicy {
-            from_end: true,
-            ..ReadPolicy::PLAIN
-        },
-        |line, _, _| {
-            let bytes = line.bytes();
-            if marker.matches(bytes)
-                && let Ok(text) = std::str::from_utf8(bytes)
-                && let Some(usage) = context_usage(text.trim())
-            {
-                return ControlFlow::Break(usage);
-            }
-            ControlFlow::Continue(())
-        },
-    )
+    let usage = jsonl::read_last(path, |line| {
+        let bytes = line.raw();
+        if marker.matches(bytes)
+            && let Some(usage) = context_usage(bytes)
+        {
+            return ControlFlow::Break(usage);
+        }
+        ControlFlow::Continue(())
+    })
     .ok()??;
     let total_input_tokens =
         usage.input_tokens? + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
@@ -465,8 +453,17 @@ struct TranscriptContextUsage {
     cache_read_input_tokens: u64,
 }
 
-fn context_usage(text: &str) -> Option<TranscriptContextUsage> {
-    let record = serde_json::from_str::<ContextRecord<'_>>(text).ok()?;
+fn context_usage(bytes: &[u8]) -> Option<TranscriptContextUsage> {
+    let bytes = bytes.trim_ascii();
+    let start = bytes.iter().position(|byte| matches!(byte, b'{' | b'['))?;
+    let end = bytes.iter().rposition(|byte| matches!(byte, b'}' | b']'))? + 1;
+    if end <= start
+        || !std::str::from_utf8(&bytes[..start]).ok()?.trim().is_empty()
+        || !std::str::from_utf8(&bytes[end..]).ok()?.trim().is_empty()
+    {
+        return None;
+    }
+    let record = serde_json::from_slice::<ContextRecord<'_>>(&bytes[start..end]).ok()?;
     let usage = record.message.usage;
     (record.kind == "assistant" && usage.input_tokens.is_some()).then_some(usage)
 }

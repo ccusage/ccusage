@@ -1,12 +1,13 @@
 use std::{
     fmt,
     fs::File,
-    io::{self, BufReader, Read},
+    io::{self, BufReader, Read, Seek, SeekFrom},
     marker::PhantomData,
     ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
+use memchr::{memchr_iter, memrchr_iter};
 use serde::{
     Deserialize, Deserializer,
     de::{self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor},
@@ -39,7 +40,6 @@ impl Read for Input {
 pub struct ReadPolicy {
     pub capacity: usize,
     pub compressed: bool,
-    pub from_end: bool,
     pub retry_missing: Option<fn(&Path) -> PathBuf>,
     pub keep_interrupted_tail: fn(io::ErrorKind) -> bool,
     pub open_failure: Option<&'static str>,
@@ -51,7 +51,6 @@ impl ReadPolicy {
     pub const PLAIN: Self = Self {
         capacity: DEFAULT_BUFFER_SIZE,
         compressed: false,
-        from_end: false,
         retry_missing: None,
         keep_interrupted_tail: |_| false,
         open_failure: None,
@@ -162,20 +161,6 @@ pub fn read<B>(
         None
     };
     let local = staged.as_ref().or(diagnostics);
-    if policy.from_end {
-        let content = read_utf8(input)?;
-        return Ok(content.lines().rev().enumerate().find_map(|(index, text)| {
-            visit(
-                Line {
-                    index,
-                    raw: text.as_bytes(),
-                },
-                &opened_path,
-                local,
-            )
-            .break_value()
-        }));
-    }
     let mut reader = LineReader::with_capacity(policy.capacity, input);
     let (found, failure) = fold(&mut reader, policy.keep_interrupted_tail, |line| {
         visit(line, &opened_path, local)
@@ -184,11 +169,93 @@ pub fn read<B>(
     Ok(found)
 }
 
-#[inline(never)]
-fn read_utf8(input: Input) -> io::Result<String> {
-    match input {
-        Input::Plain(file) => std::io::read_to_string(file),
-        Input::Zstd(decoder) => std::io::read_to_string(decoder),
+/// Visits physical lines from the end of a plain file until the visitor accepts one.
+pub fn read_last<B>(
+    path: &Path,
+    mut visit: impl FnMut(ReverseLine<'_>) -> ControlFlow<B>,
+) -> io::Result<Option<B>> {
+    let mut file = File::open(path)?;
+    let mut offset = file.metadata()?.len();
+    let mut line_end = offset;
+    let mut chunk = [0; DEFAULT_BUFFER_SIZE];
+    let mut spanning = Vec::new();
+    let mut number = None;
+
+    while offset > 0 {
+        let chunk_end = offset;
+        offset = offset.saturating_sub(chunk.len() as u64);
+        let chunk = &mut chunk[..(chunk_end - offset) as usize];
+        read_range(&mut file, offset, chunk)?;
+        let starts = memrchr_iter(b'\n', chunk)
+            .map(|newline| newline + 1)
+            .chain((offset == 0).then_some(0));
+        for start in starts {
+            let line_start = offset + start as u64;
+            if line_start == line_end {
+                continue;
+            }
+            let raw = if line_end <= chunk_end {
+                &chunk[start..(line_end - offset) as usize]
+            } else {
+                let line_len = usize::try_from(line_end - line_start)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                spanning.resize(line_len, 0);
+                read_range(&mut file, line_start, &mut spanning)?;
+                &spanning
+            };
+            let line = ReverseLine {
+                file: &mut file,
+                start: line_start,
+                raw,
+                number: &mut number,
+            };
+            if let ControlFlow::Break(value) = visit(line) {
+                return Ok(Some(value));
+            }
+            if let Some(number) = &mut number {
+                *number -= 1;
+            }
+            line_end = line_start;
+        }
+    }
+    Ok(None)
+}
+
+fn read_range(file: &mut File, start: u64, buffer: &mut [u8]) -> io::Result<()> {
+    file.seek(SeekFrom::Start(start))?;
+    file.read_exact(buffer)
+}
+
+pub struct ReverseLine<'a> {
+    file: &'a mut File,
+    start: u64,
+    raw: &'a [u8],
+    number: &'a mut Option<u64>,
+}
+
+impl<'a> ReverseLine<'a> {
+    /// Returns the line as stored, including its terminator when present.
+    pub fn raw(&self) -> &'a [u8] {
+        self.raw
+    }
+
+    /// Counts newlines in the prefix on the first request during a scan.
+    pub fn number(&mut self) -> io::Result<u32> {
+        if let Some(number) = *self.number {
+            return Ok(number.min(u64::from(u32::MAX)) as u32);
+        }
+        self.file.rewind()?;
+        let mut buffer = [0; DEFAULT_BUFFER_SIZE];
+        let mut remaining = self.start;
+        let mut number = 1;
+        while remaining > 0 {
+            let size = remaining.min(buffer.len() as u64) as usize;
+            self.file.read_exact(&mut buffer[..size])?;
+            number += memchr_iter(b'\n', &buffer[..size]).count() as u64;
+            remaining -= size as u64;
+        }
+        *self.number = Some(number);
+        Ok(number.min(u64::from(u32::MAX)) as u32)
     }
 }
 
