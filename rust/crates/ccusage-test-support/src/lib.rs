@@ -84,6 +84,10 @@ pub fn install_pricing_snapshots() {
 
 pub use ccusage_core::cli::environment::Environment;
 
+pub fn read_fixture_dir(dir: &Path) -> std::io::Result<fs::ReadDir> {
+    fs::read_dir(dir)
+}
+
 pub struct Fixture {
     dir: TempDir,
 }

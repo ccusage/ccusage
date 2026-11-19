@@ -230,7 +230,7 @@ mod tests {
         CacheEntry, PRICING_FETCH_MAX_BYTES, cache_dir_under, cache_file_stem,
         fetch_json_with_cache_dir, read_bounded_body,
     };
-    use ccusage_test_support::Fixture;
+    use ccusage_test_support::{Fixture, read_fixture_dir};
     use std::{
         fs,
         io::{self, Cursor, Read as _, Write as _},
@@ -432,14 +432,11 @@ mod tests {
             "read a torn cache pair: {:?}",
             (cached.etag, cached.body)
         );
-        let cache_path = entry.path.clone();
-        let diagnostics = ccusage_core::Diagnostics::new("http-cache");
-        let leftovers: Vec<_> = ccusage_adapter_common::dir_entries(&dir, &diagnostics)
-            .into_iter()
-            .filter_map(|(path, _)| (path != cache_path).then_some(path))
+        let leftovers: Vec<_> = read_fixture_dir(&dir)
+            .expect("open HTTP cache directory")
+            .map(|result| result.expect("read HTTP cache directory entry").path())
+            .filter(|path| *path != entry.path)
             .collect();
-        assert!(dir.is_dir());
-        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
         assert!(
             leftovers.is_empty(),
             "leftover temporary files: {leftovers:?}"

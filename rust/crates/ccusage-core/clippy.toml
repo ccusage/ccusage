@@ -5,7 +5,10 @@ allow-print-in-tests = true
 disallowed-methods = [
 	{ path = "std::env::set_var", reason = "Set environment variables on child commands or inject an environment lookup." },
 	{ path = "std::env::remove_var", reason = "Remove variables from child commands or inject a missing value." },
-	{ path = "jiff::tz::TimeZone::system", reason = "Use the report timezone resolved by the executable." },
-	{ path = "std::fs::read_dir", reason = "Use shared discovery for stable ordering and diagnostics." },
+	{ path = "jiff::tz::TimeZone::system", reason = "Resolve local time through ReportTimezone." },
+	{ path = "jiff::tz::TimeZone::try_system", reason = "Resolve local time through ReportTimezone." },
+	{ path = "jiff::Zoned::now", reason = "Use the report clock to read the current time." },
+	{ path = "std::fs::read_dir", reason = "Use shared adapter discovery or the test-support fixture reader." },
+	{ path = "std::path::Path::read_dir", reason = "Use shared adapter discovery or the test-support fixture reader." },
 	{ path = "std::process::exit", reason = "Return an exit status from the entry point so resources are dropped." },
 ]

@@ -172,7 +172,7 @@ fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sq
 mod tests {
     use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
     use ccusage_core::{ReportWindow, cli::AgentReportKind};
-    use ccusage_test_support::{Fixture, fs_fixture};
+    use ccusage_test_support::{Fixture, fs_fixture, read_fixture_dir};
 
     use super::*;
 
@@ -557,7 +557,7 @@ mod tests {
         });
         let agents = fixture.path("agents");
         fs::set_permissions(&agents, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::File::open(&agents).is_err();
+        let denied = read_fixture_dir(&agents).is_err();
         let diagnostics = diagnostics();
         let databases = collect_agent_databases(fixture.root(), &diagnostics);
         fs::set_permissions(&agents, fs::Permissions::from_mode(0o700)).unwrap();

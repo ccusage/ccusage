@@ -32,7 +32,6 @@ ureq.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-adapter-common.workspace = true
 ccusage = { path = ".", features = ["test-clock"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
