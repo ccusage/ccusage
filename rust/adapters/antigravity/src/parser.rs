@@ -793,7 +793,7 @@ fn parse_timestamp_message(blob: &[u8]) -> ProtoResult<Option<TimestampMs>> {
         .min(999_999_999);
     let milliseconds = seconds
         .saturating_mul(1_000)
-        .saturating_add((nanos / 1_000_000) as i64);
+        .saturating_add(i64::try_from(nanos / 1_000_000).unwrap_or(i64::MAX));
     Ok(Some(TimestampMs::from_millis(milliseconds)))
 }
 

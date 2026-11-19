@@ -738,7 +738,7 @@ mod tests {
             .enumerate()
             .map(|(index, model)| {
                 (
-                    index as i64,
+                    i64::try_from(index).unwrap(),
                     metadata_blob(
                         Some(model),
                         Some(UsageFixture {

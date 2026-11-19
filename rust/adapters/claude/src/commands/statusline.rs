@@ -618,7 +618,9 @@ fn now_millis() -> u64 {
 }
 
 fn format_cache_date(millis: u64) -> String {
-    format_rfc3339_millis(TimestampMs::from_millis(millis.min(i64::MAX as u64) as i64))
+    format_rfc3339_millis(TimestampMs::from_millis(
+        i64::try_from(millis).unwrap_or(i64::MAX),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
