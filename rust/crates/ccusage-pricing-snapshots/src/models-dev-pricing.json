@@ -3239,7 +3239,7 @@
 	"amazon.nova-lite-v1:0": {
 		"cost": {
 			"cache_read": 0.015,
-			"cache_write": 0.06,
+			"cache_write": 0,
 			"input": 0.06,
 			"output": 0.24
 		},
@@ -3250,7 +3250,7 @@
 	"amazon.nova-micro-v1:0": {
 		"cost": {
 			"cache_read": 0.00875,
-			"cache_write": 0.035,
+			"cache_write": 0,
 			"input": 0.035,
 			"output": 0.14
 		},
@@ -3261,7 +3261,7 @@
 	"amazon.nova-pro-v1:0": {
 		"cost": {
 			"cache_read": 0.2,
-			"cache_write": 0.8,
+			"cache_write": 0,
 			"input": 0.8,
 			"output": 3.2
 		},
@@ -3478,7 +3478,7 @@
 	"amazon/nova-lite": {
 		"cost": {
 			"cache_read": 0.015,
-			"cache_write": 0.06,
+			"cache_write": 0,
 			"input": 0.06,
 			"output": 0.24
 		},
@@ -3500,7 +3500,7 @@
 	"amazon/nova-micro": {
 		"cost": {
 			"cache_read": 0.00875,
-			"cache_write": 0.035,
+			"cache_write": 0,
 			"input": 0.035,
 			"output": 0.14
 		},
@@ -3531,7 +3531,7 @@
 	"amazon/nova-pro": {
 		"cost": {
 			"cache_read": 0.2,
-			"cache_write": 0.8,
+			"cache_write": 0,
 			"input": 0.8,
 			"output": 3.2
 		},
@@ -34944,7 +34944,7 @@
 	"us.amazon.nova-lite-v1:0": {
 		"cost": {
 			"cache_read": 0.015,
-			"cache_write": 0.06,
+			"cache_write": 0,
 			"input": 0.06,
 			"output": 0.24
 		},
@@ -34955,7 +34955,7 @@
 	"us.amazon.nova-micro-v1:0": {
 		"cost": {
 			"cache_read": 0.00875,
-			"cache_write": 0.035,
+			"cache_write": 0,
 			"input": 0.035,
 			"output": 0.14
 		},
@@ -34977,7 +34977,7 @@
 	"us.amazon.nova-pro-v1:0": {
 		"cost": {
 			"cache_read": 0.2,
-			"cache_write": 0.8,
+			"cache_write": 0,
 			"input": 0.8,
 			"output": 3.2
 		},
