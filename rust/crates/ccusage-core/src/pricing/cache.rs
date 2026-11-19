@@ -73,9 +73,11 @@ impl<'a> Name<'a> {
         &normalized.as_deref().unwrap_or(self.text)[self.offset..]
     }
 
-    pub(super) fn suffix(mut self, offset: usize) -> Self {
-        self.offset += offset;
-        self
+    pub(super) fn suffixes(self) -> impl Iterator<Item = Self> {
+        self.raw().match_indices('/').map(move |(offset, _)| Self {
+            offset: self.offset + offset + 1,
+            ..self
+        })
     }
 }
 

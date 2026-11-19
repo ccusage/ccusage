@@ -1750,16 +1750,7 @@ impl PricingMap {
     ) -> Option<CachedHit> {
         match pass {
             Pass::Label => {
-                if self.overrides.is_empty() {
-                    return None;
-                }
-                let id = self
-                    .overrides
-                    .id_identity(slot.name(model).identity())
-                    .or_else(|| {
-                        self.overrides
-                            .id_identity(slot.configured(model)?.identity())
-                    })?;
+                let id = self.overrides.label_id(model, slot)?;
                 let found = self.resolve_override(id, models_dev);
                 lookup
                     .includes(found.row)
@@ -1772,9 +1763,8 @@ impl PricingMap {
                 .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeIdentity)),
             Pass::S34 => {
                 let suffix = slot.names(model, |name| {
-                    name.raw().match_indices('/').find_map(|(offset, _)| {
-                        self.authoritative(name.suffix(offset + 1), lookup, false, models_dev)
-                    })
+                    name.suffixes()
+                        .find_map(|suffix| self.authoritative(suffix, lookup, false, models_dev))
                 });
                 suffix
                     .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeSuffix))
@@ -1892,7 +1882,9 @@ impl PricingMap {
     }
 
     fn has_user_override(&self, model: &str) -> bool {
-        self.overrides.label_id(model).is_some()
+        self.overrides
+            .label_id(model, &NameSlot::default())
+            .is_some()
     }
 
     pub fn context_limit(&self, model: &str) -> Option<u64> {
@@ -2604,6 +2596,58 @@ mod tests {
             assert_eq!(price.output, 1.85, "{model}");
         }
         assert!(pricing.find("free-hosted").is_none());
+    }
+
+    #[test]
+    fn override_answers_the_model_id_behind_a_label_path() {
+        crate::test_support::install_pricing_snapshots();
+        let embedded = PricingMap::load_embedded();
+        let mut live = PricingMap::load_embedded();
+        live.refresh_litellm(|load| {
+            load(r#"{
+                "xai/grok-4.3": {"litellm_provider":"xai","input_cost_per_token":1.25e-6,"output_cost_per_token":2.5e-6},
+                "gemini/gemini-2.5-pro": {"litellm_provider":"gemini","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5},
+                "hostx/acme-1": {"litellm_provider":"hostx","input_cost_per_token":3e-6,"output_cost_per_token":4e-6}
+            }"#);
+            Ok(())
+        });
+        let override_at = |rate| ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(rate),
+            output_cost_per_token: Some(rate),
+            ..Default::default()
+        };
+        let overrides = ["grok-4.3", "gemini-2.5-pro", "acme-1"]
+            .map(|key| (key.to_owned(), override_at(50e-6)));
+        let specific = ("hostx/acme-1".to_owned(), override_at(7e-6));
+        for base in [&embedded, &live] {
+            let pricing = base.with_user_overrides(overrides.iter().map(|(key, rate)| (key, rate)));
+            for label in [
+                "xai/grok-4.3",
+                "openrouter/xai/grok-4.3",
+                "gemini/gemini-2.5-pro",
+                "hostx/acme-1",
+            ] {
+                let candidates = [(label, MatchKind::Fuzzy)];
+                let found = pricing.explain(Some(label), &candidates).unwrap();
+                assert_eq!(
+                    found.step,
+                    super::ResolutionStep::ReportedOverride,
+                    "{label}"
+                );
+                let rate = pricing.find(label).unwrap();
+                assert_eq!((rate.input, rate.output), (50e-6, 50e-6), "{label}");
+                assert!(pricing.has_user_override(label), "{label}");
+            }
+            assert!(!pricing.has_user_override("hostx/acme-1-flash"));
+            let pricing = base.with_user_overrides(
+                overrides
+                    .iter()
+                    .chain([&specific])
+                    .map(|(key, rate)| (key, rate)),
+            );
+            let rate = pricing.find("hostx/acme-1").unwrap();
+            assert_eq!((rate.input, rate.output), (7e-6, 7e-6));
+        }
     }
 
     #[test]

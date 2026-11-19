@@ -4,8 +4,8 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Lookup, Name, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch, Scope, Source,
-    SpeedMultipliers, normalized_pricing_key, with_names,
+    Lookup, Name, NameSlot, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch,
+    Scope, Source, SpeedMultipliers, normalized_pricing_key, with_names,
 };
 
 #[derive(Debug, Default)]
@@ -53,12 +53,17 @@ impl Overrides {
             .map(|row| RowMatch::new(id, row))
     }
 
-    pub(super) fn label_id(&self, label: &str) -> Option<usize> {
-        if self.rows.is_empty() {
+    pub(super) fn label_id(&self, label: &str, slot: &NameSlot) -> Option<usize> {
+        if self.is_empty() {
             return None;
         }
-        self.id(label)
-            .or_else(|| self.id(crate::model_aliases::resolve_model_name(label).as_ref()))
+        let name = slot.name(label);
+        self.id_identity(name.identity())
+            .or_else(|| self.id_identity(slot.configured(label)?.identity()))
+            .or_else(|| {
+                name.suffixes()
+                    .find_map(|suffix| self.id_identity(suffix.identity()))
+            })
     }
 
     pub(super) fn shadow(&self, found: RowMatch<'_>) -> Option<usize> {
