@@ -86,14 +86,14 @@ pub fn directories_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn list_roots_trim_expand_and_deduplicate_without_reordering() {
         let fixture = fs_fixture!({});
         let first = fixture.create_dir_all("first");
         let second = fixture.create_dir_all("second");
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", Some(fixture.root().into())),
             (
                 "CCUSAGE_TEST_ROOTS",
@@ -112,7 +112,7 @@ mod tests {
         let fixture = fs_fixture!({});
         let fallback = fixture.create_dir_all("fallback");
         for value in ["", " ", " , , "] {
-            let _guard = EnvVarGuard::set("CCUSAGE_TEST_ROOTS", value);
+            let _guard = EnvGuard::set("CCUSAGE_TEST_ROOTS", value);
             assert_eq!(
                 resolve(RootsEnv::List("CCUSAGE_TEST_ROOTS"), || vec![
                     fallback.clone()
@@ -120,7 +120,7 @@ mod tests {
                 vec![fallback.clone()]
             );
         }
-        let _guard = EnvVarGuard::set("CCUSAGE_TEST_ROOTS", fixture.path("missing"));
+        let _guard = EnvGuard::set("CCUSAGE_TEST_ROOTS", fixture.path("missing"));
         assert!(resolve(RootsEnv::List("CCUSAGE_TEST_ROOTS"), || vec![fallback]).is_empty());
     }
 
@@ -128,7 +128,7 @@ mod tests {
     fn single_roots_keep_commas_in_the_directory_name() {
         let fixture = fs_fixture!({});
         let root = fixture.create_dir_all("first,second");
-        let _guard = EnvVarGuard::set("CCUSAGE_TEST_ROOTS", format!(" {} ", root.display()));
+        let _guard = EnvGuard::set("CCUSAGE_TEST_ROOTS", format!(" {} ", root.display()));
 
         assert_eq!(
             resolve(RootsEnv::Single("CCUSAGE_TEST_ROOTS"), Vec::new),
@@ -166,7 +166,7 @@ mod tests {
         let root = fixture.create_dir_all("root");
         let alias = fixture.path("alias");
         std::os::unix::fs::symlink(&root, &alias).unwrap();
-        let _guard = EnvVarGuard::set(
+        let _guard = EnvGuard::set(
             "CCUSAGE_TEST_ROOTS",
             format!("{},{}", alias.display(), root.display()),
         );
@@ -181,7 +181,7 @@ mod tests {
     fn tilde_without_a_home_does_not_use_a_literal_directory_or_defaults() {
         let fixture = fs_fixture!({});
         let fallback = fixture.create_dir_all("fallback");
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             ("HOME", None),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),

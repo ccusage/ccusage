@@ -11,8 +11,6 @@ use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::
 pub mod claims;
 pub mod dedupe;
 pub mod jsonl;
-#[cfg(any(test, feature = "testing"))]
-pub mod parity;
 pub(crate) mod pipeline;
 pub mod report;
 pub mod roots;
@@ -27,10 +25,10 @@ pub mod testing;
 pub mod timestamps;
 pub mod units;
 
+#[cfg(any(test, feature = "testing"))]
+pub use pipeline::parity;
 pub use units::{SqliteStage, UnitError, read_units, read_units_flat};
 
-/// Collects the files under `dir` whose extension is `extension`, like
-/// [`collect_files_matching`].
 pub fn collect_files_with_extension(
     dir: &Path,
     extension: &str,
@@ -45,9 +43,6 @@ pub fn collect_files_with_extension(
     );
 }
 
-/// Collects the files under `dir` that `matches` accepts, recursing into
-/// subdirectories without following symlinks. What cannot be read is
-/// recorded like [`dir_entries`] does.
 pub fn collect_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
@@ -65,8 +60,6 @@ pub fn collect_files_matching(
     );
 }
 
-/// Hands each `.jsonl` file under `dir` to `visit` as the walk finds it, like
-/// [`visit_files_matching`].
 pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics: &Diagnostics) {
     let _ = visit_files_matching(
         dir,
@@ -79,8 +72,6 @@ pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics
     );
 }
 
-/// Like [`collect_files_matching`], but hands each file to `visit` as the walk
-/// finds it, so reading can start before the walk ends.
 fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
@@ -105,12 +96,6 @@ pub fn any_file_matching(
     visit_files_matching(dir, matches, &mut |_| ControlFlow::Break(()), diagnostics).is_break()
 }
 
-/// The entries directly inside `dir`, each with its own (not a symlink
-/// target's) file type, sorted by path.
-///
-/// A missing `dir` holds no entries. A directory, entry or file type that
-/// cannot be read is recorded in `diagnostics`, so files it hides show up as
-/// a warning rather than as lower usage.
 pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::FileType)> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -158,9 +143,6 @@ pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &Sh
 }
 
 pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<Vec<usize>> {
-    // Callers derive the count from available_parallelism, which can be 0 for a
-    // caller that clamps against an empty file list; one chunk still returns
-    // every index rather than indexing an empty vector.
     let chunk_count = chunk_count.max(1);
     chunk_indexes_by_size(files, PathBuf::as_path, chunk_count)
 }
@@ -261,13 +243,7 @@ fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
-/// Reads files as `discover` yields them and returns each with its result,
-/// in no particular order.
-///
-/// Workers take the next file as soon as they are free, so reading overlaps a
-/// directory walk instead of waiting for its full list, and no file sizes are
-/// needed to balance the work. A worker starts with each of the first files,
-/// so a discovery that finds few files spawns no more threads than it needs.
+/// Reads files as discovery yields them. Parallel results have no ordering guarantee.
 pub fn read_discovered_files<T, F>(
     single_thread: bool,
     discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
@@ -328,9 +304,9 @@ mod tests {
     #[test]
     fn discovery_is_sorted_and_stops_at_the_first_match() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("z.jsonl", "");
+        fixture.write_file("z.jsonl", "");
         let first = fixture.write_file("a/first.jsonl", "");
-        let _ = fixture.write_file("a/second.jsonl", "");
+        fixture.write_file("a/second.jsonl", "");
         let diagnostics = ccusage_core::Diagnostics::new("test");
         let mut visited = Vec::new();
         assert!(super::any_file_matching(
@@ -358,7 +334,7 @@ mod tests {
     fn directory_entries_and_recursive_collection_have_path_order() {
         let fixture = Fixture::new();
         for name in ["z.jsonl", "b/z.jsonl", "b/a.jsonl", "a.jsonl"] {
-            let _ = fixture.write_file(name, "");
+            fixture.write_file(name, "");
         }
         let diagnostics = ccusage_core::Diagnostics::new("test");
         let mut files = Vec::new();
@@ -409,7 +385,7 @@ mod tests {
     fn collects_nested_files_accepted_by_the_predicate() {
         let fixture = Fixture::new();
         let kept = fixture.write_file("a/b/kept.jsonl", "");
-        let _ = fixture.write_file("a/skipped.txt", "");
+        fixture.write_file("a/skipped.txt", "");
         let mut files = Vec::new();
         let diagnostics = ccusage_core::Diagnostics::new("test");
 

@@ -1,5 +1,3 @@
-//! A stand-in source for the tests of the pipeline and of the parity check.
-
 use std::{
     path::Path,
     sync::{
@@ -95,7 +93,6 @@ pub(crate) fn entry(session: &str, timestamp: &str, input_tokens: u64) -> Loaded
     }
 }
 
-/// Session `long` runs across three days and `early` ends before them.
 pub(crate) fn entries() -> Vec<LoadedEntry> {
     vec![
         entry("early", "2026-01-01T10:00:00.000Z", 1),

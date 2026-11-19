@@ -1,11 +1,3 @@
-//! The contracts between a usage source and the reports that read it.
-//!
-//! [`UsageSource`] supplies identity, supported reports and unified rows to
-//! the unified registry. Sources whose loader yields `Vec<LoadedEntry>` also
-//! implement [`EntrySource`], which runs focused and unified reports through
-//! [`crate::pipeline`]. Format-specific sources implement [`UsageSource`]
-//! directly and keep their focused report paths in their own adapter.
-
 use std::sync::OnceLock;
 
 use serde_json::Value;
@@ -18,12 +10,9 @@ use ccusage_core::{
 
 use crate::{pipeline, rows::SourceRow};
 
-/// One usage source registered for the unified report.
 pub trait UsageSource: Sync {
-    /// The agent name on the command line and in unified rows, such as `amp`.
     fn id(&self) -> &'static str;
 
-    /// The name progress output shows while the source loads, such as `Amp`.
     fn label(&self) -> &'static str;
 
     fn uses_shared_pricing(&self) -> bool {
@@ -32,20 +21,14 @@ pub trait UsageSource: Sync {
 
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows>;
 
-    /// Whether the source has usage data at all, whatever the date window.
-    /// Only sources that cannot tell from their loaded rows answer.
     fn has_data(&self) -> bool {
         false
     }
 }
 
-/// Who renders the progress of a load.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProgressOwner {
-    /// The source shows its own spinner, as a focused report does.
     Source,
-    /// The caller already tracks every source it loads, as the unified report
-    /// does, so the source stays quiet.
     Caller,
 }
 
@@ -186,21 +169,15 @@ pub struct LoadedRows {
     pub diagnostics: Diagnostics,
 }
 
-/// The per-source options beside [`SharedArgs`]. Each is read by one source.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SourceOptions<'a> {
-    /// Claude: keep only this project.
     pub claude_project: Option<&'a str>,
-    /// pi: the sessions directory to read instead of the default one.
     pub pi_path: Option<&'a str>,
-    /// OpenClaw: the directory to read instead of the default one.
     pub open_claw_path: Option<&'a str>,
-    /// Codex: the service tier to price with.
     pub codex_speed: CodexSpeed,
 }
 
 impl<'a> SourceOptions<'a> {
-    /// The options of `ccusage <agent> <kind>`.
     pub(crate) fn from_command(args: &'a AgentCommandArgs) -> Self {
         Self {
             claude_project: args.options.claude_project.as_deref(),
@@ -210,8 +187,6 @@ impl<'a> SourceOptions<'a> {
         }
     }
 
-    /// The options the configuration resolved for one source of a unified
-    /// report, or the defaults for a source it does not address.
     pub fn from_source(source: Option<&'a SourceArgs>) -> Self {
         source.map_or_else(Self::default, |source| Self {
             claude_project: source.options.claude_project.as_deref(),
@@ -222,25 +197,15 @@ impl<'a> SourceOptions<'a> {
     }
 }
 
-/// Where a source's date window is applied.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowMode {
-    /// Entries outside the window are dropped before summarizing. A session
-    /// that crosses the window edge is cut at it.
     Entries,
-    /// As [`Entries`](Self::Entries), except that a session report summarizes
-    /// every entry and keeps the sessions whose last activity is inside the
-    /// window, so a kept session shows its whole usage.
     SessionLastActivity,
 }
 
-/// How the unified report decides that a source is present.
 #[derive(Clone, Copy, Debug)]
 pub enum Detection {
-    /// The source loaded at least one entry, before the date window.
     NonEmpty,
-    /// As [`NonEmpty`](Self::NonEmpty), or the probe finds data on disk; for a
-    /// source whose loader can return nothing while data exists.
     NonEmptyOrHasData(fn() -> bool),
 }
 
@@ -289,14 +254,12 @@ pub enum TableStyle {
     AutoCacheCreation,
 }
 
-/// The identity and the declared policies of an [`EntrySource`].
 #[derive(Clone, Copy, Debug)]
 pub struct EntryDescriptor {
     pub id: &'static str,
     pub label: &'static str,
     pub window: WindowMode,
     pub detection: Detection,
-    /// Whether unified session rows carry the session's project path.
     pub unified_project_path: bool,
     pub session: SessionShape,
     pub table: TableStyle,
@@ -304,9 +267,6 @@ pub struct EntryDescriptor {
 }
 
 impl EntryDescriptor {
-    /// A source with the common policies: daily, monthly and session reports,
-    /// the window applied to entries, detected by loading at least one entry,
-    /// priced by the pipeline's map.
     pub const fn standard(id: &'static str, label: &'static str) -> Self {
         Self {
             id,
@@ -321,24 +281,18 @@ impl EntryDescriptor {
     }
 }
 
-/// What a loader is given for one load, focused or unified.
 pub struct LoadContext<'a> {
     pub shared: &'a SharedArgs,
-    /// The kind being loaded, for a loader whose input depends on it.
     pub kind: AgentReportKind,
-    /// The report window, as a hint for a loader that can skip input early.
     pub window: &'a ReportWindow,
     pub pricing: ReportPricing<'a>,
     pub options: SourceOptions<'a>,
-    /// Where the loader records what it skipped.
     pub diagnostics: &'a Diagnostics,
 }
 
-/// A source whose loader yields `Vec<LoadedEntry>`.
 pub trait EntrySource: Sync {
     fn descriptor(&self) -> EntryDescriptor;
 
-    /// Runs `ccusage <id> <kind>` through the shared entry pipeline.
     fn run_focused(&self, args: AgentCommandArgs) -> Result<()>
     where
         Self: Sized,
@@ -346,11 +300,6 @@ pub trait EntrySource: Sync {
         pipeline::run_focused(self, args)
     }
 
-    /// Loads every entry, sorted the way the adapter's reports expect. The
-    /// pipeline shows progress and applies the date window, so the loader does
-    /// neither. A loader that narrows to [`LoadContext::window`] as it reads
-    /// can return nothing while the source has data, which is what
-    /// [`Detection::NonEmptyOrHasData`] is for.
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>>;
 
     fn summarize(&self, entries: &[LoadedEntry], kind: SummaryKind) -> Result<Vec<UsageSummary>> {
@@ -358,7 +307,6 @@ pub trait EntrySource: Sync {
         crate::rows::summarize_entries(entries, kind, descriptor.session, descriptor.session_scope)
     }
 
-    /// The key `--order` sorts focused rows by.
     fn sort_key<'a>(&self, row: &'a UsageSummary) -> &'a str {
         summary_period(row)
     }

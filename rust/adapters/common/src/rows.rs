@@ -61,8 +61,6 @@ impl std::ops::DerefMut for SourceRow {
     }
 }
 
-/// Converts a source's summaries into its unified rows, dropping the ones with
-/// neither tokens nor cost.
 pub fn summary_rows(
     agent: &'static str,
     summaries: Vec<UsageSummary>,
@@ -100,8 +98,6 @@ pub fn summary_rows(
         .collect()
 }
 
-/// Summarizes entries into one row per session of a project, ordered by
-/// project path and then session id.
 pub fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
     session_groups(entries, crate::source::SessionScope::Project)
         .into_values()

@@ -1,19 +1,11 @@
-//! Test support: checks that a source counts the same usage in its focused
-//! report and in its slice of the unified report.
-//!
-//! Compiled only for tests: this crate's own, and an adapter's through the
-//! `testing` feature it enables from its `[dev-dependencies]`.
-
 use std::collections::BTreeMap;
 
 use serde_json::Value;
 
 use ccusage_core::cli::{AgentCommandArgs, AgentId, AgentReportKind, SharedArgs, WeekDay};
 
-use crate::{
-    pipeline,
-    source::{EntrySource, LoadRequest, ProgressOwner, SourceOptions},
-};
+use super::{focused_rows, load_rows};
+use crate::source::{EntrySource, LoadRequest, ProgressOwner, SourceOptions};
 
 #[derive(Debug, PartialEq)]
 struct Totals {
@@ -26,8 +18,6 @@ struct Totals {
 }
 
 impl Totals {
-    /// Costs are summed in a different order by the two reports, so they are
-    /// compared up to rounding; token counts are compared exactly.
     fn matches(&self, other: &Self) -> bool {
         let scale = self.total_cost.abs().max(other.total_cost.abs()).max(1.0);
         self.input_tokens == other.input_tokens
@@ -39,20 +29,8 @@ impl Totals {
     }
 }
 
-/// Asserts that, for every report kind `source` supports, the `totals` of its
-/// focused JSON report equal the totals of the rows it gives the unified
-/// report when both load with `shared`.
-///
-/// The caller points the source at a fixture first, through the environment
-/// variable its `paths.rs` reads. The fixture must hold usage: two empty
-/// reports agree without comparing anything, so a source that reads nothing
-/// without the window fails the check. A window that leaves nothing is still
-/// compared.
-///
-/// # Panics
-///
-/// Panics when a load fails, when the source reads no usage, when a kind
-/// has different focused and unified totals.
+/// Compares focused and unified totals for every supported report kind.
+/// The fixture must contain usage before date filtering.
 pub fn assert_focused_matches_unified<S: EntrySource>(
     source: &S,
     agent: AgentId,
@@ -106,7 +84,7 @@ fn focused_totals<S: EntrySource>(
         start_of_week: WeekDay::Sunday,
         sources: BTreeMap::new(),
     };
-    let rows = pipeline::focused_rows(source, &args)
+    let rows = focused_rows(source, &args)
         .unwrap_or_else(|error| panic!("focused {kind:?} load failed: {error}"));
     let report = source.report_json(&rows, kind);
     let totals = &report["totals"];
@@ -130,7 +108,7 @@ fn unified_totals<S: EntrySource>(
     shared: &SharedArgs,
 ) -> Totals {
     let load_kind = crate::source::LoadKind::for_report(kind).report_kind();
-    let rows = pipeline::load_rows(
+    let rows = load_rows(
         source,
         &LoadRequest {
             kind: crate::source::LoadKind::for_report(load_kind),

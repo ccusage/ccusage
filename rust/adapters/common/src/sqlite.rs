@@ -76,7 +76,6 @@ where
     })
 }
 
-// NOTE(2026-11-17, sqlite 0.37.4): `Statement::read::<i64>` and `read::<f64>` never fail on a valid index; they turn NULL into 0 and clamp an out-of-range REAL, so a numeric column is read by the type SQLite stored, and text keeps SQLite's own numeric conversion.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Number {
     Integer(i64),
@@ -103,6 +102,7 @@ impl Number {
     }
 }
 
+// NOTE(2026-11-17, sqlite 0.37.4): SQLite's numeric reads coerce NULL to zero and clamp out-of-range REAL values in integer reads. Inspect the stored type first to preserve the distinction between absent and zero values.
 pub(crate) fn read_number(statement: &Statement<'_>, index: usize) -> Option<Number> {
     match statement.column_type(index).ok()? {
         Type::Integer => statement.read::<i64, _>(index).ok().map(Number::Integer),

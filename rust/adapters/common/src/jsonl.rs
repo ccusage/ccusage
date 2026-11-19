@@ -1,19 +1,3 @@
-//! Shared JSONL parsing helpers for agent adapters.
-//!
-//! Adapters historically parsed each log line into a dynamic
-//! [`serde_json::Value`] and then hand-navigated it with `Value::get`. This
-//! module centralizes the faster gold-standard approach used by the Claude
-//! loader so every adapter shares the same optimizations:
-//!
-//! 1. Read the whole file once and split it into byte slices with
-//!    [`byte_lines`](ccusage_core::fast::byte_lines), avoiding a `String` allocation
-//!    per line.
-//! 2. Skip lines that cannot possibly match using a precompiled `memmem`
-//!    substring prefilter, before any JSON parsing happens.
-//! 3. Deserialize the surviving lines directly into a typed struct with
-//!    `serde_json::from_slice`, so unused fields are skipped instead of being
-//!    materialized into an intermediate `Value` tree.
-
 use std::{fmt, marker::PhantomData, path::Path};
 
 use serde::{
@@ -28,32 +12,7 @@ use ccusage_core::{
 
 use crate::units::being_written;
 
-/// Iterate over deserialized JSONL records contained in `content`.
-///
-/// When `prefilter` is provided, lines that it rejects are skipped before any
-/// JSON parsing, mirroring the per-line `memmem` prefilter used by the Claude
-/// loader. Build the [`LinePrefilter`] from markers that appear in every line
-/// the adapter would accept (for example the required `"usage"` key) so the
-/// prefilter never drops a usable record. Pass `None` to parse every line.
-///
-/// Lines that fail to deserialize into `T` are silently skipped, matching the
-/// historical `serde_json::from_str::<Value>(line).ok()` behavior.
-///
-/// # Examples
-///
-/// ```ignore
-/// #[derive(serde::Deserialize)]
-/// struct Record {
-///     model: Option<String>,
-/// }
-///
-/// let content = b"{\"model\":\"qwen3-coder\"}\n{}\n";
-/// let prefilter = LinePrefilter::all(&[b"model"]);
-/// let models: Vec<_> = jsonl::records::<Record>(content, Some(&prefilter))
-///     .filter_map(|record| record.model)
-///     .collect();
-/// assert_eq!(models, ["qwen3-coder"]);
-/// ```
+/// A prefilter marker must occur on every line the caller would accept. Rejected lines never reach the decoder.
 pub fn records<'data, T>(
     content: &'data [u8],
     prefilter: Option<&'data LinePrefilter>,
@@ -87,8 +46,7 @@ fn selected_lines<'data>(
         })
 }
 
-/// Retains source line numbers so callers can diagnose rejected fields while
-/// preserving independently decoded state in the same record.
+/// Reports rejected records by source line number while yielding the records that decode.
 pub fn numbered_records_with_usage_diagnostics<'data, T>(
     content: &'data [u8],
     prefilter: Option<&'data LinePrefilter>,
@@ -118,8 +76,6 @@ where
     })
 }
 
-/// Decodes one JSON record held whole, such as a database JSON column. Usage
-/// confirmation runs only after a rejection.
 pub fn decode_record<T: DeserializeOwned>(
     content: &[u8],
     unit: &Path,
@@ -145,9 +101,6 @@ pub fn decode_record<T: DeserializeOwned>(
     }
 }
 
-/// Decodes `line`, one line of the JSONL file `content`, like
-/// [`decode_record`]. The last line of a file that does not end in a newline
-/// may still be being written, so a record it cuts short is not a skip.
 pub fn decode_line<T: DeserializeOwned>(
     content: &[u8],
     line: &[u8],
@@ -161,9 +114,7 @@ pub fn decode_line<T: DeserializeOwned>(
     decode_streamed_line(line, unterminated, unit, number, diagnostics, is_usage)
 }
 
-/// Decodes `line` like [`decode_line`] for a reader that streams the file
-/// instead of holding it whole, and so passes whether `line` is the
-/// unterminated end of the file itself.
+/// Decodes a streamed line. Pass whether it is the unterminated end of the file.
 pub fn decode_streamed_line<T: DeserializeOwned>(
     line: &[u8],
     unterminated: bool,
@@ -189,20 +140,7 @@ pub fn decode_streamed_line<T: DeserializeOwned>(
     }
 }
 
-/// Records why `record`, record `number` of `unit`, failed to decode.
-///
-/// `unterminated` says the record is the last line of a JSONL file that does
-/// not end in a newline yet. An agent appends its log while ccusage reads it,
-/// so a record such a line cuts short is noted under `--debug` instead of
-/// skipped while `unit` is still being written: the next run reads it whole.
-/// Once `unit` has been left unchanged past
-/// [`IN_PROGRESS_WINDOW`](crate::units::IN_PROGRESS_WINDOW), the line stays
-/// truncated and is skipped as invalid data.
-///
-/// A data error is invalid data when `is_usage` confirms that the record, read
-/// as plain JSON, carries usage, and undecoded usage otherwise. `is_usage`
-/// runs only for a data error, so a source may also take what it needs from
-/// the rejected record there.
+/// Reports the decoding category and column. Raw record text can include prompt content.
 #[cold]
 pub fn record_decode_error(
     record: &[u8],
@@ -261,17 +199,6 @@ pub fn record_decode_error(
     ));
 }
 
-/// Deserialize a JSON value into `u64` with the same lenient rules as
-/// [`serde_json::Value::as_u64`].
-///
-/// Non-negative integers that fit in `u64` are returned as-is; floats, strings,
-/// nulls, negative numbers, and missing values all become `0`. This reproduces
-/// the historical `json_value_u64(value.get(...))` behavior so typed structs
-/// match the previous dynamic-`Value` parsing instead of failing the whole line
-/// when a token count is encoded unexpectedly.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_u64")]` so a
-/// missing field also defaults to `0`.
 pub fn lenient_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -283,15 +210,6 @@ where
         .unwrap_or_default())
 }
 
-/// Deserialize a JSON value into `Option<i64>` with the same lenient rules as
-/// [`serde_json::Value::as_i64`].
-///
-/// Any integer that fits in `i64` is returned; floats, strings, nulls, and
-/// missing values become `None`. This reproduces the historical
-/// `Value::as_i64` navigation so an unexpectedly typed field does not fail the
-/// whole record.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_i64")]`.
 pub fn lenient_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -300,15 +218,6 @@ where
     Ok(value.as_ref().and_then(serde_json::Value::as_i64))
 }
 
-/// Deserialize a JSON value into `Option<f64>` with the same lenient rules as
-/// [`serde_json::Value::as_f64`].
-///
-/// Any JSON number yields a value; strings, nulls, and missing values become
-/// `None`. This reproduces the historical `Value::as_f64` navigation so an
-/// unexpectedly typed number (for example a cost field) does not fail the whole
-/// record.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_f64")]`.
 pub fn lenient_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -317,17 +226,6 @@ where
     Ok(value.as_ref().and_then(serde_json::Value::as_f64))
 }
 
-/// Deserialize a nested JSON object into `Option<T>` leniently.
-///
-/// JSON objects are deserialized into `T`; any non-object value (number,
-/// string, array, bool), nulls, and missing values become `None`. An object
-/// that fails to deserialize into `T` also yields `None` rather than failing
-/// the whole record. This reproduces the historical
-/// `Value::get(...).map_or(.., ..)` navigation, where a malformed nested object
-/// was simply treated as absent instead of discarding an otherwise usable
-/// record.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_object")]`.
 pub fn lenient_object<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -340,18 +238,6 @@ where
     })
 }
 
-/// Deserialize a JSON array into `Option<Vec<T>>` leniently, skipping elements
-/// that fail to deserialize into `T`.
-///
-/// A JSON array yields `Some(vec)` containing only the elements that
-/// successfully deserialize (malformed entries are dropped, not fatal); any
-/// non-array value, null, and missing values become `None`. This reproduces the
-/// historical `Value::as_array` navigation, where a non-array field was treated
-/// as absent and individual bad elements were skipped instead of discarding the
-/// whole record. The `Some`/`None` distinction lets callers tell an array that
-/// was present (even if empty) apart from a missing or non-array field.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_array")]`.
 pub fn lenient_array<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -369,14 +255,6 @@ where
     })
 }
 
-/// Deserialize a JSON array into `Vec<T>` leniently, skipping elements that fail
-/// to deserialize into `T`.
-///
-/// Like [`lenient_array`] but collapses the missing/non-array case to an empty
-/// `Vec` for callers that do not need to distinguish a present-but-empty array
-/// from an absent field.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_vec")]`.
 pub fn lenient_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -385,14 +263,6 @@ where
     Ok(lenient_array(deserializer)?.unwrap_or_default())
 }
 
-/// Deserialize a JSON value into a trimmed, non-empty [`String`].
-///
-/// Mirrors [`ccusage_core::non_empty_json_string`]: non-string values and
-/// empty-after-trim strings become `None`, and surviving strings are trimmed.
-/// This keeps typed structs lenient about unexpected field types instead of
-/// erroring on the whole line.
-///
-/// Use with `#[serde(default, deserialize_with = "jsonl::non_empty_string")]`.
 pub fn non_empty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -421,21 +291,17 @@ macro_rules! skip_scalars {
     };
 }
 
-/// A lenient value that can tell whether it read anything usable.
 pub trait Present {
     fn is_present(&self) -> bool;
 }
 
-/// Names the object field a [`FirstField`] reads.
 pub trait FieldName {
     const NAME: &'static str;
 }
 
-/// The first usable value of field `N::NAME` in a JSON object, or `None` for
-/// any other value. Unlike a derived struct, it tolerates a repeated field, and
-/// it skips every other field and any non-object without building it. `T` must
-/// be lenient too, such as [`LenientString`], [`LenientSeq`], or another
-/// `FirstField`, because a failure inside the object cannot be recovered.
+/// Reads the first usable value of a field. Use lenient types for `T`, such as
+/// [`LenientString`] or [`LenientSeq`], because Serde cannot recover from an
+/// error midway through a streamed object.
 pub struct FirstField<N, T>(pub Option<T>, PhantomData<N>);
 
 impl<N, T> Default for FirstField<N, T> {
@@ -519,8 +385,6 @@ impl<'de, N: FieldName, T: Deserialize<'de> + Present> Deserialize<'de> for Firs
     }
 }
 
-/// A JSON string, or `None` for any other value, which is skipped without
-/// being built. Never fails, so it is safe inside a [`FirstField`].
 #[derive(Default)]
 pub struct LenientString(pub Option<String>);
 
@@ -564,9 +428,6 @@ impl<'de> Deserialize<'de> for LenientString {
     }
 }
 
-/// A JSON array read as `T` elements, or empty for any other value, which is
-/// skipped without being built. Elements must be lenient for one malformed
-/// element not to fail the whole array.
 pub struct LenientSeq<T>(pub Vec<T>);
 
 impl<T> Present for LenientSeq<T> {
@@ -620,7 +481,7 @@ mod tests {
     use serde::Deserialize;
 
     use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvVarGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
 
     use crate::units::tests::age_past_write_window;
 
@@ -674,7 +535,7 @@ mod tests {
                 .collect::<Vec<_>>();
 
         assert_eq!(records, [1]);
-        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
         assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
         assert_eq!(
             diagnostics.warnings(&SharedArgs {
@@ -701,7 +562,7 @@ mod tests {
 
         assert_eq!(records, [1]);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
         let warnings = diagnostics
             .warnings(&SharedArgs {
                 debug: true,
@@ -780,7 +641,7 @@ mod tests {
         );
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
 
-        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
         let warnings = diagnostics
             .warnings(&SharedArgs {
                 debug: true,
@@ -840,7 +701,7 @@ mod tests {
         assert_eq!(records, [1, 2]);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
 
-        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let _log_level = EnvGuard::set("LOG_LEVEL", "1");
         let warnings = diagnostics
             .warnings(&SharedArgs {
                 debug: true,
@@ -954,12 +815,10 @@ mod tests {
         assert_eq!(both.created, Some(-5));
         assert_eq!(both.cost, Some(1.5));
 
-        // i64 rejects floats; f64 accepts any number.
         let mixed = parse("{\"created\":1.5,\"cost\":7}");
         assert_eq!(mixed.created, None);
         assert_eq!(mixed.cost, Some(7.0));
 
-        // Strings, nulls, and missing values all become None.
         let strings = parse("{\"created\":\"3\",\"cost\":\"x\"}");
         assert_eq!(strings.created, None);
         assert_eq!(strings.cost, None);
@@ -987,7 +846,6 @@ mod tests {
 
         let parse = |raw: &str| serde_json::from_str::<Outer>(raw).unwrap();
 
-        // A real object deserializes as expected.
         assert_eq!(
             parse("{\"cache\":{\"read\":5},\"input\":7}"),
             Outer {
@@ -996,8 +854,6 @@ mod tests {
             }
         );
 
-        // Non-object cache payloads become None instead of failing the record,
-        // preserving the sibling `input` value.
         for raw in [
             "{\"cache\":5,\"input\":7}",
             "{\"cache\":\"oops\",\"input\":7}",
@@ -1034,7 +890,6 @@ mod tests {
 
         let parse = |raw: &str| serde_json::from_str::<Outer>(raw).unwrap();
 
-        // Non-object array elements are skipped instead of failing the record.
         let mixed =
             parse(r#"{"optional":[{"value":1},"oops",{"value":2}],"required":[3,{"value":4}]}"#);
         assert_eq!(
@@ -1043,14 +898,10 @@ mod tests {
         );
         assert_eq!(mixed.required, vec![Item { value: 4 }]);
 
-        // A present-but-empty array stays distinguishable from a missing field
-        // for `lenient_array`, while `lenient_vec` collapses both to an empty
-        // vec.
         let empty = parse(r#"{"optional":[],"required":[]}"#);
         assert_eq!(empty.optional, Some(vec![]));
         assert_eq!(empty.required, vec![]);
 
-        // Non-array and missing values become None / empty without erroring.
         for raw in [
             r#"{"optional":5,"required":"nope"}"#,
             r#"{"optional":null,"required":null}"#,

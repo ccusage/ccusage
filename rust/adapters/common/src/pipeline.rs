@@ -1,11 +1,3 @@
-//! The order every [`EntrySource`] report runs in: pricing, load, detection,
-//! date window, summarize, then sort and render for a focused report or row
-//! conversion for the unified one.
-//!
-//! Both entry points share the stages up to summarizing, so a focused report
-//! is the unified pipeline for one source: a window or detection rule cannot
-//! be applied in one and missed in the other.
-
 use ccusage_core::{
     Diagnostics, LoadedEntry, ReportWindow, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind},
@@ -22,7 +14,9 @@ use crate::{
     },
 };
 
-/// Runs `ccusage <agent> <kind>` for an [`EntrySource`].
+#[cfg(any(test, feature = "testing"))]
+pub mod parity;
+
 pub(crate) fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> Result<()> {
     let rows = focused_rows(source, &args)?;
     let shared = &args.shared;
@@ -36,12 +30,7 @@ pub(crate) fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> R
     source.print_table(&rows, args.kind, shared)
 }
 
-/// The rows of a focused report, sorted, before they are rendered. Prints what
-/// the load skipped to stderr.
-pub(crate) fn focused_rows(
-    source: &dyn EntrySource,
-    args: &AgentCommandArgs,
-) -> Result<Vec<UsageSummary>> {
+fn focused_rows(source: &dyn EntrySource, args: &AgentCommandArgs) -> Result<Vec<UsageSummary>> {
     let descriptor = source.descriptor();
     let shared = &args.shared;
     let pricing = ReportPricing::for_load(shared, None);
@@ -69,7 +58,6 @@ pub(crate) fn focused_rows(
     Ok(rows)
 }
 
-/// Loads the rows an [`EntrySource`] contributes to the unified report.
 pub(crate) fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let descriptor = source.descriptor();
     let shared = request.shared;
@@ -108,8 +96,6 @@ fn load(
     )
 }
 
-/// Decided on the entries as loaded, before the window drops any, so asking
-/// for a range without usage does not make the source look absent.
 fn detect(detection: Detection, entries: &[LoadedEntry]) -> bool {
     match detection {
         Detection::NonEmpty => !entries.is_empty(),
@@ -139,7 +125,7 @@ pub(crate) fn retain_entries_in(entries: &mut Vec<LoadedEntry>, window: &ReportW
     entries.retain(|entry| window.contains_date(&entry.date));
 }
 
-pub(crate) fn retain_sessions_last_active_in(rows: &mut Vec<UsageSummary>, window: &ReportWindow) {
+fn retain_sessions_last_active_in(rows: &mut Vec<UsageSummary>, window: &ReportWindow) {
     if window.is_unbounded() {
         return;
     }
@@ -374,7 +360,6 @@ mod tests {
             skips_a_unit: true,
             ..Fake::new(descriptor(), entries())
         };
-        // `--debug` lists the unit whatever LOG_LEVEL the test runs under.
         let shared = SharedArgs {
             debug: true,
             ..shared(None, None)
@@ -484,7 +469,6 @@ mod tests {
 
     #[test]
     fn session_window_takes_the_day_in_the_report_timezone() {
-        // Asia/Tokyo is UTC+9, so the window shifts nine hours earlier in UTC.
         let shared = SharedArgs {
             since: Some("20260223".to_string()),
             until: Some("20260223".to_string()),
