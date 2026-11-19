@@ -317,7 +317,7 @@ mod tests {
         let _guard = EnvGuard::set(super::super::paths::ZCODE_HOME_ENV, root);
         let shared = SharedArgs {
             mode,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         ccusage_adapter_common::testing::entries(
@@ -375,7 +375,7 @@ mod tests {
         );
         let shared = SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -533,7 +533,7 @@ mod tests {
         let _home = EnvGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let window = ReportWindow::from_shared(&shared);
@@ -681,7 +681,7 @@ mod tests {
         );
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = ccusage_adapter_common::testing::entries(

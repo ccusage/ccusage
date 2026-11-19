@@ -2294,7 +2294,7 @@ fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
     let shared = SharedArgs {
         since: Some("20260315".to_string()),
         until: Some("20260315".to_string()),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
 
@@ -2358,7 +2358,7 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
     let shared = SharedArgs {
         since: Some("20260315".to_string()),
         until: Some("20260315".to_string()),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
 
@@ -2422,7 +2422,7 @@ fn bounded_loading_uses_the_first_duplicate_parent_id() {
     let shared = SharedArgs {
         since: Some("20260315".to_string()),
         until: Some("20260315".to_string()),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
 
@@ -2482,7 +2482,7 @@ fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
     let shared = SharedArgs {
         since: Some("20260315".to_string()),
         until: Some("20260315".to_string()),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
 
@@ -2597,7 +2597,7 @@ fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
     let shared = SharedArgs {
         since: Some("20260315".to_string()),
         until: Some("20260315".to_string()),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         single_thread: true,
         ..SharedArgs::default()
     };
@@ -2727,7 +2727,7 @@ fn the_fused_fork_pass_records_a_parent_skip_once() {
     });
     let totals = [true, false].map(|single_thread| {
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..Default::default()
         };
@@ -2784,7 +2784,7 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
         let shared = SharedArgs {
             since: Some(since.to_string()),
             until: Some("20260315".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             debug: true,
             ..Default::default()

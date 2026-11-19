@@ -138,10 +138,10 @@ mod tests {
 
         let pricing = PricingMap::load_embedded();
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let tz = crate::resolve_tz(shared.timezone.as_deref());
+        let tz = crate::resolve_tz(shared.timezone.as_ref());
         let diagnostics = Diagnostics::new("hermes");
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics)
             .into_iter()
@@ -288,7 +288,7 @@ mod tests {
         let _cleanup = EnvGuard::set("HERMES_HOME", fixture.root());
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 

@@ -167,7 +167,7 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             since: Some("99991231".into()),
             until: Some("99991231".into()),
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         assert!(
@@ -208,7 +208,7 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             since: Some("20260101".to_owned()),
-            timezone: Some("UTC".to_owned()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("claude");

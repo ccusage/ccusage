@@ -1137,7 +1137,7 @@ mod tests {
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             debug: true,
             ..SharedArgs::default()
@@ -1163,7 +1163,7 @@ mod tests {
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             ..SharedArgs::default()
         };
@@ -1199,7 +1199,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             since: Some("20260101".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             ..SharedArgs::default()
         };
@@ -1467,7 +1467,7 @@ mod tests {
             )]);
             let shared = SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 single_thread: true,
                 ..SharedArgs::default()
             };

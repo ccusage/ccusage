@@ -457,7 +457,7 @@ mod tests {
         let shared = SharedArgs {
             since: Some("20260223".to_string()),
             until: Some("20260223".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -472,7 +472,7 @@ mod tests {
         let shared = SharedArgs {
             since: Some("20260223".to_string()),
             until: Some("20260223".to_string()),
-            timezone: Some("Asia/Tokyo".to_string()),
+            timezone: Some("Asia/Tokyo".parse().unwrap()),
             ..SharedArgs::default()
         };
 
@@ -483,7 +483,7 @@ mod tests {
     fn session_window_with_only_until_keeps_everything_through_that_day() {
         let shared = SharedArgs {
             until: Some("20260223".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -497,7 +497,7 @@ mod tests {
     fn session_window_with_only_since_keeps_everything_from_that_day() {
         let shared = SharedArgs {
             since: Some("20260223".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 

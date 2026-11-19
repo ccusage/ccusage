@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-
+jiff.workspace = true
 
 [lints]
 workspace = true

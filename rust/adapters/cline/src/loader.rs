@@ -110,7 +110,7 @@ mod tests {
         let shared = SharedArgs {
             json: true,
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             mode: CostMode::Auto,
             ..SharedArgs::default()
         };
@@ -190,7 +190,7 @@ mod tests {
         let _env = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 

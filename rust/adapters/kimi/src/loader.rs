@@ -43,7 +43,7 @@ mod tests {
         });
         let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = ccusage_adapter_common::testing::entries(
@@ -79,7 +79,7 @@ mod tests {
         });
         let _cleanup = EnvGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = ccusage_adapter_common::testing::entries(

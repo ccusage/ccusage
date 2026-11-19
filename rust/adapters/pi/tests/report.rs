@@ -19,7 +19,7 @@ fn loads_pi_agent_jsonl_usage_entries() {
         .join("\n"),
     });
     let shared = SharedArgs {
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         mode: CostMode::Display,
         ..SharedArgs::default()
     };

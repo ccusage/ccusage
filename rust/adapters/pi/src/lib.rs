@@ -90,7 +90,7 @@ mod tests {
         let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..crate::cli::SharedArgs::default()
         };
@@ -149,7 +149,7 @@ mod tests {
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
             debug: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..crate::cli::SharedArgs::default()
         };

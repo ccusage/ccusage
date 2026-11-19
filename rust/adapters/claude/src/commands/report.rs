@@ -293,7 +293,7 @@ mod tests {
             SharedArgs {
                 mode: CostMode::Display,
                 since: Some("20260813".to_string()),
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         );
@@ -312,7 +312,7 @@ mod tests {
             SharedArgs {
                 mode: CostMode::Display,
                 until: Some("20260814".to_string()),
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         );
@@ -329,7 +329,7 @@ mod tests {
             SharedArgs {
                 mode: CostMode::Display,
                 since: Some("20260815".to_string()),
-                timezone: Some("Asia/Tokyo".to_string()),
+                timezone: Some("Asia/Tokyo".parse().unwrap()),
                 ..SharedArgs::default()
             },
         );
@@ -359,7 +359,7 @@ mod tests {
             SharedArgs {
                 mode: CostMode::Calculate,
                 offline: true,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         );

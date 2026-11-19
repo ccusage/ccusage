@@ -1146,7 +1146,7 @@ mod tests {
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
         ccusage_test_support::install_pricing_snapshots();
-        let tz = crate::resolve_tz(Some("UTC"));
+        let tz = crate::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{

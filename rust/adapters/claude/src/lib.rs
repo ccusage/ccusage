@@ -902,7 +902,7 @@ mod tests {
             mode: CostMode::Display,
             offline: true,
             single_thread: true,
-            timezone: Some("UTC".to_owned()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let loaded = super::load_windowed_entries(
@@ -947,7 +947,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let entries = super::load_entries(&shared, None).unwrap();
@@ -969,7 +969,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let entries = super::load_entries(&shared, None).unwrap();
@@ -994,7 +994,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let entries = super::load_entries(&shared, None).unwrap();
@@ -1016,7 +1016,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let entries = super::load_entries(&shared, None).unwrap();
@@ -1711,7 +1711,7 @@ mod tests {
         )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread: true,
             json: true,
             ..SharedArgs::default()

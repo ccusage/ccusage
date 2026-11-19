@@ -762,14 +762,14 @@ mod tests {
             offline: true,
             json: true,
             mode: CostMode::Display,
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990102".into()),
             until: Some("20990102".into()),
             ..SharedArgs::with_defaults()
         };
         let source = SourceArgs {
             shared: SharedArgs {
-                timezone: Some("Asia/Tokyo".into()),
+                timezone: Some("Asia/Tokyo".parse().unwrap()),
                 ..shared.clone()
             },
             ..SourceArgs::default()
@@ -795,7 +795,7 @@ mod tests {
             json: true,
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
@@ -1221,7 +1221,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("America/Boise".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
             since: Some("20260704".to_string()),
             until: Some("20260704".to_string()),
             pi_stores: vec![NamedPiStore {
@@ -1306,7 +1306,7 @@ mod tests {
         });
         let shared = SharedArgs {
             mode: crate::cli::CostMode::Display,
-            timezone: Some("America/Boise".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
             since: Some("20260703".to_string()),
             until: Some("20260704".to_string()),
             ..SharedArgs::default()
@@ -1348,7 +1348,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("America/Boise".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
             since: Some("20260704".to_string()),
             until: Some("20260704".to_string()),
             ..SharedArgs::default()
@@ -1397,7 +1397,7 @@ mod tests {
             json: true,
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("America/Boise".to_string()),
+            timezone: Some("America/Boise".parse().unwrap()),
             since: Some("20260704".to_string()),
             until: Some("20260704".to_string()),
             ..SharedArgs::default()
@@ -1634,7 +1634,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990102".to_string()),
             until: Some("20990102".to_string()),
             pi_stores: vec![NamedPiStore {
@@ -1717,7 +1717,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990102".to_string()),
             until: Some("20990102".to_string()),
             pi_stores: vec![NamedPiStore {
@@ -1800,7 +1800,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990102".to_string()),
             until: Some("20990102".to_string()),
             pi_stores: vec![NamedPiStore {
@@ -1840,7 +1840,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990102".to_string()),
             until: Some("20990102".to_string()),
             ..SharedArgs::default()
@@ -1884,7 +1884,7 @@ mod tests {
             json: true,
             mode: crate::cli::CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990101".to_string()),
             until: Some("20990103".to_string()),
             ..SharedArgs::default()
@@ -1937,7 +1937,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260720".to_string()),
             until: Some("20260723".to_string()),
             ..SharedArgs::default()
@@ -2025,7 +2025,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
@@ -2068,7 +2068,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let sources = BTreeMap::from([(
@@ -2146,7 +2146,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20990102".to_string()),
             until: Some("20990102".to_string()),
             pi_stores: vec![NamedPiStore {

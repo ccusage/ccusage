@@ -78,7 +78,10 @@ pub(crate) fn entry(session: &str, timestamp: &str, input_tokens: u64) -> Loaded
             is_sidechain: None,
         },
         timestamp: parsed,
-        date: format_date_tz(parsed, &resolve_tz(Some("UTC"))),
+        date: format_date_tz(
+            parsed,
+            &resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC)),
+        ),
         project: Arc::from("fake"),
         session_id: Arc::from(session),
         project_path: Arc::from("project"),
@@ -107,7 +110,7 @@ pub(crate) fn shared(since: Option<&str>, until: Option<&str>) -> SharedArgs {
     SharedArgs {
         since: since.map(str::to_string),
         until: until.map(str::to_string),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         offline: true,
         ..SharedArgs::with_defaults()
     }

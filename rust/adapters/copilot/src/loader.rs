@@ -732,7 +732,7 @@ mod tests {
         ]);
         let shared = crate::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..crate::cli::SharedArgs::default()
         };
 
@@ -1253,7 +1253,7 @@ mod tests {
         ]);
         let shared = crate::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             until: Some("20260102".to_string()),
             ..crate::cli::SharedArgs::default()
         };
@@ -1341,7 +1341,7 @@ mod tests {
         let shared = crate::cli::SharedArgs {
             single_thread: true,
             since: Some("20260103".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..crate::cli::SharedArgs::default()
         };
 
@@ -1642,7 +1642,7 @@ mod tests {
         ]);
         let shared = crate::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..crate::cli::SharedArgs::default()
         };
 
@@ -1700,7 +1700,7 @@ mod tests {
         ]);
         let shared = crate::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..crate::cli::SharedArgs::default()
         };
 
@@ -1785,7 +1785,7 @@ mod tests {
     fn utc_args() -> crate::cli::SharedArgs {
         crate::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..crate::cli::SharedArgs::default()
         }
     }

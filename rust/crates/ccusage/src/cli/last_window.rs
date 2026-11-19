@@ -19,7 +19,7 @@ pub(crate) fn resolve_shared(
     let Some(last) = shared.last else {
         return Ok(());
     };
-    let today = format_date(utc_now(), shared.timezone.as_deref());
+    let today = format_date(utc_now(), shared.timezone.as_ref());
     let Some(since) = last_periods_since(unit, last, &today, start_of_week) else {
         return Err(format!("Could not resolve --last {last} from today's date"));
     };
@@ -44,7 +44,7 @@ mod tests {
     fn shared_with_last(last: u32) -> SharedArgs {
         SharedArgs {
             last: Some(periods(last)),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::with_defaults()
         }
     }
@@ -72,7 +72,8 @@ mod tests {
 
     #[test]
     fn resolves_the_unified_daily_window_to_today() {
-        let today = format_date(utc_now(), Some("UTC")).replace('-', "");
+        let today =
+            format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC)).replace('-', "");
 
         let since = resolved_since(Command::All(agent_command(AgentReportKind::Daily, 1)));
 
@@ -94,7 +95,7 @@ mod tests {
             agent_command(AgentReportKind::Monthly, 1),
         ));
 
-        let today = format_date(utc_now(), Some("UTC"));
+        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
         assert_eq!(
             weekly,
             last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Monday)
@@ -116,7 +117,7 @@ mod tests {
             start_of_week: WeekDay::Sunday,
         }));
 
-        let today = format_date(utc_now(), Some("UTC"));
+        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
         assert_eq!(
             since,
             last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Sunday)
@@ -130,7 +131,7 @@ mod tests {
             ..agent_command(AgentReportKind::Weekly, 1)
         }));
 
-        let today = format_date(utc_now(), Some("UTC"));
+        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
         assert_eq!(
             since,
             last_periods_since(PeriodUnit::Week, periods(1), &today, WeekDay::Wednesday)
@@ -158,7 +159,7 @@ mod tests {
         )
         .unwrap();
         resolve(&mut command).unwrap();
-        let today = format_date(utc_now(), Some("UTC"));
+        let today = format_date(utc_now(), Some(&ccusage_core::cli::ReportTimezone::UTC));
         assert_eq!(
             command.shared().unwrap().since,
             last_periods_since(PeriodUnit::Day, periods(2), &today, WeekDay::Monday)

@@ -15,7 +15,7 @@ mod tests {
         });
         let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
@@ -63,7 +63,7 @@ mod tests {
         });
         let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };

@@ -6,8 +6,8 @@ use ccusage_cli::{
     AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
     BlocksOption, ClaudeStatuslineOption, CliConfig, CodexSpeed, CodexStatuslineArgs,
     CodexStatuslineOption, ColorChoice, Command, CostMode, CostSource, DATE_BOUND_FORMATS,
-    DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent, StatuslineArgs,
-    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    DailyArgs, ReportTimezone, SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 use ccusage_cli::{command_tokens, is_shared_flag};
 
@@ -65,6 +65,18 @@ pub fn parse_from_with_config<I>(
 where
     I: IntoIterator<Item = OsString>,
 {
+    parse_with_timezone(args, config, version, None)
+}
+
+fn parse_with_timezone<I>(
+    args: I,
+    config: &dyn CliConfig,
+    version: &'static str,
+    known_timezone: Option<&ReportTimezone>,
+) -> Result<Command, String>
+where
+    I: IntoIterator<Item = OsString>,
+{
     let mut parser = ArgParser::new(args.into_iter().skip(1).collect())?;
     normalize_legacy_agent_command_args(&mut parser.args);
     match control_arg(&parser.args) {
@@ -75,11 +87,15 @@ where
     if let Some(message) = report_flag_alias_error(&parser.args) {
         return Err(message);
     }
-    parse_invocation(&mut parser, config)
+    parse_invocation(&mut parser, config, known_timezone)
         .map_err(|message| invocation_error(&parser.args).unwrap_or(message))
 }
 
-fn parse_invocation(parser: &mut ArgParser, config: &dyn CliConfig) -> Result<Command, String> {
+fn parse_invocation(
+    parser: &mut ArgParser,
+    config: &dyn CliConfig,
+    known_timezone: Option<&ReportTimezone>,
+) -> Result<Command, String> {
     if let Some(message) = config.config_error() {
         return Err(message.to_string());
     }
@@ -106,7 +122,7 @@ fn parse_invocation(parser: &mut ArgParser, config: &dyn CliConfig) -> Result<Co
         return Err(message);
     }
     validate_date_window(&mut command, parser, config)?;
-    validate_timezone(&mut command, parser, config)?;
+    resolve_timezone(&mut command, parser, config, known_timezone)?;
     Ok(command)
 }
 
@@ -115,11 +131,12 @@ pub fn parse_report_args_with_config<I>(
     config: &dyn CliConfig,
     version: &'static str,
     start_of_week: WeekDay,
+    known_timezone: Option<&ReportTimezone>,
 ) -> Result<AgentCommandArgs, String>
 where
     I: IntoIterator<Item = OsString>,
 {
-    match parse_from_with_config(args, config, version)? {
+    match parse_with_timezone(args, config, version, known_timezone)? {
         Command::All(args) | Command::Agent(_, AgentCommand::Report(args)) => {
             Ok(AgentCommandArgs {
                 start_of_week,
@@ -310,7 +327,6 @@ fn parse_statusline_command(
     if let Some(offline) = offline_override {
         args.offline = offline;
     }
-    args.timezone = shared.timezone.clone();
     args.debug = shared.debug;
     args.color = shared.color;
     args.mode = shared.mode;
@@ -352,9 +368,7 @@ fn parse_statusline_command(
                         .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?,
                 )
             }
-            ClaudeStatuslineOption::Timezone => {
-                args.timezone = Some(parser.value_for("--timezone")?)
-            }
+            ClaudeStatuslineOption::Timezone => parser.read_timezone()?,
             ClaudeStatuslineOption::Config => {
                 parser.value_for("--config")?;
             }
@@ -810,7 +824,7 @@ enum SharedFlag {
     Breakdown,
     Offline(bool),
     Color(ColorChoice),
-    Timezone(String),
+    Timezone,
     Jq(String),
     Config,
     Compact,
@@ -832,9 +846,8 @@ impl SharedFlag {
             Self::Breakdown => shared.breakdown = true,
             Self::Offline(value) => shared.offline = value,
             Self::Color(value) => shared.color = value,
-            Self::Timezone(value) => shared.timezone = Some(value),
             Self::Jq(value) => shared.jq = Some(value),
-            Self::Config => {}
+            Self::Config | Self::Timezone => {}
             Self::Compact => shared.compact = true,
             Self::SingleThread => shared.single_thread = true,
             Self::NoCost => shared.no_cost = true,
@@ -866,7 +879,10 @@ fn read_shared_flag(parser: &mut ArgParser) -> Result<SharedFlag, String> {
         "--no-offline" => SharedFlag::Offline(false),
         "--color" => SharedFlag::Color(ColorChoice::Always),
         "--no-color" => SharedFlag::Color(ColorChoice::Never),
-        "-z" | "--timezone" => SharedFlag::Timezone(parser.value_for("--timezone")?),
+        "-z" | "--timezone" => {
+            parser.read_timezone()?;
+            SharedFlag::Timezone
+        }
         "-q" | "--jq" => SharedFlag::Jq(parser.value_for("--jq")?),
         "--config" => {
             parser.value_for("--config")?;
@@ -1030,44 +1046,47 @@ fn validate_date_window(
     Err(message)
 }
 
-fn validate_timezone(
+fn resolve_timezone(
     command: &mut Command,
     parser: &ArgParser,
     config: &dyn CliConfig,
+    known_timezone: Option<&ReportTimezone>,
 ) -> Result<(), String> {
     let statusline = matches!(
         command,
         Command::Statusline(_) | Command::Agent(_, AgentCommand::Statusline(_))
     );
-    let timezone = match command {
-        Command::Statusline(args) => &mut args.timezone,
-        command => {
-            let Some(shared) = command.shared_mut() else {
-                return Ok(());
-            };
-            &mut shared.timezone
+    let timezone = if let Some(value) = parser.timezone.as_deref().or_else(|| config.timezone()) {
+        let resolved = known_timezone
+            .filter(|timezone| timezone.name() == value)
+            .map_or_else(
+                || value.parse::<ReportTimezone>(),
+                |timezone| Ok(timezone.clone()),
+            );
+        match resolved {
+            Ok(timezone) => Some(timezone),
+            Err(_) => {
+                let error = format!(
+                    "Invalid value for --timezone '{value}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
+                );
+                if !statusline || parser.timezone.is_some() {
+                    return Err(error);
+                }
+                config.recover_statusline_timezone(value, error)?
+            }
         }
+    } else {
+        None
     };
-    let Some(value) = timezone.as_deref() else {
-        return Ok(());
-    };
-    if valid_timezone(value) {
-        return Ok(());
+    match command {
+        Command::Statusline(args) => args.timezone = timezone,
+        command => {
+            if let Some(shared) = command.shared_mut() {
+                shared.timezone = timezone;
+            }
+        }
     }
-    let message = format!(
-        "Invalid value for --timezone '{value}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
-    );
-    if statusline
-        && !parser.saw_flag(&["-z", "--timezone"])
-        && config.recover_statusline_timezone(timezone, valid_timezone)
-    {
-        return Ok(());
-    }
-    Err(message)
-}
-
-fn valid_timezone(value: &str) -> bool {
-    matches!(value, "local" | "UTC") || jiff::tz::TimeZone::get(value).is_ok()
+    Ok(())
 }
 
 fn parse_cost_mode(value: &str) -> Result<CostMode, String> {

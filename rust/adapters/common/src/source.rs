@@ -399,7 +399,7 @@ mod pricing_tests {
     #[test]
     fn usage_context_resolves_nothing_until_a_file_needs_it() {
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let cx = UsageLoadContext::new(&shared);

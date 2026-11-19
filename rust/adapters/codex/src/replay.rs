@@ -513,7 +513,7 @@ mod tests {
                     fixture.root(),
                     &crate::cli::SharedArgs {
                         single_thread,
-                        timezone: Some("UTC".to_string()),
+                        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                         ..Default::default()
                     },
                     crate::cli::AgentReportKind::Daily,

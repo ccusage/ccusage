@@ -1,11 +1,9 @@
 mod last_window;
 mod sources;
-#[cfg(test)]
-mod timezone;
 
 use std::{env, ffi::OsString, process};
 
-use ccusage_cli::{AgentCommand, AgentCommandArgs, Command, WeekDay};
+use ccusage_cli::{AgentCommand, AgentCommandArgs, Command, ReportTimezone, WeekDay};
 use ccusage_cli_parser::{parse_from_with_config, parse_report_args_with_config};
 use ccusage_config::ConfigContext;
 
@@ -46,9 +44,15 @@ fn try_parse_report_with(
     args: Vec<OsString>,
     config: &ConfigContext,
     start_of_week: WeekDay,
+    known_timezone: Option<&ReportTimezone>,
 ) -> Result<AgentCommandArgs, String> {
-    let mut report =
-        parse_report_args_with_config(args, config, env!("CCUSAGE_VERSION"), start_of_week)?;
+    let mut report = parse_report_args_with_config(
+        args,
+        config,
+        env!("CCUSAGE_VERSION"),
+        start_of_week,
+        known_timezone,
+    )?;
     if let Some(period) = report.period() {
         last_window::resolve_shared(&mut report.shared, period)?;
     }

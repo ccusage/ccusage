@@ -30,7 +30,7 @@ impl ReportWindow {
         Self {
             since: shared.since.as_deref().map(Box::from),
             until: shared.until.as_deref().map(ReportBound::new),
-            timezone: resolve_tz(shared.timezone.as_deref()),
+            timezone: resolve_tz(shared.timezone.as_ref()),
         }
     }
 
@@ -134,7 +134,7 @@ mod tests {
         ReportWindow::from_shared(&SharedArgs {
             since: since.map(str::to_string),
             until: until.map(str::to_string),
-            timezone: timezone.map(str::to_string),
+            timezone: timezone.map(|value| value.parse().unwrap()),
             ..SharedArgs::default()
         })
     }
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn bounds_ms_match_the_shared_helper() {
         for timezone in [Some("UTC"), Some("Asia/Tokyo"), Some("America/New_York")] {
-            let parsed = resolve_tz(timezone);
+            let parsed = resolve_tz(timezone.map(|value| value.parse().unwrap()).as_ref());
             for since in BOUNDS {
                 for until in BOUNDS {
                     assert_eq!(

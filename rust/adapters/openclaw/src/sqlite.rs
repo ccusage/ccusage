@@ -502,7 +502,7 @@ mod tests {
         let custom_path = fixture.root().to_str().unwrap();
         let shared = ccusage_core::cli::SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         let window = ReportWindow::from_shared(&shared);

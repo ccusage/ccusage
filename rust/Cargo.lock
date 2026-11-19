@@ -445,6 +445,9 @@ dependencies = [
 [[package]]
 name = "ccusage-cli"
 version = "0.0.0"
+dependencies = [
+ "jiff",
+]
 
 [[package]]
 name = "ccusage-cli-parser"
@@ -454,7 +457,6 @@ dependencies = [
  "ccusage-config",
  "ccusage-test-support",
  "insta",
- "jiff",
  "serde_json",
 ]
 

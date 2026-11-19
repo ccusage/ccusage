@@ -127,7 +127,7 @@ mod tests {
         let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };

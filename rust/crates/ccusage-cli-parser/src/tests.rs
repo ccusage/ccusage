@@ -170,6 +170,10 @@ struct TestConfig {
 }
 
 impl CliConfig for TestConfig {
+    fn timezone(&self) -> Option<&str> {
+        self.shared_timezone
+    }
+
     fn apply_shared(&self, shared: &mut SharedArgs) {
         if let Some(json) = self.shared_json {
             shared.json = json;
@@ -179,9 +183,6 @@ impl CliConfig for TestConfig {
         }
         if let Some(since) = self.shared_since {
             shared.since = Some(since.to_string());
-        }
-        if let Some(timezone) = self.shared_timezone {
-            shared.timezone = Some(timezone.to_string());
         }
         if let Some(compact) = self.shared_compact {
             shared.compact = compact;
@@ -249,7 +250,7 @@ fn shared_snapshot(shared: &SharedArgs) -> Value {
         "breakdown": shared.breakdown,
         "offline": shared.offline,
         "color": format!("{:?}", shared.color),
-        "timezone": shared.timezone.as_deref(),
+        "timezone": shared.timezone.as_ref().map(|timezone| timezone.name()),
         "jq": shared.jq.as_deref(),
         "compact": shared.compact,
         "singleThread": shared.single_thread,
@@ -368,6 +369,7 @@ fn source_reparse_keeps_the_unified_week_start() {
         },
         "test",
         WeekDay::Wednesday,
+        None,
     )
     .unwrap();
     assert_eq!(args.kind, AgentReportKind::Weekly);
@@ -383,6 +385,7 @@ fn report_reparse_carries_focused_agent_options() {
         &TestConfig::default(),
         "test",
         WeekDay::Monday,
+        None,
     )
     .unwrap();
     assert_eq!(args.kind, AgentReportKind::Weekly);
@@ -1075,7 +1078,13 @@ fn applies_config_file_passed_after_agent_command() {
     };
     assert_eq!(args.kind, AgentReportKind::Monthly);
     assert!(args.shared.json);
-    assert_eq!(args.shared.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert_eq!(
+        args.shared
+            .timezone
+            .as_ref()
+            .map(|timezone| timezone.name()),
+        Some("Asia/Tokyo")
+    );
     assert_eq!(args.shared.since.as_deref(), Some("20260101"));
     assert_eq!(args.options.codex_speed, CodexSpeed::Standard);
 }
@@ -1589,7 +1598,10 @@ fn parses_statusline_options() {
     };
     assert!(args.offline);
     assert!(!args.cache);
-    assert_eq!(args.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert_eq!(
+        args.timezone.as_ref().map(|timezone| timezone.name()),
+        Some("Asia/Tokyo")
+    );
     assert_eq!(args.visual_burn_rate, VisualBurnRate::EmojiText);
     assert_eq!(args.cost_source, CostSource::Both);
 }
@@ -2340,7 +2352,13 @@ fn codex_statusline_config_overrides_defaults_and_flags_override_config() {
     };
     assert!(!args.shared.offline);
     assert_eq!(args.codex_speed, CodexSpeed::Flex);
-    assert_eq!(args.shared.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert_eq!(
+        args.shared
+            .timezone
+            .as_ref()
+            .map(|timezone| timezone.name()),
+        Some("Asia/Tokyo")
+    );
 
     let cli = parse_with_config(
         &[

@@ -137,7 +137,7 @@ pub(super) struct CodexFileEligibility {
 
 impl CodexFileEligibility {
     pub(super) fn from_shared(shared: &SharedArgs) -> Option<Self> {
-        let timezone = resolve_tz(shared.timezone.as_deref());
+        let timezone = resolve_tz(shared.timezone.as_ref());
         let since_date = shared.since.as_deref().and_then(parse_compact_date);
         let until_date = shared.until.as_deref().and_then(parse_compact_date);
         let (since_millis, until_millis) =

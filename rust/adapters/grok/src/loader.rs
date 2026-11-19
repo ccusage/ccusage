@@ -95,7 +95,7 @@ mod tests {
             "sessions/proj/sess-load/summary.json": r#"{"info":{"id":"sess-load","cwd":"/tmp/proj"}}"#,
         });
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
@@ -126,7 +126,7 @@ mod tests {
             "sessions/proj/sess-b/updates.jsonl": format!("{shared_event}\n{other}"),
         });
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
@@ -155,7 +155,7 @@ mod tests {
             "sessions/proj/sess-bad/updates.jsonl": "\0\0\0not-jsonl\n{broken",
         });
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
@@ -183,7 +183,7 @@ mod tests {
             ),
         });
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());
@@ -213,7 +213,7 @@ mod tests {
             "sessions/proj/sess-early/updates.jsonl": early,
         });
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = with_grok_home(fixture.root());

@@ -57,7 +57,7 @@ mod tests {
         SharedArgs {
             since: since.map(str::to_string),
             until: until.map(str::to_string),
-            timezone: Some(timezone.to_string()),
+            timezone: Some(timezone.parse().unwrap()),
             offline: true,
             ..SharedArgs::with_defaults()
         }

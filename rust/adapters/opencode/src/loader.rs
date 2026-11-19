@@ -1388,7 +1388,7 @@ mod tests {
         {
             let shared = SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since: since.map(str::to_string),
                 until: until.map(str::to_string),
                 ..SharedArgs::default()
@@ -1715,7 +1715,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -1749,7 +1749,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
@@ -1810,7 +1810,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let entries = load_entries_from_directory_for_report(
@@ -1855,7 +1855,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         );
@@ -1893,7 +1893,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         );
@@ -1975,7 +1975,7 @@ mod tests {
             &[&fixture.path("first"), &fixture.path("second")],
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Daily,
@@ -2037,7 +2037,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         );
@@ -2085,7 +2085,7 @@ mod tests {
         );
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -2220,7 +2220,7 @@ mod tests {
             db_path.parent().expect("fixture db has a parent directory"),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
         )
@@ -2420,7 +2420,7 @@ mod tests {
             .unwrap();
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -2509,7 +2509,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
@@ -2550,7 +2550,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
@@ -2593,7 +2593,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since: Some("20260102".to_string()),
                 until: Some("20260103".to_string()),
                 ..SharedArgs::default()
@@ -2635,7 +2635,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since: Some("2026".to_string()),
                 ..SharedArgs::default()
             },
@@ -2680,7 +2680,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 until: Some("2026-02".to_string()),
                 ..SharedArgs::default()
             },
@@ -2721,7 +2721,7 @@ mod tests {
             &[aggregate_fixture.root(), message_fixture.root()],
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
@@ -2764,7 +2764,7 @@ mod tests {
         );
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -2840,7 +2840,7 @@ mod tests {
         );
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -2888,7 +2888,7 @@ mod tests {
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
-                timezone: Some("UTC".to_string()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
@@ -3054,7 +3054,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
@@ -3084,7 +3084,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             until: Some("20260105".to_string()),
             ..SharedArgs::default()
         };
@@ -3106,7 +3106,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260103".to_string()),
             until: Some("20260107".to_string()),
             ..SharedArgs::default()
@@ -3129,7 +3129,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260103".to_string()),
             until: Some("20260107".to_string()),
             ..SharedArgs::default()
@@ -3150,7 +3150,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             until: Some("20260101".to_string()),
             ..SharedArgs::default()
         };
@@ -3169,7 +3169,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
@@ -3188,7 +3188,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260101".to_string()),
             until: Some("20260103".to_string()),
             ..SharedArgs::default()
@@ -3209,7 +3209,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260102".to_string()),
             ..SharedArgs::default()
         };
@@ -3229,7 +3229,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             until: Some("20260102".to_string()),
             ..SharedArgs::default()
         };
@@ -3267,7 +3267,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             until: Some("20260101".to_string()),
             ..SharedArgs::default()
         };
@@ -3286,7 +3286,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260101".to_string()),
             until: Some("20260103".to_string()),
             ..SharedArgs::default()
@@ -3312,7 +3312,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("Pacific/Kiritimati".to_string()),
+            timezone: Some("Pacific/Kiritimati".parse().unwrap()),
             since: Some("20260102".to_string()),
             until: Some("20260102".to_string()),
             ..SharedArgs::default()
@@ -3339,7 +3339,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("Etc/GMT+12".to_string()),
+            timezone: Some("Etc/GMT+12".parse().unwrap()),
             until: Some("20260101".to_string()),
             ..SharedArgs::default()
         };
@@ -3366,7 +3366,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260102".to_string()),
             until: Some("20260102".to_string()),
             ..SharedArgs::default()
@@ -3394,7 +3394,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260101".to_string()),
             until: Some("20260103".to_string()),
             ..SharedArgs::default()
@@ -3421,7 +3421,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("abあcde".to_string()),
             ..SharedArgs::default()
         };
@@ -3456,7 +3456,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20200101".to_string()),
             until: Some("20200102".to_string()),
             ..SharedArgs::default()

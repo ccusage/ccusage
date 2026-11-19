@@ -113,7 +113,7 @@ mod tests {
         SharedArgs {
             mode: crate::cli::CostMode::Calculate,
             single_thread,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         }
     }

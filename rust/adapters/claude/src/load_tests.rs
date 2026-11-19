@@ -17,7 +17,7 @@ fn display_shared() -> SharedArgs {
 
 fn display_shared_in_utc() -> SharedArgs {
     SharedArgs {
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..display_shared()
     }
 }

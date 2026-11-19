@@ -4,6 +4,7 @@ pub(crate) struct ArgParser {
     pub(crate) args: Vec<String>,
     index: usize,
     flags: Vec<String>,
+    pub(crate) timezone: Option<String>,
     inline_value: Option<InlineValue>,
 }
 
@@ -25,6 +26,7 @@ impl ArgParser {
             args: parsed,
             index: 0,
             flags: Vec::new(),
+            timezone: None,
             inline_value: None,
         })
     }
@@ -86,6 +88,11 @@ impl ArgParser {
             return Err(format!("Missing value for {flag}"));
         }
         Ok(value)
+    }
+
+    pub(crate) fn read_timezone(&mut self) -> Result<(), String> {
+        self.timezone = Some(self.value_for("--timezone")?);
+        Ok(())
     }
 
     pub(crate) fn finish(&mut self) -> Result<(), String> {

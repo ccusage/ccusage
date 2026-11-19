@@ -11,8 +11,13 @@ pub(crate) fn resolve(
 ) -> Result<(), String> {
     for agent in BUILT_IN_AGENT_NAMES {
         let view = config.for_dependency(agent);
-        let report = super::try_parse_report_with(args.to_vec(), &view, unified.start_of_week)
-            .map_err(|message| format!("{message} (in {agent} config)"))?;
+        let report = super::try_parse_report_with(
+            args.to_vec(),
+            &view,
+            unified.start_of_week,
+            unified.shared.timezone.as_ref(),
+        )
+        .map_err(|message| format!("{message} (in {agent} config)"))?;
         unified.sources.insert(
             agent.to_string(),
             SourceArgs::from_options(report.shared, view.agent_options(agent)),
@@ -27,7 +32,12 @@ pub(crate) fn resolve_opencode_claims(
     config: &ConfigContext,
 ) -> Result<(), String> {
     let view = config.for_dependency("claude");
-    let parsed = super::try_parse_report_with(args.to_vec(), &view, focused.start_of_week)?;
+    let parsed = super::try_parse_report_with(
+        args.to_vec(),
+        &view,
+        focused.start_of_week,
+        focused.shared.timezone.as_ref(),
+    )?;
     let options = view.agent_options("claude");
     focused.sources.insert(
         "claude".to_string(),
@@ -173,9 +183,23 @@ mod tests {
             panic!("expected focused command")
         };
         resolve_opencode_claims(&mut focused, &args, &config).unwrap();
-        assert_eq!(focused.shared.timezone.as_deref(), Some("UTC"));
+        assert_eq!(
+            focused
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("UTC")
+        );
         let claude = &focused.sources["claude"];
-        assert_eq!(claude.shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(
+            claude
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("Asia/Tokyo")
+        );
         assert_eq!(claude.shared.since.as_deref(), Some("20990102"));
         assert_eq!(claude.options.claude_project.as_deref(), Some("selected"));
     }
@@ -313,7 +337,14 @@ mod tests {
         let codex = &unified.sources["codex"];
         assert_eq!(codex.shared.since.as_deref(), Some("20260601"));
         assert_eq!(codex.shared.mode, CostMode::Auto);
-        assert_eq!(codex.shared.timezone.as_deref(), Some("Pacific/Auckland"));
+        assert_eq!(
+            codex
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("Pacific/Auckland")
+        );
         assert!(codex.shared.offline);
         assert_eq!(codex.options.codex_speed, CodexSpeed::Fast);
     }
@@ -366,7 +397,11 @@ mod tests {
             assert_eq!(codex.shared.since.as_deref(), Some(since), "{name}");
             assert_eq!(codex.shared.mode, mode, "{name}");
             assert_eq!(
-                codex.shared.timezone.as_deref(),
+                codex
+                    .shared
+                    .timezone
+                    .as_ref()
+                    .map(|timezone| timezone.name()),
                 Some("Europe/London"),
                 "{name}"
             );
@@ -459,11 +494,15 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["weekly", "--last", "1"], config);
         let codex = &unified.sources["codex"];
-        let today = format_date(utc_now(), codex.shared.timezone.as_deref());
+        let today = format_date(utc_now(), codex.shared.timezone.as_ref());
 
         assert_eq!(unified.start_of_week, WeekDay::Wednesday);
         assert_eq!(
-            codex.shared.timezone.as_deref(),
+            codex
+                .shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
             Some("America/Los_Angeles")
         );
         assert_eq!(codex.shared.last, Some(std::num::NonZeroU32::MIN));
@@ -490,7 +529,7 @@ mod tests {
             config,
         );
         let codex = &unified.sources["codex"];
-        let today = format_date(utc_now(), codex.shared.timezone.as_deref());
+        let today = format_date(utc_now(), codex.shared.timezone.as_ref());
 
         assert_eq!(unified.start_of_week, WeekDay::Friday);
         assert_eq!(

@@ -69,7 +69,7 @@ mod tests {
     fn load(fixture: &ccusage_test_support::Fixture) -> (Vec<LoadedEntry>, Diagnostics) {
         let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         ccusage_adapter_common::testing::load_entries(

@@ -41,7 +41,7 @@ mod smoke_tests {
     #[ignore = "requires real Grok home with sessions/**/updates.jsonl"]
     fn smoke_real_grok_home_loads_without_error() {
         let shared = SharedArgs {
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let pricing = PricingMap::load_embedded();
@@ -120,7 +120,7 @@ mod tests {
         )]);
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..crate::cli::SharedArgs::default()
         };
@@ -158,7 +158,7 @@ mod tests {
         let shared = crate::cli::SharedArgs {
             mode: crate::cli::CostMode::Display,
             debug: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             since: Some("20270101".to_string()),
             ..crate::cli::SharedArgs::default()

@@ -144,7 +144,7 @@ fn refresh(
     let mut shared = args.shared.clone();
     shared.since = None;
     shared.until = None;
-    let timezone = resolve_tz(shared.timezone.as_deref());
+    let timezone = resolve_tz(shared.timezone.as_ref());
     let today = format_date_tz(utc_now(), &timezone).replace('-', "");
     let file_groups =
         paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, diagnostics);

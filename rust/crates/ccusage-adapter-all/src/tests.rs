@@ -940,7 +940,7 @@ fn an_undatable_daily_row_is_skipped_with_a_diagnostic_naming_its_source() {
     let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
     let shared = SharedArgs {
         mode: CostMode::Display,
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
 
@@ -1469,7 +1469,7 @@ fn unified_daily_dates_claude_agent_rows_in_the_claude_source_timezone() {
         "claude".to_string(),
         SourceArgs {
             shared: SharedArgs {
-                timezone: Some("Asia/Tokyo".to_string()),
+                timezone: Some("Asia/Tokyo".parse().unwrap()),
                 ..shared.clone()
             },
             ..SourceArgs::default()
@@ -1589,7 +1589,7 @@ fn native_claims_widen_by_calendar_days_across_months_and_clock_changes() {
         );
         let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
         let shared = SharedArgs {
-            timezone: Some(timezone.to_owned()),
+            timezone: Some(timezone.parse().unwrap()),
             ..claude_agent_shared(day, day)
         };
         for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
@@ -2486,7 +2486,7 @@ fn fixture_shared(since: &str, until: &str) -> SharedArgs {
     SharedArgs {
         since: Some(since.to_string()),
         until: Some(until.to_string()),
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         offline: true,
         single_thread: true,
         ..SharedArgs::default()

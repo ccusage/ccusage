@@ -355,7 +355,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
     for single_thread in [true, false] {
         let shared = SharedArgs {
             since: Some("20261014".into()),
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
         };
@@ -438,7 +438,7 @@ fn compressed_rollouts_match_plain_json_reports_for_every_report_mode() {
     write_compressed(&fixture, "compressed/session.jsonl.zst", &log);
     let pricing = PricingMap::load_embedded();
     let shared = SharedArgs {
-        timezone: Some("UTC".into()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
     let report = |dir: &str, kind| {

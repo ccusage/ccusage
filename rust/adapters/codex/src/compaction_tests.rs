@@ -120,7 +120,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
     for single_thread in [true, false] {
         let shared = SharedArgs {
             since: Some("20260902".into()),
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
         };
@@ -166,7 +166,7 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
     for single_thread in [true, false] {
         let shared = SharedArgs {
             since: Some("20260902".into()),
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             single_thread,
             ..SharedArgs::default()
         };
@@ -195,7 +195,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
     ] {
         let reports = [true, false].map(|single_thread| {
             let shared = SharedArgs {
-                timezone: Some("UTC".into()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 single_thread,
                 ..SharedArgs::default()
             };
@@ -340,7 +340,7 @@ fn local_compaction_usage_already_in_cumulative_counts_is_not_added_again() {
     for single_thread in [true, false] {
         let shared = SharedArgs {
             single_thread,
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let groups =

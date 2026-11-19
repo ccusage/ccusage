@@ -10,8 +10,8 @@ use serde_json::Value;
 use ccusage_cli::command_tokens;
 use ccusage_cli::{
     AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, ContextThresholds, CostMode, CostSource,
-    DailyArgs, NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs,
-    VisualBurnRate, WeekDay, WeeklyArgs,
+    DailyArgs, NamedPiStore, PricingOverride, ReportTimezone, SharedArgs, SortOrder,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
 };
 
 use crate::config_schema::{
@@ -526,9 +526,6 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         if let Some(refresh_interval) = options.refresh_interval {
             args.refresh_interval = refresh_interval;
         }
-        if let Some(timezone) = options.timezone {
-            args.timezone = Some(timezone);
-        }
         if let Some(debug) = options.debug {
             args.debug = debug;
         }
@@ -603,30 +600,40 @@ impl ccusage_cli::CliConfig for ConfigContext {
             })
     }
 
+    fn timezone(&self) -> Option<&str> {
+        self.option_maps().into_iter().rev().find_map(|layer| {
+            if self.command.report == "statusline" {
+                layer.statusline.timezone.as_deref()
+            } else {
+                layer.shared.timezone.as_deref()
+            }
+        })
+    }
+
     fn recover_statusline_timezone(
         &self,
-        timezone: &mut Option<String>,
-        valid: fn(&str) -> bool,
-    ) -> bool {
+        rejected: &str,
+        error: String,
+    ) -> Result<Option<ReportTimezone>, String> {
         for path in self.option_paths().into_iter().rev() {
             let Some(value) = self
                 .layers
                 .get(&path)
-                .and_then(|layer| layer.shared.timezone.as_deref())
+                .and_then(|layer| layer.statusline.timezone.as_deref())
             else {
                 continue;
             };
-            if valid(value) {
-                *timezone = Some(value.to_string());
-                return true;
+            if value != rejected
+                && let Ok(timezone) = value.parse()
+            {
+                return Ok(Some(timezone));
             }
             let message = format!("unknown IANA timezone '{value}'");
             if !self.warn_discovered_statusline_field(&path, "timezone", &message) {
-                return false;
+                return Err(error);
             }
-            *timezone = None;
         }
-        timezone.is_none()
+        Ok(None)
     }
 
     fn recover_statusline_window(
@@ -769,9 +776,6 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
     }
     if options.no_color == Some(true) {
         shared.color = ColorChoice::Never;
-    }
-    if let Some(timezone) = options.timezone {
-        shared.timezone = Some(timezone);
     }
     if let Some(jq) = options.jq {
         shared.jq = Some(jq);
@@ -1436,7 +1440,7 @@ mod tests {
         assert!(shared.breakdown);
         assert!(!shared.offline);
         assert_eq!(shared.color, ColorChoice::Never);
-        assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(config.timezone(), Some("Asia/Tokyo"));
         assert_eq!(shared.jq.as_deref(), Some(".totals"));
         assert!(shared.compact);
         assert!(shared.single_thread);
@@ -1520,7 +1524,7 @@ mod tests {
         assert_eq!(statusline.refresh_interval, 3);
         assert_eq!(config.context_thresholds(None, None).unwrap().low(), 45);
         assert_eq!(config.context_thresholds(None, None).unwrap().medium(), 75);
-        assert_eq!(statusline.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(config.timezone(), Some("Asia/Tokyo"));
         assert!(statusline.debug);
     }
 
@@ -1716,7 +1720,7 @@ mod tests {
 
         assert_eq!(shared.since.as_deref(), Some("20260301"));
         assert_eq!(shared.mode, CostMode::Calculate);
-        assert_eq!(shared.timezone.as_deref(), Some("UTC"));
+        assert_eq!(codex.timezone(), Some("UTC"));
         assert!(shared.breakdown);
         assert_eq!(speed, CodexSpeed::Fast);
     }
@@ -1782,7 +1786,7 @@ mod tests {
             assert_eq!(shared.since.as_deref(), Some("20260301"));
             assert!(shared.offline);
             assert!(shared.json);
-            assert_eq!(shared.timezone.as_deref(), Some("UTC"));
+            assert_eq!(config.timezone(), Some("UTC"));
             assert_eq!(
                 shared.pricing_overrides["cline-model"].input_cost_per_token,
                 Some(0.000003)
@@ -2198,9 +2202,7 @@ mod tests {
 
     fn user_config_timezone() -> Option<String> {
         let config = ConfigContext::from_args(&["daily".to_string()]);
-        let mut shared = SharedArgs::default();
-        apply_config_to_shared(&mut shared, &config);
-        shared.timezone
+        config.timezone().map(str::to_owned)
     }
 
     #[test]

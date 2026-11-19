@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ccusage_cli::WeekDay;
+use ccusage_cli::{ReportTimezone, WeekDay};
 
 use jiff::{Timestamp as JiffTimestamp, civil::Date as JiffDate, tz::TimeZone as JiffTimeZone};
 
@@ -328,13 +328,8 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
-/// `local`, an absent value and an unknown name resolve to the system timezone.
-pub fn resolve_tz(timezone: Option<&str>) -> JiffTimeZone {
-    match timezone {
-        Some("UTC") => JiffTimeZone::UTC,
-        Some("local") | None => JiffTimeZone::system(),
-        Some(value) => JiffTimeZone::get(value).unwrap_or_else(|_| JiffTimeZone::system()),
-    }
+pub fn resolve_tz(timezone: Option<&ReportTimezone>) -> JiffTimeZone {
+    timezone.map_or_else(JiffTimeZone::system, |timezone| timezone.zone().clone())
 }
 
 pub fn format_date_tz(timestamp: TimestampMs, timezone: &JiffTimeZone) -> String {
@@ -394,7 +389,7 @@ mod tests {
 
     #[test]
     fn formats_local_dates_across_dst_boundaries() {
-        let timezone = resolve_tz(Some("Europe/London"));
+        let timezone = resolve_tz(Some(&"Europe/London".parse().unwrap()));
         for (timestamp, expected) in [
             ("2026-03-28T23:30:00Z", "2026-03-28"),
             ("2026-03-29T23:30:00Z", "2026-03-30"),
@@ -439,9 +434,12 @@ mod tests {
 
     #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
-        assert_eq!(resolve_tz(Some("UTC")).iana_name(), Some("UTC"));
+        assert_eq!(
+            resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC)).iana_name(),
+            Some("UTC")
+        );
         let system = jiff::tz::TimeZone::system();
-        for timezone in [Some("local"), None, Some("Not/AZone")] {
+        for timezone in [Some(&"local".parse().unwrap()), None] {
             assert_eq!(
                 resolve_tz(timezone).iana_name(),
                 system.iana_name(),
@@ -469,7 +467,7 @@ mod tests {
 
     #[test]
     fn resolves_bounds_to_local_midnight() {
-        let utc = resolve_tz(Some("UTC"));
+        let utc = resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC));
         let (start, end) = date_range_bounds_ms(Some("20260102"), Some("20260102"), &utc);
         assert_eq!(start, Some(JAN_2_UTC));
         assert_eq!(
@@ -478,14 +476,14 @@ mod tests {
             "until is inclusive, so the bound is the start of the next day"
         );
 
-        let kiritimati = resolve_tz(Some("Pacific/Kiritimati"));
+        let kiritimati = resolve_tz(Some(&"Pacific/Kiritimati".parse().unwrap()));
         let (start, _) = date_range_bounds_ms(Some("20260102"), None, &kiritimati);
         assert_eq!(start, Some(JAN_2_UTC - 14 * MILLIS_PER_HOUR));
     }
 
     #[test]
     fn spans_twenty_three_hours_across_a_spring_forward_day() {
-        let new_york = resolve_tz(Some("America/New_York"));
+        let new_york = resolve_tz(Some(&"America/New_York".parse().unwrap()));
         let (start, end) = date_range_bounds_ms(Some("20260308"), Some("20260308"), &new_york);
         assert_eq!(
             end.unwrap() - start.unwrap(),
@@ -496,7 +494,7 @@ mod tests {
 
     #[test]
     fn leaves_bounds_open_when_they_have_no_instant() {
-        let utc = resolve_tz(Some("UTC"));
+        let utc = resolve_tz(Some(&ccusage_cli::ReportTimezone::UTC));
         assert_eq!(
             date_range_bounds_ms(Some("202601"), Some("abあcde"), &utc),
             (None, None)

@@ -348,7 +348,7 @@ mod tests {
         let sessions_dir = fixture.path("sessions");
         let shared = SharedArgs {
             since: Some("20260103".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -374,7 +374,7 @@ mod tests {
         });
         let sessions_dir = fixture.path("sessions");
         let shared = SharedArgs {
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -499,7 +499,7 @@ mod tests {
         });
         let shared = SharedArgs {
             single_thread: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 
@@ -1280,7 +1280,7 @@ mod tests {
             for single_thread in [true, false] {
                 let shared = SharedArgs {
                     single_thread,
-                    timezone: Some("UTC".to_string()),
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                     ..SharedArgs::default()
                 };
                 for kind in [

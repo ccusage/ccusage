@@ -256,7 +256,7 @@ fn statusline_today_shared(
     shared: &SharedArgs,
     now: TimestampMs,
 ) -> SharedArgs {
-    let today = format_date(now, args.timezone.as_deref()).replace('-', "");
+    let today = format_date(now, args.timezone.as_ref()).replace('-', "");
     SharedArgs {
         since: Some(today.clone()),
         until: Some(today),
@@ -347,7 +347,7 @@ fn statusline_block_shared(
         ccusage_core::cli::SessionLength::DEFAULT.as_millis() + lookback_days * MILLIS_PER_DAY;
     let since = format_date(
         TimestampMs::from_millis(now.as_millis() - lookback),
-        args.timezone.as_deref(),
+        args.timezone.as_ref(),
     )
     .replace('-', "");
     SharedArgs {
@@ -869,7 +869,7 @@ mod tests {
     #[test]
     fn builds_statusline_today_filter_from_timezone() {
         let args = StatuslineArgs {
-            timezone: Some("Asia/Tokyo".to_string()),
+            timezone: Some("Asia/Tokyo".parse().unwrap()),
             ..StatuslineArgs::default()
         };
         let mut shared = SharedArgs {
@@ -889,7 +889,13 @@ mod tests {
 
         assert_eq!(today_shared.since.as_deref(), Some("20260522"));
         assert_eq!(today_shared.until.as_deref(), Some("20260522"));
-        assert_eq!(today_shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(
+            today_shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("Asia/Tokyo")
+        );
         assert!(
             today_shared
                 .pricing_overrides
@@ -900,7 +906,7 @@ mod tests {
     #[test]
     fn bounds_statusline_block_load_behind_the_session_window() {
         let args = StatuslineArgs {
-            timezone: Some("Asia/Tokyo".to_string()),
+            timezone: Some("Asia/Tokyo".parse().unwrap()),
             ..StatuslineArgs::default()
         };
         let shared = SharedArgs {
@@ -919,7 +925,13 @@ mod tests {
             Some("20260514")
         );
         assert_eq!(block_shared.until, None);
-        assert_eq!(block_shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(
+            block_shared
+                .timezone
+                .as_ref()
+                .map(|timezone| timezone.name()),
+            Some("Asia/Tokyo")
+        );
         assert!(block_shared.offline);
     }
 

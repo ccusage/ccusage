@@ -77,7 +77,7 @@ pub(crate) fn load_rollouts(
         fixture.write_file(path, lines.join("\n"));
     }
     let shared = SharedArgs {
-        timezone: Some("UTC".to_string()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
     load_groups_from_directory(fixture.root(), &shared, kind).unwrap()

@@ -351,7 +351,7 @@ INSERT INTO sessions (
         let _cleanup = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
 

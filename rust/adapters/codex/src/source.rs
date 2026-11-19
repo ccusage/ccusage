@@ -148,7 +148,7 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             mode: CostMode::Calculate,
             offline: true,
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
         for kind in [
@@ -195,7 +195,7 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             offline: true,
-            timezone: Some("UTC".to_owned()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
 
@@ -220,7 +220,7 @@ mod diagnostic_tests {
         ]);
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".into()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let loaded = SOURCE
@@ -250,7 +250,7 @@ mod diagnostic_tests {
         ]);
         let shared = SharedArgs {
             offline: true,
-            timezone: Some("UTC".to_owned()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             since: Some("20260101".to_owned()),
             ..Default::default()
         };
@@ -285,7 +285,7 @@ mod diagnostic_tests {
         for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
             let shared = SharedArgs {
                 offline: true,
-                timezone: Some("UTC".to_owned()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since: Some("20260102".to_owned()),
                 until: Some("20260102".to_owned()),
                 ..Default::default()
@@ -357,7 +357,7 @@ mod diagnostic_tests {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
-                timezone: Some("UTC".to_owned()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since,
                 ..Default::default()
             };
@@ -419,7 +419,7 @@ mod diagnostic_tests {
                 let shared = SharedArgs {
                     offline: true,
                     debug: true,
-                    timezone: Some("UTC".to_owned()),
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                     since,
                     ..Default::default()
                 };
@@ -469,7 +469,7 @@ mod diagnostic_tests {
                 let shared = SharedArgs {
                     offline: true,
                     json: true,
-                    timezone: Some("UTC".to_owned()),
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                     since,
                     ..Default::default()
                 };
@@ -510,7 +510,7 @@ mod diagnostic_tests {
             let shared = SharedArgs {
                 offline: true,
                 debug: true,
-                timezone: Some("UTC".to_owned()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 since,
                 ..Default::default()
             };
@@ -688,7 +688,7 @@ mod diagnostic_tests {
         let shared = SharedArgs {
             offline: true,
             debug: true,
-            timezone: Some("UTC".to_owned()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..Default::default()
         };
 

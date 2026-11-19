@@ -40,7 +40,7 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &ReportPricing<'_>) -> Result<
     } else if shared.since.is_some() || shared.until.is_some() {
         "range"
     } else {
-        let timezone = resolve_tz(shared.timezone.as_deref());
+        let timezone = resolve_tz(shared.timezone.as_ref());
         let today = format_date_tz(utc_now(), &timezone).replace('-', "");
         shared.since = Some(today.clone());
         shared.until = Some(today);

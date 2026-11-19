@@ -157,7 +157,7 @@ pub fn print_usage_table_with_options(
         USAGE_COMPACT_WIDTH_THRESHOLD,
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
-    let timezone = resolve_tz(shared.timezone.as_deref());
+    let timezone = resolve_tz(shared.timezone.as_ref());
     print_box_title(title, shared);
     let (mut headers, mut aligns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn last_activity_column_shows_the_date_in_the_report_timezone() {
-        let timezone = resolve_tz(Some("America/Los_Angeles"));
+        let timezone = resolve_tz(Some(&"America/Los_Angeles".parse().unwrap()));
 
         assert_eq!(
             format_last_activity_date("2026-02-24T02:00:00.000Z", &timezone),

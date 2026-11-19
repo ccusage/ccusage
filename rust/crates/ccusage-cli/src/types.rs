@@ -1,9 +1,51 @@
 use crate::{ContextThresholds, SessionLength, StandardAgent, TokenLimit};
 
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap},
     num::NonZeroU32,
 };
+
+use jiff::tz::TimeZone;
+
+#[derive(Clone, Debug)]
+pub struct ReportTimezone {
+    name: Cow<'static, str>,
+    zone: TimeZone,
+}
+
+impl ReportTimezone {
+    pub const UTC: Self = Self {
+        name: Cow::Borrowed("UTC"),
+        zone: TimeZone::UTC,
+    };
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn zone(&self) -> &TimeZone {
+        &self.zone
+    }
+}
+
+impl std::str::FromStr for ReportTimezone {
+    type Err = jiff::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "UTC" => Ok(Self::UTC),
+            "local" => Ok(Self {
+                name: Cow::Borrowed("local"),
+                zone: TimeZone::system(),
+            }),
+            name => Ok(Self {
+                name: Cow::Owned(name.to_owned()),
+                zone: TimeZone::get(name)?,
+            }),
+        }
+    }
+}
 
 pub enum Command {
     All(AgentCommandArgs),
@@ -88,7 +130,7 @@ pub struct SharedArgs {
     pub breakdown: bool,
     pub offline: bool,
     pub color: ColorChoice,
-    pub timezone: Option<String>,
+    pub timezone: Option<ReportTimezone>,
     pub jq: Option<String>,
     pub compact: bool,
     pub single_thread: bool,
@@ -198,7 +240,7 @@ pub struct StatuslineArgs {
     pub cache: bool,
     pub refresh_interval: u64,
     pub context_thresholds: ContextThresholds,
-    pub timezone: Option<String>,
+    pub timezone: Option<ReportTimezone>,
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
@@ -410,12 +452,16 @@ pub trait CliConfig {
         None
     }
 
+    fn timezone(&self) -> Option<&str> {
+        None
+    }
+
     fn recover_statusline_timezone(
         &self,
-        _timezone: &mut Option<String>,
-        _valid: fn(&str) -> bool,
-    ) -> bool {
-        false
+        _rejected: &str,
+        error: String,
+    ) -> Result<Option<ReportTimezone>, String> {
+        Err(error)
     }
 
     fn recover_statusline_window(

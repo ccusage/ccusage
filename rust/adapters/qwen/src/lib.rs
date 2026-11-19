@@ -67,7 +67,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
@@ -101,7 +101,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
@@ -151,7 +151,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
@@ -183,7 +183,7 @@ mod tests {
 
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
         let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
@@ -240,7 +240,7 @@ mod tests {
             mode: CostMode::Display,
             since: Some("20260131".to_string()),
             until: Some("20260131".to_string()),
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
@@ -278,7 +278,7 @@ mod tests {
         let shared = SharedArgs {
             mode: CostMode::Display,
             debug: true,
-            timezone: Some("UTC".to_string()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             offline: true,
             ..SharedArgs::default()
         };
