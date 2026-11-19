@@ -2301,6 +2301,42 @@ mod tests {
     }
 
     #[test]
+    fn leaves_receipted_sessions_unchanged_when_a_watermarked_shutdown_lacks_its_total() {
+        let receipt = usage_record(
+            "response-a",
+            "2026-01-02T09:00:00Z",
+            json!({
+                "apiCallId": "response-a",
+                "accounting": {"sourceSessionId": "session-1", "sequence": 1},
+                "copilotUsage": {"totalNanoAiu": 10 * NANO_AIU_PER_CREDIT},
+            }),
+        );
+        let mut watermarked_checkpoint: serde_json::Value =
+            serde_json::from_str(&checkpoint("checkpoint-1", "2026-01-02T10:00:00Z", 30)).unwrap();
+        watermarked_checkpoint["data"]["usageAccountingWatermarks"] = json!({"session-1": 1});
+        let untotalled_shutdown = json!({
+            "type": "session.shutdown",
+            "id": "shutdown-1",
+            "timestamp": "2026-01-02T11:00:00Z",
+            "data": {"usageAccountingWatermarks": {"session-1": 1}}
+        });
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                receipt,
+                watermarked_checkpoint.to_string(),
+                untotalled_shutdown.to_string(),
+            ].join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 100, 10)]
+        );
+    }
+
+    #[test]
     fn leaves_the_gap_unknown_when_otel_has_no_recorded_credits() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl":
