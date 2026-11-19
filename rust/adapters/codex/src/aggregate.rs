@@ -60,7 +60,7 @@ impl<T> StringInterner<T> {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 struct CodexUsageKey {
     session: Option<StringId>,
     timestamp: crate::TimestampMs,
@@ -69,28 +69,18 @@ struct CodexUsageKey {
     occurrence: u32,
 }
 
-/// Numbers the identical usage events of one rollout file.
-///
-/// A rollout records each request once, so identical events in one file are
-/// distinct requests and get distinct ordinals. Usage copied into another file
-/// repeats the ordinals of the original, which is what lets the dedupe drop it.
-pub(super) struct CodexFileOccurrences<K>(FxHashMap<K, u32>);
-
-impl<K> Default for CodexFileOccurrences<K> {
-    fn default() -> Self {
-        Self(FxHashMap::default())
-    }
+#[derive(Default)]
+struct CodexFileOccurrences {
+    total: u32,
+    recordless: u32,
 }
 
-impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
-    fn next(&mut self, key: &K) -> u32 {
-        if let Some(count) = self.0.get_mut(key) {
-            let occurrence = *count;
-            *count += 1;
-            return occurrence;
-        }
-        self.0.insert(key.clone(), 1);
-        0
+impl CodexFileOccurrences {
+    fn add(&mut self, recorded: bool) -> (u32, u32) {
+        let occurrence = self.recordless;
+        self.total += 1;
+        self.recordless += u32::from(!recorded);
+        (occurrence, self.total)
     }
 }
 
@@ -98,7 +88,7 @@ impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
 /// ordinals of the identical usage events seen in it so far.
 struct CodexEventProvenance {
     file_index: usize,
-    occurrences: CodexFileOccurrences<CodexUsageKey>,
+    occurrences: FxHashMap<CodexUsageKey, CodexFileOccurrences>,
     models: FxHashMap<CompactString, StringId>,
     sessions: FxHashMap<CompactString, StringId>,
 }
@@ -107,7 +97,7 @@ impl CodexEventProvenance {
     fn new(file_index: usize) -> Self {
         Self {
             file_index,
-            occurrences: CodexFileOccurrences::default(),
+            occurrences: FxHashMap::default(),
             models: FxHashMap::default(),
             sessions: FxHashMap::default(),
         }
@@ -133,6 +123,7 @@ impl CodexEventProvenance {
 
 struct CodexAttribution {
     file_index: usize,
+    rollout_count: u32,
     session: Option<StringId>,
     last_activity: CompactString,
     is_fallback: bool,
@@ -143,6 +134,7 @@ impl CodexAttribution {
     fn new(event: &CodexTokenUsageEvent, file_index: usize, session: Option<StringId>) -> Self {
         Self {
             file_index,
+            rollout_count: 0,
             session,
             last_activity: CompactString::new(&event.last_activity),
             is_fallback: event.is_fallback_model,
@@ -152,10 +144,12 @@ impl CodexAttribution {
 
     fn merge(&mut self, mut incoming: Self) -> bool {
         self.service_tier = merge_codex_service_tiers(self.service_tier, incoming.service_tier);
+        self.rollout_count = self.rollout_count.max(incoming.rollout_count);
         if incoming.file_index >= self.file_index {
             return false;
         }
         incoming.service_tier = self.service_tier;
+        incoming.rollout_count = self.rollout_count;
         *self = incoming;
         true
     }
@@ -187,9 +181,33 @@ impl CodexDedupeMap {
             recorded,
             mut session_usage,
         } = self;
-        for (signature, requests) in &recorded {
-            let mut stand_in = signature.clone();
-            for occurrence in 0..u32::try_from(requests.len()).unwrap_or(u32::MAX) {
+        for (&signature, requests) in &recorded {
+            let mut max_in_rollout = requests
+                .iter()
+                .map(|request| request.attribution.rollout_count)
+                .max()
+                .unwrap_or_default();
+            let mut stand_in = signature;
+            loop {
+                let count = usage
+                    .get(&stand_in)
+                    .map(|item| item.rollout_count)
+                    .or_else(|| {
+                        session_usage.get(&stand_in).and_then(|sessions| {
+                            sessions.iter().map(|item| item.rollout_count).max()
+                        })
+                    });
+                let Some(count) = count else { break };
+                max_in_rollout = max_in_rollout.max(count);
+                stand_in.occurrence += 1;
+            }
+            // Copies can account for at most the distinct requests named by the
+            // records. Any rollout with more requests proves there were others.
+            let named = u32::try_from(requests.len()).unwrap_or(u32::MAX);
+            let recordless = stand_in.occurrence;
+            let unmatched = max_in_rollout.saturating_sub(named);
+            let paired = recordless.saturating_sub(unmatched);
+            for occurrence in 0..paired {
                 stand_in.occurrence = occurrence;
                 usage.remove(&stand_in);
                 session_usage.remove(&stand_in);
@@ -198,12 +216,12 @@ impl CodexDedupeMap {
         let named = recorded.into_iter().flat_map(|(signature, requests)| {
             requests
                 .into_iter()
-                .map(move |request| (signature.clone(), request.attribution))
+                .map(move |request| (signature, request.attribution))
         });
         let session_usage = session_usage.into_iter().flat_map(|(signature, sessions)| {
             sessions
                 .into_iter()
-                .map(move |attribution| (signature.clone(), attribution))
+                .map(move |attribution| (signature, attribution))
         });
         usage.into_iter().chain(session_usage).chain(named).chain(
             responses
@@ -306,7 +324,7 @@ impl<'a> CodexDedupe<'a> {
             usage: event.raw_usage(),
             occurrence: 0,
         };
-        let attribution = CodexAttribution::new(event, provenance.file_index, session);
+        let mut attribution = CodexAttribution::new(event, provenance.file_index, session);
         if let Some(response) = &event.response_id {
             let mut shard = self
                 .shard(response)?
@@ -324,8 +342,12 @@ impl<'a> CodexDedupe<'a> {
             }
         } else {
             let shard = self.shard(&key)?;
-            if event.record_response_id.is_none() {
-                key.occurrence = provenance.occurrences.next(&key);
+            let recorded = event.record_response_id.is_some();
+            let (occurrence, rollout_count) =
+                provenance.occurrences.entry(key).or_default().add(recorded);
+            attribution.rollout_count = rollout_count;
+            if !recorded {
+                key.occurrence = occurrence;
             }
             let mut shard = shard
                 .lock()
@@ -2610,6 +2632,92 @@ mod tests {
                 model.recorded_usage[CodexServiceTier::Flex].input_tokens,
                 100
             );
+        }
+    }
+
+    #[test]
+    fn preserves_recordless_requests_that_cooccur_with_their_recorded_match() {
+        ccusage_test_support::install_pricing_snapshots();
+        let recorded = recorded_requests(Some("priority"), &[Some("resp_x")]);
+        let mixed_after = recorded_requests(Some("standard"), &[Some("resp_x"), None]);
+        let mixed_before = recorded_requests(Some("standard"), &[None, Some("resp_x")]);
+        let recordless = recorded_requests(Some("standard"), &[None, None]);
+        for mixed in [&mixed_after, &mixed_before] {
+            for files in [
+                vec![&recorded, mixed],
+                vec![mixed, &recorded],
+                vec![&recorded, &recordless, mixed],
+                vec![mixed, &recorded, &recordless],
+                vec![&recordless, mixed, &recorded],
+            ] {
+                let fixture = ccusage_test_support::Fixture::new();
+                for (index, contents) in files.iter().enumerate() {
+                    let _ = fixture.write_file(format!("sessions/{index}.jsonl"), contents);
+                }
+                let sessions = fixture.path("sessions");
+                for single_thread in [true, false] {
+                    assert_eq!(
+                        daily_input_tokens(&sessions, single_thread),
+                        [("2026-11-01".to_string(), 2_000)],
+                        "single_thread={single_thread}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn settles_mixed_recordless_tiers_independently_of_file_order() {
+        ccusage_test_support::install_pricing_snapshots();
+        let change_last_tier = |mut contents: String, tier| {
+            let last_count = contents.rfind('\n').unwrap() + 1;
+            let settings = service_tier_line("2026-11-01T09:01:00.000Z", tier);
+            contents.insert_str(last_count, &format!("{settings}\n"));
+            contents
+        };
+        let named = recorded_requests(Some("priority"), &[Some("resp_x")]);
+        let anonymous =
+            change_last_tier(recorded_requests(Some("flex"), &[None, None]), "standard");
+        let mixed = change_last_tier(
+            recorded_requests(Some("priority"), &[Some("resp_x"), None]),
+            "standard",
+        );
+        for files in [
+            [&named, &anonymous, &mixed],
+            [&named, &mixed, &anonymous],
+            [&anonymous, &named, &mixed],
+            [&anonymous, &mixed, &named],
+            [&mixed, &named, &anonymous],
+            [&mixed, &anonymous, &named],
+        ] {
+            let fixture = ccusage_test_support::Fixture::new();
+            for (index, contents) in files.iter().enumerate() {
+                let _ = fixture.write_file(format!("sessions/{index}.jsonl"), contents);
+            }
+            for single_thread in [true, false] {
+                let shared = SharedArgs {
+                    single_thread,
+                    timezone: Some("UTC".into()),
+                    ..SharedArgs::default()
+                };
+                let groups = load_groups_from_directory(
+                    &fixture.path("sessions"),
+                    &shared,
+                    AgentReportKind::Daily,
+                )
+                .unwrap();
+                let usage = &groups["2026-11-01"].models["gpt-5.2"];
+                assert_eq!(
+                    (
+                        usage.usage.input_tokens,
+                        usage.recorded_usage[CodexServiceTier::Fast].input_tokens,
+                        usage.recorded_usage[CodexServiceTier::Standard].input_tokens,
+                        usage.recorded_usage[CodexServiceTier::Flex].input_tokens,
+                    ),
+                    (2_000, 1_000, 1_000, 0),
+                    "single_thread={single_thread}"
+                );
+            }
         }
     }
 }
