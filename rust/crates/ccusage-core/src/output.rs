@@ -32,7 +32,7 @@ pub fn totals_json(rows: &[UsageSummary]) -> Value {
 }
 
 impl Totals {
-    pub fn to_json(&self) -> Value {
+    fn to_json(&self) -> Value {
         let mut value = json!({
             "inputTokens": self.input_tokens,
             "outputTokens": self.output_tokens,
@@ -52,7 +52,7 @@ impl Totals {
 /// Model names with at least one usage entry that had no price. A model can
 /// still show positive cost when other entries carried stored costs. Sorted
 /// and deduplicated so JSON consumers can compare runs.
-pub fn unpriced_models<'a>(
+pub(crate) fn unpriced_models<'a>(
     breakdowns: impl IntoIterator<Item = &'a ModelBreakdown>,
 ) -> Vec<String> {
     breakdowns
@@ -309,17 +309,6 @@ fn empty_usage_table_message() -> &'static str {
     "No usage data found."
 }
 
-pub fn print_missing_pricing_warnings(rows: &[UsageSummary], offline: bool) {
-    for warning in missing_pricing_warnings(rows, offline) {
-        eprintln!("{warning}");
-    }
-}
-
-fn missing_pricing_warnings(rows: &[UsageSummary], offline: bool) -> Vec<String> {
-    let models = unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns));
-    missing_pricing_warnings_for_models(models.iter().map(String::as_str), offline)
-}
-
 pub fn print_missing_pricing_warnings_for_models<'a>(
     models: impl IntoIterator<Item = &'a str>,
     offline: bool,
@@ -492,6 +481,11 @@ fn format_last_activity_date(value: &str, timezone: &JiffTimeZone) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    fn missing_pricing_warnings(rows: &[UsageSummary], offline: bool) -> Vec<String> {
+        let models = unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns));
+        missing_pricing_warnings_for_models(models.iter().map(String::as_str), offline)
+    }
     use super::*;
     use crate::ModelBreakdown;
 

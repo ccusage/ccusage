@@ -122,7 +122,7 @@ pub(super) fn session_detail_json(
     row
 }
 
-pub fn non_cached_input_tokens(
+pub(super) fn non_cached_input_tokens(
     input_tokens: u64,
     cached_input_tokens: u64,
     cache_creation_tokens: u64,
@@ -182,7 +182,7 @@ fn totals_json<'a>(
     })
 }
 
-pub fn calculate_codex_model_cost(
+pub(super) fn calculate_codex_model_cost(
     model: &str,
     usage: &CodexModelUsage,
     pricing: Option<&PricingMap>,
@@ -325,7 +325,7 @@ pub fn calculate_group_cost(
     )
 }
 
-pub fn codex_model_missing_pricing(
+pub(super) fn codex_model_missing_pricing(
     model: &str,
     usage: &CodexModelUsage,
     pricing: Option<&PricingMap>,

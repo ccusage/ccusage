@@ -7,7 +7,7 @@ use ccusage_core::{
     format_number, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
 };
 
-pub fn print_table_for_agent(
+fn print_table_for_agent(
     agent_name: &str,
     kind: AgentReportKind,
     rows: &[UsageSummary],
@@ -269,7 +269,7 @@ pub fn report_json(
     })
 }
 
-pub fn rows_key(kind: AgentReportKind) -> &'static str {
+fn rows_key(kind: AgentReportKind) -> &'static str {
     match kind {
         AgentReportKind::Daily => "daily",
         AgentReportKind::Monthly => "monthly",

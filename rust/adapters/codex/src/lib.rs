@@ -26,20 +26,17 @@ use ccusage_adapter_common::source::ReportPricing;
 
 pub use aggregate::load_groups;
 
-pub use report::{
-    calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
-    non_cached_input_tokens,
-};
+pub use report::calculate_group_cost;
 pub use source::SOURCE;
 #[doc(hidden)]
 pub use source::unified_row_from_group;
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use statusline::run_statusline;
 pub use types::{
-    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,
-    CodexUsageBucket, TierBuckets,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,
+    TierBuckets,
 };
-pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
+use types::{CodexRawUsage, CodexTokenUsageEvent, merge_codex_service_tiers};
 
 use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
@@ -157,7 +154,9 @@ fn is_codex_uuid(value: &str) -> bool {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::report::report_from_groups;
+    use super::report::{
+        calculate_codex_model_cost, codex_model_missing_pricing, report_from_groups,
+    };
     use super::*;
     use crate::cli::{AgentReportKind, CostMode, SharedArgs};
     use crate::test_support::{load_groups_from_directory, load_rollouts, token_count_line};

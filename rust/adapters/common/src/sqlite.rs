@@ -84,7 +84,7 @@ pub enum Number {
 }
 
 impl Number {
-    pub fn as_i64(self) -> Option<i64> {
+    fn as_i64(self) -> Option<i64> {
         match self {
             Self::Integer(value) => Some(value),
             Self::Real(value) => {
@@ -95,7 +95,7 @@ impl Number {
         }
     }
 
-    pub fn as_f64(self) -> f64 {
+    fn as_f64(self) -> f64 {
         match self {
             Self::Integer(value) => value as f64,
             Self::Real(value) => value,
@@ -103,7 +103,7 @@ impl Number {
     }
 }
 
-pub fn read_number(statement: &Statement<'_>, index: usize) -> Option<Number> {
+pub(crate) fn read_number(statement: &Statement<'_>, index: usize) -> Option<Number> {
     match statement.column_type(index).ok()? {
         Type::Integer => statement.read::<i64, _>(index).ok().map(Number::Integer),
         Type::Float | Type::String => statement

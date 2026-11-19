@@ -9,13 +9,13 @@ layers.
 - file discovery by extension, including the JSONL helper most adapters use.
 - `chunk_file_indexes_by_size` — size-balanced work splitting, so one large file
   does not leave workers idle.
-- `read_files_parallel` and `map_parallel` — ordered parallel reads: results
+- `map_parallel` — ordered parallel reads: results
   come back in input order, so output does not depend on worker scheduling, a
   worker's panic reaches the caller, and `--single-thread` collapses to a plain
   sequential read. `worker_count` is the one rule for how many workers run.
 - `timestamps` — a file's mtime, and an epoch number whose unit the source
   does not fix.
-- `units::read_units` and `read_units_flat` — `read_files_parallel` with fault
+- `units::read_units` and `read_units_flat` — ordered parallel reads with fault
   isolation: a unit whose read fails is recorded in the load's `Diagnostics`
   and the rest of the report goes on, so no call site writes its own skip.
 - `units::read_typed_units` and `read_typed_units_flat` preserve discovered
@@ -48,7 +48,6 @@ layers.
 
 ## Public surface
 
-- `report::print_table_for_agent`
 - `roots::{resolve, RootsEnv}` for normalized list or single directory roots
 - `source::{EntryDescriptor, SummaryKind, SessionScope, SessionShape}`
 - `source::{LoadContext, ReportPricing, UsageLoadContext}`
@@ -58,19 +57,15 @@ layers.
 - `read_discovered_files`
 - `filter_loaded_entries_by_date`
 - `chunk_file_indexes_by_size`
-- `read_files_parallel`, `map_parallel`, `Split` and `worker_count`
+- `map_parallel`, `Split` and `worker_count`
 - `timestamps::file_mtime` and `timestamps::epoch_secs_or_millis`
 - `units::read_units`
 - `units::read_units_flat`
 - `units::UnitError`
 - `units::read_json` and `units::decode_json`
-- `jsonl::records_with_diagnostics` and `records_with_usage_diagnostics`
 - `jsonl::numbered_records_with_usage_diagnostics`
 - `source::UsageSource`, `source::EntrySource` and the request, row and policy
   types they exchange
-- `pipeline::run_focused`
-- `pipeline::focused_rows`
-- `pipeline::load_rows`
 - `rows::{SourceRow, RowUsage}`
 - `rows::summary_rows`
 - `claims::ClaudeCounted`

@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Runs `ccusage <agent> <kind>` for an [`EntrySource`].
-pub fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> Result<()> {
+pub(crate) fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> Result<()> {
     let rows = focused_rows(source, &args)?;
     let shared = &args.shared;
     if wants_json(shared) {
@@ -38,7 +38,7 @@ pub fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> Result<(
 
 /// The rows of a focused report, sorted, before they are rendered. Prints what
 /// the load skipped to stderr.
-pub fn focused_rows(
+pub(crate) fn focused_rows(
     source: &dyn EntrySource,
     args: &AgentCommandArgs,
 ) -> Result<Vec<UsageSummary>> {
@@ -70,7 +70,7 @@ pub fn focused_rows(
 }
 
 /// Loads the rows an [`EntrySource`] contributes to the unified report.
-pub fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+pub(crate) fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let descriptor = source.descriptor();
     let shared = request.shared;
     let pricing = ReportPricing::for_load(shared, request.pricing);

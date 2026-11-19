@@ -259,7 +259,7 @@ fn summarize_daily_entries(deduped: &[ClaudeEntry], group_by_project: bool) -> V
 #[derive(Debug)]
 pub(super) struct DedupKey {
     pub(super) timestamp: TimestampMs,
-    pub(super) session_id: Arc<str>,
+    session_id: Arc<str>,
     pub(super) message_id: Option<String>,
     pub(super) request_id: Option<String>,
     pub(super) is_sidechain: Option<bool>,
@@ -278,14 +278,14 @@ pub(super) trait DedupEntry {
 
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {
-    pub(super) key: DedupKey,
-    pub(super) date: String,
-    pub(super) project: Arc<str>,
-    pub(super) usage: TokenUsageRaw,
-    pub(super) cost: f64,
-    pub(super) model: Option<String>,
-    pub(super) missing_pricing_model: Option<String>,
-    pub(super) recorded_cost: RecordedCost,
+    key: DedupKey,
+    date: String,
+    project: Arc<str>,
+    usage: TokenUsageRaw,
+    cost: f64,
+    model: Option<String>,
+    missing_pricing_model: Option<String>,
+    recorded_cost: RecordedCost,
 }
 
 /// A record's `costUSD`: absent, carried but not billed by `--mode`, or billed.
@@ -395,21 +395,21 @@ impl ParsedUsage {
 
 #[derive(Debug)]
 pub(super) struct ClaudeUsageRecord {
-    pub(super) timestamp: String,
+    timestamp: String,
     pub(super) message: ClaudeUsageMessage,
-    pub(super) version: Option<String>,
-    pub(super) session_id: Option<String>,
-    pub(super) cost_usd: Option<f64>,
-    pub(super) request_id: Option<String>,
-    pub(super) is_sidechain: Option<bool>,
-    pub(super) is_api_error_message: Option<bool>,
+    version: Option<String>,
+    session_id: Option<String>,
+    cost_usd: Option<f64>,
+    request_id: Option<String>,
+    is_sidechain: Option<bool>,
+    is_api_error_message: Option<bool>,
 }
 
 #[derive(Debug)]
 pub(super) struct ClaudeUsageMessage {
     pub(super) usage: IteratedTokenUsage,
-    pub(super) model: Option<String>,
-    pub(super) id: Option<String>,
+    model: Option<String>,
+    id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

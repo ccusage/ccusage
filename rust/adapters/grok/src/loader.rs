@@ -34,7 +34,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     Ok(entries)
 }
 
-pub fn has_data() -> bool {
+pub(super) fn has_data() -> bool {
     discover_session_files(&ccusage_core::Diagnostics::new("grok"))
         .is_ok_and(|files| !files.is_empty())
 }

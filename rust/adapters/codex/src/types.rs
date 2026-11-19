@@ -187,20 +187,20 @@ pub const fn merge_codex_service_tiers(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodexTokenUsageEvent {
-    pub session_id: String,
-    pub response_id: Option<String>,
-    pub timestamp: crate::TimestampMs,
-    pub last_activity: String,
-    pub model: String,
-    pub input_tokens: u64,
-    pub cached_input_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub output_tokens: u64,
-    pub reasoning_output_tokens: u64,
-    pub total_tokens: u64,
-    pub is_fallback_model: bool,
-    pub service_tier: Option<CodexServiceTier>,
+pub(super) struct CodexTokenUsageEvent {
+    pub(crate) session_id: String,
+    pub(crate) response_id: Option<String>,
+    pub(crate) timestamp: crate::TimestampMs,
+    pub(crate) last_activity: String,
+    pub(crate) model: String,
+    pub(crate) input_tokens: u64,
+    pub(crate) cached_input_tokens: u64,
+    pub(crate) cache_creation_tokens: u64,
+    pub(crate) output_tokens: u64,
+    pub(crate) reasoning_output_tokens: u64,
+    pub(crate) total_tokens: u64,
+    pub(crate) is_fallback_model: bool,
+    pub(crate) service_tier: Option<CodexServiceTier>,
 }
 
 impl CodexTokenUsageEvent {

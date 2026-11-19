@@ -102,14 +102,14 @@ const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 pub struct Pricing {
     pub input: f64,
     pub output: f64,
-    pub(crate) cache_create: Option<f64>,
-    pub cache_read: Option<f64>,
-    pub(crate) cache_create_1h: Option<f64>,
+    cache_create: Option<f64>,
+    cache_read: Option<f64>,
+    cache_create_1h: Option<f64>,
     pub long_context: Option<LongContext>,
     pub fast_multiplier: f64,
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
-    pub(crate) family: ProviderFamily,
+    family: ProviderFamily,
     pub(crate) overridden: bool,
     explicit_fields: u16,
 }
@@ -128,15 +128,15 @@ pub struct LongContextRates {
     pub input: Option<f64>,
     pub output: Option<f64>,
     pub cache_create: Option<f64>,
-    pub cache_create_1h: Option<f64>,
+    cache_create_1h: Option<f64>,
     pub cache_read: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct LongContext {
-    pub threshold: u64,
+    pub(crate) threshold: u64,
     pub rates: LongContextRates,
-    pub mode: LongContextMode,
+    pub(crate) mode: LongContextMode,
 }
 
 impl LongContext {
@@ -1837,7 +1837,7 @@ impl PricingMap {
         self.lookup(prices, model, Fuzzy::ShorterKeys)
     }
 
-    pub fn resolve_at<'a>(
+    pub(crate) fn resolve_at<'a>(
         &self,
         reported_model: Option<&'a str>,
         candidates: &[(&'a str, MatchKind)],
@@ -2231,26 +2231,13 @@ impl PricingMap {
     }
 
     /// Whether a user supplied pricing for this model id or its configured alias.
-    pub fn has_user_override(&self, model: &str) -> bool {
+    fn has_user_override(&self, model: &str) -> bool {
         [
             model,
             crate::model_aliases::resolve_model_name(model).as_ref(),
         ]
         .into_iter()
         .any(|key| self.overridden(key).is_some())
-    }
-
-    pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-        self.find_exact_with_fallback_using(model, models_dev_pricing)
-    }
-
-    fn find_exact_with_fallback_using<'a>(
-        &self,
-        model: &str,
-        live: impl FnOnce() -> Option<&'a Self>,
-    ) -> Option<Pricing> {
-        self.with_live_layer(model, Lookup::Exact, live)
-            .find_exact_normalized(model)
     }
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
@@ -2871,6 +2858,21 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 
 #[cfg(test)]
 mod tests {
+
+    impl PricingMap {
+        fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
+            self.find_exact_with_fallback_using(model, super::models_dev_pricing)
+        }
+
+        fn find_exact_with_fallback_using<'a>(
+            &self,
+            model: &str,
+            live: impl FnOnce() -> Option<&'a Self>,
+        ) -> Option<Pricing> {
+            self.with_live_layer(model, Lookup::Exact, live)
+                .find_exact_normalized(model)
+        }
+    }
     use super::{
         Fuzzy, Lookup, Pricing, PricingMap, build_time_models_dev_json, build_time_pricing_json,
         embedded_models_dev_pricing, model_without_date_suffix,

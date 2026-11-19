@@ -13,7 +13,7 @@ pub mod dedupe;
 pub mod jsonl;
 #[cfg(any(test, feature = "testing"))]
 pub mod parity;
-pub mod pipeline;
+pub(crate) mod pipeline;
 pub mod report;
 pub mod roots;
 pub mod rows;
@@ -27,7 +27,6 @@ pub mod testing;
 pub mod timestamps;
 pub mod units;
 
-pub use report::print_table_for_agent;
 pub use units::{SqliteStage, UnitError, read_units, read_units_flat};
 
 /// Collects the files under `dir` whose extension is `extension`, like
@@ -82,7 +81,7 @@ pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics
 
 /// Like [`collect_files_matching`], but hands each file to `visit` as the walk
 /// finds it, so reading can start before the walk ends.
-pub fn visit_files_matching(
+fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     visit: &mut dyn FnMut(PathBuf) -> ControlFlow<()>,
@@ -262,20 +261,6 @@ fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
-/// Reads `files` by applying `read` to each path and returns results in file order.
-pub fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
-where
-    T: Send,
-    F: Fn(&Path) -> T + Sync,
-{
-    map_parallel(
-        files,
-        single_thread,
-        Split::BySize(PathBuf::as_path),
-        |file| read(file),
-    )
-}
-
 /// Reads files as `discover` yields them and returns each with its result,
 /// in no particular order.
 ///
@@ -332,11 +317,25 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
+
+    /// Reads `files` by applying `read` to each path and returns results in file order.
+    fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
+    where
+        T: Send,
+        F: Fn(&Path) -> T + Sync,
+    {
+        map_parallel(
+            files,
+            single_thread,
+            Split::BySize(PathBuf::as_path),
+            |file| read(file),
+        )
+    }
     use ccusage_test_support::Fixture;
 
     use super::{
-        Split, chunk_file_indexes_by_size, collect_files_matching, map_parallel,
-        read_files_parallel, worker_count,
+        Split, chunk_file_indexes_by_size, collect_files_matching, map_parallel, worker_count,
     };
 
     #[test]

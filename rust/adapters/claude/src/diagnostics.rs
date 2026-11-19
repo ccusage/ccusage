@@ -47,7 +47,7 @@ fn for_each_line_from(
 
 pub(super) struct LinesRead {
     pub(super) stopped: bool,
-    pub(super) interrupted: bool,
+    interrupted: bool,
 }
 
 pub(super) fn visit_lines(

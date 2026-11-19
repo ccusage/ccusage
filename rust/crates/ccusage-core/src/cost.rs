@@ -1,7 +1,7 @@
 use crate::{
     cli::CostMode,
     pricing::{Pricing, PricingMap},
-    types::{Speed, UsageEntry},
+    types::Speed,
 };
 
 pub struct EntryPricing<'a> {
@@ -161,17 +161,6 @@ fn cost_at_speed(usage: crate::TokenUsageRaw, rates: Pricing) -> f64 {
     calculate_cost_from_pricing(usage, rates) * multiplier
 }
 
-pub fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
-    calculate_cost_for_usage_at(
-        data.message.model.as_deref(),
-        data.message.usage,
-        data.cost_usd,
-        crate::parse_ts_timestamp(&data.timestamp),
-        mode,
-        pricing,
-    )
-}
-
 #[cfg(test)]
 fn calculate_cost_for_usage(
     model: Option<&str>,
@@ -204,19 +193,6 @@ pub fn stored_cost_for_mode(cost_usd: Option<f64>, mode: CostMode) -> Option<f64
     cost_usd.filter(|_| mode == CostMode::Auto)
 }
 
-pub fn missing_pricing_model_for_usage(
-    model: Option<&str>,
-    usage: crate::TokenUsageRaw,
-    cost_usd: Option<f64>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
-        return None;
-    }
-    missing_pricing_model_for_token_total(model, crate::total_usage_tokens(usage), pricing)
-}
-
 pub fn missing_pricing_model_for_token_total(
     model: Option<&str>,
     total_tokens: u64,
@@ -230,22 +206,6 @@ pub fn missing_pricing_model_for_token_total(
     pricing
         .find(model)
         .is_none()
-        .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
-}
-
-pub fn missing_pricing_model_for_candidates(
-    model: &str,
-    candidates: impl IntoIterator<Item = String>,
-    total_tokens: u64,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if total_tokens == 0 {
-        return None;
-    }
-    let pricing = pricing?;
-    candidates
-        .into_iter()
-        .all(|candidate| pricing.find(&candidate).is_none())
         .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
 }
 
@@ -269,7 +229,7 @@ fn calculate_cost_from_tokens(
     cost_at_speed(usage, pricing)
 }
 
-pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing) -> f64 {
+fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing) -> f64 {
     let (cache_create_5m_tokens, cache_create_1h_tokens) =
         if let Some(breakdown) = usage.cache_creation {
             (
@@ -357,6 +317,30 @@ pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
 
 #[cfg(test)]
 mod tests {
+
+    fn missing_pricing_model_for_usage(
+        model: Option<&str>,
+        usage: crate::TokenUsageRaw,
+        cost_usd: Option<f64>,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> Option<String> {
+        if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
+            return None;
+        }
+        missing_pricing_model_for_token_total(model, crate::total_usage_tokens(usage), pricing)
+    }
+
+    fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
+        calculate_cost_for_usage_at(
+            data.message.model.as_deref(),
+            data.message.usage,
+            data.cost_usd,
+            crate::parse_ts_timestamp(&data.timestamp),
+            mode,
+            pricing,
+        )
+    }
     use super::*;
 
     #[test]
@@ -689,7 +673,7 @@ mod tests {
         types::{CacheCreationRaw, TokenUsageRaw, UsageEntry, UsageMessage},
     };
 
-    use super::{calculate_cost, calculate_cost_for_usage, calculate_cost_for_usage_at};
+    use super::{calculate_cost_for_usage, calculate_cost_for_usage_at};
 
     fn pricing() -> PricingMap {
         let mut pricing = PricingMap::default();

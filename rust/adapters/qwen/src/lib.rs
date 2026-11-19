@@ -38,7 +38,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     SOURCE.run_focused(args)
 }
 
-pub fn has_data() -> bool {
+fn has_data() -> bool {
     paths::discover_chat_files(&ccusage_core::Diagnostics::new("qwen"))
         .is_ok_and(|files| !files.is_empty())
 }

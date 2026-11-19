@@ -296,7 +296,7 @@ impl UsageSummary {
             .saturating_add(self.extra_total_tokens)
     }
 
-    pub fn totals_row(&self) -> TotalsRow<'_> {
+    fn totals_row(&self) -> TotalsRow<'_> {
         TotalsRow {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
@@ -356,7 +356,7 @@ impl Totals {
         totals.total_cost = crate::sum_costs(costs);
         let credits = crate::sum_costs(credits);
         totals.credits = (credits > 0.0).then_some(credits);
-        totals.unpriced_models = crate::unpriced_models(breakdowns.into_iter().flatten());
+        totals.unpriced_models = crate::output::unpriced_models(breakdowns.into_iter().flatten());
         totals
     }
 

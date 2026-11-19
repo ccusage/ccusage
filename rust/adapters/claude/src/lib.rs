@@ -81,7 +81,7 @@ pub(crate) fn load_deduped_entries(
 }
 
 /// Loads deduplicated entries with progress owned by the caller or source.
-pub(crate) fn load_deduped_entries_with_progress(
+fn load_deduped_entries_with_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     owner: ProgressOwner,
@@ -96,14 +96,14 @@ pub(crate) fn load_deduped_entries_with_progress(
 /// a turn.
 #[derive(Default)]
 pub(crate) struct DedupedEntries {
-    pub(crate) entries: Vec<LoadedEntry>,
-    pub(crate) detected: bool,
+    entries: Vec<LoadedEntry>,
+    detected: bool,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
 
 impl DedupedEntries {
-    pub(crate) fn main_thread_sessions(&self) -> MainThreadSessions {
+    fn main_thread_sessions(&self) -> MainThreadSessions {
         main_thread_sessions(
             self.entries
                 .iter()
@@ -157,7 +157,7 @@ pub(crate) fn load_daily_summaries(
     Ok(daily.summaries(group_by_project))
 }
 
-pub type MainThreadSessions = HashSet<Arc<str>>;
+pub(crate) type MainThreadSessions = HashSet<Arc<str>>;
 
 fn main_thread_sessions<'a>(entries: impl Iterator<Item = (&'a str, bool)>) -> MainThreadSessions {
     entries
@@ -170,13 +170,13 @@ fn main_thread_sessions<'a>(entries: impl Iterator<Item = (&'a str, bool)>) -> M
 }
 
 /// Daily Claude summaries plus whether any Claude usage exists at all.
-pub struct DailySummaries {
+pub(crate) struct DailySummaries {
     /// Summaries inside the requested report window.
-    pub summaries: Vec<UsageSummary>,
+    summaries: Vec<UsageSummary>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
-    pub detected: bool,
-    pub sessions: MainThreadSessions,
+    detected: bool,
+    sessions: MainThreadSessions,
 }
 
 /// Loads daily summaries with progress owned by the caller or source.
@@ -196,7 +196,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     })
 }
 
-pub(crate) fn load_windowed_entries(
+fn load_windowed_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
@@ -664,7 +664,7 @@ pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
 
 pub(crate) type Nullable<T> = Option<Option<T>>;
 
-pub(crate) fn nullable<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+fn nullable<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Nullable<T>, D::Error> {
     Option::<T>::deserialize(deserializer).map(Some)
@@ -680,8 +680,8 @@ pub(crate) fn non_null<T>(field: Nullable<T>) -> std::result::Result<Option<T>, 
 
 #[derive(Debug)]
 pub(crate) struct GuardedUsage {
-    pub(crate) usage: IteratedTokenUsage,
-    pub(crate) has_null: bool,
+    usage: IteratedTokenUsage,
+    has_null: bool,
 }
 
 impl<'de> Deserialize<'de> for GuardedUsage {

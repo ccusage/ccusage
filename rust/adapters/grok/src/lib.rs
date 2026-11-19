@@ -7,7 +7,7 @@ mod paths;
 #[cfg(test)]
 mod report;
 
-pub use loader::has_data;
+use loader::has_data;
 
 pub struct Grok;
 

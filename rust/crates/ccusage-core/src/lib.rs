@@ -30,18 +30,17 @@ pub use ccusage_cli::{BUILT_IN_AGENT_NAMES, home};
 
 pub use agent_report::{agent_summary_json, first_column, summary_period};
 pub use cost::{
-    calculate_cost, calculate_cost_for_usage_at, calculate_cost_from_pricing,
-    missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
-    missing_pricing_model_for_usage, stored_cost_for_mode, sum_costs,
+    calculate_cost_for_usage_at, missing_pricing_model_for_token_total, stored_cost_for_mode,
+    sum_costs,
 };
 pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use logger::{debug_log, log_level};
 pub use output::{
     UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
-    format_number, json_float, print_json_or_jq, print_missing_pricing_warnings,
-    print_missing_pricing_warnings_for_models, print_usage_table, print_usage_table_with_options,
-    sanitize_terminal_text, should_use_compact_layout, totals_json, unpriced_models, wants_json,
+    format_number, json_float, print_json_or_jq, print_missing_pricing_warnings_for_models,
+    print_usage_table, print_usage_table_with_options, sanitize_terminal_text,
+    should_use_compact_layout, totals_json, wants_json,
 };
 pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
 pub(crate) use project_names::parse_project_aliases;

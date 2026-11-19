@@ -84,6 +84,14 @@ fn open_encoded_rollout(path: &Path, buffer_size: usize) -> io::Result<Box<dyn R
     }
 }
 
+pub(super) fn record_rollout_read_failure(path: &Path, diagnostics: &ccusage_core::Diagnostics) {
+    diagnostics.record(ccusage_core::Skip::unit(
+        path,
+        ccusage_core::SkipKind::ReadInterrupted,
+        "rollout read failed",
+    ));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,12 +116,4 @@ mod tests {
             PathBuf::from("a/session.jsonl")
         );
     }
-}
-
-pub(super) fn record_rollout_read_failure(path: &Path, diagnostics: &ccusage_core::Diagnostics) {
-    diagnostics.record(ccusage_core::Skip::unit(
-        path,
-        ccusage_core::SkipKind::ReadInterrupted,
-        "rollout read failed",
-    ));
 }

@@ -98,7 +98,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 
 /// Runs `ccusage opencode`, leaving Claude Agent turns to the Claude source
 /// unless `--include-claude-agent` keeps them.
-pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
+fn run_opencode(args: AgentCommandArgs) -> Result<()> {
     let (entries, claude_diagnostics) = loader::load_opencode_entries(
         &args.shared,
         args.kind,

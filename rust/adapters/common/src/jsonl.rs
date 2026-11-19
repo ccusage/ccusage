@@ -87,39 +87,6 @@ fn selected_lines<'data>(
         })
 }
 
-/// Iterates over decoded JSONL records, diagnosing malformed JSON separately
-/// from selected records that a typed decoder rejects.
-///
-/// Lines rejected by `prefilter` are never parsed or counted as skipped. JSON
-/// error details retain only the category and source location, not input text.
-pub fn records_with_diagnostics<'data, T>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-    unit: &'data Path,
-    diagnostics: &'data Diagnostics,
-) -> impl Iterator<Item = T> + 'data
-where
-    T: DeserializeOwned + 'data,
-{
-    diagnosed_records::<T>(content, prefilter, unit, diagnostics, None).map(|(_, record)| record)
-}
-
-/// Adds a normal warning for a decoding failure whose JSON envelope the source
-/// confirms carries usage. The confirmation runs only on decoding failures.
-pub fn records_with_usage_diagnostics<'data, T>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-    unit: &'data Path,
-    diagnostics: &'data Diagnostics,
-    is_usage: fn(&serde_json::Value) -> bool,
-) -> impl Iterator<Item = T> + 'data
-where
-    T: DeserializeOwned + 'data,
-{
-    numbered_records_with_usage_diagnostics::<T>(content, prefilter, unit, diagnostics, is_usage)
-        .map(|(_, record)| record)
-}
-
 /// Retains source line numbers so callers can diagnose rejected fields while
 /// preserving independently decoded state in the same record.
 pub fn numbered_records_with_usage_diagnostics<'data, T>(
@@ -648,9 +615,49 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Iterates over decoded JSONL records, diagnosing malformed JSON separately
+    /// from selected records that a typed decoder rejects.
+    ///
+    /// Lines rejected by `prefilter` are never parsed or counted as skipped. JSON
+    /// error details retain only the category and source location, not input text.
+    fn records_with_diagnostics<'data, T>(
+        content: &'data [u8],
+        prefilter: Option<&'data LinePrefilter>,
+        unit: &'data Path,
+        diagnostics: &'data Diagnostics,
+    ) -> impl Iterator<Item = T> + 'data
+    where
+        T: DeserializeOwned + 'data,
+    {
+        diagnosed_records::<T>(content, prefilter, unit, diagnostics, None)
+            .map(|(_, record)| record)
+    }
+
+    /// Adds a normal warning for a decoding failure whose JSON envelope the source
+    /// confirms carries usage. The confirmation runs only on decoding failures.
+    fn records_with_usage_diagnostics<'data, T>(
+        content: &'data [u8],
+        prefilter: Option<&'data LinePrefilter>,
+        unit: &'data Path,
+        diagnostics: &'data Diagnostics,
+        is_usage: fn(&serde_json::Value) -> bool,
+    ) -> impl Iterator<Item = T> + 'data
+    where
+        T: DeserializeOwned + 'data,
+    {
+        numbered_records_with_usage_diagnostics::<T>(
+            content,
+            prefilter,
+            unit,
+            diagnostics,
+            is_usage,
+        )
+        .map(|(_, record)| record)
+    }
     use std::path::Path;
 
-    use serde::Deserialize;
+    use serde::{Deserialize, de::DeserializeOwned};
 
     use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
     use ccusage_test_support::{EnvVarGuard, Fixture};
@@ -658,9 +665,9 @@ mod tests {
     use crate::units::tests::age_past_write_window;
 
     use super::{
-        FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
-        lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
-        records_with_diagnostics, records_with_usage_diagnostics,
+        FieldName, FirstField, LenientSeq, LenientString, diagnosed_records, lenient_array,
+        lenient_f64, lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string,
+        numbered_records_with_usage_diagnostics, records,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -833,7 +840,7 @@ mod tests {
             tokens: u64,
         }
         let diagnostics = Diagnostics::new("test");
-        let records = super::records_with_usage_diagnostics::<Record>(
+        let records = records_with_usage_diagnostics::<Record>(
             b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
             None,
             Path::new("/logs/session.jsonl"),

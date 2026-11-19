@@ -18,7 +18,6 @@ themselves independent of each other.
 
 - `run`
 - `runner`
-- `run_opencode`
 
 ## Depends on
 

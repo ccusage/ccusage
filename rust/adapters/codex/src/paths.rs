@@ -47,7 +47,7 @@ fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> 
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CodexUsageSource {
-    pub(super) dir: PathBuf,
+    dir: PathBuf,
     dedupe_scope: PathBuf,
 }
 

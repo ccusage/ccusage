@@ -29,7 +29,6 @@ file's modification time.
 
 - `SOURCE`
 - `run`
-- `has_data`
 
 ## Depends on
 

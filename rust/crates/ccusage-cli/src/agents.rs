@@ -2,7 +2,7 @@ use crate::AgentReportKind;
 
 #[derive(Debug)]
 pub struct AgentSpec {
-    pub id: AgentId,
+    id: AgentId,
     pub name: &'static str,
     pub label: &'static str,
     pub report_label: &'static str,

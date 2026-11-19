@@ -20,10 +20,10 @@ pub struct UtcParts {
     pub year: i32,
     pub month: u32,
     pub day: u32,
-    pub hour: u32,
-    pub minute: u32,
-    pub second: u32,
-    pub millisecond: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    millisecond: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -123,11 +123,11 @@ impl IsoDate {
         days_from_civil(self.year, self.month, self.day)
     }
 
-    pub(crate) fn weekday_from_sunday(self) -> u32 {
+    fn weekday_from_sunday(self) -> u32 {
         weekday_from_epoch_days(self.days_since_epoch())
     }
 
-    pub(crate) fn checked_add_days(self, days: i64) -> Option<Self> {
+    fn checked_add_days(self, days: i64) -> Option<Self> {
         let days = self.days_since_epoch().checked_add(days)?;
         let (year, month, day) = civil_from_days(days);
         Some(Self { year, month, day })

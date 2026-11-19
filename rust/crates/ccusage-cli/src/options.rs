@@ -74,7 +74,7 @@ pub fn option_arity(arg: &str) -> Option<OptionArity> {
     option(arg).map(|option| option.arity)
 }
 
-pub fn option_takes_value(arg: &str) -> bool {
+fn option_takes_value(arg: &str) -> bool {
     matches!(
         option_arity(arg),
         Some(OptionArity::Value | OptionArity::CommandDependent)

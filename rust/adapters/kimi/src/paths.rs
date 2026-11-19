@@ -64,7 +64,7 @@ pub(super) struct WireConfig {
 
 #[derive(Debug)]
 pub(super) struct WireFile {
-    pub(super) path: PathBuf,
+    path: PathBuf,
     pub(super) session_id: String,
     pub(super) config: Arc<WireConfig>,
 }

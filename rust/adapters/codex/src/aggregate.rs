@@ -82,7 +82,7 @@ impl<K> Default for CodexFileOccurrences<K> {
 }
 
 impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
-    pub(super) fn next(&mut self, key: &K) -> u32 {
+    fn next(&mut self, key: &K) -> u32 {
         if let Some(count) = self.0.get_mut(key) {
             let occurrence = *count;
             *count += 1;

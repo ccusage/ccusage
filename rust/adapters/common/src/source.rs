@@ -202,7 +202,7 @@ pub struct SourceOptions<'a> {
 
 impl<'a> SourceOptions<'a> {
     /// The options of `ccusage <agent> <kind>`.
-    pub fn from_command(args: &'a AgentCommandArgs) -> Self {
+    pub(crate) fn from_command(args: &'a AgentCommandArgs) -> Self {
         Self {
             claude_project: args.options.claude_project.as_deref(),
             pi_path: args.options.pi_path.as_deref(),
@@ -263,7 +263,7 @@ impl SummaryKind {
         }
     }
 
-    pub fn for_load(kind: LoadKind) -> Self {
+    pub(crate) fn for_load(kind: LoadKind) -> Self {
         match kind {
             LoadKind::Day => Self::Daily,
             LoadKind::Session => Self::Session,
