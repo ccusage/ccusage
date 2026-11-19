@@ -78,7 +78,7 @@ def profile [files: list<string>]: nothing -> record {
 def codex-rollouts [roots: list<string>]: nothing -> list<string> {
     $roots
     | each {|root|
-        let subdirs = ['sessions' 'archived_sessions'] | where {|sub| ($root | path join $sub | path type) == 'dir' }
+        let subdirs = ['sessions' 'archived_sessions'] | where {|sub| ($root | path join $sub | path expand | path type) == 'dir' }
         # A home without either directory is scanned directly, as ccusage does.
         $subdirs | default --empty ['.'] | each {|sub|
             let dir = $root | path join $sub | path expand
