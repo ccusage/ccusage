@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::{
     LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
     cli::CostMode,
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, price_entry_with_zero_fallback},
     format_date_tz,
     pricing::MatchKind,
     stored_cost_for_mode,
@@ -331,7 +331,7 @@ impl OpenCodeUsage {
             .iter()
             .map(|candidate| (candidate.as_str(), MatchKind::Fuzzy))
             .collect();
-        let priced = price_entry(
+        let priced = price_entry_with_zero_fallback(
             EntryPricing {
                 usage,
                 reasoning_tokens: 0,
@@ -666,6 +666,34 @@ mod tests {
         .unwrap();
 
         assert_eq!(entry.cost, 0.000205);
+    }
+
+    #[test]
+    fn checks_the_provider_price_after_a_zero_output_rate() {
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{
+            "azure/us-gov/text-embedding-3-small": {"input_cost_per_token": 0.025, "output_cost_per_token": 0},
+            "ambient/small": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.001}
+        }"#);
+        let entry = message_value_to_entry(
+            message(json!({
+                "id": "message-a",
+                "sessionID": "session-a",
+                "providerID": "ambient",
+                "modelID": "small",
+                "time": {"created": 1767312000000i64},
+                "tokens": {"output": 100}
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.cost, 0.1);
+        assert_eq!(entry.missing_pricing_model, None);
     }
 
     #[test]
