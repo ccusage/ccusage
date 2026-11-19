@@ -3,6 +3,7 @@ use super::{CacheDefaults, Pricing, data};
 #[derive(Clone, Debug)]
 pub(super) struct Row {
     pub(super) pricing: Pricing,
+    pub(super) source: Source,
     pub(super) context_limit: Option<u64>,
     pub(super) exact_only: bool,
     pub(super) scope: Scope,
@@ -13,6 +14,7 @@ impl Default for Row {
     fn default() -> Self {
         Self {
             pricing: Pricing::empty(),
+            source: Source::LiteLlm,
             context_limit: None,
             exact_only: false,
             scope: Scope::Hosted,
@@ -22,12 +24,24 @@ impl Default for Row {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Source {
+    Override,
+    LiteLlm,
+    Curated,
+    ModelsDev,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Scope {
     Direct,
     Hosted,
 }
 
 impl Row {
+    pub(super) fn is_free(&self) -> bool {
+        self.source != Source::Override && self.pricing.input == 0.0 && self.pricing.output == 0.0
+    }
+
     pub(super) fn is_bare_hosted(&self, key: &str) -> bool {
         self.scope == Scope::Hosted && !key.contains('/')
     }

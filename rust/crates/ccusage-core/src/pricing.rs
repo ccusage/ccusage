@@ -16,7 +16,7 @@ use crate::{
 mod builtin_pricing;
 mod data;
 mod row;
-use row::{Row, Scope, cache_defaults, row_scope, vendor_id};
+use row::{Row, Scope, Source, cache_defaults, row_scope, vendor_id};
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -615,16 +615,7 @@ impl PricingRows {
     }
 
     fn vendor_match(&self, keys: &[String], lookup: Lookup) -> Option<RowMatch<'_>> {
-        let mut matches = keys
-            .iter()
-            .filter_map(|key| self.literal(key, lookup))
-            .filter(|found| {
-                let rates = found.row.pricing;
-                matches!(lookup, Lookup::Context)
-                    || rates.input != 0.0
-                    || rates.output != 0.0
-                    || rates.overridden
-            });
+        let mut matches = keys.iter().filter_map(|key| self.literal(key, lookup));
         let first = matches.next()?;
         let mut best = first;
         for found in matches {
@@ -681,7 +672,12 @@ impl PricingRows {
                     .entry(normalized_pricing_key(key).into_owned())
                     .or_default()
                     .push(key.clone());
-                if let Some(id) = row.vendor_id.as_deref().filter(|id| *id != key) {
+                let id = if row.scope == Scope::Direct && row.is_free() {
+                    Some(last_segment(key))
+                } else {
+                    row.vendor_id.as_deref()
+                };
+                if let Some(id) = id.filter(|id| *id != key) {
                     indexes
                         .by_vendor_id
                         .entry(normalized_pricing_key(id).into_owned())
@@ -1308,7 +1304,7 @@ impl PricingMap {
             } else {
                 (Scope::Hosted, None)
             };
-            if scope == Scope::Hosted && input == 0.0 && output == 0.0 && !model.contains('/') {
+            if scope == Scope::Hosted && input == 0.0 && output == 0.0 {
                 continue;
             }
 
@@ -1324,6 +1320,7 @@ impl PricingMap {
             let published_speed = provider_specific.or(speed.for_model(&model));
             let defaults = cache_defaults(&model, pricing.litellm_provider.as_deref());
             let row = self.rows_mut().entries.entry(model).or_default();
+            row.source = Source::LiteLlm;
             row.scope = scope;
             row.vendor_id = vendor_id;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);
@@ -1538,6 +1535,7 @@ impl PricingMap {
                     }),
                     exact_only,
                     context_limit,
+                    source: Source::ModelsDev,
                     scope: Scope::Direct,
                     vendor_id: None,
                 },
@@ -1741,7 +1739,11 @@ impl PricingMap {
         let segment = last_segment(normalized.as_ref());
         rows.entries
             .iter()
-            .filter(|(_, row)| !row.exact_only && lookup.includes(row))
+            .filter(|(_, row)| {
+                !row.exact_only
+                    && lookup.includes(row)
+                    && (matches!(lookup, Lookup::Context) || !row.is_free())
+            })
             .filter(|(key, _)| pricing_key_matches(key, name, normalized.as_ref()))
             .max_by_key(|(key, _)| {
                 (
@@ -1858,6 +1860,9 @@ impl PricingMap {
                 .entry(model.to_string())
                 .or_default();
             row.exact_only = is_exact_only;
+            row.source = Source::Override;
+            row.scope = Scope::Direct;
+            row.vendor_id = Some(model.into());
             row.pricing = pricing;
             self.rows_mut()
                 .override_keys
@@ -2031,6 +2036,7 @@ impl PricingMap {
                 slot.insert(Row {
                     pricing,
                     context_limit,
+                    source: Source::Curated,
                     scope: Scope::Direct,
                     vendor_id: Some(vendor_id(model, provider).into()),
                     ..Row::default()
@@ -6653,6 +6659,35 @@ mod tests {
             let rate = pricing.find(name).unwrap();
             assert_eq!((rate.input, rate.output), (3.0, 4.0), "{name}");
         }
+    }
+
+    #[test]
+    fn resolver_table_vendor_free_rows_only_answer_their_identity_or_segment() {
+        crate::test_support::install_pricing_snapshots();
+        let mut map = PricingMap::default();
+        map.load_json(r#"{
+            "plan-2.5": {"litellm_provider":"zai","input_cost_per_token": 1,"output_cost_per_token":2},
+            "zai/plan-2.5-flash": {"litellm_provider":"zai","input_cost_per_token": 0,"output_cost_per_token":0},
+            "host/plan-2.5-flash": {"litellm_provider":"reseller","input_cost_per_token": 0,"output_cost_per_token":0}
+        }"#);
+        for (case, name, expected) in [
+            ("54_bare_free", "plan-2.5-flash", (0.0, 0.0)),
+            (
+                "55_foreign_prefix_free",
+                "foreign/plan-2-5-flash",
+                (0.0, 0.0),
+            ),
+            ("53_qualified_free", "zai/plan-2-5-flash", (0.0, 0.0)),
+            (
+                "free_tier_does_not_win_fuzzy",
+                "plan-2.5-flash-preview",
+                (1.0, 2.0),
+            ),
+        ] {
+            let rates = map.find(name).expect(case);
+            assert_eq!((rates.input, rates.output), expected, "{case}");
+        }
+        assert!(map.find_exact("host/plan-2.5-flash").is_none());
     }
 
     #[test]
