@@ -108,7 +108,7 @@ pub(super) enum CodexCopyTier {
 }
 
 impl CodexCopyTier {
-    pub(super) fn apply(
+    fn apply(
         self,
         retained: Option<CodexServiceTier>,
         duplicate: Option<CodexServiceTier>,
