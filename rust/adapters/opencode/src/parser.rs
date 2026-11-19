@@ -1039,14 +1039,14 @@ mod tests {
                     let old_cost = open_code_model_candidates(&model, provider)
                         .into_iter()
                         .map(|candidate| {
-                            crate::calculate_cost_for_usage_at(
+                            ccusage_core::cost::price_reported_usage(
                                 Some(&candidate),
                                 usage,
                                 None,
-                                Some(timestamp),
-                                CostMode::Calculate,
-                                Some(&pricing),
+                                timestamp,
+                                PriceTable::Calculate(&pricing),
                             )
+                            .0
                         })
                         .find(|cost| *cost > 0.0)
                         .unwrap_or(0.0);

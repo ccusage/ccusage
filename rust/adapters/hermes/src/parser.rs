@@ -544,14 +544,14 @@ mod tests {
                 "deepseek-v4-flash".to_string()
             ]
         );
-        let raw_model_cost = ccusage_core::calculate_cost_for_usage_at(
+        let raw_model_cost = ccusage_core::cost::price_reported_usage(
             Some("deepseek-v4-flash"),
             entry.usage,
             None,
-            Some(entry.timestamp),
-            CostMode::Calculate,
-            Some(&pricing),
-        );
+            entry.timestamp,
+            PriceTable::Calculate(&pricing),
+        )
+        .0;
         assert!((raw_model_cost - 0.44).abs() < 1e-12);
         assert!(
             (price_hermes(&entry, PriceTable::Auto(&pricing)).0 - raw_model_cost).abs() < 1e-12
