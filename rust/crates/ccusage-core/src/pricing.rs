@@ -1866,20 +1866,34 @@ impl PricingMap {
         lookup: Lookup,
     ) -> Option<RowMatch<'a>> {
         let segment = last_segment(normalized);
-        rows.filter(|(found, _)| {
+        let pool = rows.filter(|(found, key)| {
             !found.row.is_exact_only()
                 && lookup.includes(found.row)
                 && (matches!(lookup, Lookup::Context) || !found.row.is_free())
-        })
-        .filter(|(found, key)| pricing_key_matches(found.key, key, name, normalized))
-        .max_by_key(|(found, key)| {
-            (
-                last_segment(key) == segment,
-                found.key.len(),
-                std::cmp::Reverse(found.key),
-            )
-        })
-        .map(|(found, _)| found)
+                && pricing_key_matches(found.key, key, name, normalized)
+        });
+        let mut best = None;
+        let mut best_not_longer = None;
+        let mut equal_segment_seen = false;
+        for (found, key) in pool {
+            let row_segment = last_segment(key);
+            let rank = (found.key.len(), std::cmp::Reverse(found.key));
+            if best.is_none_or(|(previous, _)| rank > previous) {
+                best = Some((rank, found));
+            }
+            if row_segment.len() <= segment.len() {
+                if best_not_longer.is_none_or(|(previous, _)| rank > previous) {
+                    best_not_longer = Some((rank, found));
+                }
+                equal_segment_seen |= row_segment == segment;
+            }
+        }
+        let winner = if equal_segment_seen {
+            best_not_longer
+        } else {
+            best
+        };
+        winner.map(|(_, found)| found)
     }
 
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
@@ -2663,6 +2677,38 @@ mod tests {
             );
             let rate = pricing.find("hostx/acme-1").unwrap();
             assert_eq!((rate.input, rate.output), (7e-6, 7e-6));
+        }
+    }
+
+    #[test]
+    fn fuzzy_keeps_a_shorter_id_row_and_drops_longer_ones() {
+        crate::test_support::install_pricing_snapshots();
+        let mut secondary = PricingMap::default();
+        assert_eq!(
+            secondary.load_models_dev_json_for_tests(
+                r#"{
+            "hostaa/m-1":{"cost":{"input":1,"output":1}},
+            "m-1-turbo":{"cost":{"input":2,"output":2}},
+            "hostc/m-2-turbo":{"cost":{"input":2,"output":2}},
+            "hostc/long/m-2-turbo-max":{"cost":{"input":3,"output":3}}
+        }"#
+            ),
+            Some(4)
+        );
+        let pricing = layered(&PricingMap::default(), Some(&secondary));
+        for (model, row, rate) in [
+            ("hostaa/m-1-turbo", "hostaa/m-1", 1e-6),
+            ("m-2-turbo", "hostc/m-2-turbo", 2e-6),
+        ] {
+            let candidates = [(model, MatchKind::Fuzzy)];
+            let found = pricing.explain(Some(model), &candidates).unwrap();
+            assert_eq!(
+                (found.step, found.row_key),
+                (super::ResolutionStep::ModelsDevFuzzy, row),
+                "{model}"
+            );
+            let found = pricing.find(model).unwrap();
+            assert_eq!((found.input, found.output), (rate, rate), "{model}");
         }
     }
 
