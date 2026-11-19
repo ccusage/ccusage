@@ -126,6 +126,7 @@ in
               nu --no-config-file scripts/comments/tests/check.test.nu
               nu scripts/validate-commit-scope.test.nu
               nu scripts/check-models-dev-dependencies.test.nu
+              nu scripts/check-nushell.test.nu
               nu .github/scripts/contribution-gate.test.nu
               nu .github/scripts/pricing-lock.test.nu
               nu .github/scripts/upsert-pr-comment.test.nu
