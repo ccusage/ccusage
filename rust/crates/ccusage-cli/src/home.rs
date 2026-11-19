@@ -22,36 +22,61 @@ pub fn parse_paths(
     separator: Option<char>,
     home: Option<&Path>,
 ) -> Option<Vec<PathBuf>> {
-    let Some(raw) = raw.to_str() else {
-        return separator.is_none().then(|| vec![PathBuf::from(raw)]);
-    };
-    let entries = raw
-        .split(|ch| separator == Some(ch))
-        .map(str::trim)
-        .filter(|raw| !raw.is_empty())
-        .collect::<Vec<_>>();
+    let entries = path_entries(raw, separator);
     if entries.is_empty() {
         return None;
     }
     Some(
         entries
             .into_iter()
-            .filter_map(|raw| {
-                if home.is_none() && (raw == "~" || raw.starts_with("~/")) {
-                    return None;
-                }
-                Some(expand_home(raw, home))
-            })
+            .filter_map(|entry| expand_home(entry, home))
             .collect(),
     )
 }
 
-fn expand_home(raw: &str, home: Option<&Path>) -> PathBuf {
-    match (raw.strip_prefix('~'), home) {
-        (Some(""), Some(home)) => home.to_path_buf(),
-        (Some(rest), Some(home)) if rest.starts_with('/') => home.join(&rest[1..]),
-        _ => PathBuf::from(raw),
+fn path_entries(raw: &OsStr, separator: Option<char>) -> Vec<&OsStr> {
+    let Some(raw) = raw.to_str() else {
+        return native_path_entries(raw, separator);
+    };
+    raw.split(|ch| separator == Some(ch))
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(OsStr::new)
+        .collect()
+}
+
+#[cfg(unix)]
+fn native_path_entries(raw: &OsStr, separator: Option<char>) -> Vec<&OsStr> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let separator = separator.and_then(|ch| u8::try_from(ch).ok());
+    raw.as_bytes()
+        .split(|byte| separator == Some(*byte))
+        .map(<[u8]>::trim_ascii)
+        .filter(|entry| !entry.is_empty())
+        .map(OsStr::from_bytes)
+        .collect()
+}
+
+#[cfg(not(unix))]
+fn native_path_entries(raw: &OsStr, separator: Option<char>) -> Vec<&OsStr> {
+    if separator.is_some() {
+        Vec::new()
+    } else {
+        vec![raw]
     }
+}
+
+fn expand_home(entry: &OsStr, home: Option<&Path>) -> Option<PathBuf> {
+    let bytes = entry.as_encoded_bytes();
+    if bytes == b"~" {
+        return home.map(Path::to_path_buf);
+    }
+    if !bytes.starts_with(b"~/") {
+        return Some(PathBuf::from(entry));
+    }
+    let rest = Path::new(entry).strip_prefix("~").unwrap_or(Path::new(""));
+    home.map(|home| home.join(rest))
 }
 
 /// The Claude Code directories that hold both the usage logs and the user's
@@ -145,11 +170,30 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn non_utf8_path_lists_allow_default_discovery() {
+    fn non_utf8_path_lists_split_into_native_paths() {
         use std::os::unix::ffi::OsStrExt;
 
         let raw = OsStr::from_bytes(b" ~/one , ~/two\xff , /absolute ");
-        assert_eq!(parse_paths(raw, Some(','), None), None);
+        assert_eq!(
+            parse_paths(raw, Some(','), Some(Path::new("/home/user"))),
+            Some(vec![
+                PathBuf::from("/home/user/one"),
+                PathBuf::from("/home/user").join(OsStr::from_bytes(b"two\xff")),
+                PathBuf::from("/absolute"),
+            ])
+        );
+        assert_eq!(
+            parse_paths(raw, Some(','), None),
+            Some(vec![PathBuf::from("/absolute")])
+        );
+        assert_eq!(
+            parse_paths(OsStr::from_bytes(b"opencode-\xff"), Some(','), None),
+            Some(vec![PathBuf::from(OsStr::from_bytes(b"opencode-\xff"))])
+        );
+        assert_eq!(
+            parse_paths(OsStr::from_bytes(b" , "), Some(','), None),
+            None
+        );
     }
 
     #[test]
