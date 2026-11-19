@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    sync::{Arc, OnceLock, RwLock},
+    sync::{Arc, OnceLock},
 };
 
 use ccusage_cli::PricingOverride;
@@ -14,12 +14,14 @@ use crate::{
 };
 
 mod builtin_pricing;
+mod cache;
+use cache::{CachedHit, Name, NameCache, NameSlot, Pass};
 mod data;
 mod overrides;
 use overrides::Overrides;
 mod row;
 pub use row::Source;
-use row::{Row, Scope, cache_defaults, row_scope, schedule_for, vendor_id};
+use row::{Entries, Row, Scope, cache_defaults, row_scope, schedule_for, vendor_id};
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -553,16 +555,17 @@ pub struct Explanation<'a> {
 struct RowMatch<'a> {
     key: &'a str,
     row: &'a Row,
+    id: usize,
 }
 
-/// One slot per looked-up model, so concurrent first lookups of a model share
-/// a single fuzzy search instead of each running it.
-type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<ResolvedPricing>>>>>;
-
-#[derive(Clone, Copy, Debug)]
-struct ResolvedPricing {
-    rates: Pricing,
-    schedule: Option<&'static PricingSchedule>,
+impl<'a> RowMatch<'a> {
+    fn new(id: usize, row: &'a Row) -> Self {
+        Self {
+            key: &row.key,
+            row,
+            id,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -572,61 +575,79 @@ pub struct PricingMap {
     models_dev: Option<Arc<PricingRows>>,
     live_models_dev: OnceLock<Option<Arc<PricingRows>>>,
     enable_models_dev_fallback: bool,
-    find_cache: OnceLock<FindCache>,
+    find_cache: OnceLock<NameCache>,
 }
 
 #[derive(Clone, Debug, Default)]
 struct PricingRows {
-    entries: FxHashMap<String, Row>,
+    entries: Entries,
     indexes: OnceLock<RowIndexes>,
-    exact_only_by_identity: OnceLock<FxHashMap<String, Option<String>>>,
+    exact_only_by_identity: OnceLock<FxHashMap<Box<str>, Option<usize>>>,
 }
 
-type IdentityIndex = FxHashMap<String, smallvec::SmallVec<[String; 1]>>;
+type IdentityIndex = FxHashMap<Box<str>, smallvec::SmallVec<[usize; 1]>>;
 
 #[derive(Clone, Debug, Default)]
 struct RowIndexes {
     by_identity: IdentityIndex,
     by_vendor_id: IdentityIndex,
     bare_hosted: IdentityIndex,
+    normalized_keys: Vec<Option<Box<str>>>,
 }
 
 impl PricingRows {
     fn literal(&self, key: &str, lookup: Lookup) -> Option<RowMatch<'_>> {
-        let (key, row) = self.entries.get_key_value(key)?;
-        lookup.includes(row).then_some(RowMatch { key, row })
+        let id = self.entries.id(key)?;
+        let found = self.at(id)?;
+        lookup.includes(found.row).then_some(found)
     }
 
-    fn indexed_row(&self, keys: &[String], lookup: Lookup) -> Option<RowMatch<'_>> {
+    fn at(&self, id: usize) -> Option<RowMatch<'_>> {
+        self.entries.rows.get(id).map(|row| RowMatch::new(id, row))
+    }
+
+    fn matches(&self) -> impl Iterator<Item = RowMatch<'_>> {
+        self.entries
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(id, row)| RowMatch::new(id, row))
+    }
+
+    fn normalized_matches(&self) -> impl Iterator<Item = (RowMatch<'_>, &str)> {
+        let keys = &self.indexes().normalized_keys;
+        self.matches()
+            .zip(keys)
+            .map(|(found, key)| (found, key.as_deref().unwrap_or(found.key)))
+    }
+
+    fn indexed_row(&self, keys: &[usize], lookup: Lookup) -> Option<RowMatch<'_>> {
         keys.iter()
-            .filter_map(|key| self.literal(key, lookup))
+            .filter_map(|id| self.at(*id))
+            .filter(|found| lookup.includes(found.row))
             .min_by_key(|found| found.key)
     }
 
     fn authoritative<'a>(
         &'a self,
-        name: &str,
+        name: Name<'_>,
         hosted: bool,
         visible: impl Fn(RowMatch<'a>) -> Option<RowMatch<'a>>,
     ) -> Option<RowMatch<'a>> {
-        let literal = self.literal(name, Lookup::Pricing);
+        let literal = self.literal(name.raw(), Lookup::Pricing);
         if let Some(found) = literal
             && !found.row.is_bare_hosted(found.key)
             && let Some(found) = visible(found)
         {
             return Some(found);
         }
-        let identity = normalized_pricing_key(name);
+        let identity = name.identity();
         let indexes = self.indexes();
         let matches = |index: &'a IdentityIndex| {
-            index
-                .get(identity.as_ref())
-                .into_iter()
-                .flatten()
-                .filter_map(|key| {
-                    let raw = self.literal(key, Lookup::Pricing)?;
-                    Some((raw.key, visible(raw)?))
-                })
+            index.get(identity).into_iter().flatten().filter_map(|key| {
+                let raw = self.at(*key)?;
+                Some((raw.key, visible(raw)?))
+            })
         };
         let by_key = |index: &'a IdentityIndex| {
             matches(index)
@@ -660,70 +681,77 @@ impl PricingRows {
             })
     }
 
-    fn exact(&self, name: &str, lookup: Lookup) -> Option<RowMatch<'_>> {
-        self.literal(name, lookup).or_else(|| {
-            let id = normalized_pricing_key(name);
+    fn exact(&self, name: Name<'_>, lookup: Lookup) -> Option<RowMatch<'_>> {
+        self.literal(name.raw(), lookup).or_else(|| {
             let indexes = self.indexes();
-            self.indexed_row(indexes.by_identity.get(id.as_ref())?, lookup)
+            self.indexed_row(indexes.by_identity.get(name.identity())?, lookup)
         })
     }
 
     fn indexes(&self) -> &RowIndexes {
         self.indexes.get_or_init(|| {
             let mut indexes = RowIndexes::default();
-            for (key, row) in &self.entries {
+            for found in self.matches() {
+                let row = found.row;
+                let key = found.key;
                 let index = if row.is_bare_hosted(key) {
                     &mut indexes.bare_hosted
                 } else {
                     &mut indexes.by_identity
                 };
+                let normalized = normalized_pricing_key(key);
                 index
-                    .entry(normalized_pricing_key(key).into_owned())
+                    .entry(normalized.as_ref().into())
                     .or_default()
-                    .push(key.clone());
-                let id = if row.scope == Scope::Direct && row.is_free() {
+                    .push(found.id);
+                indexes.normalized_keys.push(match normalized {
+                    Cow::Borrowed(_) => None,
+                    Cow::Owned(normalized) => Some(normalized.into_boxed_str()),
+                });
+                let vendor_id = if row.scope == Scope::Direct && row.is_free() {
                     Some(last_segment(key))
                 } else {
                     row.vendor_id.as_deref()
                 };
-                if let Some(id) = id.filter(|id| *id != key) {
+                if let Some(id) = vendor_id.filter(|id| *id != key) {
                     indexes
                         .by_vendor_id
-                        .entry(normalized_pricing_key(id).into_owned())
+                        .entry(normalized_pricing_key(id).into_owned().into_boxed_str())
                         .or_default()
-                        .push(key.clone());
+                        .push(found.id);
                 }
             }
             indexes
         })
     }
 
-    fn exact_only_by_identity(&self) -> &FxHashMap<String, Option<String>> {
+    fn exact_only_by_identity(&self) -> &FxHashMap<Box<str>, Option<usize>> {
         self.exact_only_by_identity.get_or_init(|| {
             let mut index = FxHashMap::default();
-            for (key, row) in &self.entries {
-                if row.is_exact_only() {
-                    index
-                        .entry(normalized_pricing_key(key).into_owned())
-                        .and_modify(|value| *value = None)
-                        .or_insert_with(|| Some(key.clone()));
-                }
+            for found in self.matches().filter(|found| found.row.is_exact_only()) {
+                index
+                    .entry(
+                        normalized_pricing_key(found.key)
+                            .into_owned()
+                            .into_boxed_str(),
+                    )
+                    .and_modify(|value| *value = None)
+                    .or_insert(Some(found.id));
             }
             index
         })
     }
 
-    fn contains_exact_only_spelling(&self, key: &str) -> bool {
+    fn contains_exact_only_identity(&self, key: &str, identity: &str) -> bool {
         self.entries.get(key).is_some_and(|row| row.is_exact_only())
-            || self
-                .exact_only_by_identity()
-                .contains_key(normalized_pricing_key(key).as_ref())
+            || self.exact_only_by_identity().contains_key(identity)
     }
 
     fn exact_only_id(&self, key: &str) -> Option<&str> {
-        self.exact_only_by_identity()
-            .get(normalized_pricing_key(key).as_ref())?
-            .as_deref()
+        let id = self
+            .exact_only_by_identity()
+            .get(normalized_pricing_key(key).as_ref())?;
+        self.at((*id)?).map(|found| found.key)
     }
 }
 
@@ -1330,7 +1358,7 @@ impl PricingMap {
                 .unwrap_or_default();
             let published_speed = provider_specific.or(speed.for_model(&model));
             let defaults = cache_defaults(&model, pricing.litellm_provider.as_deref());
-            let row = self.rows_mut().entries.entry(model).or_default();
+            let row = self.rows_mut().entries.get_or_insert(model, Row::default);
             row.source = Source::LiteLlm;
             row.scope = scope;
             row.schedule = vendor_id.as_deref().and_then(schedule_for);
@@ -1541,6 +1569,7 @@ impl PricingMap {
                     }),
                     exact_only: OnceLock::from(exact_only),
                     context_limit,
+                    key: Arc::default(),
                     source: Source::ModelsDev,
                     scope: Scope::Direct,
                     vendor_id: None,
@@ -1569,40 +1598,13 @@ impl PricingMap {
     }
 
     pub fn find(&self, model: &str) -> Option<Pricing> {
-        self.find_resolved(model).map(|resolved| resolved.rates)
-    }
-
-    fn find_resolved(&self, model: &str) -> Option<ResolvedPricing> {
-        let cache = self
-            .find_cache
-            .get_or_init(|| RwLock::new(FxHashMap::default()));
-        if let Some(&cached) = cache
-            .read()
-            .unwrap_or_else(|error| error.into_inner())
-            .get(model)
-            .and_then(|slot| slot.get())
-        {
-            return cached;
-        }
-        let slot = Arc::clone(
-            cache
-                .write()
-                .unwrap_or_else(|error| error.into_inner())
-                .entry(model.to_string())
-                .or_default(),
-        );
-        *slot.get_or_init(|| {
-            let (_, found, step) = self.resolve_row_with(
-                Some(model),
-                &[(model, MatchKind::Fuzzy)],
-                Lookup::Pricing,
-                models_dev_pricing,
-            )?;
-            Some(ResolvedPricing {
-                rates: found.row.pricing,
-                schedule: found.row.schedule.filter(|_| step.scheduled()),
-            })
-        })
+        let (_, found, _) = self.resolve_row_with(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(found.row.pricing)
     }
 
     pub fn explain<'a>(
@@ -1630,15 +1632,6 @@ impl PricingMap {
         candidates: &[(&'a str, MatchKind)],
         timestamp: Option<TimestampMs>,
     ) -> Option<(&'a str, Pricing)> {
-        if let [(model, MatchKind::Fuzzy)] = candidates
-            && reported_model.is_none_or(|reported| reported == *model)
-        {
-            let rates = match timestamp {
-                Some(timestamp) => self.find_at(model, timestamp),
-                None => self.find(model),
-            }?;
-            return Some((model, rates));
-        }
         let (model, found, step) = self.resolve_row_with(
             reported_model,
             candidates,
@@ -1675,14 +1668,17 @@ impl PricingMap {
 
     fn authoritative<'a>(
         &'a self,
-        model: &str,
+        model: Name<'_>,
         lookup: Lookup,
         hosted: bool,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<RowMatch<'a>> {
         let project = |found: RowMatch<'a>| lookup.includes(found.row).then_some(found);
+        if self.overrides.is_empty() {
+            return self.rows.authoritative(model, hosted, project);
+        }
         self.overrides
-            .id(model)
+            .id_identity(model.identity())
             .and_then(|id| project(self.resolve_override(id, models_dev)))
             .or_else(|| {
                 self.rows.authoritative(model, hosted, |found| {
@@ -1704,117 +1700,195 @@ impl PricingMap {
     ) -> Option<(&'a str, RowMatch<'_>, ResolutionStep)> {
         let live = std::cell::Cell::new(Some(live));
         let models_dev = || self.select_models_dev(|| live.take().and_then(|load| load()));
-        if let Some(label) = reported
-            && let Some(id) = self.overrides.label_id(label)
+        let cache = self.find_cache.get_or_init(NameCache::default);
+        let matching = |name, pass| {
+            cache.get_or_init(name, lookup, pass, |slot| {
+                self.search_pass(name, slot, lookup, pass, &models_dev)
+            })
+        };
+        if let &[(model, MatchKind::Fuzzy)] = candidates
+            && (reported == Some(model) || (reported.is_none() && self.overrides.is_empty()))
         {
-            let found = self.resolve_override(id, &models_dev);
-            if lookup.includes(found.row) {
-                return Some((label, found, ResolutionStep::ReportedOverride));
-            }
+            let hit = cache.get_or_init(model, lookup, Pass::Find, |slot| {
+                let search = |pass| {
+                    *slot
+                        .result(lookup, pass)
+                        .get_or_init(|| self.search_pass(model, slot, lookup, pass, &models_dev))
+                };
+                search(Pass::Label)
+                    .or_else(|| search(Pass::S2))
+                    .or_else(|| search(Pass::S34))
+                    .or_else(|| search(Pass::S56))
+            })?;
+            return self.cached_row(model, hit);
         }
-        for &(candidate, _) in candidates {
-            if let Some(found) = with_names(candidate, |name| {
-                self.authoritative(name, lookup, true, &models_dev)
-            }) {
-                return Some((candidate, found, ResolutionStep::AuthoritativeIdentity));
-            }
+        if !self.overrides.is_empty()
+            && let Some(model) = reported
+            && let Some(hit) = matching(model, Pass::Label)
+        {
+            return self.cached_row(model, hit);
         }
-        for &(candidate, kind) in candidates {
-            if kind == MatchKind::StrictExact {
-                continue;
-            }
-            let suffix = with_names(candidate, |name| {
-                name.match_indices('/').find_map(|(offset, _)| {
-                    self.authoritative(&name[offset + 1..], lookup, false, &models_dev)
-                })
-            });
-            if let Some(found) = suffix {
-                return Some((candidate, found, ResolutionStep::AuthoritativeSuffix));
-            }
-            if let Some(rows) = models_dev()
-                && let Some(found) = with_names(candidate, |name| rows.exact(name, lookup))
-            {
-                return Some((candidate, found, ResolutionStep::ModelsDevIdentity));
-            }
-        }
-        for &(candidate, kind) in candidates {
-            if kind != MatchKind::Fuzzy {
-                continue;
-            }
-            let secondary = self.available_models_dev();
-            if let Some((found, step)) = with_names(candidate, |name| {
-                if secondary.is_some_and(|rows| rows.contains_exact_only_spelling(name)) {
-                    return None;
+        for pass in [Pass::S2, Pass::S34, Pass::S56] {
+            for &(model, kind) in candidates {
+                if pass.allows(kind)
+                    && let Some(hit) = matching(model, pass)
+                {
+                    return self.cached_row(model, hit);
                 }
-                let base = self
-                    .rows
-                    .entries
-                    .iter()
-                    .map(|(key, row)| RowMatch { key, row })
-                    .filter(|found| self.overrides.shadow(*found).is_none());
-                let normalized = normalized_pricing_key(name);
-                let overrides = self
-                    .overrides
-                    .keys()
-                    .enumerate()
-                    .filter(|(_, key)| pricing_key_matches(key, name, &normalized))
-                    .map(|(id, _)| self.resolve_override(id, &models_dev))
-                    .filter(|found| {
-                        !*found.row.exact_only.get_or_init(|| {
-                            secondary
-                                .is_some_and(|rows| rows.contains_exact_only_spelling(found.key))
-                        })
-                    });
-                Self::fuzzy(base.chain(overrides), name, &normalized, lookup)
-                    .map(|row| (row, ResolutionStep::AuthoritativeFuzzy))
-                    .or_else(|| {
-                        let rows = secondary?
-                            .entries
-                            .iter()
-                            .map(|(key, row)| RowMatch { key, row });
-                        Self::fuzzy(rows, name, &normalized, lookup)
-                            .map(|row| (row, ResolutionStep::ModelsDevFuzzy))
-                    })
-            }) {
-                return Some((candidate, found, step));
             }
         }
         None
     }
 
+    fn search_pass<'a>(
+        &'a self,
+        model: &str,
+        slot: &NameSlot,
+        lookup: Lookup,
+        pass: Pass,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        match pass {
+            Pass::Label => {
+                if self.overrides.is_empty() {
+                    return None;
+                }
+                let id = self
+                    .overrides
+                    .id_identity(slot.name(model).identity())
+                    .or_else(|| {
+                        self.overrides
+                            .id_identity(slot.configured(model)?.identity())
+                    })?;
+                let found = self.resolve_override(id, models_dev);
+                lookup
+                    .includes(found.row)
+                    .then(|| CachedHit::new(found, ResolutionStep::ReportedOverride))
+            }
+            Pass::S2 => slot
+                .names(model, |name| {
+                    self.authoritative(name, lookup, true, models_dev)
+                })
+                .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeIdentity)),
+            Pass::S34 => {
+                let suffix = slot.names(model, |name| {
+                    name.raw().match_indices('/').find_map(|(offset, _)| {
+                        self.authoritative(name.suffix(offset + 1), lookup, false, models_dev)
+                    })
+                });
+                suffix
+                    .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeSuffix))
+                    .or_else(|| {
+                        let rows = models_dev()?;
+                        slot.names(model, |name| rows.exact(name, lookup))
+                            .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevIdentity))
+                    })
+            }
+            Pass::S56 => slot.names(model, |name| self.search_fuzzy(name, lookup, models_dev)),
+            Pass::Find => None,
+        }
+    }
+
+    fn search_fuzzy<'a>(
+        &'a self,
+        name: Name<'_>,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        let secondary = self.available_models_dev();
+        let normalized = name.identity();
+        if secondary.is_some_and(|rows| rows.contains_exact_only_identity(name.raw(), normalized)) {
+            return None;
+        }
+        let base = self.rows.normalized_matches();
+        let primary = if self.overrides.is_empty() {
+            Self::fuzzy(base, name.raw(), normalized, lookup)
+        } else {
+            let base = base.filter(|(found, _)| self.overrides.shadow(*found).is_none());
+            let overrides = self
+                .overrides
+                .names()
+                .enumerate()
+                .filter(|(_, (key, identity))| {
+                    pricing_key_matches(key, identity, name.raw(), normalized)
+                })
+                .map(|(id, (_, normalized))| (self.resolve_override(id, models_dev), normalized))
+                .filter(|(found, normalized)| {
+                    !*found.row.exact_only.get_or_init(|| {
+                        secondary.is_some_and(|rows| {
+                            rows.contains_exact_only_identity(found.key, normalized)
+                        })
+                    })
+                });
+            Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
+        };
+        primary
+            .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeFuzzy))
+            .or_else(|| {
+                Self::fuzzy(
+                    secondary?.normalized_matches(),
+                    name.raw(),
+                    normalized,
+                    lookup,
+                )
+                .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevFuzzy))
+            })
+    }
+
+    fn cached_row<'a>(
+        &self,
+        name: &'a str,
+        hit: CachedHit,
+    ) -> Option<(&'a str, RowMatch<'_>, ResolutionStep)> {
+        let row = if hit.overridden {
+            self.overrides.resolved(hit.id)
+        } else if matches!(
+            hit.step,
+            ResolutionStep::ModelsDevIdentity | ResolutionStep::ModelsDevFuzzy
+        ) {
+            self.available_models_dev()?.at(hit.id)
+        } else {
+            self.rows.at(hit.id)
+        }?;
+        Some((name, row, hit.step))
+    }
+
     fn fuzzy<'a>(
-        rows: impl Iterator<Item = RowMatch<'a>>,
+        rows: impl Iterator<Item = (RowMatch<'a>, &'a str)>,
         name: &str,
         normalized: &str,
         lookup: Lookup,
     ) -> Option<RowMatch<'a>> {
         let segment = last_segment(normalized);
-        rows.filter(|found| {
+        rows.filter(|(found, _)| {
             !found.row.is_exact_only()
                 && lookup.includes(found.row)
                 && (matches!(lookup, Lookup::Context) || !found.row.is_free())
         })
-        .filter(|found| pricing_key_matches(found.key, name, normalized))
-        .max_by_key(|found| {
+        .filter(|(found, key)| pricing_key_matches(found.key, key, name, normalized))
+        .max_by_key(|(found, key)| {
             (
-                normalized_pricing_key(last_segment(found.key)) == segment,
+                last_segment(key) == segment,
                 found.key.len(),
                 std::cmp::Reverse(found.key),
             )
         })
+        .map(|(found, _)| found)
     }
 
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
-        let resolved = self.find_resolved(model)?;
-        Some(match resolved.schedule {
-            Some(schedule) => resolved.rates.at(schedule, timestamp),
-            None => resolved.rates,
-        })
+        self.resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], Some(timestamp))
+            .map(|(_, rates)| rates)
     }
 
     pub fn is_time_dependent(&self, model: &str) -> bool {
-        self.find_resolved(model)
-            .is_some_and(|result| result.schedule.is_some())
+        self.resolve_row_with(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Pricing,
+            models_dev_pricing,
+        )
+        .is_some_and(|(_, found, step)| step.scheduled() && found.row.schedule.is_some())
     }
 
     fn has_user_override(&self, model: &str) -> bool {
@@ -1832,12 +1906,7 @@ impl PricingMap {
     }
 
     fn clear_find_cache(&mut self) {
-        if let Some(cache) = self.find_cache.get_mut() {
-            cache
-                .get_mut()
-                .unwrap_or_else(|error| error.into_inner())
-                .clear();
-        }
+        self.find_cache.take();
     }
 
     /// Fills in long-context tier rates for models whose upstream pricing
@@ -1851,7 +1920,8 @@ impl PricingMap {
     /// rather than per field: each source's rates assume that source's own
     /// boundary, so mixing fields across sources would price both tiers wrong.
     fn fill_long_context_rates_from_models_dev(&mut self, tiers: &Self) {
-        for (model, row) in &mut self.rows_mut().entries {
+        for row in &mut self.rows_mut().entries.rows {
+            let model = &row.key;
             let pricing = &mut row.pricing;
             let previous = pricing
                 .long_context
@@ -1905,26 +1975,21 @@ impl PricingMap {
         provider: &str,
     ) {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        match self.rows_mut().entries.entry(model.to_string()) {
-            std::collections::hash_map::Entry::Occupied(mut existing) => {
-                let existing = existing.get_mut();
-                existing.context_limit = existing.context_limit.or(context_limit);
-                let existing = &mut existing.pricing;
-                existing.cache_read = existing.cache_read.or(pricing.cache_read);
-                existing.cache_create = existing.cache_create.or(pricing.cache_create);
-            }
-            std::collections::hash_map::Entry::Vacant(slot) => {
-                slot.insert(Row {
-                    pricing,
-                    context_limit,
-                    source: Source::Curated,
-                    scope: Scope::Direct,
-                    vendor_id: Some(vendor_id(model, provider).into()),
-                    schedule: schedule_for(vendor_id(model, provider)),
-                    ..Row::default()
-                });
-            }
-        }
+        let row = self
+            .rows_mut()
+            .entries
+            .get_or_insert(model.to_string(), || Row {
+                pricing,
+                context_limit,
+                source: Source::Curated,
+                scope: Scope::Direct,
+                vendor_id: Some(vendor_id(model, provider).into()),
+                schedule: schedule_for(vendor_id(model, provider)),
+                ..Row::default()
+            });
+        row.context_limit = row.context_limit.or(context_limit);
+        row.pricing.cache_read = row.pricing.cache_read.or(pricing.cache_read);
+        row.pricing.cache_create = row.pricing.cache_create.or(pricing.cache_create);
         self.clear_find_cache();
     }
 
@@ -2020,13 +2085,17 @@ fn last_segment(key: &str) -> &str {
 }
 
 /// Matches pricing keys across provider/model aliases while preserving version boundaries.
-fn pricing_key_matches(candidate: &str, model: &str, normalized_model: &str) -> bool {
+fn pricing_key_matches(
+    candidate: &str,
+    normalized_candidate: &str,
+    model: &str,
+    normalized_model: &str,
+) -> bool {
     if contains_pricing_key(model, candidate) || contains_pricing_key(candidate, model) {
         return true;
     }
-    let normalized_candidate = normalized_pricing_key(candidate);
-    contains_pricing_key(normalized_model, normalized_candidate.as_ref())
-        || contains_pricing_key(normalized_candidate.as_ref(), normalized_model)
+    contains_pricing_key(normalized_model, normalized_candidate)
+        || contains_pricing_key(normalized_candidate, normalized_model)
 }
 
 /// Finds a key only when the surrounding bytes are non-alphanumeric boundaries.
@@ -2253,7 +2322,7 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 mod tests {
 
     use super::{
-        Lookup, MatchKind, Pricing, PricingMap, build_time_models_dev_json,
+        Lookup, MatchKind, Pricing, PricingMap, Row, build_time_models_dev_json,
         build_time_pricing_json, embedded_models_dev_pricing, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
@@ -2295,13 +2364,16 @@ mod tests {
         }
 
         fn insert_test_pricing(&mut self, key: String, pricing: Pricing) {
-            let row = self.rows_mut().entries.entry(key).or_default();
+            let row = self.rows_mut().entries.get_or_insert(key, Row::default);
             row.scope = super::Scope::Direct;
             row.pricing = pricing;
         }
 
         fn insert_test_limit(&mut self, key: &str, limit: u64) {
-            let row = self.rows_mut().entries.entry(key.to_string()).or_default();
+            let row = self
+                .rows_mut()
+                .entries
+                .get_or_insert(key.to_string(), Row::default);
             row.scope = super::Scope::Direct;
             row.context_limit = Some(limit);
         }
@@ -2309,8 +2381,7 @@ mod tests {
         fn mark_test_exact_only(&mut self, key: &str) {
             self.rows_mut()
                 .entries
-                .entry(key.to_string())
-                .or_default()
+                .get_or_insert(key.to_string(), Row::default)
                 .exact_only = std::sync::OnceLock::from(true);
         }
 
@@ -2364,9 +2435,9 @@ mod tests {
 
         fn len(&self) -> usize {
             let mut keys = rustc_hash::FxHashSet::default();
-            keys.extend(self.rows.entries.keys().map(String::as_str));
+            keys.extend(self.rows.matches().map(|found| found.key));
             if let Some(models_dev) = self.available_models_dev() {
-                keys.extend(models_dev.entries.keys().map(String::as_str));
+                keys.extend(models_dev.matches().map(|found| found.key));
             }
             keys.len()
         }
@@ -5775,8 +5846,8 @@ mod tests {
         primary.put_builtin_pricing();
         let model = embedded_models_dev_pricing()
             .rows
-            .entries
-            .keys()
+            .matches()
+            .map(|found| found.key)
             .find(|model| primary.find(model).is_none())
             .expect(
                 "the embedded models.dev snapshot should price a model the primary table misses",

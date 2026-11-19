@@ -4,19 +4,20 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Lookup, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch, Scope, Source,
+    Lookup, Name, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch, Scope, Source,
     SpeedMultipliers, normalized_pricing_key, with_names,
 };
 
 #[derive(Debug, Default)]
 pub(super) struct Overrides {
-    by_identity: FxHashMap<Box<str>, usize>,
+    by_identity: FxHashMap<Arc<str>, usize>,
     rows: Vec<OverrideRow>,
 }
 
 #[derive(Debug)]
 struct OverrideRow {
-    key: Box<str>,
+    key: Arc<str>,
+    identity: Arc<str>,
     base: Option<Base>,
     patches: SmallVec<[PricingOverride; 1]>,
     row: OnceLock<Row>,
@@ -29,13 +30,27 @@ enum Base {
 }
 
 impl Overrides {
-    pub(super) fn id(&self, name: &str) -> Option<usize> {
-        if self.rows.is_empty() {
+    pub(super) fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    fn id(&self, name: &str) -> Option<usize> {
+        if self.is_empty() {
             return None;
         }
-        self.by_identity
-            .get(normalized_pricing_key(name).as_ref())
-            .copied()
+        self.id_identity(normalized_pricing_key(name).as_ref())
+    }
+
+    pub(super) fn id_identity(&self, identity: &str) -> Option<usize> {
+        self.by_identity.get(identity).copied()
+    }
+
+    pub(super) fn resolved(&self, id: usize) -> Option<RowMatch<'_>> {
+        self.rows
+            .get(id)?
+            .row
+            .get()
+            .map(|row| RowMatch::new(id, row))
     }
 
     pub(super) fn label_id(&self, label: &str) -> Option<usize> {
@@ -51,8 +66,10 @@ impl Overrides {
             .or_else(|| self.id(found.row.vendor_id.as_deref()?))
     }
 
-    pub(super) fn keys(&self) -> impl Iterator<Item = &str> {
-        self.rows.iter().map(|slot| slot.key.as_ref())
+    pub(super) fn names(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.rows
+            .iter()
+            .map(|slot| (slot.key.as_ref(), slot.identity.as_ref()))
     }
 
     fn in_cycle(&self, id: usize) -> bool {
@@ -82,19 +99,23 @@ impl PricingMap {
         values.sort_unstable_by_key(|(key, _)| *key);
         let mut overrides = Overrides::default();
         for (key, value) in values {
-            let id = *overrides
-                .by_identity
-                .entry(normalized_pricing_key(key).into_owned().into_boxed_str())
-                .or_insert_with(|| {
+            let identity = normalized_pricing_key(key);
+            let id = match overrides.by_identity.get(identity.as_ref()) {
+                Some(&id) => id,
+                None => {
                     let id = overrides.rows.len();
+                    let identity: Arc<str> = Arc::from(identity.as_ref());
+                    overrides.by_identity.insert(Arc::clone(&identity), id);
                     overrides.rows.push(OverrideRow {
                         key: key.as_str().into(),
+                        identity,
                         base: None,
                         patches: SmallVec::new(),
                         row: OnceLock::new(),
                     });
                     id
-                });
+                }
+            };
             overrides.rows[id].patches.push(value.clone());
         }
         for (id, slot) in overrides.rows.iter_mut().enumerate() {
@@ -115,7 +136,7 @@ impl PricingMap {
         &self,
         id: usize,
         key: &str,
-        overrides: &FxHashMap<Box<str>, usize>,
+        overrides: &FxHashMap<Arc<str>, usize>,
     ) -> Option<Base> {
         with_names(key, |name| {
             if name != key
@@ -125,7 +146,7 @@ impl PricingMap {
                 return Some(Base::Override(dependency));
             }
             self.rows
-                .authoritative(name, false, Some)
+                .authoritative(Name::new(name, &OnceLock::new()), false, Some)
                 .map(|found| Base::Authority(Box::new(found.row.clone())))
         })
     }
@@ -145,7 +166,9 @@ impl PricingMap {
                 }
                 None => {
                     let base = models_dev().and_then(|rows| {
-                        with_names(&slot.key, |name| rows.exact(name, Lookup::Pricing))
+                        with_names(&slot.key, |name| {
+                            rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing)
+                        })
                     });
                     match base {
                         Some(found) => (
@@ -179,18 +202,16 @@ impl PricingMap {
             }
             pricing.explicit_fields = explicit_fields;
             Row {
+                key: Arc::clone(&slot.key),
                 source: Source::Override,
                 scope: Scope::Direct,
-                vendor_id: Some(slot.key.clone()),
+                vendor_id: Some(slot.key.as_ref().into()),
                 exact_only: OnceLock::new(),
                 schedule,
                 context_limit,
                 pricing,
             }
         });
-        RowMatch {
-            key: &slot.key,
-            row,
-        }
+        RowMatch::new(id, row)
     }
 }
