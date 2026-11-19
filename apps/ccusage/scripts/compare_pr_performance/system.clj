@@ -37,7 +37,9 @@
 (def report-vars (sorted-map "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"))
 
 (defn fixture-env
-  [fixture-dir codex-fixture-dir empty-home]
+  [fixture-dir codex-fixture-dir grok-fixture-dir empty-home]
   {:clean? true
-   :vars (into (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home)
+   :vars (into (cond-> (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir)
+                 grok-fixture-dir (assoc "GROK_HOME" grok-fixture-dir)
+                 true (assoc "HOME" empty-home))
                (assoc report-vars "LOG_LEVEL" "0"))})

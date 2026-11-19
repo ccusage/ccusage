@@ -55,6 +55,10 @@
                           (history/parse-history-cli ["--fixture-dir" "c" "main"])))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fixture-dir and --codex-fixture-dir together"
                           (history/parse-history-cli ["--codex-fixture-dir" "x" "main"]))))
+  (testing "a custom Grok fixture joins a custom Claude and Codex pair"
+    (is (= "g" (:grok-fixture-dir (history/parse-history-cli ["--fixture-dir" "c" "--codex-fixture-dir" "x" "--grok-fixture-dir" "g" "main"]))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--grok-fixture-dir with --fixture-dir"
+                          (history/parse-history-cli ["--grok-fixture-dir" "g" "main"]))))
   (testing "history rejects too few rounds instead of measuring them"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
                           (history/parse-history-cli ["--runs" "2" "main"])))
@@ -74,7 +78,10 @@
           (benchmark/command-argv "/tmp/ccusage" "claude daily"))))
   (testing "fixture runs start from an empty environment"
     (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
-           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" "/e") (benchmark/command-argv "/b" "daily"))))))
+           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" nil "/e") (benchmark/command-argv "/b" "daily")))))
+  (testing "a Grok fixture is pointed at through GROK_HOME"
+    (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x GROK_HOME=/f/g HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
+           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" "/f/g" "/e") (benchmark/command-argv "/b" "daily"))))))
 
 (deftest statistics
   (is (= 4 (data/median [9 1 2 4 7])))
@@ -173,7 +180,10 @@
                        "## ccusage performance comparison\n")))
     (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
-    (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))))
+    (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))
+    (is (.contains markdown "Claude logs (1.00 GiB on disk, 10 files) and Codex logs"))
+    (is (.contains (report/fixture-line (assoc context :grok-fixture-stats {:bytes 2097152 :files 3}))
+                   "Claude logs (1.00 GiB on disk, 10 files), Codex logs (1.00 MiB on disk, 2 files, mostly zstd-compressed), and Grok logs (2.00 MiB on disk, 3 files) shaped"))))
 
 (deftest overall-verdicts
   (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]

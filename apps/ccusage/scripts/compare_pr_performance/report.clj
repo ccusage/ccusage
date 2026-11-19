@@ -38,10 +38,14 @@
       (seq improvements) {:text (format "**Verdict: ✅ improved** in %s; nothing regressed beyond %d%%." (commands improvements) percent)}
       :else {:text (format "**Verdict: no significant change** (every command within ±%d%% CPU time and peak RSS)." percent)})))
 
-(defn fixture-line [{:keys [fixture-stats codex-fixture-stats]}]
-  (format "Fixture: generated Claude logs (%s on disk, %d files) and Codex logs (%s on disk, %d files, mostly zstd-compressed) shaped like current real logs; every value is synthetic."
+(defn fixture-line [{:keys [fixture-stats codex-fixture-stats grok-fixture-stats]}]
+  (format "Fixture: generated Claude logs (%s on disk, %d files)%s Codex logs (%s on disk, %d files, mostly zstd-compressed)%s shaped like current real logs; every value is synthetic."
           (data/format-data-size (:bytes fixture-stats)) (:files fixture-stats)
-          (data/format-data-size (:bytes codex-fixture-stats)) (:files codex-fixture-stats)))
+          (if grok-fixture-stats "," " and")
+          (data/format-data-size (:bytes codex-fixture-stats)) (:files codex-fixture-stats)
+          (if grok-fixture-stats
+            (format ", and Grok logs (%s on disk, %d files)" (data/format-data-size (:bytes grok-fixture-stats)) (:files grok-fixture-stats))
+            "")))
 
 (defn method-line [{:keys [runs warmup threshold]}]
   (format (str "Base and PR are built from source the same way on this runner and run `--offline --json` in %d interleaved rounds after %d warmup rounds; "

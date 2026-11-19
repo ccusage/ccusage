@@ -16,17 +16,69 @@ const LEGACY_PROGRESS_FILE_EVERY = 6;
 const CODEX_PLAIN_RECENT_DAYS = 14;
 const CODEX_ARCHIVED_FILE_EVERY = 4;
 const CODEX_COMPACTION_CHANCE = 1 / 30;
-const REAL_WORLD_PROFILE_FILES = 3142;
-const REAL_WORLD_PROFILE_TOTAL_MIB = 1238.9718046188354;
-const REAL_WORLD_QUANTILES = [
-	{ percentile: 0, size: 236 },
-	{ percentile: 0.5, size: 105_267 },
-	{ percentile: 0.75, size: 233_572 },
-	{ percentile: 0.9, size: 653_972 },
-	{ percentile: 0.95, size: 1_504_757 },
-	{ percentile: 0.99, size: 5_383_751 },
-	{ percentile: 1, size: 87_033_471 },
-] as const;
+type Format = 'claude' | 'codex' | 'grok';
+
+type SizeProfile = {
+	files: number;
+	totalBytes: number;
+	quantiles: readonly { percentile: number; size: number }[];
+};
+const SIZE_PROFILES = {
+	claude: {
+		files: 10_723,
+		totalBytes: 11_084_634_346,
+		quantiles: [
+			{ percentile: 0, size: 20 },
+			{ percentile: 0.1, size: 12_650 },
+			{ percentile: 0.25, size: 165_359 },
+			{ percentile: 0.5, size: 456_592 },
+			{ percentile: 0.75, size: 982_483 },
+			{ percentile: 0.9, size: 1_986_849 },
+			{ percentile: 0.95, size: 3_239_049 },
+			{ percentile: 0.98, size: 6_636_290 },
+			{ percentile: 0.99, size: 10_975_928 },
+			{ percentile: 0.995, size: 16_288_675 },
+			{ percentile: 0.999, size: 38_777_640 },
+			{ percentile: 1, size: 129_659_313 },
+		],
+	},
+	codex: {
+		files: 7312,
+		totalBytes: 15_293_400_760,
+		quantiles: [
+			{ percentile: 0, size: 20_070 },
+			{ percentile: 0.1, size: 163_312 },
+			{ percentile: 0.25, size: 356_202 },
+			{ percentile: 0.5, size: 797_068 },
+			{ percentile: 0.75, size: 1_610_200 },
+			{ percentile: 0.9, size: 3_762_690 },
+			{ percentile: 0.95, size: 6_397_926 },
+			{ percentile: 0.98, size: 12_601_686 },
+			{ percentile: 0.99, size: 23_663_548 },
+			{ percentile: 0.995, size: 39_980_016 },
+			{ percentile: 0.999, size: 99_553_853 },
+			{ percentile: 1, size: 221_490_002 },
+		],
+	},
+	grok: {
+		files: 354,
+		totalBytes: 98_732_436,
+		quantiles: [
+			{ percentile: 0, size: 601 },
+			{ percentile: 0.1, size: 4671 },
+			{ percentile: 0.25, size: 6147 },
+			{ percentile: 0.5, size: 7937 },
+			{ percentile: 0.75, size: 153_184 },
+			{ percentile: 0.9, size: 1_012_536 },
+			{ percentile: 0.95, size: 1_301_281 },
+			{ percentile: 0.98, size: 2_281_428 },
+			{ percentile: 0.99, size: 2_906_443 },
+			{ percentile: 0.995, size: 4_749_250 },
+			{ percentile: 0.999, size: 5_332_993 },
+			{ percentile: 1, size: 5_332_993 },
+		],
+	},
+} as const satisfies Record<Format, SizeProfile>;
 
 const CLAUDE_MODELS = [
 	'claude-opus-4-5-20251101',
@@ -34,6 +86,7 @@ const CLAUDE_MODELS = [
 	'claude-sonnet-4-5-20250929',
 	'claude-haiku-4-5-20251001',
 ] as const;
+const GROK_MODELS = ['grok-4.5-build', 'grok-4.5-build', 'grok-4.3-build'] as const;
 const CODEX_MODELS = [
 	'gpt-5.2-codex',
 	'gpt-5.2-codex',
@@ -85,8 +138,10 @@ type CodexLayout = 'current' | 'legacy';
 type Options = {
 	outputDir: string;
 	codexOutputDir?: string;
+	grokOutputDir?: string;
 	sizeMib: number;
 	codexSizeMib: number;
+	grokSizeMib: number;
 	codexLayout: CodexLayout;
 };
 
@@ -98,6 +153,12 @@ function parsePositiveInteger(value: string, flagName: string): number {
 		throw new Error(`${flagName} must be a positive integer`);
 	}
 	return parsed;
+}
+
+function parseSizeMib(value: string | undefined, flagName: string, format: Format): number {
+	return value === undefined
+		? Math.round(SIZE_PROFILES[format].totalBytes / MIB)
+		: parsePositiveInteger(value, flagName);
 }
 
 function parseArguments(args: readonly string[]): Options {
@@ -115,8 +176,10 @@ function parseArguments(args: readonly string[]): Options {
 			![
 				'--output-dir',
 				'--codex-output-dir',
+				'--grok-output-dir',
 				'--size-mib',
 				'--codex-size-mib',
+				'--grok-size-mib',
 				'--codex-layout',
 			].includes(flag)
 		) {
@@ -138,11 +201,10 @@ function parseArguments(args: readonly string[]): Options {
 	return {
 		outputDir,
 		codexOutputDir: values.get('--codex-output-dir'),
-		sizeMib: parsePositiveInteger(values.get('--size-mib') ?? '1024', '--size-mib'),
-		codexSizeMib: parsePositiveInteger(
-			values.get('--codex-size-mib') ?? '1024',
-			'--codex-size-mib',
-		),
+		grokOutputDir: values.get('--grok-output-dir'),
+		sizeMib: parseSizeMib(values.get('--size-mib'), '--size-mib', 'claude'),
+		codexSizeMib: parseSizeMib(values.get('--codex-size-mib'), '--codex-size-mib', 'codex'),
+		grokSizeMib: parseSizeMib(values.get('--grok-size-mib'), '--grok-size-mib', 'grok'),
 		codexLayout,
 	};
 }
@@ -151,26 +213,29 @@ function formatBytes(bytes: number): string {
 	return `${(bytes / MIB).toFixed(2)} MiB`;
 }
 
-function interpolateFileSize(percentile: number): number {
-	for (let index = 1; index < REAL_WORLD_QUANTILES.length; index += 1) {
-		const previous = REAL_WORLD_QUANTILES[index - 1];
-		const current = REAL_WORLD_QUANTILES[index];
+function interpolateFileSize(profile: SizeProfile, percentile: number): number {
+	const { quantiles } = profile;
+	for (let index = 1; index < quantiles.length; index += 1) {
+		const previous = quantiles[index - 1];
+		const current = quantiles[index];
 		if (!previous || !current || percentile > current.percentile) {
 			continue;
 		}
 		const ratio = (percentile - previous.percentile) / (current.percentile - previous.percentile);
-		return previous.size + (current.size - previous.size) * ratio;
+		return Math.expm1(
+			Math.log1p(previous.size) + (Math.log1p(current.size) - Math.log1p(previous.size)) * ratio,
+		);
 	}
-	return REAL_WORLD_QUANTILES.at(-1)?.size ?? 0;
+	return quantiles.at(-1)?.size ?? 0;
 }
 
-function createFileSizeTargets(targetBytes: number): number[] {
+function createFileSizeTargets(profile: SizeProfile, targetBytes: number): number[] {
 	const targetFileCount = Math.max(
 		1,
-		Math.round((targetBytes / MIB / REAL_WORLD_PROFILE_TOTAL_MIB) * REAL_WORLD_PROFILE_FILES),
+		Math.round((targetBytes / profile.totalBytes) * profile.files),
 	);
 	const rawSizes = Array.from({ length: targetFileCount }, (_, index) =>
-		interpolateFileSize((index + 0.5) / targetFileCount),
+		interpolateFileSize(profile, (index + 0.5) / targetFileCount),
 	);
 	const rawTotal = rawSizes.reduce((total, size) => total + size, 0);
 	return rawSizes.map((size) => Math.max(256, Math.round(size * (targetBytes / rawTotal))));
@@ -780,6 +845,213 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 	}
 }
 
+type GrokSession = {
+	cwd: string;
+	sessionId: string;
+	model: string;
+	random: Random;
+	clockMs: number;
+	events: number;
+	promptIndex: number;
+};
+
+function grokLine(session: GrokSession, method: string, update: Line, meta: Line = {}): Line {
+	session.clockMs += 50 + session.random.int(20_000);
+	session.events += 1;
+	return {
+		timestamp: Math.floor(session.clockMs / 1000),
+		method,
+		params: {
+			sessionId: session.sessionId,
+			update,
+			_meta: {
+				...meta,
+				eventId: `${session.sessionId}-${session.events}`,
+				agentTimestampMs: session.clockMs,
+			},
+		},
+	};
+}
+
+function grokTurnMeta(session: GrokSession, updateType: string, turnStartMs: number): Line {
+	return {
+		totalTokens: session.random.between(5000, 200_000),
+		requestTrimmedTokens: 0,
+		promptId: `prompt-${session.promptIndex}`,
+		streamStartMs: turnStartMs + 1000,
+		turnStartMs,
+		updateType,
+	};
+}
+
+function byteArray(random: Random, length: number): number[] {
+	return Array.from(Buffer.from(text(random, length)));
+}
+
+function grokToolOutput(random: Random): Line {
+	switch (random.int(3)) {
+		case 0: {
+			const content = text(random, around(random, 3000));
+			return {
+				type: 'FileContent',
+				FileContent: {
+					content,
+					content_concise: content,
+					absolute_path: `/tmp/ccusage-fixture/grok/${random.hex(8)}.rs`,
+					offset: null,
+					raw_output: content,
+					total_lines: random.between(10, 2000),
+				},
+			};
+		}
+		case 1:
+			return {
+				type: 'Bash',
+				command: text(random, 80),
+				current_dir: '/tmp/ccusage-fixture/grok',
+				description: text(random, 40),
+				exit_code: 0,
+				output: byteArray(random, around(random, 1500)),
+				output_file: null,
+				output_for_prompt: null,
+				signal: null,
+				timed_out: false,
+				total_bytes: random.int(4000),
+				truncated: false,
+			};
+		default:
+			return {
+				type: 'GrepSearch',
+				stdout: byteArray(random, around(random, 2500)),
+				stderr: [],
+				exit_code: 0,
+				match_count: random.int(60),
+				file_matches: Array.from({ length: random.between(1, 6) }, () => ({
+					path: `src/${random.hex(6)}.rs`,
+					matches: Array.from({ length: random.between(1, 8) }, () => ({
+						line_number: random.int(2000),
+						content: text(random, around(random, 60)),
+					})),
+				})),
+			};
+	}
+}
+
+function grokUsage(random: Random, model: string): Line {
+	const inputTokens = random.between(20_000, 4_000_000);
+	const usage = {
+		inputTokens,
+		outputTokens: random.between(100, 60_000),
+		totalTokens: 0,
+		cachedReadTokens: Math.floor(inputTokens * (0.6 + random.next() * 0.38)),
+		cacheCreationTokens: 0,
+		reasoningTokens: random.between(0, 40_000),
+		modelCalls: random.between(1, 100),
+		apiDurationMs: random.between(1000, 1_000_000),
+		costUsdTicks: random.chance(0.9) ? random.between(1_000_000, 30_000_000_000) : 0,
+	};
+	usage.totalTokens = usage.inputTokens + usage.outputTokens;
+	return { ...usage, modelUsage: { [model]: usage }, numTurns: usage.modelCalls };
+}
+
+function* grokSessionLines(session: GrokSession): Generator<Line> {
+	const { random } = session;
+	yield grokLine(session, '_x.ai/session/update', {
+		sessionUpdate: 'hook_execution',
+		event_name: 'session_start',
+		runs: [{ name: text(random, 40), status: { status: 'success', elapsed_ms: random.int(60) } }],
+	});
+	while (true) {
+		session.promptIndex += 1;
+		const turnStartMs = session.clockMs;
+		yield grokLine(session, 'session/update', {
+			sessionUpdate: 'user_message_chunk',
+			content: { type: 'text', text: text(random, around(random, 3000)) },
+		});
+		const toolFree = random.chance(session.promptIndex === 1 ? 0.8 : 0.5);
+		const tools = toolFree ? 0 : random.between(1, 40);
+		for (let tool = 0; tool < tools; tool += 1) {
+			if (random.chance(0.2)) {
+				yield grokLine(
+					session,
+					'session/update',
+					{
+						sessionUpdate: 'agent_thought_chunk',
+						content: { type: 'text', text: text(random, around(random, 1400)) },
+					},
+					{ ...grokTurnMeta(session, 'AgentThoughtChunk', turnStartMs), chunkId: tool },
+				);
+			}
+			const toolCallId = `call_${random.hex(38)}`;
+			const xaiTool = {
+				'x.ai/tool': {
+					version: 1,
+					name: 'run_command',
+					kind: 'run_command',
+					namespace: 'grok_build',
+					label: 'Run Command',
+					read_only: false,
+				},
+			};
+			yield grokLine(
+				session,
+				'session/update',
+				{
+					sessionUpdate: 'tool_call',
+					toolCallId,
+					title: 'run_command',
+					rawInput: { command: text(random, around(random, 200)) },
+					_meta: xaiTool,
+				},
+				{
+					...grokTurnMeta(session, 'ToolCall', turnStartMs),
+					updateParams: { toolCallId, title: 'run_command', kind: 'Other', status: 'Pending' },
+				},
+			);
+			const rawOutput = grokToolOutput(random);
+			yield grokLine(
+				session,
+				'session/update',
+				{
+					sessionUpdate: 'tool_call_update',
+					toolCallId,
+					status: 'completed',
+					content: [
+						{
+							type: 'content',
+							content: { type: 'text', text: text(random, around(random, 1200)) },
+						},
+					],
+					rawOutput,
+				},
+				{
+					...grokTurnMeta(session, 'ToolCallUpdate', turnStartMs),
+					updateParams: { toolCallId, status: 'completed' },
+				},
+			);
+			yield grokLine(session, '_x.ai/session/update', {
+				sessionUpdate: 'hook_execution',
+				event_name: 'post_tool_use',
+				runs: [
+					{ name: text(random, 40), status: { status: 'success', elapsed_ms: random.int(60) } },
+				],
+			});
+		}
+		yield grokLine(session, 'session/update', {
+			sessionUpdate: 'agent_message_chunk',
+			content: { type: 'text', text: text(random, around(random, 900)) },
+		});
+		yield grokLine(session, '_x.ai/session/update', {
+			sessionUpdate: 'turn_completed',
+			prompt_id: `prompt-${session.promptIndex}`,
+			stop_reason: 'end_turn',
+			agent_result: text(random, 60),
+			usage: grokUsage(random, session.model),
+			elapsed_ms: session.clockMs - turnStartMs,
+		});
+	}
+}
+
 async function createEmptyDirectory(directory: string, flagName: string): Promise<void> {
 	await mkdir(directory, { recursive: true });
 	if ((await readdir(directory)).length > 0) {
@@ -791,7 +1063,12 @@ function paddedNumber(value: number, width: number): string {
 	return String(value).padStart(width, '0');
 }
 
-type PlannedFile = { path: string; lines: Generator<Line>; compressed?: boolean };
+type PlannedFile = {
+	path: string;
+	lines: Generator<Line>;
+	compressed?: boolean;
+	sidecar?: { path: string; value: Line };
+};
 
 function planClaudeFile(
 	directory: string,
@@ -883,6 +1160,37 @@ function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout
 	};
 }
 
+function planGrokFile(directory: string, fileIndex: number): PlannedFile {
+	const random = new Random(900_000 + fileIndex);
+	const startMs = FIXTURE_START_MS + (fileIndex % FIXTURE_DAYS) * DAY_MS + random.int(DAY_MS / 2);
+	const cwd = `/tmp/ccusage-fixture/grok-project-${paddedNumber(fileIndex % 12, 2)}`;
+	const session: GrokSession = {
+		cwd,
+		sessionId: random.uuid(),
+		model: random.pick(GROK_MODELS),
+		random,
+		clockMs: startMs,
+		events: 0,
+		promptIndex: 0,
+	};
+	const sessionDir = join(directory, 'sessions', encodeURIComponent(cwd), session.sessionId);
+	return {
+		path: join(sessionDir, 'updates.jsonl'),
+		lines: grokSessionLines(session),
+		sidecar: {
+			path: join(sessionDir, 'summary.json'),
+			value: {
+				info: { id: session.sessionId, cwd },
+				session_summary: text(random, 120),
+				created_at: new Date(startMs).toISOString(),
+				current_model_id: session.model.replace(/-build$/, ''),
+				chat_format_version: 1,
+				agent_name: 'grok-build',
+			},
+		},
+	};
+}
+
 async function writePlannedFile(
 	file: PlannedFile,
 	targetSize: number,
@@ -897,23 +1205,36 @@ async function writePlannedFile(
 			break;
 		}
 		const line = `${JSON.stringify(next.value)}\n`;
+		const lineBytes = Buffer.byteLength(line);
+		if (lines > 0 && bytes + lineBytes - targetSize > targetSize - bytes) {
+			break;
+		}
 		chunks.push(line);
-		bytes += Buffer.byteLength(line);
+		bytes += lineBytes;
 		lines += 1;
 	}
 	const content = Buffer.from(chunks.join(''));
 	const data = file.compressed ? zstdCompressSync(content) : content;
 	await writeFile(file.path, data);
+	if (file.sidecar) {
+		await writeFile(file.sidecar.path, JSON.stringify(file.sidecar.value));
+	}
 	return { bytes, diskBytes: data.byteLength, lines };
 }
+
+const OUTPUT_DIR_FLAGS = {
+	claude: '--output-dir',
+	codex: '--codex-output-dir',
+	grok: '--grok-output-dir',
+} as const satisfies Record<Format, string>;
 
 async function generateFixture(
 	outputDir: string,
 	sizeMib: number,
-	format: 'claude' | 'codex',
+	format: Format,
 	codexLayout: CodexLayout = 'current',
 ): Promise<FixtureResult> {
-	const fileSizeTargets = createFileSizeTargets(sizeMib * MIB);
+	const fileSizeTargets = createFileSizeTargets(SIZE_PROFILES[format], sizeMib * MIB);
 
 	let totalBytes = 0;
 	let diskBytes = 0;
@@ -929,8 +1250,10 @@ async function generateFixture(
 			const planned = planClaudeFile(outputDir, fileIndex, previousSession);
 			file = planned.file;
 			previousSession = planned.session;
-		} else {
+		} else if (format === 'codex') {
 			file = planCodexFile(outputDir, fileIndex, codexLayout);
+		} else {
+			file = planGrokFile(outputDir, fileIndex);
 		}
 		const written = await writePlannedFile(file, targetSize);
 		totalBytes += written.bytes;
@@ -954,9 +1277,15 @@ async function main(): Promise<void> {
 	const outputDir = resolve(options.outputDir);
 	const codexOutputDir =
 		options.codexOutputDir === undefined ? undefined : resolve(options.codexOutputDir);
+	const grokOutputDir =
+		options.grokOutputDir === undefined ? undefined : resolve(options.grokOutputDir);
 	await createEmptyDirectory(outputDir, '--output-dir');
 	if (codexOutputDir !== undefined) {
 		await createEmptyDirectory(codexOutputDir, '--codex-output-dir');
+	}
+
+	if (grokOutputDir !== undefined) {
+		await createEmptyDirectory(grokOutputDir, '--grok-output-dir');
 	}
 
 	const claudeResult = await generateFixture(outputDir, options.sizeMib, 'claude');
@@ -970,6 +1299,11 @@ async function main(): Promise<void> {
 			options.codexLayout,
 		);
 		printResult('Codex', codexOutputDir, codexResult);
+	}
+
+	if (grokOutputDir !== undefined) {
+		const grokResult = await generateFixture(grokOutputDir, options.grokSizeMib, 'grok');
+		printResult('Grok', grokOutputDir, grokResult);
 	}
 }
 
