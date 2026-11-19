@@ -22,7 +22,7 @@ const LOADING_TEXT: &str = "Codex | Loading usage...";
 #[test]
 fn native_resource_keeps_valid_usage_when_another_rollout_is_corrupt() {
     let fixture = native_usage_fixture();
-    let _ = fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt-rollout-canary");
+    fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt-rollout-canary");
     let mut process = McpProcess::start(&fixture, &["--no-cost"]);
     assert_eq!(
         process.read_resource_line(1, THREAD_UUID),
@@ -36,7 +36,7 @@ fn native_fork_parent_warning_stays_off_stdout() {
     let fixture = fs_fixture!({
         "codex/sessions/unrelated.jsonl.zst": "corrupt rollout",
     });
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-2000-01-01T12-00-00-{THREAD_UUID}.jsonl"),
         [
             json!({
@@ -50,7 +50,7 @@ fn native_fork_parent_warning_stays_off_stdout() {
         ]
         .join("\n"),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-2000-01-01T11-00-00-{OTHER_THREAD_UUID}.jsonl.zst"),
         "corrupt parent",
     );
@@ -254,7 +254,7 @@ fn native_resource_refreshes_cached_usage_after_a_new_revert_rollout() {
     let timestamp_text = format_rfc3339_millis(timestamp);
     let file_stamp = rollout_stamp(&timestamp_text);
     let new_usage = usage(&timestamp_text, 200, 100);
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-{file_stamp}-{THREAD_UUID}_{LATE_REVERT_UUID}.jsonl"),
         rollout(THREAD_UUID, &timestamp_text, &[new_usage]),
     );
@@ -572,14 +572,14 @@ fn native_usage_fixture() -> Fixture {
             let file_stamp = rollout_stamp(&timestamp_text);
             let event = usage(&timestamp_text, 100, 50);
             let path = format!("codex/sessions/rollout-{file_stamp}-{thread_id}.jsonl");
-            let _ = fixture.write_file(path, rollout(thread_id, &timestamp_text, &[event]));
+            fixture.write_file(path, rollout(thread_id, &timestamp_text, &[event]));
         }
     }
 
     let reverted_text = format_rfc3339_millis(reverted);
     let file_stamp = rollout_stamp(&reverted_text);
     let new_usage = usage(&reverted_text, 100, 50);
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-{file_stamp}-{THREAD_UUID}_{REVERT_UUID}.jsonl"),
         rollout(THREAD_UUID, &reverted_text, &[new_usage]),
     );

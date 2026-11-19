@@ -18,7 +18,7 @@ fn calculate_mode_uses_primary_mythos_prices_from_the_embedded_snapshot() {
         ("claude-mythos-preview", 0.002325),
     ] {
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "projects/project-a/session-a.jsonl",
             serde_json::json!({
                 "timestamp": "2026-09-15T12:00:00Z",
@@ -67,7 +67,7 @@ fn session_id_deduplicates_repeated_message_usage() {
         r#"{"timestamp":"2026-09-15T12:00:01.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
         r#"{"timestamp":"2026-09-15T12:00:02.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
     ];
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
         messages.join("\n"),
     );
@@ -100,11 +100,11 @@ fn write_two_model_session(fixture: &Fixture) {
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":0.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
         r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":1.5,"message":{"id":"message-b","model":"claude-opus-4-20250514","usage":{"input_tokens":30,"output_tokens":4,"cache_read_input_tokens":100}}}"#,
     ];
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
         messages.join("\n"),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-b/session-b/chat.jsonl",
         r#"{"timestamp":"2026-09-15T13:00:00.000Z","sessionId":"session-b","requestId":"request-c","costUSD":9.0,"message":{"id":"message-c","model":"claude-sonnet-4-20250514","usage":{"input_tokens":999,"output_tokens":999}}}"#,
     );
@@ -269,7 +269,7 @@ fn daily_since_totals_match_after_pruning_stale_files() {
 #[test]
 fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
         [
             r#"{"timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a","requestId":"request-direct","costUSD":1.0,"message":{"id":"message-direct","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}},"data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-shadow","costUSD":5.0,"message":{"id":"message-shadow","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":200}}}}}"#,
@@ -638,7 +638,7 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
 #[test]
 fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-e.jsonl",
         [
             usage_line(
@@ -683,7 +683,7 @@ fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
 #[test]
 fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a.jsonl",
         usage_line(
             "2026-09-11T10:00:00.000Z",
@@ -693,7 +693,7 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
             1.0,
         ),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/subagents/agent-b.jsonl",
         sidechain_line(
             "2026-09-11T10:03:00.000Z",
@@ -703,7 +703,7 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
             2.0,
         ),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/subagents/workflows/wf_1/agent-c.jsonl",
         sidechain_line(
             "2026-09-11T10:05:00.000Z",
@@ -739,7 +739,7 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
 #[test]
 fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-c.jsonl",
         usage_line(
             "2026-09-11T23:30:00.000Z",
@@ -749,7 +749,7 @@ fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
             1.0,
         ),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-d.jsonl",
         usage_line(
             "2026-09-12T00:30:00.000Z",
@@ -1070,7 +1070,7 @@ fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
 #[test]
 fn requestless_sidechain_replays_are_counted_once_in_every_report() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a.jsonl",
         requestless_line(
             "2026-09-11T12:00:00.000Z",
@@ -1082,7 +1082,7 @@ fn requestless_sidechain_replays_are_counted_once_in_every_report() {
         ),
     );
     // The /btw replay repeats the parent message, and its cache read, minutes later.
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-a/subagents/agent-a.jsonl",
         requestless_line(
             "2026-09-11T12:05:00.000Z",
@@ -1114,7 +1114,7 @@ fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
             false,
         )
     });
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 306, "claude {command}");
@@ -1144,7 +1144,7 @@ fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_rep
             false,
         ),
     ];
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 102, "claude {command}");
@@ -1172,7 +1172,7 @@ fn requestless_response_message_id_content_blocks_are_counted_once_in_every_repo
             false,
         ),
     ];
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 102, "claude {command}");
@@ -1193,9 +1193,9 @@ fn requestless_anthropic_message_id_keeps_largest_usage_across_days_and_sessions
         line("2026-09-11T23:59:59.900Z", "session-a", 5),
         line("2026-09-12T00:00:00.100Z", "session-a", 50),
     ];
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", session_a.join("\n"));
+    fixture.write_file("projects/project-a/session-a.jsonl", session_a.join("\n"));
     // The same message ID in another session is a separate copy and stays counted.
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/project-a/session-b.jsonl",
         line("2026-09-12T01:00:00.000Z", "session-b", 5),
     );
@@ -1212,7 +1212,7 @@ fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":100}}}"#,
         r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":0.5,"message":{"id":"message-b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":500,"output_tokens":10}}}"#,
     ];
-    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
     let breakdown = |args: &[&str], pointer: &str| -> serde_json::Value {
         let base = ["--json", "--offline", "--timezone", "UTC"];
@@ -1270,7 +1270,7 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
         r#"{"timestamp":"2026-09-16T12:00:00.000Z","sessionId":"session-a","requestId":"request-d","message":{"id":"message-d","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":80}}}}"#,
         r#"{"timestamp":"2026-09-16T12:01:00.000Z","sessionId":"session-a","requestId":"request-e","message":{"id":"message-e","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":30}}}"#,
     ];
-    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+    fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
     // Daily rows stop at 2026-09-15; weekly, monthly and session rows merge
     // both days.
@@ -1358,7 +1358,7 @@ fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
 
     for lines in [[unsplit, split], [split, unsplit]] {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+        fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
         let mut costs = Vec::new();
         for (report, pointer) in [("daily", "/daily/0"), ("session", "/sessions/0")] {
@@ -1391,7 +1391,7 @@ fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_repo
     // The top-level split covers only the first `message` iteration; the
     // second one's 1,181 5-minute writes appear only in `iterations`.
     let line = r#"{"isSidechain":false,"message":{"model":"claude-sonnet-4-20250514","id":"msg_advisor","type":"message","role":"assistant","content":[{"type":"text","text":"placeholder"}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":4,"cache_creation_input_tokens":12323,"cache_read_input_tokens":140030,"output_tokens":244,"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":11142,"ephemeral_5m_input_tokens":0},"iterations":[{"input_tokens":2,"output_tokens":58,"cache_read_input_tokens":64444,"cache_creation_input_tokens":11142,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":11142},"type":"message"},{"input_tokens":77025,"output_tokens":3427,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"advisor_message","model":"claude-opus-5"},{"input_tokens":2,"output_tokens":186,"cache_read_input_tokens":75586,"cache_creation_input_tokens":1181,"cache_creation":{"ephemeral_5m_input_tokens":1181,"ephemeral_1h_input_tokens":0},"type":"message"}],"speed":"standard"}},"requestId":"req_advisor","type":"assistant","uuid":"00000000-0000-4000-8000-000000000002","timestamp":"2026-09-15T12:00:00.000Z","cwd":"/tmp/demo","sessionId":"session-a","version":"2.1.323"}"#;
-    let _ = fixture.write_file("projects/project-a/session-a.jsonl", line);
+    fixture.write_file("projects/project-a/session-a.jsonl", line);
 
     let mut costs = Vec::new();
     for (report, pointer) in [
@@ -1477,7 +1477,7 @@ const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
 #[test]
 fn block_table_and_active_detail_follow_the_report_timezone() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "projects/p/session-a.jsonl",
         usage_line(
             "2026-01-02T23:00:00Z",
@@ -1536,7 +1536,7 @@ fn blocks_reject_unrepresentable_session_lengths() {
 fn config_warnings_follow_log_level() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);
-    let _ = fixture.write_file("ccusage.json", r#"{"defaults":{"json":true,"jsoon":true}}"#);
+    fixture.write_file("ccusage.json", r#"{"defaults":{"json":true,"jsoon":true}}"#);
     for (level, expected) in [("0", false), ("1", true)] {
         let output = claude_command(&fixture)
             .env("LOG_LEVEL", level)
@@ -1601,7 +1601,7 @@ fn configured_project_preserves_base_report_scope() {
 #[test]
 fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "xdg-config/claude/projects/project-a/session-a.jsonl",
         usage_line(
             "2026-09-15T12:00:00.000Z",
@@ -1611,7 +1611,7 @@ fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
             1.0,
         ),
     );
-    let _ = fixture.write_file("xdg-config/claude/ccusage.json", JSON_USER_CONFIG);
+    fixture.write_file("xdg-config/claude/ccusage.json", JSON_USER_CONFIG);
 
     let json = run_with_user_config(&fixture, None);
 
@@ -1621,7 +1621,7 @@ fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
 #[test]
 fn user_config_in_a_tilde_claude_config_dir_entry_is_loaded() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "home/claude-a/projects/project-a/session-a.jsonl",
         usage_line(
             "2026-09-15T12:00:00.000Z",
@@ -1631,7 +1631,7 @@ fn user_config_in_a_tilde_claude_config_dir_entry_is_loaded() {
             1.0,
         ),
     );
-    let _ = fixture.write_file("home/claude-b/ccusage.json", JSON_USER_CONFIG);
+    fixture.write_file("home/claude-b/ccusage.json", JSON_USER_CONFIG);
 
     let json = run_with_user_config(&fixture, Some("~/claude-a,~/claude-b"));
 

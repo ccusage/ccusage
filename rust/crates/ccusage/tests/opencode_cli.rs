@@ -10,7 +10,7 @@ const MODEL: &str = r#"{"id":"gpt-5","providerID":"openai"}"#;
 /// keeps only a compaction row; its aggregate already includes that usage.
 fn opencode_fixture() -> Fixture {
     let fixture = Fixture::new();
-    let _ = fixture.create_dir_all("opencode");
+    fixture.create_dir_all("opencode");
     let db = sqlite::open(fixture.path("opencode/opencode.db")).unwrap();
     db.execute(
         "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, \

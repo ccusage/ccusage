@@ -86,71 +86,48 @@ pub fn install_pricing_snapshots() {
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-fn env_lock() -> MutexGuard<'static, ()> {
-    ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner())
-}
-
-pub struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<OsString>,
-    _guard: MutexGuard<'static, ()>,
-}
-
-impl EnvVarGuard {
-    pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
-        let guard = env_lock();
-        let previous = std::env::var_os(key);
-        unsafe { std::env::set_var(key, value) };
-        Self {
-            key,
-            previous,
-            _guard: guard,
-        }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.previous.take() {
-            Some(value) => unsafe { std::env::set_var(self.key, value) },
-            None => unsafe { std::env::remove_var(self.key) },
-        }
-    }
-}
-
-pub struct EnvVarsGuard {
+pub struct EnvGuard {
     previous: Vec<(&'static str, Option<OsString>)>,
-    _guard: MutexGuard<'static, ()>,
+    lock: MutexGuard<'static, ()>,
 }
 
-impl EnvVarsGuard {
+impl EnvGuard {
+    pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        Self::set_many([(key, Some(value.as_ref().to_os_string()))])
+    }
+
     pub fn set_many(vars: impl IntoIterator<Item = (&'static str, Option<OsString>)>) -> Self {
-        let guard = env_lock();
+        let lock = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let mut previous = Vec::new();
         for (key, value) in vars {
             previous.push((key, std::env::var_os(key)));
-            match value {
-                Some(value) => unsafe { std::env::set_var(key, value) },
-                None => unsafe { std::env::remove_var(key) },
-            }
+            set_process_var(&lock, key, value);
         }
-        Self {
-            previous,
-            _guard: guard,
+        Self { previous, lock }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (key, value) in self.previous.drain(..).rev() {
+            set_process_var(&self.lock, key, value);
         }
     }
 }
 
-impl Drop for EnvVarsGuard {
-    fn drop(&mut self) {
-        for (key, value) in self.previous.drain(..).rev() {
-            match value {
-                Some(value) => unsafe { std::env::set_var(key, value) },
-                None => unsafe { std::env::remove_var(key) },
-            }
+fn set_process_var(_lock: &MutexGuard<'static, ()>, key: &'static str, value: Option<OsString>) {
+    // SAFETY: The guard serializes test environment changes and restoration. Its
+    // callers must avoid concurrent environment access outside Rust's std::env.
+    unsafe {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
         }
     }
 }
+
+pub use EnvGuard as EnvVarGuard;
+pub use EnvGuard as EnvVarsGuard;
 
 pub struct Fixture {
     dir: TempDir,
@@ -176,7 +153,6 @@ impl Fixture {
         self.dir.child(path)
     }
 
-    #[must_use]
     pub fn write_file(&self, path: impl AsRef<Path>, contents: impl AsRef<str>) -> PathBuf {
         let child = self.child(path);
         if let Some(parent) = child.path().parent() {
@@ -188,7 +164,6 @@ impl Fixture {
         child.path().to_path_buf()
     }
 
-    #[must_use]
     pub fn create_dir_all(&self, path: impl AsRef<Path>) -> PathBuf {
         let child = self.child(path);
         child
@@ -209,7 +184,7 @@ macro_rules! fs_fixture {
     ({ $($path:literal : $contents:expr_2021),* $(,)? }) => {{
         let fixture = $crate::Fixture::new();
         $(
-            let _ = fixture.write_file($path, $contents);
+            fixture.write_file($path, $contents);
         )*
         fixture
     }};
@@ -274,7 +249,7 @@ mod tests {
     #[test]
     fn creates_incremental_fixture_tree() {
         let fixture = fs_fixture!({});
-        let _ = fixture.write_file("projects/example/session/chat.jsonl", "{}\n");
+        fixture.write_file("projects/example/session/chat.jsonl", "{}\n");
 
         assert!(
             fixture

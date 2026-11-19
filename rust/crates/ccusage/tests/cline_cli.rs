@@ -105,7 +105,7 @@ fn cline_fixture() -> Fixture {
             "../../../adapters/cline/tests/fixtures/cli/session.messages.json"
         ),
     });
-    let _ = fixture.write_file(
+    fixture.write_file(
         "data/sessions/rejected-cache/rejected-cache.messages.json",
         format!(
             r#"{{"version":1,"sessionId":"rejected-cache","messages":[{{"role":"assistant","ts":{ts},"id":"cache-exceeds-input-session","modelInfo":{{"id":"claude-sonnet-4-20250514","provider":"anthropic"}},"metrics":{{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}}}]}}"#,

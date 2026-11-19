@@ -14,7 +14,7 @@ const OTHER_UUID: &str = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
 #[test]
 fn codex_statusline_keeps_valid_usage_when_a_replacement_rollout_is_corrupt() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/rollout-2026-09-20T12-00-00-{SESSION_UUID}_{OTHER_UUID}.jsonl.zst"),
         "corrupt-rollout-canary",
     );
@@ -108,7 +108,7 @@ fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
 #[test]
 fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/{SESSION_ID}.jsonl"),
         [
             usage("2026-09-19T23:22:40Z", 100, 50),
@@ -116,7 +116,7 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
         ]
         .join("\n"),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/{SESSION_UUID}.jsonl"),
         [
             json!({"type":"session_meta","payload":{"id":"01a0cc9d-d8d1-8741-ae93-971c986041a1"}})
@@ -129,7 +129,7 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
     let replacement = format!(
         "codex/sessions/2026/09/20/rollout-2026-09-20T12-00-00-{SESSION_UUID}_01a0ddae-e9e2-7852-bfa4-a82da97152b2.jsonl"
     );
-    let _ = fixture.write_file(replacement, [
+    fixture.write_file(replacement, [
         json!({"timestamp":"2026-09-20T12:00:00Z","type":"session_meta","payload":{"id":SESSION_UUID}}).to_string(),
         usage("2026-09-20T12:00:01Z", 200, 50),
     ].join("\n"));
@@ -152,7 +152,7 @@ fn codex_statusline_thread_uuid_includes_replacement_rollout_spend() {
 #[test]
 fn codex_statusline_session_includes_usage_outside_date_filters() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/{SESSION_ID}.jsonl"),
         [
             usage("2026-09-19T23:22:40Z", 100, 50),
@@ -183,7 +183,7 @@ fn codex_statusline_session_includes_usage_outside_date_filters() {
 #[test]
 fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
     let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
-    let _ = fixture.write_file(
+    fixture.write_file(
         format!("codex/sessions/2026/09/20/rollout-2026-09-20T00-00-00-{SESSION_UUID}.jsonl"),
         [
             usage("2026-09-19T18:00:00Z", 100, 50),
@@ -212,7 +212,7 @@ fn codex_statusline_keeps_directory_dates_from_ahead_timezones() {
 #[test]
 fn codex_statusline_skips_directories_after_the_last_possible_local_date() {
     let fixture = codex_fixture();
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/sessions/2026/09/21/future.jsonl",
         usage("invalid", 100, 50),
     );
