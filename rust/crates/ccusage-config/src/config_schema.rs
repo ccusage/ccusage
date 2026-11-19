@@ -1,278 +1,233 @@
 use std::collections::{BTreeMap, HashMap};
 
 use ccusage_cli::{SessionLength, TokenLimit};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 
 use schemars::{JsonSchema, r#gen::SchemaSettings};
 
 pub(crate) const NAMED_PI_STORE_NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CcusageConfig {
     /// JSON Schema URL for validation and autocomplete.
     #[serde(rename = "$schema")]
-    _schema_url: Option<String>,
+    schema_url: Option<String>,
     /// Default values for all-agent reports and legacy Claude commands.
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
+    defaults: Option<SharedOptions>,
     /// Command-specific configuration for all-agent reports.
-    _commands: Option<RootCommandsConfig>,
+    commands: Option<RootCommandsConfig>,
     /// Claude Code configuration.
-    #[serde(rename = "claude")]
-    _claude: Option<ClaudeConfig>,
+    claude: Option<ClaudeConfig>,
     /// Cline configuration.
-    _cline: Option<ClineConfig>,
+    cline: Option<ClineConfig>,
     /// Codex configuration.
-    #[serde(rename = "codex")]
-    _codex: Option<CodexConfig>,
+    codex: Option<CodexConfig>,
     /// OpenCode configuration.
-    _opencode: Option<OpenCodeConfig>,
+    opencode: Option<OpenCodeConfig>,
     /// Amp configuration.
-    #[serde(rename = "amp")]
-    _amp: Option<AmpConfig>,
+    amp: Option<AmpConfig>,
     /// Droid configuration.
-    _droid: Option<DroidConfig>,
+    droid: Option<DroidConfig>,
     /// Codebuff configuration.
-    #[serde(rename = "codebuff")]
-    _codebuff: Option<CodebuffConfig>,
+    codebuff: Option<CodebuffConfig>,
     /// Hermes Agent configuration.
-    _hermes: Option<HermesConfig>,
+    hermes: Option<HermesConfig>,
     /// pi-agent configuration.
-    #[serde(rename = "pi")]
-    _pi: Option<PiConfig>,
+    pi: Option<PiConfig>,
     /// Goose configuration.
-    _goose: Option<GooseConfig>,
+    goose: Option<GooseConfig>,
     /// OpenClaw configuration.
-    #[serde(rename = "openclaw")]
-    _openclaw: Option<OpenClawConfig>,
+    openclaw: Option<OpenClawConfig>,
     /// Kilo configuration.
-    _kilo: Option<KiloConfig>,
+    kilo: Option<KiloConfig>,
     /// GitHub Copilot CLI configuration.
-    #[serde(rename = "copilot")]
-    _copilot: Option<CopilotConfig>,
+    copilot: Option<CopilotConfig>,
     /// Gemini CLI configuration.
-    _gemini: Option<GeminiConfig>,
+    gemini: Option<GeminiConfig>,
     /// Antigravity configuration.
-    #[serde(rename = "antigravity")]
-    _antigravity: Option<AntigravityConfig>,
+    antigravity: Option<AntigravityConfig>,
     /// Kimi configuration.
-    _kimi: Option<KimiConfig>,
+    kimi: Option<KimiConfig>,
     /// Qwen configuration.
-    #[serde(rename = "qwen")]
-    _qwen: Option<QwenConfig>,
+    qwen: Option<QwenConfig>,
     /// Grok Build CLI configuration.
-    _grok: Option<GrokConfig>,
+    grok: Option<GrokConfig>,
     /// ZCode configuration.
-    #[serde(rename = "zcode")]
-    _zcode: Option<ZCodeConfig>,
+    zcode: Option<ZCodeConfig>,
     /// DeepSeek Harness configuration.
-    _dsh: Option<DshConfig>,
+    dsh: Option<DshConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RootCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<DailyOptions>,
-    _weekly: Option<WeeklyOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
-    #[serde(rename = "blocks")]
-    _blocks: Option<BlocksOptions>,
-    _statusline: Option<StatuslineOptions>,
+    daily: Option<DailyOptions>,
+    weekly: Option<WeeklyOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
+    blocks: Option<BlocksOptions>,
+    statusline: Option<StatuslineOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<ClaudeOptions>,
-    _commands: Option<ClaudeCommandsConfig>,
+    defaults: Option<ClaudeOptions>,
+    commands: Option<ClaudeCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<DailyOptions>,
-    _weekly: Option<ClaudeWeeklyOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
-    #[serde(rename = "blocks")]
-    _blocks: Option<BlocksOptions>,
-    _statusline: Option<StatuslineOptions>,
+    daily: Option<DailyOptions>,
+    weekly: Option<ClaudeWeeklyOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
+    blocks: Option<BlocksOptions>,
+    statusline: Option<StatuslineOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<CodexOptions>,
-    _commands: Option<CodexCommandsConfig>,
+    defaults: Option<CodexOptions>,
+    commands: Option<CodexCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<CodexOptions>,
-    _weekly: Option<CodexOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<CodexOptions>,
-    _session: Option<CodexOptions>,
-    #[serde(rename = "statusline")]
-    _statusline: Option<CodexStatuslineOptions>,
+    daily: Option<CodexOptions>,
+    weekly: Option<CodexOptions>,
+    monthly: Option<CodexOptions>,
+    session: Option<CodexOptions>,
+    statusline: Option<CodexStatuslineOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenCodeConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<OpenCodeCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<OpenCodeCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenCodeCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AmpConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<AmpCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<AmpCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AmpCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DroidConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<DroidCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<DroidCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DroidCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodebuffConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<CodebuffCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<CodebuffCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodebuffCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClineConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<ClineCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<ClineCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClineCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DshConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<DshCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<DshCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DshCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HermesConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<HermesCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<HermesCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HermesCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiConfig {
     /// Additional named pi-format session stores included in all-agent reports.
-    #[serde(rename = "stores")]
-    _stores: Option<Vec<PiStoreConfig>>,
-    _defaults: Option<PiOptions>,
-    #[serde(rename = "commands")]
-    _commands: Option<PiCommandsConfig>,
+    stores: Option<Vec<PiStoreConfig>>,
+    defaults: Option<PiOptions>,
+    commands: Option<PiCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiStoreConfig {
     /// Agent name to use for this pi-format store in all-agent reports.
@@ -282,208 +237,176 @@ pub struct PiStoreConfig {
     pub(crate) path: String,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<PiOptions>,
-    _weekly: Option<PiOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<PiOptions>,
-    _session: Option<PiOptions>,
+    daily: Option<PiOptions>,
+    weekly: Option<PiOptions>,
+    monthly: Option<PiOptions>,
+    session: Option<PiOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GooseConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<GooseCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<GooseCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GooseCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenClawConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<OpenClawOptions>,
-    _commands: Option<OpenClawCommandsConfig>,
+    defaults: Option<OpenClawOptions>,
+    commands: Option<OpenClawCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenClawCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<OpenClawOptions>,
-    _weekly: Option<OpenClawOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<OpenClawOptions>,
-    _session: Option<OpenClawOptions>,
+    daily: Option<OpenClawOptions>,
+    weekly: Option<OpenClawOptions>,
+    monthly: Option<OpenClawOptions>,
+    session: Option<OpenClawOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KiloConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<KiloCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<KiloCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KiloCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopilotConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<CopilotCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<CopilotCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopilotCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<GeminiCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<GeminiCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AntigravityConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<AntigravityCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<AntigravityCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AntigravityCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KimiConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<KimiCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<KimiCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KimiCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QwenConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<QwenCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<QwenCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QwenCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<GrokCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<GrokCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ZCodeConfig {
-    #[serde(rename = "defaults")]
-    _defaults: Option<SharedOptions>,
-    _commands: Option<ZCodeCommandsConfig>,
+    defaults: Option<SharedOptions>,
+    commands: Option<ZCodeCommandsConfig>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ZCodeCommandsConfig {
-    #[serde(rename = "daily")]
-    _daily: Option<SharedOptions>,
-    _weekly: Option<SharedOptions>,
-    #[serde(rename = "monthly")]
-    _monthly: Option<SharedOptions>,
-    _session: Option<SharedOptions>,
+    daily: Option<SharedOptions>,
+    weekly: Option<SharedOptions>,
+    monthly: Option<SharedOptions>,
+    session: Option<SharedOptions>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ConfigDateBound(pub(crate) String);
 
 impl<'de> Deserialize<'de> for ConfigDateBound {
@@ -500,7 +423,7 @@ impl<'de> Deserialize<'de> for ConfigDateBound {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedOptions {
     /// Filter from date (YYYY-MM-DD or YYYYMMDD).
@@ -534,8 +457,7 @@ pub struct SharedOptions {
     /// jq filter to apply to JSON output.
     pub(crate) jq: Option<String>,
     /// Accepted for compatibility; all detected supported agents are included by default.
-    #[serde(rename = "all")]
-    _all: Option<bool>,
+    all: Option<bool>,
     /// Force compact table layout for narrow terminals.
     pub(crate) compact: Option<bool>,
     /// Disable parallel file processing.
@@ -546,31 +468,31 @@ pub struct SharedOptions {
     pub(crate) pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     #[serde(flatten)]
-    _daily: DailySpecificOptions,
+    daily: DailySpecificOptions,
     #[serde(flatten)]
-    _weekly: WeeklySpecificOptions,
+    weekly: WeeklySpecificOptions,
     #[serde(flatten)]
-    _blocks: BlocksSpecificOptions,
+    blocks: BlocksSpecificOptions,
     #[serde(flatten)]
-    _statusline: StatuslineSpecificOptions,
+    statusline: StatuslineSpecificOptions,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     #[serde(flatten)]
-    _daily: DailySpecificOptions,
+    daily: DailySpecificOptions,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DailySpecificOptions {
     /// Show per-session project instances.
@@ -581,41 +503,41 @@ pub struct DailySpecificOptions {
     pub(crate) project_aliases: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklyOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     #[serde(flatten)]
-    _weekly: WeeklySpecificOptions,
+    weekly: WeeklySpecificOptions,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeWeeklyOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     #[serde(flatten)]
-    _weekly: WeeklySpecificOptions,
+    weekly: WeeklySpecificOptions,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklySpecificOptions {
     /// First day of week for weekly grouping.
     pub(crate) start_of_week: Option<ConfigWeekDay>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlocksOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     #[serde(flatten)]
-    _blocks: BlocksSpecificOptions,
+    blocks: BlocksSpecificOptions,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlocksSpecificOptions {
     /// Show the active session block.
@@ -623,16 +545,26 @@ pub struct BlocksSpecificOptions {
     /// Show recent session blocks.
     pub(crate) recent: Option<bool>,
     /// Token limit for session block calculations.
-    #[serde(default, deserialize_with = "deserialize_token_limit")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_token_limit",
+        serialize_with = "serialize_token_limit",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "Option<ConfigTokenLimit>")]
     pub(crate) token_limit: Option<TokenLimit>,
     /// Session block duration in hours.
-    #[serde(default, deserialize_with = "deserialize_session_length")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_session_length",
+        serialize_with = "serialize_session_length",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "Option<f64>")]
     pub(crate) session_length: Option<SessionLength>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(untagged)]
 pub enum ConfigTokenLimit {
     Text(#[schemars(regex(pattern = r"^(max|\+?0*[1-9][0-9]*)$"))] String),
@@ -661,14 +593,49 @@ fn deserialize_session_length<'de, D: Deserializer<'de>>(
         .transpose()
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
+fn serialize_token_limit<S: Serializer>(
+    limit: &Option<TokenLimit>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    limit.map(|limit| limit.to_string()).serialize(serializer)
+}
+
+fn serialize_session_length<S: Serializer>(
+    length: &Option<SessionLength>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    length
+        .map(|length| {
+            std::time::Duration::from_millis(length.as_millis().unsigned_abs()).as_secs_f64()
+                / 3600.0
+        })
+        .serialize(serializer)
+}
+
+fn serialize_example(example: CcusageConfig) -> serde_json::Result<Value> {
+    fn remove_unset(value: &mut Value) {
+        match value {
+            Value::Object(fields) => {
+                fields.retain(|_, value| !value.is_null());
+                fields.values_mut().for_each(remove_unset);
+            }
+            Value::Array(items) => items.iter_mut().for_each(remove_unset),
+            _ => {}
+        }
+    }
+    let mut value = serde_json::to_value(example)?;
+    remove_unset(&mut value);
+    Ok(value)
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatuslineOptions {
     #[serde(flatten)]
-    _statusline: StatuslineSpecificOptions,
+    statusline: StatuslineSpecificOptions,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatuslineSpecificOptions {
     /// Use cached pricing data where supported.
@@ -701,59 +668,53 @@ pub struct StatuslineSpecificOptions {
     pub(crate) pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     /// Codex speed normalization strategy.
     pub(crate) speed: Option<ConfigCodexSpeed>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexStatuslineOptions {
-    #[serde(rename = "json")]
-    _json: Option<bool>,
-    _jq: Option<String>,
-    #[serde(rename = "mode")]
-    _mode: Option<ConfigCostMode>,
-    _no_cost: Option<bool>,
+    json: Option<bool>,
+    jq: Option<String>,
+    mode: Option<ConfigCostMode>,
+    no_cost: Option<bool>,
     #[schemars(with = "Option<String>")]
-    #[serde(rename = "since")]
-    _since: Option<ConfigDateBound>,
+    since: Option<ConfigDateBound>,
     #[schemars(with = "Option<String>")]
-    _until: Option<ConfigDateBound>,
-    #[serde(rename = "timezone")]
-    _timezone: Option<String>,
-    _offline: Option<bool>,
-    #[serde(rename = "noOffline")]
-    _no_offline: Option<bool>,
-    _single_thread: Option<bool>,
-    #[serde(rename = "speed")]
-    _speed: Option<ConfigCodexSpeed>,
-    _pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
+    until: Option<ConfigDateBound>,
+    timezone: Option<String>,
+    offline: Option<bool>,
+    no_offline: Option<bool>,
+    single_thread: Option<bool>,
+    speed: Option<ConfigCodexSpeed>,
+    pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     /// Path or comma-separated paths to pi-agent sessions directories.
     pub(crate) pi_path: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenClawOptions {
     #[serde(flatten)]
-    _shared: SharedOptions,
+    shared: SharedOptions,
     /// Path or comma-separated paths to OpenClaw data directories.
     pub(crate) open_claw_path: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigCostMode {
     Auto,
@@ -761,14 +722,14 @@ pub enum ConfigCostMode {
     Display,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigSortOrder {
     Desc,
     Asc,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigWeekDay {
     Sunday,
@@ -780,7 +741,7 @@ pub enum ConfigWeekDay {
     Saturday,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigCodexSpeed {
     Auto,
@@ -789,7 +750,7 @@ pub enum ConfigCodexSpeed {
     Flex,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ConfigVisualBurnRate {
     Off,
@@ -798,7 +759,7 @@ pub enum ConfigVisualBurnRate {
     EmojiText,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigCostSource {
     Auto,
@@ -807,7 +768,7 @@ pub enum ConfigCostSource {
     Both,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema, Clone)]
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigPricingOverride {
     pub(crate) input_cost_per_token: Option<f64>,
@@ -824,15 +785,14 @@ pub struct ConfigPricingOverride {
     pub(crate) flex_multiplier: Option<f64>,
 }
 
-pub fn generate_config_schema_json() -> String {
+pub fn generate_config_schema_json() -> serde_json::Result<String> {
     let generator = SchemaSettings::draft07()
         .with(|settings| {
             settings.meta_schema = Some("https://json-schema.org/draft-07/schema#".to_string());
             settings.option_add_null_type = false;
         })
         .into_generator();
-    let mut schema =
-        serde_json::to_value(generator.into_root_schema_for::<CcusageConfig>()).unwrap();
+    let mut schema = serde_json::to_value(generator.into_root_schema_for::<CcusageConfig>())?;
     if let Value::Object(root) = &mut schema {
         root.insert(
             "title".to_string(),
@@ -844,52 +804,55 @@ pub fn generate_config_schema_json() -> String {
         );
         root.insert(
             "examples".to_string(),
-            json!([
-                {
-                    "$schema": "https://ccusage.com/config-schema.json",
-                    "defaults": {
-                        "json": false,
-                        "timezone": "Asia/Tokyo",
-                        "pricingOverrides": {
-                            "[pi] gpt-5.4": {
-                                "inputCostPerToken": 0.0000025,
-                                "outputCostPerToken": 0.000015,
-                                "cacheReadInputTokenCost": 0.00000025
-                            }
-                        }
-                    },
-                    "claude": {
+            Value::Array(vec![
+                serde_json::from_value(json!(
+                    {
+                        "$schema": "https://ccusage.com/config-schema.json",
                         "defaults": {
-                            "mode": "auto"
+                            "json": false,
+                            "timezone": "Asia/Tokyo",
+                            "pricingOverrides": {
+                                "[pi] gpt-5.4": {
+                                    "inputCostPerToken": 0.0000025,
+                                    "outputCostPerToken": 0.000015,
+                                    "cacheReadInputTokenCost": 0.00000025
+                                }
+                            }
                         },
-                        "commands": {
-                            "daily": {
-                                "instances": true
+                        "claude": {
+                            "defaults": {
+                                "mode": "auto"
                             },
-                            "blocks": {
-                                "tokenLimit": "500000"
+                            "commands": {
+                                "daily": {
+                                    "instances": true
+                                },
+                                "blocks": {
+                                    "tokenLimit": "500000"
+                                }
                             }
-                        }
-                    },
-                    "codex": {
-                        "defaults": {
-                            "speed": "auto"
-                        }
-                    },
-                    "pi": {
-                        "stores": [
-                            {
-                                "name": "omp",
-                                "path": "~/.omp/agent/sessions"
+                        },
+                        "codex": {
+                            "defaults": {
+                                "speed": "auto"
                             }
-                        ]
-                    },
-                    "gemini": {
-                        "defaults": {
-                            "offline": true
+                        },
+                        "pi": {
+                            "stores": [
+                                {
+                                    "name": "omp",
+                                    "path": "~/.omp/agent/sessions"
+                                }
+                            ]
+                        },
+                        "gemini": {
+                            "defaults": {
+                                "offline": true
+                            }
                         }
                     }
-                }
+                ))
+                .and_then(serialize_example)?,
             ]),
         );
     }
@@ -898,14 +861,17 @@ pub fn generate_config_schema_json() -> String {
     inline_schema_references(&mut schema);
     if let Some(offline) = schema.pointer_mut(
         "/properties/codex/properties/commands/properties/statusline/properties/offline",
-    ) {
-        offline["default"] = json!(true);
+    ) && let Some(command) = ccusage_cli::AgentId::Codex
+        .spec()
+        .extra_command("statusline")
+    {
+        offline["default"] = json!(command.offline_by_default);
     }
     wrap_root_schema(&mut schema);
     add_agent_command_keys(&mut schema);
-    let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema).unwrap());
+    let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema)?);
     json.push('\n');
-    json
+    Ok(json)
 }
 
 fn tab_indent_json(json: &str) -> String {
@@ -1279,7 +1245,7 @@ mod tests {
 
     #[test]
     fn generated_schema_does_not_accept_null_config_values() {
-        let schema = generate_config_schema_json();
+        let schema = generate_config_schema_json().unwrap();
         let value = serde_json::from_str::<Value>(&schema).unwrap();
 
         assert!(!schema.contains("\"null\""));
@@ -1642,7 +1608,7 @@ mod tests {
 
     #[test]
     fn codex_statusline_schema_exposes_shared_options_with_offline_default() {
-        let schema: Value = serde_json::from_str(&generate_config_schema_json()).unwrap();
+        let schema: Value = serde_json::from_str(&generate_config_schema_json().unwrap()).unwrap();
         assert_eq!(
             property_default(&schema, &["codex", "commands", "statusline", "offline"]),
             Some(&json!(true))
@@ -1689,7 +1655,7 @@ mod tests {
     }
 
     fn generated_schema() -> Value {
-        serde_json::from_str(&generate_config_schema_json()).unwrap()
+        serde_json::from_str(&generate_config_schema_json().unwrap()).unwrap()
     }
 
     fn assert_properties(schema: &Value, definition: &str, expected: &[&str]) {

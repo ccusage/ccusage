@@ -1,7 +1,13 @@
 use std::{env, fs, process};
 
 fn main() {
-    let schema = ccusage_config::generate_config_schema_json();
+    let schema = match ccusage_config::generate_config_schema_json() {
+        Ok(schema) => schema,
+        Err(error) => {
+            eprintln!("failed to generate config schema: {error}");
+            process::exit(1);
+        }
+    };
     let paths = env::args().skip(1).collect::<Vec<_>>();
     if paths.is_empty() {
         print!("{schema}");
