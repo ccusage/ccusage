@@ -39,6 +39,7 @@ impl NativeUsageReader {
         thread::spawn(move || {
             let pricing = super::load_pricing(&args);
             let mut cached = None;
+            let mut last_warnings = Vec::new();
             loop {
                 let thread_id = {
                     let (lock, ready) = &*worker;
@@ -52,8 +53,20 @@ impl NativeUsageReader {
                     }
                     state.pending.pop_front().unwrap()
                 };
-                let output = refresh(&args, &pricing, &thread_id, &mut cached)
-                    .unwrap_or_else(|_| "Codex | Usage unavailable".to_string());
+                let diagnostics = Diagnostics::new("codex");
+                let output = match refresh(&args, &pricing, &thread_id, &mut cached, &diagnostics) {
+                    Ok(output) => {
+                        let warnings = diagnostics.warnings(&args.shared);
+                        if warnings != last_warnings {
+                            for warning in &warnings {
+                                eprintln!("{warning}");
+                            }
+                            last_warnings = warnings;
+                        }
+                        output
+                    }
+                    Err(_) => "Codex | Usage unavailable".to_string(),
+                };
                 let mut state = worker.0.lock().unwrap();
                 state.output.insert(thread_id, output);
             }
@@ -93,6 +106,7 @@ struct Fingerprint {
 struct CachedUsage {
     fingerprint: Fingerprint,
     text: String,
+    load_diagnostics: Diagnostics,
 }
 
 fn refresh(
@@ -100,15 +114,15 @@ fn refresh(
     pricing: &PricingMap,
     thread_id: &str,
     cached: &mut Option<CachedUsage>,
+    diagnostics: &Diagnostics,
 ) -> Result<String> {
     let mut shared = args.shared.clone();
     shared.since = None;
     shared.until = None;
     let timezone = parse_tz(shared.timezone.as_deref()).unwrap_or_else(TimeZone::system);
     let today = format_date_tz(utc_now(), Some(&timezone)).replace('-', "");
-    let diagnostics = Diagnostics::new("codex");
     let file_groups =
-        paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, &diagnostics);
+        paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, diagnostics);
     let speed = resolve_codex_speed(args.codex_speed);
     let files = file_groups
         .iter()
@@ -118,7 +132,7 @@ fn refresh(
             {
                 Ok((len, modified)) => Some((path.clone(), len, modified)),
                 Err(error) => {
-                    UnitError::from(error).record(path, &diagnostics);
+                    UnitError::from(error).record(path, diagnostics);
                     None
                 }
             }
@@ -134,10 +148,13 @@ fn refresh(
         .as_ref()
         .filter(|cached| cached.fingerprint == fingerprint)
     {
-        diagnostics.emit(&shared);
+        diagnostics.merge(&cached.load_diagnostics);
         return Ok(cached.text.clone());
     }
 
+    // Cache load diagnostics separately so cache hits can combine them with
+    // current discovery diagnostics.
+    let load_diagnostics = Diagnostics::new("codex");
     let session_files = file_groups
         .iter()
         .map(|group| {
@@ -157,7 +174,7 @@ fn refresh(
         &session_files,
         &shared,
         AgentReportKind::Session,
-        &diagnostics,
+        &load_diagnostics,
     )?;
     shared.since = Some(today.clone());
     shared.until = Some(today);
@@ -170,9 +187,9 @@ fn refresh(
         &today_files,
         &shared,
         AgentReportKind::Daily,
-        &diagnostics,
+        &load_diagnostics,
     )?;
-    diagnostics.emit(&shared);
+    diagnostics.merge(&load_diagnostics);
     let session = report::report_from_groups(
         &session,
         AgentReportKind::Session,
@@ -193,6 +210,7 @@ fn refresh(
     *cached = Some(CachedUsage {
         fingerprint,
         text: text.clone(),
+        load_diagnostics,
     });
     Ok(text)
 }
