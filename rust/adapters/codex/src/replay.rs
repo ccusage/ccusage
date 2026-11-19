@@ -49,7 +49,7 @@ impl CodexReplayPlan {
         let mut files = read_replay_files(
             &collect_replay_files(selected.iter().copied()),
             single_thread,
-            Some(diagnostics),
+            diagnostics,
         );
         let children = files
             .iter()
@@ -71,7 +71,8 @@ impl CodexReplayPlan {
             .into_iter()
             .filter(|(path, _)| !metadata.contains_key(path))
             .collect::<Vec<_>>();
-        for file in read_replay_files(&missing, single_thread, None) {
+        let probe_diagnostics = Diagnostics::new(diagnostics.source());
+        for file in read_replay_files(&missing, single_thread, &probe_diagnostics) {
             metadata.insert(file.path.clone(), file);
         }
         let files = available
@@ -79,7 +80,15 @@ impl CodexReplayPlan {
             .flat_map(|(_, paths)| paths.iter())
             .filter_map(|path| metadata.remove(path))
             .collect();
-        Self::new(files, Some(&children), single_thread, diagnostics)
+        let plan = Self::new(files, Some(&children), single_thread, diagnostics);
+        if plan
+            .parent_by_child
+            .values()
+            .any(|parent| parent.path.is_none())
+        {
+            diagnostics.merge(&probe_diagnostics);
+        }
+        plan
     }
 
     pub(super) fn new(
@@ -209,7 +218,7 @@ fn collect_replay_files<'a>(
 fn read_replay_files<'a>(
     files: &[(PathBuf, &'a Path)],
     single_thread: bool,
-    diagnostics: Option<&Diagnostics>,
+    diagnostics: &Diagnostics,
 ) -> Vec<CodexReplayFile<'a>> {
     let read = |(path, sessions_dir): &(PathBuf, &'a Path)| CodexReplayFile {
         path: path.clone(),
@@ -301,20 +310,15 @@ impl CodexSessionMetadata {
     }
 }
 
-fn read_codex_session_metadata(
-    path: &Path,
-    diagnostics: Option<&Diagnostics>,
-) -> CodexSessionMetadata {
+fn read_codex_session_metadata(path: &Path, diagnostics: &Diagnostics) -> CodexSessionMetadata {
     let (mut lines, _) = match open_rollout_lines(path, PROBE_BUFFER_SIZE) {
         Ok(opened) => opened,
         Err(failed) => {
-            if let Some(diagnostics) = diagnostics {
-                ccusage_adapter_common::UnitError::new(
-                    ccusage_core::SkipKind::Unreadable,
-                    "rollout open failed",
-                )
-                .record(&failed, diagnostics);
-            }
+            ccusage_adapter_common::UnitError::new(
+                ccusage_core::SkipKind::Unreadable,
+                "rollout open failed",
+            )
+            .record(&failed, diagnostics);
             return CodexSessionMetadata::default();
         }
     };
@@ -323,9 +327,7 @@ fn read_codex_session_metadata(
             session_metadata_from_line(path, line)
         }),
         Err(_) => {
-            if let Some(diagnostics) = diagnostics {
-                super::reader::record_rollout_read_failure(path, diagnostics);
-            }
+            super::reader::record_rollout_read_failure(path, diagnostics);
             CodexSessionMetadata::default()
         }
     }
@@ -497,6 +499,70 @@ mod tests {
         );
         assert!(!visited);
         assert!(plan.parent_by_child.is_empty());
+    }
+
+    #[test]
+    fn bounded_forks_warn_only_when_a_failed_probe_can_hide_the_parent() {
+        let usage = |timestamp: &str| {
+            serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
+                "type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
+            }}).to_string()
+        };
+        let replayed = usage("2026-09-19T12:00:01Z");
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                r#"{"type":"session_meta","timestamp":"2026-09-19T12:01:00Z","payload":{"id":"child","forked_from_id":"parent"}}"#.to_string(),
+                replayed.clone(),
+                usage("2026-09-19T12:02:00Z"),
+            ].join("\n"),
+            "parent.jsonl": [
+                r#"{"type":"session_meta","timestamp":"2026-09-19T12:00:00Z","payload":{"id":"parent"}}"#,
+                &replayed,
+            ].join("\n"),
+            "parent.jsonl.zst": "invalid zstd",
+        });
+        let selected = [fixture.path("child.jsonl")];
+        let corrupt = fixture.path("parent.jsonl.zst");
+        for (parent_readable, expected_tokens, expected_skips) in [(true, 150, 0), (false, 300, 1)]
+        {
+            let mut available = vec![selected[0].clone(), corrupt.clone()];
+            if parent_readable {
+                available.push(fixture.path("parent.jsonl"));
+            }
+            for single_thread in [true, false] {
+                let diagnostics = Diagnostics::new("codex");
+                let plan = CodexReplayPlan::for_selection(
+                    &[(fixture.root(), &selected)],
+                    [(fixture.root(), available.as_slice())],
+                    single_thread,
+                    &diagnostics,
+                );
+                let mut tokens = 0;
+                crate::parser::visit_codex_session_file_with_diagnostics(
+                    fixture.root(),
+                    &selected[0],
+                    plan.fork_replay(&selected[0]),
+                    |event| tokens += event.total_tokens,
+                    &diagnostics,
+                );
+                assert_eq!(tokens, expected_tokens);
+                assert_eq!(
+                    diagnostics.skipped(ccusage_core::SkipKind::ReadInterrupted)
+                        + diagnostics.skipped(ccusage_core::SkipKind::Unreadable),
+                    expected_skips
+                );
+                let warnings = diagnostics.warnings(&crate::cli::SharedArgs {
+                    debug: true,
+                    ..Default::default()
+                });
+                assert_eq!(
+                    warnings
+                        .iter()
+                        .any(|line| line.contains("parent.jsonl.zst")),
+                    !parent_readable
+                );
+            }
+        }
     }
 
     #[test]
