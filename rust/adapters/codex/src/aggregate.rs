@@ -83,8 +83,6 @@ impl CodexFileOccurrences {
     }
 }
 
-/// Where an event was read from: the file's position in the run, and the
-/// ordinals of the identical usage events seen in it so far.
 struct CodexEventProvenance {
     file_index: usize,
     occurrences: FxHashMap<CodexUsageKey, CodexFileOccurrences>,
@@ -202,8 +200,6 @@ impl CodexDedupeMap {
                 }
                 stand_in.occurrence += 1;
             }
-            // Copies can account for at most the distinct requests named by the
-            // records. Any rollout with more requests proves there were others.
             let named = u32::try_from(requests.len()).unwrap_or(u32::MAX);
             let recordless = stand_in.occurrence;
             let unmatched = max_in_rollout.saturating_sub(named);
@@ -438,22 +434,17 @@ struct CodexModel {
     time_dependent: bool,
 }
 
-/// How a run tells which rollouts replayed a parent's history.
 #[derive(Clone, Copy)]
 enum CodexReplay<'a> {
     Planned(&'a CodexReplayPlan),
-    /// Reads each rollout's metadata from its own first line and leaves forks
-    /// for a planned run, so no separate pass opens every rollout up front.
     Discover,
 }
 
-/// Read-only inputs every file of one aggregation run shares.
 struct CodexAggregateRun<'a> {
     sessions_dir: &'a Path,
     files: &'a [PathBuf],
     shared: &'a SharedArgs,
     replay: CodexReplay<'a>,
-    /// Indexes into `files` this run reads; `None` reads all of them.
     selection: Option<&'a [usize]>,
     file_offset: usize,
     diagnostics: &'a Diagnostics,
@@ -481,7 +472,6 @@ impl CodexAggregateRun<'_> {
     }
 }
 
-/// Session metadata a discovering run read, by index into its files.
 type CodexFileMetadata = Vec<(usize, CodexSessionMetadata)>;
 
 fn fork_indexes<'a>(
@@ -608,8 +598,6 @@ pub(super) fn load_groups_from_file_selection(
     )
 }
 
-/// Aggregates `selected` against the replay history of `available`, the
-/// unfiltered files of the same groups.
 fn aggregate_file_groups(
     selected: &[(&Path, &[PathBuf])],
     available: &[(&Path, &[PathBuf])],
@@ -711,8 +699,6 @@ fn aggregate_files_with_dedupe(
     .map(|metadata| metadata.into_iter().flatten().collect())
 }
 
-/// Visits one file of `run`, recording its metadata when the run discovers
-/// forks as it goes.
 fn visit_run_file(
     run: &CodexAggregateRun<'_>,
     file_index: usize,
@@ -820,11 +806,7 @@ fn accumulate_codex_usage_into_model_usage(
         .reasoning_output_tokens
         .saturating_add(event.reasoning_output_tokens);
     model_usage.total_tokens = model_usage.total_tokens.saturating_add(event.total_tokens);
-    // Each event is one request, so its input size decides the pricing tier
-    // here; the summed totals cannot recover per-request context sizes. The
-    // boundary is per model (OpenAI's 272K models and any future tier with a
-    // different threshold) rather than a single global constant, matching the
-    // threshold used to price the long-context buckets.
+    // NOTE(2026-07-09, #1414): OpenAI applies long-context rates to every token in a request once its input exceeds that model's threshold. The split has to happen before requests are summed.
     let is_long_context = event.input_tokens > model.long_context_threshold;
     let usage = CodexUsageBucket::from_usage(event, is_long_context);
     model_usage.add_usage(usage, attribution.service_tier);
@@ -1585,7 +1567,6 @@ mod tests {
             })
             .to_string()
         };
-        // One request above the 272K input threshold and one below it.
         let long_line = usage_line(280_000, 20_000, 500);
         let short_line = usage_line(100_000, 50_000, 300);
         let fast_marker = json!({
@@ -2145,8 +2126,6 @@ mod tests {
         }
     }
 
-    /// The rollout from #2046: a spawned subagent whose every line carries the
-    /// fork instant, with two requests of identical usage.
     const IDENTICAL_REQUESTS_ROLLOUT: &str = r#"{"timestamp":"2026-11-01T09:42:09.923Z","type":"session_meta","payload":{"id":"01a1967c-0000-7000-8000-00000000000a","forked_from_id":"01a1967b-0000-7000-8000-000000000001","timestamp":"2026-11-01T09:42:09.923Z","originator":"codex_vscode","cli_version":"0.164.0-alpha.11.1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"01a1967b-0000-7000-8000-000000000001","depth":1}}},"model_provider":"openai"}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"compacted","payload":{"message":"","replacement_history":[]}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
@@ -2274,8 +2253,6 @@ mod tests {
             .replace("00000000000a", "00000000000b")
             .replace("resp_child_1", "resp_child_3")
             .replace("resp_child_2", "resp_child_4");
-        // Same records under another session ID: a copy whose replay was not
-        // recognized, so only the copied response IDs identify it.
         let copy = IDENTICAL_REQUESTS_ROLLOUT.replace("00000000000a", "00000000000c");
         let scenarios = [
             ("distinct sibling", sibling, (32_000, 8_000, 400, 40_400)),
@@ -2314,8 +2291,6 @@ mod tests {
         }
     }
 
-    /// Requests with equal usage at one instant, so they share a usage signature,
-    /// each optionally preceded by the `token_usage_record` Codex writes for it.
     fn recorded_requests(service_tier: Option<&str>, response_ids: &[Option<&str>]) -> String {
         let mut lines = vec![
             json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}})
@@ -2352,17 +2327,12 @@ mod tests {
         lines.join("\n")
     }
 
-    /// A copy can lack the records of the rollout it copied, as a spawned child
-    /// replays its parent's counts without them. The two still describe the
-    /// same requests, whichever file is read first, while a sibling that recorded
-    /// other requests stays distinct.
     #[test]
     fn matches_recordless_copies_to_recorded_requests_in_either_file_order() {
         ccusage_test_support::install_pricing_snapshots();
         let original = recorded_requests(None, &[Some("resp_a1"), Some("resp_a2")]);
         let sibling = recorded_requests(None, &[Some("resp_b1"), Some("resp_b2")]);
         let copy = recorded_requests(None, &[None, None]);
-        // Only the second request, so its record sits at another ordinal.
         let partial = recorded_requests(None, &[Some("resp_a2")]);
         let scenarios = [
             ("recorded first", vec![&original, &copy], 2),
@@ -2400,8 +2370,6 @@ mod tests {
         }
     }
 
-    /// A recordless copy cannot say which of several recorded requests it copied,
-    /// so it must not lend its tier to whichever one happened to arrive first.
     #[test]
     fn keeps_recorded_tiers_when_a_recordless_copy_cannot_name_its_request() {
         ccusage_test_support::install_pricing_snapshots();
@@ -2445,8 +2413,6 @@ mod tests {
             }
         }
     }
-    /// A spawned child replays its parent's request without the record. Whichever
-    /// file is read first, the parent's recorded request owns the usage.
     #[test]
     fn credits_a_replaced_stand_in_to_the_recording_session() {
         ccusage_test_support::install_pricing_snapshots();

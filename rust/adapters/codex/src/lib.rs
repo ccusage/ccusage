@@ -691,8 +691,6 @@ mod tests {
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
 
-        // Short bucket: 40K non-cached input, 10K cached, 200 output tokens.
-        // Long bucket: 260K non-cached input, 40K cached, 800 output tokens.
         let expected = 40_000.0 * 5e-6
             + 10_000.0 * 0.5e-6
             + 200.0 * 30e-6
@@ -1069,7 +1067,7 @@ mod tests {
             ..CodexUsageBucket::default()
         });
 
-        // Expected costs use OpenAI's published Ultrafast USD per 1M tokens.
+        // NOTE(2026-10-30, #1989): OpenAI published Ultrafast rates for GPT-6.1 Sol and GPT-6 Astra. The expected costs use those rates.
         for (model, short_cost, long_cost) in [
             ("gpt-6.1-sol", 0.01512, 1.59),
             ("gpt-6-astra", 0.0762, 9.45),
@@ -1130,9 +1128,6 @@ mod tests {
         }
     }
 
-    /// Entries for every model the Ultrafast tests look up, so their outcome
-    /// does not depend on which LiteLLM snapshot the build embedded. Only
-    /// `gpt-6.1-sol` carries a published Ultrafast multiplier.
     fn ultrafast_test_pricing() -> PricingMap {
         ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
@@ -1188,8 +1183,6 @@ mod tests {
             calculate_codex_model_cost(model, &usage, Some(&pricing), speed)
         };
 
-        // The alias resolves to Sol, so the Ultrafast cost is Sol's standard cost
-        // times its published multiplier.
         let private_sol = cost(
             "private-sol",
             CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
@@ -1204,7 +1197,6 @@ mod tests {
             "{private_sol}"
         );
 
-        // An exact Terra entry wins over the alias and has no published rate.
         let terra = cost(
             "gpt-6.1-terra",
             CodexSpeedPolicy::Auto(CodexServiceTier::Standard),

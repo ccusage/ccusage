@@ -43,7 +43,7 @@ static SESSION_META_MARKER: LazyLock<LinePrefilter> =
     LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_DEFAULT_MODEL: &str = "gpt-5";
-// NOTE(2026-09-17, #1753): auto-review routing changes independently of public model releases, so a new entry needs evidence of the routing change, not just a catalog release.
+// NOTE(2026-09-17, #1753): The server can reroute `codex-auto-review` without a public model release. The rollout omits the resolved model, so a new timeline entry needs routing evidence.
 const CODEX_AUTO_REVIEW_FALLBACKS: &[CodexAutoReviewFallback] = &[
     CodexAutoReviewFallback::new((2026, 7, 30), "gpt-5.6-luna"),
     CodexAutoReviewFallback::new((2026, 3, 5), "gpt-5.4"),
@@ -102,44 +102,23 @@ struct CodexTokenCountUsage {
     delta: Option<CodexRawUsage>,
 }
 
-/// History a forked session replayed from its parent.
 #[derive(Clone, Copy)]
 pub(super) struct CodexForkReplay<'a> {
-    /// The parent's usage up to the fork; empty when the parent log is unavailable.
     pub(super) prefix: &'a [CodexRawUsage],
-    /// Codex drops the parent's `token_usage_record` lines when it spawns a
-    /// subagent, so every record in such a child is a request the child sent
-    /// itself and nothing after it can be replayed history. A user fork copies
-    /// them with the rest of the parent's history, so they prove nothing there.
+    // NOTE(2026-11-09, Codex VS Code 0.164.0-alpha.11.1, #2051): Spawned subagents drop inherited `token_usage_record` lines, so the first record ends replay even if the timestamps coincide. User forks copy those lines.
     pub(super) ends_at_usage_record: bool,
 }
 
-/// Tracks how far a forked session's leading events still match the history it
-/// replayed from its parent.
 enum CodexReplayState<'a> {
-    /// Comparing the child's leading usage against the parent's usage prefix.
     MatchingParent {
         prefix: &'a [CodexRawUsage],
         index: usize,
     },
-    /// The parent stream could not anchor the replay, so skip the leading burst
-    /// that Codex rewrote to the fork instant. Carries the last skipped event so
-    /// the run can be followed however long it takes to write.
     SkippingRewrittenBurst(TimestampMs),
-    /// Past the replayed history: every remaining event is the child's own usage.
     Done,
 }
 
-/// Longest pause tolerated inside a burst of replayed usage.
-///
-/// Codex rewrites a replayed history to the fork instant and writes it in one
-/// go, so the burst is dense while the child's own first turn follows a real
-/// pause. Across the fork logs this was measured against, bursts spanned 10 to
-/// 40ms and the pause that followed ran from 5.8 to 15.3 seconds, so a second
-/// sits two orders of magnitude above the one and well below the other.
-///
-/// Bucketing by the recorded second instead would split any burst written across
-/// a second tick, leaving the remainder counted as the child's own usage.
+// NOTE(2026-07-27, #1501): Codex rewrites replay timestamps near the fork instant. Observed bursts spanned 10–40 ms, crossed second boundaries, and preceded a 5.8–15.3 s pause before the child's own usage.
 const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 
 #[derive(Default)]
@@ -150,7 +129,6 @@ struct CodexBurst {
 }
 
 impl CodexBurst {
-    // NOTE(2026-07-27, #1501): a Codex session that opens with two usage events written back to back replayed a history it did not spend; one that pauses between them was recording its own turns from the start.
     fn observe(&mut self, timestamp: TimestampMs) {
         if self.decision.is_some() {
             return;
@@ -161,7 +139,7 @@ impl CodexBurst {
         };
         let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
             .contains(&(timestamp.as_millis() - first.as_millis()));
-        // NOTE(2026-10-26, #1971): a late first request can also produce a dense pair, so the pair must also start at the fork instant.
+        // NOTE(2026-10-26, #1971): A child's first request can produce a dense pair after the fork instant. Density alone can mistake it for replay.
         let starts_at_fork = self.session_start.is_none_or(|start| {
             first.as_millis().abs_diff(start.as_millis())
                 <= CODEX_REWRITTEN_BURST_PAUSE_MS.unsigned_abs()
@@ -231,9 +209,6 @@ impl CodexReplayFilter<'_> {
             self.pending.push(CodexPendingReplay::Event(event));
             return;
         }
-        // Compaction requests have their own response identity. Comparing them
-        // with normal request totals could consume an unrelated replay entry;
-        // copied compactions are deduplicated by ID after parsing instead.
         if event.response_id.is_some() {
             visit(event);
             return;
@@ -248,7 +223,6 @@ impl CodexReplayFilter<'_> {
                         };
                         return;
                     }
-                    // NOTE(2026-07-25, #1435): nothing matched, so the parent stream cannot anchor this replay: the parent log is unavailable, or Codex rewrote the copied history.
                     if index == 0 {
                         let Some(burst) = self.burst.decision else {
                             self.pending.push(CodexPendingReplay::Event(event));
@@ -281,8 +255,6 @@ impl CodexReplayFilter<'_> {
     }
 }
 
-/// Visits usage while optionally retaining matched compaction identities,
-/// including requests already covered by cumulative usage in a parent log.
 pub(super) fn visit_codex_session_file_with_compaction_history(
     sessions_dir: &Path,
     path: &Path,
@@ -320,9 +292,6 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
     )
 }
 
-/// Visits a rollout that its first line shows is not a fork, and returns that
-/// line's session metadata. A fork is left unvisited: which of its usage it
-/// replayed is known only once every rollout's metadata has been read.
 pub(super) fn visit_codex_session_file_unless_fork(
     sessions_dir: &Path,
     path: &Path,
@@ -476,8 +445,6 @@ fn visit_codex_session_file_inner(
     if let Some(history) = compaction_history
         && let Some(mut timestamps) = state.compaction_usage.recorded_usage_timestamps
     {
-        // Parent identity survives accounting suppression. A copied child can
-        // retain a compaction pair while its cumulative snapshot is missing.
         timestamps.retain(|response_id, _| {
             state
                 .compaction_usage
@@ -581,8 +548,6 @@ fn visit_codex_session_entry(
 
         let parsed_model = codex_model_from_payload(payload);
         let model_was_inferred = parsed_model.is_none();
-        // A request record can name a different model, or never match a
-        // compaction. Neither case changes the surrounding turn's model.
         let mut request_model = current_model.clone();
         let mut request_model_is_fallback = *current_model_is_fallback;
         let (model, is_fallback_model) = resolve_codex_usage_model(
@@ -649,11 +614,7 @@ fn visit_codex_session_entry(
         if codex_session_timestamp(value.timestamp.as_ref()).is_none() {
             return;
         }
-        // A settings event that carries no `service_tier` at all says nothing
-        // about the tier, so the previous one stands. Codex emits such events
-        // for auto-review threads. A tier that is present but unrecognized is
-        // different: it means the tier changed to something unknown, so the
-        // stale value must not be inherited.
+        // NOTE(2026-07-26, Codex CLI 0.144.0, #1438): Auto-review rollouts can emit `thread_settings_applied` without `service_tier`. Keep the last recorded tier when that key is absent.
         if let Some(recorded) = payload
             .thread_settings
             .as_ref()
@@ -705,10 +666,7 @@ fn visit_codex_session_entry(
         return;
     }
 
-    // Local compaction emits an advancing token_count between the response
-    // record and its marker. Remote v2 compaction omits that advance, so only
-    // the latter needs an extra event. Matching the latest response keeps an
-    // unrelated request with identical token counts from consuming it.
+    // NOTE(2026-10-02, #1821): Local compaction emits an advancing `token_count` between its response record and compaction marker. Remote v2 omits that snapshot, so its usage can be missing from the cumulative counts.
     let mut record_response_id = None;
     if cumulative_advanced
         && let Some(response_id) = compaction_usage.latest_usage_response_id.as_ref()
@@ -1240,9 +1198,7 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage
 }
 
-/// Classifies a rollout line that did not decode like every other JSONL
-/// source does. A rejected `token_count` still advances the cumulative
-/// baseline, so the next record's delta does not count its tokens again.
+// NOTE(2026-11-15): A rejected `token_count` can still carry a usable cumulative total. Advance the baseline or the next dated delta can recount its tokens.
 fn record_decode_failure(
     path: &Path,
     line: u32,

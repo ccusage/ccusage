@@ -114,10 +114,6 @@ fn records_flex_service_tier_for_following_usage() {
     assert_eq!(events[0].input_tokens, 10);
 }
 
-/// Codex emits `thread_settings_applied` without a `service_tier` key for
-/// auto-review threads. Such an event says nothing about the tier, so usage
-/// after it keeps the tier the rollout already recorded. A tier that is
-/// present but unrecognized is the opposite case and clears it.
 #[test]
 fn keeps_recorded_service_tier_when_a_later_settings_event_omits_it() {
     let settings = |timestamp: &str, thread_settings: serde_json::Value| {
@@ -154,10 +150,8 @@ fn keeps_recorded_service_tier_when_a_later_settings_event_omits_it() {
         "session.jsonl": [
             settings("2026-07-22T00:00:00.000Z", json!({"service_tier": "priority"})),
             token_count("2026-07-22T00:00:01.000Z", 10),
-            // Auto-review thread settings: no service_tier key at all.
             settings("2026-07-22T00:00:02.000Z", json!({"model": "codex-auto-review"})),
             token_count("2026-07-22T00:00:03.000Z", 20),
-            // Recognized tier again, then an unrecognized one that clears it.
             settings("2026-07-22T00:00:04.000Z", json!({"service_tier": "standard"})),
             token_count("2026-07-22T00:00:05.000Z", 30),
             settings("2026-07-22T00:00:06.000Z", json!({"service_tier": "unknown"})),
@@ -668,10 +662,6 @@ fn resolves_codex_auto_review_at_documented_model_boundaries() {
 
 #[test]
 fn resolves_codex_auto_review_with_invalid_event_date_falls_back_to_file_mtime() {
-    // When the log's own timestamp fields are unparsable AND no alternate
-    // timestamp fields are present, the parser falls back to the file's
-    // modified time so the date-based fallback table still resolves to a
-    // real model rather than locking in a misleading malformed string.
     let fixture = fs_fixture!({
         "invalid-month.jsonl": json!({
             "type": "turn.completed",
@@ -700,18 +690,12 @@ fn resolves_codex_auto_review_with_invalid_event_date_falls_back_to_file_mtime()
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 2);
-    // File mtime is "now" at fixture creation, which is on or after every
-    // entry currently in the fallback table, so resolution lands on the
-    // newest known model. The exact value updates when the table grows.
     assert!(events.iter().all(|event| event.model.starts_with("gpt-5")));
     assert!(events.iter().all(|event| event.is_fallback_model));
 }
 
 #[test]
 fn resolves_codex_auto_review_uses_created_at_when_top_level_timestamp_is_malformed() {
-    // Regression test for the model-date resolution chain short-circuiting
-    // on a malformed top-level `timestamp` and ignoring the `created_at`
-    // fallback field that holds a parseable date.
     let fixture = fs_fixture!({
         "run.jsonl": json!({
             "type": "turn.completed",
@@ -920,7 +904,6 @@ fn skips_replayed_parent_token_history_in_thread_spawn_subagent_files() {
         ]
         .join("\n"),
         "2026-05-12T08-03-00-subagent.jsonl": [
-            // session_meta: subagent with thread_spawn
             json!({
                 "timestamp": "2026-05-12T08:03:00.000Z",
                 "type": "session_meta",
@@ -936,14 +919,12 @@ fn skips_replayed_parent_token_history_in_thread_spawn_subagent_files() {
                 },
             })
             .to_string(),
-            // session_meta: parent
             json!({
                 "timestamp": "2026-05-12T08:03:00.000Z",
                 "type": "session_meta",
                 "payload": {"id": "parent-xyz"},
             })
             .to_string(),
-            // replayed parent history — timestamps all at subagent creation time
             json!({
                 "timestamp": "2026-05-12T08:03:00.000Z",
                 "type": "event_msg",
@@ -988,7 +969,6 @@ fn skips_replayed_parent_token_history_in_thread_spawn_subagent_files() {
                 },
             })
             .to_string(),
-            // subagent's own entries — different timestamps
             json!({
                 "timestamp": "2026-05-12T08:04:00.000Z",
                 "type": "event_msg",
@@ -1141,7 +1121,6 @@ fn skips_replayed_parent_token_history_in_forked_session_files() {
                 "payload": {"id": "parent-xyz"},
             })
             .to_string(),
-            // replayed parent history with timestamps rewritten to fork creation time
             json!({
                 "timestamp": "2026-05-12T08:03:00.000Z",
                 "type": "event_msg",
@@ -1186,7 +1165,6 @@ fn skips_replayed_parent_token_history_in_forked_session_files() {
                 },
             })
             .to_string(),
-            // fork's own entry
             json!({
                 "timestamp": "2026-05-12T08:04:00.000Z",
                 "type": "event_msg",
@@ -1367,7 +1345,6 @@ fn skips_replayed_history_across_multiple_subagent_files() {
                 "payload": {"id": "parent"},
             })
             .to_string(),
-            // replayed entries — two token_count lines with the same timestamp
             json!({
                 "timestamp": creation_ts,
                 "type": "event_msg",
@@ -1412,7 +1389,6 @@ fn skips_replayed_history_across_multiple_subagent_files() {
                 },
             })
             .to_string(),
-            // subagent's own entry — different timestamp
             json!({
                 "timestamp": real_ts,
                 "type": "event_msg",
@@ -1484,20 +1460,17 @@ fn bounds_the_replay_at_a_numeric_fork_timestamp() {
         "01-parent.jsonl": [
             replay_metadata("2026-07-10T08:00:00.000Z", "parent", None),
             replay_token_count("2026-07-10T08:01:00.000Z", 100),
-            // Written after the child forked.
             replay_token_count("2026-07-10T08:03:00.000Z", 50),
         ]
         .join("\n"),
         "02-child.jsonl": [
             json!({
-                // Epoch seconds for 2026-07-10T08:02:00Z.
                 "timestamp": 1_783_670_520_u64,
                 "type": "session_meta",
                 "payload": {"id": "child", "forked_from_id": "parent"},
             })
             .to_string(),
             replay_token_count("2026-07-10T08:02:00.000Z", 100),
-            // Real child usage that happens to equal the parent's next event.
             replay_token_count("2026-07-10T08:04:00.000Z", 50),
         ]
         .join("\n"),
@@ -1523,8 +1496,6 @@ fn falls_back_to_rewritten_second_when_the_replay_starts_mid_parent_stream() {
             replay_token_count("2026-07-10T08:03:00.000Z", 300),
         ]
         .join("\n"),
-        // Codex replayed a compacted history, so it does not line up with the
-        // start of the parent stream.
         "02-child.jsonl": [
             replay_metadata("2026-07-10T09:00:00.000Z", "child", Some("parent")),
             replay_token_count("2026-07-10T09:00:00.100Z", 200),
@@ -1736,19 +1707,12 @@ fn counts_spawned_responses_once_across_duplicate_snapshot_controls() {
 #[test]
 fn skips_a_rewritten_burst_that_straddles_a_second_boundary() {
     let fixture = fs_fixture!({
-        // Codex writes the replayed history in a few milliseconds, so the
-        // burst lands on either side of a second tick whenever the fork
-        // happens late in a second. Measured against real logs, such a burst
-        // spans tens of milliseconds while the child's own first turn follows
-        // seconds later, so the run is what identifies it, not the second it
-        // was stamped with.
         "child.jsonl": [
             replay_metadata("2026-07-10T09:00:00.985Z", "child", Some("missing-parent")),
             replay_token_count("2026-07-10T09:00:00.986Z", 100),
             replay_token_count("2026-07-10T09:00:00.999Z", 200),
             replay_token_count("2026-07-10T09:00:01.000Z", 300),
             replay_token_count("2026-07-10T09:00:01.009Z", 400),
-            // The child's own first turn, after a real pause.
             replay_token_count("2026-07-10T09:00:08.000Z", 500),
         ]
         .join("\n"),
@@ -1795,8 +1759,6 @@ fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
         .to_string()
     };
     let fixture = fs_fixture!({
-        // Every line carries the fork instant, so timestamps cannot separate
-        // the inherited baseline from the child's own requests.
         "child.jsonl": [
             json!({
                 "timestamp": at_fork,
@@ -1843,9 +1805,6 @@ fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
 #[test]
 fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
     let fixture = fs_fixture!({
-        // A Codex release that predates usage records started this child,
-        // and a later one resumed it. The turns before the first record are
-        // still the child's own, so a record must not start a skip.
         "child.jsonl": [
             json!({
                 "timestamp": "2026-09-02T18:09:32.557Z",
@@ -1882,8 +1841,6 @@ fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
 #[test]
 fn skips_usage_records_copied_into_a_rewritten_user_fork_burst() {
     let fixture = fs_fixture!({
-        // A user fork copies the parent's usage records along with the rest
-        // of its history, so a record does not end the replay here.
         "child.jsonl": [
             replay_metadata("2026-11-01T09:00:00.000Z", "child", Some("missing-parent")),
             replay_token_count("2026-11-01T09:00:00.100Z", 100),
@@ -1912,7 +1869,6 @@ fn keeps_fork_local_usage_recorded_after_a_rewritten_burst() {
             replay_metadata("2026-07-10T09:00:00.000Z", "child", Some("missing-parent")),
             replay_token_count("2026-07-10T09:00:00.100Z", 100),
             replay_token_count("2026-07-10T09:00:00.200Z", 200),
-            // Every later turn is the child's own, however many there are.
             replay_token_count("2026-07-10T09:00:30.000Z", 300),
             replay_token_count("2026-07-10T09:01:00.000Z", 400),
             replay_token_count("2026-07-10T09:01:30.000Z", 500),
@@ -1936,15 +1892,12 @@ fn keeps_child_usage_matching_parent_event_after_fork() {
         "parent.jsonl": [
             replay_metadata("2026-05-12T08:00:00.000Z", "parent", None),
             replay_token_count("2026-05-12T08:01:00.000Z", 100),
-            // Written after the child forked.
             replay_token_count("2026-05-12T08:03:00.000Z", 50),
         ]
         .join("\n"),
         "child.jsonl": [
             replay_metadata("2026-05-12T08:02:00.000Z", "child", Some("parent")),
-            // Replayed parent state at the fork.
             replay_token_count("2026-05-12T08:02:00.000Z", 100),
-            // Real child usage that happens to equal the parent's next event.
             replay_token_count("2026-05-12T08:04:00.000Z", 50),
         ]
         .join("\n"),
@@ -1965,8 +1918,6 @@ fn keeps_child_usage_matching_parent_event_after_fork() {
 #[test]
 fn keeps_full_parent_stream_when_the_parent_itself_replayed_a_missing_session() {
     let fixture = fs_fixture!({
-        // The grandparent log is gone, so this session falls back to skipping
-        // its own rewritten second.
         "01-parent.jsonl": [
             replay_metadata("2026-07-10T08:00:00.000Z", "parent", Some("missing-grandparent")),
             replay_token_count("2026-07-10T08:00:00.100Z", 100),
@@ -2057,10 +2008,8 @@ fn skips_missing_parent_replay_when_duplicate_snapshot_is_suppressed() {
                 "payload": {"id": "child", "forked_from_id": "missing-parent"},
             })
             .to_string(),
-            // The replay repeats a snapshot, which must not end the burst.
             token_count("2026-07-10T08:00:00.100Z", 100, 100),
             token_count("2026-07-10T08:00:00.200Z", 100, 100),
-            // The child's own turn, after a real pause.
             token_count("2026-07-10T08:00:08.000Z", 50, 50),
         ]
         .join("\n"),
@@ -2196,11 +2145,9 @@ fn skips_missing_parent_replay_with_duplicate_snapshots_and_advancing_usage() {
                 "payload": {"id": "child", "forked_from_id": "missing-parent"},
             })
             .to_string(),
-            // The replay repeats a snapshot, which must not end the burst.
             token_count("2026-07-10T08:00:00.100Z", 100, 100),
             token_count("2026-07-10T08:00:00.200Z", 100, 100),
             token_count("2026-07-10T08:00:00.300Z", 200, 300),
-            // The child's own turn, after a real pause.
             token_count("2026-07-10T08:00:08.000Z", 50, 50),
         ]
         .join("\n"),

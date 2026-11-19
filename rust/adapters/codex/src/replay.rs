@@ -21,7 +21,6 @@ pub(super) struct CodexReplayPlan {
 }
 
 struct ParentReplay {
-    /// `None` when the referenced parent log is not part of the scanned files.
     path: Option<PathBuf>,
     forked_at: Option<TimestampMs>,
     spawned: bool,
@@ -143,11 +142,6 @@ impl CodexReplayPlan {
         }
     }
 
-    /// Usage history that `child` replayed from the session it forked from.
-    ///
-    /// Returns `None` for sessions that are not forks. Forked sessions whose
-    /// parent log is unavailable get an empty prefix, which tells the parser
-    /// to fall back to the rewritten-burst heuristic.
     pub(super) fn fork_replay(&self, child: &Path) -> Option<CodexForkReplay<'_>> {
         let parent = self.parent_by_child.get(child)?;
         Some(CodexForkReplay {
@@ -164,8 +158,6 @@ impl CodexReplayPlan {
         else {
             return &[];
         };
-        // Usage the parent recorded after the fork was never replayed, so it must
-        // not mask the child's own events.
         let replay_len = parent.forked_at.map_or(stream.usage.len(), |forked_at| {
             stream
                 .timestamps
@@ -176,8 +168,6 @@ impl CodexReplayPlan {
         &stream.usage[..replay_len]
     }
 
-    /// Recognizes copied compaction requests even when date filtering excludes
-    /// their parent from the report. Requests after the fork stay countable.
     pub(super) fn is_replayed_compaction(&self, child: &Path, response_id: Option<&str>) -> bool {
         let Some(response_id) = response_id else {
             return false;
@@ -264,8 +254,6 @@ fn read_parent_usage(
     single_thread: bool,
     diagnostics: &Diagnostics,
 ) -> HashMap<PathBuf, ParentUsage> {
-    // A parent the report also reads records the same skips again, which
-    // `Diagnostics` counts once.
     let read = |(path, sessions_dir): &(PathBuf, &Path)| {
         read_parent_usage_file(path, sessions_dir, diagnostics)
     };
@@ -307,8 +295,6 @@ fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics
         None,
         Some(compactions),
         |event| {
-            // Response IDs deduplicate compactions independently of this normal
-            // token-count prefix, including when a fork omits compaction records.
             if event.response_id.is_some() {
                 return;
             }
@@ -330,7 +316,6 @@ pub(super) struct CodexSessionMetadata {
 }
 
 impl CodexSessionMetadata {
-    /// Whether the rollout replays history from the session it forked from.
     pub(super) fn is_fork(&self) -> bool {
         self.parent_id.is_some()
     }

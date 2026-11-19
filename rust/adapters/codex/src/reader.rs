@@ -6,11 +6,8 @@ use std::{
 
 use ccusage_core::fast::LineReader;
 
-/// Matches zstd's preferred input size, so a whole rollout streams in
-/// block-sized reads.
 pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
-/// Fits a whole `session_meta` line without growing the window: its
-/// `base_instructions` make it roughly 19-50 KB in practice.
+// NOTE(2026-11-16, #2102): Codex embeds `base_instructions` in the first `session_meta` line. Observed lines reached 49.4 KB, so a 16 KiB probe usually has to grow.
 pub(super) const PROBE_BUFFER_SIZE: usize = 64 * 1024;
 
 type RolloutLines = LineReader<Box<dyn Read>>;
@@ -28,7 +25,6 @@ fn is_compressed_rollout(path: &Path) -> bool {
         })
 }
 
-/// The `.jsonl` path a rollout has regardless of its encoding.
 pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     if is_compressed_rollout(path) {
         path.with_extension("")
@@ -37,17 +33,13 @@ pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     }
 }
 
-/// Opens the rollout's lines through windows of `buffer_size` bytes, at
-/// `path` or at its other encoding when `path` is gone, and returns them with
-/// the path it opened. On failure, returns the path to diagnose: the encoding
-/// that exists but did not open, or `path` when neither encoding exists.
 pub(super) fn open_rollout_lines(
     path: &Path,
     buffer_size: usize,
 ) -> Result<(RolloutLines, PathBuf), PathBuf> {
     let (reader, opened) = match open_encoded_rollout(path, buffer_size) {
         Ok(reader) => (reader, path.to_path_buf()),
-        // Codex may compress or restore the rollout between discovery and this open.
+        // NOTE(2026-10-14, #1890): Codex can compress or restore a rollout after discovery. The other encoding can still hold the same rollout.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let other = other_encoding_path(path);
             match open_encoded_rollout(&other, buffer_size) {

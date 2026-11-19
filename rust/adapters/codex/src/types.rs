@@ -150,9 +150,7 @@ pub enum CodexServiceTier {
 impl CodexServiceTier {
     pub(crate) fn from_codex_name(name: &str) -> Option<Self> {
         match name {
-            // Both spellings mean non-priority pricing and occur in the same Codex
-            // version on the same day; which one is written depends on the client
-            // (Codex Desktop writes "standard"), not on the CLI version.
+            // NOTE(2026-07-26, Codex CLI 0.144.0, #1438): Codex Desktop writes `"standard"` and the CLI writes `"default"` for the same tier. Accept both spellings.
             "default" | "standard" => Some(Self::Standard),
             "fast" | "priority" => Some(Self::Fast),
             "flex" => Some(Self::Flex),
@@ -166,9 +164,6 @@ pub const fn merge_codex_service_tiers(
     current: Option<CodexServiceTier>,
     incoming: Option<CodexServiceTier>,
 ) -> Option<CodexServiceTier> {
-    // Preserve explicit metadata over an unclassified copy. If two copied
-    // records conflict, Standard keeps the cost estimate conservative and
-    // makes the result independent of file order or worker scheduling.
     match (current, incoming) {
         (Some(CodexServiceTier::Standard), _) | (_, Some(CodexServiceTier::Standard)) => {
             Some(CodexServiceTier::Standard)
@@ -375,7 +370,6 @@ pub struct CodexModelUsage {
     pub(crate) recorded_usage: TierBuckets,
     pub(crate) reasoning_output_tokens: u64,
     pub total_tokens: u64,
-    /// Exact event timestamps keep time-dependent pricing available after aggregation.
     pub(crate) timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub(crate) is_fallback: bool,
 }
@@ -832,9 +826,7 @@ impl CodexRawUsage {
             cache_creation_tokens: cache_creation,
             output_tokens: output,
             reasoning_output_tokens: reasoning,
-            // Codex reports reasoning as a subset of output, so a derived total
-            // must not add it on top. A recorded zero total means the field is
-            // unusable rather than that the turn spent nothing, so derive it too.
+            // NOTE(2026-07-27, #1499): Codex includes reasoning in `output_tokens`. Saved `codex exec --json` usage can omit the total or report zero with nonzero components, so derive it from input and output.
             total_tokens: fields
                 .total_tokens
                 .filter(|total| *total > 0)
@@ -1127,8 +1119,6 @@ mod tests {
 
     #[test]
     fn keeps_a_recorded_total() {
-        // Deliberately not input plus output, so deriving instead of preserving
-        // the recorded value cannot pass this test.
         let usage: CodexRawUsage = serde_json::from_str(
             r#"{
                 "input_tokens": 100,

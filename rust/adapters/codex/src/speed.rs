@@ -43,7 +43,6 @@ fn codex_home_paths() -> Vec<std::path::PathBuf> {
 
 fn codex_config_service_tier(content: &str) -> Option<CodexServiceTier> {
     let config = content.parse::<toml::Table>().ok()?;
-    // Stored profiles affect fallback pricing only when the config selects them.
     let profile_tier = config
         .get("profile")
         .and_then(toml::Value::as_str)
@@ -248,7 +247,6 @@ mod tests {
             super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
         );
 
-        // Ten unclassified tokens stay Standard; recorded Flex and Fast keep their rates.
         assert!((cost - 35e-6).abs() < 1e-12);
     }
 }

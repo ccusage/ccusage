@@ -67,8 +67,7 @@ pub(super) fn collect_codex_usage_files(dir: &Path, diagnostics: &Diagnostics) -
     let mut files = Vec::new();
     collect_files_matching(dir, &is_rollout_file, &mut files, diagnostics);
     files.sort();
-    // Sorting puts `x.jsonl` before `x.jsonl.zst`. Codex also prefers the plain
-    // copy: resuming a compressed rollout restores it before removing the `.zst`.
+    // NOTE(2026-10-14, #1890): Codex restores the plain `.jsonl` before deleting the compressed copy on resume. Prefer the plain rollout while both exist.
     let mut seen = FxHashSet::default();
     files.retain(|path| seen.insert(uncompressed_rollout_path(path)));
     files
@@ -132,7 +131,7 @@ impl CodexFileEligibility {
         }
         Some(Self {
             since_date,
-            // NOTE(2026-11-19, #2097): Codex names rollout paths in its local calendar, so a later path day can contain events before the UTC cutoff.
+            // NOTE(2026-11-18, #2097): Codex names rollout paths in its local calendar. A later path day can still contain events before the UTC cutoff.
             until_path_date: until_millis
                 .and_then(|end| end.checked_add(crate::MILLIS_PER_DAY - 1))
                 .and_then(utc_path_date),
