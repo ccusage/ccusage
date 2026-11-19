@@ -171,17 +171,19 @@ pub(super) fn parse_otel_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<CopilotUsageEntry>, UnitError> {
-    let content = fs::read(path)?;
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
-    let (numbers, records): (Vec<_>, Vec<_>) =
-        jsonl::numbered_records_with_usage_diagnostics::<CopilotRecord>(
-            &content,
-            Some(&prefilter),
-            path,
-            diagnostics,
-            is_otel_usage_envelope,
-        )
-        .unzip();
+    let mut numbers = Vec::new();
+    let mut records = Vec::new();
+    jsonl::read_records::<CopilotRecord>(
+        path,
+        Some(&prefilter),
+        diagnostics,
+        is_otel_usage_envelope,
+        |number, record, _| {
+            numbers.push(number);
+            records.push(record);
+        },
+    )?;
     let trace_contexts = collect_trace_contexts(&records);
     let candidates = records
         .iter()
@@ -437,7 +439,6 @@ pub(super) fn parse_session_state_file(
         return Ok(CopilotSourceUsage::default());
     };
 
-    let content = fs::read(path)?;
     let prefilter = LinePrefilter::any(&[
         SHUTDOWN_EVENT.as_bytes(),
         USAGE_CHECKPOINT_EVENT.as_bytes(),
@@ -446,126 +447,126 @@ pub(super) fn parse_session_state_file(
     let mut parsed = CopilotSourceUsage::default();
     let mut records = Vec::new();
     let mut covered_by_records = false;
-    for (number, event) in jsonl::numbered_records_with_usage_diagnostics::<CopilotSessionStateEvent>(
-        &content,
-        Some(&prefilter),
+    jsonl::read_records::<CopilotSessionStateEvent>(
         path,
+        Some(&prefilter),
         diagnostics,
         is_session_state_usage_envelope,
-    ) {
-        let timestamp = event.timestamp.as_deref().and_then(parse_ts_timestamp);
-        let skip_undated = |carries_usage: bool| {
-            if carries_usage {
-                diagnostics.record(ccusage_core::Skip::record(
-                    path,
-                    number,
-                    ccusage_core::SkipKind::InvalidTimestamp,
-                    "Copilot usage has no valid timestamp",
-                ));
+        |number, event, diagnostics| {
+            let timestamp = event.timestamp.as_deref().and_then(parse_ts_timestamp);
+            let skip_undated = |carries_usage: bool| {
+                if carries_usage {
+                    diagnostics.record(ccusage_core::Skip::record(
+                        path,
+                        number,
+                        ccusage_core::SkipKind::InvalidTimestamp,
+                        "Copilot usage has no valid timestamp",
+                    ));
+                }
+            };
+            let is_shutdown = match event.event_type.as_deref() {
+                Some(SHUTDOWN_EVENT) => true,
+                Some(USAGE_CHECKPOINT_EVENT) => false,
+                Some(USAGE_RECORD_EVENT) => {
+                    let Some(timestamp) = timestamp else {
+                        skip_undated(event.carries_usage());
+                        return;
+                    };
+                    let record = usage_record(event, timestamp);
+                    covered_by_records |= record.is_some();
+                    records.extend(record);
+                    return;
+                }
+                _ => return,
+            };
+            let carries_usage = event.carries_usage();
+            let data = event.data.unwrap_or_default();
+            // NOTE(2026-11-16, #2108): Copilot shutdowns and checkpoints can total calls already represented by usage records. Watermarks can refer to receipts in a different session file, so those snapshots also overlap.
+            covered_by_records |= data.covers_usage_records();
+            if covered_by_records {
+                return;
             }
-        };
-        let is_shutdown = match event.event_type.as_deref() {
-            Some(SHUTDOWN_EVENT) => true,
-            Some(USAGE_CHECKPOINT_EVENT) => false,
-            Some(USAGE_RECORD_EVENT) => {
-                let Some(timestamp) = timestamp else {
-                    skip_undated(event.carries_usage());
+            let Some(timestamp) = timestamp else {
+                skip_undated(carries_usage);
+                return;
+            };
+            let session_nano_aiu = nano_aiu(data.total_nano_aiu);
+            let snapshot_key = |total: Option<u64>| {
+                event.id.as_deref().map_or_else(
+                    || {
+                        format!(
+                            "credits:{session_id}:{is_shutdown}:{}:{total:?}",
+                            timestamp.as_millis()
+                        )
+                    },
+                    |event_id| format!("credits:{session_id}:{event_id}"),
+                )
+            };
+            if !is_shutdown {
+                if let Some(total) = session_nano_aiu {
+                    parsed.credit_snapshots.push(CopilotCreditSnapshot {
+                        timestamp,
+                        session_id: session_id.clone(),
+                        is_shutdown,
+                        total_nano_aiu: Some(total),
+                        dedup_key: snapshot_key(Some(total)),
+                    });
+                }
+                return;
+            }
+            let mut models_report_credits = true;
+            for (logged_model, metrics) in data.model_metrics.unwrap_or_default() {
+                let (model, logged_model) = copilot_model_names(logged_model);
+                let request_count = metrics
+                    .requests
+                    .as_ref()
+                    .map_or(0, |requests| requests.count);
+                let Some(usage) = metrics.usage else {
                     continue;
                 };
-                let record = usage_record(event, timestamp);
-                covered_by_records |= record.is_some();
-                records.extend(record);
-                continue;
-            }
-            _ => continue,
-        };
-        let carries_usage = event.carries_usage();
-        let data = event.data.unwrap_or_default();
-        // NOTE(2026-11-16, #2108): Copilot shutdowns and checkpoints can total calls already represented by usage records. Watermarks can refer to receipts in a different session file, so those snapshots also overlap.
-        covered_by_records |= data.covers_usage_records();
-        if covered_by_records {
-            continue;
-        }
-        let Some(timestamp) = timestamp else {
-            skip_undated(carries_usage);
-            continue;
-        };
-        let session_nano_aiu = nano_aiu(data.total_nano_aiu);
-        let snapshot_key = |total: Option<u64>| {
-            event.id.as_deref().map_or_else(
-                || {
-                    format!(
-                        "credits:{session_id}:{is_shutdown}:{}:{total:?}",
-                        timestamp.as_millis()
-                    )
-                },
-                |event_id| format!("credits:{session_id}:{event_id}"),
-            )
-        };
-        if !is_shutdown {
-            if let Some(total) = session_nano_aiu {
-                parsed.credit_snapshots.push(CopilotCreditSnapshot {
+                if model.is_empty() || usage.is_empty() && request_count == 0 {
+                    continue;
+                }
+                let model_nano_aiu = nano_aiu(metrics.total_nano_aiu);
+                models_report_credits &= model_nano_aiu.is_some();
+                let timestamp_text = crate::format_rfc3339_millis(timestamp);
+                let dedup_key = session_state_dedup_key(
+                    &session_id,
+                    event.id.as_deref(),
+                    &timestamp_text,
+                    &model,
+                    &usage,
+                    request_count,
+                );
+                parsed.entries.push(CopilotUsageEntry {
                     timestamp,
+                    timestamp_text,
                     session_id: session_id.clone(),
-                    is_shutdown,
-                    total_nano_aiu: Some(total),
-                    dedup_key: snapshot_key(Some(total)),
+                    model,
+                    logged_model,
+                    input_tokens: uncached_session_input_tokens(&usage),
+                    output_tokens: usage.output_tokens,
+                    cache_creation_tokens: usage.cache_write_tokens,
+                    cache_read_tokens: usage.cache_read_tokens,
+                    reasoning_output_tokens: usage.reasoning_tokens,
+                    extra_total_tokens: 0,
+                    request_count,
+                    nano_aiu: model_nano_aiu,
+                    dedup_key,
+                    call_key: None,
+                    call_ids: CallIds::default(),
                 });
             }
-            continue;
-        }
-        let mut models_report_credits = true;
-        for (logged_model, metrics) in data.model_metrics.unwrap_or_default() {
-            let (model, logged_model) = copilot_model_names(logged_model);
-            let request_count = metrics
-                .requests
-                .as_ref()
-                .map_or(0, |requests| requests.count);
-            let Some(usage) = metrics.usage else {
-                continue;
-            };
-            if model.is_empty() || usage.is_empty() && request_count == 0 {
-                continue;
-            }
-            let model_nano_aiu = nano_aiu(metrics.total_nano_aiu);
-            models_report_credits &= model_nano_aiu.is_some();
-            let timestamp_text = crate::format_rfc3339_millis(timestamp);
-            let dedup_key = session_state_dedup_key(
-                &session_id,
-                event.id.as_deref(),
-                &timestamp_text,
-                &model,
-                &usage,
-                request_count,
-            );
-            parsed.entries.push(CopilotUsageEntry {
+            let total_nano_aiu = session_nano_aiu.filter(|_| models_report_credits);
+            parsed.credit_snapshots.push(CopilotCreditSnapshot {
                 timestamp,
-                timestamp_text,
                 session_id: session_id.clone(),
-                model,
-                logged_model,
-                input_tokens: uncached_session_input_tokens(&usage),
-                output_tokens: usage.output_tokens,
-                cache_creation_tokens: usage.cache_write_tokens,
-                cache_read_tokens: usage.cache_read_tokens,
-                reasoning_output_tokens: usage.reasoning_tokens,
-                extra_total_tokens: 0,
-                request_count,
-                nano_aiu: model_nano_aiu,
-                dedup_key,
-                call_key: None,
-                call_ids: CallIds::default(),
+                is_shutdown,
+                total_nano_aiu,
+                dedup_key: snapshot_key(total_nano_aiu),
             });
-        }
-        let total_nano_aiu = session_nano_aiu.filter(|_| models_report_credits);
-        parsed.credit_snapshots.push(CopilotCreditSnapshot {
-            timestamp,
-            session_id: session_id.clone(),
-            is_shutdown,
-            total_nano_aiu,
-            dedup_key: snapshot_key(total_nano_aiu),
-        });
-    }
+        },
+    )?;
     if covered_by_records {
         parsed.credit_snapshots.clear();
     }
