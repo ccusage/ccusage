@@ -2689,6 +2689,44 @@ mod tests {
     }
 
     #[test]
+    fn direct_providers_cover_every_curated_vendor() {
+        crate::test_support::install_pricing_snapshots();
+        let providers = &super::litellm_sources().unwrap().direct_providers;
+        for model in super::BUILTIN_PRICING {
+            assert!(
+                providers.iter().any(|provider| provider == model.provider),
+                "{}",
+                model.provider
+            );
+        }
+    }
+
+    #[test]
+    fn live_direct_provider_row_answers_the_unqualified_model_id() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.refresh_litellm(|load| {
+            assert!(load(r#"{
+                "xai/grok-code-fast-1": {"litellm_provider":"xai","input_cost_per_token":1e-6,"output_cost_per_token":2e-6}
+            }"#));
+            Ok(())
+        });
+        let model = "grok-code-fast-1";
+        let found = pricing
+            .explain(Some(model), &[(model, MatchKind::Exact)])
+            .unwrap();
+        assert_eq!(
+            (found.step, found.row_key),
+            (
+                super::ResolutionStep::AuthoritativeIdentity,
+                "xai/grok-code-fast-1"
+            )
+        );
+        let rate = pricing.find(model).unwrap();
+        assert_eq!((rate.input, rate.output), (1e-6, 2e-6));
+    }
+
+    #[test]
     fn builtin_alias_applies_to_a_separator_respelling() {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();

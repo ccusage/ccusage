@@ -5,7 +5,8 @@
 		"text-completion-openai",
 		"deepseek",
 		"zai",
-		"moonshot"
+		"moonshot",
+		"xai"
 	],
 	"embedded": [
 		{
