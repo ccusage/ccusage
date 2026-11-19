@@ -30,7 +30,7 @@ pub enum AgentCommandKind {
 }
 
 impl AgentCommandSpec {
-    pub const fn offline_by_default(&self) -> bool {
+    pub(crate) const fn offline_by_default(&self) -> bool {
         match self.kind {
             AgentCommandKind::Blocks(_) => false,
             AgentCommandKind::ClaudeStatusline {
