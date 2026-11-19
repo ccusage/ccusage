@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     fs,
     ops::ControlFlow,
     path::{Path, PathBuf},
@@ -6,7 +7,9 @@ use std::{
 };
 
 use ccusage_core::{
-    Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs,
+    Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind,
+    cli::{SharedArgs, home::path_identity},
+    fast::FxHashSet,
     parallel::spawn_scoped_worker,
 };
 
@@ -84,14 +87,90 @@ pub fn visit_files_matching(
     visit: &mut dyn FnMut(PathBuf) -> ControlFlow<()>,
     diagnostics: &Diagnostics,
 ) -> ControlFlow<()> {
-    for (path, file_type) in dir_entries(dir, diagnostics) {
-        if file_type.is_file() && matches(&path) {
-            visit(path)?;
-        } else if file_type.is_dir() {
-            visit_files_matching(&path, matches, visit, diagnostics)?;
-        }
+    let mut walk = FileWalk {
+        matches,
+        visit,
+        diagnostics,
+        seen: FxHashSet::default(),
+        links: VecDeque::new(),
+    };
+    walk.visit_directory(dir, path_identity(dir))?;
+    while let Some(path) = walk.links.pop_front() {
+        walk.visit_symlink(path)?;
     }
     ControlFlow::Continue(())
+}
+
+struct FileWalk<'a> {
+    matches: &'a dyn Fn(&Path) -> bool,
+    visit: &'a mut dyn FnMut(PathBuf) -> ControlFlow<()>,
+    diagnostics: &'a Diagnostics,
+    seen: FxHashSet<PathBuf>,
+    links: VecDeque<PathBuf>,
+}
+
+impl FileWalk<'_> {
+    fn visit_directory(&mut self, dir: &Path, identity: PathBuf) -> ControlFlow<()> {
+        if !self.seen.insert(identity.clone()) {
+            return ControlFlow::Continue(());
+        }
+        for (path, file_type) in dir_entries(dir, self.diagnostics) {
+            if file_type.is_symlink() {
+                self.links.push_back(path);
+            } else if self.is_candidate(&path, file_type)
+                && let Some(name) = path.file_name()
+            {
+                let identity = identity.join(name);
+                self.visit_entry(path, file_type, identity)?;
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn visit_symlink(&mut self, path: PathBuf) -> ControlFlow<()> {
+        let Ok(metadata) = fs::metadata(&path) else {
+            self.diagnostics.record(Skip::unit(
+                &path,
+                SkipKind::Unreadable,
+                "cannot read file type",
+            ));
+            return ControlFlow::Continue(());
+        };
+        let file_type = metadata.file_type();
+        if !self.is_candidate(&path, file_type) {
+            return ControlFlow::Continue(());
+        }
+
+        let identity = path_identity(&path);
+        if identity == path {
+            self.diagnostics.record(Skip::unit(
+                &path,
+                SkipKind::Unreadable,
+                "cannot resolve symlink",
+            ));
+            return ControlFlow::Continue(());
+        }
+        self.visit_entry(path, file_type, identity)
+    }
+
+    fn is_candidate(&self, path: &Path, file_type: fs::FileType) -> bool {
+        file_type.is_dir() || (file_type.is_file() && (self.matches)(path))
+    }
+
+    fn visit_entry(
+        &mut self,
+        path: PathBuf,
+        file_type: fs::FileType,
+        identity: PathBuf,
+    ) -> ControlFlow<()> {
+        if file_type.is_dir() {
+            self.visit_directory(&path, identity)
+        } else if self.seen.insert(identity) {
+            (self.visit)(path)
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
 }
 
 pub fn any_file_matching(
