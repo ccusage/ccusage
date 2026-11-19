@@ -13,21 +13,16 @@
 let
   inherit (lib.importJSON (root + /package.json)) version;
   cliPackageJson = lib.importJSON (root + /apps/ccusage/package.json);
+  rustRoot = root + /rust;
   src = lib.cleanSourceWith {
-    src = root + /rust;
+    src = rustRoot;
     filter =
       path: type:
-      (craneLib.filterCargoSources path type)
-      || lib.hasSuffix "/cli-help.json" path
-      || lib.hasSuffix "/cli-commands.json" path
-      || lib.hasSuffix "/fast-multiplier-overrides.json" path
-      || lib.hasSuffix "/flex-multiplier-overrides.json" path
-      || lib.hasSuffix "/ultrafast-multiplier-overrides.json" path
-      || (
-        dirOf path == toString (root + /rust/crates/ccusage-pricing-snapshots/src)
-        && lib.hasPrefix "models-dev-" (baseNameOf path)
-        && lib.hasSuffix ".json" path
-      );
+      let
+        relativePath = lib.removePrefix "${toString rustRoot}/" (toString path);
+      in
+      craneLib.filterCargoSources path type
+      || builtins.match "(adapters|crates)/[^/]+/src/.*" relativePath != null;
   };
   cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
   # NOTE(2026-07-27, #1428): Apple ld64 lacks identical-code folding. Link with lld on Darwin to fold duplicate adapter instantiations.
