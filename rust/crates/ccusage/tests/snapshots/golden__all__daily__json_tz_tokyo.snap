@@ -418,19 +418,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 8000,
           "cost": 0.000812,
           "inputTokens": 1200,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 300
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
-          "inputTokens": 1621,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 204
         },
         {
           "cacheCreationTokens": 0,
@@ -489,7 +489,7 @@ exit: 0
       ],
       "outputTokens": 7779,
       "period": "2025-12-30",
-      "totalCost": 6.186669650000001,
+      "totalCost": 6.1871768000000005,
       "totalTokens": 144021
     },
     {
@@ -1087,14 +1087,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00009075,
           "inputTokens": 11,
           "modelName": "gemini-3.6-flash-high",
@@ -1103,7 +1095,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
-          "cost": 1.845e-6,
+          "cost": 3.69e-6,
           "inputTokens": 12,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 0
@@ -1246,6 +1238,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
@@ -1327,7 +1328,7 @@ exit: 0
       ],
       "outputTokens": 33633,
       "period": "2026-01-01",
-      "totalCost": 14.884319495000002,
+      "totalCost": 14.884195940000003,
       "totalTokens": 1855307
     },
     {
@@ -1513,6 +1514,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 30,
+          "cost": 0.0006019,
+          "inputTokens": 670,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0005250000000000001,
           "inputTokens": 50,
@@ -1550,14 +1559,6 @@ exit: 0
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 30,
-          "cost": 0.00030095,
-          "inputTokens": 670,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -1719,7 +1720,7 @@ exit: 0
       ],
       "outputTokens": 11086,
       "period": "2026-01-02",
-      "totalCost": 3.250108,
+      "totalCost": 3.25040895,
       "totalTokens": 669125
     },
     {
@@ -1795,7 +1796,7 @@ exit: 0
     "cacheReadTokens": 1316617,
     "inputTokens": 1349391,
     "outputTokens": 59241,
-    "totalCost": 28.645522425000003,
+    "totalCost": 28.646206970000005,
     "totalTokens": 2746731,
     "unpricedModels": [
       "GLM-5.3",
@@ -1825,6 +1826,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

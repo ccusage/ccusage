@@ -318,17 +318,17 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 80,
-          "inputTokens": 585,
-          "modelName": "gemini-3-flash-preview",
-          "outputTokens": 140
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "inputTokens": 1621,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "inputTokens": 585,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 140
         },
         {
           "cacheCreationTokens": 0,
@@ -343,13 +343,6 @@ exit: 0
           "inputTokens": 300,
           "modelName": "qwen-2.5-72b-instruct",
           "outputTokens": 60
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -429,6 +422,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
         }
       ],
       "modelsUsed": [
@@ -753,6 +754,13 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 33,
+          "inputTokens": 682,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 71,
           "modelName": "opus",
@@ -792,13 +800,6 @@ exit: 0
           "inputTokens": 800,
           "modelName": "GLM-5.3-Flash",
           "outputTokens": 400
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 33,
-          "inputTokens": 682,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -1134,6 +1135,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1316617,
     "inputTokens": 1349391,
     "outputTokens": 59241,
-    "totalCost": 28.645522425000003,
+    "totalCost": 28.64620697,
     "totalTokens": 2746731,
     "unpricedModels": [
       "GLM-5.3",
@@ -40,6 +40,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
@@ -636,6 +637,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 633,
+          "cost": 0.00161989,
+          "inputTokens": 2303,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 354
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0014000000000000002,
           "inputTokens": 400,
@@ -673,14 +682,6 @@ exit: 0
           "inputTokens": 785,
           "modelName": "gemini-3-flash-preview",
           "outputTokens": 185
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 633,
-          "cost": 0.000809945,
-          "inputTokens": 2303,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 354
         },
         {
           "cacheCreationTokens": 0,
@@ -777,14 +778,6 @@ exit: 0
           "inputTokens": 300,
           "modelName": "qwen-2.5-72b-instruct",
           "outputTokens": 60
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -985,6 +978,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "zcode-mystery-1",
@@ -1073,7 +1075,7 @@ exit: 0
       ],
       "outputTokens": 56922,
       "period": "2025-12-28",
-      "totalCost": 24.810766725,
+      "totalCost": 24.81145127,
       "totalTokens": 2730409
     },
     {

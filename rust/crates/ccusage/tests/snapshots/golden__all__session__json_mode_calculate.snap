@@ -404,20 +404,21 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 33,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 11
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
         }
       ],
       "modelsUsed": [
@@ -428,7 +429,7 @@ exit: 0
       ],
       "outputTokens": 2626,
       "period": "sess-b",
-      "totalCost": 0.3319494,
+      "totalCost": 0.331824,
       "totalTokens": 410249
     },
     {
@@ -2320,29 +2321,6 @@ exit: 0
       "totalTokens": 14000
     },
     {
-      "agent": "goose",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 800,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.006900000000000001,
-          "inputTokens": 800,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 300
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514"
-      ],
-      "outputTokens": 300,
-      "period": "s-total-short",
-      "totalCost": 0.006900000000000001,
-      "totalTokens": 1100
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1083,
@@ -2366,19 +2344,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 603,
+          "cost": 0.00100169,
+          "inputTokens": 1612,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
           "cost": 0.0007065,
           "inputTokens": 505,
           "modelName": "gemini-3-flash-preview",
           "outputTokens": 120
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 603,
-          "cost": 0.000500845,
-          "inputTokens": 1612,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 200
         },
         {
           "cacheCreationTokens": 0,
@@ -2399,8 +2377,31 @@ exit: 0
       ],
       "outputTokens": 1244,
       "period": "aaaa1111-session-json",
-      "totalCost": 0.006707345,
+      "totalCost": 0.00720819,
       "totalTokens": 5364
+    },
+    {
+      "agent": "goose",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 800,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006900000000000001,
+          "inputTokens": 800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 300,
+      "period": "s-total-short",
+      "totalCost": 0.006900000000000001,
+      "totalTokens": 1100
     },
     {
       "agent": "openclaw",
@@ -3952,6 +3953,29 @@ exit: 0
       "totalTokens": 195
     },
     {
+      "agent": "gemini",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00037,
+          "inputTokens": 400,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 90
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash"
+      ],
+      "outputTokens": 90,
+      "period": "dddd4444-camel",
+      "totalCost": 0.00037,
+      "totalTokens": 500
+    },
+    {
       "agent": "codex",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 50,
@@ -4263,25 +4287,25 @@ exit: 0
     {
       "agent": "gemini",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 400,
+      "cacheReadTokens": 30,
+      "inputTokens": 270,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000185,
-          "inputTokens": 400,
+          "cacheReadTokens": 30,
+          "cost": 0.0002319,
+          "inputTokens": 270,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 90
+          "outputTokens": 60
         }
       ],
       "modelsUsed": [
         "gemini-2.5-flash"
       ],
-      "outputTokens": 90,
-      "period": "dddd4444-camel",
-      "totalCost": 0.000185,
-      "totalTokens": 500
+      "outputTokens": 60,
+      "period": "bbbb2222-renamed",
+      "totalCost": 0.0002319,
+      "totalTokens": 360
     },
     {
       "agent": "opencode",
@@ -4361,29 +4385,6 @@ exit: 0
       "period": "2025/12/31/rollout-2025-12-31T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       "totalCost": 0.00012937500000000001,
       "totalTokens": 143
-    },
-    {
-      "agent": "gemini",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 30,
-      "inputTokens": 270,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 30,
-          "cost": 0.00011595,
-          "inputTokens": 270,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 60
-        }
-      ],
-      "modelsUsed": [
-        "gemini-2.5-flash"
-      ],
-      "outputTokens": 60,
-      "period": "bbbb2222-renamed",
-      "totalCost": 0.00011595,
-      "totalTokens": 360
     },
     {
       "agent": "opencode",
@@ -4605,7 +4606,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 8.15e-6,
+          "cost": 0.0000163,
           "inputTokens": 21,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 4
@@ -4616,7 +4617,7 @@ exit: 0
       ],
       "outputTokens": 4,
       "period": "shadow-outside-chats",
-      "totalCost": 8.15e-6,
+      "totalCost": 0.0000163,
       "totalTokens": 25
     },
     {
@@ -5579,7 +5580,7 @@ exit: 0
     "cacheReadTokens": 1323187,
     "inputTokens": 1358297,
     "outputTokens": 68831,
-    "totalCost": 10.543712424999999,
+    "totalCost": 10.54439697,
     "totalTokens": 2772177,
     "unpricedModels": [
       "GLM-5.3",
@@ -5609,6 +5610,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

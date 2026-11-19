@@ -268,19 +268,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 8000,
           "cost": 0.00083636,
           "inputTokens": 1250,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 303
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
-          "inputTokens": 1621,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 204
         },
         {
           "cacheCreationTokens": 0,
@@ -408,7 +408,7 @@ exit: 0
       ],
       "outputTokens": 13763,
       "period": "2025-12",
-      "totalCost": 10.480863729999998,
+      "totalCost": 10.481370879999998,
       "totalTokens": 212607
     },
     {
@@ -788,6 +788,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 33,
+          "cost": 0.00060559,
+          "inputTokens": 682,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0005300000000000001,
           "inputTokens": 71,
@@ -828,14 +836,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 33,
-          "cost": 0.000302795,
-          "inputTokens": 682,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 150
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.00027599999999999993,
           "inputTokens": 500,
@@ -873,14 +873,6 @@ exit: 0
           "inputTokens": 300,
           "modelName": "qwen-2.5-72b-instruct",
           "outputTokens": 60
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -1054,6 +1046,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
@@ -1146,7 +1147,7 @@ exit: 0
       ],
       "outputTokens": 44969,
       "period": "2026-01",
-      "totalCost": 18.161277495,
+      "totalCost": 18.16145489,
       "totalTokens": 2530582
     },
     {
@@ -1183,7 +1184,7 @@ exit: 0
     "cacheReadTokens": 1316617,
     "inputTokens": 1349391,
     "outputTokens": 59241,
-    "totalCost": 28.645522424999996,
+    "totalCost": 28.64620697,
     "totalTokens": 2746731,
     "unpricedModels": [
       "GLM-5.3",
@@ -1213,6 +1214,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

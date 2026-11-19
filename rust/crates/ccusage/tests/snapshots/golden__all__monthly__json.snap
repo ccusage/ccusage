@@ -374,19 +374,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
           "cost": 0.0008065,
           "inputTokens": 585,
           "modelName": "gemini-3-flash-preview",
           "outputTokens": 140
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
-          "inputTokens": 1621,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 204
         },
         {
           "cacheCreationTokens": 0,
@@ -403,14 +403,6 @@ exit: 0
           "inputTokens": 300,
           "modelName": "qwen-2.5-72b-instruct",
           "outputTokens": 60
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -500,6 +492,15 @@ exit: 0
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
         }
       ],
       "modelsUsed": [
@@ -555,7 +556,7 @@ exit: 0
       ],
       "outputTokens": 30266,
       "period": "2025-12",
-      "totalCost": 21.669175779999993,
+      "totalCost": 21.669557529999995,
       "totalTokens": 459950
     },
     {
@@ -869,6 +870,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 33,
+          "cost": 0.00060559,
+          "inputTokens": 682,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0005300000000000001,
           "inputTokens": 71,
@@ -914,14 +923,6 @@ exit: 0
           "inputTokens": 800,
           "modelName": "GLM-5.3-Flash",
           "outputTokens": 400
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 33,
-          "cost": 0.000302795,
-          "inputTokens": 682,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -1220,7 +1221,7 @@ exit: 0
       ],
       "outputTokens": 28466,
       "period": "2026-01",
-      "totalCost": 6.972965445,
+      "totalCost": 6.9732682399999995,
       "totalTokens": 2283239
     },
     {
@@ -1257,7 +1258,7 @@ exit: 0
     "cacheReadTokens": 1316617,
     "inputTokens": 1349391,
     "outputTokens": 59241,
-    "totalCost": 28.645522424999992,
+    "totalCost": 28.646206969999994,
     "totalTokens": 2746731,
     "unpricedModels": [
       "GLM-5.3",
@@ -1287,6 +1288,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

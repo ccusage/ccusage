@@ -45,7 +45,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
+          "cost": 0.0010142999999999999,
           "inputTokens": 1621,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 204
@@ -56,7 +56,7 @@ exit: 0
         "gemini-2.5-flash"
       ],
       "outputTokens": 434,
-      "totalCost": 0.00420715,
+      "totalCost": 0.004714300000000001,
       "totalTokens": 3785
     },
     {
@@ -124,7 +124,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
-          "cost": 1.845e-6,
+          "cost": 3.69e-6,
           "inputTokens": 12,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 0
@@ -147,7 +147,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 2114,
-      "totalCost": 0.8092683450000001,
+      "totalCost": 0.8092701900000001,
       "totalTokens": 455282
     },
     {
@@ -159,7 +159,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
-          "cost": 0.00030095,
+          "cost": 0.0006019,
           "inputTokens": 670,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 150
@@ -178,7 +178,7 @@ exit: 0
         "gemini-2.5-flash"
       ],
       "outputTokens": 195,
-      "totalCost": 0.0005559499999999999,
+      "totalCost": 0.0008569000000000001,
       "totalTokens": 1210
     },
     {
@@ -209,7 +209,7 @@ exit: 0
     "cacheReadTokens": 155413,
     "inputTokens": 306559,
     "outputTokens": 3184,
-    "totalCost": 0.8231939450000001,
+    "totalCost": 0.8240038900000002,
     "totalTokens": 465451,
     "unpricedModels": [
       "gemini-mystery-1",

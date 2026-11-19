@@ -39,6 +39,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
@@ -554,6 +555,13 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 633,
+          "inputTokens": 2303,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 354
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 400,
           "modelName": "gemini-2-5-pro",
@@ -586,13 +594,6 @@ exit: 0
           "inputTokens": 785,
           "modelName": "gemini-3-flash-preview",
           "outputTokens": 185
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 633,
-          "inputTokens": 2303,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 354
         },
         {
           "cacheCreationTokens": 0,
@@ -677,13 +678,6 @@ exit: 0
           "inputTokens": 300,
           "modelName": "qwen-2.5-72b-instruct",
           "outputTokens": 60
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -857,6 +851,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,

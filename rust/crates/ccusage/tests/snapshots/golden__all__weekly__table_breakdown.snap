@@ -369,11 +369,11 @@ exit: 0
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─ sonnet-4  │        600 │       120 │          0 │       2,000 │       2,780 │     $0.01 │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│          │              │ └─           │        785 │       185 │          0 │         180 │       1,185 │     $0.00 │
-│          │              │ gemini-3-fl… │            │           │            │             │             │           │
-├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─           │      2,303 │       354 │          0 │         633 │       3,300 │     $0.00 │
 │          │              │ gemini-2.5-… │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─           │        785 │       185 │          0 │         180 │       1,185 │     $0.00 │
+│          │              │ gemini-3-fl… │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │   └─ unknown │         33 │        11 │          0 │           0 │          44 │     $0.00 │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
@@ -595,11 +595,11 @@ exit: 0
 │          │              │ └─           │        300 │        60 │          0 │           0 │         360 │     $0.00 │
 │          │              │ qwen-2.5-72b │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│          │              │ └─           │        310 │        65 │          0 │           0 │         375 │     $0.00 │
-│          │              │ qwen-3-235b  │            │           │            │             │             │           │
-├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─           │         33 │       665 │          0 │         500 │       1,198 │     $0.00 │
 │          │              │ qwen-myster… │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─           │        310 │        65 │          0 │           0 │         375 │     $0.00 │
+│          │              │ qwen-3-235b  │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │   └─ unknown │         70 │        30 │          0 │           0 │         100 │     $0.00 │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
@@ -672,6 +672,7 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
