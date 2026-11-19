@@ -61,6 +61,7 @@ Forked rollouts without those markers:
 - A spawned subagent (`thread_spawn`) never inherits the parent's `token_usage_record` lines, so a record ends any skip of replayed history: everything from it on is the child's own, even when every line carries the fork timestamp. A record never starts a skip. A child created by a Codex release without records and resumed by a later one holds its own record-less turns before the first record.
 - A user fork (`forked_from_id` only) copies the parent's records, so they mark nothing there. Its replayed prefix is matched against the parent's usage stream, or, when the parent log is unavailable, skipped as the dense burst Codex writes at the fork instant.
 - Usage without a response ID is deduplicated across files on timestamp, model, token counts, and its ordinal among identical events in its own file. A copy repeats the original's ordinals, while identical requests within one rollout stay distinct.
+- A `token_count` that accounts for the `token_usage_record` just before it reports that request, so the record's response ID joins its dedupe key. Spawned siblings that sent different requests with equal usage at the same instant then stay distinct, while a copy carrying the same records still collapses. The event remains normal usage, so replay filtering still skips it.
 
 Token mapping:
 
