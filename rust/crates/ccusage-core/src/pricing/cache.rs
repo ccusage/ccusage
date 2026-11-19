@@ -128,7 +128,6 @@ impl Pass {
 #[derive(Clone, Copy)]
 pub(super) struct Name<'a> {
     text: &'a str,
-    offset: usize,
     identity: Identity<'a>,
 }
 
@@ -136,7 +135,7 @@ pub(super) struct Name<'a> {
 enum Identity<'a> {
     Standalone(&'a OnceLock<Option<Box<str>>>),
     Candidate(&'a Candidate<'a>),
-    Alias(Option<&'a str>),
+    Resolved(Option<&'a str>),
 }
 
 fn normalized(text: &str) -> Option<Box<str>> {
@@ -151,12 +150,11 @@ impl<'a> Name<'a> {
         Self {
             text,
             identity: Identity::Standalone(normalized),
-            offset: 0,
         }
     }
 
     pub(super) fn raw(self) -> &'a str {
-        &self.text[self.offset..]
+        self.text
     }
 
     pub(super) fn identity(self) -> &'a str {
@@ -165,16 +163,25 @@ impl<'a> Name<'a> {
             Identity::Candidate(slot) => slot
                 .forms(self.text)
                 .and_then(|forms| forms.normalized.as_deref()),
-            Identity::Alias(identity) => identity,
+            Identity::Resolved(identity) => identity,
         };
-        &identity.unwrap_or(self.text)[self.offset..]
+        identity.unwrap_or(self.text)
     }
 
     pub(super) fn suffixes(self) -> impl Iterator<Item = Self> {
-        self.raw().match_indices('/').map(move |(offset, _)| Self {
-            offset: self.offset + offset + 1,
-            ..self
-        })
+        self.raw()
+            .match_indices('/')
+            .scan(None, move |identity, (offset, _)| {
+                let raw = self.raw().get(offset + 1..)?;
+                let (_, suffix) = identity
+                    .unwrap_or_else(|| self.identity())
+                    .split_once('/')?;
+                *identity = Some(suffix);
+                Some(Self {
+                    text: raw,
+                    identity: Identity::Resolved(Some(suffix)),
+                })
+            })
     }
 }
 
@@ -195,8 +202,7 @@ impl<T: AsRef<str>> Alias<T> {
     fn name(&self) -> Name<'_> {
         Name {
             text: self.text.as_ref(),
-            offset: 0,
-            identity: Identity::Alias(self.normalized.as_deref()),
+            identity: Identity::Resolved(self.normalized.as_deref()),
         }
     }
 }
@@ -282,7 +288,6 @@ impl Candidate<'_> {
     pub(super) fn name<'a>(&'a self, text: &'a str) -> Name<'a> {
         Name {
             text,
-            offset: 0,
             identity: Identity::Candidate(self),
         }
     }
