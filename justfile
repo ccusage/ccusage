@@ -91,8 +91,46 @@ fmt:
     nix fmt
 
 # Run every flake check (treefmt, oxlint, clippy, schema drift, gitleaks)
-check:
+check: check-pricing-data
     nix flake check
+
+[script('bash')]
+check-pricing-data:
+    set -euo pipefail
+    names='deepseek|gemini|glm-|kimi|qwen|grok|claude|gpt-|chatgpt|codex|"o[134]"|anthropic|openai|bedrock|azure|vertex|fireworks|moonshot|zai|volcengine|openrouter'
+    names="$names|google|xai|mistral|llama|minimax|doubao|alibaba|groq|copilot|droid|hermes|kilo|opencode|cline|goose|antigravity"
+    removed='has_primary_price|has_base_rate_override_with_long_context|price_entry_with_zero_fallback|requires_full_vendor_id|direct_deepseek_id|matches_service_plan|literal_pricing_keys|ShorterKeys|ScheduleId|ProviderFamily'
+    collect() {
+        local pattern="$1"
+        local scope="$2"
+        if [[ "$scope" = '-' ]]; then
+            rg -ni "$pattern" - | sed -E '/^[0-9]+:[[:space:]]*\/\//d' || [[ "$?" -eq 1 ]]
+        else
+            rg -n "$pattern" "$scope" || [[ "$?" -eq 1 ]]
+        fi
+    }
+    failed=0
+    for file in rust/crates/ccusage-core/src/pricing.rs rust/crates/ccusage-core/src/pricing/*.rs \
+        rust/crates/ccusage-core/src/cost.rs rust/crates/ccusage-pricing-snapshots/src/litellm_filter.rs; do
+        case "$file" in */pricing/data.rs|*/pricing/builtin_pricing.rs) continue ;; esac
+        matches="$(sed '/^mod tests/,$d' "$file" | collect "$names" -)"
+        if [[ -n "$matches" ]]; then
+            printf '%s\n' "$matches" | sed "s|^|$file:|"
+            failed=1
+        fi
+    done
+    data=rust/crates/ccusage-core/src/pricing/data.rs
+    matches="$(collect '\b(fn|match|if|while|for|loop)\b' - < "$data")"
+    if [[ -n "$matches" ]]; then
+        printf '%s\n' "$matches" | sed "s|^|$data:|"
+        failed=1
+    fi
+    matches="$(collect "$removed" rust)"
+    if [[ -n "$matches" ]]; then
+        printf '%s\n' "$matches"
+        failed=1
+    fi
+    exit "$failed"
 
 hawk:
     cargo hawk check --manifest-path rust/Cargo.toml -D warnings
