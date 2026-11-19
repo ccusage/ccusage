@@ -2628,9 +2628,9 @@
 	},
 	"alibaba/qwen-max": {
 		"cost": {
-			"cache_read": 0.32,
-			"input": 1.6,
-			"output": 6.4
+			"cache_read": 0.224,
+			"input": 1.12,
+			"output": 4.48
 		},
 		"exactOnly": true,
 		"limit": {
@@ -4753,16 +4753,6 @@
 		},
 		"limit": {
 			"context": 32768
-		}
-	},
-	"arkanecloud/nvidia/nemotron-3-super-120b-a12b": {
-		"cost": {
-			"cache_read": 0.1,
-			"input": 0.4,
-			"output": 0.8
-		},
-		"limit": {
-			"context": 256000
 		}
 	},
 	"arkanecloud/nvidia/nemotron-3-ultra-550b-a55b": {
@@ -7484,6 +7474,16 @@
 		},
 		"limit": {
 			"context": 1048576
+		}
+	},
+	"canopywave/kimi-k3.1-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 10
+		},
+		"limit": {
+			"context": 1000000
 		}
 	},
 	"canopywave/minimax-m3.1-flash": {
@@ -12077,10 +12077,10 @@
 	},
 	"deepseek/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.0015,
+			"cache_read": 0.003,
 			"cache_write": 0,
-			"input": 0.035,
-			"output": 0.15
+			"input": 0.08,
+			"output": 0.52
 		},
 		"limit": {
 			"context": 1048576
