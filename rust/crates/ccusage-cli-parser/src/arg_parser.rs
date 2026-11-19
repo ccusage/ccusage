@@ -3,6 +3,7 @@ use std::ffi::OsString;
 pub(crate) struct ArgParser {
     pub(crate) args: Vec<String>,
     index: usize,
+    flags: Vec<String>,
     inline_value: Option<InlineValue>,
 }
 
@@ -23,6 +24,7 @@ impl ArgParser {
         Ok(Self {
             args: parsed,
             index: 0,
+            flags: Vec::new(),
             inline_value: None,
         })
     }
@@ -42,6 +44,10 @@ impl ArgParser {
         Some(value)
     }
 
+    pub(crate) fn saw_flag(&self, names: &[&str]) -> bool {
+        self.flags.iter().any(|flag| names.contains(&flag.as_str()))
+    }
+
     pub(crate) fn next_flag(&mut self) -> Result<String, String> {
         self.reject_unread_inline_value()?;
         let arg = self
@@ -55,9 +61,11 @@ impl ArgParser {
                 flag: flag.to_string(),
                 value: value.to_string(),
             });
+            self.flags.push(flag.to_string());
             return Ok(flag.to_string());
         }
         if arg.starts_with('-') {
+            self.flags.push(arg.clone());
             Ok(arg)
         } else {
             Err(format!("Expected option, got '{arg}'"))
@@ -80,7 +88,7 @@ impl ArgParser {
         Ok(value)
     }
 
-    pub(crate) fn finish(mut self) -> Result<(), String> {
+    pub(crate) fn finish(&mut self) -> Result<(), String> {
         self.reject_unread_inline_value()?;
         match self.next() {
             Some(extra) => Err(format!("Unexpected argument '{extra}'")),

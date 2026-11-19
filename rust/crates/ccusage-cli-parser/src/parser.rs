@@ -106,7 +106,7 @@ where
     };
     recover_statusline_date_window(&mut command, &parser.args, config);
     parser.finish()?;
-    if let Some(message) = last_option_error(&command, &shared) {
+    if let Some(message) = last_option_error(&command, &shared, parser.saw_flag(&["--last"])) {
         return Err(message);
     }
     if let Some(message) = date_window_error(&command) {
@@ -886,11 +886,14 @@ fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
     })
 }
 
-fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {
-    if matches!(
-        command,
-        Command::Statusline(_) | Command::CodexStatusline(_)
-    ) {
+fn last_option_error(
+    command: &Command,
+    root_shared: &SharedArgs,
+    explicit: bool,
+) -> Option<String> {
+    if matches!(command, Command::Statusline(_))
+        || (!explicit && matches!(command, Command::CodexStatusline(_)))
+    {
         return None;
     }
     let shared = command.shared().unwrap_or(root_shared);

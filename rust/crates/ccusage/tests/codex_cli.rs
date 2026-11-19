@@ -368,15 +368,7 @@ fn codex_statusline_recovers_discovered_config_and_accepts_root_flags() {
         "codex/sessions/today.jsonl": usage("2026-11-19T12:00:00Z", 100, 50),
     });
     let output = support::hermetic_command(fixture.root())
-        .args([
-            "--last",
-            "2",
-            "--sections",
-            "daily",
-            "--offline",
-            "codex",
-            "statusline",
-        ])
+        .args(["--sections", "daily", "--offline", "codex", "statusline"])
         .env("CODEX_HOME", fixture.path("codex"))
         .env("CCUSAGE_TEST_NOW", "2026-11-19T12:30:00Z")
         .output()

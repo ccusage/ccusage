@@ -2262,3 +2262,13 @@ fn option_metadata_matches_every_documented_flag_and_arity() {
         assert_eq!(ccusage_cli::option_arity(flag), Some(expected), "{flag}");
     }
 }
+
+#[test]
+fn codex_statusline_rejects_explicit_report_flags() {
+    for args in [
+        ["ccusage", "--last", "1", "codex", "statusline"],
+        ["ccusage", "codex", "statusline", "--last", "1"],
+    ] {
+        assert!(parse_error(&args).contains("The --last option is only available"));
+    }
+}

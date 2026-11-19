@@ -33,7 +33,7 @@ Most users can start with unified reports such as `ccusage daily`. Add the `code
 Codex | Today: 1,050 tokens | Est. $0.00
 ```
 
-Use `--id <session-id>` to show one full session, or `--since` and `--until` to select a date range. `--last` has no effect on a statusline. The command also supports `--timezone`, `--speed`, `--no-cost`, `--json`, `--jq`, and the [`pricingOverrides` setting](/guide/config-files#pricing-overrides). Use `--no-offline` to fetch current pricing. The JSON summary includes token totals such as `inputTokens`, `cacheReadTokens`, and `outputTokens`, plus `costUSD`, `scope` (`today`, `range`, or `session`), optional `sessionId`, and `unpricedModels` when applicable.
+Use `--id <session-id>` to show one full session, or `--since` and `--until` to select a date range. `--last` is only available for period reports. The command also supports `--timezone`, `--speed`, `--no-cost`, `--json`, `--jq`, and the [`pricingOverrides` setting](/guide/config-files#pricing-overrides). Use `--no-offline` to fetch current pricing. The JSON summary includes token totals such as `inputTokens`, `cacheReadTokens`, and `outputTokens`, plus `costUSD`, `scope` (`today`, `range`, or `session`), optional `sessionId`, and `unpricedModels` when applicable.
 
 ```bash
 ccusage codex statusline
