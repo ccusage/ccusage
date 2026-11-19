@@ -2,11 +2,14 @@ use std::{
     fs,
     ops::ControlFlow,
     path::{Path, PathBuf},
-    sync::{Mutex, mpsc},
     thread,
 };
 
 use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs};
+
+mod discovery;
+
+pub use discovery::{DiscoverFiles, DiscoveredFile, read_discovered_files, read_discovered_paths};
 
 pub mod claims;
 pub mod dedupe;
@@ -241,80 +244,6 @@ fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
     handle
         .join()
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-}
-
-pub struct DiscoveredFile {
-    pub group: usize,
-    pub index: usize,
-    pub path: PathBuf,
-}
-
-pub type DiscoverFiles<'a> = dyn FnMut(&mut dyn FnMut(usize, PathBuf)) + 'a;
-
-pub fn read_discovered_paths<T: Send>(
-    single_thread: bool,
-    mut discover: impl FnMut(&mut dyn FnMut(PathBuf)),
-    read: impl Fn(&PathBuf) -> T + Sync,
-) -> Vec<(PathBuf, T)> {
-    read_discovered_files(
-        single_thread,
-        &mut |emit| discover(&mut |path| emit(0, path)),
-        &|file| read(&file.path),
-    )
-    .into_iter()
-    .map(|(file, result)| (file.path, result))
-    .collect()
-}
-
-/// Reads files as discovery yields them. Parallel results have no ordering guarantee.
-pub fn read_discovered_files<T: Send>(
-    single_thread: bool,
-    discover: &mut DiscoverFiles<'_>,
-    read: &(dyn Fn(&DiscoveredFile) -> T + Sync),
-) -> Vec<(DiscoveredFile, T)> {
-    let mut index = 0;
-    let mut discover = |emit: &mut dyn FnMut(DiscoveredFile)| {
-        discover(&mut |group, path| {
-            emit(DiscoveredFile { group, index, path });
-            index += 1;
-        });
-    };
-    if single_thread {
-        let mut results = Vec::new();
-        discover(&mut |file| {
-            let result = read(&file);
-            results.push((file, result));
-        });
-        return results;
-    }
-    let worker_count = thread::available_parallelism().map_or(1, usize::from);
-    let (sender, receiver) = mpsc::channel::<DiscoveredFile>();
-    let receiver = Mutex::new(receiver);
-    let receiver = &receiver;
-    thread::scope(|scope| {
-        let mut workers = Vec::new();
-        discover(&mut |path| {
-            if workers.len() < worker_count {
-                workers.push(scope.spawn(move || {
-                    let mut results = Vec::new();
-                    loop {
-                        let next = receiver
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner())
-                            .recv();
-                        let Ok(path) = next else {
-                            return results;
-                        };
-                        let result = read(&path);
-                        results.push((path, result));
-                    }
-                }));
-            }
-            let _ = sender.send(path);
-        });
-        drop(sender);
-        workers.into_iter().flat_map(join_worker).collect()
-    })
 }
 
 #[cfg(test)]
