@@ -1,0 +1,99 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kilo monthly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 9500,
+      "inputTokens": 1800,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0326875,
+          "inputTokens": 900,
+          "modelName": "gpt-5",
+          "outputTokens": 190,
+          "storedCost": 0.03
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
+      ],
+      "month": "2025-12",
+      "outputTokens": 590,
+      "totalCost": 2.0326875,
+      "totalTokens": 12090
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 1030,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 330,
+          "missingPricing": true,
+          "modelName": "kilo-mystery-1",
+          "outputTokens": 77,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.004575000000000001,
+          "inputTokens": 100,
+          "modelName": "gpt-5",
+          "outputTokens": 365
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100,
+          "storedCost": 0.0
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "kilo-mystery-1",
+        "gpt-5"
+      ],
+      "month": "2026-01",
+      "outputTokens": 542,
+      "totalCost": 0.204575,
+      "totalTokens": 4652
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 12500,
+    "inputTokens": 2830,
+    "outputTokens": 1132,
+    "totalCost": 2.2372625000000004,
+    "totalTokens": 16742,
+    "unpricedModels": [
+      "kilo-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

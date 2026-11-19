@@ -36,6 +36,10 @@ test-statusline:
 test-performance-harness:
     scripts/compare-pr-performance_test.clj
 
+# Run focused tests for the diff-refs output comparison.
+test-diff-refs:
+    scripts/diff-refs_test.clj
+
 test-statusline-all:
     @echo 'Testing Sonnet 4:'
     just test-statusline-sonnet4

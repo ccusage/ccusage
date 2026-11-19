@@ -1,0 +1,11 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity statusline --offline --json
+---
+exit: 2
+--- stdout ---
+
+--- stderr ---
+The "statusline" command is available for Claude Code and Codex usage.
+Use "ccusage antigravity daily" for Antigravity usage reports.
+Run 'ccusage --help' for usage.

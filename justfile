@@ -62,6 +62,11 @@ generate-large-fixture output_dir codex_output_dir size_mib="1024":
 bench-history *args:
     apps/ccusage/scripts/bench-history.bb "$@"
 
+# Build two git refs (or take binary paths) and prove they print the same reports over the golden seeds; `--real` reads local logs
+[positional-arguments]
+diff-refs *args:
+    apps/ccusage/scripts/diff-refs.bb "$@"
+
 # Format the whole tree (Nix, Rust, JS/TS, workflows, typos) via treefmt
 fmt:
     nix fmt

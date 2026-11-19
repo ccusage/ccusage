@@ -1,0 +1,24 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude blocks --offline --active
+---
+exit: 0
+--- stdout ---
+Block Started:   2026-01-02 08:00:00
+Time Elapsed:    4h 0m
+Time Remaining:  1h 0m
+
+Current Usage:
+  Input Tokens:     1,150
+  Output Tokens:    950
+  Total Cost:       $0.06
+
+Burn Rate:
+  Tokens/minute:    61
+  Cost/hour:        $0.02
+
+Projected Usage (if current rate continues):
+  Total Tokens:     14,600
+  Total Cost:       $0.09
+
+--- stderr ---

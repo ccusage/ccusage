@@ -1,0 +1,119 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude daily --offline --json --project=-Users-dev-beta
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 12000,
+      "date": "2025-12-31",
+      "inputTokens": 1600,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.05775,
+          "inputTokens": 900,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 5000,
+          "cost": 0.02,
+          "inputTokens": 700,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 150,
+          "storedCost": 0.02
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 550,
+      "project": "-Users-dev-beta",
+      "totalCost": 0.07775,
+      "totalTokens": 14450
+    },
+    {
+      "cacheCreationTokens": 1250,
+      "cacheReadTokens": 6000,
+      "date": "2026-01-01",
+      "inputTokens": 2657,
+      "modelBreakdowns": [
+        {
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 6000,
+          "cost": 0.5095685,
+          "inputTokens": 657,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 204,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-5"
+      ],
+      "outputTokens": 504,
+      "project": "-Users-dev-beta",
+      "totalCost": 0.5270684999999999,
+      "totalTokens": 10411
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 8500,
+      "date": "2026-01-02",
+      "inputTokens": 950,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.051000000000000004,
+          "inputTokens": 150,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 600
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 0.008887500000000001,
+          "inputTokens": 800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 900,
+      "project": "-Users-dev-beta",
+      "totalCost": 0.0598875,
+      "totalTokens": 10400
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1600,
+    "cacheReadTokens": 26500,
+    "inputTokens": 5207,
+    "outputTokens": 1954,
+    "totalCost": 0.6647059999999999,
+    "totalTokens": 35261
+  }
+}
+
+--- stderr ---

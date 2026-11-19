@@ -75,13 +75,20 @@
     (.lock channel)
     (f)))
 
-(defn- build-commit-locked! [repo cache commit worktree bin]
+(defn build-key
+  "The cache entry of `commit` built with cargo `features`; a plain release
+  build keeps the bare commit."
+  [commit features]
+  (str/join "+" (cons commit (map #(str/replace % "/" "-") features))))
+
+(defn- build-commit-locked! [repo cache commit worktree features bin]
   (when-not (fs/exists? bin)
     (when-not (fs/exists? worktree)
       (run-checked ["git" "worktree" "add" "--detach" "--quiet" worktree commit] {:dir repo} "git worktree add"))
     (run-checked ["git" "-C" worktree "checkout" "--detach" "--quiet" commit] {} "git checkout")
-    (write-progress (str "building " (format-sha commit)))
-    (run-checked ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
+    (write-progress (str "building " (build-key (format-sha commit) features)))
+    (run-checked (cond-> ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
+                   (seq features) (into ["--features" (str/join "," features)]))
                  {:env {"CARGO_TARGET_DIR" (path cache "target")}} (str "cargo build " (format-sha commit)))
     (fs/create-dirs (fs/parent bin))
     (let [partial (str bin ".partial")]
@@ -92,29 +99,34 @@
   "Builds one commit into the cache, reusing a binary built earlier. A shared
   target directory keeps dependency artifacts across refs, so building and
   copying its binary out happen under one lock."
-  [repo cache commit worktree]
-  (let [bin (path cache "bin" commit "ccusage")]
+  [repo cache commit worktree features]
+  (let [bin (path cache "bin" (build-key commit features) "ccusage")]
     (when-not (fs/exists? bin)
-      (with-file-lock (path cache "build.lock") #(build-commit-locked! repo cache commit worktree bin)))
+      (with-file-lock (path cache "build.lock") #(build-commit-locked! repo cache commit worktree features bin)))
     bin))
 
 (defn resolve-variants
   "Each run checks refs out into its own temporary worktree, so concurrent runs
-  sharing the cache cannot remove each other's checkout."
-  [repo cache refs]
-  (let [scratch (temp-dir "ccusage-bench-src.")
-        worktree (path scratch "src")]
-    (try
-      (mapv (fn [ref]
-              (if (fs/regular-file? ref)
-                {:label ref :bin (expand ref)}
-                (let [commit (resolve-commit repo ref)]
-                  {:label ref :commit commit :bin (build-commit! repo cache commit worktree)})))
-            refs)
-      (finally
-        (when (fs/exists? worktree)
-          (run-process ["git" "worktree" "remove" "--force" worktree] {:dir repo}))
-        (fs/delete-tree scratch)))))
+  sharing the cache cannot remove each other's checkout. `features-for` gives
+  the cargo features to build a commit with; an existing binary has none
+  known."
+  ([repo cache refs] (resolve-variants repo cache refs (constantly [])))
+  ([repo cache refs features-for]
+   (let [scratch (temp-dir "ccusage-bench-src.")
+         worktree (path scratch "src")]
+     (try
+       (mapv (fn [ref]
+               (if (fs/regular-file? ref)
+                 {:label ref :bin (expand ref) :features []}
+                 (let [commit (resolve-commit repo ref)
+                       features (vec (features-for commit))]
+                   {:label ref :commit commit :features features
+                    :bin (build-commit! repo cache commit worktree features)})))
+             refs)
+       (finally
+         (when (fs/exists? worktree)
+           (run-process ["git" "worktree" "remove" "--force" worktree] {:dir repo}))
+         (fs/delete-tree scratch))))))
 
 (defn file-sha256 [file]
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")]

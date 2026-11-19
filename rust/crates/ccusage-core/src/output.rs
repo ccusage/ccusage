@@ -57,9 +57,9 @@ pub fn totals_json(rows: &[UsageSummary]) -> Value {
             .saturating_add(cache_create)
             .saturating_add(cache_read)
             .saturating_add(extra),
-        "totalCost": rows.iter().map(|row| row.total_cost).sum::<f64>(),
+        "totalCost": crate::sum_costs(rows.iter().map(|row| row.total_cost)),
     });
-    let credits = rows.iter().filter_map(|row| row.credits).sum::<f64>();
+    let credits = crate::sum_costs(rows.iter().filter_map(|row| row.credits));
     if credits > 0.0 {
         value["credits"] = json!(credits);
     }
