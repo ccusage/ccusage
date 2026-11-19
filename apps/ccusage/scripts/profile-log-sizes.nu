@@ -41,6 +41,9 @@ def files-under [roots: list<string>, patterns: list<string>]: nothing -> list<s
 # decompressed bytes, so that is the size the profile records.
 def uncompressed-size [file: string]: nothing -> int {
     if ($file | str ends-with '.zst') {
+        # The pipeline below cannot see zstd's exit status, so a corrupt
+        # archive would otherwise count as a short file.
+        ^zstd --test --quiet $file
         ^zstd --decompress --stdout --quiet $file | ^wc -c | str trim | into int
     } else {
         ls $file | get 0.size | into int
@@ -73,10 +76,12 @@ def profile [files: list<string>]: nothing -> record {
 # entries add up the way they do in a real report.
 def main []: nothing -> nothing {
     let home = $env.HOME
+    let config_home = $env | get --optional XDG_CONFIG_HOME | default ($home | path join '.config')
+    # Like ccusage, accept a root that names its projects/ directory.
     let claude_roots = env-roots 'CLAUDE_CONFIG_DIR' [
-        ($home | path join '.config/claude')
+        ($config_home | path join 'claude')
         ($home | path join '.claude')
-    ]
+    ] | each {|root| if ($root | path basename) == 'projects' { $root | path dirname } else { $root } } | uniq
     let codex_roots = env-roots 'CODEX_HOME' [
         ($home | path join '.codex')
     ]
@@ -94,6 +99,12 @@ def main []: nothing -> nothing {
                     'archived_sessions/**/*.jsonl'
                     'archived_sessions/**/*.jsonl.zst'
                 ]
+                # ccusage reads a rollout once when both its plain and .zst
+                # copies exist, preferring the plain one.
+                | sort
+                | each {|file| {rollout: ($file | str replace --regex '\.zst$' '') file: $file} }
+                | uniq-by rollout
+                | get file
             )
         )
         grok: (profile (files-under $grok_roots ['sessions/**/updates.jsonl']))
