@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+/** @type {string} */
+let label = '/* not a comment */';
+// NOTE(2026-11-19): Wire labels are case sensitive. Keep the original label.
+label = 'foo'; // NOTE(2026-11-19): The wire means foo. Preserve it.
+/** Ordinary prose. */

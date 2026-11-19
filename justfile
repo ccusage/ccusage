@@ -90,6 +90,10 @@ diff-refs *args:
 fmt:
     nix fmt
 
+# Check tracked code comments against the repository comment rule
+comments:
+    nu --no-config-file scripts/comments/check.nu
+
 # Run every flake check (treefmt, oxlint, clippy, schema drift, gitleaks)
 check: check-pricing-data
     nix flake check

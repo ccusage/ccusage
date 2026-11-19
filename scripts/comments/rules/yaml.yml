@@ -1,0 +1,18 @@
+id: yaml-comment
+language: Yaml
+message: Collect Yaml comments.
+rule:
+  kind: comment
+---
+id: yaml-run-script
+language: Yaml
+message: Collect shell scripts from workflow run blocks.
+files:
+  - '.github/workflows/**'
+  - '.github/actions/**'
+rule:
+  kind: block_scalar
+  inside:
+    stopBy: end
+    kind: block_mapping_pair
+    regex: '^run:'

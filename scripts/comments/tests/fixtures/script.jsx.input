@@ -1,0 +1,1 @@
+export const View = () => <span>{/* HACK */}{"// data"}</span>;
