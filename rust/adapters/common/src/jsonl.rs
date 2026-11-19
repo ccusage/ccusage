@@ -39,6 +39,7 @@ impl Read for Input {
 pub struct ReadPolicy {
     pub capacity: usize,
     pub compressed: bool,
+    pub from_end: bool,
     pub retry_missing: Option<fn(&Path) -> PathBuf>,
     pub keep_interrupted_tail: fn(io::ErrorKind) -> bool,
     pub open_failure: Option<&'static str>,
@@ -50,6 +51,7 @@ impl ReadPolicy {
     pub const PLAIN: Self = Self {
         capacity: DEFAULT_BUFFER_SIZE,
         compressed: false,
+        from_end: false,
         retry_missing: None,
         keep_interrupted_tail: |_| false,
         open_failure: None,
@@ -160,12 +162,34 @@ pub fn read<B>(
         None
     };
     let local = staged.as_ref().or(diagnostics);
+    if policy.from_end {
+        let content = read_utf8(input)?;
+        return Ok(content.lines().rev().enumerate().find_map(|(index, text)| {
+            visit(
+                Line {
+                    index,
+                    raw: text.as_bytes(),
+                },
+                &opened_path,
+                local,
+            )
+            .break_value()
+        }));
+    }
     let mut reader = LineReader::with_capacity(policy.capacity, input);
     let (found, failure) = fold(&mut reader, policy.keep_interrupted_tail, |line| {
         visit(line, &opened_path, local)
     });
     finish(path, diagnostics, staged.as_ref(), policy, failure)?;
     Ok(found)
+}
+
+#[inline(never)]
+fn read_utf8(input: Input) -> io::Result<String> {
+    match input {
+        Input::Plain(file) => std::io::read_to_string(file),
+        Input::Zstd(decoder) => std::io::read_to_string(decoder),
+    }
 }
 
 #[derive(Clone, Copy)]

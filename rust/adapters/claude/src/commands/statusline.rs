@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env, fs,
     io::{self, Read},
@@ -408,24 +409,28 @@ fn calculate_context_tokens_from_transcript(
     offline: bool,
     shared: &SharedArgs,
 ) -> Option<HookContext> {
-    let marker = ccusage_core::fast::LinePrefilter::all(&[br#""assistant""#]);
-    let mut input = None;
-    let result = jsonl::read(path, None, ReadPolicy::PLAIN, |line, _, _| {
-        let Ok(text) = std::str::from_utf8(line.bytes()) else {
-            return ControlFlow::Break(());
-        };
-        if marker.matches(line.bytes())
-            && let Some(tokens) = context_input_tokens(text.trim().as_bytes())
-        {
-            input = Some(tokens);
-        }
-        ControlFlow::Continue(())
-    });
-    if !matches!(result, Ok(None)) {
-        return None;
-    }
-    let (input, creation, read) = input?;
-    let total_input_tokens = input + creation + read;
+    let marker = ccusage_core::fast::LinePrefilter::all(&[br#""input_tokens""#]);
+    let usage = jsonl::read(
+        path,
+        None,
+        ReadPolicy {
+            from_end: true,
+            ..ReadPolicy::PLAIN
+        },
+        |line, _, _| {
+            let bytes = line.bytes();
+            if marker.matches(bytes)
+                && let Ok(text) = std::str::from_utf8(bytes)
+                && let Some(usage) = context_usage(text.trim())
+            {
+                return ControlFlow::Break(usage);
+            }
+            ControlFlow::Continue(())
+        },
+    )
+    .ok()??;
+    let total_input_tokens =
+        usage.input_tokens? + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
     let context_window_size = model_id
         .filter(|model_id| !model_id.is_empty())
         .and_then(|model_id| {
@@ -439,22 +444,31 @@ fn calculate_context_tokens_from_transcript(
     })
 }
 
-fn context_input_tokens(bytes: &[u8]) -> Option<(u64, u64, u64)> {
-    let value = ccusage_adapter_common::jsonl::parse::<serde_json::Value>(bytes).ok()?;
-    if value.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
-        return None;
-    }
-    let usage = value.get("message")?.get("usage")?;
-    let input = usage.get("input_tokens")?.as_u64()?;
-    let creation = usage
-        .get("cache_creation_input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or_default();
-    let read = usage
-        .get("cache_read_input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or_default();
-    Some((input, creation, read))
+#[derive(Deserialize)]
+struct ContextRecord<'a> {
+    #[serde(rename = "type", borrow)]
+    kind: Cow<'a, str>,
+    message: ContextMessage,
+}
+
+#[derive(Deserialize)]
+struct ContextMessage {
+    usage: TranscriptContextUsage,
+}
+
+#[derive(Deserialize)]
+struct TranscriptContextUsage {
+    input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_creation_input_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_read_input_tokens: u64,
+}
+
+fn context_usage(text: &str) -> Option<TranscriptContextUsage> {
+    let record = serde_json::from_str::<ContextRecord<'_>>(text).ok()?;
+    let usage = record.message.usage;
+    (record.kind == "assistant" && usage.input_tokens.is_some()).then_some(usage)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -652,6 +666,29 @@ mod tests {
     use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
+
+    #[test]
+    fn transcript_context_uses_the_latest_usage_with_escaped_json_keys() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let transcript = fixture.write_file(
+            "transcript.jsonl",
+            concat!(
+                r#"{"type":"assistant","message":{"usage":{"input_tokens":10}}}"#, "\n",
+                r#"{"t\u0079pe":"assist\u0061nt","message":{"usage":{"input\u005ftokens":20,"cache_read_input_tokens":3}}}"#, "\n",
+                r#"{"type":"assistant","message":{"usage":{"input_tokens":"invalid"}}}"#,
+            ),
+        );
+
+        let context = calculate_context_tokens_from_transcript(
+            &transcript,
+            None,
+            true,
+            &SharedArgs::default(),
+        )
+        .unwrap();
+
+        assert_eq!(context.total_input_tokens, 23);
+    }
 
     #[test]
     fn a_cached_pid_is_alive_only_when_it_names_one_running_process() {
