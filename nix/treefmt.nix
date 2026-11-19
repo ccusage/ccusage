@@ -24,7 +24,7 @@ in
         // {
           pname = "generate-config-schema";
           inherit cargoArtifacts;
-          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema";
+          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema --features schema";
           doCheck = false;
           meta = {
             mainProgram = "generate-config-schema";

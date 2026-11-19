@@ -1,13 +1,16 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt, sync::LazyLock};
 
-use schemars::{JsonSchema, schema_for};
-use serde::de::DeserializeOwned;
+use serde::{
+    Deserializer,
+    de::{DeserializeOwned, Visitor},
+    forward_to_deserialize_any,
+};
 use serde_json::{Map, Value};
 
 use crate::config_schema::{
-    BlocksSpecificOptions, CodexOptions, DailySpecificOptions, OpenClawOptions, PiOptions,
-    PiStoreConfig, SharedOptions, StatuslineSpecificOptions, WeeklySpecificOptions,
-    legacy_all_schema,
+    BlocksSpecificOptions, CodexOptions, ConfigPricingOverride, DailySpecificOptions,
+    OpenClawOptions, PiOptions, PiStoreConfig, SharedOptions, StatuslineSpecificOptions,
+    WeeklySpecificOptions,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -45,7 +48,6 @@ impl ConfigFile {
         let root = object(&value, "$")?;
         let mut layers = BTreeMap::new();
         let mut warnings = Vec::new();
-        let schema = layer_schema()?;
         for (key, value) in root {
             match key.as_str() {
                 "$schema" => {
@@ -57,13 +59,10 @@ impl ConfigFile {
                     }
                 }
                 "defaults" if !value.is_null() => {
-                    layers.insert(
-                        key.clone(),
-                        layer(value, key, &schema, strict, &mut warnings)?,
-                    );
+                    layers.insert(key.clone(), layer(value, key, strict, &mut warnings)?);
                 }
                 "commands" if !value.is_null() => {
-                    commands(value, key, &schema, strict, &mut layers, &mut warnings)?;
+                    commands(value, key, strict, &mut layers, &mut warnings)?;
                 }
                 agent if ccusage_cli::BUILT_IN_AGENT_NAMES.contains(&agent) && !value.is_null() => {
                     let Some(fields) = option_object(value, key, strict, &mut warnings)? else {
@@ -75,33 +74,27 @@ impl ConfigFile {
                             "defaults" if !value.is_null() => {
                                 layers.insert(
                                     path.clone(),
-                                    layer(value, &path, &schema, strict, &mut warnings)?,
+                                    layer(value, &path, strict, &mut warnings)?,
                                 );
                             }
                             "commands" if !value.is_null() => {
-                                commands(
-                                    value,
-                                    &path,
-                                    &schema,
-                                    strict,
-                                    &mut layers,
-                                    &mut warnings,
-                                )?;
+                                commands(value, &path, strict, &mut layers, &mut warnings)?;
                             }
                             "stores" if agent == "pi" && !value.is_null() => {
                                 if strict {
                                     decode::<Vec<PiStoreConfig>>(value, &path)?;
                                 }
-                                let store_schema =
-                                    serde_json::to_value(schema_for!(Vec<PiStoreConfig>))
-                                        .map_err(|error| error.to_string())?;
-                                unknown_fields(
-                                    value,
-                                    &store_schema,
-                                    &store_schema,
-                                    &path,
-                                    &mut warnings,
-                                );
+                                if let Some(stores) = value.as_array() {
+                                    let known = struct_fields::<PiStoreConfig>();
+                                    for (index, store) in stores.iter().enumerate() {
+                                        warn_unknown_fields(
+                                            store,
+                                            known,
+                                            &format!("{path}[{index}]"),
+                                            &mut warnings,
+                                        );
+                                    }
+                                }
                             }
                             "defaults" | "commands" | "stores" if value.is_null() => {}
                             _ => warnings.push(format!("Unknown ccusage config key: {path}")),
@@ -133,7 +126,6 @@ fn object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>, St
 fn commands(
     value: &Value,
     path: &str,
-    schema: &Value,
     strict: bool,
     layers: &mut BTreeMap<String, Layer>,
     warnings: &mut Vec<String>,
@@ -155,7 +147,7 @@ fn commands(
         if !known {
             warnings.push(format!("Unknown ccusage config key: {path}"));
         } else if !value.is_null() {
-            layers.insert(path.clone(), layer(value, &path, schema, strict, warnings)?);
+            layers.insert(path.clone(), layer(value, &path, strict, warnings)?);
         }
     }
     Ok(())
@@ -164,13 +156,12 @@ fn commands(
 fn layer(
     value: &Value,
     path: &str,
-    schema: &Value,
     strict: bool,
     warnings: &mut Vec<String>,
 ) -> Result<Layer, String> {
-    if option_object(value, path, strict, warnings)?.is_none() {
+    let Some(fields) = option_object(value, path, strict, warnings)? else {
         return Ok(Layer::default());
-    }
+    };
     let mut retained = value.clone();
     let mut date_error = None;
     if !strict {
@@ -210,7 +201,7 @@ fn layer(
         pi: decode_options(&mut retained, path, strict, warnings)?,
         openclaw: decode_options(&mut retained, path, strict, warnings)?,
     };
-    unknown_fields(value, schema, schema, path, warnings);
+    warn_unknown_layer_fields(fields, path, warnings);
     Ok(layer)
 }
 
@@ -315,68 +306,89 @@ fn failing_path(value: &Value, path: &str, rejects: &dyn Fn(&Value) -> bool) -> 
     path.to_string()
 }
 
-fn layer_schema() -> Result<Value, String> {
-    let mut generator = schemars::r#gen::SchemaGenerator::default();
-    let mut properties = serde_json::Map::new();
-    macro_rules! add {
-        ($($ty:ty),*) => { $(
-            let schema = serde_json::to_value(<$ty>::json_schema(&mut generator)).map_err(|error| error.to_string())?;
-            let fields = schema.get("properties").and_then(Value::as_object).ok_or_else(|| "option schema has no properties".to_string())?;
-            properties.extend(fields.clone());
-        )* };
+fn warn_unknown_layer_fields(fields: &Map<String, Value>, path: &str, warnings: &mut Vec<String>) {
+    static LAYER_FIELDS: LazyLock<[&[&str]; 9]> = LazyLock::new(|| {
+        [
+            struct_fields::<SharedOptions>(),
+            struct_fields::<DailySpecificOptions>(),
+            struct_fields::<WeeklySpecificOptions>(),
+            struct_fields::<BlocksSpecificOptions>(),
+            struct_fields::<StatuslineSpecificOptions>(),
+            struct_fields::<CodexOptions>(),
+            struct_fields::<PiOptions>(),
+            struct_fields::<OpenClawOptions>(),
+            &["all"],
+        ]
+    });
+    for (key, value) in fields {
+        if key == "pricingOverrides" {
+            if let Some(overrides) = value.as_object() {
+                let known = struct_fields::<ConfigPricingOverride>();
+                for (model, fields) in overrides {
+                    warn_unknown_fields(fields, known, &format!("{path}.{key}.{model}"), warnings);
+                }
+            }
+        } else if !LAYER_FIELDS
+            .iter()
+            .any(|fields| fields.contains(&key.as_str()))
+        {
+            warnings.push(format!("Unknown ccusage config key: {path}.{key}"));
+        }
     }
-    add!(
-        SharedOptions,
-        DailySpecificOptions,
-        WeeklySpecificOptions,
-        BlocksSpecificOptions,
-        StatuslineSpecificOptions,
-        CodexOptions,
-        PiOptions,
-        OpenClawOptions
-    );
-    properties.insert("all".to_string(), legacy_all_schema());
-    Ok(serde_json::json!({ "properties": properties, "definitions": generator.definitions() }))
 }
 
-pub(crate) fn unknown_fields(
-    value: &Value,
-    schema: &Value,
-    root: &Value,
-    path: &str,
-    warnings: &mut Vec<String>,
-) {
-    if let Some(reference) = schema.get("$ref").and_then(Value::as_str)
-        && let Some(schema) = reference
-            .strip_prefix('#')
-            .and_then(|path| root.pointer(path))
-    {
-        unknown_fields(value, schema, root, path, warnings);
-        return;
+fn warn_unknown_fields(value: &Value, known: &[&str], path: &str, warnings: &mut Vec<String>) {
+    if let Some(fields) = value.as_object() {
+        for key in fields.keys().filter(|key| !known.contains(&key.as_str())) {
+            warnings.push(format!("Unknown ccusage config key: {path}.{key}"));
+        }
     }
-    if let (Some(fields), Some(properties)) = (
-        value.as_object(),
-        schema.get("properties").and_then(Value::as_object),
-    ) {
-        for (key, value) in fields {
-            let path = format!("{path}.{key}");
-            match properties.get(key) {
-                Some(schema) => unknown_fields(value, schema, root, &path, warnings),
-                None => warnings.push(format!("Unknown ccusage config key: {path}")),
-            }
-        }
-    } else if let (Some(fields), Some(additional)) = (
-        value.as_object(),
-        schema
-            .get("additionalProperties")
-            .filter(|schema| schema.is_object()),
-    ) {
-        for (key, value) in fields {
-            unknown_fields(value, additional, root, &format!("{path}.{key}"), warnings);
-        }
-    } else if let (Some(values), Some(items)) = (value.as_array(), schema.get("items")) {
-        for (index, value) in values.iter().enumerate() {
-            unknown_fields(value, items, root, &format!("{path}[{index}]"), warnings);
-        }
+}
+
+fn struct_fields<T: DeserializeOwned>() -> &'static [&'static str] {
+    match T::deserialize(StructFields) {
+        Err(Fields(Some(fields))) => fields,
+        _ => unreachable!("config option types must use named fields"),
+    }
+}
+
+struct StructFields;
+
+#[derive(Debug)]
+struct Fields(Option<&'static [&'static str]>);
+
+impl fmt::Display for Fields {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("expected a named config struct")
+    }
+}
+
+impl std::error::Error for Fields {}
+
+impl serde::de::Error for Fields {
+    fn custom<T: fmt::Display>(_: T) -> Self {
+        Self(None)
+    }
+}
+
+impl<'de> Deserializer<'de> for StructFields {
+    type Error = Fields;
+
+    fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, Fields> {
+        Err(Fields(None))
+    }
+
+    fn deserialize_struct<V: Visitor<'de>>(
+        self,
+        _: &'static str,
+        fields: &'static [&'static str],
+        _: V,
+    ) -> Result<V::Value, Fields> {
+        Err(Fields(Some(fields)))
+    }
+
+    forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes byte_buf
+        option unit unit_struct newtype_struct seq tuple tuple_struct map enum identifier ignored_any
     }
 }
