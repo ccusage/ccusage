@@ -734,12 +734,7 @@ impl<'a, T> Table<'a, T> {
             part.rows
                 .keys()
                 .map(String::as_str)
-                .filter(move |key| {
-                    part.contains(key)
-                        && part
-                            .pricing_rows
-                            .is_none_or(|rows| !rows.literal_pricing_keys.contains(*key))
-                })
+                .filter(move |key| part.contains(key))
                 .map(move |key| {
                     (
                         key,
@@ -2022,9 +2017,17 @@ impl PricingMap {
         };
         if table.primary.pricing_rows.is_some() {
             if let Some(exact) = models_dev_exact {
-                let shorter_primary = (fuzzy != Fuzzy::Denied && resolved.contains('/'))
+                let shorter_primary = (fuzzy != Fuzzy::Denied)
                     .then(|| {
-                        self.layer_key(table, model, resolved, Layer::Primary, Fuzzy::ShorterKeys)
+                        resolved
+                            .match_indices(['/', '-'])
+                            .find_map(|(separator, _)| {
+                                let suffix = &resolved[separator + 1..];
+                                table.primary.same_id(suffix).filter(|key| {
+                                    !table.primary.exact_only.contains(key)
+                                        && !self.rows.literal_pricing_keys.contains(*key)
+                                })
+                            })
                     })
                     .flatten();
                 return shorter_primary.or(Some(exact));
@@ -2132,6 +2135,10 @@ impl PricingMap {
             .into_iter()
             .find_map(|key| self.overridden(key));
         pricing.at(schedule, timestamp, explicit)
+    }
+
+    pub fn has_primary_price(&self, model: &str) -> bool {
+        self.prices().primary.same_id(model).is_some()
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
@@ -2821,6 +2828,8 @@ mod tests {
         primary.load_json(r#"{
             "deepseek.v3.2": {"litellm_provider":"bedrock_converse","input_cost_per_token": 0.62, "output_cost_per_token": 1.85}
         }"#);
+        primary.load_json(r#"{"anthropic.claude-classic": {"litellm_provider":"bedrock","input_cost_per_token": 7, "output_cost_per_token": 8}}"#);
+        assert_eq!(primary.find("anthropic-claude-classic").unwrap().input, 7.0);
         let mut embedded = PricingMap::default();
         embedded.load_json(
             r#"{
@@ -3107,6 +3116,7 @@ mod tests {
         let mut embedded = PricingMap::default();
         embedded.load_models_dev_json_for_tests(
             r#"{
+                "vendor-sample": { "cost": { "input": 3000000, "output": 4000000 } },
                 "vendor/sample": { "cost": { "input": 3000000, "output": 4000000 } },
                 "sample-tier": { "cost": { "input": 5000000, "output": 6000000 }, "exactOnly": true },
                 "unrelated-9": { "cost": { "input": 7000000, "output": 8000000 } }
@@ -3114,6 +3124,7 @@ mod tests {
         );
         let pricing = layered(&primary, Some(&embedded));
         assert_eq!(pricing.find("vendor/sample").unwrap().input, 1.0);
+        assert_eq!(pricing.find("vendor-sample").unwrap().input, 1.0);
         assert_eq!(
             pricing
                 .resolve(&[("vendor/sample", super::MatchKind::Exact)])

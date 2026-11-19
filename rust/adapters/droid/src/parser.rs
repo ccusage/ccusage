@@ -146,7 +146,12 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
         .collect();
     let candidates: Vec<_> = qualified
         .iter()
-        .filter(|_| entry.provider_locked)
+        .filter(|model| {
+            entry.provider_locked
+                && pricing
+                    .as_map()
+                    .is_some_and(|map| map.has_primary_price(model))
+        })
         .map(|name| (name.as_str(), MatchKind::Exact))
         .chain(std::iter::once((entry.model.as_str(), MatchKind::Fuzzy)))
         .chain(
@@ -444,18 +449,25 @@ mod pricing_identity_tests {
     use super::*;
 
     #[test]
-    fn locked_zai_glm_uses_the_provider_rate_above_32k() {
+    fn locked_model_prefers_a_primary_provider_rate() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
-        let fixture = ccusage_test_support::fs_fixture!({
-            "s.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":150000}}"#
-        });
-        let entry = load_settings_file(&fixture.path("s.settings.json"))
-            .unwrap()
-            .unwrap();
-        let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
-        assert!((cost - 0.09).abs() < 1e-12, "{cost}");
-        assert_eq!(missing, None);
+        for (model, provider, input_tokens, expected) in [
+            ("glm-4.7", "zai", 150_000, 0.09),
+            ("gemini-2.5-flash", "google", 1_000, 0.0003),
+        ] {
+            let fixture = ccusage_test_support::fs_fixture!({
+                "s.settings.json": serde_json::json!({"model": model, "providerLock": provider,
+                    "providerLockTimestamp": "2026-11-17T10:00:00Z", "tokenUsage": {"inputTokens": input_tokens}
+                }).to_string()
+            });
+            let entry = load_settings_file(&fixture.path("s.settings.json"))
+                .unwrap()
+                .unwrap();
+            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
+            assert_eq!(missing, None);
+        }
     }
 
     #[test]
