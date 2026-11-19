@@ -2,7 +2,7 @@
 /*
 #! nix shell --inputs-from ../../.. nixpkgs#bun -c bun
 */
-// Writes Claude Code and Codex logs whose line shapes, line-type mix, and
+// Writes Claude Code, Codex, and Grok Build logs whose line shapes, line-type mix, and
 // per-type byte share follow aggregate statistics of real logs, with every
 // value synthesized. Parser cost depends on those shapes (null-valued fields,
 // nested usage, escaped strings, non-usage lines), so a fixture made of
