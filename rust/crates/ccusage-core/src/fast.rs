@@ -312,15 +312,22 @@ pub struct LineReader<R> {
 }
 
 impl<R: Read> LineReader<R> {
-    pub fn with_capacity(capacity: usize, reader: R) -> Self {
+    pub fn with_buffer(mut buffer: Vec<u8>, reader: R) -> Self {
+        if buffer.is_empty() {
+            buffer.push(0);
+        }
         Self {
             reader,
-            buffer: vec![0; capacity.max(1)],
+            buffer,
             start: 0,
             scanned: 0,
             end: 0,
             eof: false,
         }
+    }
+
+    pub fn into_buffer(self) -> Vec<u8> {
+        self.buffer
     }
 
     /// Includes the trailing newline unless the final line is unterminated.
@@ -727,7 +734,7 @@ mod tests {
     }
 
     fn read_lines(content: &[u8], capacity: usize) -> Vec<Vec<u8>> {
-        let mut reader = LineReader::with_capacity(capacity, Cursor::new(content));
+        let mut reader = LineReader::with_buffer(vec![0; capacity], Cursor::new(content));
         let mut lines = Vec::new();
         while let Some(line) = reader.next_line().unwrap() {
             lines.push(line.to_vec());
@@ -766,7 +773,7 @@ mod tests {
     #[test]
     fn line_reader_keeps_the_partial_line_before_a_read_error() {
         let mut reader =
-            LineReader::with_capacity(4, Cursor::new(b"complete\npartial").chain(Failing));
+            LineReader::with_buffer(vec![0; 4], Cursor::new(b"complete\npartial").chain(Failing));
         assert_eq!(reader.next_line().unwrap(), Some(b"complete\n".as_slice()));
         assert!(reader.next_line().is_err());
         assert_eq!(reader.rest(), b"partial");

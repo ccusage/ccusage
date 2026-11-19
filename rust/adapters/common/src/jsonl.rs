@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     fmt,
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
@@ -21,6 +22,10 @@ use ccusage_core::{
 use crate::{UnitError, units::being_written};
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
+
+thread_local! {
+    static LINE_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
 enum Input {
     Plain(File),
@@ -161,12 +166,32 @@ pub fn read<B>(
         None
     };
     let local = staged.as_ref().or(diagnostics);
-    let mut reader = LineReader::with_capacity(policy.capacity, input);
+    let capacity = policy.capacity.max(1);
+    let mut reader = line_reader(capacity, input);
     let (found, failure) = fold(&mut reader, policy.keep_interrupted_tail, |line| {
         visit(line, &opened_path, local)
     });
+    recycle_line_buffer(capacity, reader);
     finish(path, diagnostics, staged.as_ref(), policy, failure)?;
     Ok(found)
+}
+
+#[inline(never)]
+fn line_reader(capacity: usize, input: Input) -> LineReader<Input> {
+    let mut buffer = LINE_BUFFER.take();
+    if buffer.capacity() > capacity {
+        buffer = Vec::new();
+    }
+    buffer.resize(capacity, 0);
+    LineReader::with_buffer(buffer, input)
+}
+
+#[inline(never)]
+fn recycle_line_buffer(capacity: usize, reader: LineReader<Input>) {
+    let buffer = reader.into_buffer();
+    if buffer.capacity() <= capacity {
+        LINE_BUFFER.set(buffer);
+    }
 }
 
 /// Visits physical lines from the end of a plain file until the visitor accepts one.
