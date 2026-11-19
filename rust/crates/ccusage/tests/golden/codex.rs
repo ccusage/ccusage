@@ -23,6 +23,7 @@ const COMPACTING_FORK: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ARCHIVED_COPY: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const MISSING_PARENT: &str = "99999999-9999-4999-8999-999999999999";
 const REPLACEMENT: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const SUBAGENT_SIBLING: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 
 const NEW_YEAR: u64 = 1_767_225_600; // 2026-01-01T00:00:00Z
 
@@ -490,6 +491,38 @@ service_tier = "fast"
                 "2026-01-01T12:06:00.000Z",
                 Some(&usage(250, 50, 25, 5)),
                 Some(&usage(3750, 1350, 475, 55)),
+            ),
+        ],
+        utc(0, 12, 7),
+    );
+
+    // The sibling reports the same request usage at the same instant. Its
+    // distinct response ID keeps both requests in cross-session totals.
+    write(
+        &format!(
+            "work/sessions/{}",
+            rollout("2026-01-01", "12-05-00", SUBAGENT_SIBLING)
+        ),
+        &[
+            meta(
+                "2026-01-01T12:05:00.000Z",
+                SUBAGENT_SIBLING,
+                &format!(
+                    r#","source":{{"subagent":{{"thread_spawn":{{"parent_thread_id":"{MAIN}"}}}}}}"#
+                ),
+            ),
+            turn("2026-01-01T12:05:00.010Z", &format!(r#""model":"{CODEX}""#)),
+            settings("2026-01-01T12:05:00.020Z", r#""service_tier":"flex""#),
+            record(
+                "2026-01-01T12:05:00.400Z",
+                "resp-subagent-sibling-own",
+                &usage(500, 100, 50, 0),
+                "",
+            ),
+            count(
+                "2026-01-01T12:05:00.500Z",
+                Some(&usage(500, 100, 50, 0)),
+                Some(&usage(500, 100, 50, 0)),
             ),
         ],
         utc(0, 12, 7),

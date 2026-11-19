@@ -2360,6 +2360,33 @@ exit: 0
       "totalTokens": 150
     },
     {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 400,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:05:00.500Z",
+        "reasoningOutputTokens": 0
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0010125,
+          "inputTokens": 400,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5-codex"
+      ],
+      "outputTokens": 50,
+      "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "totalCost": 0.0010125,
+      "totalTokens": 550
+    },
+    {
       "agent": "hermes",
       "cacheCreationTokens": 20,
       "cacheReadTokens": 500,
@@ -5569,11 +5596,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 18765,
-    "cacheReadTokens": 1327467,
-    "inputTokens": 1359787,
-    "outputTokens": 69126,
-    "totalCost": 26.42021950000002,
-    "totalTokens": 2778582,
+    "cacheReadTokens": 1327567,
+    "inputTokens": 1360187,
+    "outputTokens": 69176,
+    "totalCost": 26.42123200000002,
+    "totalTokens": 2779132,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
