@@ -568,13 +568,11 @@ impl ccusage_cli::CliConfig for ConfigContext {
         self.error
             .as_deref()
             .or_else(|| {
-                (self.command.report != "statusline"
-                    && self.command.report != "blocks"
-                    && self
-                        .command
-                        .agent
-                        .as_deref()
-                        .is_none_or(|agent| agent == "pi"))
+                (self.command.agent.is_none()
+                    && matches!(
+                        self.command.report.as_str(),
+                        "daily" | "weekly" | "monthly" | "session"
+                    ))
                 .then_some(self.pi_stores_error.as_deref())
                 .flatten()
             })
@@ -854,6 +852,9 @@ mod tests {
                 vec!["claude", "blocks"],
                 vec!["claude", "session"],
                 vec!["codex", "daily"],
+                vec!["pi", "daily"],
+                vec!["pi", "session"],
+                vec!["pi:daily"],
             ] {
                 let args = command
                     .iter()
@@ -864,7 +865,12 @@ mod tests {
                     "{command:?}"
                 );
             }
-            for command in [vec!["daily"], vec!["weekly"], vec!["pi", "daily"]] {
+            for command in [
+                vec!["daily"],
+                vec!["weekly"],
+                vec!["monthly"],
+                vec!["session"],
+            ] {
                 let args = command
                     .iter()
                     .map(|arg| arg.to_string())
