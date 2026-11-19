@@ -1672,8 +1672,11 @@ impl PricingMap {
         lookup: Lookup,
         hosted: bool,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
+        visible: impl Fn(&Row) -> bool,
     ) -> Option<RowMatch<'a>> {
-        let project = |found: RowMatch<'a>| lookup.includes(found.row).then_some(found);
+        let project = |found: RowMatch<'a>| {
+            (lookup.includes(found.row) && visible(found.row)).then_some(found)
+        };
         if self.overrides.is_empty() {
             return self.rows.authoritative(model, hosted, project);
         }
@@ -1758,20 +1761,33 @@ impl PricingMap {
             }
             Pass::S2 => slot
                 .names(model, |name| {
-                    self.authoritative(name, lookup, true, models_dev)
+                    self.authoritative(name, lookup, true, models_dev, |_| true)
                 })
                 .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeIdentity)),
             Pass::S34 => {
-                let suffix = slot.names(model, |name| {
-                    name.suffixes()
-                        .find_map(|suffix| self.authoritative(suffix, lookup, false, models_dev))
-                });
-                suffix
+                let suffix = |free| {
+                    slot.names(model, |name| {
+                        name.suffixes().find_map(|suffix| {
+                            self.authoritative(suffix, lookup, false, models_dev, |row| {
+                                if free {
+                                    row.scope == Scope::Direct && row.is_free()
+                                } else {
+                                    matches!(lookup, Lookup::Context) || !row.is_free()
+                                }
+                            })
+                        })
+                    })
                     .map(|found| CachedHit::new(found, ResolutionStep::AuthoritativeSuffix))
+                };
+                suffix(false)
                     .or_else(|| {
                         let rows = models_dev()?;
                         slot.names(model, |name| rows.exact(name, lookup))
                             .map(|found| CachedHit::new(found, ResolutionStep::ModelsDevIdentity))
+                    })
+                    .or_else(|| match lookup {
+                        Lookup::Pricing => suffix(true),
+                        Lookup::Context => None,
                     })
             }
             Pass::S56 => slot.names(model, |name| self.search_fuzzy(name, lookup, models_dev)),
@@ -2647,6 +2663,83 @@ mod tests {
             );
             let rate = pricing.find("hostx/acme-1").unwrap();
             assert_eq!((rate.input, rate.output), (7e-6, 7e-6));
+        }
+    }
+
+    #[test]
+    fn free_vendor_row_behind_a_path_yields_to_the_ids_own_listing() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        use super::ResolutionStep::{
+            AuthoritativeIdentity, AuthoritativeSuffix, ModelsDevIdentity,
+        };
+        for (model, input, output, step, row) in [
+            (
+                "novita/glm-4.7-flash",
+                0.0707e-6,
+                0.404e-6,
+                ModelsDevIdentity,
+                "novita/glm-4.7-flash",
+            ),
+            (
+                "z-ai/glm-4.7-flash",
+                0.13225e-6,
+                0.529e-6,
+                ModelsDevIdentity,
+                "z-ai/glm-4.7-flash",
+            ),
+            (
+                "@cf/zai-org/glm-4.7-flash",
+                0.0605e-6,
+                0.4e-6,
+                ModelsDevIdentity,
+                "@cf/zai-org/glm-4.7-flash",
+            ),
+            (
+                "openrouter/z-ai/glm-4.7-flash",
+                0.0,
+                0.0,
+                AuthoritativeSuffix,
+                "zai/glm-4.7-flash",
+            ),
+            (
+                "kyma/glm-4.7-flash",
+                0.0,
+                0.0,
+                AuthoritativeSuffix,
+                "zai/glm-4.7-flash",
+            ),
+            (
+                "glm-4.7-flash",
+                0.0,
+                0.0,
+                AuthoritativeIdentity,
+                "zai/glm-4.7-flash",
+            ),
+            (
+                "zai/glm-4.7-flash",
+                0.0,
+                0.0,
+                AuthoritativeIdentity,
+                "zai/glm-4.7-flash",
+            ),
+        ] {
+            for kind in [MatchKind::Exact, MatchKind::Fuzzy] {
+                let candidates = [(model, kind)];
+                let (_, rate) = pricing.resolve_at(Some(model), &candidates, None).unwrap();
+                let found = pricing.explain(Some(model), &candidates).unwrap();
+                assert_eq!((found.step, found.row_key), (step, row), "{model} {kind:?}");
+                assert!(
+                    (rate.input - input).abs() < 1e-15,
+                    "{model} {kind:?}: {}",
+                    rate.input
+                );
+                assert!(
+                    (rate.output - output).abs() < 1e-15,
+                    "{model} {kind:?}: {}",
+                    rate.output
+                );
+            }
         }
     }
 
