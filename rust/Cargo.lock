@@ -262,6 +262,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlite",
+ "zstd",
 ]
 
 [[package]]

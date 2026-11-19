@@ -1,4 +1,11 @@
-use std::{fmt, marker::PhantomData, path::Path};
+use std::{
+    fmt,
+    fs::File,
+    io::{self, BufReader, Read},
+    marker::PhantomData,
+    ops::ControlFlow,
+    path::{Path, PathBuf},
+};
 
 use serde::{
     Deserialize, Deserializer,
@@ -7,10 +14,246 @@ use serde::{
 
 use ccusage_core::{
     Diagnostics, Skip, SkipKind,
-    fast::{LinePrefilter, byte_lines},
+    fast::{LinePrefilter, LineReader, byte_lines},
 };
 
-use crate::units::being_written;
+use crate::{UnitError, units::being_written};
+
+pub const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
+
+enum Input {
+    Plain(File),
+    Zstd(zstd::stream::read::Decoder<'static, BufReader<File>>),
+}
+
+pub struct JsonLines {
+    input: Input,
+    capacity: usize,
+}
+
+#[derive(Debug)]
+pub struct ReadFailure {
+    pub error: io::Error,
+    pub complete_lines: usize,
+    pub tail_bytes: usize,
+}
+
+pub struct Scan<B> {
+    pub found: Option<B>,
+    pub failure: Option<ReadFailure>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Tail {
+    Discard,
+    Keep,
+    KeepUnlessUnexpectedEof,
+}
+
+impl JsonLines {
+    pub fn open(path: &Path, capacity: usize, compressed: bool) -> io::Result<Self> {
+        let file = File::open(path)?;
+        let input = if compressed {
+            Input::Zstd(zstd::stream::read::Decoder::with_buffer(
+                BufReader::with_capacity(capacity, file),
+            )?)
+        } else {
+            Input::Plain(file)
+        };
+        Ok(Self { input, capacity })
+    }
+
+    pub fn open_alternate(
+        path: &Path,
+        capacity: usize,
+        compressed: bool,
+        alternate: impl FnOnce() -> PathBuf,
+    ) -> Result<(Self, PathBuf), PathBuf> {
+        match Self::open(path, capacity, compressed) {
+            Ok(lines) => Ok((lines, path.to_path_buf())),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let alternate = alternate();
+                match Self::open(&alternate, capacity, !compressed) {
+                    Ok(lines) => Ok((lines, alternate)),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        Err(path.to_path_buf())
+                    }
+                    Err(_) => Err(alternate),
+                }
+            }
+            Err(_) => Err(path.to_path_buf()),
+        }
+    }
+
+    #[inline]
+    pub fn scan<B>(self, tail: Tail, visit: impl FnMut(Line<'_>) -> ControlFlow<B>) -> Scan<B> {
+        match self.input {
+            Input::Plain(input) => scan(input, self.capacity, tail, visit),
+            Input::Zstd(input) => scan(input, self.capacity, tail, visit),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Line<'a> {
+    pub index: usize,
+    pub raw: &'a [u8],
+}
+
+impl<'a> Line<'a> {
+    #[inline]
+    pub fn bytes(self) -> &'a [u8] {
+        self.raw.strip_suffix(b"\n").unwrap_or(self.raw)
+    }
+
+    pub fn unterminated(self) -> bool {
+        !self.raw.ends_with(b"\n")
+    }
+
+    pub fn number(self) -> u32 {
+        Skip::line_number(self.index)
+    }
+
+    pub fn selected(self, prefilter: Option<&LinePrefilter>) -> bool {
+        !self
+            .bytes()
+            .iter()
+            .all(|byte| matches!(*byte, b' ' | b'\t' | b'\r'))
+            && prefilter.is_none_or(|prefilter| prefilter.matches(self.bytes()))
+    }
+
+    #[inline]
+    pub fn decode<T: Deserialize<'a>>(self) -> serde_json::Result<T> {
+        parse(self.bytes())
+    }
+
+    pub fn record<T: Deserialize<'a>>(
+        self,
+        path: &Path,
+        diagnostics: &Diagnostics,
+        is_usage: Option<fn(&serde_json::Value) -> bool>,
+    ) -> Option<T> {
+        match self.decode() {
+            Ok(record) => Some(record),
+            Err(error) => {
+                self.reject(error, path, diagnostics, is_usage);
+                None
+            }
+        }
+    }
+
+    pub fn reject(
+        self,
+        error: serde_json::Error,
+        path: &Path,
+        diagnostics: &Diagnostics,
+        is_usage: Option<impl FnOnce(&serde_json::Value) -> bool>,
+    ) {
+        record_decode_error(
+            self.bytes(),
+            error,
+            path,
+            self.number(),
+            self.unterminated(),
+            diagnostics,
+            is_usage,
+        );
+    }
+}
+
+#[inline]
+pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
+    serde_json::from_slice(bytes)
+}
+
+#[inline]
+pub fn scan<R: Read, B>(
+    reader: R,
+    capacity: usize,
+    tail: Tail,
+    mut visit: impl FnMut(Line<'_>) -> ControlFlow<B>,
+) -> Scan<B> {
+    let mut lines = LineReader::with_capacity(capacity, reader);
+    let mut index = 0;
+    loop {
+        match lines.next_line() {
+            Ok(Some(raw)) => {
+                if let ControlFlow::Break(value) = visit(Line { index, raw }) {
+                    return Scan {
+                        found: Some(value),
+                        failure: None,
+                    };
+                }
+            }
+            Ok(None) => {
+                return Scan {
+                    found: None,
+                    failure: None,
+                };
+            }
+            Err(error) => {
+                let remaining = lines.rest();
+                let keep = match tail {
+                    Tail::Discard => false,
+                    Tail::Keep => true,
+                    Tail::KeepUnlessUnexpectedEof => error.kind() != io::ErrorKind::UnexpectedEof,
+                };
+                let found = if keep && !remaining.is_empty() {
+                    visit(Line {
+                        index,
+                        raw: remaining,
+                    })
+                    .break_value()
+                } else {
+                    None
+                };
+                return Scan {
+                    found,
+                    failure: Some(ReadFailure {
+                        error,
+                        complete_lines: index,
+                        tail_bytes: remaining.len(),
+                    }),
+                };
+            }
+        }
+        index += 1;
+    }
+}
+
+pub fn read_records<T: DeserializeOwned>(
+    path: &Path,
+    prefilter: Option<&LinePrefilter>,
+    diagnostics: &Diagnostics,
+    is_usage: fn(&serde_json::Value) -> bool,
+    mut fold: impl FnMut(u32, T, &Diagnostics),
+) -> Result<(), UnitError> {
+    read_file(path, diagnostics, |line, local| {
+        if line.selected(prefilter)
+            && let Some(record) = line.record(path, local, Some(is_usage))
+        {
+            fold(line.number(), record, local);
+        }
+    })
+}
+
+pub fn read_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+    mut fold: impl FnMut(Line<'_>, &Diagnostics),
+) -> Result<(), UnitError> {
+    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, false)?;
+    let local = Diagnostics::new(diagnostics.source());
+    let result = lines.scan(Tail::Discard, |line| {
+        fold(line, &local);
+        ControlFlow::<()>::Continue(())
+    });
+    if let Some(failure) = result.failure {
+        return Err(failure.error.into());
+    }
+    diagnostics.merge(&local);
+    Ok(())
+}
 
 /// A prefilter marker must occur on every line the caller would accept. Rejected lines never reach the decoder.
 pub fn records<'data, T>(
