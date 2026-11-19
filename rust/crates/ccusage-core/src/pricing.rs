@@ -1809,9 +1809,7 @@ impl PricingMap {
         }
         candidates.iter().find_map(|&(model, kind)| {
             let pricing = match kind {
-                MatchKind::StrictExact => self
-                    .find_exact(model)
-                    .and_then(|_| self.exact_candidate_price(model)),
+                MatchKind::StrictExact => self.rows.entries.get(model).copied(),
                 MatchKind::Exact => self
                     .for_lookup(model, Lookup::Exact)
                     .exact_candidate_price(model),
@@ -2889,8 +2887,31 @@ mod tests {
                 "sample-1-5"
             };
             assert_eq!(primary.resolve(&[(model, kind)]).unwrap().1.input, 1.0);
+        }
+        for kind in [MatchKind::Exact, MatchKind::Fuzzy] {
             assert_eq!(primary.resolve(&[("o1", kind)]).unwrap().1.input, 15.0);
         }
+    }
+
+    #[test]
+    fn strict_candidates_only_admit_literal_primary_keys() {
+        use super::MatchKind;
+        let mut pricing = PricingMap::default();
+        let mut embedded = PricingMap::default();
+        embedded.load_json(
+            r#"{
+            "reseller/model-1.5": {"input_cost_per_token": 8, "output_cost_per_token": 9},
+            "model-1.5": {"input_cost_per_token": 1, "output_cost_per_token": 2}
+        }"#,
+        );
+        pricing.complete_layers(&embedded);
+        let candidates = [
+            ("reseller/model-1.5", MatchKind::StrictExact),
+            ("model-1.5", MatchKind::Fuzzy),
+        ];
+        let (matched, rates) = pricing.resolve(&candidates).unwrap();
+        assert_eq!(matched, "model-1.5");
+        assert_eq!(rates.input, 1.0);
     }
 
     #[test]
@@ -3889,11 +3910,11 @@ mod tests {
             r#"{"sample":{"cost":{"input":1000000,"output":2000000}}}"#,
         );
         let pricing = layered(&primary, Some(&embedded));
-        for kind in [super::MatchKind::Exact, super::MatchKind::StrictExact] {
-            let (_, price) = pricing.resolve(&[("sample", kind)]).unwrap();
-            assert_eq!(price.input, 1.0);
-            assert_eq!(price.output, 2.0);
-        }
+        let (_, price) = pricing
+            .resolve(&[("sample", super::MatchKind::Exact)])
+            .unwrap();
+        assert_eq!(price.input, 1.0);
+        assert_eq!(price.output, 2.0);
     }
 
     #[test]
@@ -3906,12 +3927,19 @@ mod tests {
             r#"{"vendor/sample":{"cost":{"input":3000000,"output":4000000}}}"#,
         );
         let pricing = layered(&primary, Some(&embedded));
-        for kind in [super::MatchKind::Exact, super::MatchKind::StrictExact] {
-            assert_eq!(
-                pricing.resolve(&[("vendor/sample", kind)]).unwrap().1.input,
-                1.0
-            );
-        }
+        assert_eq!(
+            pricing
+                .resolve(&[("vendor/sample", super::MatchKind::Exact)])
+                .unwrap()
+                .1
+                .input,
+            1.0
+        );
+        assert!(
+            pricing
+                .resolve(&[("vendor/sample", super::MatchKind::StrictExact)])
+                .is_none()
+        );
         assert!(
             pricing
                 .resolve(&[("grok-4.1-x", super::MatchKind::StrictExact)])
