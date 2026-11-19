@@ -103,6 +103,9 @@ in
         '';
         ccusage-package = config.packages.ccusage;
         ccusage-tests = config.packages.ccusage-tests;
+        clippy-config = mkRepoCheck "clippy-config-check" [ pkgs.nushell ] ''
+          nu --no-config-file scripts/check-clippy-config.nu rust
+        '';
         models-dev-dependencies = mkRepoCheck "models-dev-dependencies-check" [ pkgs.nushell ] ''
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
