@@ -157,6 +157,14 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
     decode_json(&fs::read(path)?)
 }
 
+pub fn read_filtered_json<T: DeserializeOwned>(
+    path: &Path,
+    accept: impl FnOnce(&[u8]) -> bool,
+) -> Result<Option<T>, UnitError> {
+    let content = fs::read(path)?;
+    accept(&content).then(|| decode_json(&content)).transpose()
+}
+
 // NOTE(2026-11-16): Whole-document sources such as Cline can rewrite a JSON file in place. A read can therefore see an empty or truncated document while the writer is active.
 pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> {
     use serde_json::error::Category;

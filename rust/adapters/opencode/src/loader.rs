@@ -1,7 +1,7 @@
 use ccusage_adapter_common::{
     SqliteStage, any_file_matching, dir_entries, jsonl, read_units_flat,
     sqlite::{read_count, read_f64, read_i64},
-    units::{UnitError, decode_json},
+    units::{UnitError, read_filtered_json},
 };
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -659,15 +659,16 @@ fn read_message_file(
     pricing: PriceTable<'_>,
     window: DateWindow,
 ) -> std::result::Result<Option<LoadedEntry>, UnitError> {
-    let content = fs::read(path)?;
-    if !window.is_unbounded()
-        && let Ok(text) = std::str::from_utf8(&content)
-        && let Some(millis) = extract_message_timestamp(text)
-        && !window.contains(millis)
-    {
+    let value = read_filtered_json::<OpenCodeMessage>(path, |content| {
+        window.is_unbounded()
+            || std::str::from_utf8(content)
+                .ok()
+                .and_then(extract_message_timestamp)
+                .is_none_or(|millis| window.contains(millis))
+    })?;
+    let Some(value) = value else {
         return Ok(None);
-    }
-    let value = decode_json::<OpenCodeMessage>(&content)?;
+    };
     message_value_to_entry(value, None, None, tz, mode, pricing).map_err(|MissingTimestamp| {
         UnitError::new(SkipKind::InvalidTimestamp, MissingTimestamp::REASON)
     })
