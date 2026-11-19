@@ -1,7 +1,4 @@
 //! Report-only helpers for the CLI and the Claude report commands.
-//!
-//! They live here rather than in `ccusage-core` so editing them recompiles
-//! only the Claude adapter and the binary, not every adapter built on core.
 
 mod date_utils;
 mod last_window;

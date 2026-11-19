@@ -41,10 +41,6 @@ fn main() {
     );
 }
 
-/// The committed snapshots stay indented so their regeneration diffs stay
-/// reviewable, but they are embedded verbatim, so the indentation - and, at
-/// 2K+ models, most of the JSON itself - would ship in the binary. Minify and
-/// deflate on the way in; the runtime inflates once on first use.
 fn embed_snapshot(source: &str, out_name: &str) {
     println!("cargo:rerun-if-changed={source}");
     let snapshot =
@@ -57,8 +53,6 @@ fn embed_snapshot(source: &str, out_name: &str) {
         .unwrap_or_else(|error| panic!("write {out_name}: {error}"));
 }
 
-/// Raw deflate at maximum effort: the cost is paid once per changed snapshot at
-/// build time, and the level only matters there.
 fn deflate(bytes: &[u8]) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec(bytes, 10)
 }
@@ -67,13 +61,6 @@ fn out_dir_path(file_name: &str) -> PathBuf {
     PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by cargo")).join(file_name)
 }
 
-// The snapshot is normally handed to the build by CCUSAGE_PRICING_JSON_PATH, which
-// every Nix build sets from the pinned litellm input — and which is the only way
-// to get the snapshot inside the network-free Nix sandbox. Downloading it is for
-// plain `cargo build` on platforms Nix cannot target, so the HTTPS client that
-// download needs is behind this feature instead of on every build's critical
-// path: rustls and its C crypto backend are the single most expensive
-// build-dependency in the workspace.
 #[cfg(not(feature = "fetch-litellm-pricing"))]
 fn fetch_pricing_json() -> String {
     panic!(

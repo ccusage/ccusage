@@ -670,7 +670,6 @@ mod tests {
             },
         )
         .with_terminal_width(200);
-        // 5 models — a realistic single-agent scenario where the bug would be severe
         table.push(vec![
             "2026-05-18".to_string(),
             "- claude-sonnet-4-20250514 (self-serve)\n- claude-opus-4-5\n- gpt-5.2-codex\n- gemini-3.0-pro-wildly-long\n- claude-haiku-3-5-sonnet".to_string(),
@@ -683,8 +682,6 @@ mod tests {
         let cell = "- claude-sonnet-4-20250514 (self-serve)\n- claude-opus-4-5\n- gpt-5.2-codex\n- gemini-3.0-pro-wildly-long\n- claude-haiku-3-5-sonnet";
         let widest_line = visible_width_max_line(cell);
         let sum_of_lines = cell.lines().map(visible_width).sum::<usize>();
-        // If visible_width_sum were still used, models_width would be ~180
-        // With visible_width_max_line, it should be ~widest_line + padding
         assert!(
             models_width < sum_of_lines,
             "Models column width ({models_width}) should be based on widest line ({widest_line}), not sum of all lines ({sum_of_lines})"

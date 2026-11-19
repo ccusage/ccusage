@@ -115,11 +115,6 @@ impl SharedArgs {
 pub const DATE_BOUND_FORMATS: &str = "YYYY-MM-DD or YYYYMMDD";
 
 /// Normalizes a date bound into the `YYYYMMDD` form the report keys use.
-///
-/// Reports compare bounds against row keys as plain strings, so a value that is
-/// not one of the two documented formats, or that is not a real calendar date,
-/// would silently turn the filter into a no-op or drop every row. Returns
-/// `None` for those values so callers can reject them.
 pub fn normalize_date_bound(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     let digits: [u8; 8] = match bytes.len() {
@@ -225,7 +220,7 @@ pub struct AgentCommandArgs {
     pub sections: Option<Vec<AgentReportKind>>,
     pub by_agent: bool,
     pub options: AgentOptions,
-    /// Keeps OpenCode `claude-agent` turns that the Claude source also counts.
+    // NOTE(2026-11-09, #2022): OpenCode records Claude agent turns that can also appear in Claude logs. Keep this opt-in so totals count matching turns once.
     pub include_claude_agent: bool,
     pub start_of_week: WeekDay,
     /// Per-source options of a unified report, keyed by agent name. A source

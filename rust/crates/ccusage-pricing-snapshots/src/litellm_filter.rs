@@ -15,7 +15,7 @@ const LOADED_FIELDS: [&str; 12] = [
     "litellm_provider",
 ];
 
-// NOTE(2026-11-19): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai, https://docs.litellm.ai/docs/providers/moonshot and https://docs.litellm.ai/docs/providers/xai.
+// NOTE(2026-11-19, #2187): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai, https://docs.litellm.ai/docs/providers/moonshot and https://docs.litellm.ai/docs/providers/xai. Use those IDs for direct-provider pricing.
 const SOURCES: &str = include_str!("litellm-sources.json");
 
 pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {

@@ -72,7 +72,6 @@ mod tests {
 
     #[test]
     fn starts_a_single_week_at_the_configured_week_start() {
-        // 2026-07-27 is a Monday.
         assert_eq!(
             last_periods_since(PeriodUnit::Week, periods(1), "2026-07-29", WeekDay::Monday)
                 .as_deref(),

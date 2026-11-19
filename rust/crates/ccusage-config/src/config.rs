@@ -1918,7 +1918,6 @@ mod tests {
             },
         );
 
-        // Child config only sets max_input_tokens for the same model
         let mut incoming = BTreeMap::new();
         incoming.insert(
             "[pi] gpt-5.4".to_string(),
@@ -1931,12 +1930,10 @@ mod tests {
         merge_pricing_overrides(&mut current, incoming);
 
         let result = &current["[pi] gpt-5.4"];
-        // Parent fields preserved
         assert_eq!(result.input_cost_per_token, Some(2.5e-6));
         assert_eq!(result.output_cost_per_token, Some(1.5e-5));
         assert_eq!(result.fast_multiplier, Some(2.0));
         assert_eq!(result.flex_multiplier, Some(0.75));
-        // Child field applied
         assert_eq!(result.max_input_tokens, Some(1_000_000));
     }
 
@@ -1958,7 +1955,6 @@ mod tests {
             },
         );
 
-        // Child overrides just input, leaves others alone
         let mut incoming = BTreeMap::new();
         incoming.insert(
             "model-a".to_string(),
@@ -1973,9 +1969,9 @@ mod tests {
         merge_pricing_overrides(&mut current, incoming);
 
         let result = &current["model-a"];
-        assert_eq!(result.input_cost_per_token, Some(2e-6)); // overridden
-        assert_eq!(result.output_cost_per_token, Some(15e-6)); // preserved
-        assert_eq!(result.cache_read_input_token_cost, Some(3e-7)); // preserved
+        assert_eq!(result.input_cost_per_token, Some(2e-6));
+        assert_eq!(result.output_cost_per_token, Some(15e-6));
+        assert_eq!(result.cache_read_input_token_cost, Some(3e-7));
         assert_eq!(result.fast_multiplier, Some(3.0));
         assert_eq!(result.flex_multiplier, Some(0.5));
     }

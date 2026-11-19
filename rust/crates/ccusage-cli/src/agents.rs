@@ -214,7 +214,6 @@ macro_rules! agents {
             },)*
         ];
 
-        /// Agent subcommands that ship in the binary, in report load order.
         pub const BUILT_IN_AGENT_NAMES: &[&str] = &[$own_name, $($name,)*];
     };
 }

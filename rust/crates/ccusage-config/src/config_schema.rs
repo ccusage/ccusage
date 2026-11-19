@@ -452,7 +452,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
     enrich_schema(&mut schema);
     inline_schema_references(&mut schema);
     wrap_root_schema(&mut schema);
-    add_agent_command_keys(&mut schema);
+    add_agent_command_references(&mut schema);
     schema["examples"] = json!([example_config()]);
     let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema)?);
     json.push('\n');
@@ -737,10 +737,7 @@ fn wrap_root_schema(schema: &mut Value) {
     root.insert("definitions".to_string(), Value::Object(definitions));
 }
 
-/// `commands."<agent> <report>"` and `commands."<agent>:<report>"` take the
-/// options of `<agent>.commands.<report>`. They point at that schema instead of
-/// inlining it, which would add a copy of every agent report schema per form.
-fn add_agent_command_keys(schema: &mut Value) {
+fn add_agent_command_references(schema: &mut Value) {
     let Some(config) = schema.pointer("/definitions/ccusage-config/properties") else {
         return;
     };

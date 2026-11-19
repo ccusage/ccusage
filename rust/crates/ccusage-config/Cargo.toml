@@ -4,8 +4,6 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
-# Owning the generator here means building it compiles the config layer and its two
-# dependencies rather than the binary's whole adapter graph.
 [[bin]]
 name = "generate-config-schema"
 path = "src/bin/generate_config_schema.rs"

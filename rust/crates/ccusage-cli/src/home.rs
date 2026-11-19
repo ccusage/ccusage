@@ -61,11 +61,8 @@ fn expand_home(raw: &str, home: Option<&Path>) -> PathBuf {
 /// The Claude Code directories that hold both the usage logs and the user's
 /// `ccusage.json`, in priority order.
 pub enum ClaudeConfigDirs {
-    /// The entries of `CLAUDE_CONFIG_DIR`, which replace the defaults.
     Env { value: String, dirs: Vec<PathBuf> },
-    /// `$XDG_CONFIG_HOME/claude` (or `~/.config/claude`), then `~/.claude`.
     Default(Vec<PathBuf>),
-    /// `CLAUDE_CONFIG_DIR` is unset and there is no home directory.
     NoHome,
 }
 
@@ -112,7 +109,7 @@ fn claude_config_dirs_from(
     ClaudeConfigDirs::Default(vec![config_home.join("claude"), home.join(".claude")])
 }
 
-/// `CLAUDE_CONFIG_DIR` may name the `projects/` directory itself.
+// NOTE(2026-11-16, #2107): Users can point CLAUDE_CONFIG_DIR at the projects directory itself. Resolve its parent before searching for ccusage.json.
 fn normalize_claude_config_dir(path: PathBuf) -> PathBuf {
     if path.file_name().is_some_and(|name| name == "projects") && path.is_dir() {
         return path.parent().map(Path::to_path_buf).unwrap_or(path);

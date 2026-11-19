@@ -1,9 +1,5 @@
 use unicode_width::UnicodeWidthChar;
 
-/// Index of the first byte after the escape sequence starting at `index`.
-///
-/// Only CSI sequences carry parameters, so a bare `\x1b` advances by one and a
-/// `\x1b[` run consumes bytes up to and including its alphabetic final byte.
 fn skip_ansi_escape(bytes: &[u8], index: usize) -> usize {
     let mut index = index + 1;
     if index < bytes.len() && bytes[index] == b'[' {
@@ -100,7 +96,6 @@ pub fn truncate_to_width(value: &str, width: usize) -> String {
     if visible_width(value) <= width {
         return value.to_string();
     }
-    // The ellipsis itself needs a column, so a zero budget can only stay silent.
     if width == 0 {
         return String::new();
     }
@@ -122,7 +117,6 @@ pub fn truncate_to_width(value: &str, width: usize) -> String {
             break;
         };
         let char_width = char_display_width(ch);
-        // Stop one column early so the ellipsis itself stays inside `width`.
         if current_width + char_width >= width {
             break;
         }
