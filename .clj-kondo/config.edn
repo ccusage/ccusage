@@ -1,0 +1,3 @@
+{:config-in-ns {bench-history {:linters {:namespace-name-mismatch {:level :off}}}
+                compare-pr-performance {:linters {:namespace-name-mismatch {:level :off}}}
+                diff-refs {:linters {:namespace-name-mismatch {:level :off}}}}}

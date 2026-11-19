@@ -98,8 +98,8 @@ in
     in
     {
       checks = {
-        clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo ] ''
-          clj-kondo --lint apps/ccusage/scripts
+        clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo pkgs.fd ] ''
+          fd --extension clj --extension cljc --extension bb --exec-batch clj-kondo --lint
         '';
         ccusage-package = config.packages.ccusage;
         ccusage-tests = config.packages.ccusage-tests;
