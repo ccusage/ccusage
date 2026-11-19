@@ -7,7 +7,11 @@ into the usage entries the reports render.
 
 - `${KIMI_DATA_DIR:-~/.kimi}/sessions/**/wire.jsonl`, and the same layout under `~/.kimi-code`
 
-Usage records without a valid timestamp are skipped with a diagnostic.
+Of the `usage.record` entries, only turn-scoped records count. Legacy
+`token_usage` records also count. For duplicate entries
+with the same session, message ID (when present), timestamp, model, and token
+counts, ccusage keeps the first copy. Usage records without a valid timestamp
+are skipped with a diagnostic.
 
 ## Build layer
 

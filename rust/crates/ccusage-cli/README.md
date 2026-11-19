@@ -6,6 +6,6 @@ discovery.
 
 ## Build layer
 
-Keep this crate dependency-free and free of build scripts and embedded assets.
+Keep this crate free of build scripts and embedded assets.
 Core and every adapter build on it in the `foundation` Crane layer. Put parsing
 and help generation in `ccusage-cli-parser`.
