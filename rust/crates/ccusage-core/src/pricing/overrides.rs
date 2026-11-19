@@ -20,8 +20,8 @@ struct OverrideRow {
     identity: Arc<str>,
     base: Option<Base>,
     patches: SmallVec<[PricingOverride; 1]>,
-    authoritative: OnceLock<Row>,
-    row: OnceLock<Row>,
+    authoritative: OnceLock<Option<Row>>,
+    row: OnceLock<Option<Row>>,
 }
 
 #[derive(Debug)]
@@ -50,7 +50,8 @@ impl Overrides {
         let slot = self.rows.get(id)?;
         slot.row
             .get()
-            .or_else(|| slot.authoritative.get())
+            .and_then(Option::as_ref)
+            .or_else(|| slot.authoritative.get().and_then(Option::as_ref))
             .map(|row| RowMatch::new(id, row))
     }
 
@@ -78,18 +79,20 @@ impl Overrides {
             .map(|slot| (slot.key.as_ref(), slot.identity.as_ref()))
     }
 
-    fn has_authoritative_base(&self, id: usize) -> bool {
-        let mut base = self.rows[id].base.as_ref();
+    fn has_authoritative_base(&self, id: usize) -> Option<bool> {
+        let mut base = self.rows.get(id)?.base.as_ref();
         while let Some(Base::Override(dependency)) = base {
-            base = self.rows[*dependency].base.as_ref();
+            base = self.rows.get(*dependency)?.base.as_ref();
         }
-        base.is_some()
+        Some(base.is_some())
     }
 
     fn in_cycle(&self, id: usize) -> bool {
         let mut current = id;
         for _ in 0..self.rows.len() {
-            let Some(Base::Override(next)) = self.rows[current].base.as_ref() else {
+            let Some(Base::Override(next)) =
+                self.rows.get(current).and_then(|slot| slot.base.as_ref())
+            else {
                 return false;
             };
             if *next == id {
@@ -131,7 +134,9 @@ impl PricingMap {
                     id
                 }
             };
-            overrides.rows[id].patches.push(value.clone());
+            if let Some(slot) = overrides.rows.get_mut(id) {
+                slot.patches.push(value.clone());
+            }
         }
         for (id, slot) in overrides.rows.iter_mut().enumerate() {
             slot.base = self.override_base(id, &slot.key, &overrides.by_identity);
@@ -140,8 +145,9 @@ impl PricingMap {
             .filter(|id| overrides.in_cycle(*id))
             .collect();
         for id in in_cycle {
-            let slot = &mut overrides.rows[id];
-            slot.base = self.override_base(id, &slot.key, &FxHashMap::default());
+            if let Some(slot) = overrides.rows.get_mut(id) {
+                slot.base = self.override_base(id, &slot.key, &FxHashMap::default());
+            }
         }
         self.overrides = Arc::new(overrides);
         self.clear_find_cache();
@@ -171,12 +177,12 @@ impl PricingMap {
         id: usize,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
         needs_fuzzy_flag: bool,
-    ) -> RowMatch<'a> {
-        let slot = &self.overrides.rows[id];
+    ) -> Option<RowMatch<'a>> {
+        let slot = self.overrides.rows.get(id)?;
         if let Some(row) = slot.row.get() {
-            return RowMatch::new(id, row);
+            return row.as_ref().map(|row| RowMatch::new(id, row));
         }
-        let select_catalogue = needs_fuzzy_flag || !self.overrides.has_authoritative_base(id);
+        let select_catalogue = needs_fuzzy_flag || !self.overrides.has_authoritative_base(id)?;
         let cell = if select_catalogue {
             &slot.row
         } else {
@@ -186,18 +192,18 @@ impl PricingMap {
             let secondary = if select_catalogue { models_dev() } else { None };
             let exact_only = secondary
                 .is_some_and(|rows| rows.contains_exact_only_identity(&slot.key, &slot.identity));
-            if let Some(authority) = slot.authoritative.get() {
-                return Row {
+            if let Some(authority) = slot.authoritative.get().and_then(Option::as_ref) {
+                return Some(Row {
                     exact_only,
                     ..authority.clone()
-                };
+                });
             }
             let (mut pricing, mut context_limit, schedule) = match &slot.base {
                 Some(Base::Authority(row)) => {
                     (row.pricing.rates(), row.context_limit, row.schedule)
                 }
                 Some(Base::Override(id)) => {
-                    let row = self.resolve_override(*id, models_dev, false).row;
+                    let row = self.resolve_override(*id, models_dev, false)?.row;
                     (row.pricing.rates(), row.context_limit, row.schedule)
                 }
                 None => {
@@ -237,7 +243,7 @@ impl PricingMap {
                 context_limit = patch.max_input_tokens.or(context_limit);
             }
             pricing.explicit_fields = explicit_fields;
-            Row {
+            Some(Row {
                 key: Arc::clone(&slot.key),
                 source: Source::Override,
                 scope: Scope::Direct,
@@ -246,8 +252,8 @@ impl PricingMap {
                 schedule,
                 context_limit,
                 pricing: pricing.into(),
-            }
+            })
         });
-        RowMatch::new(id, row)
+        row.as_ref().map(|row| RowMatch::new(id, row))
     }
 }

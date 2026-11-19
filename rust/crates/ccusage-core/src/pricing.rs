@@ -508,8 +508,6 @@ impl Pricing {
         );
     }
 }
-/// Whether a lookup may fall back to the fuzzy scan, or has to answer from
-/// exact entries because a fuzzy match would shadow an exact-only id.
 #[derive(Clone, Copy)]
 enum Lookup {
     Pricing,
@@ -1393,7 +1391,9 @@ impl PricingMap {
             let defaults = cache_defaults(&model, pricing.litellm_provider.as_deref());
             let schedule = vendor_id.and_then(schedule_for);
             let vendor_start = vendor_id.and_then(|id| vendor_start(&model, id));
-            let row = self.rows_mut().entries.get_or_insert(model, Row::default);
+            let Some(row) = self.rows_mut().entries.get_or_insert(model, Row::default) else {
+                continue;
+            };
             row.source = Source::LiteLlm;
             row.scope = scope;
             row.schedule = schedule;
@@ -1727,13 +1727,14 @@ impl PricingMap {
         }
         self.overrides
             .id_identity(model.identity())
-            .and_then(|id| project(self.resolve_override(id, models_dev, false)))
+            .and_then(|id| self.resolve_override(id, models_dev, false))
+            .and_then(project)
             .or_else(|| {
                 self.rows.authoritative(model, hosted, |found| {
-                    let found = self
-                        .overrides
-                        .shadow(found)
-                        .map_or(found, |id| self.resolve_override(id, models_dev, false));
+                    let found = match self.overrides.shadow(found) {
+                        Some(id) => self.resolve_override(id, models_dev, false)?,
+                        None => found,
+                    };
                     project(found)
                 })
             })
@@ -1814,7 +1815,7 @@ impl PricingMap {
         match pass {
             Pass::Label => {
                 let id = self.overrides.label_id(model, slot)?;
-                let found = self.resolve_override(id, models_dev, false);
+                let found = self.resolve_override(id, models_dev, false)?;
                 lookup
                     .includes(found.row)
                     .then(|| CachedHit::new(found, HitKind::ReportedOverride))
@@ -1899,7 +1900,7 @@ impl PricingMap {
             let resolve = |id| self.resolve_override(id, models_dev, true);
             let base = base.filter_map(|(raw, identity)| {
                 let found = match self.overrides.shadow(raw) {
-                    Some(id) if matches(raw.key, identity) => resolve(id),
+                    Some(id) if matches(raw.key, identity) => resolve(id)?,
                     Some(_) => return None,
                     None => raw,
                 };
@@ -1913,7 +1914,7 @@ impl PricingMap {
                         if shadowed.contains(&id) || !matches(key, identity) {
                             return None;
                         }
-                        Some((key, identity, resolve(id)))
+                        Some((key, identity, resolve(id)?))
                     });
             Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
         };
@@ -2085,7 +2086,7 @@ impl PricingMap {
         provider: &str,
     ) {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        let row = self
+        let Some(row) = self
             .rows_mut()
             .entries
             .get_or_insert(model.to_string(), || Row {
@@ -2096,7 +2097,10 @@ impl PricingMap {
                 vendor_start: vendor_start(model, vendor_id(model, provider)),
                 schedule: schedule_for(vendor_id(model, provider)),
                 ..Row::default()
-            });
+            })
+        else {
+            return;
+        };
         row.context_limit = row.context_limit.or(context_limit);
         row.pricing.cache_read = row.pricing.cache_read.or(pricing.cache_read);
         row.pricing.cache_create = row.pricing.cache_create.or(pricing.cache_create);
@@ -2492,7 +2496,11 @@ mod tests {
         }
 
         fn insert_test_pricing(&mut self, key: String, pricing: Pricing) {
-            let row = self.rows_mut().entries.get_or_insert(key, Row::default);
+            let row = self
+                .rows_mut()
+                .entries
+                .get_or_insert(key, Row::default)
+                .unwrap();
             row.scope = super::Scope::Direct;
             row.pricing = pricing.into();
         }
@@ -2501,7 +2509,8 @@ mod tests {
             let row = self
                 .rows_mut()
                 .entries
-                .get_or_insert(key.to_string(), Row::default);
+                .get_or_insert(key.to_string(), Row::default)
+                .unwrap();
             row.scope = super::Scope::Direct;
             row.context_limit = Some(limit);
         }
@@ -2510,6 +2519,7 @@ mod tests {
             self.rows_mut()
                 .entries
                 .get_or_insert(key.to_string(), Row::default)
+                .unwrap()
                 .exact_only = true;
         }
 

@@ -186,28 +186,30 @@ impl Entries {
     }
 
     pub(super) fn insert(&mut self, key: String, mut row: Row) {
-        if let Some(id) = self.id(&key) {
-            row.key = Arc::clone(&self.rows[id].key);
-            self.rows[id] = row;
+        if let Some(existing) = self.id(&key).and_then(|id| self.rows.get_mut(id)) {
+            row.key = Arc::clone(&existing.key);
+            *existing = row;
         } else {
             self.append(key, row);
         }
     }
 
-    pub(super) fn get_or_insert(&mut self, key: String, create: impl FnOnce() -> Row) -> &mut Row {
-        let id = match self.id(&key) {
-            Some(id) => id,
-            None => self.append(key, create()),
-        };
-        &mut self.rows[id]
+    pub(super) fn get_or_insert(
+        &mut self,
+        key: String,
+        create: impl FnOnce() -> Row,
+    ) -> Option<&mut Row> {
+        match self.id(&key) {
+            Some(id) => self.rows.get_mut(id),
+            None => Some(self.append(key, create())),
+        }
     }
 
-    fn append(&mut self, key: String, mut row: Row) -> usize {
+    fn append(&mut self, key: String, mut row: Row) -> &mut Row {
         let id = self.rows.len();
         row.key = Arc::from(key);
         self.literal.insert(Arc::clone(&row.key), id);
-        self.rows.push(row);
-        id
+        self.rows.push_mut(row)
     }
 
     pub(super) fn remove(&mut self, key: &str) {
