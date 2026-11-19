@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ccusage_test_support::{instant, set_modified};
 
@@ -46,16 +46,7 @@ fn tokens(input: u64, output: u64) -> String {
     format!(r#""gen_ai.usage.input_tokens":{input},"gen_ai.usage.output_tokens":{output}"#)
 }
 
-pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
-    let home = root.join("copilot");
-    let write = |relative: &str, lines: &[String]| {
-        let path = home.join(relative);
-        std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
-            .expect("failed to create Copilot fixture directory");
-        std::fs::write(&path, lines.join("\n")).expect("failed to write Copilot fixture file");
-        path
-    };
-
+fn seed_shutdowns_with_credit_checkpoints(write: &impl Fn(&str, &[String]) -> PathBuf) {
     let first_shutdown = shutdown(
         r#""id":"sd-a1","timestamp":"2025-12-30T10:00:00.000Z","#,
         &format!(r#""totalNanoAiu":{},"#, 30 * CREDIT),
@@ -130,7 +121,9 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             &model(SONNET, r#""inputTokens":9999,"outputTokens":9999"#, ""),
         )],
     );
+}
 
+fn seed_replayed_shutdown_with_otel_coverage(write: &impl Fn(&str, &[String]) -> PathBuf) {
     let shutdown_without_id = shutdown(
         r#""timestamp":"2025-12-31T10:00:00.000Z","#,
         "",
@@ -157,7 +150,9 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
         ],
     );
+}
 
+fn seed_incomplete_shutdown_covered_by_otel(write: &impl Fn(&str, &[String]) -> PathBuf) {
     write(
         "session-state/session-gamma/events.jsonl",
         &[
@@ -181,7 +176,9 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
         ],
     );
+}
 
+fn seed_shutdown_without_credit_checkpoints(write: &impl Fn(&str, &[String]) -> PathBuf) {
     write(
         "session-state/session-delta/events.jsonl",
         &[shutdown(
@@ -197,7 +194,9 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
         )],
     );
+}
 
+fn seed_checkpoints_without_model_credit_total(write: &impl Fn(&str, &[String]) -> PathBuf) {
     write(
         "session-state/session-epsilon/events.jsonl",
         &[
@@ -214,7 +213,9 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             checkpoint("cp-e2", "2026-01-02T12:00:00.000Z", 9_999),
         ],
     );
+}
 
+fn seed_checkpoints_without_shutdown(write: &impl Fn(&str, &[String]) -> PathBuf) {
     let only_checkpoint = checkpoint("cp-z1", "2026-01-01T03:00:00.000Z", 12);
     write(
         "session-state/session-zeta/events.jsonl",
@@ -225,7 +226,11 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             r#"{"type":"session.usage_checkpoint","id":"cp-z3","timestamp":"2026-01-01T05:00:00.000Z","data":{"totalNanoAiu":-5000000000}}"#.to_string(),
         ],
     );
+}
 
+fn seed_per_call_usage_with_accounted_and_unaccounted_replays(
+    write: &impl Fn(&str, &[String]) -> PathBuf,
+) {
     let accounted_record = usage_record(
         r#""id":"ur-h1","timestamp":"2025-12-31T11:00:00.000Z","#,
         SONNET,
@@ -260,6 +265,31 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "session-state/session-theta/events.jsonl",
         &[accounted_record],
     );
+}
+
+pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let home = root.join("copilot");
+    let write = |relative: &str, lines: &[String]| {
+        let path = home.join(relative);
+        std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
+            .expect("failed to create Copilot fixture directory");
+        std::fs::write(&path, lines.join("\n")).expect("failed to write Copilot fixture file");
+        path
+    };
+
+    seed_shutdowns_with_credit_checkpoints(&write);
+
+    seed_replayed_shutdown_with_otel_coverage(&write);
+
+    seed_incomplete_shutdown_covered_by_otel(&write);
+
+    seed_shutdown_without_credit_checkpoints(&write);
+
+    seed_checkpoints_without_model_credit_total(&write);
+
+    seed_checkpoints_without_shutdown(&write);
+
+    seed_per_call_usage_with_accounted_and_unaccounted_replays(&write);
 
     write("session-state/session-empty/events.jsonl", &[]);
     write(

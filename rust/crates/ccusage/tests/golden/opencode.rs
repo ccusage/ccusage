@@ -131,6 +131,90 @@ const AGGREGATE_COLUMNS: &str = "id TEXT PRIMARY KEY, time_created INTEGER, cost
     tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, \
     tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT";
 
+fn seed_compaction_as_only_message(db: &Database) {
+    db.session_message(
+        "msg-v2-compaction-only",
+        "ses-v2-compact",
+        "compaction",
+        0,
+        Some(instant("2026-01-01T10:30:00Z").millis()),
+        &payload(
+            &nested("gpt-5", "openai"),
+            Some(instant("2026-01-01T10:30:00Z").millis()),
+            &tokens(60, 6, 0, 0),
+            r#","status":"completed""#,
+        ),
+    );
+}
+
+fn seed_messages_with_and_without_column_timestamps(db: &Database) {
+    let misc = "ses-v2-misc";
+    db.session_message(
+        "msg-v2-column-time",
+        misc,
+        "assistant",
+        0,
+        Some(instant("2026-01-02T11:00:00Z").millis()),
+        &payload(
+            r#""model":{"modelID":"gpt-5","providerID":"openai"}"#,
+            None,
+            &tokens(45, 5, 0, 0),
+            "",
+        ),
+    );
+    db.session_message(
+        "msg-v2-no-time",
+        misc,
+        "assistant",
+        1,
+        None,
+        &payload(&nested("gpt-5", "openai"), None, &tokens(11, 1, 0, 0), ""),
+    );
+}
+
+fn seed_claude_agent_messages_with_transcript_overlap(db: &Database) {
+    let agent = "ses-v2-agent";
+    db.session_message(
+        "msg-v2-agent-counted",
+        agent,
+        "assistant",
+        0,
+        Some(instant("2025-12-31T12:05:00Z").millis()),
+        &claude_agent(
+            "claude-native-a",
+            instant("2025-12-31T12:05:00Z").millis(),
+            5000,
+            500,
+        ),
+    );
+    db.session_message(
+        "msg-v2-agent-other-day",
+        agent,
+        "assistant",
+        1,
+        Some(instant("2026-01-01T12:00:00Z").millis()),
+        &claude_agent(
+            "claude-native-a",
+            instant("2026-01-01T12:00:00Z").millis(),
+            64,
+            6,
+        ),
+    );
+    db.session_message(
+        "msg-v2-agent-no-transcript",
+        agent,
+        "assistant",
+        2,
+        Some(instant("2026-01-01T12:10:00Z").millis()),
+        &claude_agent(
+            "claude-native-missing",
+            instant("2026-01-01T12:10:00Z").millis(),
+            7,
+            1,
+        ),
+    );
+}
+
 fn seed_main_database(path: &Path) {
     let session_v2 = format!(
         "CREATE TABLE session_v2 ({AGGREGATE_COLUMNS}, fork_session_id TEXT, fork_boundary TEXT)"
@@ -408,83 +492,11 @@ fn seed_main_database(path: &Path) {
     let idle = "ses-v2-fork-idle";
     copy("msg-v2-fi-copy-1", idle, 1, 9006);
 
-    db.session_message(
-        "msg-v2-compaction-only",
-        "ses-v2-compact",
-        "compaction",
-        0,
-        Some(instant("2026-01-01T10:30:00Z").millis()),
-        &payload(
-            &nested("gpt-5", "openai"),
-            Some(instant("2026-01-01T10:30:00Z").millis()),
-            &tokens(60, 6, 0, 0),
-            r#","status":"completed""#,
-        ),
-    );
+    seed_compaction_as_only_message(&db);
 
-    let misc = "ses-v2-misc";
-    db.session_message(
-        "msg-v2-column-time",
-        misc,
-        "assistant",
-        0,
-        Some(instant("2026-01-02T11:00:00Z").millis()),
-        &payload(
-            r#""model":{"modelID":"gpt-5","providerID":"openai"}"#,
-            None,
-            &tokens(45, 5, 0, 0),
-            "",
-        ),
-    );
-    db.session_message(
-        "msg-v2-no-time",
-        misc,
-        "assistant",
-        1,
-        None,
-        &payload(&nested("gpt-5", "openai"), None, &tokens(11, 1, 0, 0), ""),
-    );
+    seed_messages_with_and_without_column_timestamps(&db);
 
-    let agent = "ses-v2-agent";
-    db.session_message(
-        "msg-v2-agent-counted",
-        agent,
-        "assistant",
-        0,
-        Some(instant("2025-12-31T12:05:00Z").millis()),
-        &claude_agent(
-            "claude-native-a",
-            instant("2025-12-31T12:05:00Z").millis(),
-            5000,
-            500,
-        ),
-    );
-    db.session_message(
-        "msg-v2-agent-other-day",
-        agent,
-        "assistant",
-        1,
-        Some(instant("2026-01-01T12:00:00Z").millis()),
-        &claude_agent(
-            "claude-native-a",
-            instant("2026-01-01T12:00:00Z").millis(),
-            64,
-            6,
-        ),
-    );
-    db.session_message(
-        "msg-v2-agent-no-transcript",
-        agent,
-        "assistant",
-        2,
-        Some(instant("2026-01-01T12:10:00Z").millis()),
-        &claude_agent(
-            "claude-native-missing",
-            instant("2026-01-01T12:10:00Z").millis(),
-            7,
-            1,
-        ),
-    );
+    seed_claude_agent_messages_with_transcript_overlap(&db);
 
     let opus_model = format!(r#"{{"id":"{OPUS}","providerID":"anthropic"}}"#);
     let covered = "0.99, 9999, 9999, 9999, 9999, 0";

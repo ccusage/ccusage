@@ -46,6 +46,96 @@ fn document(lines: &[String]) -> String {
     lines.join("\n")
 }
 
+fn seed_session_with_torn_zstd_frame(
+    write: &impl Fn(&str, &[u8]),
+    beta_parent_call: &str,
+    never_counted: &str,
+) {
+    let beta_head = header(
+        instant("2025-12-31T23:50:00Z").millis(),
+        r#","id":"sess-beta","cwd":"/work/beta""#,
+    );
+    let beta_lines = [
+        route(
+            1,
+            instant("2025-12-31T23:50:00Z").millis(),
+            "deepseek-official",
+            V4_PRO,
+        ),
+        beta_parent_call.to_owned(),
+        message(
+            3,
+            instant("2026-01-02T10:00:00Z").millis(),
+            r#""inputTokens":700,"outputTokens":90,"cacheWriteTokens":300"#,
+        ),
+    ];
+    let mut beta = zstd::encode_all(format!("{beta_head}\n").as_bytes(), 0)
+        .expect("failed to compress fixture");
+    beta.extend(
+        zstd::encode_all(format!("{}\n", beta_lines.join("\n")).as_bytes(), 0)
+            .expect("failed to compress fixture"),
+    );
+    let torn = zstd::encode_all(
+        message(4, instant("2026-01-02T10:00:00Z").millis(), never_counted).as_bytes(),
+        0,
+    )
+    .expect("failed to compress fixture");
+    beta.extend(&torn[..torn.len() / 2]);
+    write(
+        "home-a/sessions/--work-beta--/sess-beta/session.v4.jsonl.zstd",
+        &beta,
+    );
+}
+
+fn seed_fork_with_multiple_inherited_markers(write: &impl Fn(&str, &[u8]), beta_parent_call: &str) {
+    write(
+        "home-a/sessions/--work-beta--/fork-beta/session.v4.jsonl",
+        document(&[
+            header(
+                instant("2026-01-02T08:00:00Z").millis(),
+                r#","id":"fork-beta","cwd":"/work/beta","parentSession":"sess-beta","isSeeded":true"#,
+            ),
+            route(1, instant("2025-12-31T23:50:00Z").millis(), "deepseek-official", V4_PRO),
+            beta_parent_call.to_owned(),
+            event("session/end-seed", Some("3"), Some(&instant("2026-01-02T08:00:00Z").millis().to_string()), "{}"),
+            event(
+                "session/end-seed",
+                Some("4"),
+                Some(&instant("2026-01-02T08:00:00Z").millis().to_string()),
+                r#"{"inherited":true}"#,
+            ),
+            message(5, instant("2026-01-02T08:00:00Z").millis() + 5_000, r#""inputTokens":600,"outputTokens":60"#),
+            route(6, instant("2026-01-02T10:00:00Z").millis(), "deepseek-account", FLASH),
+            message(
+                7,
+                instant("2026-01-02T10:00:00Z").millis(),
+                r#""inputTokens":1500,"outputTokens":250,"cacheReadTokens":3000"#,
+            ),
+        ])
+        .as_bytes(),
+    );
+}
+
+fn seed_fork_torn_before_inherited_marker(write: &impl Fn(&str, &[u8]), beta_parent_call: String) {
+    write(
+        "home-a/sessions/--work-beta--/fork-torn/session.v4.jsonl",
+        document(&[
+            header(
+                instant("2026-01-02T08:00:00Z").millis(),
+                r#","id":"fork-torn","isSeeded":true"#,
+            ),
+            route(
+                1,
+                instant("2025-12-31T23:50:00Z").millis(),
+                "deepseek-official",
+                V4_PRO,
+            ),
+            beta_parent_call,
+        ])
+        .as_bytes(),
+    );
+}
+
 pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let write = |relative: &str, contents: &[u8]| {
         let path = root.join("dsh").join(relative);
@@ -213,89 +303,16 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         document(&alpha_copy).as_bytes(),
     );
 
-    let beta_head = header(
-        instant("2025-12-31T23:50:00Z").millis(),
-        r#","id":"sess-beta","cwd":"/work/beta""#,
-    );
     let beta_parent_call = message(
         2,
         instant("2025-12-31T23:50:00Z").millis(),
         r#""inputTokens":2000,"outputTokens":500,"cacheReadTokens":6000,"totalTokens":8500"#,
     );
-    let beta_lines = [
-        route(
-            1,
-            instant("2025-12-31T23:50:00Z").millis(),
-            "deepseek-official",
-            V4_PRO,
-        ),
-        beta_parent_call.clone(),
-        message(
-            3,
-            instant("2026-01-02T10:00:00Z").millis(),
-            r#""inputTokens":700,"outputTokens":90,"cacheWriteTokens":300"#,
-        ),
-    ];
-    let mut beta = zstd::encode_all(format!("{beta_head}\n").as_bytes(), 0)
-        .expect("failed to compress fixture");
-    beta.extend(
-        zstd::encode_all(format!("{}\n", beta_lines.join("\n")).as_bytes(), 0)
-            .expect("failed to compress fixture"),
-    );
-    let torn = zstd::encode_all(
-        message(4, instant("2026-01-02T10:00:00Z").millis(), never_counted).as_bytes(),
-        0,
-    )
-    .expect("failed to compress fixture");
-    beta.extend(&torn[..torn.len() / 2]);
-    write(
-        "home-a/sessions/--work-beta--/sess-beta/session.v4.jsonl.zstd",
-        &beta,
-    );
+    seed_session_with_torn_zstd_frame(&write, &beta_parent_call, never_counted);
 
-    write(
-        "home-a/sessions/--work-beta--/fork-beta/session.v4.jsonl",
-        document(&[
-            header(
-                instant("2026-01-02T08:00:00Z").millis(),
-                r#","id":"fork-beta","cwd":"/work/beta","parentSession":"sess-beta","isSeeded":true"#,
-            ),
-            route(1, instant("2025-12-31T23:50:00Z").millis(), "deepseek-official", V4_PRO),
-            beta_parent_call.clone(),
-            event("session/end-seed", Some("3"), Some(&instant("2026-01-02T08:00:00Z").millis().to_string()), "{}"),
-            event(
-                "session/end-seed",
-                Some("4"),
-                Some(&instant("2026-01-02T08:00:00Z").millis().to_string()),
-                r#"{"inherited":true}"#,
-            ),
-            message(5, instant("2026-01-02T08:00:00Z").millis() + 5_000, r#""inputTokens":600,"outputTokens":60"#),
-            route(6, instant("2026-01-02T10:00:00Z").millis(), "deepseek-account", FLASH),
-            message(
-                7,
-                instant("2026-01-02T10:00:00Z").millis(),
-                r#""inputTokens":1500,"outputTokens":250,"cacheReadTokens":3000"#,
-            ),
-        ])
-        .as_bytes(),
-    );
-    write(
-        "home-a/sessions/--work-beta--/fork-torn/session.v4.jsonl",
-        document(&[
-            header(
-                instant("2026-01-02T08:00:00Z").millis(),
-                r#","id":"fork-torn","isSeeded":true"#,
-            ),
-            route(
-                1,
-                instant("2025-12-31T23:50:00Z").millis(),
-                "deepseek-official",
-                V4_PRO,
-            ),
-            beta_parent_call,
-        ])
-        .as_bytes(),
-    );
+    seed_fork_with_multiple_inherited_markers(&write, &beta_parent_call);
+
+    seed_fork_torn_before_inherited_marker(&write, beta_parent_call);
 
     let no_seq = event(
         "assistant/message",

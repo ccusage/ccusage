@@ -83,17 +83,8 @@ fn compacted(timestamp: &str, response_id: &str) -> String {
     )
 }
 
-fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
-    vec![
-        turn(
-            &stamp("2025-12-31T16:00:05.000Z"),
-            &format!(r#""model_name":"{CODEX}""#),
-        ),
-        count(
-            &stamp("2025-12-31T16:00:10.000Z"),
-            None,
-            Some(&usage(1000, 400, 100, 0)),
-        ),
+fn remote_compaction_with_repeated_marker(stamp: &dyn Fn(&str) -> String) -> [String; 3] {
+    [
         record(
             &stamp("2025-12-31T16:05:00.000Z"),
             "resp-remote-1",
@@ -102,6 +93,11 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
         ),
         compacted(&stamp("2025-12-31T16:05:01.000Z"), "resp-remote-1"),
         compacted(&stamp("2025-12-31T16:05:02.000Z"), "resp-remote-1"),
+    ]
+}
+
+fn local_compaction_already_in_token_count(stamp: &dyn Fn(&str) -> String) -> [String; 3] {
+    [
         record(
             &stamp("2025-12-31T16:10:00.000Z"),
             "resp-local-1",
@@ -114,6 +110,11 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
             Some(&usage(1800, 400, 180, 0)),
         ),
         compacted(&stamp("2025-12-31T16:10:02.000Z"), "resp-local-1"),
+    ]
+}
+
+fn unmatched_or_empty_compaction_records(stamp: &dyn Fn(&str) -> String) -> [String; 4] {
+    [
         record(
             &stamp("2025-12-31T16:15:00.000Z"),
             "resp-not-compaction",
@@ -133,6 +134,11 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
             "",
         ),
         compacted(&stamp("2025-12-31T16:17:01.000Z"), "resp-zero"),
+    ]
+}
+
+fn remote_compaction_marker_before_record(stamp: &dyn Fn(&str) -> String) -> [String; 2] {
+    [
         compacted(&stamp("2026-01-01T01:00:00.000Z"), "resp-remote-2"),
         record(
             &stamp("2026-01-01T01:00:01.000Z"),
@@ -140,12 +146,118 @@ fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
             &usage(2000, 1500, 200, 50),
             &format!(r#","model":"{GPT5}""#),
         ),
+    ]
+}
+
+fn compacting_history(stamp: &dyn Fn(&str) -> String) -> Vec<String> {
+    [
+        turn(
+            &stamp("2025-12-31T16:00:05.000Z"),
+            &format!(r#""model_name":"{CODEX}""#),
+        ),
         count(
-            &stamp("2026-01-01T01:05:00.000Z"),
-            Some(&usage(300, 100, 30, 0)),
-            Some(&usage(2100, 500, 210, 0)),
+            &stamp("2025-12-31T16:00:10.000Z"),
+            None,
+            Some(&usage(1000, 400, 100, 0)),
         ),
     ]
+    .into_iter()
+    .chain(remote_compaction_with_repeated_marker(stamp))
+    .chain(local_compaction_already_in_token_count(stamp))
+    .chain(unmatched_or_empty_compaction_records(stamp))
+    .chain(remote_compaction_marker_before_record(stamp))
+    .chain([count(
+        &stamp("2026-01-01T01:05:00.000Z"),
+        Some(&usage(300, 100, 30, 0)),
+        Some(&usage(2100, 500, 210, 0)),
+    )])
+    .collect()
+}
+
+fn seed_exec_json_with_timestamp_fallback(write: &impl Fn(&str, &[String], Instant)) {
+    write(
+        "work/sessions/exec/headless-run.jsonl",
+        &[
+            format!(
+                r#"{{"timestamp":"2026-01-01T03:00:00.000Z","model":"{GPT5}","usage":{{"prompt_tokens":900,"cached_tokens":300,"completion_tokens":90,"reasoning_tokens":9}}}}"#
+            ),
+            r#"{"timestamp":"2026-01-01T03:10:00.000Z","usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":400,"output_tokens":50}}"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-01T03:30:00.000Z","usage":{"input_tokens":0,"output_tokens":0}}"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-01T03:31:00.000Z","usage":"n/a","note":"9999"}"#.to_string(),
+            format!(
+                r#"{{"created_at":{created_at},"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#,
+                created_at = instant("2026-01-02T03:00:00Z").secs()
+            ),
+            r#"{"result":{"usage":{"input":120,"output":12}}}"#.to_string(),
+            r#"{"timestamp":"2026-01-02T05:00:00Z","model":5,"usage":{"input_tokens":80,"output_tokens":8}}"#
+                .to_string(),
+            r#"{"timestamp":"2025-12-31T23:59:59.000Z","model":"codex-auto-review","usage":{"input_tokens":640,"cached_input_tokens":40,"output_tokens":64}}"#
+                .to_string(),
+        ],
+        instant("2026-01-02T04:00:00Z"),
+    );
+}
+
+fn seed_fork_with_copied_compactions(write: &impl Fn(&str, &[String], Instant)) {
+    let mut compacting_fork = vec![meta(
+        "2026-01-01T02:00:00.000Z",
+        COMPACTING_FORK,
+        &format!(r#","forked_from_id":"{COMPACTING}""#),
+    )];
+    compacting_fork.extend(compacting_history(&|_| {
+        "2026-01-01T02:00:00.000Z".to_string()
+    }));
+    compacting_fork.extend([
+        record(
+            "2026-01-01T02:10:00.000Z",
+            "resp-fork-own",
+            &usage(1500, 1200, 150, 0),
+            "",
+        ),
+        compacted("2026-01-01T02:10:01.000Z", "resp-fork-own"),
+        count(
+            "2026-01-01T02:11:00.000Z",
+            Some(&usage(220, 20, 22, 0)),
+            Some(&usage(2320, 520, 232, 0)),
+        ),
+    ]);
+    write(
+        &format!(
+            "work/sessions/{}",
+            rollout("2026-01-01", "02-00-00", COMPACTING_FORK)
+        ),
+        &compacting_fork,
+        instant("2026-01-01T02:12:00Z"),
+    );
+}
+
+fn seed_archived_copy_with_service_tier(write: &impl Fn(&str, &[String], Instant)) {
+    write(
+        &format!("work/archived_sessions/rollout-2025-12-31T16-00-00-{ARCHIVED_COPY}.jsonl"),
+        &[
+            meta("2025-12-31T16:00:00.000Z", ARCHIVED_COPY, ""),
+            turn(
+                "2025-12-31T16:00:05.000Z",
+                &format!(r#""model_name":"{CODEX}""#),
+            ),
+            count(
+                "2025-12-31T16:00:10.000Z",
+                None,
+                Some(&usage(1000, 400, 100, 0)),
+            ),
+            settings("2025-12-31T16:04:59.000Z", r#""service_tier":"priority""#),
+            record(
+                "2025-12-31T16:05:00.000Z",
+                "resp-remote-1",
+                &usage(5000, 4000, 500, 0),
+                "",
+            ),
+            compacted("2025-12-31T16:05:01.000Z", "resp-remote-1"),
+        ],
+        instant("2025-12-31T16:06:00Z"),
+    );
 }
 
 pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
@@ -295,61 +407,9 @@ service_tier = "fast"
         instant("2026-01-01T01:06:00Z"),
     );
 
-    let mut compacting_fork = vec![meta(
-        "2026-01-01T02:00:00.000Z",
-        COMPACTING_FORK,
-        &format!(r#","forked_from_id":"{COMPACTING}""#),
-    )];
-    compacting_fork.extend(compacting_history(&|_| {
-        "2026-01-01T02:00:00.000Z".to_string()
-    }));
-    compacting_fork.extend([
-        record(
-            "2026-01-01T02:10:00.000Z",
-            "resp-fork-own",
-            &usage(1500, 1200, 150, 0),
-            "",
-        ),
-        compacted("2026-01-01T02:10:01.000Z", "resp-fork-own"),
-        count(
-            "2026-01-01T02:11:00.000Z",
-            Some(&usage(220, 20, 22, 0)),
-            Some(&usage(2320, 520, 232, 0)),
-        ),
-    ]);
-    write(
-        &format!(
-            "work/sessions/{}",
-            rollout("2026-01-01", "02-00-00", COMPACTING_FORK)
-        ),
-        &compacting_fork,
-        instant("2026-01-01T02:12:00Z"),
-    );
+    seed_fork_with_copied_compactions(&write);
 
-    write(
-        &format!("work/archived_sessions/rollout-2025-12-31T16-00-00-{ARCHIVED_COPY}.jsonl"),
-        &[
-            meta("2025-12-31T16:00:00.000Z", ARCHIVED_COPY, ""),
-            turn(
-                "2025-12-31T16:00:05.000Z",
-                &format!(r#""model_name":"{CODEX}""#),
-            ),
-            count(
-                "2025-12-31T16:00:10.000Z",
-                None,
-                Some(&usage(1000, 400, 100, 0)),
-            ),
-            settings("2025-12-31T16:04:59.000Z", r#""service_tier":"priority""#),
-            record(
-                "2025-12-31T16:05:00.000Z",
-                "resp-remote-1",
-                &usage(5000, 4000, 500, 0),
-                "",
-            ),
-            compacted("2025-12-31T16:05:01.000Z", "resp-remote-1"),
-        ],
-        instant("2025-12-31T16:06:00Z"),
-    );
+    seed_archived_copy_with_service_tier(&write);
 
     write(
         &format!(
@@ -552,29 +612,7 @@ service_tier = "fast"
         instant("2025-12-31T12:02:00Z"),
     );
 
-    write(
-        "work/sessions/exec/headless-run.jsonl",
-        &[
-            format!(
-                r#"{{"timestamp":"2026-01-01T03:00:00.000Z","model":"{GPT5}","usage":{{"prompt_tokens":900,"cached_tokens":300,"completion_tokens":90,"reasoning_tokens":9}}}}"#
-            ),
-            r#"{"timestamp":"2026-01-01T03:10:00.000Z","usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":400,"output_tokens":50}}"#
-                .to_string(),
-            r#"{"timestamp":"2026-01-01T03:30:00.000Z","usage":{"input_tokens":0,"output_tokens":0}}"#
-                .to_string(),
-            r#"{"timestamp":"2026-01-01T03:31:00.000Z","usage":"n/a","note":"9999"}"#.to_string(),
-            format!(
-                r#"{{"created_at":{created_at},"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#,
-                created_at = instant("2026-01-02T03:00:00Z").secs()
-            ),
-            r#"{"result":{"usage":{"input":120,"output":12}}}"#.to_string(),
-            r#"{"timestamp":"2026-01-02T05:00:00Z","model":5,"usage":{"input_tokens":80,"output_tokens":8}}"#
-                .to_string(),
-            r#"{"timestamp":"2025-12-31T23:59:59.000Z","model":"codex-auto-review","usage":{"input_tokens":640,"cached_input_tokens":40,"output_tokens":64}}"#
-                .to_string(),
-        ],
-        instant("2026-01-02T04:00:00Z"),
-    );
+    seed_exec_json_with_timestamp_fallback(&write);
 
     let compressed = rollout("2026-01-02", "09-00-00", COMPRESSED);
     write_bytes(

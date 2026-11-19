@@ -345,10 +345,137 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
     );
 }
 
+fn lab(name: &str) -> String {
+    format!("{LAB}/{name}.jsonl")
+}
+
+fn relative(name: &str) -> String {
+    format!(r#""{name}.jsonl""#)
+}
+
+fn seed_fork_with_parent_outside_store(
+    root: &Path,
+    write: &impl Fn(&str, &[String]),
+    day_start: Option<&str>,
+) {
+    let outside = message("2025-12-27T11:30:00.000Z", UNPRICED, &tokens(25, 8, 0, 0));
+    write(
+        OUTSIDE_ROOT,
+        &[
+            header("outside-root", day_start, None),
+            outside.clone(),
+            message("2025-12-27T12:50:00.000Z", UNPRICED, &tokens(5, 5, 0, 0)),
+        ],
+    );
+    write(
+        &lab("lab-outside-child"),
+        &[
+            header(
+                "lab-outside-child",
+                Some("2025-12-27T12:00:00.000Z"),
+                Some(&json_path(&root.join(OUTSIDE_ROOT))),
+            ),
+            outside,
+            message("2025-12-27T11:40:00.000Z", UNPRICED, &tokens(2, 1, 0, 0)),
+        ],
+    );
+}
+
+fn seed_active_branch_and_partial_tree_replays(
+    write: &impl Fn(&str, &[String]),
+    day_start: Option<&str>,
+) {
+    let tree = |id: &str, parent: &str, time: &str, input: u64| {
+        linked(
+            id,
+            parent,
+            &format!("2025-12-27T{time}:00.000Z"),
+            UNPRICED,
+            &tokens(input, 10, 20, 3),
+        )
+    };
+    write(
+        &lab("lab-tree-root"),
+        &[
+            header("lab-tree-root", day_start, None),
+            tree("t-unrelated", "null", "12:00", 50),
+            tree("t-a", "null", "12:10", 100),
+            tree("t-x", r#""t-a""#, "12:20", 200),
+            tree("t-y", r#""t-a""#, "12:30", 300),
+            tree("t-z", r#""t-y""#, "12:40", 400),
+        ],
+    );
+    write(
+        &lab("lab-tree-child"),
+        &[
+            header(
+                "lab-tree-child",
+                Some("2025-12-27T13:00:00.000Z"),
+                Some(&relative("lab-tree-root")),
+            ),
+            tree("copy-a", "null", "12:10", 100),
+            tree("copy-y", r#""copy-a""#, "12:30", 300),
+            tree("copy-z", r#""copy-y""#, "12:40", 400),
+            tree("child-only", r#""copy-z""#, "13:10", 500),
+        ],
+    );
+
+    let partial_plain = message("2025-12-27T14:10:00.000Z", UNPRICED, &tokens(27, 9, 0, 0));
+    write(
+        &lab("lab-tree-partial"),
+        &[
+            header("lab-tree-partial", day_start, None),
+            tree("pt1", "null", "14:00", 26),
+            partial_plain.clone(),
+        ],
+    );
+    write(
+        &lab("lab-tree-partial-child"),
+        &[
+            header(
+                "lab-tree-partial-child",
+                Some("2025-12-27T14:20:00.000Z"),
+                Some(&relative("lab-tree-partial")),
+            ),
+            message("2025-12-27T14:00:00.000Z", UNPRICED, &tokens(26, 10, 20, 3)),
+            partial_plain,
+        ],
+    );
+}
+
+fn seed_fork_with_missing_and_zero_cost(write: &impl Fn(&str, &[String]), day_start: Option<&str>) {
+    let zero_usage = tokens(1000, 100, 0, 0);
+    write(
+        &lab("lab-zero-root"),
+        &[
+            header("lab-zero-root", day_start, None),
+            message("2025-12-27T14:30:00.000Z", GPT5, &zero_usage),
+        ],
+    );
+    write(
+        &lab("lab-zero-child"),
+        &[
+            header(
+                "lab-zero-child",
+                Some("2025-12-27T14:40:00.000Z"),
+                Some(&relative("lab-zero-root")),
+            ),
+            message(
+                "2025-12-27T14:30:00.000Z",
+                GPT5,
+                &with_cost(&zero_usage, "0"),
+            ),
+            message(
+                "2025-12-27T14:50:00.000Z",
+                GPT5,
+                &with_cost(&tokens(10, 1, 0, 0), "0.125"),
+            ),
+        ],
+    );
+}
+
 fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
-    let lab = |name: &str| format!("{LAB}/{name}.jsonl");
     let day_start = Some("2025-12-27T00:00:00.000Z");
-    let relative = |name: &str| format!(r#""{name}.jsonl""#);
 
     let cost_usage = tokens(10, 20, 30, 40);
     write(
@@ -546,113 +673,11 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
         ],
     );
 
-    let outside = message("2025-12-27T11:30:00.000Z", UNPRICED, &tokens(25, 8, 0, 0));
-    write(
-        OUTSIDE_ROOT,
-        &[
-            header("outside-root", day_start, None),
-            outside.clone(),
-            message("2025-12-27T12:50:00.000Z", UNPRICED, &tokens(5, 5, 0, 0)),
-        ],
-    );
-    write(
-        &lab("lab-outside-child"),
-        &[
-            header(
-                "lab-outside-child",
-                Some("2025-12-27T12:00:00.000Z"),
-                Some(&json_path(&root.join(OUTSIDE_ROOT))),
-            ),
-            outside,
-            message("2025-12-27T11:40:00.000Z", UNPRICED, &tokens(2, 1, 0, 0)),
-        ],
-    );
+    seed_fork_with_parent_outside_store(root, write, day_start);
 
-    let tree = |id: &str, parent: &str, time: &str, input: u64| {
-        linked(
-            id,
-            parent,
-            &format!("2025-12-27T{time}:00.000Z"),
-            UNPRICED,
-            &tokens(input, 10, 20, 3),
-        )
-    };
-    write(
-        &lab("lab-tree-root"),
-        &[
-            header("lab-tree-root", day_start, None),
-            tree("t-unrelated", "null", "12:00", 50),
-            tree("t-a", "null", "12:10", 100),
-            tree("t-x", r#""t-a""#, "12:20", 200),
-            tree("t-y", r#""t-a""#, "12:30", 300),
-            tree("t-z", r#""t-y""#, "12:40", 400),
-        ],
-    );
-    write(
-        &lab("lab-tree-child"),
-        &[
-            header(
-                "lab-tree-child",
-                Some("2025-12-27T13:00:00.000Z"),
-                Some(&relative("lab-tree-root")),
-            ),
-            tree("copy-a", "null", "12:10", 100),
-            tree("copy-y", r#""copy-a""#, "12:30", 300),
-            tree("copy-z", r#""copy-y""#, "12:40", 400),
-            tree("child-only", r#""copy-z""#, "13:10", 500),
-        ],
-    );
+    seed_active_branch_and_partial_tree_replays(write, day_start);
 
-    let partial_plain = message("2025-12-27T14:10:00.000Z", UNPRICED, &tokens(27, 9, 0, 0));
-    write(
-        &lab("lab-tree-partial"),
-        &[
-            header("lab-tree-partial", day_start, None),
-            tree("pt1", "null", "14:00", 26),
-            partial_plain.clone(),
-        ],
-    );
-    write(
-        &lab("lab-tree-partial-child"),
-        &[
-            header(
-                "lab-tree-partial-child",
-                Some("2025-12-27T14:20:00.000Z"),
-                Some(&relative("lab-tree-partial")),
-            ),
-            message("2025-12-27T14:00:00.000Z", UNPRICED, &tokens(26, 10, 20, 3)),
-            partial_plain,
-        ],
-    );
-
-    let zero_usage = tokens(1000, 100, 0, 0);
-    write(
-        &lab("lab-zero-root"),
-        &[
-            header("lab-zero-root", day_start, None),
-            message("2025-12-27T14:30:00.000Z", GPT5, &zero_usage),
-        ],
-    );
-    write(
-        &lab("lab-zero-child"),
-        &[
-            header(
-                "lab-zero-child",
-                Some("2025-12-27T14:40:00.000Z"),
-                Some(&relative("lab-zero-root")),
-            ),
-            message(
-                "2025-12-27T14:30:00.000Z",
-                GPT5,
-                &with_cost(&zero_usage, "0"),
-            ),
-            message(
-                "2025-12-27T14:50:00.000Z",
-                GPT5,
-                &with_cost(&tokens(10, 1, 0, 0), "0.125"),
-            ),
-        ],
-    );
+    seed_fork_with_missing_and_zero_cost(write, day_start);
 }
 
 fn seed_named_store(root: &Path, write: &impl Fn(&str, &[String])) {
