@@ -8,6 +8,7 @@ pub struct EntryPricing<'a> {
     pub usage: crate::TokenUsageRaw,
     pub reasoning_tokens: u64,
     pub residual_tokens: u64,
+    pub reported_model: Option<&'a str>,
     pub candidates: &'a [(&'a str, crate::pricing::MatchKind)],
     pub stored_cost: Option<f64>,
     pub timestamp: Option<crate::TimestampMs>,
@@ -69,7 +70,7 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> Entr
             .saturating_add(entry.residual_tokens),
         ..entry.usage
     };
-    let resolved = map.resolve_at(entry.candidates, entry.timestamp);
+    let resolved = map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp);
     match resolved {
         Some((model, rates)) => {
             let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
@@ -312,6 +313,7 @@ mod tests {
                 },
                 reasoning_tokens: 4,
                 residual_tokens: 5,
+                reported_model: None,
                 candidates: &candidates,
                 stored_cost: Some(99.0),
                 timestamp: None,
@@ -344,6 +346,7 @@ mod tests {
                     },
                     reasoning_tokens: 0,
                     residual_tokens: 0,
+                    reported_model: None,
                     candidates: &candidates,
                     stored_cost,
                     timestamp: None,
@@ -376,6 +379,7 @@ mod tests {
                     },
                     reasoning_tokens,
                     residual_tokens,
+                    reported_model: None,
                     candidates: &candidates,
                     stored_cost,
                     timestamp: None,
@@ -407,6 +411,7 @@ mod tests {
                 },
                 reasoning_tokens: 0,
                 residual_tokens: 0,
+                reported_model: None,
                 candidates: &candidates,
                 stored_cost: None,
                 timestamp: Some(timestamp("2026-08-17T01:00:00Z")),

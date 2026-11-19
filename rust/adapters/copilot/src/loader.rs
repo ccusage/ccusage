@@ -567,6 +567,7 @@ fn usage_entry_to_loaded(
             usage,
             reasoning_tokens: 0,
             residual_tokens: entry.extra_total_tokens,
+            reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: cost_usd,
             timestamp: Some(entry.timestamp),

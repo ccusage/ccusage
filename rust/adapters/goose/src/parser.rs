@@ -114,6 +114,7 @@ pub(super) fn row_to_entry(
             usage,
             reasoning_tokens,
             residual_tokens: 0,
+            reported_model: Some(&model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(timestamp),

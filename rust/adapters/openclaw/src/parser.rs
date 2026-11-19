@@ -429,6 +429,7 @@ pub(super) fn entry_to_loaded(
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
+            reported_model: Some(identity.display()),
             candidates: &candidates,
             stored_cost: entry.cost,
             timestamp: Some(entry.timestamp),

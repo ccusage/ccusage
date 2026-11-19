@@ -1813,10 +1813,14 @@ impl PricingMap {
 
     pub fn resolve_at<'a>(
         &self,
+        reported_model: Option<&'a str>,
         candidates: &[(&'a str, MatchKind)],
         timestamp: Option<TimestampMs>,
     ) -> Option<(&'a str, Pricing)> {
-        let (model, pricing) = self.resolve(candidates)?;
+        let (model, pricing) = reported_model
+            .filter(|_| !self.rows.override_keys.is_empty())
+            .and_then(|model| self.overridden(model).map(|pricing| (model, pricing)))
+            .or_else(|| self.resolve(candidates))?;
         Some((
             model,
             timestamp.map_or(pricing, |timestamp| match ScheduleId::for_request(model) {
@@ -3862,6 +3866,7 @@ mod tests {
         let instant = timestamp("2026-08-17T01:00:00Z");
         let (matched, provider) = pricing
             .resolve_at(
+                None,
                 &[
                     ("openrouter/deepseek.v4.flash", super::MatchKind::Exact),
                     ("deepseek-v4-flash", super::MatchKind::Fuzzy),
@@ -3873,6 +3878,7 @@ mod tests {
         assert_eq!(provider.input, 9e-6);
         let (matched, direct) = pricing
             .resolve_at(
+                None,
                 &[
                     ("unknown/deepseek-v4-flash", super::MatchKind::Exact),
                     ("deepseek-v4-flash", super::MatchKind::Fuzzy),

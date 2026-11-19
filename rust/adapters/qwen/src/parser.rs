@@ -196,6 +196,7 @@ fn price_qwen(
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
+            reported_model: Some(model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(timestamp),

@@ -439,6 +439,7 @@ pub(super) fn dsh_entry_to_loaded(
             usage: entry.usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
+            reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(entry.timestamp),

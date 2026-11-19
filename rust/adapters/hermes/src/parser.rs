@@ -201,6 +201,7 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
             usage: entry.usage,
             reasoning_tokens: entry.reasoning_tokens,
             residual_tokens: 0,
+            reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
             timestamp: Some(entry.timestamp),
@@ -621,7 +622,14 @@ mod pricing_identity_tests {
                 output_cost_per_token: Some(50e-6),
                 ..Default::default()
             };
-            let pricing = pricing.with_user_overrides([(&id, &rates)]);
+            let qualified_id = format!("{provider}/{configured}");
+            let provider_override = ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(99e-6),
+                output_cost_per_token: Some(99e-6),
+                ..Default::default()
+            };
+            let pricing =
+                pricing.with_user_overrides([(&id, &rates), (&qualified_id, &provider_override)]);
             let entry = HermesEntry {
                 timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
                 timestamp_text: String::new(),

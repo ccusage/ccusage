@@ -410,6 +410,7 @@ fn amp_entry(
             },
             reasoning_tokens: 0,
             residual_tokens: record.extra_total_tokens,
+            reported_model: Some(&record.model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(record.timestamp),

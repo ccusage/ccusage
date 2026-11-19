@@ -336,6 +336,7 @@ impl OpenCodeUsage {
                 usage,
                 reasoning_tokens: 0,
                 residual_tokens: extra_total_tokens,
+                reported_model: Some(&model),
                 candidates: &candidates,
                 stored_cost: recorded_cost,
                 timestamp: pricing_timestamp,

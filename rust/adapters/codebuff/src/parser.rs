@@ -396,6 +396,7 @@ pub(super) fn price_codebuff(
             usage: entry.usage,
             reasoning_tokens: 0,
             residual_tokens: entry.extra_total_tokens,
+            reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(entry.timestamp),

@@ -595,6 +595,7 @@ pub(super) fn event_to_loaded(
             usage,
             reasoning_tokens: event.reasoning_tokens,
             residual_tokens: 0,
+            reported_model: Some(&event.model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(event.timestamp),
