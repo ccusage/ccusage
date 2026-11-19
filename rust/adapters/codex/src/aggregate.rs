@@ -170,10 +170,41 @@ struct CodexDedupeMap {
     responses: FxHashMap<CompactString, CodexResponseUsage>,
 }
 
+#[derive(Default)]
+struct CodexModels {
+    logged: FxHashMap<CompactString, StringId>,
+    resolved: StringInterner<CodexModel>,
+}
+
+impl CodexModels {
+    fn intern(&mut self, logged: &str, pricing: Option<&PricingMap>) -> Result<StringId> {
+        if let Some(id) = self.logged.get(logged) {
+            return Ok(*id);
+        }
+
+        let model = crate::model_aliases::resolve_model_name(logged);
+        let id = self.resolved.intern(&model, || {
+            let price = pricing.and_then(|table| table.find_handle(&model));
+            CodexModel {
+                name: CompactString::new(model.as_ref()),
+                long_context_threshold: price.as_ref().map_or(
+                    crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+                    |handle| {
+                        handle.with_rates_at(None, |entry| entry.long_context_split_threshold())
+                    },
+                ),
+                time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
+            }
+        })?;
+        self.logged.insert(CompactString::new(logged), id);
+        Ok(id)
+    }
+}
+
 struct CodexDedupe<'a> {
     pricing: Option<&'a PricingMap>,
     shards: Vec<Mutex<CodexDedupeMap>>,
-    models: Mutex<StringInterner<CodexModel>>,
+    models: Mutex<CodexModels>,
     sessions: Mutex<StringInterner<CompactString>>,
 }
 
@@ -185,7 +216,7 @@ impl<'a> CodexDedupe<'a> {
             shards: (0..count)
                 .map(|_| Mutex::new(CodexDedupeMap::default()))
                 .collect(),
-            models: Mutex::new(StringInterner::default()),
+            models: Mutex::new(CodexModels::default()),
             sessions: Mutex::new(StringInterner::default()),
         }
     }
@@ -206,7 +237,6 @@ impl<'a> CodexDedupe<'a> {
         kind: AgentReportKind,
         provenance: &mut CodexEventProvenance,
     ) -> Result<()> {
-        let model = crate::model_aliases::resolve_model_name(&event.model);
         let mut key = CodexUsageKey {
             session: if kind == AgentReportKind::Session {
                 Some(CodexEventProvenance::intern(
@@ -219,26 +249,7 @@ impl<'a> CodexDedupe<'a> {
                 None
             },
             timestamp: event.timestamp,
-            model: CodexEventProvenance::intern(
-                &mut provenance.models,
-                &self.models,
-                &model,
-                || {
-                    let price = self.pricing.and_then(|table| table.find_handle(&model));
-                    CodexModel {
-                        name: CompactString::new(&model),
-                        long_context_threshold: price.as_ref().map_or(
-                            crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
-                            |handle| {
-                                handle.with_rates_at(None, |entry| {
-                                    entry.long_context_split_threshold()
-                                })
-                            },
-                        ),
-                        time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
-                    }
-                },
-            )?,
+            model: self.intern_model(provenance, &event.model)?,
             usage: event.raw_usage(),
             occurrence: 0,
         };
@@ -277,6 +288,25 @@ impl<'a> CodexDedupe<'a> {
         Ok(())
     }
 
+    fn intern_model(
+        &self,
+        provenance: &mut CodexEventProvenance,
+        logged: &str,
+    ) -> Result<StringId> {
+        let cache = &mut provenance.models;
+        if let Some(id) = cache.get(logged) {
+            return Ok(*id);
+        }
+
+        let id = self
+            .models
+            .lock()
+            .map_err(|_| crate::cli_error("codex interner poisoned"))?
+            .intern(logged, self.pricing)?;
+        cache.insert(CompactString::new(logged), id);
+        Ok(id)
+    }
+
     fn fold(
         self,
         shared: &SharedArgs,
@@ -302,7 +332,11 @@ impl<'a> CodexDedupe<'a> {
                     .into_values()
                     .map(|record| (record.key, record.attribution)),
             ) {
-                let model = &models.values[key.model.0.get() - 1];
+                let model = models
+                    .resolved
+                    .values
+                    .get(key.model.0.get() - 1)
+                    .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
                 let session = key
                     .session
                     .map(|id| sessions.values[id.0.get() - 1].as_str());
