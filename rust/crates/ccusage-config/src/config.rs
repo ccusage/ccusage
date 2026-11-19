@@ -107,29 +107,27 @@ impl ConfigContext {
                 }
             }
         }
-        if let Some(value) = low_override {
-            lows.push((usize::MAX, String::new(), value));
-        }
-        if let Some(value) = medium_override {
-            mediums.push((usize::MAX, String::new(), value));
-        }
         let defaults = ContextThresholds::default();
         loop {
-            let low = lows.last().map_or(defaults.low(), |(_, _, value)| *value);
-            let medium = mediums
-                .last()
-                .map_or(defaults.medium(), |(_, _, value)| *value);
+            let low = low_override
+                .or_else(|| lows.last().map(|(_, _, value)| *value))
+                .unwrap_or(defaults.low());
+            let medium = medium_override
+                .or_else(|| mediums.last().map(|(_, _, value)| *value))
+                .unwrap_or(defaults.medium());
             match ContextThresholds::new(low, medium) {
                 Ok(thresholds) => {
                     return Ok(thresholds);
                 }
                 Err(error) => {
-                    if low_override.is_some() || medium_override.is_some() {
-                        return Err(error);
-                    }
-                    let drop_low = lows.last().is_some_and(|(index, _, _)| {
-                        mediums.last().is_none_or(|(other, _, _)| index >= other)
-                    });
+                    let drop_low = match (low_override, medium_override) {
+                        (Some(_), None) if !mediums.is_empty() => false,
+                        (None, Some(_)) if !lows.is_empty() => true,
+                        (None, None) => lows.last().is_some_and(|(index, _, _)| {
+                            mediums.last().is_none_or(|(other, _, _)| index >= other)
+                        }),
+                        _ => return Err(error),
+                    };
                     let (field, invalid) = if drop_low {
                         ("contextLowThreshold", lows.pop())
                     } else {
@@ -1024,6 +1022,23 @@ mod tests {
             config.warnings()[0]
                 .contains("selected.json: commands.statusline.contextMediumThreshold")
         );
+    }
+
+    #[test]
+    fn discovered_threshold_does_not_invalidate_a_cli_flag() {
+        let mut config = context(
+            json!({"defaults": {"contextMediumThreshold": 40}}),
+            "statusline",
+            None,
+            "statusline",
+        );
+        config.threshold_origin = Some((PathBuf::from("selected.json"), false));
+        assert_eq!(
+            config.context_thresholds(Some(60), None).unwrap(),
+            ContextThresholds::new(60, 80).unwrap()
+        );
+        assert_eq!(config.warnings().len(), 1);
+        assert!(config.context_thresholds(Some(60), Some(40)).is_err());
     }
 
     #[test]
