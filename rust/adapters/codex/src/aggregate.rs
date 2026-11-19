@@ -2389,6 +2389,35 @@ mod tests {
         }
     }
 
+    /// A spawned child replays its parent's request without the record. When the
+    /// child is read first, the parent's recorded request still owns the usage.
+    #[test]
+    fn credits_a_replaced_stand_in_to_the_recording_session() {
+        let fixture = fs_fixture!({
+            "sessions/0-child.jsonl": &recorded_requests(None, &[None]),
+            "sessions/1-parent.jsonl": &recorded_requests(None, &[Some("resp_parent")]),
+        });
+        let sessions = fixture.path("sessions");
+
+        for single_thread in [true, false] {
+            let events = crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+            assert_eq!(
+                aggregate_events(&events, AgentReportKind::Session, Some("UTC"))
+                    .unwrap()
+                    .into_iter()
+                    .map(|(session, group)| (session, group.input_tokens))
+                    .collect::<Vec<_>>(),
+                [("1-parent".to_string(), 1_000)],
+                "single_thread={single_thread}"
+            );
+            assert_eq!(
+                daily_input_tokens(&sessions, single_thread),
+                [("2026-11-01".to_string(), 1_000)],
+                "single_thread={single_thread}"
+            );
+        }
+    }
+
     /// A recordless copy cannot say which of several recorded requests it copied,
     /// so it must not lend its tier to whichever one happened to arrive first.
     #[test]
