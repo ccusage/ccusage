@@ -26,6 +26,15 @@ enum Input {
     Zstd(zstd::stream::read::Decoder<'static, BufReader<File>>),
 }
 
+impl Read for Input {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Plain(file) => file.read(buffer),
+            Self::Zstd(decoder) => decoder.read(buffer),
+        }
+    }
+}
+
 pub struct JsonLines {
     input: Input,
     capacity: usize,
@@ -87,10 +96,7 @@ impl JsonLines {
 
     #[inline]
     pub fn scan<B>(self, tail: Tail, visit: impl FnMut(Line<'_>) -> ControlFlow<B>) -> Scan<B> {
-        match self.input {
-            Input::Plain(input) => scan(input, self.capacity, tail, visit),
-            Input::Zstd(input) => scan(input, self.capacity, tail, visit),
-        }
+        scan(self.input, self.capacity, tail, visit)
     }
 }
 
@@ -136,28 +142,18 @@ impl<'a> Line<'a> {
         match self.decode() {
             Ok(record) => Some(record),
             Err(error) => {
-                self.reject(error, path, diagnostics, is_usage);
+                record_decode_error(
+                    self.bytes(),
+                    error,
+                    path,
+                    self.number(),
+                    self.unterminated(),
+                    diagnostics,
+                    is_usage,
+                );
                 None
             }
         }
-    }
-
-    pub fn reject(
-        self,
-        error: serde_json::Error,
-        path: &Path,
-        diagnostics: &Diagnostics,
-        is_usage: Option<impl FnOnce(&serde_json::Value) -> bool>,
-    ) {
-        record_decode_error(
-            self.bytes(),
-            error,
-            path,
-            self.number(),
-            self.unterminated(),
-            diagnostics,
-            is_usage,
-        );
     }
 }
 
