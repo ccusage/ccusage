@@ -557,7 +557,7 @@ pub struct BlocksSpecificOptions {
 #[serde(untagged)]
 pub enum ConfigTokenLimit {
     Text(#[schemars(regex(pattern = r"^(max|\+?0*[1-9][0-9]*)$"))] String),
-    Number(std::num::NonZeroU64),
+    Number(#[schemars(range(min = 1))] u64),
 }
 
 fn deserialize_token_limit<'de, D: Deserializer<'de>>(

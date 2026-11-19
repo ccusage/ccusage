@@ -1042,6 +1042,15 @@ mod tests {
     }
 
     #[test]
+    fn numeric_zero_token_limit_reports_the_positive_limit_requirement() {
+        let fixture = fs_fixture!({
+            "selected.json": r#"{"commands":{"blocks":{"tokenLimit":0}}}"#
+        });
+        let (_, _, warnings) = load_config_paths(false, vec![fixture.path("selected.json")]);
+        assert!(warnings[0].contains("Expected max or a positive whole number"));
+    }
+
+    #[test]
     fn explicit_unordered_context_thresholds_are_errors() {
         let fixture = fs_fixture!({"selected.json": r#"{"commands":{"statusline":{"contextLowThreshold":80,"cache":false}}}"#});
         let config = ConfigContext::from_args(&[
