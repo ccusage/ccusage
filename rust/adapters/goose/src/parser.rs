@@ -213,12 +213,13 @@ fn normalize_provider(provider: Option<&str>, model: &str) -> String {
 mod tests {
     #[test]
     fn zero_rates_stop_candidate_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = ccusage_test_support::Fixture::new();
         let connection = sqlite::open(fixture.path("row.db")).unwrap();
         let mut row = connection.prepare(r#"SELECT 's', '{"model_name":"sample"}', 'vendor', '2026-05-19 00:00:00', 100, 100, 0, 100, 100, 0"#).unwrap();
         assert_eq!(row.next().unwrap(), sqlite::State::Row);
         let mut pricing = ccusage_core::PricingMap::default();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         let loaded = super::row_to_entry(
             &row,
             &jiff::tz::TimeZone::UTC,

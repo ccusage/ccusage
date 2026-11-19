@@ -689,6 +689,7 @@ mod tests {
 
     #[test]
     fn report_totals_list_unpriced_codex_models_only_when_present() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut group = CodexGroup {
             input_tokens: 100,
             output_tokens: 5,
@@ -729,7 +730,7 @@ mod tests {
 
         let mut pricing = PricingMap::default();
         pricing.load_json(
-            r#"{ "gpt-free": { "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
+            r#"{ "gpt-free": { "litellm_provider": "openai", "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
         );
         let mut free_group = CodexGroup {
             input_tokens: 100,

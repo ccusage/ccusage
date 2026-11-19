@@ -274,18 +274,18 @@ exit: 0
           "outputTokens": 300
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "inputTokens": 3000,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 610
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
           "inputTokens": 520,
           "modelName": "gpt-6.1-sol",
           "outputTokens": 57
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "inputTokens": 3000,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 610
         },
         {
           "cacheCreationTokens": 0,
@@ -555,19 +555,19 @@ exit: 0
           "outputTokens": 300
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "inputTokens": 1411,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 339
-        },
-        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 600,
           "inputTokens": 1200,
           "missingPricing": true,
           "modelName": "GLM-5.3",
           "outputTokens": 320
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "inputTokens": 1411,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 339
         },
         {
           "cacheCreationTokens": 20,

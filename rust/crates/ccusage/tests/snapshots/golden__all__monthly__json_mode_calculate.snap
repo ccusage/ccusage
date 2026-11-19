@@ -131,20 +131,20 @@ exit: 0
           "outputTokens": 1000
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "cost": 0.01401022,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 999
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2100,
           "cost": 0.012672500000000001,
           "inputTokens": 2488,
           "modelName": "gemini-2.5-pro",
           "outputTokens": 740
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "cost": 0.0115519,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 999
         },
         {
           "cacheCreationTokens": 200,
@@ -516,7 +516,7 @@ exit: 0
       ],
       "outputTokens": 29801,
       "period": "2025-12",
-      "totalCost": 1.0326062299999996,
+      "totalCost": 1.0301479099999997,
       "totalTokens": 452735
     },
     {
@@ -753,7 +753,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0011656000000000001,
+          "cost": 0.001245,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 482
@@ -1162,7 +1162,7 @@ exit: 0
       ],
       "outputTokens": 28242,
       "period": "2026-01",
-      "totalCost": 3.7511563649999995,
+      "totalCost": 3.7512357649999992,
       "totalTokens": 2279290
     },
     {
@@ -1199,7 +1199,7 @@ exit: 0
     "cacheReadTokens": 1309837,
     "inputTokens": 1346014,
     "outputTokens": 58550,
-    "totalCost": 4.7871163449999985,
+    "totalCost": 4.7847374249999985,
     "totalTokens": 2735543,
     "unpricedModels": [
       "GLM-5.3",

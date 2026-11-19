@@ -1557,7 +1557,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.00524957,
+          "cost": 0.0046569,
           "inputTokens": 1511,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 821
@@ -1568,7 +1568,7 @@ exit: 0
       ],
       "outputTokens": 821,
       "period": "session-old-1",
-      "totalCost": 0.00524957,
+      "totalCost": 0.0046569,
       "totalTokens": 7582
     },
     {
@@ -3067,7 +3067,7 @@ exit: 0
     "cacheReadTokens": 568714,
     "inputTokens": 872699,
     "outputTokens": 35660,
-    "totalCost": 15.059417770000005,
+    "totalCost": 15.058825100000005,
     "totalTokens": 1487786,
     "unpricedModels": [
       "GLM-5.3",

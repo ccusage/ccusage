@@ -466,10 +466,12 @@ mod tests {
 
     #[test]
     fn scheduled_price_is_the_same_for_direct_provider_and_bare_ids() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
-                "deepseek-v4-flash": {
+                "deepseek/deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028
                 }

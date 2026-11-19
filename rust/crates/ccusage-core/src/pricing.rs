@@ -545,168 +545,25 @@ impl Pricing {
 }
 /// Whether a lookup may fall back to the fuzzy scan, or has to answer from
 /// exact entries because a fuzzy match would shadow an exact-only id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Fuzzy {
-    Allowed,
-    ShorterKeys,
-    Denied,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Layer {
-    Primary,
-    ModelsDev,
-}
-
-struct MatchedRow<'a, T> {
-    key: &'a str,
-    value: &'a T,
-}
-
-struct TablePart<'a, T> {
-    rows: &'a PricingRows,
-    project: fn(&Row) -> Option<&T>,
-    excluded: Option<&'a FxHashSet<String>>,
-    excluded_exact_only: Option<&'a FxHashSet<String>>,
-    pricing_rows: Option<&'a PricingRows>,
-}
-impl<T> Clone for TablePart<'_, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for TablePart<'_, T> {}
-impl<'a, T: 'a> TablePart<'a, T> {
-    fn contains(self, key: &str) -> bool {
-        !self.excluded.is_some_and(|excluded| excluded.contains(key))
-    }
-    fn row(self, model: &str) -> Option<MatchedRow<'a, T>> {
-        let (key, row) = self.rows.entries.get_key_value(model)?;
-        let value = (self.project)(row)?;
-        self.contains(key).then_some(MatchedRow { key, value })
-    }
-    fn key(self, model: &str) -> Option<&'a str> {
-        self.row(model).map(|row| row.key)
-    }
-}
-impl<'a, T: 'a> TablePart<'a, T> {
-    fn same_id(self, model: &str) -> Option<&'a str> {
-        if self.pricing_rows.is_none() {
-            return self.key(model);
-        }
-        let literal = self.row(model);
-        if let Some(row) = &literal
-            && !self.rows.entries[row.key].is_bare_hosted(row.key)
-        {
-            return self.key(model);
-        }
-        let identity = normalized_pricing_key(model);
-        let indexes = self.rows.indexes();
-        let by_key = |index: &IdentityIndex| {
-            index
-                .get(identity.as_ref())?
-                .iter()
-                .filter_map(|key| self.key(key))
-                .min()
-        };
-        by_key(&indexes.by_identity)
-            .or_else(|| self.vendor_match(indexes.by_vendor_id.get(identity.as_ref())?))
-            .or_else(|| literal.map(|row| row.key))
-            .or_else(|| by_key(&indexes.bare_hosted))
-    }
-
-    fn vendor_match(self, keys: &[String]) -> Option<&'a str> {
-        let mut rows = keys.iter().filter_map(|key| self.key(key)).filter(|key| {
-            let rates = self.rows.entries[*key].pricing;
-            rates.input != 0.0 || rates.output != 0.0 || rates.overridden
-        });
-        let first = rows.next()?;
-        let price = self.rows.entries[first].pricing;
-        let mut best = first;
-        for key in rows {
-            if self.rows.entries[key].pricing != price {
-                return None;
-            }
-            best = best.min(key);
-        }
-        Some(best)
-    }
-}
-
-struct Table<'a, T> {
-    primary: TablePart<'a, T>,
-    models_dev: [Option<TablePart<'a, T>>; 2],
-}
-impl<T> Clone for Table<'_, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for Table<'_, T> {}
-impl<'a, T: 'a> Table<'a, T> {
-    fn parts(self, layer: Layer) -> impl Iterator<Item = TablePart<'a, T>> {
-        match layer {
-            Layer::Primary => [Some(self.primary), None],
-            Layer::ModelsDev => self.models_dev,
-        }
-        .into_iter()
-        .flatten()
-    }
-    fn all_parts(self) -> impl Iterator<Item = TablePart<'a, T>> {
-        std::iter::once(self.primary).chain(self.models_dev.into_iter().flatten())
-    }
-    fn row_in(self, model: &str, layer: Layer) -> Option<MatchedRow<'a, T>> {
-        self.parts(layer).find_map(|part| part.row(model))
-    }
-    fn get(self, model: &str) -> Option<&'a T> {
-        self.all_parts()
-            .find_map(|part| part.row(model).map(|row| row.value))
-    }
-    fn rows_in(self, layer: Layer) -> impl Iterator<Item = (MatchedRow<'a, T>, bool)> {
-        self.parts(layer).flat_map(|part| {
-            part.rows.entries.iter().filter_map(move |(key, row)| {
-                let value = (part.project)(row)?;
-                part.contains(key).then_some((
-                    MatchedRow { key, value },
-                    row.exact_only
-                        && !part
-                            .excluded_exact_only
-                            .is_some_and(|excluded| excluded.contains(key)),
-                ))
-            })
-        })
-    }
-    fn is_exact_only(self, model: &str) -> bool {
-        self.all_parts().any(|part| {
-            part.rows.contains_exact_only_spelling(model)
-                && part.rows.exact_only_id(model).is_none_or(|id| {
-                    !part
-                        .excluded_exact_only
-                        .is_some_and(|excluded| excluded.contains(id))
-                })
-        })
-    }
-    fn exact_only_id(self, model: &str) -> Option<&'a str> {
-        self.all_parts().find_map(|part| {
-            part.rows.exact_only_id(model).filter(|id| {
-                !part
-                    .excluded_exact_only
-                    .is_some_and(|excluded| excluded.contains(*id))
-            })
-        })
-    }
-}
-#[derive(Clone, Debug)]
-struct ModelsDevLayer {
-    rows: Arc<PricingRows>,
-    excluded_prices: Arc<FxHashSet<String>>,
-    excluded_limits: Arc<FxHashSet<String>>,
-}
 #[derive(Clone, Copy)]
 enum Lookup {
     Pricing,
     Context,
-    Exact,
+}
+
+impl Lookup {
+    fn includes(self, row: &Row) -> bool {
+        match self {
+            Self::Pricing => true,
+            Self::Context => row.context_limit.is_some(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RowMatch<'a> {
+    key: &'a str,
+    row: &'a Row,
 }
 
 /// One slot per looked-up model, so concurrent first lookups of a model share
@@ -722,8 +579,8 @@ struct ResolvedPricing {
 #[derive(Debug)]
 pub struct PricingMap {
     rows: Arc<PricingRows>,
-    models_dev: [Option<ModelsDevLayer>; 2],
-    live_merged: OnceLock<Box<PricingMap>>,
+    models_dev: Option<Arc<PricingRows>>,
+    live_models_dev: OnceLock<Option<Arc<PricingRows>>>,
     enable_models_dev_fallback: bool,
     find_cache: OnceLock<FindCache>,
 }
@@ -746,6 +603,71 @@ struct RowIndexes {
 }
 
 impl PricingRows {
+    fn literal(&self, key: &str, lookup: Lookup) -> Option<RowMatch<'_>> {
+        let (key, row) = self.entries.get_key_value(key)?;
+        lookup.includes(row).then_some(RowMatch { key, row })
+    }
+
+    fn indexed_row(&self, keys: &[String], lookup: Lookup) -> Option<RowMatch<'_>> {
+        keys.iter()
+            .filter_map(|key| self.literal(key, lookup))
+            .min_by_key(|found| found.key)
+    }
+
+    fn vendor_match(&self, keys: &[String], lookup: Lookup) -> Option<RowMatch<'_>> {
+        let mut matches = keys
+            .iter()
+            .filter_map(|key| self.literal(key, lookup))
+            .filter(|found| {
+                let rates = found.row.pricing;
+                matches!(lookup, Lookup::Context)
+                    || rates.input != 0.0
+                    || rates.output != 0.0
+                    || rates.overridden
+            });
+        let first = matches.next()?;
+        let mut best = first;
+        for found in matches {
+            if found.row.pricing != first.row.pricing {
+                return None;
+            }
+            if found.key < best.key {
+                best = found;
+            }
+        }
+        Some(best)
+    }
+
+    fn authoritative(&self, name: &str, lookup: Lookup, hosted: bool) -> Option<RowMatch<'_>> {
+        let literal = self.literal(name, lookup);
+        if let Some(found) = literal
+            && !found.row.is_bare_hosted(found.key)
+        {
+            return Some(found);
+        }
+        let identity = normalized_pricing_key(name);
+        let indexes = self.indexes();
+        let by_key =
+            |index: &IdentityIndex| self.indexed_row(index.get(identity.as_ref())?, lookup);
+        by_key(&indexes.by_identity)
+            .or_else(|| self.vendor_match(indexes.by_vendor_id.get(identity.as_ref())?, lookup))
+            .or_else(|| {
+                if hosted {
+                    literal.or_else(|| by_key(&indexes.bare_hosted))
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn exact(&self, name: &str, lookup: Lookup) -> Option<RowMatch<'_>> {
+        self.literal(name, lookup).or_else(|| {
+            let id = normalized_pricing_key(name);
+            let indexes = self.indexes();
+            self.indexed_row(indexes.by_identity.get(id.as_ref())?, lookup)
+        })
+    }
+
     fn indexes(&self) -> &RowIndexes {
         self.indexes.get_or_init(|| {
             let mut indexes = RowIndexes::default();
@@ -804,8 +726,8 @@ impl Default for PricingMap {
     fn default() -> Self {
         Self {
             rows: Arc::default(),
-            models_dev: [None, None],
-            live_merged: OnceLock::new(),
+            models_dev: None,
+            live_models_dev: OnceLock::new(),
             enable_models_dev_fallback: false,
             find_cache: OnceLock::new(),
         }
@@ -1284,11 +1206,7 @@ impl PricingMap {
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
-        self.models_dev[1] = Some(ModelsDevLayer {
-            rows: Arc::clone(&embedded_models_dev.rows),
-            excluded_prices: Arc::default(),
-            excluded_limits: Arc::default(),
-        });
+        self.models_dev = Some(Arc::clone(&embedded_models_dev.rows));
         self.clear_find_cache();
     }
 
@@ -1324,13 +1242,11 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
-        let base = self.live_merged.get().map_or(self, |map| map.as_ref());
         let mut map = Self {
-            rows: Arc::clone(&base.rows),
-            models_dev: base.models_dev.clone(),
-            live_merged: OnceLock::new(),
-            enable_models_dev_fallback: self.enable_models_dev_fallback
-                && self.live_merged.get().is_none(),
+            rows: Arc::clone(&self.rows),
+            models_dev: self.models_dev.clone(),
+            live_models_dev: self.live_models_dev.clone(),
+            enable_models_dev_fallback: self.enable_models_dev_fallback,
             find_cache: OnceLock::new(),
         };
         map.apply_overrides(overrides);
@@ -1671,39 +1587,22 @@ impl PricingMap {
                 .or_default(),
         );
         *slot.get_or_init(|| {
-            let map = self.for_lookup(model, Lookup::Pricing);
-            let rates = map
-                .overridden(model)
-                .or_else(|| map.lookup(map.prices(), model, Fuzzy::Allowed))?;
+            let (_, found) = self.resolve_row_with(
+                Some(model),
+                &[(model, MatchKind::Fuzzy)],
+                Lookup::Pricing,
+                models_dev_pricing,
+            )?;
             let schedule = ScheduleId::for_request(model).map(|(schedule, _)| schedule);
-            Some(ResolvedPricing { rates, schedule })
+            Some(ResolvedPricing {
+                rates: found.row.pricing,
+                schedule,
+            })
         })
     }
 
     pub fn resolve<'a>(&self, candidates: &[(&'a str, MatchKind)]) -> Option<(&'a str, Pricing)> {
-        if !self.rows.override_keys.is_empty()
-            && let Some(priced) = candidates
-                .iter()
-                .find_map(|&(model, _)| self.overridden(model).map(|pricing| (model, pricing)))
-        {
-            return Some(priced);
-        }
-        candidates.iter().find_map(|&(model, kind)| {
-            let pricing = match kind {
-                MatchKind::StrictExact => self.rows.entries.get(model).map(|row| row.pricing),
-                MatchKind::Exact => self
-                    .for_lookup(model, Lookup::Exact)
-                    .exact_candidate_price(model),
-                MatchKind::Fuzzy => self.find(model),
-            }?;
-            Some((model, pricing))
-        })
-    }
-
-    fn exact_candidate_price(&self, model: &str) -> Option<Pricing> {
-        let prices = self.prices();
-        self.exact_normalized_key(model)?;
-        self.lookup(prices, model, Fuzzy::ShorterKeys)
+        self.resolve_at(None, candidates, None)
     }
 
     pub(crate) fn resolve_at<'a>(
@@ -1721,10 +1620,13 @@ impl PricingMap {
             }?;
             return Some((model, rates));
         }
-        let (model, pricing) = reported_model
-            .filter(|_| !self.rows.override_keys.is_empty())
-            .and_then(|model| self.overridden(model).map(|pricing| (model, pricing)))
-            .or_else(|| self.resolve(candidates))?;
+        let (model, found) = self.resolve_row_with(
+            reported_model,
+            candidates,
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        let pricing = found.row.pricing;
         Some((
             model,
             timestamp.map_or(pricing, |timestamp| match ScheduleId::for_request(model) {
@@ -1736,318 +1638,126 @@ impl PricingMap {
         ))
     }
 
-    fn prices(&self) -> Table<'_, Pricing> {
-        Table {
-            primary: TablePart {
-                rows: &self.rows,
-                project: |row| Some(&row.pricing),
-                excluded: None,
-                excluded_exact_only: None,
-                pricing_rows: Some(&self.rows),
-            },
-            models_dev: self.models_dev.each_ref().map(|layer| {
-                layer.as_ref().map(|layer| TablePart {
-                    rows: &layer.rows,
-                    project: |row| Some(&row.pricing),
-                    excluded: Some(&layer.excluded_prices),
-                    excluded_exact_only: Some(&layer.excluded_prices),
-                    pricing_rows: Some(&layer.rows),
-                })
-            }),
-        }
-    }
-    fn limits(&self) -> Table<'_, u64> {
-        Table {
-            primary: TablePart {
-                rows: &self.rows,
-                project: |row| row.context_limit.as_ref(),
-                excluded: None,
-                excluded_exact_only: None,
-                pricing_rows: None,
-            },
-            models_dev: self.models_dev.each_ref().map(|layer| {
-                layer.as_ref().map(|layer| TablePart {
-                    rows: &layer.rows,
-                    project: |row| row.context_limit.as_ref(),
-                    excluded: Some(&layer.excluded_limits),
-                    excluded_exact_only: Some(&layer.excluded_limits),
-                    pricing_rows: None,
-                })
-            }),
-        }
-    }
-    fn merge_models_dev(&mut self, source: &Self) {
-        self.models_dev[0] = Some(ModelsDevLayer {
-            rows: Arc::clone(&source.rows),
-            excluded_prices: Arc::default(),
-            excluded_limits: Arc::default(),
-        });
-        self.clear_find_cache();
-    }
-    fn refresh_layer_exclusions(&mut self) {
-        let mut prices: FxHashSet<_> = self
-            .rows
-            .entries
-            .iter()
-            .filter(|(key, pricing)| {
-                !pricing.pricing.overridden
-                    && !pricing.is_bare_hosted(key)
-                    && !requires_full_vendor_id(key)
-            })
-            .map(|(key, _)| normalized_pricing_key(key))
-            .collect();
-        let mut limits: FxHashSet<_> = self
-            .rows
-            .entries
-            .iter()
-            .filter(|(_, row)| row.context_limit.is_some())
-            .map(|(key, _)| key.as_str())
-            .collect();
-        for (index, layer) in self.models_dev.iter_mut().enumerate() {
-            let Some(layer) = layer else { continue };
-            layer.excluded_prices = Arc::new(
-                layer
-                    .rows
-                    .entries
-                    .keys()
-                    .filter(|key| {
-                        (self.rows.entries.contains_key(key.as_str())
-                            && !requires_full_vendor_id(key))
-                            || prices.contains(normalized_pricing_key(key).as_ref())
-                    })
-                    .cloned()
-                    .collect(),
-            );
-            layer.excluded_limits = Arc::new(
-                layer
-                    .rows
-                    .entries
-                    .iter()
-                    .filter(|(key, row)| {
-                        row.context_limit.is_some() && limits.contains(key.as_str())
-                    })
-                    .map(|(key, _)| key.clone())
-                    .collect(),
-            );
-            if index == 0 {
-                prices.extend(
-                    layer
-                        .rows
-                        .entries
-                        .keys()
-                        .map(|key| normalized_pricing_key(key)),
-                );
-                limits.extend(
-                    layer
-                        .rows
-                        .entries
-                        .iter()
-                        .filter_map(|(key, row)| row.context_limit.map(|_| key.as_str())),
-                );
-            }
-        }
-    }
-    fn for_lookup(&self, model: &str, lookup: Lookup) -> &Self {
-        self.with_live_layer(model, lookup, models_dev_pricing)
+    fn available_models_dev(&self) -> Option<&PricingRows> {
+        self.live_models_dev
+            .get()
+            .and_then(Option::as_deref)
+            .or(self.models_dev.as_deref())
     }
 
-    fn with_live_layer<'a>(
+    fn select_models_dev<'a>(
         &self,
-        model: &str,
-        lookup: Lookup,
         live: impl FnOnce() -> Option<&'a Self>,
-    ) -> &Self {
-        if let Some(merged) = self.live_merged.get() {
-            return merged;
+    ) -> Option<&PricingRows> {
+        if self.enable_models_dev_fallback {
+            self.live_models_dev
+                .get_or_init(|| live().map(|source| Arc::clone(&source.rows)));
         }
-        if !self.enable_models_dev_fallback {
-            return self;
+        self.available_models_dev()
+    }
+
+    fn override_row(&self, model: &str, lookup: Lookup) -> Option<RowMatch<'_>> {
+        if self.rows.override_keys.is_empty() {
+            return None;
         }
-        let primary_hit = match lookup {
-            Lookup::Context => self.primary_key(self.limits(), model).is_some(),
-            Lookup::Pricing => {
-                let primary = self.prices().primary;
-                let resolved = crate::model_aliases::resolve_model_name(model);
-                [model, resolved.as_ref()].into_iter().any(|candidate| {
-                    primary.same_id(candidate).is_some()
-                        || pricing_alias(candidate)
-                            .is_some_and(|alias| primary.same_id(alias).is_some())
-                })
-            }
-            Lookup::Exact => self.prices().primary.same_id(model).is_some(),
-        };
-        if primary_hit {
-            return self;
+        let identity = normalized_pricing_key(model);
+        let key = self.rows.override_keys.get(identity.as_ref())?;
+        self.rows.literal(key, lookup)
+    }
+
+    fn label_override(&self, model: &str, lookup: Lookup) -> Option<RowMatch<'_>> {
+        if self.rows.override_keys.is_empty() {
+            return None;
         }
-        self.live_merged.get_or_init(|| {
-            let mut merged = self.with_user_overrides(std::iter::empty());
-            merged.enable_models_dev_fallback = false;
-            if let Some(live) = live() {
-                merged.merge_models_dev(live);
-            }
-            if let Some(cache) = self.find_cache.get() {
-                cache
-                    .write()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .clear();
-            }
-            Box::new(merged)
+        self.override_row(model, lookup).or_else(|| {
+            self.override_row(
+                crate::model_aliases::resolve_model_name(model).as_ref(),
+                lookup,
+            )
         })
     }
 
-    fn lookup<T: Copy>(&self, table: Table<'_, T>, model: &str, fuzzy: Fuzzy) -> Option<T> {
-        if let Some(row) = table
-            .primary
-            .same_id(model)
-            .and_then(|key| table.primary.row(key))
+    fn authoritative(&self, model: &str, lookup: Lookup, hosted: bool) -> Option<RowMatch<'_>> {
+        self.override_row(model, lookup)
+            .or_else(|| self.rows.authoritative(model, lookup, hosted))
+    }
+
+    fn resolve_row_with<'a, 'live>(
+        &self,
+        reported: Option<&'a str>,
+        candidates: &[(&'a str, MatchKind)],
+        lookup: Lookup,
+        live: impl FnOnce() -> Option<&'live Self>,
+    ) -> Option<(&'a str, RowMatch<'_>)> {
+        if let Some(label) = reported
+            && let Some(found) = self.label_override(label, lookup)
         {
-            return Some(*row.value);
+            return Some((label, found));
         }
-        self.resolve_row(table, model, fuzzy).map(|row| *row.value)
-    }
-
-    fn primary_key<'a, T: 'a>(&self, table: Table<'a, T>, model: &str) -> Option<&'a str> {
-        let alias = crate::model_aliases::resolve_model_name(model);
-        self.layer_row(table, model, alias.as_ref(), Layer::Primary, Fuzzy::Denied)
-            .map(|row| row.key)
-    }
-
-    fn resolve_row<'a, T>(
-        &self,
-        table: Table<'a, T>,
-        model: &str,
-        fuzzy: Fuzzy,
-    ) -> Option<MatchedRow<'a, T>> {
-        let alias = crate::model_aliases::resolve_model_name(model);
-        let resolved = alias.as_ref();
-        let same_id = |part: TablePart<'a, T>| {
-            [model, resolved].into_iter().find_map(|candidate| {
-                part.same_id(candidate)
-                    .or_else(|| pricing_alias(candidate).and_then(|id| part.same_id(id)))
-                    .and_then(|key| part.row(key))
-            })
-        };
-        if let Some(key) = same_id(table.primary) {
-            return Some(key);
+        for &(candidate, _) in candidates {
+            if let Some(found) =
+                with_names(candidate, |name| self.authoritative(name, lookup, true))
+            {
+                return Some((candidate, found));
+            }
         }
-        let models_dev_exact = table.models_dev.into_iter().flatten().find_map(same_id);
-        let fuzzy = if fuzzy != Fuzzy::Denied
-            && ![model, resolved].into_iter().any(|candidate| {
-                table.is_exact_only(candidate)
-                    || pricing_alias(candidate).is_some_and(|alias| table.is_exact_only(alias))
+        let mut live = Some(live);
+        let mut models_dev = || self.select_models_dev(|| live.take().and_then(|load| load()));
+        for &(candidate, kind) in candidates {
+            if kind == MatchKind::StrictExact {
+                continue;
+            }
+            let suffix = with_names(candidate, |name| {
+                name.match_indices('/')
+                    .find_map(|(offset, _)| self.authoritative(&name[offset + 1..], lookup, false))
+            });
+            if let Some(found) = suffix.or_else(|| {
+                let rows = models_dev()?;
+                with_names(candidate, |name| rows.exact(name, lookup))
             }) {
-            fuzzy
-        } else {
-            Fuzzy::Denied
-        };
-        if table.primary.pricing_rows.is_some() {
-            if let Some(exact) = models_dev_exact {
-                let shorter_primary = (fuzzy != Fuzzy::Denied)
-                    .then(|| {
-                        resolved
-                            .match_indices(['/', '-'])
-                            .find_map(|(separator, _)| {
-                                let suffix = &resolved[separator + 1..];
-                                table
-                                    .primary
-                                    .same_id(suffix)
-                                    .filter(|key| {
-                                        table.primary.rows.entries.get(*key).is_some_and(|row| {
-                                            !row.exact_only && !row.is_bare_hosted(key)
-                                        })
-                                    })
-                                    .and_then(|key| table.primary.row(key))
-                            })
-                    })
-                    .flatten();
-                return shorter_primary.or(Some(exact));
+                return Some((candidate, found));
             }
-            return [Layer::Primary, Layer::ModelsDev]
-                .into_iter()
-                .find_map(|layer| self.layer_row(table, model, resolved, layer, fuzzy));
         }
-        [Layer::Primary, Layer::ModelsDev]
-            .into_iter()
-            .find_map(|layer| {
-                self.layer_row(table, model, resolved, layer, Fuzzy::Denied)
-                    .or_else(|| self.layer_row(table, model, resolved, layer, fuzzy))
-            })
-    }
-
-    fn layer_row<'a, T>(
-        &self,
-        table: Table<'a, T>,
-        model: &str,
-        resolved: &str,
-        layer: Layer,
-        fuzzy: Fuzzy,
-    ) -> Option<MatchedRow<'a, T>> {
-        self.entry_or_alias_row(table, model, layer, fuzzy)
-            .or_else(|| {
-                (resolved != model)
-                    .then(|| self.entry_or_alias_row(table, resolved, layer, fuzzy))
-                    .flatten()
-            })
-    }
-
-    fn entry_or_alias_row<'a, T>(
-        &self,
-        table: Table<'a, T>,
-        model: &str,
-        layer: Layer,
-        fuzzy: Fuzzy,
-    ) -> Option<MatchedRow<'a, T>> {
-        table
-            .row_in(model, layer)
-            .or_else(|| {
-                pricing_alias(model).and_then(|alias| self.entry_row(table, alias, layer, fuzzy))
-            })
-            .or_else(|| self.entry_row(table, model, layer, fuzzy))
-    }
-
-    fn entry_row<'a, T>(
-        &self,
-        table: Table<'a, T>,
-        model: &str,
-        layer: Layer,
-        fuzzy: Fuzzy,
-    ) -> Option<MatchedRow<'a, T>> {
-        table.row_in(model, layer).or_else(|| {
-            if let Some(id) = table.exact_only_id(model) {
-                return table.row_in(id, layer);
+        for &(candidate, kind) in candidates {
+            if kind != MatchKind::Fuzzy {
+                continue;
             }
-            if fuzzy == Fuzzy::Denied || table.is_exact_only(model) {
-                return None;
+            let secondary = self.available_models_dev();
+            if let Some(found) = with_names(candidate, |name| {
+                if secondary.is_some_and(|rows| rows.contains_exact_only_spelling(name)) {
+                    return None;
+                }
+                self.fuzzy(&self.rows, secondary, name, lookup)
+                    .or_else(|| self.fuzzy(secondary?, secondary, name, lookup))
+            }) {
+                return Some((candidate, found));
             }
-            let normalized = normalized_pricing_key(model);
-            table
-                .rows_in(layer)
-                .filter(|(_, exact_only)| !exact_only)
-                .map(|(row, _)| row)
-                .filter(|row| pricing_key_matches(row.key, model, normalized.as_ref()))
-                .filter(|row| {
-                    if table.primary.pricing_rows.is_none() {
-                        return true;
-                    }
-                    matches_service_plan(row.key, model, table)
-                        && (layer != Layer::Primary
-                            || !requires_full_vendor_id(row.key)
-                            || qualified_vendor_id_matches(row.key, normalized.as_ref()))
+        }
+        None
+    }
+
+    fn fuzzy<'a>(
+        &'a self,
+        rows: &'a PricingRows,
+        secondary: Option<&PricingRows>,
+        name: &str,
+        lookup: Lookup,
+    ) -> Option<RowMatch<'a>> {
+        let normalized = normalized_pricing_key(name);
+        rows.entries
+            .iter()
+            .filter(|(_, row)| !row.exact_only && lookup.includes(row))
+            .filter(|(key, _)| pricing_key_matches(key, name, normalized.as_ref()))
+            .filter(|(key, _)| {
+                matches_service_plan(key, name, |key| {
+                    self.rows.literal(key, lookup).is_some()
+                        || secondary.is_some_and(|rows| rows.literal(key, lookup).is_some())
                 })
-                .filter(|row| {
-                    fuzzy != Fuzzy::ShorterKeys
-                        || contains_pricing_key(
-                            normalized.as_ref(),
-                            normalized_pricing_key(row.key).as_ref(),
-                        )
-                })
-                .max_by(|left, right| {
-                    left.key
-                        .len()
-                        .cmp(&right.key.len())
-                        .then_with(|| right.key.cmp(left.key))
-                })
-        })
+            })
+            .max_by(|(left, _), (right, _)| {
+                left.len().cmp(&right.len()).then_with(|| right.cmp(left))
+            })
+            .map(|(key, row)| RowMatch { key, row })
     }
 
     /// Finds the pricing that applies to one usage event.
@@ -2080,55 +1790,43 @@ impl PricingMap {
     }
 
     pub fn has_primary_price(&self, model: &str) -> bool {
-        self.prices().primary.same_id(model).is_some()
+        self.rows
+            .authoritative(model, Lookup::Pricing, true)
+            .is_some()
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
-        self.overridden(model)
-            .or_else(|| self.prices().get(model).copied())
-    }
-
-    fn overridden(&self, model: &str) -> Option<Pricing> {
-        let keys = &self.rows.override_keys;
-        (!keys.is_empty())
-            .then(|| normalized_pricing_key(model))
-            .and_then(|normalized| keys.get(normalized.as_ref()))
-            .and_then(|key| self.rows.entries.get(key))
-            .or_else(|| {
-                self.rows
-                    .entries
-                    .get(model)
-                    .filter(|entry| entry.pricing.overridden)
-            })
-            .map(|row| row.pricing)
-    }
-
-    /// Whether a user supplied pricing for this model id or its configured alias.
-    fn has_user_override(&self, model: &str) -> bool {
-        [
-            model,
-            crate::model_aliases::resolve_model_name(model).as_ref(),
-        ]
-        .into_iter()
-        .any(|key| self.overridden(key).is_some())
-    }
-
-    fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
         self.overridden(model).or_else(|| {
-            self.exact_normalized_key(model)
-                .and_then(|key| self.prices().get(key).copied())
+            self.rows
+                .literal(model, Lookup::Pricing)
+                .or_else(|| self.available_models_dev()?.literal(model, Lookup::Pricing))
+                .map(|found| found.row.pricing)
         })
     }
 
-    fn exact_normalized_key(&self, model: &str) -> Option<&str> {
-        self.prices()
-            .all_parts()
-            .find_map(|part| part.same_id(model))
+    fn overridden(&self, model: &str) -> Option<Pricing> {
+        self.override_row(model, Lookup::Pricing)
+            .map(|found| found.row.pricing)
+    }
+
+    fn has_user_override(&self, model: &str) -> bool {
+        self.label_override(model, Lookup::Pricing).is_some()
+    }
+
+    fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
+        self.authoritative(model, Lookup::Pricing, true)
+            .or_else(|| self.available_models_dev()?.exact(model, Lookup::Pricing))
+            .map(|found| found.row.pricing)
     }
 
     pub fn context_limit(&self, model: &str) -> Option<u64> {
-        let map = self.for_lookup(model, Lookup::Context);
-        map.lookup(map.limits(), model, Fuzzy::Allowed)
+        self.resolve_row_with(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Context,
+            models_dev_pricing,
+        )
+        .and_then(|(_, found)| found.row.context_limit)
     }
 
     fn apply_overrides<'a, I>(&mut self, overrides: I)
@@ -2158,13 +1856,9 @@ impl PricingMap {
             combined.1.explicit_fields |= fields;
         }
         for (normalized, (model, pricing)) in grouped {
-            let is_exact_only = self.prices().all_parts().any(|part| {
-                part.rows
-                    .entries
-                    .get(model)
-                    .is_some_and(|row| row.exact_only)
-                    && part.contains(model)
-            });
+            let is_exact_only = self
+                .available_models_dev()
+                .is_some_and(|rows| rows.contains_exact_only_spelling(model));
             let row = self
                 .rows_mut()
                 .entries
@@ -2259,35 +1953,12 @@ impl PricingMap {
     }
 
     fn clear_find_cache(&mut self) {
-        if self.models_dev.iter().any(Option::is_some) {
-            self.refresh_layer_exclusions();
-        }
-        self.live_merged.take();
         if let Some(cache) = self.find_cache.get_mut() {
             cache
                 .get_mut()
                 .unwrap_or_else(|error| error.into_inner())
                 .clear();
         }
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.prices()
-            .all_parts()
-            .map(|part| {
-                part.rows
-                    .entries
-                    .keys()
-                    .filter(|key| part.contains(key))
-                    .count()
-            })
-            .sum()
-    }
-
-    #[cfg(test)]
-    fn models_dev_fallback_enabled(&self) -> bool {
-        self.enable_models_dev_fallback
     }
 
     /// Fills in long-context tier rates for models whose upstream pricing
@@ -2461,7 +2132,19 @@ fn models_dev_entry_has_required_cost(value: &Value) -> bool {
         })
 }
 
-fn matches_service_plan<T>(candidate: &str, request: &str, table: Table<'_, T>) -> bool {
+fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<T>) -> Option<T> {
+    choose(model)
+        .or_else(|| pricing_alias(model).and_then(&mut choose))
+        .or_else(|| {
+            let alias = crate::model_aliases::resolve_model_name(model);
+            if alias == model {
+                return None;
+            }
+            choose(alias.as_ref()).or_else(|| pricing_alias(alias.as_ref()).and_then(choose))
+        })
+}
+
+fn matches_service_plan(candidate: &str, request: &str, contains: impl Fn(&str) -> bool) -> bool {
     const PLANS: [&str; 10] = [
         "batch",
         "flex",
@@ -2495,7 +2178,7 @@ fn matches_service_plan<T>(candidate: &str, request: &str, table: Table<'_, T>) 
     names_plan("fast")
         || ![standard, standard.rsplit('/').next().unwrap_or(standard)]
             .into_iter()
-            .any(|model| table.all_parts().any(|part| part.same_id(model).is_some()))
+            .any(contains)
 }
 
 /// Matches pricing keys across provider/model aliases while preserving version boundaries.
@@ -2581,24 +2264,6 @@ fn direct_deepseek_id(value: &str) -> Option<&str> {
         .filter(|model| model.starts_with("deepseek-") || model.starts_with("deepseek."))
 }
 
-fn is_direct_deepseek_model(key: &str) -> bool {
-    key.starts_with("deepseek-") || direct_deepseek_id(key).is_some()
-}
-
-fn requires_full_vendor_id(key: &str) -> bool {
-    is_direct_deepseek_model(key) || matches!(key, "gemini-2.5-flash" | "gemini-2.5-flash-lite")
-}
-
-fn qualified_vendor_id_matches(vendor_key: &str, normalized_request: &str) -> bool {
-    let vendor_id = direct_deepseek_id(vendor_key).unwrap_or(vendor_key);
-    normalized_request
-        .strip_suffix(normalized_pricing_key(vendor_id).as_ref())
-        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with(['/', '-']))
-}
-
-/// Long-context tier rates (per token) for a base model, parsed from a
-/// models.dev `cost.tiers` band and applied on top of loaded pricing entries
-/// by `fill_long_context_rates_from_models_dev`.
 #[derive(Clone, Copy)]
 struct ModelsDevLongContextRates {
     threshold: u64,
@@ -2759,7 +2424,7 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 mod tests {
 
     use super::{
-        Fuzzy, Lookup, MatchKind, Pricing, PricingMap, build_time_models_dev_json,
+        Lookup, MatchKind, Pricing, PricingMap, build_time_models_dev_json,
         build_time_pricing_json, embedded_models_dev_pricing, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
@@ -2816,12 +2481,14 @@ mod tests {
                 .exact_only = true;
         }
 
-        fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
-            self.lookup(self.prices(), model, fuzzy)
+        fn find_entry(&self, model: &str, kind: MatchKind) -> Option<Pricing> {
+            self.resolve_at(Some(model), &[(model, kind)], None)
+                .map(|(_, rates)| rates)
         }
 
-        fn context_limit_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
-            self.lookup(self.limits(), model, fuzzy)
+        fn context_limit_entry(&self, model: &str, kind: MatchKind) -> Option<u64> {
+            self.resolve_row_with(Some(model), &[(model, kind)], Lookup::Context, || None)
+                .and_then(|(_, found)| found.row.context_limit)
         }
 
         fn find_with_live<'a>(
@@ -2829,8 +2496,13 @@ mod tests {
             model: &str,
             live: impl FnOnce() -> Option<&'a Self>,
         ) -> Option<Pricing> {
-            self.with_live_layer(model, Lookup::Pricing, live)
-                .find(model)
+            self.resolve_row_with(
+                Some(model),
+                &[(model, MatchKind::Fuzzy)],
+                Lookup::Pricing,
+                live,
+            )
+            .map(|(_, found)| found.row.pricing)
         }
 
         fn context_limit_with_live<'a>(
@@ -2838,8 +2510,36 @@ mod tests {
             model: &str,
             live: impl FnOnce() -> Option<&'a Self>,
         ) -> Option<u64> {
-            self.with_live_layer(model, Lookup::Context, live)
-                .context_limit(model)
+            self.resolve_row_with(
+                Some(model),
+                &[(model, MatchKind::Fuzzy)],
+                Lookup::Context,
+                live,
+            )
+            .and_then(|(_, found)| found.row.context_limit)
+        }
+
+        fn with_live_layer<'a>(
+            &self,
+            model: &str,
+            lookup: Lookup,
+            live: impl FnOnce() -> Option<&'a Self>,
+        ) -> &Self {
+            self.resolve_row_with(Some(model), &[(model, MatchKind::Fuzzy)], lookup, live);
+            self
+        }
+
+        fn len(&self) -> usize {
+            let mut keys = rustc_hash::FxHashSet::default();
+            keys.extend(self.rows.entries.keys().map(String::as_str));
+            if let Some(models_dev) = self.available_models_dev() {
+                keys.extend(models_dev.entries.keys().map(String::as_str));
+            }
+            keys.len()
+        }
+
+        fn models_dev_fallback_enabled(&self) -> bool {
+            self.enable_models_dev_fallback
         }
     }
 
@@ -2911,7 +2611,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_deepseek_pricing_does_not_replace_a_different_model() {
+    fn same_identity_in_the_fallback_beats_a_distinct_vendor_model() {
         crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{
@@ -2920,7 +2620,7 @@ mod tests {
         let mut embedded = PricingMap::default();
         embedded.load_json(
             r#"{
-            "deepseek-v3.2-speciale": {"input_cost_per_token": 8, "output_cost_per_token": 9}
+            "reseller/deepseek-v3.2-speciale": {"input_cost_per_token": 8, "output_cost_per_token": 9}
         }"#,
         );
         pricing.complete_layers(&embedded);
@@ -2944,7 +2644,7 @@ mod tests {
         let mut embedded = PricingMap::default();
         embedded.load_json(
             r#"{
-            "deepseek-v4-flash": {"input_cost_per_token": 8, "output_cost_per_token": 9}
+            "reseller/deepseek-v4-flash-0731": {"input_cost_per_token": 8, "output_cost_per_token": 9}
         }"#,
         );
         pricing.complete_layers(&embedded);
@@ -3005,16 +2705,20 @@ mod tests {
         };
         let pricing = primary.with_user_overrides([(&override_id, &rates)]);
         let (_, entry) = pricing
-            .resolve(&[
-                ("vendor/sample-4.7", MatchKind::Exact),
-                ("sample-4.7", MatchKind::Fuzzy),
-            ])
+            .resolve_at(
+                Some("sample-4.7"),
+                &[
+                    ("vendor/sample-4.7", MatchKind::Exact),
+                    ("sample-4.7", MatchKind::Fuzzy),
+                ],
+                None,
+            )
             .unwrap();
         assert_eq!((entry.input, entry.output), (5.0, 6.0));
     }
 
     #[test]
-    fn live_merge_is_lazy_once_only_and_invalidates_cached_fuzzy_hits_and_misses() {
+    fn live_catalogue_is_selected_once_after_authoritative_misses() {
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
         assert_eq!(pricing.find("sample-special").unwrap().input, 1.0);
@@ -3027,7 +2731,7 @@ mod tests {
         }"#,
         );
         live.mark_test_exact_only("sample-special");
-        pricing.enable_models_dev_fallback = true;
+        let pricing = online(&pricing);
         let attempts = AtomicUsize::new(0);
         let fetch = || {
             attempts.fetch_add(1, Ordering::Relaxed);
@@ -3253,7 +2957,7 @@ mod tests {
     }
 
     #[test]
-    fn primary_fuzzy_pricing_beats_an_embedded_exact_reseller_listing() {
+    fn vendor_path_suffix_and_same_identity_outrank_fuzzy_matches() {
         crate::test_support::install_pricing_snapshots();
         let mut primary = PricingMap::default();
         primary.load_json(r#"{"sample": {"litellm_provider":"openai","input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
@@ -3268,7 +2972,7 @@ mod tests {
         );
         let pricing = layered(&primary, Some(&embedded));
         assert_eq!(pricing.find("vendor/sample").unwrap().input, 1.0);
-        assert_eq!(pricing.find("vendor-sample").unwrap().input, 1.0);
+        assert_eq!(pricing.find("vendor-sample").unwrap().input, 3.0);
         assert_eq!(
             pricing
                 .resolve(&[("vendor/sample", super::MatchKind::Exact)])
@@ -3334,7 +3038,7 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 pricing
-                    .with_live_layer("md-only-1", Lookup::Exact, fetch)
+                    .with_live_layer("md-only-1", Lookup::Pricing, fetch)
                     .resolve(&[("md-only-1", MatchKind::Exact)])
                     .map(|(_, pricing)| pricing)
                     .unwrap()
@@ -3346,7 +3050,7 @@ mod tests {
         let offline = layered(&PricingMap::default(), Some(&embedded));
         assert_eq!(
             offline
-                .with_live_layer("md-only-1", Lookup::Exact, || None)
+                .with_live_layer("md-only-1", Lookup::Pricing, || None)
                 .resolve(&[("md-only-1", MatchKind::Exact)])
                 .map(|(_, pricing)| pricing)
                 .unwrap()
@@ -3386,17 +3090,17 @@ mod tests {
         let pricing = layered(&PricingMap::default(), Some(&embedded));
         assert!(!pricing.rows.entries.contains_key("md-only-1"));
         assert!(std::sync::Arc::ptr_eq(
-            &pricing.models_dev[1].as_ref().unwrap().rows,
+            pricing.models_dev.as_ref().unwrap(),
             &embedded.rows,
         ));
         let mut live = PricingMap::default();
         live.load_models_dev_json_for_tests(
             r#"{"md-only-1": {"cost": {"input": 3000000, "output": 4000000}}}"#,
         );
-        let merged = pricing.with_live_layer("md-only-1", Lookup::Exact, || Some(&live));
+        let merged = pricing.with_live_layer("md-only-1", Lookup::Pricing, || Some(&live));
         assert!(std::sync::Arc::ptr_eq(&merged.rows, &pricing.rows));
         assert!(std::sync::Arc::ptr_eq(
-            &merged.models_dev[0].as_ref().unwrap().rows,
+            merged.live_models_dev.get().unwrap().as_ref().unwrap(),
             &live.rows,
         ));
         assert_eq!(
@@ -3466,10 +3170,15 @@ mod tests {
                     "claude-opus-5": {
                         "cost": { "input": 3, "output": 4 },
                         "limit": { "context": 234567 }
+                    },
+                    "claude-opus-5-fast": {
+                        "cost": { "input": 9, "output": 17 },
+                        "limit": { "context": 765432 },
+                        "exactOnly": true
                     }
                 }"#,
             ),
-            Some(1)
+            Some(2)
         );
 
         let mut embedded_models_dev = PricingMap::default();
@@ -3477,7 +3186,7 @@ mod tests {
             embedded_models_dev.load_models_dev_json_for_tests(
                 r#"{
                     "claude-opus-5-fast": {
-                        "cost": { "input": 9, "output": 17 },
+                        "cost": { "input": 5, "output": 10 },
                         "limit": { "context": 765432 },
                         "exactOnly": true
                     }
@@ -3881,14 +3590,14 @@ mod tests {
             .unwrap();
         assert_eq!(matched, "paid");
         assert_eq!(paid.input, 1.0);
-        let (matched, provider) = pricing
+        let (matched, price) = pricing
             .resolve(&[
                 ("provider/paid", super::MatchKind::Fuzzy),
                 ("paid", super::MatchKind::Fuzzy),
             ])
             .unwrap();
-        assert_eq!(matched, "provider/paid");
-        assert_eq!(provider.input, 9.0);
+        assert_eq!(matched, "paid");
+        assert_eq!(price.input, 1.0);
     }
 
     #[test]
@@ -3979,7 +3688,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_candidates_gate_literal_names_and_use_standard_price_precedence() {
+    fn strict_candidates_use_authoritative_identities_without_path_suffixes() {
         crate::test_support::install_pricing_snapshots();
         let mut primary = PricingMap::default();
         primary.load_json(r#"{"sample":{"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2},"grok-4-1-x":{"input_cost_per_token":3,"output_cost_per_token":4}}"#);
@@ -4001,10 +3710,13 @@ mod tests {
                 .resolve(&[("vendor/sample", super::MatchKind::StrictExact)])
                 .is_none()
         );
-        assert!(
+        assert_eq!(
             pricing
                 .resolve(&[("grok-4.1-x", super::MatchKind::StrictExact)])
-                .is_none()
+                .unwrap()
+                .1
+                .input,
+            3.0
         );
         assert_eq!(
             pricing
@@ -4613,9 +4325,9 @@ mod tests {
         );
         assert_eq!(
             layered(&builtin, Some(&exact_only_without_context))
-                .context_limit_with_live("claude-opus-5-turbo", || None),
+                .context_limit_with_live("claude-opus-5-fast", || None),
             None,
-            "an exact-only alias without a published limit must not inherit a fuzzy builtin limit"
+            "an exact-only id without a published limit must not inherit a fuzzy builtin limit"
         );
     }
 
@@ -4912,12 +4624,12 @@ mod tests {
         .expect("a usable models.dev body should load");
 
         let gpt_first = loaded
-            .find_entry("gpt-first", Fuzzy::Allowed)
+            .find_entry("gpt-first", MatchKind::Fuzzy)
             .expect("the loaded body should price its model");
         assert_eq!(gpt_first.input, 0.000001);
         assert_eq!(gpt_first.output, 0.000002);
         assert_eq!(
-            loaded.context_limit_entry("gpt-first", Fuzzy::Allowed),
+            loaded.context_limit_entry("gpt-first", MatchKind::Fuzzy),
             Some(42)
         );
         assert!(
@@ -5892,7 +5604,7 @@ mod tests {
         use ccusage_cli::PricingOverride;
         assert!(
             embedded_models_dev_pricing()
-                .find_entry("claude-fable-5-1", Fuzzy::Allowed)
+                .find_entry("claude-fable-5-1", MatchKind::Fuzzy)
                 .is_some(),
             "embedded models.dev snapshot should include claude-fable-5-1"
         );
@@ -6429,14 +6141,14 @@ mod tests {
         let pricing = PricingMap::load_embedded();
 
         let original = pricing
-            .find_entry("claude-opus-4-8", Fuzzy::Allowed)
+            .find_entry("claude-opus-4-8", MatchKind::Fuzzy)
             .unwrap();
         let resolved = pricing.find("claude-opus-4-8").unwrap();
 
         assert_eq!(resolved.input, original.input);
         assert_eq!(
             pricing.context_limit("claude-opus-4-8"),
-            pricing.context_limit_entry("claude-opus-4-8", Fuzzy::Allowed)
+            pricing.context_limit_entry("claude-opus-4-8", MatchKind::Fuzzy)
         );
     }
 
@@ -7290,7 +7002,7 @@ mod tests {
     fn context_limits_keep_their_pre_wave_exact_only_boundaries() {
         crate::test_support::install_pricing_snapshots();
         let map = PricingMap::load_embedded();
-        assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), None);
+        assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), Some(200_000));
         assert_eq!(
             map.context_limit("novita/zai-org/glm-5-turbo"),
             Some(204_800)
@@ -7312,7 +7024,7 @@ mod tests {
         let pricing = pricing.with_live_layer("sample-fast-extra", Lookup::Context, || Some(&live));
         assert!(pricing.find("sample-fast-extra").is_none());
         assert_eq!(pricing.context_limit("sample-fast-extra"), None);
-        assert_eq!(pricing.context_limit("sample-fast"), Some(123456));
+        assert_eq!(pricing.context_limit("sample-fast"), None);
     }
 
     #[test]

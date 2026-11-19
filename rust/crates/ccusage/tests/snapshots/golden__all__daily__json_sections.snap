@@ -138,7 +138,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000172,
+          "cost": 0.000165,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -197,7 +197,7 @@ exit: 0
       ],
       "outputTokens": 1760,
       "period": "2025-12-27",
-      "totalCost": 3.8313745000000003,
+      "totalCost": 3.8313675000000003,
       "totalTokens": 12630
     },
     {
@@ -313,20 +313,20 @@ exit: 0
           "storedCost": 0.0123
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 0.009754249999999999,
-          "inputTokens": 3000,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 610
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
           "cost": 0.00969,
           "inputTokens": 520,
           "modelName": "gpt-6.1-sol",
           "outputTokens": 57
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "cost": 0.007975,
+          "inputTokens": 3000,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 610
         },
         {
           "cacheCreationTokens": 0,
@@ -453,7 +453,7 @@ exit: 0
       ],
       "outputTokens": 8394,
       "period": "2025-12-30",
-      "totalCost": 5.671386675000001,
+      "totalCost": 5.669607425000002,
       "totalTokens": 162557
     },
     {
@@ -638,14 +638,6 @@ exit: 0
           "outputTokens": 300
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.00408397,
-          "inputTokens": 1411,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 339
-        },
-        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 600,
           "cost": 0.003436,
@@ -653,6 +645,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "GLM-5.3",
           "outputTokens": 320
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0034119,
+          "inputTokens": 1411,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 339
         },
         {
           "cacheCreationTokens": 20,
@@ -837,7 +837,7 @@ exit: 0
       ],
       "outputTokens": 19767,
       "period": "2025-12-31",
-      "totalCost": 11.669298555000001,
+      "totalCost": 11.668626485,
       "totalTokens": 278748
     },
     {
@@ -1060,7 +1060,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0011656000000000001,
+          "cost": 0.001245,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 482
@@ -1361,7 +1361,7 @@ exit: 0
       ],
       "outputTokens": 17487,
       "period": "2026-01-01",
-      "totalCost": 3.705000415,
+      "totalCost": 3.705079815,
       "totalTokens": 1608272
     },
     {
@@ -1873,7 +1873,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000172,
+          "cost": 0.000165,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -1932,7 +1932,7 @@ exit: 0
       ],
       "outputTokens": 1760,
       "period": "2025-12-22",
-      "totalCost": 3.8313745000000003,
+      "totalCost": 3.8313675000000003,
       "totalTokens": 12630
     },
     {
@@ -2176,20 +2176,20 @@ exit: 0
           "outputTokens": 300
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "cost": 0.015003819999999998,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1431
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5870,
           "cost": 0.014928750000000001,
           "inputTokens": 3700,
           "modelName": "gpt-5-codex",
           "outputTokens": 957
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "cost": 0.012631899999999998,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 0,
@@ -2711,7 +2711,7 @@ exit: 0
       ],
       "outputTokens": 56403,
       "period": "2025-12-29",
-      "totalCost": 24.313786594999996,
+      "totalCost": 24.311414675,
       "totalTokens": 2720595
     },
     {
@@ -2969,20 +2969,20 @@ exit: 0
           "storedCost": 0.05
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "cost": 0.01401022,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 999
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2100,
           "cost": 0.012672500000000001,
           "inputTokens": 2488,
           "modelName": "gemini-2.5-pro",
           "outputTokens": 740
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "cost": 0.0115519,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 999
         },
         {
           "cacheCreationTokens": 0,
@@ -3272,7 +3272,7 @@ exit: 0
       ],
       "outputTokens": 29921,
       "period": "2025-12",
-      "totalCost": 21.172059729999997,
+      "totalCost": 21.169601409999995,
       "totalTokens": 453935
     },
     {
@@ -3555,7 +3555,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0011656000000000001,
+          "cost": 0.001245,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 482
@@ -3928,7 +3928,7 @@ exit: 0
       ],
       "outputTokens": 28242,
       "period": "2026-01",
-      "totalCost": 6.973101365000001,
+      "totalCost": 6.973180765,
       "totalTokens": 2279290
     },
     {
@@ -6220,29 +6220,6 @@ exit: 0
       "totalTokens": 15900
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 600,
-      "cacheReadTokens": 13000,
-      "inputTokens": 3511,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 600,
-          "cacheReadTokens": 13000,
-          "cost": 0.01176007,
-          "inputTokens": 3511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1231
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 1231,
-      "period": "session-old-1",
-      "totalCost": 0.01176007,
-      "totalTokens": 18592
-    },
-    {
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
@@ -6374,6 +6351,29 @@ exit: 0
       "period": "sess-gamma-old",
       "totalCost": 0.01,
       "totalTokens": 150
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 13000,
+      "inputTokens": 3511,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 13000,
+          "cost": 0.0099819,
+          "inputTokens": 3511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1231
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 1231,
+      "period": "session-old-1",
+      "totalCost": 0.0099819,
+      "totalTokens": 18592
     },
     {
       "agent": "droid",
@@ -7051,29 +7051,6 @@ exit: 0
       "totalTokens": 345
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 4000,
-      "inputTokens": 1100,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 4000,
-          "cost": 0.00341575,
-          "inputTokens": 1100,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 250
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 250,
-      "period": "session-old-2",
-      "totalCost": 0.00341575,
-      "totalTokens": 5650
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 2000,
@@ -7243,6 +7220,29 @@ exit: 0
       "period": "s-replayed",
       "totalCost": 0.0029,
       "totalTokens": 1300
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 4000,
+      "inputTokens": 1100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.002815,
+          "inputTokens": 1100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 250
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 250,
+      "period": "session-old-2",
+      "totalCost": 0.002815,
+      "totalTokens": 5650
     },
     {
       "agent": "droid",
@@ -9509,7 +9509,7 @@ exit: 0
     "cacheReadTokens": 1309867,
     "inputTokens": 1347024,
     "outputTokens": 58670,
-    "totalCost": 28.148514845000005,
+    "totalCost": 28.146135925000006,
     "totalTokens": 2736743,
     "unpricedModels": [
       "GLM-5.3",

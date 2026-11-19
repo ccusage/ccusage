@@ -260,11 +260,12 @@ mod tests {
 
     #[test]
     fn calculate_qwen_cost_returns_explicit_zero_price() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "free-model": {
-                    "input_cost_per_token": 0,
+                    "litellm_provider": "openai", "input_cost_per_token": 0,
                     "output_cost_per_token": 0,
                     "cache_creation_input_token_cost": 0,
                     "cache_read_input_token_cost": 0

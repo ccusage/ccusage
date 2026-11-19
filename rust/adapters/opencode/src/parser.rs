@@ -669,6 +669,36 @@ mod tests {
     }
 
     #[test]
+    fn resolves_a_provider_identity_before_fuzzy_matches_for_both_token_sides() {
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{
+            "azure/us-gov/text-embedding-3-small": {"input_cost_per_token": 0.025, "output_cost_per_token": 0},
+            "ambient/small": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.001}
+        }"#);
+        for tokens in [json!({"input": 100}), json!({"output": 100})] {
+            let entry = message_value_to_entry(
+                message(json!({
+                    "id": "message-a",
+                    "sessionID": "session-a",
+                    "providerID": "ambient",
+                    "modelID": "small",
+                    "time": {"created": 1767312000000i64},
+                    "tokens": tokens
+                })),
+                None,
+                None,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Calculate,
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(entry.cost, 0.1, "{tokens}");
+            assert_eq!(entry.missing_pricing_model, None);
+        }
+    }
+
+    #[test]
     fn keeps_the_same_model_when_its_output_rate_is_zero() {
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
@@ -766,10 +796,11 @@ mod tests {
 
     #[test]
     fn keeps_a_free_first_candidate_instead_of_a_paid_provider_candidate() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
-                "gpt-test":{"input_cost_per_token":0,"output_cost_per_token":0},
+                "gpt-test":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},
                 "openai/gpt-test":{"input_cost_per_token":1,"output_cost_per_token":2}
             }"#,
         );
@@ -823,7 +854,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::load_embedded();
         pricing.load_json(
-            r#"{"claude-sonnet-4":{"input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
+            r#"{"claude-sonnet-4":{"litellm_provider":"anthropic","input_cost_per_token":0.125,"output_cost_per_token":0.25}}"#,
         );
         for model in [
             "anthropic/claude-sonnet-4",
