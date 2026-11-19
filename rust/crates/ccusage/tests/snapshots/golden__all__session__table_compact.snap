@@ -96,7 +96,7 @@ exit: 0
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ session… │ GitHub Copilot CLI │ - opus-4                  │        300 │       150 │       $0.40 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ sess-b   │ Qwen               │ - qwen-3-235b             │    303,443 │     2,626 │       $0.33 │
+│ sess-b   │ Qwen               │ - qwen-3-30b              │    303,443 │     2,626 │       $0.33 │
 │          │                    │ - qwen-mystery-1          │            │           │             │
 │          │                    │ - qwen3-coder-plus        │            │           │             │
 │          │                    │ - sonnet-4                │            │           │             │
@@ -517,7 +517,6 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
-WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

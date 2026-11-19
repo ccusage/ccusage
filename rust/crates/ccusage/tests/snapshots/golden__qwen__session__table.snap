@@ -18,7 +18,7 @@ exit: 0
 │                  │ - qwen3-coder-plus │           │           │               │             │               │             │               │
 │                  │ - sonnet-4         │           │           │               │             │               │             │               │
 ├──────────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
-│ sess-b           │ - qwen-3-235b      │   303,443 │     2,626 │             0 │     104,080 │       410,249 │       $0.33 │ 2026-01-02    │
+│ sess-b           │ - qwen-3-30b       │   303,443 │     2,626 │             0 │     104,080 │       410,249 │       $0.33 │ 2026-01-02    │
 │                  │ - qwen-mystery-1   │           │           │               │             │               │             │               │
 │                  │ - qwen3-coder-plus │           │           │               │             │               │             │               │
 │                  │ - sonnet-4         │           │           │               │             │               │             │               │
@@ -31,6 +31,5 @@ exit: 0
 └──────────────────┴────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┴───────────────┘
 
 --- stderr ---
-WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

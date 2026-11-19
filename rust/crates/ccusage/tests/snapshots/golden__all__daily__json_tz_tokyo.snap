@@ -1095,6 +1095,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
           "cost": 3.69e-6,
           "inputTokens": 12,
@@ -1239,15 +1247,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 310,
-          "missingPricing": true,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
@@ -1320,7 +1319,7 @@ exit: 0
         "opencode-mystery-1",
         "opus",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen/qwen3-coder",
         "qwen3-coder-plus",
@@ -1329,7 +1328,7 @@ exit: 0
       ],
       "outputTokens": 33633,
       "period": "2026-01-01",
-      "totalCost": 14.884195940000003,
+      "totalCost": 14.884265640000004,
       "totalTokens": 1855307
     },
     {
@@ -1797,7 +1796,7 @@ exit: 0
     "cacheReadTokens": 1316867,
     "inputTokens": 1349871,
     "outputTokens": 59316,
-    "totalCost": 28.653713220000004,
+    "totalCost": 28.65378292000001,
     "totalTokens": 2747536,
     "unpricedModels": [
       "GLM-5.3",
@@ -1827,7 +1826,6 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
-      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

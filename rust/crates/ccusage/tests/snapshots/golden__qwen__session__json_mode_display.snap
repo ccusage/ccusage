@@ -169,7 +169,7 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 310,
-          "modelName": "qwen-3-235b",
+          "modelName": "qwen-3-30b",
           "outputTokens": 65
         }
       ],
@@ -177,7 +177,7 @@ exit: 0
         "claude-sonnet-4-20250514",
         "qwen-mystery-1",
         "qwen3-coder-plus",
-        "qwen-3-235b"
+        "qwen-3-30b"
       ],
       "outputTokens": 2626,
       "projectPath": "beta",
