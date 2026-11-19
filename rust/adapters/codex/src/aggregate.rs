@@ -135,30 +135,19 @@ struct CodexAttribution {
     last_activity: CompactString,
     is_fallback: bool,
     service_tier: Option<CodexServiceTier>,
-    logged_model: Option<StringId>,
 }
 
 impl CodexAttribution {
-    fn new(
-        event: &CodexTokenUsageEvent,
-        file_index: usize,
-        logged_model: Option<StringId>,
-    ) -> Self {
+    fn new(event: &CodexTokenUsageEvent, file_index: usize) -> Self {
         Self {
             file_index,
             last_activity: CompactString::new(&event.last_activity),
             is_fallback: event.is_fallback_model,
             service_tier: event.service_tier,
-            logged_model,
         }
     }
 
-    fn merge(
-        &mut self,
-        event: &CodexTokenUsageEvent,
-        file_index: usize,
-        logged_model: Option<StringId>,
-    ) -> bool {
+    fn merge(&mut self, event: &CodexTokenUsageEvent, file_index: usize) -> bool {
         self.service_tier = merge_codex_service_tiers(self.service_tier, event.service_tier);
         if file_index >= self.file_index {
             return false;
@@ -166,7 +155,6 @@ impl CodexAttribution {
         self.file_index = file_index;
         self.last_activity = CompactString::new(&event.last_activity);
         self.is_fallback = event.is_fallback_model;
-        self.logged_model = logged_model;
         true
     }
 }
@@ -219,25 +207,6 @@ impl<'a> CodexDedupe<'a> {
         provenance: &mut CodexEventProvenance,
     ) -> Result<()> {
         let model = crate::model_aliases::resolve_model_name(&event.model);
-        let intern_model = |provenance: &mut CodexEventProvenance, name: &str| {
-            CodexEventProvenance::intern(&mut provenance.models, &self.models, name, || {
-                let price = self.pricing.and_then(|table| table.find_handle(name));
-                CodexModel {
-                    name: CompactString::new(name),
-                    long_context_threshold: price.as_ref().map_or(
-                        crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
-                        |handle| {
-                            handle.with_rates_at(None, |entry| entry.long_context_split_threshold())
-                        },
-                    ),
-                    time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
-                }
-            })
-        };
-        let logged_model = (model != event.model.as_str())
-            .then(|| intern_model(provenance, &event.model))
-            .transpose()?;
-        let model = intern_model(provenance, &model)?;
         let mut key = CodexUsageKey {
             session: if kind == AgentReportKind::Session {
                 Some(CodexEventProvenance::intern(
@@ -250,7 +219,26 @@ impl<'a> CodexDedupe<'a> {
                 None
             },
             timestamp: event.timestamp,
-            model,
+            model: CodexEventProvenance::intern(
+                &mut provenance.models,
+                &self.models,
+                &model,
+                || {
+                    let price = self.pricing.and_then(|table| table.find_handle(&model));
+                    CodexModel {
+                        name: CompactString::new(&model),
+                        long_context_threshold: price.as_ref().map_or(
+                            crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+                            |handle| {
+                                handle.with_rates_at(None, |entry| {
+                                    entry.long_context_split_threshold()
+                                })
+                            },
+                        ),
+                        time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
+                    }
+                },
+            )?,
             usage: event.raw_usage(),
             occurrence: 0,
         };
@@ -260,10 +248,7 @@ impl<'a> CodexDedupe<'a> {
                 .lock()
                 .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
             if let Some(record) = shard.responses.get_mut(response.as_str()) {
-                if record
-                    .attribution
-                    .merge(event, provenance.file_index, logged_model)
-                {
+                if record.attribution.merge(event, provenance.file_index) {
                     record.key = key;
                 }
             } else {
@@ -271,11 +256,7 @@ impl<'a> CodexDedupe<'a> {
                     CompactString::new(response),
                     CodexResponseUsage {
                         key,
-                        attribution: CodexAttribution::new(
-                            event,
-                            provenance.file_index,
-                            logged_model,
-                        ),
+                        attribution: CodexAttribution::new(event, provenance.file_index),
                     },
                 );
             }
@@ -286,12 +267,11 @@ impl<'a> CodexDedupe<'a> {
                 .lock()
                 .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
             if let Some(record) = shard.usage.get_mut(&key) {
-                record.merge(event, provenance.file_index, logged_model);
+                record.merge(event, provenance.file_index);
             } else {
-                shard.usage.insert(
-                    key,
-                    CodexAttribution::new(event, provenance.file_index, logged_model),
-                );
+                shard
+                    .usage
+                    .insert(key, CodexAttribution::new(event, provenance.file_index));
             }
         }
         Ok(())
@@ -323,15 +303,6 @@ impl<'a> CodexDedupe<'a> {
                     .map(|record| (record.key, record.attribution)),
             ) {
                 let model = &models.values[key.model.0.get() - 1];
-                let logged_model = attribution
-                    .logged_model
-                    .map(|id| {
-                        models
-                            .values
-                            .get(id.0.get() - 1)
-                            .ok_or_else(|| crate::cli_error("missing interned Codex model"))
-                    })
-                    .transpose()?;
                 let session = key
                     .session
                     .map(|id| sessions.values[id.0.get() - 1].as_str());
@@ -344,7 +315,6 @@ impl<'a> CodexDedupe<'a> {
                     groups.entry(period).or_default(),
                     key.usage,
                     model,
-                    logged_model,
                     key.timestamp,
                     &attribution,
                 );
@@ -698,7 +668,6 @@ fn accumulate_codex_usage_into_group(
     group: &mut CodexGroup,
     event: crate::CodexRawUsage,
     model: &CodexModel,
-    logged_model: Option<&CodexModel>,
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
@@ -722,26 +691,17 @@ fn accumulate_codex_usage_into_group(
         group.last_activity = Some(attribution.last_activity.to_string());
     }
 
-    let model_usage = match group.models.get_mut(model.name.as_str()) {
-        Some(usage) => usage,
-        None => group.models.entry(model.name.to_string()).or_default(),
-    };
-    let priced = logged_model.unwrap_or(model);
-    if logged_model.is_some() && model_usage.pricing_variants.is_empty() {
-        let usage = model_usage.clone();
-        model_usage
-            .pricing_variants
-            .insert(model.name.to_string(), usage);
+    if let Some(model_usage) = group.models.get_mut(model.name.as_str()) {
+        accumulate_codex_usage_into_model_usage(model_usage, event, model, timestamp, attribution);
+    } else {
+        accumulate_codex_usage_into_model_usage(
+            group.models.entry(model.name.to_string()).or_default(),
+            event,
+            model,
+            timestamp,
+            attribution,
+        );
     }
-    if !model_usage.pricing_variants.is_empty() {
-        let variants = &mut model_usage.pricing_variants;
-        let variant = match variants.get_mut(priced.name.as_str()) {
-            Some(usage) => usage,
-            None => variants.entry(priced.name.to_string()).or_default(),
-        };
-        accumulate_codex_usage_into_model_usage(variant, event, priced, timestamp, attribution);
-    }
-    accumulate_codex_usage_into_model_usage(model_usage, event, priced, timestamp, attribution);
 }
 
 fn accumulate_codex_usage_into_model_usage(
@@ -799,7 +759,7 @@ mod tests {
     };
 
     #[test]
-    fn prices_the_logged_model_before_its_configured_alias() {
+    fn prices_the_configured_alias_target_when_both_models_have_rates() {
         ccusage_test_support::install_pricing_snapshots();
         let _aliases = set_model_aliases_for_tests([("logged-model", "alias-model")]);
         let mut pricing = PricingMap::default();
@@ -846,7 +806,7 @@ mod tests {
                 Some(&pricing),
                 CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
             ),
-            300.0,
+            400.0,
         );
     }
 

@@ -377,7 +377,6 @@ pub struct CodexModelUsage {
     /// Exact event timestamps keep time-dependent pricing available after aggregation.
     pub(crate) timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub(crate) is_fallback: bool,
-    pub(crate) pricing_variants: BTreeMap<String, Self>,
 }
 
 impl CodexModelUsage {
