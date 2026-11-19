@@ -17,7 +17,7 @@ use crate::{
 #[cfg(test)]
 pub(crate) use loader::load_entries;
 pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
+pub(crate) use report::summarize_entries;
 
 pub struct Qwen;
 
@@ -71,7 +71,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     SOURCE.run_focused(args)
 }
 
-pub fn has_data() -> bool {
+fn has_data() -> bool {
     paths::discover_chat_files(&ccusage_core::Diagnostics::new("qwen"))
         .is_ok_and(|files| !files.is_empty())
 }

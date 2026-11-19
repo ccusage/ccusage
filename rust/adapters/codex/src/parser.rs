@@ -407,7 +407,7 @@ fn visit_codex_session_file_inner(
         };
         line_number = line_number.saturating_add(1);
         if let Some(metadata) = stop_at_fork.take() {
-            *metadata = session_metadata_from_line(line);
+            *metadata = session_metadata_from_line(path, line);
             if metadata.is_fork() {
                 return Ok(());
             }
@@ -1111,7 +1111,7 @@ fn codex_is_leap_year(year: u16) -> bool {
     year.is_multiple_of(4) && !year.is_multiple_of(100) || year.is_multiple_of(400)
 }
 
-fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
+pub(super) fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
     let relative = path.trim_prefix(sessions_dir);
     let mut session_id = uncompressed_rollout_path(relative)
         .with_extension("")

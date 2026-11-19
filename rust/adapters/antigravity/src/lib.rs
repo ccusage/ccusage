@@ -11,8 +11,6 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-pub use report::summarize_entries;
-
 pub struct Antigravity;
 pub static SOURCE: Antigravity = Antigravity;
 

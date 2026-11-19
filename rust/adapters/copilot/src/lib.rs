@@ -9,8 +9,6 @@ mod report;
 use crate::cli::{AgentCommandArgs, AgentReportKind, SharedArgs};
 use crate::{LoadedEntry, Result};
 
-pub use report::summarize_entries;
-
 pub struct Copilot;
 pub static SOURCE: Copilot = Copilot;
 

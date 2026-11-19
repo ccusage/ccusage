@@ -20,9 +20,9 @@ use crate::{
 /// A report kind whose focused and unified totals are known to differ, so the
 /// difference is on record instead of failing the check.
 pub struct KnownDivergence {
-    pub kind: AgentReportKind,
+    kind: AgentReportKind,
     /// The exact difference, and why it is not a bug to fix here.
-    pub reason: &'static str,
+    reason: &'static str,
 }
 
 #[derive(Debug, PartialEq)]

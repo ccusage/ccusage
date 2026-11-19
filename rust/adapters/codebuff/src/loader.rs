@@ -11,7 +11,7 @@ use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
 #[cfg(test)]
-pub(crate) fn load_entries(
+fn load_entries(
     shared: &crate::cli::SharedArgs,
     pricing: &crate::PricingMap,
 ) -> crate::Result<Vec<crate::LoadedEntry>> {

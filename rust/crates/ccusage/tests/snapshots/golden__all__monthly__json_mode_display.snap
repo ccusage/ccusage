@@ -48,8 +48,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13525,
-      "cacheReadTokens": 299309,
-      "inputTokens": 114780,
+      "cacheReadTokens": 299459,
+      "inputTokens": 114860,
       "metadata": {
         "agents": [
           "amp",
@@ -77,11 +77,11 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1020,
-          "cacheReadTokens": 35700,
-          "cost": 4.011405,
-          "inputTokens": 6763,
+          "cacheReadTokens": 35850,
+          "cost": 4.018405,
+          "inputTokens": 6843,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 2673
+          "outputTokens": 2698
         },
         {
           "cacheCreationTokens": 401,
@@ -521,16 +521,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 30166,
+      "outputTokens": 30191,
       "period": "2025-12",
-      "totalCost": 21.124243499999995,
-      "totalTokens": 458850
+      "totalCost": 21.131243499999997,
+      "totalTokens": 459105
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
-      "cacheReadTokens": 1015308,
-      "inputTokens": 1232578,
+      "cacheReadTokens": 1015408,
+      "inputTokens": 1232978,
       "metadata": {
         "agents": [
           "amp",
@@ -574,11 +574,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 15855,
-          "cost": 0.56213875,
-          "inputTokens": 8748,
+          "cacheReadTokens": 15955,
+          "cost": 0.5626450000000001,
+          "inputTokens": 9148,
           "modelName": "gpt-5",
-          "outputTokens": 3093
+          "outputTokens": 3143
         },
         {
           "cacheCreation1hTokens": 1000,
@@ -1159,10 +1159,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 28466,
+      "outputTokens": 28516,
       "period": "2026-01",
-      "totalCost": 3.6245447499999996,
-      "totalTokens": 2283239
+      "totalCost": 3.6250509999999996,
+      "totalTokens": 2283789
     },
     {
       "agent": "all",
@@ -1195,11 +1195,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316617,
-    "inputTokens": 1348391,
-    "outputTokens": 59141,
-    "totalCost": 24.748788249999993,
-    "totalTokens": 2745631,
+    "cacheReadTokens": 1316867,
+    "inputTokens": 1348871,
+    "outputTokens": 59216,
+    "totalCost": 24.756294499999996,
+    "totalTokens": 2746436,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

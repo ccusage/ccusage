@@ -93,8 +93,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0001254,
+          "cost": 0.0,
           "inputTokens": 310,
+          "missingPricing": true,
           "modelName": "qwen-3-235b",
           "outputTokens": 65
         },
@@ -116,7 +117,7 @@ exit: 0
         "qwen-mystery-1"
       ],
       "outputTokens": 1369,
-      "totalCost": 0.0116054,
+      "totalCost": 0.011479999999999999,
       "totalTokens": 7039
     },
     {
@@ -197,9 +198,10 @@ exit: 0
     "cacheReadTokens": 105460,
     "inputTokens": 308515,
     "outputTokens": 4335,
-    "totalCost": 0.34604740000000006,
+    "totalCost": 0.34592200000000006,
     "totalTokens": 418627,
     "unpricedModels": [
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown"
     ]

@@ -76,6 +76,7 @@ fn observe_parent_usage(path: &Path) {
     }
 }
 
+#[derive(Default)]
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
     usage_by_parent: HashMap<PathBuf, ParentUsage>,
@@ -152,19 +153,35 @@ impl CodexReplayPlan {
         diagnostics: &Diagnostics,
     ) -> Self {
         let children = collect_replay_files(children);
-        let available_files = collect_replay_files(available_files);
-        let available_metadata = read_session_metadata(&available_files, single_thread);
-        let files_by_session_id = index_session_paths(&available_files, &available_metadata);
-        let mut metadata_by_path = HashMap::with_capacity(available_files.len());
-        for ((path, _), metadata) in available_files.iter().zip(available_metadata) {
-            metadata_by_path.entry(path.clone()).or_insert(metadata);
+        let child_metadata = read_session_metadata(&children, single_thread);
+        if child_metadata
+            .iter()
+            .all(|metadata| metadata.parent_id.is_none())
+        {
+            return Self::default();
         }
-        let child_metadata = children.iter().map(|(child, _)| {
-            metadata_by_path
-                .get(child)
-                .cloned()
-                .unwrap_or_else(|| read_codex_session_metadata(child))
-        });
+        let available_files = collect_replay_files(available_files);
+        let mut metadata_by_path = children
+            .iter()
+            .zip(&child_metadata)
+            .map(|((path, _), metadata)| (path.clone(), metadata.clone()))
+            .collect::<HashMap<_, _>>();
+        let missing_files = available_files
+            .iter()
+            .filter(|(path, _)| !metadata_by_path.contains_key(path))
+            .cloned()
+            .collect::<Vec<_>>();
+        metadata_by_path.extend(
+            missing_files
+                .iter()
+                .zip(read_session_metadata(&missing_files, single_thread))
+                .map(|((path, _), metadata)| (path.clone(), metadata)),
+        );
+        let available_metadata = available_files
+            .iter()
+            .map(|(path, _)| metadata_by_path[path].clone())
+            .collect::<Vec<_>>();
+        let files_by_session_id = index_session_paths(&available_files, &available_metadata);
         let parent_by_child = build_parent_replays(&children, child_metadata, &files_by_session_id);
         let parent_paths = parent_by_child
             .values()
@@ -453,11 +470,11 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     let Ok(Some(line)) = lines.next_line() else {
         return CodexSessionMetadata::default();
     };
-    session_metadata_from_line(line)
+    session_metadata_from_line(path, line)
 }
 
 /// Session metadata from a rollout's first line.
-pub(super) fn session_metadata_from_line(line: &[u8]) -> CodexSessionMetadata {
+pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
     let Ok(line) = std::str::from_utf8(line) else {
         return CodexSessionMetadata::default();
     };
@@ -471,7 +488,7 @@ pub(super) fn session_metadata_from_line(line: &[u8]) -> CodexSessionMetadata {
         .and_then(|payload| payload.pointer("/source/subagent/thread_spawn/parent_thread_id"))
         .and_then(Value::as_str)
         .filter(|parent_id| !parent_id.is_empty());
-    CodexSessionMetadata {
+    let mut metadata = CodexSessionMetadata {
         timestamp: codex_value_timestamp(value.get("timestamp")),
         session_id: payload
             .and_then(|payload| payload.get("id"))
@@ -484,5 +501,136 @@ pub(super) fn session_metadata_from_line(line: &[u8]) -> CodexSessionMetadata {
             .or(spawn_parent_id)
             .map(str::to_string),
         spawned: spawn_parent_id.is_some(),
+    };
+    let referenced_history = payload
+        .and_then(|payload| payload.get("history_base"))
+        .is_some_and(Value::is_object);
+    let replacement = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(super::rollout_identity)
+        .is_some_and(|(thread, rollout)| {
+            thread != rollout && metadata.session_id.as_deref() == Some(thread)
+        });
+    if referenced_history || replacement {
+        // These files reference earlier history without copying its token events.
+        metadata.parent_id = None;
+    }
+    metadata
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn reference_backed_history_keeps_usage_while_physical_forks_dedupe() {
+        let parent_id = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
+        let child_id = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
+        let replacement_id = "01a0ddae-e9e2-7852-bfa4-a82da97152b2";
+        for (child_file, history_base, expected) in [
+            (
+                "child.jsonl".to_string(),
+                serde_json::json!({"thread_id":parent_id,"end_ordinal_exclusive":2}),
+                300,
+            ),
+            (
+                format!("rollout-2026-09-19T12-01-00-{child_id}_{replacement_id}.jsonl"),
+                Value::Null,
+                300,
+            ),
+            (
+                format!("backup-{child_id}_{replacement_id}.jsonl"),
+                Value::Null,
+                150,
+            ),
+            (
+                format!("rollout-backup-{child_id}_{replacement_id}.jsonl"),
+                Value::Null,
+                150,
+            ),
+        ] {
+            let usage = |timestamp: &str| {
+                serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
+                "type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
+            }}).to_string()
+            };
+            let fixture = fs_fixture!({
+                "parent.jsonl": [
+                    serde_json::json!({"timestamp":"2026-09-19T12:00:00Z","type":"session_meta","payload":{"id":parent_id}}).to_string(),
+                    usage("2026-09-19T12:00:01Z"),
+                ].join("\n"),
+            });
+            let _ = fixture.write_file(child_file, [
+                    serde_json::json!({"timestamp":"2026-09-19T12:01:00Z","type":"session_meta","payload":{"id":child_id,"forked_from_id":parent_id,"history_base":history_base}}).to_string(),
+                    usage("2026-09-19T12:02:00Z"),
+                ].join("\n"));
+            let groups = crate::aggregate::load_groups_from_directory(
+                fixture.root(),
+                &crate::cli::SharedArgs {
+                    single_thread: true,
+                    timezone: Some("UTC".to_string()),
+                    ..Default::default()
+                },
+                crate::cli::AgentReportKind::Daily,
+            )
+            .unwrap();
+            assert_eq!(
+                groups.values().map(|group| group.total_tokens).sum::<u64>(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn bounded_forks_probe_each_rollout_metadata_once() {
+        let fixture = fs_fixture!({
+            "child.jsonl": r#"{"type":"session_meta","payload":{"id":"child","forked_from_id":"parent"}}"#,
+            "parent.jsonl": r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
+        });
+        let selected = [fixture.path("child.jsonl")];
+        let available = [fixture.path("child.jsonl"), fixture.path("parent.jsonl")];
+        take_observed_file_read_events();
+
+        CodexReplayPlan::for_bounded_files(
+            [(fixture.root(), selected.as_slice())],
+            [(fixture.root(), available.as_slice())],
+            true,
+            &Diagnostics::new("codex"),
+        );
+
+        let probes = take_observed_file_read_events()
+            .into_iter()
+            .filter_map(|read| match read {
+                ObservedFileRead::MetadataProbe(path) => Some(path),
+                ObservedFileRead::ParentUsage(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(probes, available);
+    }
+
+    #[test]
+    fn bounded_regular_sessions_do_not_open_unrelated_rollouts() {
+        let fixture = fs_fixture!({
+            "current.jsonl": r#"{"type":"session_meta","payload":{"id":"current"}}"#,
+            "other.jsonl": r#"{"type":"session_meta","payload":{"id":"other"}}"#,
+        });
+        let selected = [fixture.path("current.jsonl")];
+        let available = [fixture.path("current.jsonl"), fixture.path("other.jsonl")];
+        take_observed_file_read_events();
+
+        let plan = CodexReplayPlan::for_bounded_files(
+            [(fixture.root(), selected.as_slice())],
+            [(fixture.root(), available.as_slice())],
+            true,
+            &Diagnostics::new("codex"),
+        );
+
+        assert!(plan.parent_by_child.is_empty());
+        assert_eq!(
+            take_observed_file_read_events(),
+            vec![ObservedFileRead::MetadataProbe(selected[0].clone())]
+        );
     }
 }

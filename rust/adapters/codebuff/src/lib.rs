@@ -8,8 +8,6 @@ mod parser;
 mod paths;
 mod report;
 
-pub use report::summarize_entries;
-
 pub struct Codebuff;
 
 pub static SOURCE: Codebuff = Codebuff;

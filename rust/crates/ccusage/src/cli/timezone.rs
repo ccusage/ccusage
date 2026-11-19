@@ -33,6 +33,7 @@ fn command_shared(command: &Command) -> &SharedArgs {
         Command::Weekly(args) => &args.shared,
         Command::Session(args) => &args.shared,
         Command::Blocks(args) => &args.shared,
+        Command::CodexStatusline(args) => &args.shared,
         Command::All(args)
         | Command::Codex(args)
         | Command::OpenCode(args)
@@ -94,6 +95,7 @@ mod tests {
             &["claude", "daily", "--timezone", "Not/AZone"],
             &["claude", "session", "--timezone", "Not/AZone"],
             &["codex", "monthly", "--timezone", "Not/AZone"],
+            &["codex", "statusline", "--timezone", "Not/AZone"],
             &["cline", "weekly", "--timezone", "Not/AZone"],
             &["blocks", "--timezone", "Not/AZone"],
             &["--timezone", "Not/AZone", "statusline"],

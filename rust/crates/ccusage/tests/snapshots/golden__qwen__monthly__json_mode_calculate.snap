@@ -37,20 +37,21 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 33,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 310,
+          "missingPricing": true,
+          "modelName": "qwen-3-235b",
+          "outputTokens": 65
         }
       ],
       "modelsUsed": [
@@ -62,7 +63,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 2031,
-      "totalCost": 0.019530400000000003,
+      "totalCost": 0.019405,
       "totalTokens": 12684
     },
     {
@@ -112,9 +113,10 @@ exit: 0
     "cacheReadTokens": 105460,
     "inputTokens": 308515,
     "outputTokens": 4335,
-    "totalCost": 0.34604740000000006,
+    "totalCost": 0.34592200000000006,
     "totalTokens": 418627,
     "unpricedModels": [
+      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown"
     ]

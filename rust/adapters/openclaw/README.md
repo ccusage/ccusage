@@ -28,7 +28,6 @@ contract as the JSONL path, and win over migrated JSONL duplicates.
 
 - `loader::load_entries`
 - `report::report_from_rows`
-- `report::summarize_entries`
 - `run`
 
 ## Depends on

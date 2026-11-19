@@ -206,7 +206,7 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-pub(super) fn parse_session_files(
+fn parse_session_files(
     files: &GrokSessionFiles,
     tz: &JiffTimeZone,
     mode: CostMode,

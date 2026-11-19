@@ -69,5 +69,6 @@ exit: 0
 └──────────┴────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 
 --- stderr ---
+WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

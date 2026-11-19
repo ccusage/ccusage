@@ -10,6 +10,7 @@ mod replay;
 mod report;
 mod source;
 mod speed;
+mod statusline;
 mod types;
 
 #[cfg(test)]
@@ -19,19 +20,22 @@ mod compression_tests;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
-pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
+pub(crate) use aggregate::{aggregate_events, filter_events_by_date, load_groups};
 #[cfg(test)]
 use loader::load_codex_events_from_directory;
-pub use loader::load_codex_events_with_detection;
+#[cfg(test)]
+pub(crate) use loader::load_codex_events_with_detection;
 
-pub use report::{
-    calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
-    non_cached_input_tokens,
+pub use report::calculate_group_cost;
+pub(crate) use report::{
+    calculate_codex_model_cost, codex_model_missing_pricing, non_cached_input_tokens,
 };
 pub use source::SOURCE;
 #[doc(hidden)]
 pub use source::unified_row_from_group;
-pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
+pub use speed::CodexSpeedPolicy;
+pub(crate) use speed::resolve_codex_speed;
+pub use statusline::run_statusline;
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,
     CodexUsageBucket,
@@ -82,10 +86,7 @@ fn resolve_session_id<'a>(
     requested_id: &str,
 ) -> Result<&'a str> {
     let original_id = requested_id;
-    let requested_id = original_id
-        .trim_prefix("codex://threads/")
-        .trim_suffix(".zst")
-        .trim_suffix(".jsonl");
+    let requested_id = normalize_session_id(original_id);
     let matches = groups
         .keys()
         .filter(|candidate| session_id_matches(candidate, requested_id))
@@ -100,6 +101,34 @@ fn resolve_session_id<'a>(
             matches.len()
         ))),
     }
+}
+
+fn normalize_session_id(value: &str) -> &str {
+    value
+        .trim_prefix("codex://threads/")
+        .trim_suffix(".zst")
+        .trim_suffix(".jsonl")
+}
+
+fn rollout_identity(value: &str) -> Option<(&str, &str)> {
+    let name = normalize_session_id(value)
+        .rsplit('/')
+        .next()?
+        .strip_prefix("rollout-")?;
+    let (timestamp, ids) = name.split_at_checked(20)?;
+    if !timestamp
+        .bytes()
+        .enumerate()
+        .all(|(index, byte)| match index {
+            4 | 7 | 13 | 16 | 19 => byte == b'-',
+            10 => byte == b'T',
+            _ => byte.is_ascii_digit(),
+        })
+    {
+        return None;
+    }
+    let (thread_id, rollout_id) = ids.split_once('_').unwrap_or((ids, ids));
+    (is_codex_uuid(thread_id) && is_codex_uuid(rollout_id)).then_some((thread_id, rollout_id))
 }
 
 fn session_id_matches(candidate: &str, requested_id: &str) -> bool {

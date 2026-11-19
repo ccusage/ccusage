@@ -650,6 +650,62 @@ fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
 }
 
 #[test]
+fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-11T10:00:00.000Z",
+            "session-a",
+            "msg-main",
+            "req-main",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/subagents/agent-b.jsonl",
+        sidechain_line(
+            "2026-09-11T10:03:00.000Z",
+            "session-a",
+            "msg-subagent",
+            "req-subagent",
+            2.0,
+        ),
+    );
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/subagents/workflows/wf_1/agent-c.jsonl",
+        sidechain_line(
+            "2026-09-11T10:05:00.000Z",
+            "session-a",
+            "msg-workflow",
+            "req-workflow",
+            4.0,
+        ),
+    );
+
+    let output = run_ccusage(
+        &fixture,
+        &[
+            "claude",
+            "session",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ],
+        None,
+    );
+    let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+    let sessions = json["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1, "{output}");
+    assert_eq!(sessions[0]["sessionId"], "session-a", "{output}");
+    assert_eq!(sessions[0]["projectPath"], "project-a", "{output}");
+    assert_eq!(sessions[0]["totalCost"], 7.0, "{output}");
+}
+
+#[test]
 fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     let fixture = Fixture::new();
     let _ = fixture.write_file(
