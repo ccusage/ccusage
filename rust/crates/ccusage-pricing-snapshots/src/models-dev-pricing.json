@@ -16097,6 +16097,16 @@
 			"context": 1048576
 		}
 	},
+	"google-ai-studio/gemini-4-neon": {
+		"cost": {
+			"cache_read": 0.15,
+			"input": 3,
+			"output": 15
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"google-ai-studio/gemini-pro-latest": {
 		"cost": {
 			"cache_read": 0.2,
@@ -16241,6 +16251,16 @@
 			"cache_read": 0.075,
 			"input": 1.5,
 			"output": 7.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google-vertex/gemini-4-neon": {
+		"cost": {
+			"cache_read": 0.15,
+			"input": 3,
+			"output": 15
 		},
 		"limit": {
 			"context": 1048576
@@ -18252,9 +18272,9 @@
 	},
 	"greenpt/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.043956,
-			"input": 0.153846,
-			"output": 0.384615
+			"cache_read": 0.043872,
+			"input": 0.153552,
+			"output": 0.38388
 		},
 		"limit": {
 			"context": 1000000
@@ -18262,9 +18282,9 @@
 	},
 	"greenpt/deepseek-v4.1-flash": {
 		"cost": {
-			"cache_read": 0.012088,
-			"input": 0.241758,
-			"output": 1.20879
+			"cache_read": 0.012065,
+			"input": 0.241296,
+			"output": 1.20648
 		},
 		"limit": {
 			"context": 1000000
@@ -18292,8 +18312,8 @@
 	},
 	"greenpt/gpt-oss-120b": {
 		"cost": {
-			"input": 0.21978,
-			"output": 0.76923
+			"input": 0.21936,
+			"output": 0.76776
 		},
 		"limit": {
 			"context": 128000
@@ -18301,8 +18321,8 @@
 	},
 	"greenpt/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 1.20879,
-			"output": 1.20879
+			"input": 1.20648,
+			"output": 1.20648
 		},
 		"limit": {
 			"context": 128000
@@ -18310,8 +18330,8 @@
 	},
 	"greenpt/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.98901,
-			"output": 2.96703
+			"input": 0.98712,
+			"output": 2.961361
 		},
 		"limit": {
 			"context": 250000
@@ -19173,9 +19193,9 @@
 	},
 	"hy4-flash": {
 		"cost": {
-			"cache_read": 0.00428571,
-			"input": 0.07142857,
-			"output": 0.28571429
+			"cache_read": 0.01,
+			"input": 0.07,
+			"output": 0.281
 		},
 		"exactOnly": true,
 		"limit": {
@@ -19670,8 +19690,8 @@
 	},
 	"infomaniak/mistralai/Ministral-3-14B-Instruct-2512": {
 		"cost": {
-			"input": 0.32967,
-			"output": 0.43956
+			"input": 0.32904,
+			"output": 0.43872
 		},
 		"limit": {
 			"context": 100000
@@ -19740,8 +19760,8 @@
 	},
 	"ionos/Qwen/Qwen3-Coder-Next": {
 		"cost": {
-			"input": 0.164835,
-			"output": 0.87912
+			"input": 0.16452,
+			"output": 0.87744
 		},
 		"limit": {
 			"context": 128000
@@ -19749,8 +19769,8 @@
 	},
 	"ionos/meta-llama/Llama-3.3-70B-Instruct": {
 		"cost": {
-			"input": 0.714285,
-			"output": 0.714285
+			"input": 0.71292,
+			"output": 0.71292
 		},
 		"limit": {
 			"context": 128000
@@ -19758,8 +19778,8 @@
 	},
 	"ionos/openai/gpt-oss-120b": {
 		"cost": {
-			"input": 0.164835,
-			"output": 0.714285
+			"input": 0.16452,
+			"output": 0.71292
 		},
 		"limit": {
 			"context": 128000
@@ -32347,6 +32367,15 @@
 			"context": 1000000
 		}
 	},
+	"scaledown/extract-1": {
+		"cost": {
+			"input": 0.05,
+			"output": 0
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"scaledown/scaledown-classify-1": {
 		"cost": {
 			"input": 0.05,
@@ -32386,9 +32415,9 @@
 	},
 	"scaleway/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.087912,
-			"input": 0.43956,
-			"output": 0.87912
+			"cache_read": 0.087744,
+			"input": 0.43872,
+			"output": 0.87744
 		},
 		"limit": {
 			"context": 256000
@@ -32406,9 +32435,9 @@
 	},
 	"scaleway/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.131868,
-			"input": 0.65934,
-			"output": 1.97802
+			"cache_read": 0.131616,
+			"input": 0.65808,
+			"output": 1.974241
 		},
 		"limit": {
 			"context": 256000
@@ -32425,8 +32454,8 @@
 	},
 	"scaleway/gpt-oss-120b": {
 		"cost": {
-			"input": 0.164835,
-			"output": 0.65934
+			"input": 0.16452,
+			"output": 0.65808
 		},
 		"limit": {
 			"context": 128000
@@ -32434,8 +32463,8 @@
 	},
 	"scaleway/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 0.98901,
-			"output": 0.98901
+			"input": 0.98712,
+			"output": 0.98712
 		},
 		"limit": {
 			"context": 128000
@@ -32443,8 +32472,8 @@
 	},
 	"scaleway/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.824175,
-			"output": 2.472525
+			"input": 0.8226,
+			"output": 2.467801
 		},
 		"limit": {
 			"context": 250000
@@ -34366,9 +34395,9 @@
 	},
 	"tsystems/gpt-oss-120b": {
 		"cost": {
-			"cache_read": 0.032967,
-			"input": 0.21978,
-			"output": 0.714285
+			"cache_read": 0.032904,
+			"input": 0.21936,
+			"output": 0.71292
 		},
 		"limit": {
 			"context": 131072
@@ -38653,7 +38682,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.035,
-			"input": 0.047,
+			"input": 0.055,
 			"output": 0.3
 		},
 		"limit": {
