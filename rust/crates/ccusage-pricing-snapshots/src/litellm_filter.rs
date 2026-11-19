@@ -77,7 +77,7 @@ fn is_admitted(rule: &Value, key: &str, provider: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::filter_pricing_json;
-    use ccusage_core::PricingMap;
+    use ccusage_core::{PricingMap, pricing::MatchKind};
 
     #[test]
     fn admits_free_direct_rows_and_excludes_same_prefix_hosted_rows() {
@@ -151,10 +151,16 @@ mod tests {
         let mut pricing = PricingMap::default();
         pricing.load_json(&filtered);
 
-        let both = pricing.find_exact("gpt-test").unwrap();
+        let both = pricing
+            .resolve_at(None, &[("gpt-test", MatchKind::StrictExact)], None)
+            .unwrap()
+            .1;
         assert_eq!(both.fast_multiplier, 2.0);
         assert_eq!(both.flex_multiplier, 0.5);
-        let flex_only = pricing.find_exact("gpt-flex-only").unwrap();
+        let flex_only = pricing
+            .resolve_at(None, &[("gpt-flex-only", MatchKind::StrictExact)], None)
+            .unwrap()
+            .1;
         assert_eq!(flex_only.fast_multiplier, 1.0);
         assert_eq!(flex_only.flex_multiplier, 0.25);
     }

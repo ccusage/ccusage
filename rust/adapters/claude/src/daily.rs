@@ -10,12 +10,12 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    IteratedTokenUsage, ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts,
-    TokenUsageRaw, UsageSummary,
-    cli::{CostMode, SharedArgs},
-    cost::price_reported_usage,
+    IteratedTokenUsage, ModelBreakdown, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
+    UsageSummary,
+    cli::SharedArgs,
+    cost::{PriceTable, price_reported_usage},
     fast::{FxHashMap, LinePrefilter, suffix_string},
-    format_date_tz, parse_ts_timestamp, stored_cost_for_mode, utc_now,
+    format_date_tz, parse_ts_timestamp, utc_now,
 };
 
 use super::{
@@ -174,13 +174,11 @@ fn load_deduped_daily_entries(
     context: &UsageLoadContext<'_>,
     diagnostics: &Diagnostics,
 ) -> Option<DedupedDailyEntries> {
-    let mode = context.shared.mode;
     let loaded_files = read_discovered_files(context.shared.single_thread, discover, |file| {
         read_daily_usage_file_with_diagnostics(
             file,
             context.window().timezone(),
-            mode,
-            context.pricing(),
+            context.table(),
             diagnostics,
         )
     });
@@ -563,11 +561,10 @@ struct AgentProgressMessage {
 fn read_daily_usage_file_with_diagnostics(
     path: &Path,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
-    read_usage_file(path, tz, mode, pricing, diagnostics, |parsed, _| {
+    read_usage_file(path, tz, pricing, diagnostics, |parsed, _| {
         parsed.into_daily()
     })
 }
@@ -575,8 +572,7 @@ fn read_daily_usage_file_with_diagnostics(
 pub(super) fn read_usage_file<E>(
     path: &Path,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
     build: impl Fn(ParsedUsage, &[u8]) -> E,
 ) -> Vec<E> {
@@ -618,7 +614,6 @@ pub(super) fn read_usage_file<E>(
             usage,
             data.cost_usd,
             timestamp,
-            mode,
             pricing,
         );
         let session_id = if let Some(session_id) = data.session_id.as_deref() {
@@ -642,7 +637,9 @@ pub(super) fn read_usage_file<E>(
             usage,
             cost,
             missing_pricing_model,
-            stored_cost: stored_cost_for_mode(data.cost_usd, mode),
+            stored_cost: data
+                .cost_usd
+                .filter(|_| matches!(pricing, PriceTable::Auto(_))),
             raw_model,
             timestamp_text: data.timestamp,
             version: data.version,
@@ -660,7 +657,6 @@ pub(super) fn read_usage_file<E>(
                     advisor.usage,
                     None,
                     timestamp,
-                    mode,
                     pricing,
                 );
                 ParsedUsage {
@@ -970,6 +966,7 @@ mod tests {
         Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
     };
+    use ccusage_core::cost::PriceTable;
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -990,7 +987,12 @@ mod tests {
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> Vec<ClaudeEntry> {
-        read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+        read_daily_usage_file_with_diagnostics(
+            path,
+            tz,
+            pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
+            &Diagnostics::new("claude"),
+        )
     }
 
     #[test]
@@ -1003,8 +1005,7 @@ mod tests {
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         );
         assert_eq!(loaded.len(), 1);
@@ -1026,8 +1027,7 @@ mod tests {
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         );
         let input_tokens = loaded
@@ -1047,8 +1047,7 @@ mod tests {
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         );
         assert_eq!(
@@ -1075,8 +1074,7 @@ mod tests {
             let loaded = super::read_daily_usage_file_with_diagnostics(
                 &path,
                 &JiffTimeZone::UTC,
-                CostMode::Display,
-                None,
+                PriceTable::Display,
                 &diagnostics,
             );
             assert_eq!(loaded.len(), 1, "{message}");
@@ -1096,8 +1094,7 @@ mod tests {
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            None,
+            PriceTable::Display,
             &diagnostics,
         );
         assert_eq!(loaded.len(), 1);

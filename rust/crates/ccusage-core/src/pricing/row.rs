@@ -28,7 +28,7 @@ impl Default for Row {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Source {
+pub enum Source {
     Override,
     LiteLlm,
     Curated,

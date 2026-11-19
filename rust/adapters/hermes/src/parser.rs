@@ -458,7 +458,9 @@ mod tests {
             model_candidates(&entry)
                 .into_iter()
                 .filter(|(name, kind)| *kind == MatchKind::Fuzzy
-                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                    || pricing
+                        .resolve_at(None, &[(name.as_str(), *kind)], None)
+                        .is_some())
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
             vec!["openai/gpt-5.5".to_string(), "gpt-5.5".to_string()]
@@ -498,7 +500,9 @@ mod tests {
             model_candidates(&entry)
                 .into_iter()
                 .filter(|(name, kind)| *kind == MatchKind::Fuzzy
-                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                    || pricing
+                        .resolve_at(None, &[(name.as_str(), *kind)], None)
+                        .is_some())
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
             vec!["deepseek/deepseek-v4-flash", "deepseek-v4-flash"]
@@ -528,7 +532,9 @@ mod tests {
             model_candidates(&entry)
                 .into_iter()
                 .filter(|(name, kind)| *kind == MatchKind::Fuzzy
-                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                    || pricing
+                        .resolve_at(None, &[(name.as_str(), *kind)], None)
+                        .is_some())
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
             vec![
@@ -582,7 +588,9 @@ mod tests {
             model_candidates(&entry)
                 .into_iter()
                 .filter(|(name, kind)| *kind == MatchKind::Fuzzy
-                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                    || pricing
+                        .resolve_at(None, &[(name.as_str(), *kind)], None)
+                        .is_some())
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
             vec![
@@ -601,7 +609,9 @@ mod tests {
             model_candidates(&longer_entry)
                 .into_iter()
                 .filter(|(name, kind)| *kind == MatchKind::Fuzzy
-                    || pricing.resolve(&[(name.as_str(), *kind)]).is_some())
+                    || pricing
+                        .resolve_at(None, &[(name.as_str(), *kind)], None)
+                        .is_some())
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
             vec!["deepseek.v4.flash-preview".to_string()]

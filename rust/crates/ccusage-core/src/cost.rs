@@ -90,15 +90,16 @@ pub fn price_reported_usage(
     usage: crate::TokenUsageRaw,
     stored_cost: Option<f64>,
     timestamp: crate::TimestampMs,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> (f64, Option<String>) {
-    match mode {
-        CostMode::Display => return (stored_cost.unwrap_or_default(), None),
-        CostMode::Auto if stored_cost.is_some() => return (stored_cost.unwrap_or_default(), None),
-        CostMode::Auto | CostMode::Calculate => {}
-    }
-    let Some((model, map)) = model.zip(pricing) else {
+    let map = match pricing {
+        PriceTable::Display => return (stored_cost.unwrap_or_default(), None),
+        PriceTable::Auto(_) if stored_cost.is_some() => {
+            return (stored_cost.unwrap_or_default(), None);
+        }
+        PriceTable::Auto(map) | PriceTable::Calculate(map) => map,
+    };
+    let Some(model) = model else {
         return (0.0, None);
     };
     match map.find_at(model, timestamp) {
@@ -118,17 +119,6 @@ fn cost_at_speed(usage: crate::TokenUsageRaw, rates: Pricing) -> f64 {
         1.0
     };
     calculate_cost_from_pricing(usage, rates) * multiplier
-}
-
-#[cfg(test)]
-fn calculate_cost_for_usage(
-    model: Option<&str>,
-    usage: crate::TokenUsageRaw,
-    cost_usd: Option<f64>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    calculate_cost_for_usage_at(model, usage, cost_usd, None, mode, pricing)
 }
 
 pub fn calculate_cost_for_usage_at(
@@ -276,6 +266,15 @@ pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    fn calculate_cost_for_usage(
+        model: Option<&str>,
+        usage: crate::TokenUsageRaw,
+        cost_usd: Option<f64>,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> f64 {
+        calculate_cost_for_usage_at(model, usage, cost_usd, None, mode, pricing)
+    }
 
     use super::*;
 
@@ -592,7 +591,7 @@ mod tests {
         types::{CacheCreationRaw, TokenUsageRaw},
     };
 
-    use super::{calculate_cost_for_usage, calculate_cost_for_usage_at};
+    use super::calculate_cost_for_usage_at;
 
     fn pricing() -> PricingMap {
         let mut pricing = PricingMap::default();

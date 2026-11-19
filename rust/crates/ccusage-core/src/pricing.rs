@@ -18,7 +18,8 @@ mod data;
 mod overrides;
 use overrides::Overrides;
 mod row;
-use row::{Row, Scope, Source, cache_defaults, row_scope, schedule_for, vendor_id};
+pub use row::Source;
+use row::{Row, Scope, cache_defaults, row_scope, schedule_for, vendor_id};
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -525,7 +526,7 @@ impl Lookup {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Step {
+pub enum ResolutionStep {
     ReportedOverride,
     AuthoritativeIdentity,
     AuthoritativeSuffix,
@@ -534,10 +535,18 @@ enum Step {
     ModelsDevFuzzy,
 }
 
-impl Step {
+impl ResolutionStep {
     fn scheduled(self) -> bool {
         matches!(self, Self::ReportedOverride | Self::AuthoritativeIdentity)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Explanation<'a> {
+    pub candidate: &'a str,
+    pub step: ResolutionStep,
+    pub row_key: &'a str,
+    pub source: Source,
 }
 
 #[derive(Clone, Copy)]
@@ -1407,12 +1416,6 @@ impl PricingMap {
         })
     }
 
-    /// Loads a synthetic models.dev payload for cross-module regression tests.
-    #[cfg(test)]
-    pub(crate) fn load_models_dev_json_for_tests(&mut self, json: &str) -> Option<usize> {
-        self.load_models_dev_json_missing(json)
-    }
-
     /// Load the entries of one provider catalog.
     ///
     /// `claims` records the claim strength of whichever catalog supplied each
@@ -1602,11 +1605,26 @@ impl PricingMap {
         })
     }
 
-    pub fn resolve<'a>(&self, candidates: &[(&'a str, MatchKind)]) -> Option<(&'a str, Pricing)> {
-        self.resolve_at(None, candidates, None)
+    pub fn explain<'a>(
+        &'a self,
+        reported_model: Option<&'a str>,
+        candidates: &[(&'a str, MatchKind)],
+    ) -> Option<Explanation<'a>> {
+        let (candidate, found, step) = self.resolve_row_with(
+            reported_model,
+            candidates,
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(Explanation {
+            candidate,
+            step,
+            row_key: found.key,
+            source: found.row.source,
+        })
     }
 
-    pub(crate) fn resolve_at<'a>(
+    pub fn resolve_at<'a>(
         &self,
         reported_model: Option<&'a str>,
         candidates: &[(&'a str, MatchKind)],
@@ -1683,7 +1701,7 @@ impl PricingMap {
         candidates: &[(&'a str, MatchKind)],
         lookup: Lookup,
         live: impl FnOnce() -> Option<&'live Self>,
-    ) -> Option<(&'a str, RowMatch<'_>, Step)> {
+    ) -> Option<(&'a str, RowMatch<'_>, ResolutionStep)> {
         let live = std::cell::Cell::new(Some(live));
         let models_dev = || self.select_models_dev(|| live.take().and_then(|load| load()));
         if let Some(label) = reported
@@ -1691,14 +1709,14 @@ impl PricingMap {
         {
             let found = self.resolve_override(id, &models_dev);
             if lookup.includes(found.row) {
-                return Some((label, found, Step::ReportedOverride));
+                return Some((label, found, ResolutionStep::ReportedOverride));
             }
         }
         for &(candidate, _) in candidates {
             if let Some(found) = with_names(candidate, |name| {
                 self.authoritative(name, lookup, true, &models_dev)
             }) {
-                return Some((candidate, found, Step::AuthoritativeIdentity));
+                return Some((candidate, found, ResolutionStep::AuthoritativeIdentity));
             }
         }
         for &(candidate, kind) in candidates {
@@ -1711,12 +1729,12 @@ impl PricingMap {
                 })
             });
             if let Some(found) = suffix {
-                return Some((candidate, found, Step::AuthoritativeSuffix));
+                return Some((candidate, found, ResolutionStep::AuthoritativeSuffix));
             }
             if let Some(rows) = models_dev()
                 && let Some(found) = with_names(candidate, |name| rows.exact(name, lookup))
             {
-                return Some((candidate, found, Step::ModelsDevIdentity));
+                return Some((candidate, found, ResolutionStep::ModelsDevIdentity));
             }
         }
         for &(candidate, kind) in candidates {
@@ -1748,14 +1766,14 @@ impl PricingMap {
                         })
                     });
                 Self::fuzzy(base.chain(overrides), name, &normalized, lookup)
-                    .map(|row| (row, Step::AuthoritativeFuzzy))
+                    .map(|row| (row, ResolutionStep::AuthoritativeFuzzy))
                     .or_else(|| {
                         let rows = secondary?
                             .entries
                             .iter()
                             .map(|(key, row)| RowMatch { key, row });
                         Self::fuzzy(rows, name, &normalized, lookup)
-                            .map(|row| (row, Step::ModelsDevFuzzy))
+                            .map(|row| (row, ResolutionStep::ModelsDevFuzzy))
                     })
             }) {
                 return Some((candidate, found, step));
@@ -1797,17 +1815,6 @@ impl PricingMap {
     pub fn is_time_dependent(&self, model: &str) -> bool {
         self.find_resolved(model)
             .is_some_and(|result| result.schedule.is_some())
-    }
-
-    pub fn find_exact(&self, model: &str) -> Option<Pricing> {
-        if let Some(id) = self.overrides.id(model) {
-            let found = self.resolve_override(id, &|| self.select_models_dev(models_dev_pricing));
-            return Some(found.row.pricing);
-        }
-        self.rows
-            .literal(model, Lookup::Pricing)
-            .or_else(|| self.available_models_dev()?.literal(model, Lookup::Pricing))
-            .map(|found| found.row.pricing)
     }
 
     fn has_user_override(&self, model: &str) -> bool {
@@ -2283,6 +2290,10 @@ mod tests {
     }
 
     impl PricingMap {
+        pub(crate) fn load_models_dev_json_for_tests(&mut self, json: &str) -> Option<usize> {
+            self.load_models_dev_json_missing(json)
+        }
+
         fn insert_test_pricing(&mut self, key: String, pricing: Pricing) {
             let row = self.rows_mut().entries.entry(key).or_default();
             row.scope = super::Scope::Direct;
@@ -2404,10 +2415,24 @@ mod tests {
             } else {
                 "sample-1-5"
             };
-            assert_eq!(primary.resolve(&[(model, kind)]).unwrap().1.input, 1.0);
+            assert_eq!(
+                primary
+                    .resolve_at(None, &[(model, kind)], None)
+                    .unwrap()
+                    .1
+                    .input,
+                1.0
+            );
         }
         for kind in [MatchKind::Exact, MatchKind::Fuzzy] {
-            assert_eq!(primary.resolve(&[("o1", kind)]).unwrap().1.input, 15.0);
+            assert_eq!(
+                primary
+                    .resolve_at(None, &[("o1", kind)], None)
+                    .unwrap()
+                    .1
+                    .input,
+                15.0
+            );
         }
     }
 
@@ -2427,7 +2452,7 @@ mod tests {
             ("reseller/model-1.5", MatchKind::StrictExact),
             ("model-1.5", MatchKind::Fuzzy),
         ];
-        let (matched, rates) = pricing.resolve(&candidates).unwrap();
+        let (matched, rates) = pricing.resolve_at(None, &candidates, None).unwrap();
         assert_eq!(matched, "model-1.5");
         assert_eq!(rates.input, 1.0);
     }
@@ -2562,14 +2587,22 @@ mod tests {
         assert_eq!(
             pricing
                 .with_live_layer("sample", super::Lookup::Pricing, fetch)
-                .find_exact("sample")
+                .resolve_at(None, &[("sample", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
                 .unwrap()
                 .input,
             1.0
         );
         assert_eq!(attempts.load(Ordering::Relaxed), 0);
         let merged = pricing.with_live_layer("trigger", super::Lookup::Pricing, fetch);
-        assert_eq!(merged.find_exact("sample-special").unwrap().input, 3.0);
+        assert_eq!(
+            merged
+                .resolve_at(None, &[("sample-special", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap()
+                .input,
+            3.0
+        );
         assert_eq!(pricing.find("sample-special").unwrap().input, 3.0);
         assert_eq!(pricing.find("other-model").unwrap().input, 5.0);
         pricing.with_live_layer("trigger-again", super::Lookup::Pricing, fetch);
@@ -2611,7 +2644,10 @@ mod tests {
             pricing.load_json(&format!(
                 r#"{{"{model}": {{"input_cost_per_token": 0.0000025, "output_cost_per_token": 0.000015, "litellm_provider": "{host}"}}}}"#
             ));
-            let price = pricing.find_exact(&model).unwrap();
+            let price = pricing
+                .resolve_at(None, &[(&model, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
             assert_eq!(price.cache_creation_rate(), 2.5e-6, "{host}");
         }
     }
@@ -2654,13 +2690,19 @@ mod tests {
         }"#,
         );
         pricing.put_builtin_pricing();
-        let glm_5 = pricing.find_exact("glm-5").unwrap();
+        let glm_5 = pricing
+            .resolve_at(None, &[("glm-5", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!((glm_5.input, glm_5.output), (9.0, 10.0));
         assert_eq!(
             (glm_5.cache_create, glm_5.cache_read),
             (Some(0.0), Some(0.2e-6))
         );
-        let glm_45 = pricing.find_exact("zai/glm-4.5").unwrap();
+        let glm_45 = pricing
+            .resolve_at(None, &[("zai/glm-4.5", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(
             (glm_45.cache_create, glm_45.cache_read),
             (Some(0.0), Some(7.0))
@@ -2697,7 +2739,14 @@ mod tests {
     fn curated_rows_use_the_shared_speed_policy_when_the_primary_entry_is_missing() {
         let mut pricing = PricingMap::default();
         pricing.put_builtin_pricing();
-        assert_eq!(pricing.find_exact("gpt-5.1").unwrap().flex_multiplier, 0.5);
+        assert_eq!(
+            pricing
+                .resolve_at(None, &[("gpt-5.1", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap()
+                .flex_multiplier,
+            0.5
+        );
     }
 
     #[test]
@@ -2709,7 +2758,10 @@ mod tests {
             ("gpt-5.2-codex", 1.75e-6, 0.175e-6),
             ("gpt-5.2", 1.75e-6, 0.175e-6),
         ] {
-            let entry = pricing.find_exact(model).unwrap();
+            let entry = pricing
+                .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
             assert_eq!(entry.cache_create, None, "{model}");
             assert_eq!(entry.cache_creation_rate(), input, "{model}");
             assert_eq!(entry.cache_read, Some(read), "{model}");
@@ -2797,7 +2849,7 @@ mod tests {
         assert_eq!(pricing.find("vendor-sample").unwrap().input, 3.0);
         assert_eq!(
             pricing
-                .resolve(&[("vendor/sample", super::MatchKind::Exact)])
+                .resolve_at(None, &[("vendor/sample", super::MatchKind::Exact)], None)
                 .unwrap()
                 .1
                 .input,
@@ -2861,7 +2913,7 @@ mod tests {
             assert_eq!(
                 pricing
                     .with_live_layer("md-only-1", Lookup::Pricing, fetch)
-                    .resolve(&[("md-only-1", MatchKind::Exact)])
+                    .resolve_at(None, &[("md-only-1", MatchKind::Exact)], None)
                     .map(|(_, pricing)| pricing)
                     .unwrap()
                     .input,
@@ -2873,7 +2925,7 @@ mod tests {
         assert_eq!(
             offline
                 .with_live_layer("md-only-1", Lookup::Pricing, || None)
-                .resolve(&[("md-only-1", MatchKind::Exact)])
+                .resolve_at(None, &[("md-only-1", MatchKind::Exact)], None)
                 .map(|(_, pricing)| pricing)
                 .unwrap()
                 .input,
@@ -2986,7 +3038,7 @@ mod tests {
         ));
         assert_eq!(
             merged
-                .resolve(&[("md-only-1", MatchKind::Exact)])
+                .resolve_at(None, &[("md-only-1", MatchKind::Exact)], None)
                 .map(|(_, pricing)| pricing)
                 .unwrap()
                 .input,
@@ -3519,26 +3571,38 @@ mod tests {
         }"#,
         );
         let (matched, free) = pricing
-            .resolve(&[
-                ("free", super::MatchKind::Fuzzy),
-                ("paid", super::MatchKind::Fuzzy),
-            ])
+            .resolve_at(
+                None,
+                &[
+                    ("free", super::MatchKind::Fuzzy),
+                    ("paid", super::MatchKind::Fuzzy),
+                ],
+                None,
+            )
             .unwrap();
         assert_eq!(matched, "free");
         assert_eq!(free.input, 0.0);
         let (matched, paid) = pricing
-            .resolve(&[
-                ("provider/paid", super::MatchKind::Exact),
-                ("paid", super::MatchKind::Fuzzy),
-            ])
+            .resolve_at(
+                None,
+                &[
+                    ("provider/paid", super::MatchKind::Exact),
+                    ("paid", super::MatchKind::Fuzzy),
+                ],
+                None,
+            )
             .unwrap();
         assert_eq!(matched, "paid");
         assert_eq!(paid.input, 1.0);
         let (matched, price) = pricing
-            .resolve(&[
-                ("provider/paid", super::MatchKind::Fuzzy),
-                ("paid", super::MatchKind::Fuzzy),
-            ])
+            .resolve_at(
+                None,
+                &[
+                    ("provider/paid", super::MatchKind::Fuzzy),
+                    ("paid", super::MatchKind::Fuzzy),
+                ],
+                None,
+            )
             .unwrap();
         assert_eq!(matched, "paid");
         assert_eq!(price.input, 1.0);
@@ -3573,7 +3637,7 @@ mod tests {
             ("deepseek/deepseek.v4.pro", 1.32, 3.96),
         ] {
             let rates = pricing
-                .resolve(&[(model, super::MatchKind::Fuzzy)])
+                .resolve_at(None, &[(model, super::MatchKind::Fuzzy)], None)
                 .unwrap()
                 .1;
             let direct = pricing.find(model).unwrap();
@@ -3595,7 +3659,9 @@ mod tests {
             r#"{"gpt-5-5":{"input_cost_per_token":0.000005,"output_cost_per_token":0.00003}}"#,
         );
         for kind in [super::MatchKind::Exact, super::MatchKind::StrictExact] {
-            let (_, price) = pricing.resolve(&[("gpt-5-5", kind)]).unwrap();
+            let (_, price) = pricing
+                .resolve_at(None, &[("gpt-5-5", kind)], None)
+                .unwrap();
             assert_eq!(price.input, 5e-6);
             assert_eq!(price.output, 30e-6);
         }
@@ -3612,7 +3678,14 @@ mod tests {
         ] {
             assert!(pricing.has_user_override(model), "{model}");
             for kind in [super::MatchKind::Exact, super::MatchKind::Fuzzy] {
-                assert_eq!(pricing.resolve(&[(model, kind)]).unwrap().1.input, 7e-6);
+                assert_eq!(
+                    pricing
+                        .resolve_at(None, &[(model, kind)], None)
+                        .unwrap()
+                        .1
+                        .input,
+                    7e-6
+                );
             }
             assert_eq!(pricing.find(model).unwrap().input, 7e-6);
         }
@@ -3625,7 +3698,7 @@ mod tests {
         );
         let pricing = layered(&primary, Some(&embedded));
         let (_, price) = pricing
-            .resolve(&[("sample", super::MatchKind::Exact)])
+            .resolve_at(None, &[("sample", super::MatchKind::Exact)], None)
             .unwrap();
         assert_eq!(price.input, 1.0);
         assert_eq!(price.output, 2.0);
@@ -3643,7 +3716,7 @@ mod tests {
         let pricing = layered(&primary, Some(&embedded));
         assert_eq!(
             pricing
-                .resolve(&[("vendor/sample", super::MatchKind::Exact)])
+                .resolve_at(None, &[("vendor/sample", super::MatchKind::Exact)], None)
                 .unwrap()
                 .1
                 .input,
@@ -3651,12 +3724,16 @@ mod tests {
         );
         assert!(
             pricing
-                .resolve(&[("vendor/sample", super::MatchKind::StrictExact)])
+                .resolve_at(
+                    None,
+                    &[("vendor/sample", super::MatchKind::StrictExact)],
+                    None
+                )
                 .is_none()
         );
         assert_eq!(
             pricing
-                .resolve(&[("grok-4.1-x", super::MatchKind::StrictExact)])
+                .resolve_at(None, &[("grok-4.1-x", super::MatchKind::StrictExact)], None)
                 .unwrap()
                 .1
                 .input,
@@ -3664,7 +3741,7 @@ mod tests {
         );
         assert_eq!(
             pricing
-                .resolve(&[("grok-4.1-x", super::MatchKind::Exact)])
+                .resolve_at(None, &[("grok-4.1-x", super::MatchKind::Exact)], None)
                 .unwrap()
                 .1
                 .input,
@@ -3806,7 +3883,10 @@ mod tests {
             });
             assert_eq!(accepted, Some(expected), "{body}");
             assert_eq!(
-                pricing.find_exact("gpt-fetched").is_some(),
+                pricing
+                    .resolve_at(None, &[("gpt-fetched", MatchKind::Exact)], None)
+                    .map(|(_, rates)| rates)
+                    .is_some(),
                 expected,
                 "{body}"
             );
@@ -3879,14 +3959,27 @@ mod tests {
             "gemini-3-pro-image-preview",
         ] {
             assert!(
-                embedded.find_exact(model).is_none(),
+                embedded
+                    .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                    .map(|(_, rates)| rates)
+                    .is_none(),
                 "{model} prices assets rather than text tokens and must stay out of the snapshot"
             );
         }
         // The guard keys on modalities, not on the name, so text models that
         // merely accept audio or video input have to survive it.
-        assert!(embedded.find_exact("kimi-k3").is_some());
-        assert!(embedded.find_exact("gemini-3-flash-preview").is_some());
+        assert!(
+            embedded
+                .resolve_at(None, &[("kimi-k3", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
+        assert!(
+            embedded
+                .resolve_at(None, &[("gemini-3-flash-preview", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
     }
 
     #[test]
@@ -4017,7 +4110,10 @@ mod tests {
             assert!(pricing.context_limit(model).is_some(), "{model}");
         }
 
-        let expected_fast = embedded.find_exact("claude-opus-5-fast").unwrap();
+        let expected_fast = embedded
+            .resolve_at(None, &[("claude-opus-5-fast", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         let actual_fast = pricing.find("claude-opus-5-fast").unwrap();
         assert_eq!(actual_fast.input, expected_fast.input);
         assert_eq!(actual_fast.output, expected_fast.output);
@@ -4088,13 +4184,13 @@ mod tests {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let expected = pricing
-            .resolve(&[("claude-opus-5@eu", MatchKind::Exact)])
+            .resolve_at(None, &[("claude-opus-5@eu", MatchKind::Exact)], None)
             .map(|(_, pricing)| pricing)
             .expect("the embedded snapshot should contain the exact-only regional id");
 
         for spelling in ["claude-opus-5-eu", "claude-opus-5.eu"] {
             let resolved = pricing
-                .resolve(&[(spelling, MatchKind::Exact)])
+                .resolve_at(None, &[(spelling, MatchKind::Exact)], None)
                 .map(|(_, pricing)| pricing)
                 .expect("separator-equivalent exact-only ids should resolve");
             assert_eq!(resolved.input, expected.input, "{spelling}");
@@ -4102,7 +4198,11 @@ mod tests {
         }
         assert!(
             pricing
-                .resolve(&[("claude-opus-5-eu-preview", MatchKind::Exact)])
+                .resolve_at(
+                    None,
+                    &[("claude-opus-5-eu-preview", MatchKind::Exact)],
+                    None
+                )
                 .map(|(_, pricing)| pricing)
                 .is_none()
         );
@@ -4122,7 +4222,7 @@ mod tests {
         );
 
         let resolved = pricing
-            .resolve(&[("claude-opus-5-eu", MatchKind::Exact)])
+            .resolve_at(None, &[("claude-opus-5-eu", MatchKind::Exact)], None)
             .map(|(_, pricing)| pricing)
             .expect("the normalized primary entry should resolve");
         assert_eq!(resolved.input, 0.000009);
@@ -4143,7 +4243,7 @@ mod tests {
 
         assert!(
             pricing
-                .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
+                .resolve_at(None, &[("acme-alpha-1-5", MatchKind::Exact)], None)
                 .map(|(_, pricing)| pricing)
                 .is_none()
         );
@@ -4162,7 +4262,7 @@ mod tests {
             "",
         );
         let resolved = pricing
-            .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
+            .resolve_at(None, &[("acme-alpha-1-5", MatchKind::Exact)], None)
             .map(|(_, pricing)| pricing)
             .expect("a single normalized match should resolve");
         assert_eq!(resolved.input, 1e-6);
@@ -4179,7 +4279,7 @@ mod tests {
 
         assert_eq!(
             pricing
-                .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
+                .resolve_at(None, &[("acme-alpha-1-5", MatchKind::Exact)], None)
                 .unwrap()
                 .1
                 .input,
@@ -4187,7 +4287,7 @@ mod tests {
         );
         assert_eq!(
             pricing
-                .resolve(&[("acme.alpha@1.5", MatchKind::Exact)])
+                .resolve_at(None, &[("acme.alpha@1.5", MatchKind::Exact)], None)
                 .unwrap()
                 .1
                 .input,
@@ -4207,7 +4307,7 @@ mod tests {
             }"#,
         );
         let before = pricing
-            .resolve(&[("zai/glm-test-5", MatchKind::Exact)])
+            .resolve_at(None, &[("zai/glm-test-5", MatchKind::Exact)], None)
             .map(|(_, pricing)| pricing)
             .expect("the normalized entry should resolve");
         assert!(before.cache_read.is_none());
@@ -4223,7 +4323,7 @@ mod tests {
         );
 
         let after = pricing
-            .resolve(&[("zai/glm-test-5", MatchKind::Exact)])
+            .resolve_at(None, &[("zai/glm-test-5", MatchKind::Exact)], None)
             .map(|(_, pricing)| pricing)
             .unwrap();
         assert_eq!(after.cache_read, Some(0.03));
@@ -4372,7 +4472,10 @@ mod tests {
 
         pricing.supplement_pricing("zai/glm-test-model", zeroed, None, "");
 
-        let entry = pricing.find_exact("zai/glm-test-model").unwrap();
+        let entry = pricing
+            .resolve_at(None, &[("zai/glm-test-model", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(entry.cache_create, Some(0.25));
         assert_eq!(entry.cache_read, Some(0.03));
     }
@@ -4657,7 +4760,10 @@ mod tests {
 
         let primary = pricing.find("gpt-primary").unwrap();
         let fallback = pricing.find("gpt-fallback").unwrap();
-        let alias = pricing.find_exact("gpt-alias").unwrap();
+        let alias = pricing
+            .resolve_at(None, &[("gpt-alias", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
 
         assert_eq!(primary.input, 1e-6);
         assert_eq!(primary.output, 10e-6);
@@ -4709,11 +4815,19 @@ mod tests {
             Some(1)
         );
         assert_eq!(
-            pricing.find_exact("gpt-6-astra").unwrap().fast_multiplier,
+            pricing
+                .resolve_at(None, &[("gpt-6-astra", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap()
+                .fast_multiplier,
             2.0
         );
         assert_eq!(
-            pricing.find_exact("gpt-6-astra").unwrap().flex_multiplier,
+            pricing
+                .resolve_at(None, &[("gpt-6-astra", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap()
+                .flex_multiplier,
             0.5
         );
     }
@@ -4754,7 +4868,10 @@ mod tests {
         // One entry loaded, not three: the reseller duplicates are skipped
         // because the authoring catalog claimed the id first.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let kimi = pricing.find_exact("kimi-k2.7-code").unwrap();
+        let kimi = pricing
+            .resolve_at(None, &[("kimi-k2.7-code", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!((kimi.input * 1e6 - 0.95).abs() < 1e-9);
         assert!((kimi.output * 1e6 - 4.0).abs() < 1e-9);
     }
@@ -4797,9 +4914,28 @@ mod tests {
         // Only kimi-k3 loads: audio-only input is rejected from the payload
         // itself, and the image model is rejected by the authored catalog.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.find_exact("gemini-2.5-flash-image").is_none());
-        assert!(pricing.find_exact("some-unlisted-transcriber").is_none());
-        assert!(pricing.find_exact("kimi-k3").is_some());
+        assert!(
+            pricing
+                .resolve_at(None, &[("gemini-2.5-flash-image", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
+        assert!(
+            pricing
+                .resolve_at(
+                    None,
+                    &[("some-unlisted-transcriber", MatchKind::Exact)],
+                    None
+                )
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
+        assert!(
+            pricing
+                .resolve_at(None, &[("kimi-k3", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
     }
 
     #[test]
@@ -4824,7 +4960,12 @@ mod tests {
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(0));
         assert!(
             pricing
-                .find_exact("models/gemini-2.5-flash-image")
+                .resolve_at(
+                    None,
+                    &[("models/gemini-2.5-flash-image", MatchKind::Exact)],
+                    None
+                )
+                .map(|(_, rates)| rates)
                 .is_none()
         );
     }
@@ -4855,9 +4996,24 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.find_exact("empty-output-model").is_none());
-        assert!(pricing.find_exact("empty-input-model").is_none());
-        assert!(pricing.find_exact("no-modalities-model").is_some());
+        assert!(
+            pricing
+                .resolve_at(None, &[("empty-output-model", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
+        assert!(
+            pricing
+                .resolve_at(None, &[("empty-input-model", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
+        assert!(
+            pricing
+                .resolve_at(None, &[("no-modalities-model", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
     }
 
     #[test]
@@ -4895,11 +5051,26 @@ mod tests {
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(3));
         assert!(
             pricing
-                .find_exact("accounts/fireworks/models/kimi-k2p6")
+                .resolve_at(
+                    None,
+                    &[("accounts/fireworks/models/kimi-k2p6", MatchKind::Exact)],
+                    None
+                )
+                .map(|(_, rates)| rates)
                 .is_some()
         );
-        assert!(pricing.find_exact("claude-opus-5-fast").is_some());
-        assert!(pricing.find_exact("claude-3-haiku-20240307").is_some());
+        assert!(
+            pricing
+                .resolve_at(None, &[("claude-opus-5-fast", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
+        assert!(
+            pricing
+                .resolve_at(None, &[("claude-3-haiku-20240307", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
         // Carried, but a tier is the right rate only for a request naming it,
         // even one the author prices itself.
         assert!(
@@ -4947,7 +5118,10 @@ mod tests {
 
         // One model, counted once even though the second entry replaced the first.
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
+        let entry = pricing
+            .resolve_at(None, &[("kimi-k2.6-nitro", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!(entry.cache_read.is_some());
         assert!((entry.cache_read.unwrap() * 1e6 - 0.1).abs() < 1e-9);
         assert_eq!(
@@ -4980,7 +5154,12 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.find_exact("claude-opus-5").is_some());
+        assert!(
+            pricing
+                .resolve_at(None, &[("claude-opus-5", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
     }
 
     #[test]
@@ -5009,7 +5188,10 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
+        let entry = pricing
+            .resolve_at(None, &[("kimi-k2.6-nitro", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!((entry.input * 1e6 - 3.0).abs() < 1e-9);
     }
 
@@ -5039,7 +5221,10 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
+        let entry = pricing
+            .resolve_at(None, &[("kimi-k2.6-nitro", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!(entry.cache_read.is_some());
         assert!((entry.cache_read.unwrap() * 1e6 - 0.1).abs() < 1e-9);
     }
@@ -5069,7 +5254,10 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
+        let entry = pricing
+            .resolve_at(None, &[("kimi-k2.6-nitro", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!((entry.input * 1e6 - 3.0).abs() < 1e-9);
         assert_eq!(
             pricing
@@ -5104,7 +5292,10 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("shared-model").unwrap();
+        let entry = pricing
+            .resolve_at(None, &[("shared-model", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!((entry.input * 1e6 - 1.0).abs() < 1e-9);
     }
 
@@ -5140,8 +5331,18 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.find_exact("grok-9-5").is_none());
-        let entry = pricing.find_exact("grok-9.5").unwrap();
+        assert!(!pricing.rows.entries.contains_key("grok-9-5"));
+        assert_eq!(
+            pricing
+                .explain(None, &[("grok-9-5", MatchKind::Exact)])
+                .unwrap()
+                .row_key,
+            "grok-9.5"
+        );
+        let entry = pricing
+            .resolve_at(None, &[("grok-9.5", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(
             entry.long_context.map(|context| context.threshold),
             Some(200_000)
@@ -5187,7 +5388,14 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("some-reseller-only-model").unwrap();
+        let entry = pricing
+            .resolve_at(
+                None,
+                &[("some-reseller-only-model", MatchKind::Exact)],
+                None,
+            )
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(
             entry.long_context.map(|context| context.threshold),
             Some(200_000)
@@ -5213,8 +5421,18 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.find_exact("kimi-k9").is_some());
-        assert!(pricing.find_exact("").is_none());
+        assert!(
+            pricing
+                .resolve_at(None, &[("kimi-k9", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
+        assert!(
+            pricing
+                .resolve_at(None, &[("", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
     }
 
     #[test]
@@ -5244,7 +5462,14 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("some-reseller-only-model").unwrap();
+        let entry = pricing
+            .resolve_at(
+                None,
+                &[("some-reseller-only-model", MatchKind::Exact)],
+                None,
+            )
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!((entry.input * 1e6 - 1.0).abs() < 1e-9);
     }
 
@@ -5278,7 +5503,14 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        let entry = pricing.find_exact("some-reseller-only-model").unwrap();
+        let entry = pricing
+            .resolve_at(
+                None,
+                &[("some-reseller-only-model", MatchKind::Exact)],
+                None,
+            )
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert!((entry.input * 1e6 - 1.0).abs() < 1e-9);
     }
 
@@ -5308,8 +5540,18 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(0));
-        assert!(pricing.find_exact("kimi-for-coding").is_none());
-        assert!(pricing.find_exact("kimi-k3").is_none());
+        assert!(
+            pricing
+                .resolve_at(None, &[("kimi-for-coding", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
+        assert!(
+            pricing
+                .resolve_at(None, &[("kimi-k3", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_none()
+        );
     }
 
     #[test]
@@ -5384,7 +5626,12 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.find_exact("auto").is_some());
+        assert!(
+            pricing
+                .resolve_at(None, &[("auto", MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .is_some()
+        );
         assert!(pricing.find("codex-auto-review").is_none());
         assert!(pricing.context_limit("codex-auto-review").is_none());
     }
@@ -5495,7 +5742,10 @@ mod tests {
             ("global.openai.gpt-5.4-mini-2026-03-17", 1.0, 0.5),
             ("openai.gpt-5.4-mini-extra", 1.0, 1.0),
         ] {
-            let model = pricing.find_exact(name).unwrap();
+            let model = pricing
+                .resolve_at(None, &[(name, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
             assert_eq!(model.fast_multiplier, fast, "{name}");
             assert_eq!(model.flex_multiplier, flex, "{name}");
         }
@@ -5607,9 +5857,15 @@ mod tests {
         // prices or requiring every optional rate bucket to exist.
         for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
             let entry = pricing.find(model).unwrap();
-            let litellm_source = litellm_snapshot.find_exact(model);
+            let litellm_source = litellm_snapshot
+                .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates);
             let base_source = litellm_source
-                .or_else(|| models_dev_snapshot.find_exact(model))
+                .or_else(|| {
+                    models_dev_snapshot
+                        .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                        .map(|(_, rates)| rates)
+                })
                 .unwrap();
             let tier_source = litellm_source
                 .filter(|source| {
@@ -5630,7 +5886,11 @@ mod tests {
                             .and_then(|context| context.rates.cache_read)
                             .is_some()
                 })
-                .or_else(|| models_dev_snapshot.find_exact(model))
+                .or_else(|| {
+                    models_dev_snapshot
+                        .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                        .map(|(_, rates)| rates)
+                })
                 .unwrap();
             assert_eq!(entry.input, base_source.input, "{model}");
             assert_eq!(entry.output, base_source.output, "{model}");
@@ -5710,17 +5970,26 @@ mod tests {
                 }
             }"#,
         );
-        let loaded = pricing.find_exact("gpt-5.6-sol").unwrap();
+        let loaded = pricing
+            .resolve_at(None, &[("gpt-5.6-sol", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         let loaded_context_limit = pricing.context_limit("gpt-5.6-sol");
 
         let mut builtin = PricingMap::default();
         builtin.put_builtin_pricing();
-        let builtin_rates = builtin.find_exact("gpt-5.6-sol").unwrap();
+        let builtin_rates = builtin
+            .resolve_at(None, &[("gpt-5.6-sol", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_ne!(loaded.input, builtin_rates.input);
         assert_ne!(loaded.output, builtin_rates.output);
 
         pricing.put_builtin_pricing();
-        let resolved = pricing.find_exact("gpt-5.6-sol").unwrap();
+        let resolved = pricing
+            .resolve_at(None, &[("gpt-5.6-sol", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(resolved.input, loaded.input);
         assert_eq!(resolved.output, loaded.output);
         assert_eq!(resolved.cache_create, loaded.cache_create);
@@ -5798,7 +6067,10 @@ mod tests {
     fn embedded_gpt_5_6_exact_entry_wins_over_the_sol_alias() {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
-        let exact = pricing.find_exact("gpt-5.6").unwrap();
+        let exact = pricing
+            .resolve_at(None, &[("gpt-5.6", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         let resolved = pricing.find("gpt-5.6").unwrap();
 
         assert_eq!(resolved.input, exact.input);
@@ -5911,7 +6183,10 @@ mod tests {
             Some(272_000)
         );
         // Date-pinned keys share the base model's long-context rates.
-        let dated = pricing.find_exact("gpt-5.5-2026-04-23").unwrap();
+        let dated = pricing
+            .resolve_at(None, &[("gpt-5.5-2026-04-23", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(
             dated.long_context.and_then(|context| context.rates.input),
             Some(10e-6)
@@ -6243,7 +6518,11 @@ mod tests {
             .to_string();
             assert_eq!(pricing.load_json(&json), 1);
             assert_eq!(
-                pricing.find_exact(model).unwrap().fast_multiplier,
+                pricing
+                    .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                    .map(|(_, rates)| rates)
+                    .unwrap()
+                    .fast_multiplier,
                 expected,
                 "{model}"
             );
@@ -6369,11 +6648,20 @@ mod tests {
         ]);
         let pricing = PricingMap::load_with_overrides(true, false, &overrides);
 
-        let cycle_a = pricing.find_exact("cycle-a").unwrap();
+        let cycle_a = pricing
+            .resolve_at(None, &[("cycle-a", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!((cycle_a.input, cycle_a.output), (4e-6, 0.0));
-        let cycle_b = pricing.find_exact("cycle-b").unwrap();
+        let cycle_b = pricing
+            .resolve_at(None, &[("cycle-b", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!((cycle_b.input, cycle_b.output), (0.0, 9e-6));
-        let into_cycle = pricing.find_exact("into-cycle").unwrap();
+        let into_cycle = pricing
+            .resolve_at(None, &[("into-cycle", MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         assert_eq!(
             (into_cycle.input, into_cycle.output, into_cycle.cache_read),
             (0.0, 9e-6, Some(1e-7))
@@ -6460,7 +6748,11 @@ mod tests {
             .to_string();
             assert_eq!(pricing.load_json(&json), 1);
             assert_eq!(
-                pricing.find_exact(model).unwrap().flex_multiplier,
+                pricing
+                    .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                    .map(|(_, rates)| rates)
+                    .unwrap()
+                    .flex_multiplier,
                 expected,
                 "{model}"
             );
@@ -6661,7 +6953,15 @@ mod tests {
             let rates = map.find(name).expect(case);
             assert_eq!((rates.input, rates.output), expected, "{case}");
         }
-        assert!(map.find_exact("host/plan-2.5-flash").is_none());
+        assert!(
+            map.resolve_at(
+                None,
+                &[("host/plan-2.5-flash", MatchKind::StrictExact)],
+                None
+            )
+            .map(|(_, rates)| rates)
+            .is_none()
+        );
     }
 
     #[test]
@@ -7008,7 +7308,10 @@ mod tests {
     fn cache_read_fallback_is_independent_of_cache_write_family() {
         crate::test_support::install_pricing_snapshots();
         for model in ["gpt-5.3-codex-xhigh", "auto/openai/gpt-oss-120b"] {
-            let pricing = PricingMap::load_embedded().find_exact(model).unwrap();
+            let pricing = PricingMap::load_embedded()
+                .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
             assert_eq!(pricing.cache_read, None, "{model}");
             assert_eq!(
                 pricing.cache_read_rate_at(pricing.input),
@@ -7057,7 +7360,10 @@ mod tests {
                 }})
                 .to_string(),
             );
-            let pricing = map.find_exact(model).unwrap();
+            let pricing = map
+                .resolve_at(None, &[(model, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
             assert_eq!(pricing.cache_creation_rate(), pricing.input, "{model}");
             assert_eq!(
                 pricing.one_hour_cache_creation_rate(),
@@ -7073,7 +7379,10 @@ mod tests {
         use crate::cli::PricingOverride;
         let original = "kimi-k2.7-code-highspeed";
         let key = "kimi-k2-7-code-highspeed".to_string();
-        let baseline = PricingMap::load_embedded().find_exact(original).unwrap();
+        let baseline = PricingMap::load_embedded()
+            .resolve_at(None, &[(original, MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
         let value = PricingOverride {
             input_cost_per_token: Some(7e-6),
             ..PricingOverride::default()
@@ -7081,9 +7390,11 @@ mod tests {
         let pricing = PricingMap::load_with_overrides(true, false, [(&key, &value)]);
         for resolved in [
             pricing.find(original),
-            pricing.find_exact(original),
             pricing
-                .resolve(&[(original, MatchKind::Exact)])
+                .resolve_at(None, &[(original, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates),
+            pricing
+                .resolve_at(None, &[(original, MatchKind::Exact)], None)
                 .map(|(_, pricing)| pricing),
         ] {
             let resolved = resolved.unwrap();
@@ -7091,7 +7402,14 @@ mod tests {
             assert_eq!(resolved.output, baseline.output);
             assert_eq!(resolved.cache_read, baseline.cache_read);
         }
-        assert_eq!(pricing.find_exact(&key).unwrap().input, 7e-6);
+        assert_eq!(
+            pricing
+                .resolve_at(None, &[(&key, MatchKind::Exact)], None)
+                .map(|(_, rates)| rates)
+                .unwrap()
+                .input,
+            7e-6
+        );
     }
 
     mod overrides {

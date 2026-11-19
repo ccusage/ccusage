@@ -216,8 +216,7 @@ mod diagnostic_tests {
         let probe = crate::read_usage_file_with_diagnostics(
             &main,
             ReportWindow::from_shared(&shared).timezone(),
-            CostMode::Display,
-            None,
+            ccusage_core::cost::PriceTable::Display,
             &diagnostics,
         )
         .remove(0);

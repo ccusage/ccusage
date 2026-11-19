@@ -1532,7 +1532,13 @@ mod tests {
 
         for fallback in CODEX_AUTO_REVIEW_FALLBACKS {
             assert!(
-                pricing.find_exact(fallback.model).is_some(),
+                pricing
+                    .resolve_at(
+                        None,
+                        &[(fallback.model, ccusage_core::pricing::MatchKind::Exact)],
+                        None
+                    )
+                    .is_some(),
                 "{} has no embedded pricing",
                 fallback.model
             );

@@ -158,16 +158,15 @@ impl<'a> UsageLoadContext<'a> {
             .get_or_init(|| ReportWindow::from_shared(self.shared))
     }
 
-    pub fn pricing(&self) -> Option<&PricingMap> {
-        match self.table() {
-            ccusage_core::cost::PriceTable::Display => None,
-            ccusage_core::cost::PriceTable::Auto(map)
-            | ccusage_core::cost::PriceTable::Calculate(map) => Some(map),
-        }
+    pub fn table(&self) -> ccusage_core::cost::PriceTable<'_> {
+        self.table_for_mode(self.shared.mode)
     }
 
-    pub fn table(&self) -> ccusage_core::cost::PriceTable<'_> {
-        if self.shared.mode == ccusage_core::cli::CostMode::Display {
+    pub fn table_for_mode(
+        &self,
+        mode: ccusage_core::cli::CostMode,
+    ) -> ccusage_core::cost::PriceTable<'_> {
+        if mode == ccusage_core::cli::CostMode::Display {
             return ccusage_core::cost::PriceTable::Display;
         }
         let map = self.pricing.get_or_init(|| {
@@ -177,7 +176,7 @@ impl<'a> UsageLoadContext<'a> {
                 self.shared.pricing_overrides.iter(),
             )
         });
-        ccusage_core::cost::PriceTable::for_map(self.shared.mode, map)
+        ccusage_core::cost::PriceTable::for_map(mode, map)
     }
 }
 
@@ -470,7 +469,10 @@ mod pricing_tests {
         };
         let cx = UsageLoadContext::new(&shared);
 
-        assert!(cx.pricing().is_none());
+        assert!(matches!(
+            cx.table(),
+            ccusage_core::cost::PriceTable::Display
+        ));
         assert!(cx.pricing.get().is_none());
         assert!(cx.window.get().is_none());
     }

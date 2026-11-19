@@ -36,7 +36,7 @@ use serde::{
 use smallvec::SmallVec;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry, UsageSummary,
+    LoadedEntry, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry, UsageSummary,
     cli::{CostMode, SharedArgs},
     daily::DedupEntry as _,
     debug_log,
@@ -284,12 +284,7 @@ fn load_entries_with_mode(
         read_usage_file_with_diagnostics(
             file,
             context.window().timezone(),
-            mode,
-            if mode == CostMode::Display {
-                None
-            } else {
-                context.pricing()
-            },
+            context.table_for_mode(mode),
             diagnostics,
         )
     };
@@ -517,46 +512,43 @@ impl daily::DedupEntry for LoadedEntry {
 fn read_usage_file_with_diagnostics(
     path: &Path,
     tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: ccusage_core::cost::PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let (session_id, project_path) = extract_session_parts(path);
     let session_id: Arc<str> = Arc::from(session_id);
     let project_path: Arc<str> = Arc::from(project_path);
-    daily::read_usage_file(path, tz, mode, pricing, diagnostics, |parsed, line| {
-        LoadedEntry {
-            model: daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage),
-            usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
-                line,
-                parsed.is_api_error_message,
-            ),
-            data: UsageEntry {
-                timestamp: parsed.timestamp_text,
-                version: parsed.version,
-                session_id: parsed.recorded_session_id,
-                message: UsageMessage {
-                    id: parsed.key.message_id,
-                    model: parsed.raw_model,
-                    usage: parsed.usage,
-                },
-                request_id: parsed.key.request_id,
-                is_sidechain: parsed.key.is_sidechain,
-                cost_usd: parsed.cost_usd,
-                is_api_error_message: parsed.is_api_error_message,
+    daily::read_usage_file(path, tz, pricing, diagnostics, |parsed, line| LoadedEntry {
+        model: daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage),
+        usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
+            line,
+            parsed.is_api_error_message,
+        ),
+        data: UsageEntry {
+            timestamp: parsed.timestamp_text,
+            version: parsed.version,
+            session_id: parsed.recorded_session_id,
+            message: UsageMessage {
+                id: parsed.key.message_id,
+                model: parsed.raw_model,
+                usage: parsed.usage,
             },
-            timestamp: parsed.key.timestamp,
-            date: parsed.date,
-            project: parsed.project,
-            session_id: Arc::clone(&session_id),
-            project_path: Arc::clone(&project_path),
-            cost: parsed.cost,
-            extra_total_tokens: 0,
-            credits: None,
-            message_count: None,
-            missing_pricing_model: parsed.missing_pricing_model,
-            stored_cost: parsed.stored_cost,
-        }
+            request_id: parsed.key.request_id,
+            is_sidechain: parsed.key.is_sidechain,
+            cost_usd: parsed.cost_usd,
+            is_api_error_message: parsed.is_api_error_message,
+        },
+        timestamp: parsed.key.timestamp,
+        date: parsed.date,
+        project: parsed.project,
+        session_id: Arc::clone(&session_id),
+        project_path: Arc::clone(&project_path),
+        cost: parsed.cost,
+        extra_total_tokens: 0,
+        credits: None,
+        message_count: None,
+        missing_pricing_model: parsed.missing_pricing_model,
+        stored_cost: parsed.stored_cost,
     })
 }
 
@@ -892,7 +884,14 @@ mod tests {
         diagnostics: &Diagnostics,
     ) -> LoadedFile {
         LoadedFile {
-            entries: super::read_usage_file_with_diagnostics(path, tz, mode, pricing, diagnostics),
+            entries: super::read_usage_file_with_diagnostics(
+                path,
+                tz,
+                pricing.map_or(ccusage_core::cost::PriceTable::Display, |map| {
+                    ccusage_core::cost::PriceTable::for_map(mode, map)
+                }),
+                diagnostics,
+            ),
         }
     }
 
