@@ -484,7 +484,6 @@ jobs:
       - name: Upsert PR comment
         env:
           COMMENT_FILE: ${{ runner.temp }}/ccusage-perf/ccusage-perf-comment.md
-          COMMENT_MARKER: <!-- ccusage-perf-comment:${{ github.event.pull_request.head.sha }} -->
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

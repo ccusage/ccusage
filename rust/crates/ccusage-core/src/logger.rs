@@ -8,7 +8,7 @@ pub fn debug_log(shared: &SharedArgs, message: impl AsRef<str>) {
 
 pub fn log_level() -> Option<u8> {
     Environment::current()
-        .var_os("LOG_LEVEL")
-        .and_then(|value| value.into_string().ok())
+        .var("LOG_LEVEL")
+        .ok()
         .and_then(|value| value.parse::<u8>().ok())
 }

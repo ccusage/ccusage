@@ -597,25 +597,20 @@ mod tests {
             "sessionId": entry.session_id.as_ref(),
             "project": entry.project.as_ref(),
             "projectPath": entry.project_path.as_ref(),
-            "cost": entry.cost,
-            "extraTotalTokens": entry.extra_total_tokens,
             "model": entry.model.as_deref(),
-            "data": {
-                "sessionId": Some(entry.session_id.as_ref()).filter(|id| *id != "unknown"),
-                "timestamp": entry.timestamp.as_millis(),
-                "version": entry.version.as_deref(),
-                "message": {
-                    "id": entry.message_id.as_deref(),
-                    "model": entry.model.as_deref(),
-                    "usage": {
-                        "inputTokens": entry.usage.input_tokens,
-                        "outputTokens": entry.usage.output_tokens,
-                        "cacheCreationInputTokens": entry.usage.cache_creation_input_tokens,
-                        "cacheReadInputTokens": entry.usage.cache_read_input_tokens,
-                    },
-                },
-                "costUSD": entry.recorded_cost,
+            "messageId": entry.message_id.as_deref(),
+            "version": entry.version.as_deref(),
+            "usage": {
+                "inputTokens": entry.usage.input_tokens,
+                "outputTokens": entry.usage.output_tokens,
+                "cacheCreationInputTokens": entry.usage.cache_creation_input_tokens,
+                "cacheReadInputTokens": entry.usage.cache_read_input_tokens,
             },
+            "extraTotalTokens": entry.extra_total_tokens,
+            "cost": entry.cost,
+            "recordedCost": entry.recorded_cost,
+            "storedCost": entry.stored_cost,
+            "missingPricingModel": entry.missing_pricing_model.as_deref(),
         })
     }
 
@@ -1183,10 +1178,28 @@ mod tests {
         )
         .unwrap()
         .unwrap();
+        let unknown_session = message_value_to_entry(
+            message(json!({
+                "id": "message-c",
+                "providerID": "openai",
+                "modelID": "gpt-test",
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 7, "cache": { "write": 3 } },
+                "cost": 0.03
+            })),
+            None,
+            None,
+            &tz,
+            CostMode::Auto,
+            ccusage_core::cost::PriceTable::Auto(&pricing),
+        )
+        .unwrap()
+        .unwrap();
 
         insta::assert_json_snapshot!(json!({
             "calculated": entry_snapshot(&calculated),
             "displayCost": entry_snapshot(&display_cost),
+            "unknownSession": entry_snapshot(&unknown_session),
             "candidates": {
                 "anthropic": candidate_names("claude-sonnet-4.5", "anthropic"),
                 "copilot": candidate_names("claude-sonnet-4.5", "github-copilot"),
