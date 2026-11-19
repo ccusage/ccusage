@@ -192,6 +192,12 @@ fn command_snapshot(command: Option<Command>) -> Value {
             "debug": args.debug,
         }),
         Some(Command::Codex(args)) => agent_command_snapshot("codex", args),
+        Some(Command::CodexStatusline(args)) => json!({
+            "type": "codex-statusline",
+            "shared": shared_snapshot(&args.shared),
+            "sessionId": args.session_id,
+            "speed": format!("{:?}", args.codex_speed),
+        }),
         Some(Command::OpenCode(args)) => agent_command_snapshot("opencode", args),
         Some(Command::Amp(args)) => agent_command_snapshot("amp", args),
         Some(Command::Droid(args)) => agent_command_snapshot("droid", args),
@@ -1370,6 +1376,84 @@ fn rejects_unsupported_agent_reports_with_guidance() {
         error,
         "The \"blocks\" report is only available for Claude Code usage.\nUse \"ccusage codex daily\" for Codex usage reports."
     );
+}
+
+#[test]
+fn parses_codex_statusline_with_offline_pricing_by_default() {
+    let cli = parse(&["ccusage", "codex", "statusline"]);
+    let Some(Command::CodexStatusline(args)) = cli.command else {
+        panic!("expected codex statusline command");
+    };
+    assert!(args.shared.offline);
+    assert!(!args.shared.no_offline);
+    assert!(args.session_id.is_none());
+
+    let cli = parse(&[
+        "ccusage",
+        "codex",
+        "statusline",
+        "--id",
+        "thread",
+        "--speed",
+        "fast",
+        "--no-offline",
+    ]);
+    let Some(Command::CodexStatusline(args)) = cli.command else {
+        panic!("expected codex statusline command");
+    };
+    assert_eq!(args.session_id.as_deref(), Some("thread"));
+    assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert!(args.shared.no_offline);
+    assert!(
+        parse_error(&["ccusage", "codex", "statusline", "--last", "1"])
+            .contains("only available for the daily")
+    );
+}
+
+#[test]
+fn codex_statusline_config_overrides_defaults_and_flags_override_config() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "codex": { "commands": { "statusline": {
+            "offline": false, "speed": "flex", "timezone": "Asia/Tokyo"
+        } } } }"#,
+    });
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    let args = ["codex", "statusline", "--config", &path];
+    let config = ccusage_config::ConfigContext::from_args(&args.map(str::to_string));
+    let cli = parse_with_config(&[&["ccusage"][..], &args].concat(), &config);
+    let Some(Command::CodexStatusline(args)) = cli.command else {
+        panic!("expected codex statusline command");
+    };
+    assert!(!args.shared.offline);
+    assert_eq!(args.codex_speed, CodexSpeed::Flex);
+    assert_eq!(args.shared.timezone.as_deref(), Some("Asia/Tokyo"));
+
+    let cli = parse_with_config(
+        &[
+            "ccusage",
+            "codex",
+            "statusline",
+            "--offline",
+            "--speed",
+            "standard",
+        ],
+        &config,
+    );
+    let Some(Command::CodexStatusline(args)) = cli.command else {
+        panic!("expected codex statusline command");
+    };
+    assert!(args.shared.offline);
+    assert_eq!(args.codex_speed, CodexSpeed::Standard);
+}
+
+#[test]
+fn codex_statusline_help_describes_standalone_output() {
+    insta::assert_snapshot!(
+        "codex_statusline_help",
+        help_text_for_args(&["ccusage".into(), "codex".into(), "statusline".into()])
+    );
+    let help = help_text_for_args(&["ccusage".into(), "codex".into()]);
+    assert!(help.contains("ccusage codex statusline --help"));
 }
 
 #[test]
