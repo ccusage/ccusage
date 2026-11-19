@@ -2225,9 +2225,17 @@ fn model_without_date_suffix(model: &str) -> &str {
 
 /// Maps model aliases to canonical pricing keys before fuzzy matching.
 fn pricing_alias(model: &str) -> Option<&'static str> {
-    data::ALIASES
-        .iter()
-        .find_map(|(key, alias)| (*key == model).then_some(*alias))
+    let fold = |byte| {
+        if is_pricing_key_separator(byte) {
+            b'-'
+        } else {
+            byte
+        }
+    };
+    data::ALIASES.iter().find_map(|(key, alias)| {
+        (key.len() == model.len() && key.bytes().map(fold).eq(model.bytes().map(fold)))
+            .then_some(*alias)
+    })
 }
 
 fn matches_model_suffix(part: &str, base: &str) -> bool {
@@ -2678,6 +2686,33 @@ mod tests {
             let rate = pricing.find("hostx/acme-1").unwrap();
             assert_eq!((rate.input, rate.output), (7e-6, 7e-6));
         }
+    }
+
+    #[test]
+    fn builtin_alias_applies_to_a_separator_respelling() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (canonical, respelling) in [
+            ("gpt-5.3-spark", "gpt-5-3-spark"),
+            ("gpt-5.6", "gpt-5-6"),
+            ("gpt-reserve", "gpt@reserve"),
+        ] {
+            let expected = pricing.find(canonical).unwrap();
+            let actual = pricing.find(respelling).unwrap();
+            assert_eq!(
+                (actual.input, actual.output),
+                (expected.input, expected.output),
+                "{respelling}"
+            );
+            assert_eq!(
+                pricing.context_limit(respelling),
+                pricing.context_limit(canonical),
+                "{respelling}"
+            );
+        }
+        let spark = pricing.find("gpt-5-3-spark").unwrap();
+        assert_eq!((spark.input, spark.output), (1.75e-6, 14e-6));
+        assert_eq!(pricing.context_limit("gpt-5-3-spark"), Some(128_000));
     }
 
     #[test]
