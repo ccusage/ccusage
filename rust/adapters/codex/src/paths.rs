@@ -132,7 +132,7 @@ impl CodexFileEligibility {
         }
         Some(Self {
             since_date,
-            // Codex's local date can be a day ahead of the last included instant.
+            // NOTE(2026-11-19, #2097): Codex names rollout paths in its local calendar, so a later path day can contain events before the UTC cutoff.
             until_path_date: until_millis
                 .and_then(|end| end.checked_add(crate::MILLIS_PER_DAY - 1))
                 .and_then(utc_path_date),

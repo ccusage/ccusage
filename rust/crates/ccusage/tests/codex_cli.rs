@@ -48,7 +48,6 @@ fn codex_statusline_reports_today_without_reading_stdin() {
     let output = run_cli(&fixture, &["codex", "statusline"]);
 
     let after = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
-    // The subprocess can run on either side of midnight.
     let expected = std::collections::BTreeMap::from([(
         today.as_str(),
         "Codex | Today: 1,050 tokens | Est. $0.00\n",

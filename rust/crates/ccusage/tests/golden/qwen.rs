@@ -6,8 +6,6 @@ use ccusage_test_support::{Instant, instant, set_modified};
 const CODER: &str = "qwen3-coder-plus";
 const SONNET: &str = "claude-sonnet-4-20250514";
 const UNPRICED: &str = "qwen-mystery-1";
-// These models require the respective `qwen/<model>` and `alibaba/<model>`
-// lookup candidates in the embedded pricing tables.
 const QWEN_PREFIXED: &str = "qwen-2.5-72b-instruct";
 const ALIBABA_PREFIXED: &str = "qwen-3-30b";
 
