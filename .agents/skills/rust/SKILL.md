@@ -21,9 +21,10 @@ with a historical release, compare against the matching tag or commit.
 ## Visibility
 
 Reserve `pub` for consumers in other crates. `just hawk` fails on every Hawk
-finding, and `nix flake check` runs the same gate. Fix `unnecessary_public` by
-narrowing the item, not by editing `rust/hawk.toml`; add a `[[production]]`
-entry there only for a shipped binary that is missing from it. Update the Hawk
+finding, and `nix flake check` runs the same gate. Every binary the repository
+ships or runs in a check has a `[[production]]` entry in `rust/hawk.toml`; add a
+missing one first. Then fix `unnecessary_public` by narrowing the item, never by
+editing `rust/hawk.toml` to silence it. Update the Hawk
 archive pins in `nix/cargo-hawk.nix` with the compiler in `rust-toolchain.toml`.
 
 ## Pricing embedding
