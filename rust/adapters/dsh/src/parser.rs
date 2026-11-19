@@ -3,23 +3,19 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{
-    fs::File,
-    io::{self, Read},
-    path::Path,
-    sync::Arc,
-};
+use std::{io, ops::ControlFlow, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
     Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback,
-    fast::{LinePrefilter, byte_lines},
-    format_date_tz,
+    apply_total_token_fallback, fast::LinePrefilter, format_date_tz,
 };
-use ccusage_adapter_common::{UnitError, jsonl};
+use ccusage_adapter_common::{
+    UnitError,
+    jsonl::{self, DEFAULT_BUFFER_SIZE, JsonLines, Line, Tail},
+};
 
 use super::paths::is_compressed;
 
@@ -163,54 +159,56 @@ pub(super) fn read_session_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<DshUsageEntry>, UnitError> {
-    let content = read_session_bytes(path, diagnostics)?;
-    Ok(parse_session(&content, path, diagnostics))
-}
-
-fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>, UnitError> {
-    let mut file = File::open(path)?;
-    let mut content = Vec::new();
-    if !is_compressed(path) {
-        file.read_to_end(&mut content)?;
-        return Ok(content);
-    }
-    let mut decoder = zstd::stream::read::Decoder::new(file)?;
-    let Err(error) = decoder.read_to_end(&mut content) else {
-        return Ok(content);
+    let compressed = is_compressed(path);
+    let lines = JsonLines::open(path, DEFAULT_BUFFER_SIZE, compressed)?;
+    let local = Diagnostics::new(diagnostics.source());
+    let mut session = SessionFold::default();
+    let prefilter = LinePrefilter::any(&EVENT_MARKERS);
+    let tail = if compressed {
+        Tail::KeepUnlessUnexpectedEof
+    } else {
+        Tail::Discard
     };
-    let error = match error.kind() {
-        // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
-        io::ErrorKind::UnexpectedEof => {
-            let complete = content
-                .iter()
-                .rposition(|byte| *byte == b'\n')
-                .map_or(0, |newline| newline + 1);
-            content.truncate(complete);
-            UnitError::unfinished(if content.is_empty() {
-                "zstd stream ends inside its first frame"
-            } else {
-                "zstd stream ends inside a frame; earlier records were kept"
-            })
+    let result = lines.scan(tail, |line| {
+        session.record(line, path, &local, &prefilter);
+        ControlFlow::<()>::Continue(())
+    });
+    if let Some(failure) = result.failure {
+        if !compressed {
+            return Err(failure.error.into());
         }
-        io::ErrorKind::Other => UnitError::new(
-            SkipKind::InvalidData,
-            if content.is_empty() {
-                "not a valid zstd stream"
+        let has_complete_lines = failure.complete_lines != 0;
+        let has_content = has_complete_lines
+            || (failure.tail_bytes != 0 && failure.error.kind() != io::ErrorKind::UnexpectedEof);
+        let error = match failure.error.kind() {
+            // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
+            io::ErrorKind::UnexpectedEof => UnitError::unfinished(if has_content {
+                "zstd stream ends inside a frame; earlier records were kept"
             } else {
-                "zstd stream is corrupt; earlier records were kept"
-            },
-        ),
-        _ if !content.is_empty() => UnitError::new(
-            SkipKind::ReadInterrupted,
-            "zstd stream read stopped early; earlier records were kept",
-        ),
-        _ => UnitError::from(error),
-    };
-    if content.is_empty() {
-        return Err(error);
+                "zstd stream ends inside its first frame"
+            }),
+            io::ErrorKind::Other => UnitError::new(
+                SkipKind::InvalidData,
+                if has_content {
+                    "zstd stream is corrupt; earlier records were kept"
+                } else {
+                    "not a valid zstd stream"
+                },
+            ),
+            _ if has_content => UnitError::new(
+                SkipKind::ReadInterrupted,
+                "zstd stream read stopped early; earlier records were kept",
+            ),
+            _ => UnitError::from(failure.error),
+        };
+        if !has_content {
+            return Err(error);
+        }
+        error.record(path, diagnostics);
     }
-    error.record(path, diagnostics);
-    Ok(content)
+    let entries = session.finish(path, &local);
+    diagnostics.merge(&local);
+    Ok(entries)
 }
 
 const EVENT_MARKERS: [&[u8]; 6] = [
@@ -222,78 +220,85 @@ const EVENT_MARKERS: [&[u8]; 6] = [
     b"compaction/summary",
 ];
 
-fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<DshUsageEntry> {
-    let Some((header_number, header_line)) = byte_lines(content)
-        .enumerate()
-        .find(|(_, line)| !line.iter().all(u8::is_ascii_whitespace))
-        .map(|(index, line)| (Skip::line_number(index), line))
-    else {
-        return Vec::new();
-    };
-    let Some(header) = jsonl::decode_line::<HeaderLine>(
-        content,
-        header_line,
-        path,
-        header_number,
-        diagnostics,
-        Some(|_| true),
-    ) else {
-        return Vec::new();
-    };
-    if header.r#type.as_deref() != Some("session") {
-        diagnostics.record(Skip::record(
-            path,
-            header_number,
-            SkipKind::InvalidData,
-            "first record is not a session header",
-        ));
-        return Vec::new();
-    }
-    let session_id = header.id.unwrap_or_else(|| session_id_from_path(path));
-    let created_at = header
-        .created_at
-        .filter(|millis| *millis > 0)
-        .map(TimestampMs::from_millis);
-    let cwd = header.cwd.map(Arc::<str>::from);
+#[derive(Default)]
+enum Header {
+    #[default]
+    Pending,
+    Rejected,
+    Accepted {
+        session_id: String,
+        created_at: Option<TimestampMs>,
+        cwd: Option<Arc<str>>,
+    },
+}
 
-    // NOTE(2026-11-16, #2112): DeepSeek Harness seeds a fork by copying its parent up to the inherited marker. A seeded log without that marker contains only parent usage.
-    let mut awaiting_seed_end = header.is_seeded;
-    let mut route = Route::default();
-    let mut entries = Vec::new();
-    let mut undated = Vec::new();
-    let prefilter = LinePrefilter::any(&EVENT_MARKERS);
-    for (number, event) in jsonl::numbered_records_with_usage_diagnostics::<EventLine>(
-        content,
-        Some(&prefilter),
-        path,
-        diagnostics,
-        is_usage_event,
+#[derive(Default)]
+struct SessionFold {
+    header: Header,
+    awaiting_seed_end: bool,
+    route: Route,
+    entries: Vec<DshUsageEntry>,
+    undated: Vec<u32>,
+}
+
+impl SessionFold {
+    fn record(
+        &mut self,
+        line: Line<'_>,
+        path: &Path,
+        diagnostics: &Diagnostics,
+        prefilter: &LinePrefilter,
     ) {
-        if number <= header_number {
-            continue;
+        if matches!(self.header, Header::Pending) {
+            if !line.bytes().iter().all(u8::is_ascii_whitespace) {
+                self.read_header(line, path, diagnostics);
+            }
+            return;
         }
+        let Header::Accepted {
+            session_id,
+            created_at,
+            cwd,
+        } = &self.header
+        else {
+            return;
+        };
+        if !line.selected(Some(prefilter)) {
+            return;
+        }
+        let Some(event) = line.record::<EventLine>(path, diagnostics, Some(is_usage_event)) else {
+            return;
+        };
+        let number = line.number();
+        let Self {
+            route,
+            entries,
+            undated,
+            awaiting_seed_end,
+            ..
+        } = self;
         let Some(data) = event.data else {
-            continue;
+            return;
         };
         let usage = match event.r#type.as_deref() {
             Some("request/header") => {
                 if let Some(config) = data.header.and_then(|header| header.config) {
-                    update_route(&mut route, config.provider, config.model);
+                    update_route(route, config.provider, config.model);
                 }
-                continue;
+                return;
             }
             Some("request/context") => {
-                update_route(&mut route, data.provider, data.model);
-                continue;
+                update_route(route, data.provider, data.model);
+                return;
             }
             // NOTE(2026-11-16, #2112): A DeepSeek Harness fork can carry more than one inherited marker from its ancestry. Only usage after the last marker belongs to the current session.
             Some("session/end-seed") => {
                 if data.inherited {
                     entries.clear();
                     undated.clear();
-                    awaiting_seed_end = false;
+                    *awaiting_seed_end = false;
                 }
-                continue;
+                return;
             }
             Some("assistant/message" | "assistant/attempt") => data
                 .settled_usage()
@@ -304,7 +309,7 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
             _ => None,
         };
         let Some((usage, provider, model)) = usage else {
-            continue;
+            return;
         };
         let (usage, extra_total_tokens) = apply_total_token_fallback(
             TokenUsageRaw {
@@ -319,16 +324,16 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
             usage.total_tokens,
         );
         if crate::total_usage_tokens(usage).saturating_add(extra_total_tokens) == 0 {
-            continue;
+            return;
         }
         let Some(timestamp) = event
             .time
             .filter(|millis| *millis > 0)
             .map(TimestampMs::from_millis)
-            .or(created_at)
+            .or(*created_at)
         else {
             undated.push(number);
-            continue;
+            return;
         };
         entries.push(DshUsageEntry {
             timestamp,
@@ -341,26 +346,61 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
             extra_total_tokens,
         });
     }
-    if awaiting_seed_end {
-        diagnostics.debug_note(
-            path,
-            format!(
-                "{}: {}: seeded log has no inherited end-seed marker; read as its parent's usage",
-                diagnostics.source(),
-                path.display()
-            ),
-        );
-        return Vec::new();
+
+    fn read_header(&mut self, line: Line<'_>, path: &Path, diagnostics: &Diagnostics) {
+        self.header = Header::Rejected;
+        let Some(header) = line.record::<HeaderLine>(path, diagnostics, Some(|_| true)) else {
+            return;
+        };
+        if header.r#type.as_deref() != Some("session") {
+            diagnostics.record(Skip::record(
+                path,
+                line.number(),
+                SkipKind::InvalidData,
+                "first record is not a session header",
+            ));
+            return;
+        }
+        // NOTE(2026-11-16, #2112): DeepSeek Harness seeds a fork by copying its parent up to the inherited marker. A seeded log without that marker contains only parent usage.
+        self.awaiting_seed_end = header.is_seeded;
+        self.header = Header::Accepted {
+            session_id: header.id.unwrap_or_else(|| session_id_from_path(path)),
+            created_at: header
+                .created_at
+                .filter(|millis| *millis > 0)
+                .map(TimestampMs::from_millis),
+            cwd: header.cwd.map(Arc::from),
+        };
     }
-    for number in undated {
-        diagnostics.record(Skip::record(
-            path,
-            number,
-            SkipKind::InvalidTimestamp,
-            "request has no time and its session header no createdAt",
-        ));
+
+    fn finish(self, path: &Path, diagnostics: &Diagnostics) -> Vec<DshUsageEntry> {
+        let Self {
+            awaiting_seed_end,
+            entries,
+            undated,
+            ..
+        } = self;
+        if awaiting_seed_end {
+            diagnostics.debug_note(
+                path,
+                format!(
+                    "{}: {}: seeded log has no inherited end-seed marker; read as its parent's usage",
+                    diagnostics.source(),
+                    path.display()
+                ),
+            );
+            return Vec::new();
+        }
+        for number in undated {
+            diagnostics.record(Skip::record(
+                path,
+                number,
+                SkipKind::InvalidTimestamp,
+                "request has no time and its session header no createdAt",
+            ));
+        }
+        entries
     }
-    entries
 }
 
 fn is_usage_event(value: &serde_json::Value) -> bool {
@@ -490,11 +530,11 @@ mod tests {
 
     fn parse_diagnosed(content: &[u8]) -> (Vec<DshUsageEntry>, Diagnostics) {
         let diagnostics = Diagnostics::new("dsh");
-        let entries = parse_session(
-            content,
-            Path::new("sessions/--p--/fallback/session.v4.jsonl"),
-            &diagnostics,
-        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("sessions/--p--/fallback/session.v4.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, content).unwrap();
+        let entries = read_session_file(&path, &diagnostics).unwrap();
         (entries, diagnostics)
     }
 
