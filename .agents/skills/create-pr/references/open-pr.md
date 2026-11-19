@@ -22,4 +22,4 @@ that actually ran, so documentation-only PRs usually omit it.
 
 ## Passing the body
 
-Pass multiline bodies with `gh pr create --body-file`.
+Write multiline bodies to a file and pass it to `gh pr create --body-file`.

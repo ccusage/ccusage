@@ -11,7 +11,8 @@ repeatedly belongs in the repo: system and dev-shell CLIs in `flake.nix`
 (`nix/dev-shell.nix` is the current list), JS/TS tooling and scripts in
 `package.json`. Land the matching lockfile update — `flake.lock`,
 `pnpm-lock.yaml` — in the same commit so the addition stays independently
-revertable.
+revertable. Keep Cargo's `global-min-publish-age` in `.cargo/config.toml` aligned
+with `minimumReleaseAge` in `pnpm-workspace.yaml`.
 
 ## Validation
 

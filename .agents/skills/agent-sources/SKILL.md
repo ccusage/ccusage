@@ -12,5 +12,6 @@ change workflow in `rust/adapters/AGENTS.md`.
 
 Keep command and option semantics aligned across agents. Declare supported
 reports in `rust/crates/ccusage-cli/src/agents.rs`. Preserve source-specific
-stored-cost, reasoning-token, and residual-token policies. Reuse
-`ccusage-core/src/cost.rs` when it preserves those policies.
+stored-cost, reasoning-token, and residual-token policies. Follow the cost-mode
+contract in `docs/guide/cost-modes.md` and reuse
+`rust/crates/ccusage-core/src/cost.rs` when it preserves those policies.

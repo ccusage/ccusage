@@ -5,14 +5,14 @@ description: Verifies ccusage terminal output in a real cmux pane. Use when chan
 
 # cmux Debug
 
-Verify terminal rendering in a real cmux pane. Select a workspace and surface
-with `cmux --help` or `cmux capabilities --json`. Run the command on that
-surface with `cmux send` and capture the same pane with
-`cmux capture-pane --scrollback --lines 120`. Reset the screen before the run.
+Verify terminal rendering in a real cmux pane. Pass the same `--workspace` and
+`--surface` to `cmux send` and `cmux capture-pane --scrollback`. Reset the screen
+before the run.
 
 For responsive tables, capture `stty size` and `COLUMNS` in the same run.
 Check for wrapping and truncated date, model, or total columns. Repeat at a
 narrow width.
 
-If pane capture is unavailable, use `cmux rpc surface.read_text` with workspace
-and surface UUIDs, scrollback enabled, and a line limit.
+If `cmux capabilities --json` lacks `capture-pane`, use
+`cmux rpc surface.read_text` with workspace and surface UUIDs, scrollback enabled,
+and a line limit.

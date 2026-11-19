@@ -12,7 +12,9 @@ Time release builds only:
 direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
 ```
 
-Build both refs the same way in separate worktrees.
+Build the baseline and candidate the same way in separate worktrees. Use main
+as the baseline for a branch comparison and run each worktree's own
+`rust/target/release/ccusage`.
 
 Use the same environment for both measured commands:
 

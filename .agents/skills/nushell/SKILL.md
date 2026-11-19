@@ -15,7 +15,8 @@ tools the script invokes. Resolve `--inputs-from` relative to the script's
 directory. Imported modules have neither a shebang nor `main`.
 
 Scripts invoked directly through `nu` by the gate workflows, commit hook, or
-infra fixture suites must run with Nushell alone. Use `$"#!($nu.current-exe)"`
+infra fixture suites must run with the caller's toolchain and cannot depend on
+packages provided only by the script's Nix shebang. Use `$"#!($nu.current-exe)"`
 for mock executables in the Linux build sandbox.
 
 ## Docs
