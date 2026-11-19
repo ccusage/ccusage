@@ -30,9 +30,7 @@ pub fn named_store_paths(raw: &str) -> Result<Vec<PathBuf>> {
     ))
 }
 
-// NOTE(2026-11-17): Pi writes sessions to <agent dir>/sessions/<encoded cwd>/<timestamp>_<uuid>.jsonl,
-// so a configured directory with a `sessions` child is the agent directory and the project is the
-// directory below that child.
+// NOTE(2026-11-17): Pi writes session files to `<agent dir>/sessions/<encoded cwd>/`. When given the agent directory, use its `sessions` child to preserve the project boundary.
 fn store_root(path: PathBuf) -> PathBuf {
     let sessions = path.join("sessions");
     if sessions.is_dir() { sessions } else { path }

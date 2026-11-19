@@ -21,8 +21,6 @@ use crate::{
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-/// A single parsed pi session record. Only the fields ccusage consumes are
-/// declared; serde skips everything else.
 #[derive(Debug, Deserialize)]
 struct PiLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -60,7 +58,6 @@ impl<'de> Deserialize<'de> for ParentSession {
     }
 }
 
-/// The link fields carried by every tree-format pi session entry.
 #[derive(Debug, Deserialize)]
 struct PiEntryLink {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -75,7 +72,6 @@ struct PiEntryLink {
     parent_id: Option<String>,
 }
 
-/// The pi `message` block carried by assistant records.
 #[derive(Debug, Deserialize)]
 struct PiMessage {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -85,7 +81,6 @@ struct PiMessage {
     usage: Option<PiUsage>,
 }
 
-/// Token counts and optional display cost carried by a pi assistant message.
 #[derive(Debug, Default, Deserialize)]
 struct PiUsage {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -110,7 +105,6 @@ struct PiUsage {
     cost: Option<PiCost>,
 }
 
-/// Optional display cost block carried by a pi assistant message.
 #[derive(Debug, Default, Deserialize)]
 struct PiCost {
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
@@ -219,8 +213,6 @@ fn read_session_file_data_with_context(
     let project = extract_project_for_store(path, context.root);
     let session_id = extract_session_id(path);
     let header = parse_session_header(&content);
-    // Usable pi lines carry token counts under a `usage` key nested in a
-    // `message` object, so require both substrings before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
     let mut entries = Vec::new();
     let mut usage_records = Vec::new();
@@ -375,19 +367,17 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
     let links = jsonl::records::<PiEntryLink>(content, None)
         .filter(|link| link.r#type.as_deref() != Some("session"))
         .collect::<Vec<_>>();
+    // NOTE(2026-08-29, #1662): Version 1 Pi sessions predate entry links. Their physical order is the only available replay history.
     if links
         .iter()
         .all(|link| link.id.is_none() && link.parent_id.is_none())
     {
-        // Version 1 sessions predate entry links, so their physical order is
-        // the only available linear history.
         return PiReplayUsagePath::Linear;
     }
 
     let mut parents_by_id = HashMap::new();
     let mut leaf_id = None;
     for link in links {
-        // A partially linked session cannot identify an active branch safely.
         let Some(id) = link.id else {
             return PiReplayUsagePath::Invalid;
         };
@@ -396,6 +386,7 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
         }
         leaf_id = Some(id);
     }
+    // NOTE(2026-08-29, #1662): Pi writes the current leaf last and leaves abandoned siblings earlier in the file. Follow the leaf's parents to identify the replayable branch.
     let Some(mut entry_id) = leaf_id else {
         return PiReplayUsagePath::Linear;
     };
@@ -416,8 +407,6 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
     let mut active_usage = Vec::new();
     let mut visited = HashSet::new();
     loop {
-        // Pi writes the current leaf last; walking its parents excludes sibling
-        // branches that remain earlier in the same physical JSONL file.
         if !visited.insert(entry_id.clone()) {
             return PiReplayUsagePath::Invalid;
         }
@@ -823,7 +812,6 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        // Use Calculate mode with an empty PricingMap so model won't be found
         let pricing = ccusage_core::PricingMap::default();
         let entries = read_session_file(
             &file,
@@ -983,14 +971,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        // In Auto mode with a display cost present, no missing pricing warning
         assert_eq!(entries[0].missing_pricing_model, None);
     }
 
     #[test]
     fn keeps_record_when_cost_is_not_an_object() {
-        // A non-object `cost` must not fail the whole line; the usage tokens
-        // should still be counted with display cost treated as missing.
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200,"cost":0}}}"#,
         });

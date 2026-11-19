@@ -39,13 +39,7 @@ fn load_entries_for_context(
     for path in paths {
         let mut files = Vec::new();
         collect_files_with_extension(path, "jsonl", &mut files, cx.diagnostics);
-        // pi-subagents writes derived debug transcripts under a
-        // `subagent-artifacts/` directory inside the sessions tree. They are
-        // pure copies of calls already recorded in the primary session files
-        // (no session header, no entry ids), so neither the replay suppression
-        // below nor entry-id dedup can collapse them. Skip them here instead.
-        // `run-*/` fresh-context child sessions are the primary record for
-        // those children and must keep counting.
+        // NOTE(2026-09-15, #1714): pi-subagents writes debug transcripts under `subagent-artifacts/` that copy calls without their session header or entry IDs. Skip that directory and retain the primary `run-*/` child sessions.
         files.retain(|file| !is_subagent_artifact_transcript(file));
         let loaded = read_typed_units(&files, shared.single_thread, cx.diagnostics, |file| {
             parser::read_session_file_data_for_store_with_diagnostics(
@@ -1163,17 +1157,14 @@ mod tests {
             ]
             .join("\n"),
         );
-        // Nested placement: `<session>/subagent-artifacts/*_transcript.jsonl`.
         let _ = fixture.write_file(
             "sessions/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
-        // Sibling placement: a stray `subagent-artifacts/` segment elsewhere.
         let _ = fixture.write_file(
             "sessions/project-a/subagent-artifacts/other_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
-        // Fresh-context children are the primary record and must keep counting.
         let _ = fixture.write_file(
             "sessions/project-a/root/run-abc/run-0/session.jsonl",
             usage_line("2026-01-03T01:00:00.000Z", 50, 5, 6, 1),
