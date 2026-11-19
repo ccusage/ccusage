@@ -1044,7 +1044,7 @@ mod tests {
                                 usage,
                                 None,
                                 timestamp,
-                                PriceTable::Calculate(&pricing),
+                                ccusage_core::cost::PriceTable::Calculate(&pricing),
                             )
                             .0
                         })
