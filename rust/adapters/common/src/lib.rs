@@ -52,8 +52,8 @@ pub fn collect_files_matching(
     visit_files_matching(dir, matches, &mut |path| files.push(path), diagnostics);
 }
 
-/// Hands each `.jsonl` file under `dir` to `visit` as the walk finds it, like
-/// [`visit_files_matching`].
+/// Hands each `.jsonl` file under `dir` to `visit` as the walk finds it.
+/// It uses the same traversal and diagnostics as [`collect_files_matching`].
 pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics: &Diagnostics) {
     visit_files_matching(
         dir,

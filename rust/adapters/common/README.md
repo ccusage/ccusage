@@ -33,23 +33,24 @@ layers.
 ## Public surface
 
 - `report::print_table_for_agent`
-- `collect_files_with_extension`, `collect_files_matching`,
-  `visit_files_matching`, `visit_usage_files` and `dir_entries`, which record
-  directories, entries and file types they cannot read in a `Diagnostics`
+- `collect_files_with_extension`, `collect_files_matching`, `visit_usage_files`
+  and `dir_entries`, which record directories, entries and file types they
+  cannot read in a `Diagnostics`
 - `read_discovered_files`
 - `filter_loaded_entries_by_date`
 - `chunk_file_indexes_by_size`
 - `units::read_units`
 - `units::read_units_flat`
-- `units::UnitError`
+- `units::UnitError` and `units::SqliteStage`
 - `units::read_json` and `units::decode_json`
-- `jsonl::records_with_usage_diagnostics`
-- `jsonl::numbered_records_with_usage_diagnostics`
+- `jsonl::records_with_usage_diagnostics`,
+  `jsonl::numbered_records_with_usage_diagnostics`, and the shared JSONL
+  record iterators, decoders and lenient Serde field readers
 - `source::UsageSource`, `source::EntrySource` and the request, row and policy
-  types they exchange
-- `rows::UnifiedRow`
-- `rows::summary_rows`
+  types and report-kind lists they use
+- `rows::UnifiedRow`, `rows::summary_rows` and `rows::summarize_entry_sessions`
 - `claims::ClaudeCounted`
+- `parity` and `testing` helpers under the `testing` feature
 
 ## Depends on
 

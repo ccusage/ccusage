@@ -3,7 +3,7 @@
 //! [`UsageSource`] supplies identity, supported reports and unified rows to
 //! the unified registry. Sources whose loader yields `Vec<LoadedEntry>` also
 //! implement [`EntrySource`], which runs focused and unified reports through
-//! [`crate::pipeline`]. Format-specific sources implement [`UsageSource`]
+//! the shared entry pipeline. Format-specific sources implement [`UsageSource`]
 //! directly and keep their focused report paths in their own adapter.
 
 use serde_json::Value;
@@ -240,8 +240,7 @@ impl<'a> LoadContext<'a> {
 ///
 /// The hooks are the adapter's own functions: how it summarizes and renders
 /// decides float summation order, JSON shape and table layout, so none of that
-/// is shared. What is shared is the order they run in, which
-/// [`crate::pipeline`] owns.
+/// is shared. The shared entry pipeline determines the order they run in.
 pub trait EntrySource: Sync {
     fn descriptor(&self) -> EntryDescriptor;
 
