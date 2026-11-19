@@ -26,7 +26,7 @@ use crate::{
     types::{AgentLoadSpec, AgentRows, Bucket},
     types::{DayRow, PeriodRow, ReportDay, ReportRow},
 };
-use ccusage_adapter_codex::{self as codex, CodexGroup, CodexModelUsage};
+use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
 use ccusage_adapter_common::{
     filter_loaded_entries_by_date,
     rows::{RowUsage, SourceRow},
@@ -1983,7 +1983,7 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
 }
 
 #[test]
-fn bounded_codex_reports_match_focused_rows_after_unified_bucketing() {
+fn bounded_codex_reports_deduplicate_per_bucket_after_unified_bucketing() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let usage = |timestamp: &str| {
@@ -2004,59 +2004,34 @@ fn bounded_codex_reports_match_focused_rows_after_unified_bucketing() {
         fixture.path("codex").into_os_string(),
     );
     let shared = fixture_shared("20260102", "20260102");
-    let pricing = PricingMap::load_embedded();
-    let speed = codex::resolve_codex_speed(ccusage_cli::CodexSpeed::Auto);
     for kind in [
         AgentReportKind::Daily,
         AgentReportKind::Weekly,
         AgentReportKind::Monthly,
         AgentReportKind::Session,
     ] {
-        let mut focused = codex::load_groups(&shared, kind)
-            .unwrap()
-            .iter()
-            .map(|(period, group)| {
-                codex::unified_row_from_group(
-                    ccusage_adapter_common::source::LoadKind::Session,
-                    period,
-                    group,
-                    Some(&pricing),
-                    speed,
-                    shared.mode,
-                )
-            })
-            .collect::<Vec<_>>();
-        let mut unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
+        let unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
             .unwrap()
             .rows;
-        focused.sort_by(|a, b| a.period.cmp(&b.period));
-        unified.sort_by(|a, b| a.period.cmp(&b.period));
-        assert_eq!(unified.len(), focused.len(), "{kind:?}");
-        for (actual, expected) in unified.iter().zip(&focused) {
+        let count = if kind == AgentReportKind::Session {
+            2
+        } else {
+            1
+        };
+        assert_eq!(unified.len(), count, "{kind:?}");
+        for row in unified {
             assert_eq!(
                 (
-                    &actual.period,
-                    actual.input_tokens,
-                    actual.output_tokens,
-                    actual.cache_creation_tokens,
-                    actual.cache_read_tokens,
-                    actual.total_tokens
+                    row.input_tokens,
+                    row.output_tokens,
+                    row.cache_creation_tokens,
+                    row.cache_read_tokens,
+                    row.total_tokens
                 ),
-                (
-                    &expected.period,
-                    expected.input_tokens,
-                    expected.output_tokens,
-                    expected.cache_creation_tokens,
-                    expected.cache_read_tokens,
-                    expected.total_tokens
-                ),
-                "{kind:?}"
+                (100, 10, 0, 0, 110),
+                "{kind:?}",
             );
-            assert!(
-                (actual.total_cost - expected.total_cost).abs() < 1e-12,
-                "{kind:?}"
-            );
-            assert_eq!(actual.total_tokens, 110, "{kind:?}");
+            assert!((row.total_cost - 0.000225).abs() < 1e-12, "{kind:?}");
         }
     }
 }

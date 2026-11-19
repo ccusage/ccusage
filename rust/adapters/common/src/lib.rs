@@ -317,21 +317,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
-    /// Reads `files` by applying `read` to each path and returns results in file order.
-    fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
-    where
-        T: Send,
-        F: Fn(&Path) -> T + Sync,
-    {
-        map_parallel(
-            files,
-            single_thread,
-            Split::BySize(PathBuf::as_path),
-            |file| read(file),
-        )
-    }
     use ccusage_test_support::Fixture;
 
     use super::{
@@ -462,13 +449,13 @@ mod tests {
                 fixture.write_file(format!("file-{index:03}.txt"), format!("{index}:{body}"))
             })
             .collect::<Vec<_>>();
-        let read = |path: &std::path::Path| {
+        let read = |path: &PathBuf| {
             let content = std::fs::read_to_string(path).unwrap();
             content.split(':').next().unwrap().to_string()
         };
 
-        let single = read_files_parallel(&files, true, read);
-        let multi = read_files_parallel(&files, false, read);
+        let single = map_parallel(&files, true, Split::BySize(PathBuf::as_path), read);
+        let multi = map_parallel(&files, false, Split::BySize(PathBuf::as_path), read);
         let expected = Vec::from_fn(256, |index| index.to_string());
 
         assert_eq!(single, expected);
@@ -517,7 +504,7 @@ mod tests {
     fn handles_empty_input() {
         let empty: Vec<std::path::PathBuf> = Vec::new();
 
-        assert!(read_files_parallel(&empty, false, |_| 0_u8).is_empty());
+        assert!(map_parallel(&empty, false, Split::BySize(PathBuf::as_path), |_| 0_u8).is_empty());
     }
 
     #[test]

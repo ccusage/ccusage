@@ -318,29 +318,6 @@ pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
 #[cfg(test)]
 mod tests {
 
-    fn missing_pricing_model_for_usage(
-        model: Option<&str>,
-        usage: crate::TokenUsageRaw,
-        cost_usd: Option<f64>,
-        mode: CostMode,
-        pricing: Option<&PricingMap>,
-    ) -> Option<String> {
-        if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
-            return None;
-        }
-        missing_pricing_model_for_token_total(model, crate::total_usage_tokens(usage), pricing)
-    }
-
-    fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
-        calculate_cost_for_usage_at(
-            data.message.model.as_deref(),
-            data.message.usage,
-            data.cost_usd,
-            crate::parse_ts_timestamp(&data.timestamp),
-            mode,
-            pricing,
-        )
-    }
     use super::*;
 
     #[test]
@@ -623,54 +600,32 @@ mod tests {
             ..crate::TokenUsageRaw::default()
         };
 
-        assert_eq!(
-            missing_pricing_model_for_usage(
-                Some("unknown-model"),
-                usage,
-                None,
-                CostMode::Auto,
-                Some(&pricing)
-            ),
-            Some("unknown-model".to_string())
-        );
-        assert_eq!(
-            missing_pricing_model_for_usage(
-                Some("unknown-model"),
-                usage,
-                Some(1.5),
-                CostMode::Auto,
-                Some(&pricing)
-            ),
-            None,
-            "auto mode trusts a stored cost"
-        );
-        assert_eq!(
-            missing_pricing_model_for_usage(
-                Some("unknown-model"),
-                usage,
-                None,
-                CostMode::Display,
-                Some(&pricing)
-            ),
-            None,
-            "display mode never looks prices up"
-        );
-        assert_eq!(
-            missing_pricing_model_for_usage(
-                Some("unknown-model"),
-                usage,
-                None,
-                CostMode::Calculate,
-                Some(&pricing)
-            ),
-            Some("unknown-model".to_string())
-        );
+        for (table, stored_cost, missing) in [
+            (PriceTable::Auto(&pricing), None, true),
+            (PriceTable::Auto(&pricing), Some(1.5), false),
+            (PriceTable::Display, None, false),
+            (PriceTable::Calculate(&pricing), None, true),
+        ] {
+            let price = price_entry(
+                EntryPricing {
+                    usage,
+                    reasoning_tokens: 0,
+                    residual_tokens: 0,
+                    reported_model: Some("unknown-model"),
+                    candidates: &[("unknown-model", crate::pricing::MatchKind::Fuzzy)],
+                    stored_cost,
+                    timestamp: None,
+                },
+                table,
+            );
+            assert_eq!(price.missing_pricing, missing);
+        }
     }
 
     use crate::{
         cli::CostMode,
         pricing::PricingMap,
-        types::{CacheCreationRaw, TokenUsageRaw, UsageEntry, UsageMessage},
+        types::{CacheCreationRaw, TokenUsageRaw},
     };
 
     use super::{calculate_cost_for_usage, calculate_cost_for_usage_at};
@@ -1045,31 +1000,23 @@ mod tests {
     #[test]
     fn usage_entry_cost_wrapper_uses_event_timestamp() {
         let pricing = deepseek_pricing();
-        let mut entry = UsageEntry {
-            session_id: None,
-            timestamp: "2026-08-17T01:00:00Z".to_string(),
-            version: None,
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    input_tokens: 1_000_000,
-                    ..TokenUsageRaw::default()
-                },
-                model: Some("deepseek-v4-flash".to_string()),
-                id: None,
-            },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
         };
-
-        let cost = calculate_cost(&entry, CostMode::Calculate, Some(&pricing));
-        assert!((cost - 0.44).abs() < 1e-12);
-
-        entry.timestamp = "not-a-timestamp".to_string();
-        assert_eq!(
-            calculate_cost(&entry, CostMode::Calculate, Some(&pricing)),
-            0.14
-        );
+        for (timestamp, expected) in [
+            (crate::parse_ts_timestamp("2026-08-17T01:00:00Z"), 0.44),
+            (None, 0.14),
+        ] {
+            let cost = calculate_cost_for_usage_at(
+                Some("deepseek-v4-flash"),
+                usage,
+                None,
+                timestamp,
+                CostMode::Calculate,
+                Some(&pricing),
+            );
+            assert!((cost - expected).abs() < 1e-12, "{cost}");
+        }
     }
 }

@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::{
     CodexServiceTier, CodexSpeedPolicy, PricingMap,
-    aggregate::{load_groups, load_groups_with_diagnostics},
+    aggregate::load_groups_with_diagnostics,
     cli::{AgentReportKind, CostMode, SharedArgs},
     paths,
     report::report_from_groups,
@@ -360,7 +360,13 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
             single_thread,
             ..SharedArgs::default()
         };
-        let groups = load_groups(&shared, AgentReportKind::Monthly).unwrap();
+        let (groups, _) = load_groups_with_diagnostics(
+            &shared,
+            AgentReportKind::Monthly,
+            None,
+            &Diagnostics::new("codex"),
+        )
+        .unwrap();
         assert_eq!(groups["2026-10"].total_tokens, 70);
     }
 }

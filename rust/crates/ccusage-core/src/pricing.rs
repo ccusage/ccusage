@@ -2859,23 +2859,9 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 #[cfg(test)]
 mod tests {
 
-    impl PricingMap {
-        fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-            self.find_exact_with_fallback_using(model, super::models_dev_pricing)
-        }
-
-        fn find_exact_with_fallback_using<'a>(
-            &self,
-            model: &str,
-            live: impl FnOnce() -> Option<&'a Self>,
-        ) -> Option<Pricing> {
-            self.with_live_layer(model, Lookup::Exact, live)
-                .find_exact_normalized(model)
-        }
-    }
     use super::{
-        Fuzzy, Lookup, Pricing, PricingMap, build_time_models_dev_json, build_time_pricing_json,
-        embedded_models_dev_pricing, model_without_date_suffix,
+        Fuzzy, Lookup, MatchKind, Pricing, PricingMap, build_time_models_dev_json,
+        build_time_pricing_json, embedded_models_dev_pricing, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3404,7 +3390,9 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 pricing
-                    .find_exact_with_fallback_using("md-only-1", fetch)
+                    .with_live_layer("md-only-1", Lookup::Exact, fetch)
+                    .resolve(&[("md-only-1", MatchKind::Exact)])
+                    .map(|(_, pricing)| pricing)
                     .unwrap()
                     .input,
                 3.0
@@ -3414,7 +3402,9 @@ mod tests {
         let offline = layered(&PricingMap::default(), Some(&embedded));
         assert_eq!(
             offline
-                .find_exact_with_fallback_using("md-only-1", || None)
+                .with_live_layer("md-only-1", Lookup::Exact, || None)
+                .resolve(&[("md-only-1", MatchKind::Exact)])
+                .map(|(_, pricing)| pricing)
                 .unwrap()
                 .input,
             1.0
@@ -3466,7 +3456,11 @@ mod tests {
             &live.rows,
         ));
         assert_eq!(
-            merged.find_exact_with_fallback("md-only-1").unwrap().input,
+            merged
+                .resolve(&[("md-only-1", MatchKind::Exact)])
+                .map(|(_, pricing)| pricing)
+                .unwrap()
+                .input,
             3.0
         );
     }
@@ -4485,19 +4479,22 @@ mod tests {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let expected = pricing
-            .find_exact_with_fallback("claude-opus-5@eu")
+            .resolve(&[("claude-opus-5@eu", MatchKind::Exact)])
+            .map(|(_, pricing)| pricing)
             .expect("the embedded snapshot should contain the exact-only regional id");
 
         for spelling in ["claude-opus-5-eu", "claude-opus-5.eu"] {
             let resolved = pricing
-                .find_exact_with_fallback(spelling)
+                .resolve(&[(spelling, MatchKind::Exact)])
+                .map(|(_, pricing)| pricing)
                 .expect("separator-equivalent exact-only ids should resolve");
             assert_eq!(resolved.input, expected.input, "{spelling}");
             assert_eq!(resolved.output, expected.output, "{spelling}");
         }
         assert!(
             pricing
-                .find_exact_with_fallback("claude-opus-5-eu-preview")
+                .resolve(&[("claude-opus-5-eu-preview", MatchKind::Exact)])
+                .map(|(_, pricing)| pricing)
                 .is_none()
         );
     }
@@ -4516,7 +4513,8 @@ mod tests {
         );
 
         let resolved = pricing
-            .find_exact_with_fallback("claude-opus-5-eu")
+            .resolve(&[("claude-opus-5-eu", MatchKind::Exact)])
+            .map(|(_, pricing)| pricing)
             .expect("the normalized primary entry should resolve");
         assert_eq!(resolved.input, 0.000009);
         assert_eq!(resolved.output, 0.000010);
@@ -4534,7 +4532,12 @@ mod tests {
             }"#,
         );
 
-        assert!(pricing.find_exact_with_fallback("acme-alpha-1-5").is_none());
+        assert!(
+            pricing
+                .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
+                .map(|(_, pricing)| pricing)
+                .is_none()
+        );
     }
 
     #[test]
@@ -4548,7 +4551,8 @@ mod tests {
             },
         );
         let resolved = pricing
-            .find_exact_with_fallback("acme-alpha-1-5")
+            .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
+            .map(|(_, pricing)| pricing)
             .expect("a single normalized match should resolve");
         assert_eq!(resolved.input, 1e-6);
 
@@ -4560,7 +4564,12 @@ mod tests {
             },
         );
 
-        assert!(pricing.find_exact_with_fallback("acme-alpha-1-5").is_none());
+        assert!(
+            pricing
+                .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
+                .map(|(_, pricing)| pricing)
+                .is_none()
+        );
     }
 
     #[test]
@@ -4575,7 +4584,8 @@ mod tests {
             }"#,
         );
         let before = pricing
-            .find_exact_with_fallback("zai/glm-test-5")
+            .resolve(&[("zai/glm-test-5", MatchKind::Exact)])
+            .map(|(_, pricing)| pricing)
             .expect("the normalized entry should resolve");
         assert!(before.cache_read.is_none());
 
@@ -4587,7 +4597,10 @@ mod tests {
             },
         );
 
-        let after = pricing.find_exact_with_fallback("zai/glm-test-5").unwrap();
+        let after = pricing
+            .resolve(&[("zai/glm-test-5", MatchKind::Exact)])
+            .map(|(_, pricing)| pricing)
+            .unwrap();
         assert_eq!(after.cache_read, Some(0.03));
     }
 
@@ -7375,7 +7388,9 @@ mod tests {
         for resolved in [
             pricing.find(original),
             pricing.find_exact(original),
-            pricing.find_exact_with_fallback(original),
+            pricing
+                .resolve(&[(original, MatchKind::Exact)])
+                .map(|(_, pricing)| pricing),
         ] {
             let resolved = resolved.unwrap();
             assert_eq!(resolved.input, 7e-6);

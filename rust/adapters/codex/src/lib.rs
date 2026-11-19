@@ -24,13 +24,12 @@ mod test_support;
 use crate::{Result, cli::AgentCommandArgs, print_json_or_jq, wants_json};
 use ccusage_adapter_common::source::ReportPricing;
 
-pub use aggregate::load_groups;
-
 pub use report::calculate_group_cost;
 pub use source::SOURCE;
 #[doc(hidden)]
 pub use source::unified_row_from_group;
-pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
+pub use speed::CodexSpeedPolicy;
+use speed::resolve_codex_speed;
 pub use statusline::run_statusline;
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,

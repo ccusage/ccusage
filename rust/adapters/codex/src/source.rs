@@ -291,21 +291,27 @@ mod diagnostic_tests {
                 ..Default::default()
             };
 
-            let focused = crate::load_groups(&shared, kind)
-                .unwrap()
-                .iter()
-                .map(|(period, group)| {
-                    unified_row_from_group(
-                        ccusage_adapter_common::source::LoadKind::for_report(kind),
-                        period,
-                        group,
-                        Some(&pricing),
-                        speed,
-                        shared.mode,
-                    )
-                })
-                .map(|row| (row.usage.period, row.usage.total_tokens))
-                .collect::<Vec<_>>();
+            let focused = load_groups_with_diagnostics(
+                &shared,
+                kind,
+                Some(&pricing),
+                &Diagnostics::new("codex"),
+            )
+            .unwrap()
+            .0
+            .iter()
+            .map(|(period, group)| {
+                unified_row_from_group(
+                    ccusage_adapter_common::source::LoadKind::for_report(kind),
+                    period,
+                    group,
+                    Some(&pricing),
+                    speed,
+                    shared.mode,
+                )
+            })
+            .map(|row| (row.usage.period, row.usage.total_tokens))
+            .collect::<Vec<_>>();
             let unified = unified_codex_rows(&shared, kind)
                 .into_iter()
                 .map(|row| (row.usage.period, row.usage.total_tokens))

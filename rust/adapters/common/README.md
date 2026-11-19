@@ -43,8 +43,6 @@ layers.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
 - `jsonl` — the streaming JSONL parsing helpers, including diagnostics for
   selected records that fail to decode without discarding later records.
-- `report::print_table_for_agent` — the usage table for adapters whose rows are
-  plain `UsageSummary` values, parameterized by agent name.
 
 ## Public surface
 

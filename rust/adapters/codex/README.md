@@ -42,10 +42,8 @@ lenient field conversions are unchanged.
 ## Public surface
 
 - `run_statusline`
-- `aggregate::load_groups`
 - `report::calculate_group_cost`
 - `speed::CodexSpeedPolicy`
-- `speed::resolve_codex_speed`
 - `types::CodexGroup`
 - `types::CodexModelUsage`
 - `types::CodexServiceTier`

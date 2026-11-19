@@ -482,10 +482,6 @@ fn format_last_activity_date(value: &str, timezone: &JiffTimeZone) -> String {
 #[cfg(test)]
 mod tests {
 
-    fn missing_pricing_warnings(rows: &[UsageSummary], offline: bool) -> Vec<String> {
-        let models = unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns));
-        missing_pricing_warnings_for_models(models.iter().map(String::as_str), offline)
-    }
     use super::*;
     use crate::ModelBreakdown;
 
@@ -750,12 +746,11 @@ mod tests {
 
     #[test]
     fn missing_pricing_warnings_deduplicate_models() {
-        let mut row = snapshot_summary("2026-01-02", None, None);
-        row.model_breakdowns[0].missing_pricing = true;
-        row.model_breakdowns[1].missing_pricing = true;
-
         assert_eq!(
-            missing_pricing_warnings(&[row], false),
+            missing_pricing_warnings_for_models(
+                ["gpt-5.2-codex", "claude-sonnet-4-20250514", "gpt-5.2-codex"],
+                false
+            ),
             vec![
                 "WARN  Missing pricing for claude-sonnet-4-20250514; cost excludes this model. Update pricing or run again after LiteLLM has the model.",
                 "WARN  Missing pricing for gpt-5.2-codex; cost excludes this model. Update pricing or run again after LiteLLM has the model.",
@@ -765,11 +760,8 @@ mod tests {
 
     #[test]
     fn missing_pricing_warnings_mention_embedded_pricing_offline() {
-        let mut row = snapshot_summary("2026-01-02", None, None);
-        row.model_breakdowns[0].missing_pricing = true;
-
         assert_eq!(
-            missing_pricing_warnings(&[row], true),
+            missing_pricing_warnings_for_models(["gpt-5.2-codex"], true),
             vec![
                 "WARN  Missing embedded pricing for gpt-5.2-codex; cost excludes this model. Run without --offline or update ccusage after pricing is added.",
             ]

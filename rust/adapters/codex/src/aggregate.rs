@@ -394,23 +394,6 @@ fn fork_indexes<'a>(
     (forks, files)
 }
 
-pub fn load_groups(
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    let diagnostics = Diagnostics::new("codex");
-    let pricing = (shared.mode != crate::cli::CostMode::Display).then(|| {
-        PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        )
-    });
-    let (groups, _) = load_groups_with_diagnostics(shared, kind, pricing.as_ref(), &diagnostics)?;
-    diagnostics.emit(shared.debug);
-    Ok(groups)
-}
-
 pub(super) fn load_groups_with_diagnostics(
     shared: &SharedArgs,
     kind: AgentReportKind,

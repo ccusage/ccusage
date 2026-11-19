@@ -42,9 +42,8 @@ OpenCode implement `UsageSource` directly: Claude's rows come from the same
 loader as `ccusage claude daily`, and Codex's from its grouped loader.
 
 File and database readers isolate failures with `common::units`; JSONL readers
-can record selected decoding failures with `records_with_diagnostics`, or
-confirm usage envelopes with `records_with_usage_diagnostics`, and continue to
-the next record. Decoding diagnostics retain categories and locations rather
+use `jsonl::numbered_records_with_usage_diagnostics` to confirm usage envelopes,
+record selected decoding failures and continue to the next record. Decoding diagnostics retain categories and locations rather
 than input values. Keep typed errors until this boundary so decoding failures
 remain distinct from unreadable files.
 
