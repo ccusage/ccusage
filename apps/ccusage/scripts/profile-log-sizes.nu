@@ -78,8 +78,10 @@ def profile [files: list<string>]: nothing -> record {
 def codex-rollouts [roots: list<string>]: nothing -> list<string> {
     $roots
     | each {|root|
-        ['sessions' 'archived_sessions'] | each {|sub|
-            let dir = $root | path join $sub
+        let subdirs = ['sessions' 'archived_sessions'] | where {|sub| $root | path join $sub | path exists }
+        # A home without either directory is scanned directly, as ccusage does.
+        $subdirs | default --empty ['.'] | each {|sub|
+            let dir = $root | path join $sub | path expand
             files-under [$dir] ['**/*.jsonl' '**/*.jsonl.zst']
             | sort
             | each {|file|
