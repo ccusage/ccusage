@@ -16,7 +16,7 @@ use crate::{
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
-    read_discovered_paths, visit_usage_files as visit_usage_files_in,
+    visit_usage_files as visit_usage_files_in,
 };
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
@@ -44,16 +44,6 @@ pub(crate) fn usage_files(
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
 ) -> Vec<PathBuf> {
-    let mut files = discover_usage_files(paths, project_filter, diagnostics);
-    files.sort_by_cached_key(|path| usage_file_order(path));
-    files
-}
-
-pub(super) fn discover_usage_files(
-    paths: &[PathBuf],
-    project_filter: Option<&str>,
-    diagnostics: &Diagnostics,
-) -> Vec<PathBuf> {
     let mut files = Vec::new();
     visit_usage_files(
         paths,
@@ -61,22 +51,11 @@ pub(super) fn discover_usage_files(
         &mut |path| files.push(path),
         diagnostics,
     );
+    files.sort_by_cached_key(|path| usage_file_order(path));
     files
 }
 
-pub(super) fn read_usage_files<T: Send>(
-    mut files: Vec<PathBuf>,
-    single_thread: bool,
-    read: impl Fn(&PathBuf) -> T + Sync,
-) -> Vec<(PathBuf, T)> {
-    read_discovered_paths(
-        single_thread,
-        |visit| std::mem::take(&mut files).into_iter().for_each(visit),
-        read,
-    )
-}
-
-fn visit_usage_files(
+pub(crate) fn visit_usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     visit: &mut dyn FnMut(PathBuf),

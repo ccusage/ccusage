@@ -1,4 +1,7 @@
-use ccusage_adapter_common::source::{ProgressOwner, UsageLoadContext};
+use ccusage_adapter_common::{
+    read_discovered_paths,
+    source::{ProgressOwner, UsageLoadContext},
+};
 use ccusage_core::*;
 
 mod blocks;
@@ -42,8 +45,7 @@ use crate::{
 };
 
 pub(crate) use paths::{
-    claude_paths, discover_usage_files, extract_session_parts, read_usage_files,
-    usage_files_before_since,
+    claude_paths, extract_session_parts, usage_files_before_since, visit_usage_files,
 };
 
 struct DedupeIndex {
@@ -282,7 +284,7 @@ fn load_entries_with_mode(
             ),
         );
         pruned = split.pruned;
-        let files = split.kept;
+        let mut files = split.kept;
         debug_log(
             shared,
             format!(
@@ -290,10 +292,17 @@ fn load_entries_with_mode(
                 files.len()
             ),
         );
-        read_usage_files(files, shared.single_thread, read)
+        read_discovered_paths(
+            shared.single_thread,
+            |visit| std::mem::take(&mut files).into_iter().for_each(visit),
+            read,
+        )
     } else {
-        let files = discover_usage_files(&paths, project_filter, diagnostics);
-        let loaded_files = read_usage_files(files, shared.single_thread, read);
+        let loaded_files = read_discovered_paths(
+            shared.single_thread,
+            |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
+            read,
+        );
         debug_log(
             shared,
             format!("Found {} JSONL usage files", loaded_files.len()),
