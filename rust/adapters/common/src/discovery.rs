@@ -81,7 +81,8 @@ type ConsumeFiles<'a> = dyn Fn(&mut dyn Iterator<Item = DiscoveredFile>) + Sync 
 #[inline(never)]
 fn read_discovered_in_parallel(discover: &mut DiscoverFiles<'_>, consume: &ConsumeFiles<'_>) {
     let parallelism = thread::available_parallelism().map_or(1, usize::from);
-    let workers = parallelism.saturating_sub(1).max(1);
+    let reserved = (parallelism / 3).max(1);
+    let workers = parallelism.saturating_sub(reserved).max(1);
     let queue = &WorkQueue::new(workers);
     thread::scope(|scope| {
         let _producer = QueueLifetime {
