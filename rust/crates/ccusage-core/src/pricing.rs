@@ -2102,6 +2102,9 @@ impl PricingMap {
                 .map(|(key, _)| key)
                 .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
                 .filter(|key| {
+                    table.primary.pricing_rows.is_none() || matches_service_plan(key, model)
+                })
+                .filter(|key| {
                     fuzzy != Fuzzy::ShorterKeys
                         || contains_pricing_key(
                             normalized.as_ref(),
@@ -2509,6 +2512,28 @@ fn models_dev_entry_has_required_cost(value: &Value) -> bool {
             cost.get("input").is_some_and(Value::is_number)
                 && cost.get("output").is_some_and(Value::is_number)
         })
+}
+
+fn matches_service_plan(candidate: &str, request: &str) -> bool {
+    fn qualified_parts(id: &str) -> impl Iterator<Item = &str> {
+        id.split(['-', '.', '@', '/', ':', '_'])
+    }
+
+    qualified_parts(candidate)
+        .filter(|part| {
+            matches!(
+                *part,
+                "batch"
+                    | "flex"
+                    | "priority"
+                    | "fast"
+                    | "ultrafast"
+                    | "nitro"
+                    | "highspeed"
+                    | "free"
+            )
+        })
+        .all(|plan| qualified_parts(request).any(|part| part == plan))
 }
 
 /// Matches pricing keys across provider/model aliases while preserving version boundaries.
@@ -6749,6 +6774,35 @@ mod tests {
             pricing.context_limit("claude-haiku-4.5"),
             pricing.context_limit("claude-haiku-4-5")
         );
+    }
+
+    #[test]
+    fn service_plan_variants_require_the_requested_plan() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "vendor/model-2.5-flex": {"input_cost_per_token": 1, "output_cost_per_token": 2},
+            "priority/vendor/model-2.5": {"input_cost_per_token": 7, "output_cost_per_token": 8},
+            "vendor/model-2.5-batch": {"input_cost_per_token": 9, "output_cost_per_token": 10},
+            "model-2.5": {"input_cost_per_token": 3, "output_cost_per_token": 4}
+        }"#,
+        );
+
+        assert_eq!(pricing.find("vendor/model-2.5").unwrap().input, 3.0);
+        assert_eq!(pricing.find("vendor/model-2-5-flex").unwrap().input, 1.0);
+        assert_eq!(
+            pricing.find("priority/vendor/model-2.5").unwrap().input,
+            7.0
+        );
+        assert_eq!(pricing.find("vendor/model-2.5-batch").unwrap().input, 9.0);
+    }
+
+    #[test]
+    fn standard_google_flash_uses_the_primary_rate() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let entry = pricing.find("google/gemini-2.5-flash").unwrap();
+        assert_eq!((entry.input, entry.output), (0.0000003, 0.0000025));
     }
 
     #[test]

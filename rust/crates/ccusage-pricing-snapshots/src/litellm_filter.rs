@@ -83,6 +83,7 @@ fn is_embedded_model(model: &str) -> bool {
         || model.starts_with("deepseek-")
         || model.starts_with("deepseek/")
         || model.starts_with("openrouter/openai/")
+        || matches!(model, "gemini-2.5-flash" | "gemini-2.5-flash-lite")
 }
 
 #[cfg(test)]
