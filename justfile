@@ -94,6 +94,9 @@ fmt:
 check:
     nix flake check
 
+hawk:
+    cargo hawk check --manifest-path rust/Cargo.toml -D warnings
+
 # Regenerate apps/ccusage/config-schema.json from the Rust source
 schema:
     nix run .#generate-schema

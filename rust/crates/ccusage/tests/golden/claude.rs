@@ -192,6 +192,31 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         instant("2025-12-30T10:08:00Z"),
     );
 
+    write(
+        &format!("{ALPHA}/{alpha}/subagents/workflows/wf-golden/agent-run.jsonl"),
+        &[
+            entry(
+                "2025-12-30T10:00:00.000Z",
+                alpha,
+                Some("req-workflow-replay"),
+                "msg_a1",
+                SONNET,
+                r#""input_tokens":1000,"output_tokens":200,"cache_creation_input_tokens":300,"cache_read_input_tokens":4000"#,
+                r#","isSidechain":true"#,
+            ),
+            entry(
+                "2025-12-31T09:30:00.000Z",
+                alpha,
+                Some("req-workflow-own"),
+                "msg_workflow_own",
+                HAIKU,
+                r#""input_tokens":80,"output_tokens":25,"cache_read_input_tokens":150"#,
+                r#","isSidechain":true,"costUSD":0.007"#,
+            ),
+        ],
+        instant("2025-12-31T09:31:00Z"),
+    );
+
     // Nested transcript: the session ID is the directory name.
     let beta = "sess-beta-1";
     let gateway = |timestamp: &str| {
@@ -320,6 +345,20 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
         hook(r#","context_window":{"total_input_tokens":50000,"context_window_size":200000}"#);
 
     vec![
+        Case::new(
+            "session",
+            "workflow_parent",
+            &[
+                "claude",
+                "session",
+                "--offline",
+                "--json",
+                "--id",
+                "sess-alpha-1",
+                "--mode",
+                "display",
+            ],
+        ),
         Case::new(
             "daily",
             "json_instances",
@@ -629,7 +668,7 @@ fn session_id_orders_entries_without_reordering_aggregation() {
             .iter()
             .map(|entry| entry["inputTokens"].as_u64().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(inputs, [0, 200, 300, 400, 250, 700, 120, 50, 500, 1000]);
+        assert_eq!(inputs, [0, 200, 300, 400, 250, 700, 80, 120, 50, 500, 1000]);
         actual.as_object_mut().unwrap().remove("entries");
         assert_eq!(actual, expected);
     }

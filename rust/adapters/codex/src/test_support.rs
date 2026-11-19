@@ -86,12 +86,8 @@ pub(crate) fn load_rollouts(
 pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
     let diagnostics = Diagnostics::new("codex");
     let files = paths::collect_codex_usage_files(dir, &diagnostics);
-    let plan = CodexReplayPlan::new(
-        crate::replay::read_session_metadata([(dir, files.as_slice())], true),
-        None,
-        true,
-        &diagnostics,
-    );
+    let selection = [(dir, files.as_slice())];
+    let plan = CodexReplayPlan::for_selection(&selection, &selection, true, &diagnostics);
     let mut events = Vec::new();
     for file in &files {
         parser::visit_codex_session_file_with_diagnostics(

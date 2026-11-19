@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 668244,
-    "inputTokens": 1171429,
-    "outputTokens": 37349,
-    "totalCost": 15.369217170000004,
-    "totalTokens": 1887685,
+    "cacheReadTokens": 668394,
+    "inputTokens": 1171509,
+    "outputTokens": 37374,
+    "totalCost": 15.376161470000003,
+    "totalTokens": 1887940,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -44,8 +44,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 9001,
-      "cacheReadTokens": 668244,
-      "inputTokens": 1171429,
+      "cacheReadTokens": 668394,
+      "inputTokens": 1171509,
       "metadata": {
         "agents": [
           "amp",
@@ -73,12 +73,12 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1620,
-          "cacheReadTokens": 52700,
-          "cost": 4.031115,
-          "inputTokens": 10880,
+          "cacheReadTokens": 52850,
+          "cost": 4.038115,
+          "inputTokens": 10960,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 4088,
-          "storedCost": 4.0
+          "outputTokens": 4113,
+          "storedCost": 4.007
         },
         {
           "cacheCreationTokens": 601,
@@ -425,18 +425,18 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00009075,
           "inputTokens": 11,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 22
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -684,17 +684,17 @@ exit: 0
         "opencode-mystery-1",
         "opus",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen/qwen3-coder",
         "qwen3-coder-plus",
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 37349,
+      "outputTokens": 37374,
       "period": "2025-12-29",
-      "totalCost": 15.369217170000004,
-      "totalTokens": 1887685
+      "totalCost": 15.376161470000003,
+      "totalTokens": 1887940
     }
   ]
 }

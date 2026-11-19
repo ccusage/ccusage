@@ -383,17 +383,13 @@ fn visit_codex_session_file_inner(
             Ok(Some(line)) => line,
             Ok(None) => break,
             Err(_) => {
-                diagnostics.record(Skip::unit(
-                    path,
-                    SkipKind::ReadInterrupted,
-                    "rollout read failed",
-                ));
+                super::reader::record_rollout_read_failure(path, diagnostics);
                 break;
             }
         };
         line_number = line_number.saturating_add(1);
         let first_metadata = stop_at_fork.take().map(|metadata| {
-            *metadata = session_metadata_from_line(line);
+            *metadata = session_metadata_from_line(path, line);
             metadata.clone()
         });
         if first_metadata
@@ -410,7 +406,7 @@ fn visit_codex_session_file_inner(
                 && !matches!(replay.state, CodexReplayState::Done)
                 && SESSION_META_MARKER.matches(line))
         {
-            let metadata = first_metadata.unwrap_or_else(|| session_metadata_from_line(line));
+            let metadata = first_metadata.unwrap_or_else(|| session_metadata_from_line(path, line));
             if metadata.is_session_meta {
                 if replay.burst.session_start.is_none() {
                     replay.burst.session_start = metadata.timestamp;
@@ -976,7 +972,7 @@ fn codex_log_model_fallback(model: &str, timestamp: TimestampMs) -> Option<&'sta
     Some(routed.map_or(CODEX_AUTO_REVIEW_DEFAULT_MODEL, |fallback| fallback.model))
 }
 
-fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
+pub(super) fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
     let relative = path.trim_prefix(sessions_dir);
     let mut session_id = uncompressed_rollout_path(relative)
         .with_extension("")

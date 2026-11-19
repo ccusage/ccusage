@@ -38,9 +38,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0001254,
+          "cost": 0.00006969999999999999,
           "inputTokens": 310,
-          "modelName": "qwen-3-235b",
+          "modelName": "qwen-3-30b",
           "outputTokens": 65
         },
         {
@@ -57,12 +57,12 @@ exit: 0
         "claude-sonnet-4-20250514",
         "qwen3-coder-plus",
         "qwen-mystery-1",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-2.5-72b-instruct"
       ],
       "month": "2025-12",
       "outputTokens": 1981,
-      "totalCost": 0.0189804,
+      "totalCost": 0.018924700000000003,
       "totalTokens": 12334
     },
     {
@@ -112,7 +112,7 @@ exit: 0
     "cacheReadTokens": 105460,
     "inputTokens": 308094,
     "outputTokens": 4254,
-    "totalCost": 0.34522140000000007,
+    "totalCost": 0.3451657000000001,
     "totalTokens": 418125,
     "unpricedModels": [
       "qwen-mystery-1",

@@ -109,3 +109,11 @@ mod tests {
         );
     }
 }
+
+pub(super) fn record_rollout_read_failure(path: &Path, diagnostics: &ccusage_core::Diagnostics) {
+    diagnostics.record(ccusage_core::Skip::unit(
+        path,
+        ccusage_core::SkipKind::ReadInterrupted,
+        "rollout read failed",
+    ));
+}

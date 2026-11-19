@@ -91,7 +91,7 @@ macro_rules! agents {
 
 agents! {
     Claude => "claude", "Claude Code" / "Claude", ALL_REPORTS, &["blocks", "statusline"];
-    Codex => "codex", "Codex", STANDARD_REPORTS, &[];
+    Codex => "codex", "Codex", STANDARD_REPORTS, &["statusline"];
     OpenCode => "opencode", "OpenCode", ALL_REPORTS, &[];
     Amp => "amp", "Amp", STANDARD_REPORTS, &[];
     Droid => "droid", "Droid", STANDARD_REPORTS, &[];

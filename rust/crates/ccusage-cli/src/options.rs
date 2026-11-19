@@ -53,7 +53,7 @@ fn option(arg: &str) -> Option<OptionSpec> {
         "--instances" => (false, false),
         "--all" => (false, false),
         "--by-agent" => (false, false),
-        "--include-claude-agent" => (false, false),
+        "--include-claude-agent" | "--mcp" => (false, false),
         "--cache" => (false, false),
         "--no-cache" => (false, false),
         _ => return None,

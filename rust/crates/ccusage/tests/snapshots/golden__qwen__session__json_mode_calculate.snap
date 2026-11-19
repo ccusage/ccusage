@@ -111,9 +111,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0001254,
+          "cost": 0.00006969999999999999,
           "inputTokens": 310,
-          "modelName": "qwen-3-235b",
+          "modelName": "qwen-3-30b",
           "outputTokens": 65
         },
         {
@@ -130,12 +130,12 @@ exit: 0
         "claude-sonnet-4-20250514",
         "qwen-mystery-1",
         "qwen3-coder-plus",
-        "qwen-3-235b"
+        "qwen-3-30b"
       ],
       "outputTokens": 2626,
       "projectPath": "beta",
       "sessionId": "sess-b",
-      "totalCost": 0.3319494,
+      "totalCost": 0.3318937,
       "totalTokens": 410249
     },
     {
@@ -194,7 +194,7 @@ exit: 0
     "cacheReadTokens": 105460,
     "inputTokens": 308094,
     "outputTokens": 4254,
-    "totalCost": 0.3452214,
+    "totalCost": 0.3451657,
     "totalTokens": 418125,
     "unpricedModels": [
       "qwen-mystery-1",

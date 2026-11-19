@@ -4,7 +4,7 @@ mod timezone;
 
 use std::{env, ffi::OsString, process};
 
-use ccusage_cli::{AgentCommandArgs, Command, WeekDay};
+use ccusage_cli::{AgentCommandArgs, CliConfig, Command, WeekDay};
 use ccusage_cli_parser::{parse_from_with_config, parse_report_args_with_config};
 use ccusage_config::ConfigContext;
 
@@ -37,8 +37,21 @@ pub(crate) fn parse() -> Command {
 /// Parses one command line against one view of the config, with the checks
 /// and resolutions that need the parsed command.
 fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
+    let timezone_flag = args.iter().filter_map(|arg| arg.to_str()).any(|arg| {
+        let name = arg.split_once('=').map_or(arg, |(name, _)| name);
+        matches!(name, "-z" | "--timezone")
+    });
     let mut command = parse_from_with_config(args, config, env!("CCUSAGE_VERSION"))?;
-    timezone::validate(timezone::of_command(&command))?;
+    if let Err(message) = timezone::validate(timezone::of_command(&command)) {
+        if timezone_flag || !config.warn_discovered_statusline_option(&message) {
+            return Err(message);
+        }
+        match &mut command {
+            Command::Statusline(args) => args.timezone = None,
+            Command::CodexStatusline(args) => args.shared.timezone = None,
+            _ => return Err(message),
+        }
+    }
     last_window::resolve(&mut command)?;
     Ok(command)
 }

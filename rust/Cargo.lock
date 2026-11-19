@@ -115,6 +115,7 @@ version = "0.0.0"
 dependencies = [
  "ccusage-adapter-all",
  "ccusage-adapter-claude",
+ "ccusage-adapter-codex",
  "ccusage-cli",
  "ccusage-cli-parser",
  "ccusage-config",

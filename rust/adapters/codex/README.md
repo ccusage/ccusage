@@ -13,6 +13,9 @@ into the usage entries the reports render.
 - `replay.rs` — detecting history that a forked or subagent session replays.
 - `report.rs` — the JSON and table shapes where they differ from the shared ones.
 - `speed.rs` — resolving the service tier that priced each request.
+- `statusline.rs` — usage summaries and the statusline command wiring.
+- `statusline/mcp.rs` — the native Codex stdio MCP statusline provider.
+- `statusline/native.rs` — background session and Today aggregation and cached native output.
 - `types.rs` — types that stay inside this adapter.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
@@ -37,6 +40,8 @@ source rows. Optional missing sources and deliberately suppressed records stay q
 lenient field conversions are unchanged.
 
 ## Public surface
+
+- `run_statusline`
 
 - `aggregate::load_groups`
 - `report::calculate_codex_model_cost`

@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309617,
-    "inputTokens": 1346544,
-    "outputTokens": 58595,
-    "totalCost": 28.141064294999996,
-    "totalTokens": 2735938,
+    "cacheReadTokens": 1309867,
+    "inputTokens": 1347024,
+    "outputTokens": 58670,
+    "totalCost": 28.148514844999998,
+    "totalTokens": 2736743,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -242,8 +242,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1306524,
-      "inputTokens": 1337050,
+      "cacheReadTokens": 1306774,
+      "inputTokens": 1337530,
       "metadata": {
         "agents": [
           "amp",
@@ -271,12 +271,12 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1670,
-          "cacheReadTokens": 58800,
-          "cost": 4.034480500000001,
-          "inputTokens": 11863,
+          "cacheReadTokens": 58950,
+          "cost": 4.0414805000000005,
+          "inputTokens": 11943,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 4430,
-          "storedCost": 4.0
+          "outputTokens": 4455,
+          "storedCost": 4.007
         },
         {
           "cacheCreationTokens": 601,
@@ -345,11 +345,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 33335,
-          "cost": 0.9198893749999999,
-          "inputTokens": 18430,
+          "cacheReadTokens": 33435,
+          "cost": 0.9203956249999999,
+          "inputTokens": 18830,
           "modelName": "gpt-5",
-          "outputTokens": 5243,
+          "outputTokens": 5293,
           "storedCost": 0.8500000000000001
         },
         {
@@ -707,19 +707,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.00010080000000000001,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -1006,17 +1006,17 @@ exit: 0
         "opencode-mystery-1",
         "opus",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen/qwen3-coder",
         "qwen3-coder-plus",
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56328,
+      "outputTokens": 56403,
       "period": "2025-12-29",
-      "totalCost": 24.306336044999995,
-      "totalTokens": 2719790
+      "totalCost": 24.313786594999996,
+      "totalTokens": 2720595
     },
     {
       "agent": "all",

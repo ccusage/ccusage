@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 2500,
-    "cacheReadTokens": 44200,
-    "inputTokens": 8127,
-    "outputTokens": 3634,
-    "totalCost": 0.8443259999999999,
-    "totalTokens": 58461,
+    "cacheReadTokens": 44350,
+    "inputTokens": 8207,
+    "outputTokens": 3659,
+    "totalCost": 0.8513259999999999,
+    "totalTokens": 58716,
     "unpricedModels": [
       "mystery-model-9000"
     ]
@@ -19,8 +19,8 @@ exit: 0
   "weekly": [
     {
       "cacheCreationTokens": 2500,
-      "cacheReadTokens": 44200,
-      "inputTokens": 8127,
+      "cacheReadTokens": 44350,
+      "inputTokens": 8207,
       "modelBreakdowns": [
         {
           "cacheCreation1hTokens": 1000,
@@ -51,19 +51,20 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 250,
+          "cost": 0.0071600000000000006,
+          "inputTokens": 130,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 45,
+          "storedCost": 0.007
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 300,
           "cost": 0.0048000000000000004,
           "inputTokens": 200,
           "modelName": "claude-opus-5-fast",
           "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100,
-          "cost": 0.00016,
-          "inputTokens": 50,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 20
         },
         {
           "cacheCreationTokens": 0,
@@ -83,9 +84,9 @@ exit: 0
         "claude-opus-5",
         "claude-opus-5-fast"
       ],
-      "outputTokens": 3634,
-      "totalCost": 0.8443259999999999,
-      "totalTokens": 58461,
+      "outputTokens": 3659,
+      "totalCost": 0.8513259999999999,
+      "totalTokens": 58716,
       "week": "2025-12-28"
     }
   ]

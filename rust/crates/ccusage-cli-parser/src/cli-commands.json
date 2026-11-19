@@ -248,6 +248,10 @@
 				{
 					"name": "session",
 					"description": "Show Codex token usage grouped by session"
+				},
+				{
+					"name": "statusline",
+					"description": "Show a one-line Codex usage summary"
 				}
 			]
 		},
@@ -268,6 +272,12 @@
 			"description": "Show Codex token usage grouped by session",
 			"usage": "ccusage codex session <OPTIONS>",
 			"options": "codex_session_options"
+		},
+		{
+			"path": ["codex", "statusline"],
+			"description": "Show a Codex usage summary, or serve its native statusline with --mcp",
+			"usage": "ccusage codex statusline <OPTIONS>",
+			"options": "codex_statusline_options"
 		},
 		{
 			"path": ["opencode"],

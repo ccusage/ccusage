@@ -298,9 +298,15 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
     {
         return (session_id.to_string(), relative[0].to_string());
     }
-    if relative.len() >= 4 && relative.get(relative.len() - 2) == Some(&"subagents") {
-        let session_id = relative[relative.len() - 3].to_string();
-        let project_path = relative[..relative.len() - 3].join(std::path::MAIN_SEPARATOR_STR);
+    if let Some(subagents_index) = relative
+        .iter()
+        .enumerate()
+        .take(relative.len().saturating_sub(1))
+        .skip(2)
+        .find_map(|(index, part)| (*part == "subagents").then_some(index))
+    {
+        let session_id = relative[subagents_index - 1].to_string();
+        let project_path = relative[..subagents_index - 1].join(std::path::MAIN_SEPARATOR_STR);
         return (
             session_id,
             if project_path.is_empty() {

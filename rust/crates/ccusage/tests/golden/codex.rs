@@ -26,6 +26,8 @@ const COMPACTING_FORK: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ARCHIVED_COPY: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const MISSING_PARENT: &str = "99999999-9999-4999-8999-999999999999";
 
+const REPLACEMENT: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
 /// Rollout path below a sessions directory; the session ID omits `.jsonl`.
 fn rollout(date: &str, time: &str, id: &str) -> String {
     format!(
@@ -691,6 +693,21 @@ service_tier = "fast"
         instant("2025-12-31T08:01:00Z"),
     );
 
+    let replacement = rollout("2026-01-02", "10-30-00", &format!("{MAIN}_{REPLACEMENT}"));
+    write(
+        &format!("work/sessions/{replacement}"),
+        &[
+            meta("2026-01-02T10:30:00.000Z", MAIN, ""),
+            turn("2026-01-02T10:30:00.001Z", &format!(r#""model":"{GPT5}""#)),
+            count(
+                "2026-01-02T10:31:00.000Z",
+                Some(&usage(500, 100, 50, 0)),
+                None,
+            ),
+        ],
+        instant("2026-01-02T10:32:00Z"),
+    );
+
     let homes = vec![
         root.join("codex/work").into_os_string(),
         root.join("codex/personal").into_os_string(),
@@ -702,7 +719,29 @@ service_tier = "fast"
 /// loader.
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
     let thread_url = format!("codex://threads/{SUBAGENT}");
+    let physical = rollout("2025-12-30", "10-00-00", MAIN).replace(".jsonl", "");
     vec![
+        Case::new(
+            "statusline",
+            "session_physical_json",
+            &["codex", "statusline", "--offline", "--json", "--id", &physical],
+        ),
+        Case::new("statusline", "today_json", &["codex", "statusline", "--offline", "--json"]),
+        Case::new("statusline", "today_table", &["codex", "statusline", "--offline"]),
+        Case::new("statusline", "today_no_cost", &["codex", "statusline", "--offline", "--no-cost"]),
+        // At the fixed clock it is already January 3 in Kiritimati.
+        Case::new("statusline", "today_kiritimati", &["codex", "statusline", "--offline", "--json", "--timezone", "Pacific/Kiritimati"]),
+        Case::new("statusline", "range_json", &["codex", "statusline", "--offline", "--json", "--since", "20251231", "--until", "20260101"]),
+        Case::new("statusline", "session_json", &["codex", "statusline", "--offline", "--json", "--id", MAIN]),
+        Case::new("statusline", "session_outside_window", &["codex", "statusline", "--offline", "--json", "--id", MAIN, "--since", "20990101", "--until", "20990101"]),
+        Case::new("statusline", "session_missing", &["codex", "statusline", "--offline", "--json", "--id", "missing"]),
+        Case::new("statusline", "native_provider", &["codex", "statusline", "--offline", "--mcp"])
+            .stdin(concat!(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"resources/list\"}\n",
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"resources/read\",\"params\":{\"uri\":\"ui://ccusage/codex-statusline\"}}\n",
+                "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"ccusage_codex_statusline\"}}\n"
+            )),
         Case::new(
             "daily",
             "json_speed_standard",

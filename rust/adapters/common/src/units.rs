@@ -39,7 +39,7 @@ impl UnitError {
     /// A unit that ends part-way through what its format promises, such as a
     /// compressed stream cut inside a frame, described by `detail`. Like a
     /// truncated JSON document, it reads as still being written while the
-    /// unit was modified within [`IN_PROGRESS_WINDOW`], and is skipped as
+    /// unit was modified within the in-progress window, and is skipped as
     /// invalid data after; see [`Self::record`].
     pub fn unfinished(detail: impl Into<String>) -> Self {
         Self {
@@ -93,7 +93,7 @@ impl UnitError {
     /// written when its read failed held no usage to lose: the agent removed
     /// it after discovery, or has not finished writing it. Only `--debug`
     /// names such a unit. A document cut short counts as still being written
-    /// only while the unit was modified within [`IN_PROGRESS_WINDOW`];
+    /// only while the unit was modified within the in-progress window;
     /// otherwise it stays truncated and is skipped as invalid data.
     #[cold]
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
@@ -234,8 +234,8 @@ pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> 
     })
 }
 
-/// Reads `files` like [`read_files_parallel`], and records a unit whose read
-/// fails in `diagnostics` instead of leaving that to each call site.
+/// Reads `files` in parallel unless `single_thread` is set and records failed
+/// reads in `diagnostics`.
 ///
 /// Returns one slot per file, in file order; `None` marks a failed unit, so a
 /// caller that tracks relationships between files can tell it from one that

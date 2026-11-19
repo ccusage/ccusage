@@ -3,10 +3,10 @@ use std::{collections::BTreeMap, ffi::OsString, num::NonZeroU32};
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
-    AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, ColorChoice,
-    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SessionLength,
-    SharedArgs, SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed,
+    CodexStatuslineArgs, ColorChoice, Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs,
+    SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 use ccusage_cli::{command_tokens, is_shared_flag};
 
@@ -74,6 +74,7 @@ where
         return Err(message.to_string());
     }
     let mut shared = SharedArgs::with_defaults();
+    shared.offline = matches!(command_tokens(&parser.args).as_slice(), [agent, report, ..] if agent == "codex" && report == "statusline");
     config.apply_shared(&mut shared);
     let mut root_options = RootOptions::default();
     while let Some(arg) = parser.peek() {
@@ -97,12 +98,13 @@ where
         }
     }
 
-    let command = match parser.next() {
+    let mut command = match parser.next() {
         None => Command::All(root_options.into_agent_args(shared.clone(), AgentReportKind::Daily)),
         Some(command) => {
             parse_command(&command, &mut parser, shared.clone(), config, root_options)?
         }
     };
+    recover_statusline_date_window(&mut command, &parser.args, config);
     parser.finish()?;
     if let Some(message) = last_option_error(&command, &shared) {
         return Err(message);
@@ -154,8 +156,8 @@ fn parse_command(
     config: &dyn CliConfig,
     root_options: RootOptions,
 ) -> Result<Command, String> {
-    let statusline =
-        command == "statusline" || (command == "claude" && parser.peek() == Some("statusline"));
+    let statusline = command == "statusline"
+        || (matches!(command, "claude" | "codex") && parser.peek() == Some("statusline"));
     if root_options.is_used() && !accepts_root_options(command) && !statusline {
         return Err(format!("Unknown option '{}'", root_options.first_flag()));
     }
@@ -598,7 +600,14 @@ fn parse_codex_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, StandardAgent::Codex)?;
+    let statusline = parser.peek() == Some("statusline");
+    let kind = if statusline {
+        parser.next();
+        AgentReportKind::Session
+    } else {
+        parse_agent_report_kind(parser, StandardAgent::Codex)?
+    };
+    let mut mcp = false;
     let mut options = config.agent_options("codex");
     let mut session_id = None;
     while parser.peek().is_some() {
@@ -610,8 +619,18 @@ fn parse_codex_command(
             "-i" | "--id" if kind == AgentReportKind::Session => {
                 session_id = Some(parser.value_for("--id")?)
             }
+            "--mcp" if statusline => mcp = true,
             flag => return Err(format!("Unknown codex option '{flag}'")),
         }
+    }
+    if statusline {
+        shared.offline |= mcp;
+        return Ok(Command::CodexStatusline(CodexStatuslineArgs {
+            shared,
+            session_id,
+            codex_speed: options.codex_speed,
+            mcp,
+        }));
     }
     Ok(Command::Agent(
         StandardAgent::Codex,
@@ -831,7 +850,16 @@ fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
 
     let display = spec.label;
     let claude = AgentId::Claude.spec();
-    let message = if claude.extra_commands.contains(&report.as_str()) {
+    let providers = ccusage_cli::AGENTS
+        .iter()
+        .filter(|provider| provider.extra_commands.contains(&report.as_str()))
+        .map(|provider| provider.label)
+        .collect::<Vec<_>>();
+    let message = if let [first, second] = providers.as_slice() {
+        format!(
+            "The \"{report}\" command is available for {first} and {second} usage.\nUse \"ccusage {agent} daily\" for {display} usage reports."
+        )
+    } else if claude.extra_commands.contains(&report.as_str()) {
         format!(
             "The \"{report}\" report is only available for {} usage.\nUse \"ccusage {agent} daily\" for {display} usage reports.",
             claude.label
@@ -859,7 +887,10 @@ fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
 }
 
 fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {
-    if matches!(command, Command::Statusline(_)) {
+    if matches!(
+        command,
+        Command::Statusline(_) | Command::CodexStatusline(_)
+    ) {
         return None;
     }
     let shared = command.shared().unwrap_or(root_shared);
@@ -879,10 +910,41 @@ fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<Stri
     None
 }
 
+fn recover_statusline_date_window(command: &mut Command, flags: &[String], config: &dyn CliConfig) {
+    if !matches!(command, Command::CodexStatusline(_)) {
+        return;
+    }
+    let Some(message) = date_window_error(command) else {
+        return;
+    };
+    let Command::CodexStatusline(args) = command else {
+        return;
+    };
+    let has_flag = |short: &str, long: &str| {
+        flags.iter().any(|arg| {
+            let name = arg.split_once('=').map_or(arg.as_str(), |(name, _)| name);
+            name == short || name == long
+        })
+    };
+    let since_flag = has_flag("-s", "--since");
+    let until_flag = has_flag("-u", "--until");
+    if !(since_flag && until_flag) && config.warn_discovered_statusline_option(&message) {
+        if !since_flag {
+            args.shared.since = None;
+        }
+        if !until_flag {
+            args.shared.until = None;
+        }
+    }
+}
+
 /// Both bounds are already normalized to `YYYYMMDD`, so a plain string comparison
 /// orders them. A reversed window would otherwise load everything and print an
 /// empty report that looks like missing data.
 fn date_window_error(command: &Command) -> Option<String> {
+    if matches!(command, Command::CodexStatusline(args) if args.mcp || args.session_id.is_some()) {
+        return None;
+    }
     let shared = command.shared()?;
     let since = shared.since.as_deref()?;
     let until = shared.until.as_deref()?;

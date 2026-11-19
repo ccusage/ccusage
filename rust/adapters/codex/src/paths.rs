@@ -132,7 +132,10 @@ impl CodexFileEligibility {
         }
         Some(Self {
             since_date,
-            until_path_date: until_millis.and_then(utc_path_date),
+            // Codex's local date can be a day ahead of the last included instant.
+            until_path_date: until_millis
+                .and_then(|end| end.checked_add(crate::MILLIS_PER_DAY - 1))
+                .and_then(utc_path_date),
             since_millis,
         })
     }

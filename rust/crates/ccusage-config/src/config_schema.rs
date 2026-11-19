@@ -103,6 +103,7 @@ pub struct CodexCommandsConfig {
     pub weekly: Option<CodexOptions>,
     pub monthly: Option<CodexOptions>,
     pub session: Option<CodexOptions>,
+    pub statusline: Option<CodexStatuslineOptions>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -633,6 +634,25 @@ pub struct CodexOptions {
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexStatuslineOptions {
+    pub json: Option<bool>,
+    pub jq: Option<String>,
+    pub mode: Option<ConfigCostMode>,
+    pub no_cost: Option<bool>,
+    #[schemars(with = "Option<String>")]
+    pub since: Option<ConfigDateBound>,
+    #[schemars(with = "Option<String>")]
+    pub until: Option<ConfigDateBound>,
+    pub timezone: Option<String>,
+    pub offline: Option<bool>,
+    pub no_offline: Option<bool>,
+    pub single_thread: Option<bool>,
+    pub speed: Option<ConfigCodexSpeed>,
+    pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PiOptions {
     #[serde(flatten)]
     pub shared: SharedOptions,
@@ -792,6 +812,11 @@ pub fn generate_config_schema_json() -> String {
     enrich_schema(&mut schema);
     add_schema_defaults(&mut schema);
     inline_schema_references(&mut schema);
+    if let Some(offline) = schema.pointer_mut(
+        "/properties/codex/properties/commands/properties/statusline/properties/offline",
+    ) {
+        offline["default"] = json!(true);
+    }
     wrap_root_schema(&mut schema);
     add_agent_command_keys(&mut schema);
     let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema).unwrap());
@@ -1529,6 +1554,25 @@ mod tests {
             }
         });
         assert!(serde_json::from_value::<StatuslineSpecificOptions>(map).is_err());
+    }
+
+    #[test]
+    fn codex_statusline_schema_exposes_shared_options_with_offline_default() {
+        let schema: Value = serde_json::from_str(&generate_config_schema_json()).unwrap();
+        assert_eq!(
+            property_default(&schema, &["codex", "commands", "statusline", "offline"]),
+            Some(&json!(true))
+        );
+        assert!(schema_property(&schema, &["codex", "commands", "statusline", "speed"]).is_some());
+        for option in ["breakdown", "compact", "order", "debug", "all", "color"] {
+            assert!(
+                schema_property(&schema, &["codex", "commands", "statusline", option]).is_none(),
+                "{option}"
+            );
+        }
+        for name in ["codex statusline", "codex:statusline"] {
+            assert!(schema_property(&schema, &["commands", name]).is_some());
+        }
     }
 
     #[test]

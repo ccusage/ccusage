@@ -11,6 +11,7 @@ in
       system,
       pkgs,
       craneLib,
+      rustToolchain,
       ...
     }:
     let
@@ -37,6 +38,7 @@ in
         inherit bunNodeModules;
         modelsDevSrc = inputs.models-dev;
       };
+      cargo-hawk = pkgs.callPackage ./cargo-hawk.nix { inherit rustToolchain; };
       actionlint = pkgs.callPackage ./actionlint.nix { };
       publint = pkgs.callPackage ../nix/tools/publint { inherit bunCli; };
     in
@@ -56,6 +58,7 @@ in
         default = ccusage;
         inherit
           actionlint
+          cargo-hawk
           ccusage
           changelogithub
           models-dev-pricing

@@ -1,6 +1,7 @@
 use ccusage_core::{Diagnostics, PricingMap};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
+    ffi::OsStr,
     hash::{Hash, Hasher},
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -20,7 +21,7 @@ use crate::{
 
 use super::{
     parser, paths,
-    replay::{CodexReplayFile, CodexReplayPlan, CodexSessionMetadata, read_session_metadata},
+    replay::{CodexReplayFile, CodexReplayPlan, CodexSessionMetadata},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -438,13 +439,69 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
         .iter()
         .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
         .collect::<Vec<_>>();
+    load_groups_from_file_selection(
+        &file_groups,
+        &files_by_group,
+        shared,
+        kind,
+        pricing,
+        diagnostics,
+    )
+    .map(|groups| (groups, detected))
+}
+
+pub(super) fn select_session_files(
+    file_groups: &[paths::CodexUsageFileGroup],
+    requested: &str,
+    logical_only: bool,
+) -> Vec<Vec<PathBuf>> {
+    let requested = super::normalize_session_id(requested);
+    let identity = |path: &Path| {
+        path.file_name()
+            .and_then(OsStr::to_str)
+            .and_then(super::rollout_identity)
+            .map(|(thread, rollout)| (thread == requested, thread != rollout))
+    };
+    let logical_session = logical_only
+        || file_groups
+            .iter()
+            .flat_map(|group| &group.files)
+            .any(|path| identity(path) == Some((true, true)));
+    file_groups
+        .iter()
+        .map(|group| {
+            group
+                .files
+                .iter()
+                .filter(|path| {
+                    identity(path).is_some_and(|(owned, _)| owned)
+                        || (!logical_session
+                            && super::session_id_matches(
+                                &parser::codex_session_id(&group.dir, path),
+                                requested,
+                            ))
+                })
+                .cloned()
+                .collect()
+        })
+        .collect()
+}
+
+pub(super) fn load_groups_from_file_selection(
+    file_groups: &[paths::CodexUsageFileGroup],
+    files_by_group: &[Vec<PathBuf>],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+) -> Result<BTreeMap<String, CodexGroup>> {
     let all_files = file_groups
         .iter()
         .map(|group| (group.dir.as_path(), group.files.as_slice()))
         .collect::<Vec<_>>();
     let selected_files = file_groups
         .iter()
-        .zip(&files_by_group)
+        .zip(files_by_group)
         .map(|(group, files)| (group.dir.as_path(), files.as_slice()))
         .collect::<Vec<_>>();
     aggregate_file_groups(
@@ -455,7 +512,6 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
         pricing,
         diagnostics,
     )
-    .map(|groups| (groups, detected))
 }
 
 /// Aggregates `selected` against the replay history of `available`, the
@@ -468,17 +524,12 @@ fn aggregate_file_groups(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    let bounded_plan = has_date_bounds(shared).then(|| {
-        let children = selected
-            .iter()
-            .flat_map(|(_, files)| files.iter().cloned())
-            .collect::<HashSet<_>>();
-        CodexReplayPlan::new(
-            read_session_metadata(available.iter().copied(), shared.single_thread),
-            Some(&children),
-            shared.single_thread,
-            diagnostics,
-        )
+    let filtered = selected
+        .iter()
+        .zip(available)
+        .any(|((_, files), (_, all_files))| files.len() != all_files.len());
+    let bounded_plan = (filtered || has_date_bounds(shared)).then(|| {
+        CodexReplayPlan::for_selection(selected, available, shared.single_thread, diagnostics)
     });
     let replay = bounded_plan
         .as_ref()

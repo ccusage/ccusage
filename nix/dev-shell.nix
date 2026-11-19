@@ -31,6 +31,7 @@
             config.packages.publint
 
             rustToolchain
+            config.packages.cargo-hawk
             cargo-edit
             cargo-insta
             # nixpkgs' rustc bundles an LLVM 23 profiler runtime while being

@@ -520,8 +520,12 @@ codex_record! { CodexSessionMeta {
 codex_record! { CodexSessionMetaPayload {
     id: Option<Cow<'a, str>> = "id" => Id, LossyString,
     forked_from_id: Option<Cow<'a, str>> = "forked_from_id" => ForkedFromId, LossyString,
+    history_base: Option<CodexHistoryBase> = "history_base" => HistoryBase, LossyObject,
     source: Option<CodexSessionSource<'a>> = "source" => Source, LossyObject,
 } }
+
+#[derive(serde::Deserialize)]
+pub(super) struct CodexHistoryBase {}
 
 codex_record! { CodexSessionSource {
     subagent: Option<CodexSubagent<'a>> = "subagent" => Subagent, LossyObject,

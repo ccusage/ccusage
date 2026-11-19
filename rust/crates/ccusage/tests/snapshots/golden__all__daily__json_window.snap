@@ -9,8 +9,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 6111,
-      "cacheReadTokens": 185916,
-      "inputTokens": 66914,
+      "cacheReadTokens": 186066,
+      "inputTokens": 66994,
       "metadata": {
         "agents": [
           "amp",
@@ -38,12 +38,12 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1020,
-          "cacheReadTokens": 35600,
-          "cost": 4.01659,
-          "inputTokens": 6500,
+          "cacheReadTokens": 35750,
+          "cost": 4.02359,
+          "inputTokens": 6580,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 2591,
-          "storedCost": 4.0
+          "outputTokens": 2616,
+          "storedCost": 4.007
         },
         {
           "cacheCreationTokens": 401,
@@ -288,9 +288,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0001254,
+          "cost": 0.00006969999999999999,
           "inputTokens": 310,
-          "modelName": "qwen-3-235b",
+          "modelName": "qwen-3-30b",
           "outputTokens": 65
         },
         {
@@ -380,15 +380,15 @@ exit: 0
         "kimi-for-coding",
         "kimi-k2-thinking",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19862,
+      "outputTokens": 19887,
       "period": "2025-12-31",
-      "totalCost": 11.664216755,
-      "totalTokens": 279413
+      "totalCost": 11.671161055,
+      "totalTokens": 279668
     },
     {
       "agent": "all",
@@ -917,11 +917,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 668244,
-    "inputTokens": 1171429,
-    "outputTokens": 37349,
-    "totalCost": 15.36921717,
-    "totalTokens": 1887685,
+    "cacheReadTokens": 668394,
+    "inputTokens": 1171509,
+    "outputTokens": 37374,
+    "totalCost": 15.376161470000001,
+    "totalTokens": 1887940,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

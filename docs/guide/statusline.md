@@ -1,8 +1,51 @@
-# Statusline Integration (Beta) 🚀
+# Statusline Summaries
 
-Display real-time usage statistics in your Claude Code status line.
+ccusage provides compact usage summaries for Claude Code and Codex. Claude Code provides hook data on stdin. Codex's native statusline reads a UI resource from ccusage's stdio MCP provider.
 
-## Overview
+## Codex native statusline (experimental)
+
+This integration was verified with the public Codex `0.171.0-alpha.13` prerelease. It requires Codex's experimental `tui_extensions_statusline` feature; Codex `0.170.0` stable does not include the native provider reader.
+
+Add the following to your user-level `~/.codex/config.toml`, using an absolute path to the installed `ccusage` binary:
+
+```toml
+[features]
+tui_extensions_statusline = true
+
+[mcp_servers.ccusage]
+command = "/absolute/path/to/ccusage"
+args = ["codex", "statusline", "--mcp"]
+
+[tui]
+status_line_provider = { server = "ccusage", tool = "ccusage_codex_statusline" }
+```
+
+Merge these entries into existing tables, then restart Codex. You can also select **ccusage Codex usage** in `/statusline`. Register the provider in the user config: Codex rejects project-level MCP providers for the statusline.
+
+Like the Claude Code statusline, the provider shows the current model and reasoning level, **session cost** and **today's cost**. Session usage includes the displayed thread's stored rollouts across days, including consumption before backtracking. Today's cost covers all local Codex threads in the selected timezone. Token counts describe recorded consumption rather than remaining context.
+
+```text
+🤖 GPT-6 Sol (medium) | Est. $0.23 session / $1.23 today | 15,000 tokens
+```
+
+Codex refreshes the resource approximately once per second. Log aggregation runs in the background: the provider shows a loading message initially and keeps the last completed summary while refreshing, so a slow log scan does not block native rendering. Each thread has its own cached display. ccusage reuses its existing model, service-tier, fork and pricing calculations, with embedded pricing and `pricingOverrides` and no network requests. No MCP SDK or additional runtime is bundled, and the app-only tool is excluded from model-facing tool declarations.
+
+For a custom Codex home, set its path explicitly in the MCP server registration, as Codex does not inherit `CODEX_HOME` into MCP servers by default:
+
+```toml
+[mcp_servers.ccusage.env]
+CODEX_HOME = "/absolute/path/to/your/codex-home"
+```
+
+Add `--no-cost` to the server's `args` to show session and Today token totals without prices, or `--speed <auto|standard|flex|fast>` to override the speed tier. Native mode ignores preview date filters and always shows the full session and today. A new thread without token usage has zero session usage; its Today total can include other threads. Before a thread is available, the provider clears its statusline.
+
+### Preview in a terminal
+
+Run `ccusage codex statusline` for a one-line preview. See [Codex statusline previews](/guide/codex/#statusline) for session selection, date filters, pricing options and JSON output. The native `--mcp` provider uses offline embedded pricing with your `pricingOverrides` and the thread selected by Codex.
+
+## Claude Code hook statusline (Beta)
+
+### Overview
 
 The `statusline` command provides a compact, real-time view of your Claude Code usage, designed to integrate with Claude Code's status line hooks. It shows:
 
@@ -12,9 +55,9 @@ The `statusline` command provides a compact, real-time view of your Claude Code 
 - 🔥 **Burn rate** - Token consumption rate with visual indicators
 - 🤖 **Active model** - The Claude model you're currently using, with its reasoning effort level when available
 
-## Setup
+### Setup
 
-### Configure settings.json
+#### Configure settings.json
 
 Add this to your `~/.claude/settings.json` or `~/.config/claude/settings.json`:
 
@@ -58,7 +101,7 @@ The `claude x` option requires the native version of Claude Code (not the npm ve
 
 By default, statusline uses **offline mode** with cached pricing data for optimal performance.
 
-### Online Mode (Optional)
+#### Online Mode (Optional)
 
 If you need the latest pricing data from LiteLLM API, you can explicitly enable online mode:
 
@@ -72,7 +115,7 @@ If you need the latest pricing data from LiteLLM API, you can explicitly enable 
 }
 ```
 
-### With Visual Burn Rate (Optional)
+#### With Visual Burn Rate (Optional)
 
 You can enhance the burn rate display with visual indicators:
 
@@ -88,7 +131,7 @@ You can enhance the burn rate display with visual indicators:
 
 See [Visual Burn Rate](#visual-burn-rate) section for all available options.
 
-### With Cost Source Options (Optional)
+#### With Cost Source Options (Optional)
 
 You can control how session costs are calculated and displayed:
 
@@ -104,7 +147,7 @@ You can control how session costs are calculated and displayed:
 
 See [Cost Source Options](#cost-source-options) section for all available modes.
 
-## Output Format
+### Output Format
 
 The statusline displays a compact, single-line summary. For the hook payload in the test fixtures, `ccusage statusline` prints:
 
@@ -120,7 +163,7 @@ When using `--cost-source both`, the session cost shows both Claude Code and ccu
 
 The reasoning effort level next to the model name comes from Claude Code (2.1.119+). All current Claude models report it; for older Claude Code versions or models without the effort parameter, the model segment is just the model name, such as `🤖 Opus 4.1`.
 
-### Components Explained
+#### Components Explained
 
 - **Model** (`🤖 Sonnet 4 (high)`): Currently active Claude model, followed by the reasoning effort level in parentheses (`low`, `medium`, `high`, `xhigh`, or `max`) when Claude Code provides it
 - **Session Cost** (`💰 $1.23 session`): Cost for the current conversation session (see [Cost Source Options](#cost-source-options) for different calculation modes)
@@ -139,7 +182,7 @@ The reasoning effort level next to the model name comes from Claude Code (2.1.11
 
 When no block is active, the block segment reads `No active block` and the burn rate segment is left out; the context segment is still printed, as `🧠 N/A` when no context size is known.
 
-## Technical Details
+### Technical Details
 
 The statusline command:
 
@@ -150,7 +193,7 @@ The statusline command:
 - **Uses offline mode by default** for instant response times without network dependencies
 - Can be configured to use online mode with `--no-offline` for latest pricing data
 
-## Beta Notice
+### Beta Notice
 
 ⚠️ This feature is currently in **beta**. More customization options and features are coming soon:
 
@@ -159,7 +202,7 @@ The statusline command:
 - Additional metrics display options
 - Session-specific cost tracking
 
-### Cost Source Options
+#### Cost Source Options
 
 The `--cost-source` option controls how session costs are calculated and displayed:
 
@@ -212,9 +255,9 @@ The ccusage portion honors the configured `defaults.mode` (or `--mode`): `displa
 - **Single cost modes** (`auto`, `ccusage`, `cc`): `💰 $1.23 session`
 - **Both mode**: `💰 ($1.23 cc / $0.19 ccusage) session`
 
-## Configuration
+### Configuration
 
-### Context Usage Thresholds
+#### Context Usage Thresholds
 
 You can customize the context usage color thresholds using command-line options or configuration files:
 
@@ -252,7 +295,7 @@ With these settings:
 }
 ```
 
-### Visual Burn Rate
+#### Visual Burn Rate
 
 You can enhance the burn rate display with visual status indicators using the `--visual-burn-rate` option:
 
@@ -290,7 +333,7 @@ bun x ccusage statusline --visual-burn-rate emoji
 - ⚠️ Moderate (Yellow)
 - 🚨 High (Red)
 
-### Model Label Aliases
+#### Model Label Aliases
 
 Some setups report very long model identifiers. For example, AWS Bedrock
 inference profiles surface full ARNs such as
@@ -329,9 +372,9 @@ Keys are matched exactly against the model's display name. Models without a
 matching alias are shown unchanged. See the [Configuration Guide](/guide/configuration)
 for more details.
 
-## Troubleshooting
+### Troubleshooting
 
-### No Output Displayed
+#### No Output Displayed
 
 If the statusline doesn't show:
 
@@ -339,14 +382,14 @@ If the statusline doesn't show:
 2. Check Claude Code logs for any errors
 3. Ensure you have valid usage data in your Claude data directory
 
-### Incorrect Costs
+#### Incorrect Costs
 
 If costs seem incorrect:
 
 - The command uses the same cost calculation as other ccusage commands
 - Verify with `ccusage daily` or `ccusage blocks` for detailed breakdowns
 
-## Related Commands
+### Related Commands
 
 - [`blocks`](./blocks-reports.md) - Detailed 5-hour billing block analysis
 - [`daily`](./daily-reports.md) - Daily usage reports

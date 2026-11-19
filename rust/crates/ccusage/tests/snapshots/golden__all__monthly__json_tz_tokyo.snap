@@ -37,8 +37,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 7274,
-      "cacheReadTokens": 120423,
-      "inputTokens": 64877,
+      "cacheReadTokens": 120573,
+      "inputTokens": 64957,
       "metadata": {
         "agents": [
           "amp",
@@ -200,6 +200,15 @@ exit: 0
           "outputTokens": 57
         },
         {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 750,
+          "cost": 0.008627999999999999,
+          "inputTokens": 913,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 167,
+          "storedCost": 0.007
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1900,
           "cost": 0.0085125,
@@ -230,14 +239,6 @@ exit: 0
           "inputTokens": 940,
           "modelName": "gemini-3.5-flash-high",
           "outputTokens": 120
-        },
-        {
-          "cacheCreationTokens": 20,
-          "cacheReadTokens": 600,
-          "cost": 0.0016279999999999999,
-          "inputTokens": 833,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 142
         },
         {
           "cacheCreationTokens": 30,
@@ -376,16 +377,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 13443,
+      "outputTokens": 13468,
       "period": "2025-12",
-      "totalCost": 9.73064088,
-      "totalTokens": 206687
+      "totalCost": 9.737640879999999,
+      "totalTokens": 206942
     },
     {
       "agent": "all",
       "cacheCreationTokens": 10491,
-      "cacheReadTokens": 1187194,
-      "inputTokens": 1280656,
+      "cacheReadTokens": 1187294,
+      "inputTokens": 1281056,
       "metadata": {
         "agents": [
           "amp",
@@ -457,11 +458,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 30355,
-          "cost": 0.861099375,
-          "inputTokens": 13708,
+          "cacheReadTokens": 30455,
+          "cost": 0.861605625,
+          "inputTokens": 14108,
           "modelName": "gpt-5",
-          "outputTokens": 4147,
+          "outputTokens": 4197,
           "storedCost": 0.8
         },
         {
@@ -822,19 +823,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0001254,
-          "inputTokens": 310,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.00010080000000000001,
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -1098,17 +1099,17 @@ exit: 0
         "opencode-mystery-1",
         "opus",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen/qwen3-coder",
         "qwen3-coder-plus",
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 44645,
+      "outputTokens": 44695,
       "period": "2026-01",
-      "totalCost": 18.407069664999998,
-      "totalTokens": 2525733
+      "totalCost": 18.407520214999998,
+      "totalTokens": 2526283
     },
     {
       "agent": "all",
@@ -1141,11 +1142,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309617,
-    "inputTokens": 1346544,
-    "outputTokens": 58595,
-    "totalCost": 28.141064295,
-    "totalTokens": 2735938,
+    "cacheReadTokens": 1309867,
+    "inputTokens": 1347024,
+    "outputTokens": 58670,
+    "totalCost": 28.148514844999998,
+    "totalTokens": 2736743,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

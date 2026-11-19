@@ -42,9 +42,9 @@ exit: 0
     },
     {
       "cacheCreationTokens": 1000,
-      "cacheReadTokens": 22700,
+      "cacheReadTokens": 22850,
       "firstActivity": "2025-12-30T10:00:00.000Z",
-      "inputTokens": 3520,
+      "inputTokens": 3600,
       "lastActivity": "2026-01-02T08:30:00.000Z",
       "modelBreakdowns": [
         {
@@ -54,6 +54,14 @@ exit: 0
           "inputTokens": 2220,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 780
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 250,
+          "cost": 0.007,
+          "inputTokens": 130,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 45
         },
         {
           "cacheCreation1hTokens": 400,
@@ -79,14 +87,6 @@ exit: 0
           "inputTokens": 200,
           "modelName": "claude-opus-5-fast",
           "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100,
-          "cost": 0.0,
-          "inputTokens": 50,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 20
         }
       ],
       "modelsUsed": [
@@ -96,11 +96,11 @@ exit: 0
         "claude-opus-5-fast",
         "claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 1780,
+      "outputTokens": 1805,
       "projectPath": "-Users-dev-alpha",
       "sessionId": "sess-alpha-1",
-      "totalCost": 0.07,
-      "totalTokens": 29000
+      "totalCost": 0.07700000000000001,
+      "totalTokens": 29255
     },
     {
       "cacheCreationTokens": 0,
@@ -174,11 +174,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 2500,
-    "cacheReadTokens": 44200,
-    "inputTokens": 8127,
-    "outputTokens": 3634,
-    "totalCost": 0.5800000000000001,
-    "totalTokens": 58461
+    "cacheReadTokens": 44350,
+    "inputTokens": 8207,
+    "outputTokens": 3659,
+    "totalCost": 0.587,
+    "totalTokens": 58716
   }
 }
 

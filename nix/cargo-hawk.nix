@@ -1,0 +1,102 @@
+# hawk, a workspace-aware Cargo lint for unnecessary Rust visibility.
+#
+# The upstream release is used rather than a source build because hawk links
+# against `rustc_private` and would otherwise need the `rustc-dev` component and
+# `RUSTC_BOOTSTRAP=1`. A prebuilt binary carries the same constraint in a simpler
+# form: it only runs on the compiler it was built against, which is why
+# rust-toolchain.toml pins the version in `supportedRustChannel` below.
+{
+  fetchurl,
+  lib,
+  stdenv,
+  stdenvNoCC,
+  autoPatchelfHook,
+  makeWrapper,
+  rustToolchain,
+}:
+let
+  version = "0.1.18";
+  supportedRustChannel = "1.100.0";
+  # sha256 values come from the `.sha256` file published beside each archive.
+  archives = {
+    aarch64-darwin = {
+      target = "aarch64-apple-darwin";
+      hash = "sha256-lrqfFQOhlOuHE/AG3yhugqCSmfP9c+su/5jMPODUzYI=";
+    };
+    aarch64-linux = {
+      target = "aarch64-unknown-linux-gnu";
+      hash = "sha256-sHjCULP3QrEQupwskGQI3RmNCKSn6AXszFuDtvoKHSI=";
+    };
+    x86_64-linux = {
+      target = "x86_64-unknown-linux-gnu";
+      hash = "sha256-hOK2WoVx0KqoT+H+oVSr2/iO//9k5ZqJCr+x1VSteKE=";
+    };
+  };
+  archive =
+    archives.${stdenv.hostPlatform.system}
+      or (throw "cargo-hawk has no release for ${stdenv.hostPlatform.system}");
+in
+stdenvNoCC.mkDerivation {
+  pname = "cargo-hawk";
+  inherit version;
+
+  src = fetchurl {
+    url = "https://github.com/astral-sh/hawk/releases/download/${version}/cargo-hawk-${archive.target}.tar.gz";
+    inherit (archive) hash;
+  };
+
+  # The archive holds a single cargo-hawk-<target>/ directory.
+  sourceRoot = "cargo-hawk-${archive.target}";
+
+  # The prebuilt Linux archives are ordinary glibc binaries, so they need the loader
+  # and rpath fixups; the Darwin ones resolve through @rpath as shipped.
+  nativeBuildInputs =
+    lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ]
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [ makeWrapper ];
+  # cargo-hawk-driver has a hard dependency on the compiler's librustc_driver, which
+  # is the concrete form of "only runs on the toolchain it was built against". The
+  # pinned toolchain carries the matching file because rust-overlay repackages the
+  # same upstream release, so it belongs in buildInputs rather than
+  # runtimeDependencies: the latter is written into the RUNPATH but is not part of
+  # the library set auto-patchelf resolves against, so the dependency is reported
+  # unsatisfied even once the path is on the RUNPATH.
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
+    stdenv.cc.cc.lib
+    rustToolchain
+  ];
+
+  installPhase = ''
+    runHook preInstall
+    mkdir -p "$out/bin"
+    # cargo-hawk invokes both helpers from its own directory.
+    install -m555 cargo-hawk cargo-hawk-driver cargo-hawk-rustdoc "$out/bin/"
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
+      mkdir -p "$out/libexec/hawk-tools"
+      for tool in cc c++ clang clang++; do
+        makeWrapper "${stdenv.cc}/bin/$tool" "$out/libexec/hawk-tools/$tool" \
+          --unset DYLD_LIBRARY_PATH --unset DYLD_FALLBACK_LIBRARY_PATH
+      done
+      for tool in ar ranlib; do
+        makeWrapper "${stdenv.cc.bintools}/bin/$tool" "$out/libexec/hawk-tools/$tool" \
+          --unset DYLD_LIBRARY_PATH --unset DYLD_FALLBACK_LIBRARY_PATH
+      done
+      wrapProgram "$out/bin/cargo-hawk" \
+        --prefix PATH : "$out/libexec/hawk-tools"
+    ''}
+    runHook postInstall
+  '';
+
+  passthru = { inherit supportedRustChannel; };
+
+  meta = {
+    description = "Workspace-aware Cargo lint for unnecessary public Rust APIs";
+    homepage = "https://github.com/astral-sh/hawk";
+    license = with lib.licenses; [
+      asl20
+      mit
+    ];
+    mainProgram = "cargo-hawk";
+    platforms = builtins.attrNames archives;
+    sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+  };
+}

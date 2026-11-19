@@ -32,7 +32,7 @@ pub struct ConfigContext {
     error: Option<String>,
     layers: BTreeMap<String, crate::layers::Layer>,
     warnings: RefCell<Vec<String>>,
-    threshold_origin: Option<(PathBuf, bool)>,
+    config_origin: Option<(PathBuf, bool)>,
 }
 
 impl ConfigContext {
@@ -44,15 +44,22 @@ impl ConfigContext {
         {
             return Self::empty(command);
         }
-        let (file, error, warnings) = load_config_value(scan_config_path(args).as_deref());
+        let explicit_path = scan_config_path(args);
+        let (file, error, warnings) = load_config_value(explicit_path.as_deref());
         let mut context = Self::empty(command);
         context.error = error;
         context.warnings = RefCell::new(warnings);
+        if explicit_path.is_none()
+            && context.command.report == "statusline"
+            && let Some(error) = context.error.take()
+        {
+            context.warnings.get_mut().push(error);
+        }
         if let Some(file) = file {
             context.pi_stores = file.pi_stores;
             context.pi_stores_error = file.pi_stores_error;
             context.layers = file.layers;
-            context.threshold_origin = Some((file.path, scan_config_path(args).is_some()));
+            context.config_origin = Some((file.path, explicit_path.is_some()));
         }
         context
     }
@@ -69,7 +76,7 @@ impl ConfigContext {
             error: None,
             layers: BTreeMap::new(),
             warnings: RefCell::new(Vec::new()),
-            threshold_origin: None,
+            config_origin: None,
         }
     }
 
@@ -86,7 +93,7 @@ impl ConfigContext {
             error: self.error.clone(),
             layers: self.layers.clone(),
             warnings: self.warnings.clone(),
-            threshold_origin: self.threshold_origin.clone(),
+            config_origin: self.config_origin.clone(),
         }
     }
 
@@ -136,7 +143,7 @@ impl ConfigContext {
                     let Some((_, path, _)) = invalid else {
                         return Err(config_error(error));
                     };
-                    let Some((file, strict)) = &self.threshold_origin else {
+                    let Some((file, strict)) = &self.config_origin else {
                         return Err(error);
                     };
                     let message = format!("{}: {path}.{field}: {error}", file.display());
@@ -585,6 +592,19 @@ impl ccusage_cli::CliConfig for ConfigContext {
             })
     }
 
+    fn warn_discovered_statusline_option(&self, message: &str) -> bool {
+        let Some((path, false)) = &self.config_origin else {
+            return false;
+        };
+        if self.command.report != "statusline" {
+            return false;
+        }
+        self.warnings
+            .borrow_mut()
+            .push(format!("{}: {message}", path.display()));
+        true
+    }
+
     fn apply_shared(&self, shared: &mut SharedArgs) {
         apply_config_to_shared(shared, self);
     }
@@ -1008,7 +1028,7 @@ mod tests {
             None,
             "statusline",
         );
-        config.threshold_origin = Some((PathBuf::from("selected.json"), false));
+        config.config_origin = Some((PathBuf::from("selected.json"), false));
         assert!(config.config_error().is_none());
         let mut args = StatuslineArgs::default();
         config.apply_statusline_args(&mut args);
@@ -1032,7 +1052,7 @@ mod tests {
             None,
             "statusline",
         );
-        config.threshold_origin = Some((PathBuf::from("selected.json"), false));
+        config.config_origin = Some((PathBuf::from("selected.json"), false));
         assert_eq!(
             config.context_thresholds(Some(60), None).unwrap(),
             ContextThresholds::new(60, 80).unwrap()
@@ -1384,7 +1404,7 @@ mod tests {
             None,
             "statusline",
         );
-        config.threshold_origin = Some((PathBuf::from("config.json"), true));
+        config.config_origin = Some((PathBuf::from("config.json"), true));
         let mut statusline = StatuslineArgs::default();
         apply_config_to_statusline_args(&mut statusline, &config);
 
@@ -2150,7 +2170,7 @@ mod tests {
             pi_stores_error: None,
             error,
             warnings: RefCell::new(warnings),
-            threshold_origin: None,
+            config_origin: None,
         }
     }
 

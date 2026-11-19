@@ -35,8 +35,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295309,
-      "inputTokens": 114180,
+      "cacheReadTokens": 295459,
+      "inputTokens": 114260,
       "metadata": {
         "agents": [
           "amp",
@@ -64,10 +64,10 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1020,
-          "cacheReadTokens": 35700,
-          "inputTokens": 6683,
+          "cacheReadTokens": 35850,
+          "inputTokens": 6763,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 2633
+          "outputTokens": 2658
         },
         {
           "cacheCreationTokens": 401,
@@ -338,7 +338,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 310,
-          "modelName": "qwen-3-235b",
+          "modelName": "qwen-3-30b",
           "outputTokens": 65
         },
         {
@@ -458,20 +458,20 @@ exit: 0
         "kimi-for-coding",
         "kimi-k2-thinking",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29896,
+      "outputTokens": 29921,
       "period": "2025-12",
-      "totalTokens": 453680
+      "totalTokens": 453935
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
-      "cacheReadTokens": 1012308,
-      "inputTokens": 1231353,
+      "cacheReadTokens": 1012408,
+      "inputTokens": 1231753,
       "metadata": {
         "agents": [
           "amp",
@@ -521,10 +521,10 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 12855,
-          "inputTokens": 8148,
+          "cacheReadTokens": 12955,
+          "inputTokens": 8548,
           "modelName": "gpt-5",
-          "outputTokens": 2993
+          "outputTokens": 3043
         },
         {
           "cacheCreationTokens": 0,
@@ -1042,9 +1042,9 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 28192,
+      "outputTokens": 28242,
       "period": "2026-01",
-      "totalTokens": 2278740
+      "totalTokens": 2279290
     },
     {
       "agent": "all",
@@ -1075,10 +1075,10 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309617,
-    "inputTokens": 1346544,
-    "outputTokens": 58595,
-    "totalTokens": 2735938,
+    "cacheReadTokens": 1309867,
+    "inputTokens": 1347024,
+    "outputTokens": 58670,
+    "totalTokens": 2736743,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

@@ -49,6 +49,21 @@ in
           passthru = { inherit clippyArgs; };
         }
       );
+      ccusage-hawk = craneLib.mkCargoDerivation (
+        commonArgs
+        // testArtifacts.consumerArgs
+        // {
+          pname = "ccusage-hawk";
+          src = rustSrc;
+          sourceRoot = "source/rust";
+          cargoLock = root + /rust/Cargo.lock;
+          cargoArtifacts = testArtifacts.hawkArtifacts;
+          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ config.packages.cargo-hawk ];
+          buildPhaseCargoCommand = ''
+            cargo hawk check --manifest-path Cargo.toml --target-dir "''${CARGO_TARGET_DIR:-target}" -D warnings
+          '';
+        }
+      );
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
@@ -111,6 +126,7 @@ in
           bun-nix
           ccusage-clippy
           ccusage-fmt
+          ccusage-hawk
           ;
         oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''
           oxlint --config nix/oxlint-check.json .

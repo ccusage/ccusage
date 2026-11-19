@@ -35,8 +35,9 @@
   "Every report command `bin` lists in its help: the top-level reports, then
   each agent's, an agent being a command whose own help lists commands.
   golden_matrix.rs checks those help pages against the reports the parser
-  accepts. statusline is left out: it reads a hook payload from stdin instead
-  of logs."
+  accepts. The comparison skips statusline because Claude needs a hook payload
+  on stdin and Codex takes its own set of options. The golden tests cover
+  those agent-specific cases."
   [bin]
   (let [help (fn [& command]
                (:out (system/run-checked (into [bin] (concat command ["--help"])) {}
@@ -299,15 +300,15 @@
 
 (defn diff-help-text []
   (str "Usage: diff-refs.bb [options] <base> <head>\n\n"
-       "Builds each git ref in release mode (or takes an existing binary path), runs every report\n"
-       "command the head binary's help lists with both binaries under the same arguments and\n"
+       "Builds each git ref in release mode (or takes an existing binary path), runs the shared report\n"
+       "commands listed in the head binary's help with both binaries under the same arguments and\n"
        "environment, and compares stdout, stderr, and exit code byte for byte. Without --real, both\n"
        "binaries read the golden matrix seeds of this checkout, exported by `cargo test`, at the\n"
        "golden clock: refs are built with the dev-only ccusage-core/test-clock feature when they\n"
        "declare it, and when either side cannot honor the clock (an older ref or a binary path)\n"
        "both run under the wall clock instead, with a notice. Variants\n"
        "cover JSON, tables, breakdowns, date windows, cost modes, and timezones. Agent-specific\n"
-       "options and statusline hook payloads are covered by the golden tests. Each command runs\n"
+       "options, including statusline, are covered by the golden tests. Each command runs\n"
        "twice per binary, then three more times per binary when the results disagree: a command\n"
        "whose base output is not reproducible is reported as unstable instead of different. Exits 0\n"
        "only when all commands succeed with identical output, 1 on a confirmed difference, and 2\n"

@@ -40,6 +40,43 @@ pub(super) struct CodexReplayFile<'a> {
 }
 
 impl CodexReplayPlan {
+    pub(super) fn for_selection<'a>(
+        selected: &[(&'a Path, &'a [PathBuf])],
+        available: &[(&'a Path, &'a [PathBuf])],
+        single_thread: bool,
+        diagnostics: &Diagnostics,
+    ) -> Self {
+        let mut files = read_session_metadata(selected.iter().copied(), single_thread, diagnostics);
+        let children = files
+            .iter()
+            .filter(|file| file.metadata.is_fork())
+            .map(|file| file.path.clone())
+            .collect::<HashSet<_>>();
+        if children.is_empty() {
+            return Self {
+                parent_by_child: HashMap::new(),
+                usage_by_parent: HashMap::new(),
+            };
+        }
+        let mut metadata = files
+            .drain(..)
+            .map(|file| (file.path.clone(), file))
+            .collect::<HashMap<_, _>>();
+        let missing = collect_replay_files(available.iter().copied())
+            .into_iter()
+            .filter(|(path, _)| !metadata.contains_key(path))
+            .collect::<Vec<_>>();
+        for file in read_replay_files(&missing, single_thread, diagnostics) {
+            metadata.insert(file.path.clone(), file);
+        }
+        let files = available
+            .iter()
+            .flat_map(|(_, paths)| paths.iter())
+            .filter_map(|path| metadata.remove(path))
+            .collect();
+        Self::new(files, Some(&children), single_thread, diagnostics)
+    }
+
     pub(super) fn new(
         files: Vec<CodexReplayFile<'_>>,
         children: Option<&HashSet<PathBuf>>,
@@ -164,18 +201,26 @@ fn collect_replay_files<'a>(
         .collect()
 }
 
-pub(super) fn read_session_metadata<'a>(
+fn read_session_metadata<'a>(
     groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
     single_thread: bool,
+    diagnostics: &Diagnostics,
 ) -> Vec<CodexReplayFile<'a>> {
-    let files = collect_replay_files(groups);
+    read_replay_files(&collect_replay_files(groups), single_thread, diagnostics)
+}
+
+fn read_replay_files<'a>(
+    files: &[(PathBuf, &'a Path)],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+) -> Vec<CodexReplayFile<'a>> {
     let read = |(path, sessions_dir): &(PathBuf, &'a Path)| CodexReplayFile {
         path: path.clone(),
         sessions_dir,
-        metadata: read_codex_session_metadata(path),
+        metadata: read_codex_session_metadata(path, diagnostics),
     };
     ccusage_adapter_common::map_parallel(
-        &files,
+        files,
         single_thread,
         ccusage_adapter_common::Split::ByCount,
         read,
@@ -259,18 +304,30 @@ impl CodexSessionMetadata {
     }
 }
 
-fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
-    let Ok((mut lines, _)) = open_rollout_lines(path, PROBE_BUFFER_SIZE) else {
-        return CodexSessionMetadata::default();
+fn read_codex_session_metadata(path: &Path, diagnostics: &Diagnostics) -> CodexSessionMetadata {
+    let (mut lines, _) = match open_rollout_lines(path, PROBE_BUFFER_SIZE) {
+        Ok(opened) => opened,
+        Err(failed) => {
+            ccusage_adapter_common::UnitError::new(
+                ccusage_core::SkipKind::Unreadable,
+                "rollout open failed",
+            )
+            .record(&failed, diagnostics);
+            return CodexSessionMetadata::default();
+        }
     };
-    let Ok(Some(line)) = lines.next_line() else {
-        return CodexSessionMetadata::default();
-    };
-    session_metadata_from_line(line)
+    match lines.next_line() {
+        Ok(line) => line.map_or_else(CodexSessionMetadata::default, |line| {
+            session_metadata_from_line(path, line)
+        }),
+        Err(_) => {
+            super::reader::record_rollout_read_failure(path, diagnostics);
+            CodexSessionMetadata::default()
+        }
+    }
 }
 
-/// Session metadata from a rollout's first line.
-pub(super) fn session_metadata_from_line(line: &[u8]) -> CodexSessionMetadata {
+pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
     let Ok(value) = serde_json::from_slice::<CodexSessionMeta<'_>>(line) else {
         return CodexSessionMetadata::default();
     };
@@ -283,17 +340,29 @@ pub(super) fn session_metadata_from_line(line: &[u8]) -> CodexSessionMetadata {
         .and_then(|subagent| subagent.thread_spawn.as_ref())
         .and_then(|spawn| spawn.parent_thread_id.as_deref())
         .filter(|id| !id.is_empty());
+    let session_id = payload.and_then(|payload| payload.id.as_deref());
+    let parent_id = payload
+        .filter(|payload| payload.history_base.is_none())
+        .and_then(|payload| {
+            payload
+                .forked_from_id
+                .as_deref()
+                .filter(|id| !id.is_empty())
+                .or(spawn_parent_id)
+        })
+        .filter(|_| {
+            !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(super::rollout_identity)
+                .is_some_and(|(thread, rollout)| thread != rollout && session_id == Some(thread))
+        })
+        .map(str::to_string);
     CodexSessionMetadata {
         is_session_meta: value.entry_type.as_deref() == Some("session_meta"),
         timestamp: codex_timestamp_instant(value.timestamp.as_ref()),
-        session_id: payload
-            .and_then(|payload| payload.id.as_deref())
-            .map(str::to_string),
-        parent_id: payload
-            .and_then(|payload| payload.forked_from_id.as_deref())
-            .filter(|id| !id.is_empty())
-            .or(spawn_parent_id)
-            .map(str::to_string),
+        session_id: session_id.map(str::to_string),
+        parent_id,
         spawned: spawn_parent_id.is_some(),
     }
 }
@@ -305,6 +374,7 @@ mod tests {
     #[test]
     fn metadata_keeps_a_spawn_parent_when_optional_fields_are_malformed() {
         let metadata = session_metadata_from_line(
+            Path::new("session.jsonl"),
             br#"{
             "type": "session_meta",
             "timestamp": 1767312000,
@@ -328,7 +398,7 @@ mod tests {
 
     #[test]
     fn metadata_uses_the_last_duplicate_identity() {
-        let metadata = session_metadata_from_line(br#"{
+        let metadata = session_metadata_from_line(Path::new("session.jsonl"), br#"{
             "type": "session_meta",
             "payload": {"id": "first", "id": "last", "forked_from_id": "old", "forked_from_id": "parent"}
         }"#);

@@ -277,6 +277,13 @@ fn command_snapshot(command: Command) -> Value {
             "contextMediumThreshold": args.context_thresholds.medium(),
             "debug": args.debug,
         }),
+        Command::CodexStatusline(args) => json!({
+            "type": "codex-statusline",
+            "shared": shared_snapshot(&args.shared),
+            "sessionId": args.session_id,
+            "speed": format!("{:?}", args.codex_speed),
+            "mcp": args.mcp,
+        }),
         Command::Agent(agent, args) => agent_command_snapshot(agent.spec().name, args),
     }
 }

@@ -1121,7 +1121,7 @@ fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table)
     }
 }
 
-pub(super) fn load_entries_with_native_sessions_with_progress(
+fn load_entries_with_native_sessions_with_progress(
     shared: &SharedArgs,
     kind: AgentReportKind,
     owner: ProgressOwner,

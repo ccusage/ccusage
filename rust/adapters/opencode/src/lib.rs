@@ -8,7 +8,8 @@ mod report;
 mod source;
 
 pub use loader::{LinkedEntry, load_entries_with_native_sessions};
-pub use report::{report_json, summarize_entries};
+pub use report::report_json;
+pub(crate) use report::summarize_entries;
 pub use source::SOURCE;
 
 use crate::{Result, cli::AgentCommandArgs, print_json_or_jq, sort_summaries, wants_json};
@@ -19,7 +20,7 @@ use crate::{Result, cli::AgentCommandArgs, print_json_or_jq, sort_summaries, wan
 /// The aggregate report lists which agents it found, and the loader narrows to
 /// `--since`/`--until` as it reads, so an out-of-range query cannot answer that
 /// question from the loaded entries alone.
-pub fn has_data() -> bool {
+pub(crate) fn has_data() -> bool {
     paths::paths().is_ok_and(|paths| paths.iter().any(|path| loader::has_source(path)))
 }
 

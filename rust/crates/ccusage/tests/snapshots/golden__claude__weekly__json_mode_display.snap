@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 2500,
-    "cacheReadTokens": 44200,
-    "inputTokens": 8127,
-    "outputTokens": 3634,
-    "totalCost": 0.5800000000000001,
-    "totalTokens": 58461
+    "cacheReadTokens": 44350,
+    "inputTokens": 8207,
+    "outputTokens": 3659,
+    "totalCost": 0.587,
+    "totalTokens": 58716
   },
   "weekly": [
     {
@@ -38,8 +38,8 @@ exit: 0
     },
     {
       "cacheCreationTokens": 2500,
-      "cacheReadTokens": 44200,
-      "inputTokens": 8027,
+      "cacheReadTokens": 44350,
+      "inputTokens": 8107,
       "modelBreakdowns": [
         {
           "cacheCreation1hTokens": 1000,
@@ -51,6 +51,14 @@ exit: 0
           "outputTokens": 1284
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 250,
+          "cost": 0.007,
+          "inputTokens": 130,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 45
+        },
+        {
           "cacheCreation1hTokens": 400,
           "cacheCreationTokens": 800,
           "cacheReadTokens": 19000,
@@ -58,14 +66,6 @@ exit: 0
           "inputTokens": 1800,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 1860
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100,
-          "cost": 0.0,
-          "inputTokens": 50,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 20
         },
         {
           "cacheCreationTokens": 0,
@@ -100,9 +100,9 @@ exit: 0
         "claude-opus-5",
         "claude-opus-5-fast"
       ],
-      "outputTokens": 3584,
-      "totalCost": 0.5700000000000001,
-      "totalTokens": 58311,
+      "outputTokens": 3609,
+      "totalCost": 0.577,
+      "totalTokens": 58566,
       "week": "2025-12-28"
     }
   ]

@@ -43,9 +43,9 @@ exit: 0
     },
     {
       "cacheCreationTokens": 1000,
-      "cacheReadTokens": 22700,
+      "cacheReadTokens": 22850,
       "firstActivity": "2025-12-30T10:00:00.000Z",
-      "inputTokens": 3520,
+      "inputTokens": 3600,
       "lastActivity": "2026-01-02T08:30:00.000Z",
       "modelBreakdowns": [
         {
@@ -68,19 +68,20 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 250,
+          "cost": 0.0071600000000000006,
+          "inputTokens": 130,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 45,
+          "storedCost": 0.007
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 300,
           "cost": 0.0048000000000000004,
           "inputTokens": 200,
           "modelName": "claude-opus-5-fast",
           "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100,
-          "cost": 0.00016,
-          "inputTokens": 50,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 20
         },
         {
           "cacheCreationTokens": 0,
@@ -99,11 +100,11 @@ exit: 0
         "claude-opus-5-fast",
         "claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 1780,
+      "outputTokens": 1805,
       "projectPath": "-Users-dev-alpha",
       "sessionId": "sess-alpha-1",
-      "totalCost": 0.18961999999999998,
-      "totalTokens": 29000
+      "totalCost": 0.19662,
+      "totalTokens": 29255
     },
     {
       "cacheCreationTokens": 1250,
@@ -178,11 +179,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 2500,
-    "cacheReadTokens": 44200,
-    "inputTokens": 8127,
-    "outputTokens": 3634,
-    "totalCost": 0.844326,
-    "totalTokens": 58461,
+    "cacheReadTokens": 44350,
+    "inputTokens": 8207,
+    "outputTokens": 3659,
+    "totalCost": 0.851326,
+    "totalTokens": 58716,
     "unpricedModels": [
       "mystery-model-9000"
     ]

@@ -15,6 +15,7 @@
         inherit pkgs rustToolchain craneLib;
         testArtifacts = import ./test-artifacts.nix {
           inherit craneLib;
+          cargoHawk = config.packages.cargo-hawk;
           inherit (config.packages.ccusage.passthru) depsOnlyArgs;
         };
       };

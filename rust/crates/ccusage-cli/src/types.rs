@@ -13,6 +13,7 @@ pub enum Command {
     Session(SessionArgs),
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
+    CodexStatusline(CodexStatuslineArgs),
     Agent(StandardAgent, AgentCommandArgs),
 }
 
@@ -32,6 +33,7 @@ impl Command {
             Self::Weekly(args) => Some(&args.shared),
             Self::Session(args) => Some(&args.shared),
             Self::Blocks(args) => Some(&args.shared),
+            Self::CodexStatusline(args) => Some(&args.shared),
             Self::Statusline(_) => None,
         }
     }
@@ -44,6 +46,7 @@ impl Command {
             Self::Weekly(args) => Some(&mut args.shared),
             Self::Session(args) => Some(&mut args.shared),
             Self::Blocks(args) => Some(&mut args.shared),
+            Self::CodexStatusline(args) => Some(&mut args.shared),
             Self::Statusline(_) => None,
         }
     }
@@ -54,7 +57,9 @@ impl Command {
             Self::Daily(_) => Some((PeriodUnit::Day, WeekDay::Monday)),
             Self::Monthly(_) => Some((PeriodUnit::Month, WeekDay::Monday)),
             Self::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
-            Self::Session(_) | Self::Blocks(_) | Self::Statusline(_) => None,
+            Self::Session(_) | Self::Blocks(_) | Self::Statusline(_) | Self::CodexStatusline(_) => {
+                None
+            }
         }
     }
 }
@@ -193,6 +198,14 @@ pub struct StatuslineArgs {
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
+}
+
+#[derive(Clone)]
+pub struct CodexStatuslineArgs {
+    pub shared: SharedArgs,
+    pub session_id: Option<String>,
+    pub codex_speed: CodexSpeed,
+    pub mcp: bool,
 }
 
 #[derive(Clone)]
@@ -391,6 +404,10 @@ pub trait CliConfig {
 
     fn config_error(&self) -> Option<&str> {
         None
+    }
+
+    fn warn_discovered_statusline_option(&self, _message: &str) -> bool {
+        false
     }
 
     fn apply_shared(&self, _shared: &mut SharedArgs) {}
