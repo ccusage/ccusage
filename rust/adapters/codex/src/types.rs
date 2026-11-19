@@ -190,6 +190,7 @@ pub const fn merge_codex_service_tiers(
 pub(super) struct CodexTokenUsageEvent {
     pub(crate) session_id: String,
     pub(crate) response_id: Option<String>,
+    pub(crate) record_response_id: Option<std::sync::Arc<str>>,
     pub(crate) timestamp: crate::TimestampMs,
     pub(crate) last_activity: String,
     pub(crate) model: String,

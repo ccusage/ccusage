@@ -40,6 +40,7 @@ in
       };
       cargo-hawk = pkgs.callPackage ./cargo-hawk.nix { inherit rustToolchain; };
       actionlint = pkgs.callPackage ./actionlint.nix { };
+      oxlint = pkgs.callPackage ../nix/tools/oxlint { inherit bunCli; };
       publint = pkgs.callPackage ../nix/tools/publint { inherit bunCli; };
     in
     {
@@ -62,6 +63,7 @@ in
           ccusage
           changelogithub
           models-dev-pricing
+          oxlint
           publint
           ;
       };

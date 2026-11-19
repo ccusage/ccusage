@@ -843,8 +843,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 2890,
-      "cacheReadTokens": 482328,
-      "inputTokens": 1104515,
+      "cacheReadTokens": 482428,
+      "inputTokens": 1104915,
       "metadata": {
         "agents": [
           "amp",
@@ -1003,6 +1003,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 1570,
+          "cost": 0.005591250000000001,
+          "inputTokens": 1700,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 327
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0050999999999999995,
           "inputTokens": 600,
@@ -1024,14 +1032,6 @@ exit: 0
           "inputTokens": 1300,
           "modelName": "[openclaw] claude-haiku-4-5-20251001",
           "outputTokens": 500
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 1470,
-          "cost": 0.00457875,
-          "inputTokens": 1300,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 277
         },
         {
           "cacheCreationTokens": 0,
@@ -1359,10 +1359,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 17487,
+      "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 3.705079815,
-      "totalTokens": 1608272
+      "totalCost": 3.706092315,
+      "totalTokens": 1608822
     },
     {
       "agent": "all",
@@ -1742,11 +1742,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309867,
-    "inputTokens": 1347024,
-    "outputTokens": 58670,
-    "totalCost": 28.146135925000006,
-    "totalTokens": 2736743,
+    "cacheReadTokens": 1309967,
+    "inputTokens": 1347424,
+    "outputTokens": 58720,
+    "totalCost": 28.147148425000005,
+    "totalTokens": 2737293,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

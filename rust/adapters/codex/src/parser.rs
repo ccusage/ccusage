@@ -78,6 +78,7 @@ struct CodexCompactionUsageState {
     pending_usage: HashMap<String, CodexPendingUsage>,
     emitted_response_ids: HashSet<String>,
     latest_usage_response_id: Option<String>,
+    latest_record_awaits_snapshot: bool,
     recorded_usage_timestamps: Option<HashMap<String, Option<TimestampMs>>>,
 }
 
@@ -593,6 +594,7 @@ fn visit_codex_session_entry(
         let event = CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: Some(response_id.clone()),
+            record_response_id: None,
             timestamp,
             last_activity,
             model,
@@ -607,6 +609,7 @@ fn visit_codex_session_entry(
         };
 
         compaction_usage.latest_usage_response_id = Some(response_id.clone());
+        compaction_usage.latest_record_awaits_snapshot = true;
 
         if compaction_usage
             .compacted_response_ids
@@ -684,6 +687,8 @@ fn visit_codex_session_entry(
         cumulative_advanced,
         delta,
     } = codex_token_count_usage(info, previous_totals);
+    let record_awaits_snapshot =
+        cumulative_advanced && std::mem::take(&mut compaction_usage.latest_record_awaits_snapshot);
     let Some((timestamp, last_activity)) = parsed_timestamp else {
         if info.is_some_and(|info| {
             info.last_token_usage != CodexUsageCandidate::Missing
@@ -704,6 +709,7 @@ fn visit_codex_session_entry(
     // record and its marker. Remote v2 compaction omits that advance, so only
     // the latter needs an extra event. Matching the latest response keeps an
     // unrelated request with identical token counts from consuming it.
+    let mut record_response_id = None;
     if cumulative_advanced
         && let Some(response_id) = compaction_usage.latest_usage_response_id.as_ref()
         && compaction_usage
@@ -716,6 +722,7 @@ fn visit_codex_session_entry(
                     )
             })
     {
+        record_response_id = record_awaits_snapshot.then(|| response_id.as_str().into());
         compaction_usage.pending_usage.remove(response_id);
         compaction_usage
             .emitted_response_ids
@@ -735,6 +742,7 @@ fn visit_codex_session_entry(
         CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: None,
+            record_response_id,
             timestamp,
             last_activity,
             model,
@@ -799,6 +807,7 @@ fn visit_codex_exec_usage_event(
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
         response_id: None,
+        record_response_id: None,
         timestamp,
         last_activity: crate::format_rfc3339_millis(timestamp),
         model,
@@ -2109,6 +2118,49 @@ mod diagnostic_tests {
         assert_eq!(
             events[0].timestamp,
             parse_ts_timestamp("2026-01-02T00:00:00Z").unwrap()
+        );
+    }
+
+    #[test]
+    fn attributes_a_record_only_to_the_snapshot_that_follows_it() {
+        use ccusage_test_support::fs_fixture;
+        use serde_json::json;
+
+        let usage = |input_tokens: u64| json!({"input_tokens": input_tokens, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": input_tokens + 1});
+        let token_count = |timestamp: &str, last: u64, total: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "token_count", "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": usage(last),
+                    "total_token_usage": usage(total),
+                }},
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-11-01T09:00:00.000Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_unmatched", "usage": usage(10)},
+                })
+                .to_string(),
+                token_count("2026-11-01T09:00:01.000Z", 20, 20),
+                token_count("2026-11-01T09:00:02.000Z", 10, 30),
+            ]
+            .join("\n"),
+        });
+
+        let events = crate::test_support::rollout_events(fixture.root());
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (event.input_tokens, event.record_response_id.as_deref()))
+                .collect::<Vec<_>>(),
+            [(20, None), (10, None)]
         );
     }
 }

@@ -1692,6 +1692,33 @@ exit: 0
     {
       "agent": "codex",
       "cacheCreationTokens": 0,
+      "cacheReadTokens": 150,
+      "inputTokens": 600,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:06:00.000Z",
+        "reasoningOutputTokens": 5
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 75
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5-codex"
+      ],
+      "outputTokens": 75,
+      "period": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "totalCost": 0,
+      "totalTokens": 825
+    },
+    {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
       "cacheReadTokens": 450100,
       "inputTokens": 101000,
       "metadata": {
@@ -5434,11 +5461,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17865,
-    "cacheReadTokens": 1311467,
-    "inputTokens": 1347649,
-    "outputTokens": 58842,
+    "cacheReadTokens": 1311617,
+    "inputTokens": 1348249,
+    "outputTokens": 58917,
     "totalCost": 24.12330000000001,
-    "totalTokens": 2739260
+    "totalTokens": 2740085
   }
 }
 

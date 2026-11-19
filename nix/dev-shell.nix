@@ -52,7 +52,7 @@
             oxfmt
             config.packages.actionlint
             zizmor
-            oxlint
+            config.packages.oxlint
             just
             clj-kondo
             prek

@@ -205,11 +205,12 @@ jobs:
       - parallel:
           - name: Run nix flake check
             run: nix flake check --print-build-logs
-          - name: JS test
+          - name: JS tests and typecheck
             run: |
-              nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
+              nix profile install --inputs-from . .#pnpm .#oxlint nixpkgs#nodejs nixpkgs#just
               pnpm install --frozen-lockfile
               just test-node
+              just typecheck
           - name: Babashka performance harness test
             run: apps/ccusage/scripts/compare-pr-performance_test.clj
           - name: Babashka diff-refs test

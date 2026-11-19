@@ -156,7 +156,7 @@ in
             priority = 7;
           };
           oxlint = {
-            command = lib.getExe pkgs.oxlint;
+            command = lib.getExe config.packages.oxlint;
             options = [
               "--fix"
               "--config"

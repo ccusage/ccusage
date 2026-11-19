@@ -96,7 +96,7 @@ in
             ccusage-oxlint-check = {
               enable = true;
               name = "oxlint";
-              entry = "${lib.getExe pkgs.oxlint} .";
+              entry = "${lib.getExe config.packages.oxlint} .";
               files = "\\.(ts|tsx|js|jsx|mjs|cjs)$";
               pass_filenames = false;
               stages = [ "pre-push" ];

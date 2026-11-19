@@ -128,7 +128,7 @@ in
           ccusage-fmt
           ccusage-hawk
           ;
-        oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''
+        oxlint = mkRepoCheck "oxlint-check" [ config.packages.oxlint ] ''
           oxlint --config nix/oxlint-check.json .
         '';
         gitleaks = mkRepoCheck "gitleaks-check" [ pkgs.gitleaks ] ''

@@ -194,6 +194,30 @@ exit: 0
       "totalTokens": 825
     },
     {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150,
+      "costUSD": 0.0015187500000000001,
+      "directory": "2026/01/01",
+      "inputTokens": 600,
+      "lastActivity": "2026-01-01T12:06:00.000Z",
+      "models": {
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "inputTokens": 600,
+          "isFallback": false,
+          "outputTokens": 75,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 825
+        }
+      },
+      "outputTokens": 75,
+      "reasoningOutputTokens": 5,
+      "sessionFile": "rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "sessionId": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "totalTokens": 825
+    },
+    {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 540,
       "costUSD": 0.00324675,
@@ -253,12 +277,12 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 9550,
-    "costUSD": 0.03957237500000001,
-    "inputTokens": 8700,
-    "outputTokens": 1855,
-    "reasoningOutputTokens": 94,
-    "totalTokens": 20405,
+    "cacheReadTokens": 9700,
+    "costUSD": 0.041091125000000006,
+    "inputTokens": 9300,
+    "outputTokens": 1930,
+    "reasoningOutputTokens": 99,
+    "totalTokens": 21230,
     "unpricedModels": [
       "codex-mystery-1"
     ]

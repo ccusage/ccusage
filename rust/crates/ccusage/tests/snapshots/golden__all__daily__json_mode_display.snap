@@ -800,8 +800,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 2890,
-      "cacheReadTokens": 482328,
-      "inputTokens": 1104515,
+      "cacheReadTokens": 482428,
+      "inputTokens": 1104915,
       "metadata": {
         "agents": [
           "amp",
@@ -966,11 +966,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 1470,
+          "cacheReadTokens": 1570,
           "cost": 0.0,
-          "inputTokens": 1300,
+          "inputTokens": 1700,
           "modelName": "gpt-5-codex",
-          "outputTokens": 277
+          "outputTokens": 327
         },
         {
           "cacheCreationTokens": 0,
@@ -1290,10 +1290,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 17487,
+      "outputTokens": 17537,
       "period": "2026-01-01",
       "totalCost": 1.72,
-      "totalTokens": 1608272
+      "totalTokens": 1608822
     },
     {
       "agent": "all",
@@ -1661,11 +1661,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309867,
-    "inputTokens": 1346024,
-    "outputTokens": 58570,
+    "cacheReadTokens": 1309967,
+    "inputTokens": 1346424,
+    "outputTokens": 58620,
     "totalCost": 23.3433,
-    "totalTokens": 2735643
+    "totalTokens": 2736193
   }
 }
 

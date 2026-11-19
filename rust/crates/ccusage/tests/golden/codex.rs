@@ -27,6 +27,7 @@ const ARCHIVED_COPY: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const MISSING_PARENT: &str = "99999999-9999-4999-8999-999999999999";
 
 const REPLACEMENT: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const SUBAGENT_SIBLING: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 
 /// Rollout path below a sessions directory; the session ID omits `.jsonl`.
 fn rollout(date: &str, time: &str, id: &str) -> String {
@@ -484,6 +485,51 @@ service_tier = "fast"
                 "2026-01-01T12:06:00.000Z",
                 Some(&usage(250, 50, 25, 5)),
                 Some(&usage(3750, 1350, 475, 55)),
+            ),
+        ],
+        instant("2026-01-01T12:07:00Z"),
+    );
+
+    // The sibling reports the same request usage at the same instant. Its
+    // distinct response ID keeps both requests in cross-session totals.
+    write(
+        &format!(
+            "work/sessions/{}",
+            rollout("2026-01-01", "12-05-00", SUBAGENT_SIBLING)
+        ),
+        &[
+            meta(
+                "2026-01-01T12:05:00.000Z",
+                SUBAGENT_SIBLING,
+                &format!(
+                    r#","source":{{"subagent":{{"thread_spawn":{{"parent_thread_id":"{MAIN}"}}}}}}"#
+                ),
+            ),
+            turn("2026-01-01T12:05:00.010Z", &format!(r#""model":"{CODEX}""#)),
+            settings("2026-01-01T12:05:00.020Z", r#""service_tier":"flex""#),
+            record(
+                "2026-01-01T12:05:00.400Z",
+                "resp-subagent-sibling-own",
+                &usage(500, 100, 50, 0),
+                "",
+            ),
+            count(
+                "2026-01-01T12:05:00.500Z",
+                Some(&usage(500, 100, 50, 0)),
+                Some(&usage(500, 100, 50, 0)),
+            ),
+            // The first sibling only has a token count for this request.
+            // This rollout sorts later and carries the recording.
+            record(
+                "2026-01-01T12:05:59.900Z",
+                "resp-subagent-sibling-later",
+                &usage(250, 50, 25, 5),
+                "",
+            ),
+            count(
+                "2026-01-01T12:06:00.000Z",
+                Some(&usage(250, 50, 25, 5)),
+                Some(&usage(750, 150, 75, 5)),
             ),
         ],
         instant("2026-01-01T12:07:00Z"),
