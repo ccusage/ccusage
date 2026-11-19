@@ -437,7 +437,7 @@ mod tests {
                     7
                 );
             },
-            &|file| {
+            |file| {
                 started.send(file.group).unwrap();
                 file.group * 2
             },

@@ -608,7 +608,7 @@ fn aggregate_discovered(
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let seen = CodexDedupe::new(usize::MAX, pricing);
     let eligibility = paths::CodexFileEligibility::from_shared(shared);
-    let mut loaded = read_discovered_files(shared.single_thread, discover, &|file| {
+    let mut loaded = read_discovered_files(shared.single_thread, discover, |file| {
         let dir = dirs[file.group];
         eligibility
             .is_none_or(|filter| filter.contains_file(dir, &file.path))

@@ -21,7 +21,7 @@ pub fn read_discovered_paths<T: Send>(
     collect_discovered(
         single_thread,
         &mut |emit| discover(&mut |path| emit(0, path)),
-        &|file| {
+        |file| {
             let result = read(&file.path);
             (file.path, result)
         },
@@ -32,9 +32,9 @@ pub fn read_discovered_paths<T: Send>(
 pub fn read_discovered_files<T: Send>(
     single_thread: bool,
     discover: &mut DiscoverFiles<'_>,
-    read: &(dyn Fn(&DiscoveredFile) -> T + Sync),
+    read: impl Fn(&DiscoveredFile) -> T + Sync,
 ) -> Vec<(DiscoveredFile, T)> {
-    collect_discovered(single_thread, discover, &|file| {
+    collect_discovered(single_thread, discover, |file| {
         let result = read(&file);
         (file, result)
     })
@@ -43,7 +43,7 @@ pub fn read_discovered_files<T: Send>(
 fn collect_discovered<T: Send>(
     single_thread: bool,
     discover: &mut DiscoverFiles<'_>,
-    read: &(dyn Fn(DiscoveredFile) -> T + Sync),
+    read: impl Fn(DiscoveredFile) -> T + Sync,
 ) -> Vec<T> {
     if single_thread {
         let mut results = Vec::new();
@@ -53,7 +53,7 @@ fn collect_discovered<T: Send>(
 
     let batches = Mutex::new(Vec::new());
     let consume = |files: &mut dyn Iterator<Item = DiscoveredFile>| {
-        let results = files.map(read).collect::<Vec<_>>();
+        let results = files.map(&read).collect::<Vec<_>>();
         batches
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
