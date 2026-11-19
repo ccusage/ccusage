@@ -303,6 +303,110 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn discovery_follows_symlinked_files() {
+        let fixture = Fixture::new();
+        let target = fixture.write_file("transcript", "");
+        let root = fixture.create_dir_all("root");
+        let alias = root.join("session.jsonl");
+        std::os::unix::fs::symlink(target, &alias).unwrap();
+
+        let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
+
+        assert_eq!(files, [alias]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_follows_symlinked_directories() {
+        let fixture = Fixture::new();
+        fixture.write_file("project/nested/session.jsonl", "");
+        let root = fixture.create_dir_all("root");
+        let alias = root.join("linked-project");
+        std::os::unix::fs::symlink(fixture.path("project"), &alias).unwrap();
+
+        let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
+
+        assert_eq!(files, [alias.join("nested/session.jsonl")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_reads_multiple_links_to_the_same_target_once() {
+        let fixture = Fixture::new();
+        let target = fixture.write_file("transcript.jsonl", "usage");
+        let root = fixture.create_dir_all("root");
+        let first = root.join("a.jsonl");
+        std::os::unix::fs::symlink(&target, &first).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("b.jsonl")).unwrap();
+
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let reads = super::read_discovered_paths(
+            true,
+            |visit| super::visit_usage_files(&root, visit, &diagnostics),
+            |path| std::fs::read_to_string(path).unwrap(),
+        );
+
+        assert_eq!(reads, [(first, "usage".to_owned())]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_prefers_the_original_path_over_its_aliases() {
+        let fixture = Fixture::new();
+        let root = fixture.create_dir_all("root");
+        let target = fixture.write_file("root/b/session.jsonl", "");
+        let linked = root.join("d.jsonl");
+        std::os::unix::fs::symlink(root.join("b"), root.join("a")).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("c.jsonl")).unwrap();
+        std::os::unix::fs::symlink(fixture.write_file("external.jsonl", ""), &linked).unwrap();
+
+        let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
+
+        assert_eq!(files, [target, linked]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_stops_at_symlink_cycles() {
+        let fixture = Fixture::new();
+        let root = fixture.create_dir_all("root");
+        let original = fixture.write_file("root/a.jsonl", "");
+        fixture.write_file("project/b.jsonl", "");
+        let alias = root.join("linked-project");
+        std::os::unix::fs::symlink(fixture.path("project"), &alias).unwrap();
+        std::os::unix::fs::symlink(&root, fixture.path("project/back")).unwrap();
+
+        let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
+
+        assert_eq!(files, [original, alias.join("b.jsonl")]);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_reports_dangling_symlinks_as_unreadable() {
+        let fixture = Fixture::new();
+        let original = fixture.write_file("a.jsonl", "");
+        std::os::unix::fs::symlink(fixture.path("missing"), fixture.path("b.jsonl")).unwrap();
+
+        let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        super::collect_files_with_extension(fixture.root(), "jsonl", &mut files, &diagnostics);
+
+        assert_eq!(files, [original]);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 1);
+    }
+
     #[test]
     fn balances_file_chunks_by_size() {
         let fixture = ccusage_test_support::fs_fixture!({
