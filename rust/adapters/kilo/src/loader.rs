@@ -15,7 +15,10 @@ use super::{
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
+    let db_paths: Vec<PathBuf> = paths(cx.diagnostics, cx.shared.debug)
+        .iter()
+        .filter_map(|path| db_path(path))
+        .collect();
     let pricing = cx.pricing.table(cx.shared.mode);
     let loaded = load_entries_from_databases(&db_paths, cx, pricing);
     let mut entries = dedupe_first_wins(loaded, |(id, _)| id.clone())
