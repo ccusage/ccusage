@@ -2,13 +2,14 @@ use std::{collections::BTreeMap, ffi::OsString, num::NonZeroU32};
 
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
+use ccusage_cli::is_shared_flag;
 use ccusage_cli::{
-    AgentCommand, AgentCommandArgs, AgentCommandSpec, AgentId, AgentReportKind, BlocksArgs,
-    CliConfig, CodexSpeed, CodexStatuslineArgs, ColorChoice, Command, CostMode, CostSource,
-    DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder,
-    StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
+    BlocksOption, ClaudeStatuslineOption, CliConfig, CodexSpeed, CodexStatuslineArgs,
+    CodexStatuslineOption, ColorChoice, Command, CostMode, CostSource, DATE_BOUND_FORMATS,
+    DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
-use ccusage_cli::{command_tokens, is_shared_flag};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlArg {
@@ -18,13 +19,23 @@ enum ControlArg {
 
 #[derive(Default)]
 struct RootOptions {
-    offline_override: Option<bool>,
+    shared_flags: Vec<SharedFlag>,
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
     first_flag: Option<&'static str>,
 }
 
 impl RootOptions {
+    fn shared(&mut self, config: &dyn CliConfig, offline_by_default: bool) -> SharedArgs {
+        let mut shared = SharedArgs::with_defaults();
+        shared.offline = offline_by_default;
+        config.apply_shared(&mut shared);
+        for flag in self.shared_flags.drain(..) {
+            flag.apply(&mut shared);
+        }
+        shared
+    }
+
     fn mark_used(&mut self, flag: &'static str) {
         self.first_flag.get_or_insert(flag);
     }
@@ -64,53 +75,45 @@ where
     if let Some(message) = report_flag_alias_error(&parser.args) {
         return Err(message);
     }
-    if let Some(message) = agent_filter_option_error(&parser.args) {
-        return Err(message);
-    }
-    if let Some(message) = unsupported_agent_report_error(&parser.args) {
-        return Err(message);
+    if let Some(flag) = parser.args.iter().find_map(|arg| {
+        if arg == "--agent" || arg.starts_with("--agent=") {
+            Some("--agent")
+        } else if arg.starts_with("-a=") {
+            Some("-a")
+        } else {
+            None
+        }
+    }) {
+        return Err(agent_filter_option_error(flag));
     }
     if let Some(message) = config.config_error() {
         return Err(message.to_string());
     }
-    let mut shared = SharedArgs::with_defaults();
-    if let [agent, name, ..] = command_tokens(&parser.args).as_slice()
-        && let Some(command) =
-            AgentId::from_name(agent).and_then(|agent| agent.spec().extra_command(name))
-    {
-        shared.offline = command.offline_by_default;
-    }
-    config.apply_shared(&mut shared);
     let mut root_options = RootOptions::default();
     while let Some(arg) = parser.peek() {
-        if is_command(arg) {
+        if !arg.starts_with('-') {
             break;
         }
-        if !arg.starts_with('-') {
-            return Err(format!("Unknown command '{arg}'"));
+        if arg == "-a" {
+            return Err(agent_filter_option_error("-a"));
         }
         if parse_root_all_arg(&mut parser, &mut root_options)? {
             continue;
         }
-        let offline_override = match parser.peek_name() {
-            Some("-O" | "--offline") => Some(true),
-            Some("--no-offline") => Some(false),
-            _ => None,
-        };
-        parse_shared_arg(&mut parser, &mut shared)?;
-        if offline_override.is_some() {
-            root_options.offline_override = offline_override;
-        }
+        root_options
+            .shared_flags
+            .push(read_shared_flag(&mut parser)?);
     }
 
     let mut command = match parser.next() {
-        None => Command::All(root_options.into_agent_args(shared.clone(), AgentReportKind::Daily)),
-        Some(command) => {
-            parse_command(&command, &mut parser, shared.clone(), config, root_options)?
+        None => {
+            let shared = root_options.shared(config, false);
+            Command::All(root_options.into_agent_args(shared, AgentReportKind::Daily))
         }
+        Some(command) => parse_command(&command, &mut parser, config, root_options)?,
     };
     parser.finish()?;
-    if let Some(message) = last_option_error(&command, &shared) {
+    if let Some(message) = last_option_error(&command) {
         return Err(message);
     }
     validate_date_window(&mut command, &parser, config)?;
@@ -157,16 +160,17 @@ fn control_arg(args: &[String]) -> Option<ControlArg> {
 fn parse_command(
     command: &str,
     parser: &mut ArgParser,
-    shared: SharedArgs,
     config: &dyn CliConfig,
-    root_options: RootOptions,
+    mut root_options: RootOptions,
 ) -> Result<Command, String> {
-    let statusline = command == "statusline"
-        || (command == AgentId::Claude.spec().name && parser.peek() == Some("statusline"));
-    if root_options.is_used() && !accepts_root_options(command) && !statusline {
-        return Err(format!("Unknown option '{}'", root_options.first_flag()));
+    if let Some(agent) = AgentId::from_name(command) {
+        return parse_agent_command(agent, parser, config, root_options);
     }
-    let offline_override = root_options.offline_override;
+    if let Some(command) = AgentId::Claude.spec().extra_command(command) {
+        return parse_extra_command(command.kind, parser, config, root_options);
+    }
+    reject_short_agent_filter(parser)?;
+    let shared = root_options.shared(config, false);
     match command {
         "daily" => parse_all_command(parser, shared, AgentReportKind::Daily, config, root_options),
         "monthly" => parse_all_command(
@@ -184,24 +188,35 @@ fn parse_command(
             root_options,
         ),
         "session" => parse_top_level_session_command(parser, shared, config, root_options),
-        "blocks" => parse_blocks_command(parser, shared, config),
-        "statusline" => parse_statusline_command(parser, &shared, config, offline_override),
-        _ => match AgentId::from_name(command) {
-            Some(agent) => parse_agent_command(agent, parser, shared, config, offline_override),
-            None => Err(format!("Unknown command '{command}'")),
-        },
+        _ => Err(format!("Unknown command '{command}'")),
     }
 }
 
 fn parse_agent_command(
     agent: AgentId,
     parser: &mut ArgParser,
-    shared: SharedArgs,
     config: &dyn CliConfig,
-    offline_override: Option<bool>,
+    mut root_options: RootOptions,
 ) -> Result<Command, String> {
+    let extra = parser
+        .peek()
+        .and_then(|name| agent.spec().extra_command(name));
+    if let Some(command) = extra {
+        parser.next();
+        return parse_extra_command(command.kind, parser, config, root_options);
+    }
+    reject_short_agent_filter(parser)?;
+    if let Some(report) = parser.peek().filter(|name| !name.starts_with('-'))
+        && !agent.spec().accepts(report)
+    {
+        return Err(unsupported_agent_report_error(agent, report));
+    }
+    if root_options.is_used() {
+        return Err(format!("Unknown option '{}'", root_options.first_flag()));
+    }
+    let shared = root_options.shared(config, false);
     let Some(agent) = agent.standard() else {
-        return parse_claude_command(parser, shared, config, offline_override);
+        return parse_claude_command(parser, shared, config);
     };
     match agent {
         StandardAgent::Codex => parse_codex_command(parser, shared, config),
@@ -212,10 +227,66 @@ fn parse_agent_command(
     }
 }
 
+fn parse_extra_command(
+    kind: AgentCommandKind,
+    parser: &mut ArgParser,
+    config: &dyn CliConfig,
+    mut root: RootOptions,
+) -> Result<Command, String> {
+    if !matches!(kind, AgentCommandKind::Blocks(_)) {
+        reject_short_agent_filter(parser)?;
+    }
+    if root.is_used() && !matches!(kind, AgentCommandKind::ClaudeStatusline { .. }) {
+        return Err(format!("Unknown option '{}'", root.first_flag()));
+    }
+    match kind {
+        AgentCommandKind::Blocks(options) => {
+            parse_blocks_command(parser, root.shared(config, false), config, options)
+        }
+        AgentCommandKind::ClaudeStatusline {
+            offline_by_default,
+            options,
+        } => {
+            let offline_override = root.shared_flags.iter().rev().find_map(|flag| {
+                if let SharedFlag::Offline(offline) = flag {
+                    Some(*offline)
+                } else {
+                    None
+                }
+            });
+            let shared = root.shared(config, offline_by_default);
+            parse_statusline_command(parser, &shared, config, offline_override, options)
+        }
+        AgentCommandKind::CodexStatusline {
+            offline_by_default,
+            options,
+        } => {
+            let shared = root.shared(config, offline_by_default);
+            let speed = config
+                .agent_options(StandardAgent::Codex.spec().name)
+                .codex_speed;
+            parse_codex_statusline(parser, shared, speed, options)
+        }
+    }
+}
+
+fn command_option<T: Copy>(
+    parser: &mut ArgParser,
+    options: &[(&str, T)],
+    command: &str,
+) -> Result<T, String> {
+    let flag = parser.next_flag()?;
+    options
+        .iter()
+        .find_map(|&(name, option)| (name == flag).then_some(option))
+        .ok_or_else(|| format!("Unknown {command} option '{flag}'"))
+}
+
 fn parse_blocks_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     config: &dyn CliConfig,
+    options: &[(&str, BlocksOption)],
 ) -> Result<Command, String> {
     let mut args = BlocksArgs {
         shared,
@@ -229,10 +300,10 @@ fn parse_blocks_command(
         if parse_shared_arg_for_command(parser, &mut args.shared)? {
             continue;
         }
-        match parser.next_flag()?.as_str() {
-            "-a" | "--active" => args.active = true,
-            "-r" | "--recent" => args.recent = true,
-            "-t" | "--token-limit" => {
+        match command_option(parser, options, "blocks")? {
+            BlocksOption::Active => args.active = true,
+            BlocksOption::Recent => args.recent = true,
+            BlocksOption::TokenLimit => {
                 args.token_limit = Some(
                     parser
                         .value_for("--token-limit")?
@@ -240,13 +311,12 @@ fn parse_blocks_command(
                         .map_err(|error| format!("Invalid value for --token-limit: {error}"))?,
                 )
             }
-            "-n" | "--session-length" => {
+            BlocksOption::SessionLength => {
                 args.session_length = parser
                     .value_for("--session-length")?
                     .parse()
                     .map_err(|error| format!("Invalid value for --session-length: {error}"))?
             }
-            flag => return Err(format!("Unknown blocks option '{flag}'")),
         }
     }
     Ok(Command::Blocks(args))
@@ -257,6 +327,7 @@ fn parse_statusline_command(
     shared: &SharedArgs,
     config: &dyn CliConfig,
     offline_override: Option<bool>,
+    options: &[(&str, ClaudeStatuslineOption)],
 ) -> Result<Command, String> {
     let mut args = StatuslineArgs::default();
     config.apply_statusline_args(&mut args);
@@ -271,25 +342,25 @@ fn parse_statusline_command(
     let mut low = None;
     let mut medium = None;
     while parser.peek().is_some() {
-        match parser.next_flag()?.as_str() {
-            "-O" | "--offline" => args.offline = true,
-            "--no-offline" => args.offline = false,
-            "-B" | "--visual-burn-rate" => {
+        match command_option(parser, options, "statusline")? {
+            ClaudeStatuslineOption::Offline => args.offline = true,
+            ClaudeStatuslineOption::NoOffline => args.offline = false,
+            ClaudeStatuslineOption::VisualBurnRate => {
                 args.visual_burn_rate =
                     parse_visual_burn_rate(&parser.value_for("--visual-burn-rate")?)?
             }
-            "--cost-source" => {
+            ClaudeStatuslineOption::CostSource => {
                 args.cost_source = parse_cost_source(&parser.value_for("--cost-source")?)?
             }
-            "--cache" => args.cache = true,
-            "--no-cache" => args.cache = false,
-            "--refresh-interval" => {
+            ClaudeStatuslineOption::Cache => args.cache = true,
+            ClaudeStatuslineOption::NoCache => args.cache = false,
+            ClaudeStatuslineOption::RefreshInterval => {
                 args.refresh_interval = parser
                     .value_for("--refresh-interval")?
                     .parse()
                     .map_err(|_| "Invalid value for --refresh-interval".to_string())?
             }
-            "--context-low-threshold" => {
+            ClaudeStatuslineOption::ContextLowThreshold => {
                 low = Some(
                     parser
                         .value_for("--context-low-threshold")?
@@ -297,7 +368,7 @@ fn parse_statusline_command(
                         .map_err(|_| "Invalid value for --context-low-threshold".to_string())?,
                 )
             }
-            "--context-medium-threshold" => {
+            ClaudeStatuslineOption::ContextMediumThreshold => {
                 medium = Some(
                     parser
                         .value_for("--context-medium-threshold")?
@@ -305,20 +376,17 @@ fn parse_statusline_command(
                         .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?,
                 )
             }
-            "-z" | "--timezone" => args.timezone = Some(parser.value_for("--timezone")?),
-            "--config" => {
+            ClaudeStatuslineOption::Timezone => {
+                args.timezone = Some(parser.value_for("--timezone")?)
+            }
+            ClaudeStatuslineOption::Config => {
                 parser.value_for("--config")?;
             }
-            "--debug" => args.debug = true,
-            flag => return Err(format!("Unknown statusline option '{flag}'")),
+            ClaudeStatuslineOption::Debug => args.debug = true,
         }
     }
     args.context_thresholds = config.context_thresholds(low, medium)?;
     Ok(Command::Statusline(args))
-}
-
-fn accepts_root_options(command: &str) -> bool {
-    matches!(command, "daily" | "monthly" | "weekly" | "session")
 }
 
 fn parse_root_all_arg(parser: &mut ArgParser, options: &mut RootOptions) -> Result<bool, String> {
@@ -516,7 +584,6 @@ fn parse_claude_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     config: &dyn CliConfig,
-    offline_override: Option<bool>,
 ) -> Result<Command, String> {
     let command = match parser.peek() {
         Some(command) if !command.starts_with('-') => {
@@ -531,8 +598,6 @@ fn parse_claude_command(
         "monthly" => parse_claude_monthly_command(parser, shared, config),
         "weekly" => parse_claude_weekly_command(parser, shared, config),
         "session" => parse_claude_session_command(parser, shared, config),
-        "blocks" => parse_blocks_command(parser, shared, config),
-        "statusline" => parse_statusline_command(parser, &shared, config, offline_override),
         command => Err(format!("Unknown claude command '{command}'")),
     }
 }
@@ -607,13 +672,6 @@ fn parse_codex_command(
 ) -> Result<Command, String> {
     let agent = StandardAgent::Codex;
     let mut options = config.agent_options(agent.spec().name);
-    if let Some(command) = parser
-        .peek()
-        .and_then(|name| agent.spec().extra_command(name))
-    {
-        parser.next();
-        return parse_codex_statusline(parser, command, shared, options.codex_speed);
-    }
     let kind = parse_agent_report_kind(parser, agent)?;
     let mut session_id = None;
     while parser.peek().is_some() {
@@ -639,9 +697,9 @@ fn parse_codex_command(
 
 fn parse_codex_statusline(
     parser: &mut ArgParser,
-    command: &AgentCommandSpec,
     mut shared: SharedArgs,
     mut codex_speed: CodexSpeed,
+    options: &[(&str, CodexStatuslineOption)],
 ) -> Result<Command, String> {
     let mut session_id = None;
     let mut mcp = false;
@@ -649,15 +707,12 @@ fn parse_codex_statusline(
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
-        let flag = parser.next_flag()?;
-        if !command.options.contains(&flag.as_str()) {
-            return Err(format!("Unknown codex option '{flag}'"));
-        }
-        match flag.as_str() {
-            "--speed" => codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?,
-            "-i" | "--id" => session_id = Some(parser.value_for("--id")?),
-            "--mcp" => mcp = true,
-            flag => return Err(format!("Unknown codex option '{flag}'")),
+        match command_option(parser, options, "codex")? {
+            CodexStatuslineOption::Speed => {
+                codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?
+            }
+            CodexStatuslineOption::Id => session_id = Some(parser.value_for("--id")?),
+            CodexStatuslineOption::Mcp => mcp = true,
         }
     }
     shared.offline |= mcp;
@@ -767,56 +822,90 @@ fn parse_shared_arg_for_command(
     Ok(false)
 }
 
-fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(), String> {
-    match parser.next_flag()?.as_str() {
-        "-s" | "--since" => {
-            shared.since = Some(parse_date_bound("--since", &parser.value_for("--since")?)?)
-        }
-        "-u" | "--until" => {
-            shared.until = Some(parse_date_bound("--until", &parser.value_for("--until")?)?)
-        }
-        "--last" => shared.last = Some(parse_last_periods(&parser.value_for("--last")?)?),
-        "-j" | "--json" => shared.json = true,
-        "-m" | "--mode" => shared.mode = parse_cost_mode(&parser.value_for("--mode")?)?,
-        "-d" | "--debug" => shared.debug = true,
-        "--debug-samples" => {
-            shared.debug_samples = parser
-                .value_for("--debug-samples")?
-                .parse()
-                .map_err(|_| "Invalid value for --debug-samples".to_string())?
-        }
-        "-o" | "--order" => {
-            shared.order = Some(parse_sort_order(&parser.value_for("--order")?)?);
-        }
-        "-b" | "--breakdown" => shared.breakdown = true,
-        "-O" | "--offline" => shared.offline = true,
-        "--no-offline" => shared.offline = false,
-        "--color" => shared.color = ColorChoice::Always,
-        "--no-color" => shared.color = ColorChoice::Never,
-        "-z" | "--timezone" => shared.timezone = Some(parser.value_for("--timezone")?),
-        "-q" | "--jq" => shared.jq = Some(parser.value_for("--jq")?),
-        "--config" => {
-            parser.value_for("--config")?;
-        }
-        "--compact" => shared.compact = true,
-        "--single-thread" => shared.single_thread = true,
-        "--no-cost" => shared.no_cost = true,
-        flag => return Err(format!("Unknown option '{flag}'")),
-    }
-    Ok(())
+enum SharedFlag {
+    Since(String),
+    Until(String),
+    Last(NonZeroU32),
+    Json,
+    Mode(CostMode),
+    Debug,
+    DebugSamples(usize),
+    Order(SortOrder),
+    Breakdown,
+    Offline(bool),
+    Color(ColorChoice),
+    Timezone(String),
+    Jq(String),
+    Config,
+    Compact,
+    SingleThread,
+    NoCost,
 }
 
-const TOP_LEVEL_COMMANDS: &[&str] = &[
-    "daily",
-    "monthly",
-    "weekly",
-    "session",
-    "blocks",
-    "statusline",
-];
+impl SharedFlag {
+    fn apply(self, shared: &mut SharedArgs) {
+        match self {
+            Self::Since(value) => shared.since = Some(value),
+            Self::Until(value) => shared.until = Some(value),
+            Self::Last(value) => shared.last = Some(value),
+            Self::Json => shared.json = true,
+            Self::Mode(value) => shared.mode = value,
+            Self::Debug => shared.debug = true,
+            Self::DebugSamples(value) => shared.debug_samples = value,
+            Self::Order(value) => shared.order = Some(value),
+            Self::Breakdown => shared.breakdown = true,
+            Self::Offline(value) => shared.offline = value,
+            Self::Color(value) => shared.color = value,
+            Self::Timezone(value) => shared.timezone = Some(value),
+            Self::Jq(value) => shared.jq = Some(value),
+            Self::Config => {}
+            Self::Compact => shared.compact = true,
+            Self::SingleThread => shared.single_thread = true,
+            Self::NoCost => shared.no_cost = true,
+        }
+    }
+}
 
-fn is_command(arg: &str) -> bool {
-    TOP_LEVEL_COMMANDS.contains(&arg) || AgentId::from_name(arg).is_some()
+fn read_shared_flag(parser: &mut ArgParser) -> Result<SharedFlag, String> {
+    Ok(match parser.next_flag()?.as_str() {
+        "-s" | "--since" => {
+            SharedFlag::Since(parse_date_bound("--since", &parser.value_for("--since")?)?)
+        }
+        "-u" | "--until" => {
+            SharedFlag::Until(parse_date_bound("--until", &parser.value_for("--until")?)?)
+        }
+        "--last" => SharedFlag::Last(parse_last_periods(&parser.value_for("--last")?)?),
+        "-j" | "--json" => SharedFlag::Json,
+        "-m" | "--mode" => SharedFlag::Mode(parse_cost_mode(&parser.value_for("--mode")?)?),
+        "-d" | "--debug" => SharedFlag::Debug,
+        "--debug-samples" => SharedFlag::DebugSamples(
+            parser
+                .value_for("--debug-samples")?
+                .parse()
+                .map_err(|_| "Invalid value for --debug-samples".to_string())?,
+        ),
+        "-o" | "--order" => SharedFlag::Order(parse_sort_order(&parser.value_for("--order")?)?),
+        "-b" | "--breakdown" => SharedFlag::Breakdown,
+        "-O" | "--offline" => SharedFlag::Offline(true),
+        "--no-offline" => SharedFlag::Offline(false),
+        "--color" => SharedFlag::Color(ColorChoice::Always),
+        "--no-color" => SharedFlag::Color(ColorChoice::Never),
+        "-z" | "--timezone" => SharedFlag::Timezone(parser.value_for("--timezone")?),
+        "-q" | "--jq" => SharedFlag::Jq(parser.value_for("--jq")?),
+        "--config" => {
+            parser.value_for("--config")?;
+            SharedFlag::Config
+        }
+        "--compact" => SharedFlag::Compact,
+        "--single-thread" => SharedFlag::SingleThread,
+        "--no-cost" => SharedFlag::NoCost,
+        flag => return Err(format!("Unknown option '{flag}'")),
+    })
+}
+
+fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(), String> {
+    read_shared_flag(parser)?.apply(shared);
+    Ok(())
 }
 
 fn normalize_legacy_agent_command_args(args: &mut Vec<String>) {
@@ -842,50 +931,29 @@ fn report_flag_alias_error(args: &[String]) -> Option<String> {
     ))
 }
 
-fn agent_filter_option_error(args: &[String]) -> Option<String> {
-    let allows_short_active = blocks_command_tokens(args);
-    let flag = args.iter().find_map(|arg| {
-        if arg == "--agent" || arg.starts_with("--agent=") {
-            return Some("--agent");
-        }
-        if (arg == "-a" && !allows_short_active) || arg.starts_with("-a=") {
-            return Some("-a");
-        }
-        None
-    })?;
-    Some(format!(
-        "Agent filters like {flag} are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
-    ))
+fn reject_short_agent_filter(parser: &ArgParser) -> Result<(), String> {
+    if parser.args.iter().any(|arg| arg == "-a") {
+        return Err(agent_filter_option_error("-a"));
+    }
+    Ok(())
 }
 
-fn blocks_command_tokens(args: &[String]) -> bool {
-    let tokens = command_tokens(args);
-    matches!(
-        tokens.as_slice(),
-        [command, ..] if command == "blocks"
-    ) || matches!(
-        tokens.as_slice(),
-        [agent, command, ..] if agent == "claude" && command == "blocks"
+fn agent_filter_option_error(flag: &str) -> String {
+    format!(
+        "Agent filters like {flag} are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
     )
 }
 
-fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
-    let tokens = command_tokens(args);
-    let [agent, report, ..] = tokens.as_slice() else {
-        return None;
-    };
-    let spec = AgentId::from_name(agent)?.spec();
-    if spec.accepts(report) {
-        return None;
-    }
-
+fn unsupported_agent_report_error(agent: AgentId, report: &str) -> String {
+    let spec = agent.spec();
+    let agent = spec.name;
     let display = spec.label;
     let providers = ccusage_cli::AGENTS
         .iter()
         .filter(|provider| provider.extra_command(report).is_some())
         .map(|provider| provider.label)
         .collect::<Vec<_>>();
-    let message = if let Some((last, others)) = providers
+    if let Some((last, others)) = providers
         .split_last()
         .filter(|(_, others)| !others.is_empty())
     {
@@ -901,8 +969,7 @@ fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
         format!(
             "The \"{report}\" report is not available for {display} usage.\nUse \"ccusage {agent} daily\" for {display} usage reports."
         )
-    };
-    Some(message)
+    }
 }
 
 fn parse_date_bound(flag: &str, value: &str) -> Result<String, String> {
@@ -919,11 +986,8 @@ fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
     })
 }
 
-fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {
-    if matches!(command, Command::Statusline(_)) {
-        return None;
-    }
-    let shared = command.shared().unwrap_or(root_shared);
+fn last_option_error(command: &Command) -> Option<String> {
+    let shared = command.shared()?;
     shared.last?;
     if command.period().is_none() {
         return Some(

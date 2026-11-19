@@ -5,7 +5,8 @@ mod options;
 mod types;
 
 pub use agents::{
-    AGENTS, AgentCommandSpec, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES, StandardAgent,
+    AGENTS, AgentCommandKind, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES, BlocksOption,
+    ClaudeStatuslineOption, CodexStatuslineOption, StandardAgent,
 };
 pub use limits::{ContextThresholds, SessionLength, TokenLimit};
 pub use options::{OptionArity, command_tokens, is_shared_flag, option_arity};

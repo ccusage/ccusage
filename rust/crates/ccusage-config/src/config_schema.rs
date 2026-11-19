@@ -865,7 +865,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         .spec()
         .extra_command("statusline")
     {
-        offline["default"] = json!(command.offline_by_default);
+        offline["default"] = json!(command.offline_by_default());
     }
     wrap_root_schema(&mut schema);
     add_agent_command_keys(&mut schema);
