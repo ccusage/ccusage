@@ -54,6 +54,7 @@ direnv exec . nu --ide-check 10 path/to/script.nu
 direnv exec . nu -c 'help <command>'
 ```
 
-`just fmt` runs `nufmt` over `*.nu` through treefmt. For behavior changes, invoke
+`nix flake check` fails on any `--ide-check` diagnostic in a `.nu` file
+(`scripts/check-nushell.nu`). `just fmt` runs `nufmt` over `*.nu` through treefmt. For behavior changes, invoke
 the script through its shebang as a smoke check and run the repo check that owns
 the caller.
