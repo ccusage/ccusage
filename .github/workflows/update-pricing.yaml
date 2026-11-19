@@ -55,7 +55,13 @@ jobs:
           $SCRIPT | jq -r '"changed=\(.changed)", "paths=\(.paths | join(" "))"' >> "$GITHUB_OUTPUT"
       - name: Validate changed pricing
         if: steps.update.outputs.changed == 'true'
-        run: nix flake check
+        run: |
+          nix flake check
+          nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just nixpkgs#bun
+          just install
+          just test-node
+          just ccusage::test-performance-harness
+          just ccusage::test-diff-refs
       - uses: ./.github/actions/commit-and-push-main
         if: steps.update.outputs.changed == 'true'
         with:
