@@ -62,11 +62,11 @@ The report's `totals`:
 {
 	"totals": {
 		"cacheCreationTokens": 2500,
-		"cacheReadTokens": 44200,
-		"inputTokens": 8127,
-		"outputTokens": 3634,
-		"totalCost": 0.8443259999999999,
-		"totalTokens": 58461,
+		"cacheReadTokens": 44350,
+		"inputTokens": 8207,
+		"outputTokens": 3659,
+		"totalCost": 0.851326,
+		"totalTokens": 58716,
 		"unpricedModels": ["mystery-model-9000"]
 	}
 }
@@ -204,11 +204,11 @@ ccusage daily --by-agent --json
 	],
 	"totals": {
 		"cacheCreationTokens": 17765,
-		"cacheReadTokens": 1309617,
-		"inputTokens": 1346544,
-		"outputTokens": 58595,
-		"totalCost": 28.141064295000003,
-		"totalTokens": 2735938,
+		"cacheReadTokens": 1309867,
+		"inputTokens": 1347024,
+		"outputTokens": 58670,
+		"totalCost": 28.148514845000005,
+		"totalTokens": 2736743,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -371,11 +371,11 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 	],
 	"totals": {
 		"cacheCreationTokens": 17765,
-		"cacheReadTokens": 1309617,
-		"inputTokens": 1346544,
-		"outputTokens": 58595,
-		"totalCost": 28.141064295000003,
-		"totalTokens": 2735938,
+		"cacheReadTokens": 1309867,
+		"inputTokens": 1347024,
+		"outputTokens": 58670,
+		"totalCost": 28.148514845000005,
+		"totalTokens": 2736743,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -454,11 +454,11 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 	],
 	"totals": {
 		"cacheCreationTokens": 17865,
-		"cacheReadTokens": 1311217,
-		"inputTokens": 1348169,
-		"outputTokens": 58867,
-		"totalCost": 28.925214295000025,
-		"totalTokens": 2739555,
+		"cacheReadTokens": 1311467,
+		"inputTokens": 1348649,
+		"outputTokens": 58942,
+		"totalCost": 28.932664845000023,
+		"totalTokens": 2740360,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -536,11 +536,11 @@ This excerpt shows one session; `totals` covers the complete report.
 	],
 	"totals": {
 		"cacheCreationTokens": 2500,
-		"cacheReadTokens": 44200,
-		"inputTokens": 8127,
-		"outputTokens": 3634,
-		"totalCost": 0.844326,
-		"totalTokens": 58461,
+		"cacheReadTokens": 44350,
+		"inputTokens": 8207,
+		"outputTokens": 3659,
+		"totalCost": 0.851326,
+		"totalTokens": 58716,
 		"unpricedModels": ["mystery-model-9000"]
 	}
 }
@@ -607,11 +607,11 @@ This excerpt shows one session; `totals` covers the complete report.
 	},
 	"totals": {
 		"cacheCreationTokens": 2500,
-		"cacheReadTokens": 44200,
-		"inputTokens": 8127,
-		"outputTokens": 3634,
-		"totalCost": 0.8443259999999999,
-		"totalTokens": 58461,
+		"cacheReadTokens": 44350,
+		"inputTokens": 8207,
+		"outputTokens": 3659,
+		"totalCost": 0.851326,
+		"totalTokens": 58716,
 		"unpricedModels": ["mystery-model-9000"]
 	}
 }
