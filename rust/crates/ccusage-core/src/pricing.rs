@@ -1559,7 +1559,12 @@ impl PricingMap {
         lookup: Lookup,
         live: impl FnOnce() -> Option<&'live Self>,
     ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
-        let search = || self.search_request(reported, candidates, lookup, live);
+        let search = || {
+            let live = std::cell::Cell::new(Some(live));
+            self.search_request(reported, candidates, lookup, &|| {
+                live.take().and_then(|load| load())
+            })
+        };
         let hit = match lookup {
             Lookup::Pricing => self
                 .requests
@@ -1574,15 +1579,15 @@ impl PricingMap {
         self.cached_row(model, hit.row)
     }
 
+    #[inline(never)]
     fn search_request<'live>(
         &self,
         reported: Option<&str>,
         candidates: &[(&str, MatchKind)],
         lookup: Lookup,
-        live: impl FnOnce() -> Option<&'live Self>,
+        live: &dyn Fn() -> Option<&'live Self>,
     ) -> Option<RequestHit> {
-        let live = std::cell::Cell::new(Some(live));
-        let models_dev = || self.select_models_dev(|| live.take().and_then(|load| load()));
+        let models_dev = || self.select_models_dev(live);
         let cache = self.find_cache.get_or_init(NameCache::default);
         let matching = |name, pass| {
             cache.get_or_init(name, lookup, pass, |slot| {
