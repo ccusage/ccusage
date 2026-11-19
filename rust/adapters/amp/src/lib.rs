@@ -5,7 +5,6 @@ mod loader;
 mod parser;
 mod paths;
 
-/// The Amp usage source.
 pub struct Amp;
 
 pub static SOURCE: Amp = Amp;

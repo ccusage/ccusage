@@ -18,8 +18,6 @@ use crate::{
     apply_total_token_fallback, format_date_tz,
 };
 
-/// A single Amp thread file: one JSON object holding the thread id, the chat
-/// messages, and an optional usage ledger.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AmpThread {
@@ -31,14 +29,12 @@ struct AmpThread {
     usage_ledger: Option<AmpUsageLedger>,
 }
 
-/// Wrapper around the ledger's `events` array.
 #[derive(Debug, Default, Deserialize)]
 struct AmpUsageLedger {
     #[serde(default, deserialize_with = "jsonl::lenient_array")]
     events: Option<Vec<AmpLedgerEvent>>,
 }
 
-/// A single ledger event carrying token counts and pricing metadata.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AmpLedgerEvent {
@@ -66,7 +62,6 @@ struct AmpLedgerTokens {
     total: u64,
 }
 
-/// A single chat message in the thread.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AmpMessage {
@@ -166,16 +161,12 @@ fn counted_usage(usage: TokenUsageRaw, total_tokens: u64) -> Option<(TokenUsageR
     counts_tokens.then_some((usage, extra_total_tokens))
 }
 
-/// Where a thread's records come from and where the ones that cannot be
-/// counted are recorded.
 struct ThreadUnit<'a> {
     path: &'a Path,
     diagnostics: &'a Diagnostics,
 }
 
 impl ThreadUnit<'_> {
-    /// Records the record at `index` whose timestamp the report cannot place
-    /// on a day.
     fn invalid_timestamp(&self, index: usize) {
         self.diagnostics.record(Skip::record(
             self.path,
@@ -195,8 +186,6 @@ impl ThreadUnit<'_> {
     }
 }
 
-/// A record's timestamp text together with the instant it names, or `None`
-/// when the report cannot place it on a day.
 fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
     crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp))
 }
@@ -211,8 +200,6 @@ pub(crate) fn read_thread(
     parse_thread(&content, &ThreadUnit { path, diagnostics }, tz, pricing)
 }
 
-/// Fails when the content is not a thread object at all, so the caller skips
-/// the file as a unit instead of taking it for a thread without usage.
 fn parse_thread(
     content: &[u8],
     unit: &ThreadUnit<'_>,
@@ -221,6 +208,7 @@ fn parse_thread(
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let thread = decode_json::<AmpThread>(content)?;
     let messages = &thread.messages;
+    // NOTE(2026-05-25, #1145): Newer Amp threads store usage on assistant messages without a `usageLedger`. Older ledgers and their corresponding message usage describe the same calls.
     let ledger_events = thread
         .usage_ledger
         .as_ref()
@@ -510,7 +498,6 @@ mod tests {
     #[test]
     fn records_usage_whose_timestamp_cannot_be_placed() {
         let diagnostics = Diagnostics::new("amp");
-        // Microsecond precision is a shape the timestamp parser does not read.
         let ledger = LEDGER_THREAD.replace("23:30:00.000Z", "23:30:00.000000Z");
         let messages = MESSAGES_THREAD.replace("2026-02-01T23:59:59Z", "yesterday");
 
@@ -835,9 +822,6 @@ mod tests {
 
     #[test]
     fn empty_usage_ledger_falls_back_to_message_usage() {
-        // A `usageLedger` object without a usable `events` array must not win
-        // precedence over `messages`; the thread should still report message
-        // usage instead of returning nothing.
         let fixture = fs_fixture!({
             "thread.json": r#"{
                 "id":"T-thread-a",
@@ -872,8 +856,6 @@ mod tests {
 
     #[test]
     fn malformed_message_element_does_not_drop_the_thread() {
-        // A non-object entry in `messages` (and a non-object `usageLedger`) must
-        // be skipped gracefully rather than failing the whole thread.
         let fixture = fs_fixture!({
             "thread.json": r#"{
                 "id":"T-thread-a",
