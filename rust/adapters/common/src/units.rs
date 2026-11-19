@@ -77,7 +77,7 @@ impl UnitError {
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
         let state = match self.fault {
             Fault::Unwritten => UNWRITTEN,
-            Fault::Unfinished if being_written(unit, diagnostics.report_now()) => {
+            Fault::Unfinished if being_written(unit, diagnostics.assessment_instant()) => {
                 "incomplete, read as still being written"
             }
             Fault::Unfinished | Fault::Skip(_) => match fs::metadata(unit) {
@@ -139,7 +139,10 @@ const UNWRITTEN: &str = "empty, read as not yet written";
 const IN_PROGRESS_WINDOW: Duration = Duration::from_secs(60);
 
 #[cold]
-pub(crate) fn being_written(unit: &Path, now: ccusage_core::TimestampMs) -> bool {
+pub(crate) fn being_written(unit: &Path, now: Option<ccusage_core::TimestampMs>) -> bool {
+    let Some(now) = now else {
+        return false;
+    };
     fs::metadata(unit)
         .and_then(|metadata| metadata.modified())
         .is_ok_and(|modified| {
@@ -295,11 +298,12 @@ pub(crate) mod tests {
         time::{Duration, SystemTime},
     };
 
-    use ccusage_core::{Diagnostics, Result, SkipKind, cli::SharedArgs, cli_error};
-    use ccusage_test_support::Fixture;
+    use ccusage_core::{Diagnostics, Result, SkipKind, TimestampMs, cli::SharedArgs, cli_error};
+    use ccusage_test_support::{Fixture, instant, set_modified};
 
     use super::{
-        Fault, IN_PROGRESS_WINDOW, SqliteStage, UnitError, decode_json, read_units, read_units_flat,
+        Fault, IN_PROGRESS_WINDOW, SqliteStage, UnitError, being_written, decode_json, read_units,
+        read_units_flat,
     };
 
     pub(crate) fn age_past_write_window(path: &Path) {
@@ -310,6 +314,31 @@ pub(crate) mod tests {
             .unwrap()
             .set_modified(modified)
             .unwrap();
+    }
+
+    #[test]
+    fn being_written_compares_file_mtime_to_the_assessment_instant() {
+        let fixture = Fixture::new();
+        let unit = fixture.write_file("frame.zst", "frame");
+        let now = TimestampMs::from_millis(instant("2026-01-02T00:00:00Z").millis());
+
+        set_modified(&unit, instant("2026-01-01T23:59:00Z"));
+        assert!(being_written(&unit, Some(now)));
+
+        set_modified(&unit, instant("2026-01-01T23:58:59Z"));
+        assert!(!being_written(&unit, Some(now)));
+        assert!(!being_written(&unit, None));
+    }
+
+    #[test]
+    fn discovery_diagnostics_classify_recent_incomplete_units_as_invalid_data() {
+        let fixture = Fixture::new();
+        let fresh = fixture.write_file("fresh.zst", "frame");
+        let diagnostics = Diagnostics::without_clock("test");
+
+        UnitError::unfinished("stream ends inside a frame").record(&fresh, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]
@@ -339,7 +368,7 @@ pub(crate) mod tests {
             },
         ];
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::new("test");
+            let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
             let loaded = super::read_typed_units(&units, single_thread, &diagnostics, |unit| {
                 if unit.id == 3 {
                     Err(UnitError::new(SkipKind::InvalidData, "rejected"))
@@ -372,7 +401,7 @@ pub(crate) mod tests {
             fixture.write_file("empty.txt", ""),
             fixture.write_file("broken.txt", "3 four"),
         ];
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(&files, true, &diagnostics, numbers);
 
@@ -401,7 +430,7 @@ pub(crate) mod tests {
             .collect::<Vec<_>>();
 
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::new("test");
+            let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
             let loaded = read_units_flat(&files, single_thread, &diagnostics, numbers);
 
@@ -414,7 +443,7 @@ pub(crate) mod tests {
     fn a_reader_chooses_the_kind_of_its_failure() {
         let fixture = Fixture::new();
         let files = vec![fixture.write_file("state.db", "SQLite format 3")];
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(&files, true, &diagnostics, |_| {
             Err::<(), _>(UnitError::new(SkipKind::Invariant, "no usage table"))
@@ -429,7 +458,7 @@ pub(crate) mod tests {
     fn io_errors_convert_without_a_wrapper() {
         let fixture = Fixture::new();
         let files = vec![fixture.create_dir_all("directory.txt")];
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(&files, true, &diagnostics, |file| fs::read(file));
 
@@ -443,7 +472,7 @@ pub(crate) mod tests {
         let missing = fixture.path("missing.json");
         let empty = fixture.write_file("empty.json", "");
         let files = vec![missing.clone(), empty.clone()];
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(
             &files,
@@ -479,7 +508,7 @@ pub(crate) mod tests {
             fixture.create_dir_all("directory.json"),
             fixture.write_file("broken.json", "{\"value\":}"),
         ];
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(
             &files,
@@ -501,7 +530,7 @@ pub(crate) mod tests {
             cut.clone(),
             fixture.write_file("broken.json", "{\"value\":}"),
         ];
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(
             &files,
@@ -531,7 +560,7 @@ pub(crate) mod tests {
         let fixture = Fixture::new();
         let cut = fixture.write_file("cut.json", r#"{"usage":{"inp"#);
         age_past_write_window(&cut);
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(
             std::slice::from_ref(&cut),
@@ -563,7 +592,7 @@ pub(crate) mod tests {
         let fresh = fixture.write_file("fresh.zst", "frame");
         let stale = fixture.write_file("stale.zst", "frame");
         age_past_write_window(&stale);
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         for unit in [&fresh, &stale] {
             UnitError::unfinished("stream ends inside a frame").record(unit, &diagnostics);
@@ -592,7 +621,7 @@ pub(crate) mod tests {
     fn a_whitespace_only_document_is_noted_like_an_empty_file() {
         let fixture = Fixture::new();
         let blank = fixture.write_file("blank.json", " \n\t\r\n");
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let loaded = read_units(
             std::slice::from_ref(&blank),

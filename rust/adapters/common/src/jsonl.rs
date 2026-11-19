@@ -467,7 +467,7 @@ pub fn record_decode_error(
 ) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
-        Category::Eof if unterminated && being_written(unit, diagnostics.report_now()) => {
+        Category::Eof if unterminated && being_written(unit, diagnostics.assessment_instant()) => {
             diagnostics.debug_note(
                 unit,
                 format!(
@@ -843,7 +843,7 @@ mod tests {
         let mut compressed = zstd::stream::encode_all(b"complete\npartial".as_slice(), 0).unwrap();
         compressed.extend_from_slice(b"invalid next frame");
         std::fs::write(&path, compressed).unwrap();
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let mut lines = Vec::new();
         read(
             &path,
@@ -886,7 +886,7 @@ mod tests {
         let content =
             b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n{\"model\":\"b\",\"tokens\":2}\n";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let parsed = decode_fixture::<Record>(
             content,
             Some(&prefilter),
@@ -919,7 +919,7 @@ mod tests {
     fn a_record_cut_short_by_the_end_of_a_file_being_written_is_noted_not_skipped() {
         let fixture = Fixture::new();
         let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let records =
             decode_fixture::<Record>(CUT_LAST_LINE.as_bytes(), None, &live, &diagnostics, None)
                 .map(|(_, record)| record.tokens)
@@ -946,7 +946,7 @@ mod tests {
         let fixture = Fixture::new();
         let stale = fixture.write_file("stale.jsonl", CUT_LAST_LINE);
         age_past_write_window(&stale);
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let records =
             decode_fixture::<Record>(CUT_LAST_LINE.as_bytes(), None, &stale, &diagnostics, None)
                 .map(|(_, record)| record.tokens)
@@ -978,7 +978,7 @@ mod tests {
             b"{\"tokens\":2,\"mod\n{\"tokens\":1}".as_slice(),
             b"{\"tokens\":1}\n{\"tokens\":2,\"mod\n",
         ] {
-            let diagnostics = Diagnostics::new("test");
+            let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
             let _ = decode_fixture::<Record>(
                 content,
                 None,
@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn records_skips_unparsable_lines() {
         let content = b"{\"tokens\":1}\nnot json\n{\"tokens\":2}\n";
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let parsed = decode_fixture::<Record>(
             content,
             None,
@@ -1025,7 +1025,7 @@ mod tests {
 
         let content = b"{\"model\":\"before\",\"tokens\":1}\n{\"other\":\"SECRET_CANARY\",\"tokens\":}\n{\"model\":\"broken\",\"tokens\":\"SECRET_CANARY\"}\n{\"model\":\"after\",\"tokens\":2}";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
 
         let records = decode_fixture::<StrictRecord>(
             content,
@@ -1061,7 +1061,7 @@ mod tests {
         struct Record {
             tokens: u64,
         }
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let records = decode_fixture::<Record>(
             b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
             None,
@@ -1090,7 +1090,7 @@ mod tests {
             r#"{"kind":"usage","tokens":2}"#,
         )
         .as_bytes();
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
         let records = decode_fixture::<UsageRecord>(
             content,
             None,
@@ -1116,7 +1116,7 @@ mod tests {
             assert!(!warnings.contains("/logs/session.jsonl:2:"));
             assert!(!warnings.contains("SECRET_CANARY"));
 
-            let database_diagnostics = Diagnostics::new("test");
+            let database_diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
             assert!(
                 super::decode_record::<UsageRecord>(
                     b" \t\r",

@@ -106,7 +106,11 @@ mod tests {
         fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
         Environment::with_var("QWEN_DATA_DIR", fixture.path("qwen")).run(|| {
             assert_eq!(
-                discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
+                discover_chat_files(&ccusage_core::Diagnostics::at(
+                    "qwen",
+                    ccusage_core::utc_now()
+                ))
+                .unwrap(),
                 [archived.clone(), direct]
             );
             assert_eq!(project_from_file(&archived).as_deref(), Some("project-a"));

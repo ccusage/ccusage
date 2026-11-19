@@ -771,8 +771,13 @@ mod tests {
                 }),
                 effort: None,
             };
-            let output =
-                render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
+            let output = render_statusline(
+                &hook,
+                &args,
+                &shared,
+                &Diagnostics::at("claude", ccusage_core::utc_now()),
+            )
+            .unwrap();
             assert!(output.contains("💰 $0.40 session"), "{output}");
         })
     }

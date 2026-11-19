@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn a_file_removed_after_discovery_is_not_a_skip() {
         let fixture = ccusage_test_support::Fixture::new();
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
 
         let pricing = ccusage_core::PricingMap::default();
         let entries = crate::daily::read_usage_file(
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn malformed_usage_is_diagnosed() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
 
         let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
         reject_terminated(line, &diagnostics);
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn a_usage_line_still_being_written_is_not_a_skip() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.write_file("session.jsonl", CUT_LAST_LINE);
 
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn a_usage_line_left_cut_short_is_skipped_as_truncated() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.write_file("session.jsonl", CUT_LAST_LINE);
         File::options()
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn unrelated_and_intentionally_unsupported_records_stay_quiet() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
         for line in [
             br#"{"metadata":{"usage":{}}}"#.as_slice(),
             br#"{"data":{"usage":{},"content":[{"text":"\uD83D\uDE00"},true,false,null,-1,2,3.5]}}"#,
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn a_rejected_wrapped_usage_record_is_invalid_data() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
         reject_terminated(
             br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
             &diagnostics,
@@ -164,7 +164,7 @@ mod tests {
             b"{\"data\":{\"usage\":{},\"content\":\"\xff\"}}",
             br#"{"data":{"usage":{},"value":1e400}}"#,
         ] {
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
             reject_terminated(line, &diagnostics);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         }

@@ -1308,7 +1308,11 @@ mod tests {
         let database = fixture.write_file("conversations/empty.db", "");
 
         assert!(matches!(
-            parse_sqlite_file(&database, &Diagnostics::new("antigravity")).unwrap(),
+            parse_sqlite_file(
+                &database,
+                &Diagnostics::at("antigravity", ccusage_core::utc_now())
+            )
+            .unwrap(),
             ParsedDatabase::EmptySnapshot
         ));
 
@@ -1334,9 +1338,12 @@ mod tests {
         ])
         .run(|| {
             assert!(
-                super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
-                    .unwrap()
-                    .is_empty()
+                super::super::paths::conversation_db_paths(
+                    &Diagnostics::at("antigravity", ccusage_core::utc_now()),
+                    false
+                )
+                .unwrap()
+                .is_empty()
             );
 
             let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
@@ -1545,7 +1552,7 @@ mod tests {
             let shared = shared(true);
             let pricing = PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::new("antigravity");
+            let diagnostics = Diagnostics::at("antigravity", ccusage_core::utc_now());
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

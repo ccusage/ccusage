@@ -31,7 +31,7 @@ pub(crate) fn load_groups_from_sources(
         shared,
         kind,
         Some(&crate::PricingMap::load_embedded()),
-        &Diagnostics::new("codex"),
+        &Diagnostics::at("codex", ccusage_core::utc_now()),
     )
     .map(|(groups, _)| groups)
 }
@@ -84,7 +84,7 @@ pub(crate) fn load_rollouts(
 }
 
 pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
-    let diagnostics = Diagnostics::new("codex");
+    let diagnostics = Diagnostics::at("codex", ccusage_core::utc_now());
     let files = collect_codex_usage_files(dir, &diagnostics);
     let selection = [(dir, files.as_slice())];
     let plan = CodexReplayPlan::for_selection(&selection, selection, true, &diagnostics);

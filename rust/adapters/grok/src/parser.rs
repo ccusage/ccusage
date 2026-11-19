@@ -699,7 +699,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -829,7 +829,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -867,7 +867,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -894,7 +894,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -1007,7 +1007,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1,"outputTokens":1}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::new("grok");
+        let diagnostics = Diagnostics::at("grok", ccusage_core::utc_now());
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1029,7 +1029,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::new("grok");
+        let diagnostics = Diagnostics::at("grok", ccusage_core::utc_now());
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1064,7 +1064,7 @@ mod tests {
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let diagnostics = Diagnostics::new("grok");
+        let diagnostics = Diagnostics::at("grok", ccusage_core::utc_now());
 
         let entries = parse_session_files_with_diagnostics(
             &files,
@@ -1117,7 +1117,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -1163,7 +1163,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -1258,7 +1258,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::at("grok", ccusage_core::utc_now()),
         )
         .map(|entries| {
             entries
@@ -1302,7 +1302,7 @@ mod tests {
                 &jiff::tz::TimeZone::UTC,
                 mode,
                 PriceTable::for_map(mode, &pricing),
-                &Diagnostics::new("grok"),
+                &Diagnostics::at("grok", ccusage_core::utc_now()),
             )
             .map(|entries| {
                 entries

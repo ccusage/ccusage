@@ -178,7 +178,11 @@ mod diagnostic_tests {
             };
             assert!(
                 SOURCE
-                    .counted(&shared, None, &Diagnostics::new("claude"))
+                    .counted(
+                        &shared,
+                        None,
+                        &Diagnostics::at("claude", ccusage_core::utc_now())
+                    )
                     .is_ok()
             );
         })
@@ -219,7 +223,7 @@ mod diagnostic_tests {
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..Default::default()
             };
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
             let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
             let probe = crate::read_usage_file_with_diagnostics(
                 &main,
@@ -269,7 +273,7 @@ mod diagnostic_tests {
                 debug: true,
                 ..Default::default()
             };
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::at("claude", ccusage_core::utc_now());
             let focused = crate::load_deduped_entries_with_progress(
                 &shared,
                 None,

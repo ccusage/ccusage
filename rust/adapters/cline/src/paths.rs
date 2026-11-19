@@ -187,7 +187,7 @@ mod tests {
             let blocked = fixture.path("tasks/blocked");
             fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
             let denied = read_fixture_dir(&blocked).is_err();
-            let diagnostics = Diagnostics::new("cline");
+            let diagnostics = Diagnostics::at("cline", ccusage_core::utc_now());
             let files = discover_files(&diagnostics);
             fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
             let files = files.unwrap();
@@ -226,7 +226,7 @@ mod tests {
             legacy_cli_tasks.root().display()
         );
         Environment::with_var(CLINE_DATA_DIR_ENV, configured).run(|| {
-            let files = discover_files(&Diagnostics::new("cline")).unwrap();
+            let files = discover_files(&Diagnostics::at("cline", ccusage_core::utc_now())).unwrap();
 
             let mut expected = vec![
                 SourceFile {
@@ -262,7 +262,7 @@ mod tests {
         });
         let configured = format!("{},{}", fixture.root().display(), fixture.root().display());
         Environment::with_var(CLINE_DATA_DIR_ENV, configured).run(|| {
-            let files = discover_files(&Diagnostics::new("cline")).unwrap();
+            let files = discover_files(&Diagnostics::at("cline", ccusage_core::utc_now())).unwrap();
 
             assert_eq!(files.len(), 1);
             assert_eq!(files[0].session_id, "task-a");
@@ -282,7 +282,7 @@ mod tests {
             ("XDG_CONFIG_HOME", None),
         ])
         .run(|| {
-            let files = discover_files(&Diagnostics::new("cline")).unwrap();
+            let files = discover_files(&Diagnostics::at("cline", ccusage_core::utc_now())).unwrap();
 
             assert_eq!(files.len(), 1);
             assert_eq!(files[0].session_id, "task-a");

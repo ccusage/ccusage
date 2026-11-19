@@ -1160,7 +1160,7 @@ mod session_state_tests {
                 "timestamp": raw,
                 "attributes": {"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2},
             }).to_string());
-            let diagnostics = Diagnostics::new("copilot");
+            let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
             let entries = parse_otel_file(&path, &diagnostics).unwrap();
             assert_eq!(entries.len(), 1, "{raw}");
             assert_eq!(entries[0].timestamp.as_millis(), expected, "{raw}");
@@ -1180,7 +1180,7 @@ mod session_state_tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "otel.jsonl": r#"{"body":"GenAI inference:","attributes":{"gen_ai.usage.input_tokens":10,"gen_ai.usage.output_tokens":2,"gen_ai.request.model":"gpt-5"}}"#,
         });
-        let diagnostics = Diagnostics::new("copilot");
+        let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
         let events = parse_otel_file(&fixture.path("otel.jsonl"), &diagnostics).unwrap();
         assert!(events.is_empty());
         assert_eq!(
@@ -1194,7 +1194,7 @@ mod session_state_tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session/events.jsonl": r#"{"type":"session.shutdown","data":{"modelMetrics":{"gpt-5":{"usage":{"inputTokens":10,"outputTokens":2}}}}}"#,
         });
-        let diagnostics = Diagnostics::new("copilot");
+        let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
         let events =
             parse_session_state_file(&fixture.path("session/events.jsonl"), &diagnostics).unwrap();
         assert!(events.entries.is_empty());
@@ -1214,7 +1214,7 @@ mod session_state_tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("copilot");
+        let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
 
         let parsed =
             parse_session_state_file(&fixture.path("session/events.jsonl"), &diagnostics).unwrap();
@@ -1299,7 +1299,7 @@ mod session_state_tests {
 {}
 ", record("record-2")),
         });
-        let diagnostics = Diagnostics::new("copilot");
+        let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
 
         let parsed =
             parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics)
@@ -1334,7 +1334,7 @@ mod session_state_tests {
 {}
 ", record("record-2")),
         });
-        let diagnostics = Diagnostics::new("copilot");
+        let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
 
         let parsed =
             parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics)
@@ -1375,7 +1375,7 @@ mod session_state_tests {
 
         let entries = parse_session_state_file(
             &fixture.path("session-1/events.jsonl"),
-            &Diagnostics::new("copilot"),
+            &Diagnostics::at("copilot", ccusage_core::utc_now()),
         )
         .expect("session-state file should parse")
         .entries;
@@ -1439,7 +1439,7 @@ mod session_state_tests {
 
         let entries = parse_session_state_file(
             &fixture.path("session-1/events.jsonl"),
-            &Diagnostics::new("copilot"),
+            &Diagnostics::at("copilot", ccusage_core::utc_now()),
         )
         .unwrap()
         .entries;
@@ -1490,7 +1490,7 @@ mod session_state_tests {
 
         let entries = parse_session_state_file(
             &fixture.path("session-1/events.jsonl"),
-            &Diagnostics::new("copilot"),
+            &Diagnostics::at("copilot", ccusage_core::utc_now()),
         )
         .unwrap()
         .entries;
@@ -1546,7 +1546,7 @@ mod session_state_tests {
 
         let parsed = parse_session_state_file(
             &fixture.path("session-1/events.jsonl"),
-            &Diagnostics::new("copilot"),
+            &Diagnostics::at("copilot", ccusage_core::utc_now()),
         )
         .unwrap();
 
@@ -1603,7 +1603,7 @@ mod session_state_tests {
 
         let parsed = parse_session_state_file(
             &fixture.path("session-1/events.jsonl"),
-            &Diagnostics::new("copilot"),
+            &Diagnostics::at("copilot", ccusage_core::utc_now()),
         )
         .unwrap();
 

@@ -912,7 +912,13 @@ mod tests {
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> LoadedFile {
-        read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+        read_usage_file_with_diagnostics(
+            path,
+            tz,
+            mode,
+            pricing,
+            &Diagnostics::at("claude", ccusage_core::utc_now()),
+        )
     }
 
     #[test]
@@ -939,7 +945,7 @@ mod tests {
             let loaded = super::load_windowed_entries(
                 &shared,
                 None,
-                &Diagnostics::new("claude"),
+                &Diagnostics::at("claude", ccusage_core::utc_now()),
                 CostMode::Calculate,
             )
             .unwrap();
@@ -1096,7 +1102,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let diagnostics = ccusage_core::Diagnostics::new("claude");
+        let diagnostics = ccusage_core::Diagnostics::at("claude", ccusage_core::utc_now());
 
         let loaded = read_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
@@ -1127,7 +1133,7 @@ mod tests {
         let files = super::paths::usage_files(
             &[fixture.root().to_path_buf()],
             Some("project-a"),
-            &ccusage_core::Diagnostics::new("claude"),
+            &ccusage_core::Diagnostics::at("claude", ccusage_core::utc_now()),
         );
 
         assert_eq!(files.len(), 1);
@@ -1144,7 +1150,7 @@ mod tests {
         let files = super::paths::usage_files(
             &[fixture.root().to_path_buf()],
             Some("project-a/session-a"),
-            &ccusage_core::Diagnostics::new("claude"),
+            &ccusage_core::Diagnostics::at("claude", ccusage_core::utc_now()),
         );
 
         assert!(files.is_empty());

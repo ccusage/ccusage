@@ -341,7 +341,10 @@ mod tests {
         fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
-        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
+        let groups = collect_deduped_codex_usage_files(
+            &sources,
+            &Diagnostics::at("codex", ccusage_core::utc_now()),
+        );
 
         assert_eq!(
             groups,
@@ -368,7 +371,7 @@ mod tests {
         let blocked = fixture.create_dir_all("codex/sessions/2026/01/02");
         fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let diagnostics = Diagnostics::new("codex");
+        let diagnostics = Diagnostics::at("codex", ccusage_core::utc_now());
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
         let groups = collect_deduped_codex_usage_files(&sources, &diagnostics);
@@ -396,7 +399,10 @@ mod tests {
         fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
-        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
+        let groups = collect_deduped_codex_usage_files(
+            &sources,
+            &Diagnostics::at("codex", ccusage_core::utc_now()),
+        );
 
         assert_eq!(
             groups,
@@ -426,7 +432,10 @@ mod tests {
 
         let sources =
             codex_usage_sources_from_homes(vec![fixture.path("work"), fixture.path("personal")]);
-        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
+        let groups = collect_deduped_codex_usage_files(
+            &sources,
+            &Diagnostics::at("codex", ccusage_core::utc_now()),
+        );
 
         assert_eq!(
             groups,

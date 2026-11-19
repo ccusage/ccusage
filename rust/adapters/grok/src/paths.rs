@@ -54,7 +54,8 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )])
         .run(|| {
-            let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+            let files =
+                discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now())).unwrap();
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with("updates.jsonl"));
         })
@@ -73,7 +74,8 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )])
         .run(|| {
-            let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+            let files =
+                discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now())).unwrap();
             let names: Vec<_> = files
                 .iter()
                 .map(|file| file.file_name().unwrap().to_string_lossy().to_string())
@@ -94,7 +96,8 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )])
         .run(|| {
-            let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+            let files =
+                discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now())).unwrap();
             assert_eq!(files.len(), 2);
             assert!(files.iter().all(|file| file.ends_with("updates.jsonl")));
             assert!(files[0] < files[1]);
@@ -111,7 +114,8 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )])
         .run(|| {
-            let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+            let files =
+                discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now())).unwrap();
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with("updates.jsonl"));
         })
@@ -129,7 +133,8 @@ mod tests {
             ("USERPROFILE", Some(home)),
         ])
         .run(|| {
-            let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+            let files =
+                discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now())).unwrap();
 
             assert_eq!(files.len(), 1);
             assert!(files[0].to_string_lossy().contains("session-a"));
@@ -142,7 +147,9 @@ mod tests {
         let missing = fixture.path("does-not-exist");
         Environment::with_vars([(GROK_HOME_ENV, Some(OsString::from(missing.as_os_str())))]).run(
             || {
-                let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+                let files =
+                    discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now()))
+                        .unwrap();
                 assert!(files.is_empty());
             },
         )
@@ -156,7 +163,9 @@ mod tests {
         let file_path = fixture.path("not-a-dir");
         Environment::with_vars([(GROK_HOME_ENV, Some(OsString::from(file_path.as_os_str())))]).run(
             || {
-                let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
+                let files =
+                    discover_session_files(&Diagnostics::at("grok", ccusage_core::utc_now()))
+                        .unwrap();
                 assert!(files.is_empty());
             },
         )

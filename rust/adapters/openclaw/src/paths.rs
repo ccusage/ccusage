@@ -78,7 +78,7 @@ mod tests {
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let permission_denied = read_fixture_dir(&blocked).is_err();
 
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::at("openclaw", ccusage_core::utc_now());
         let files = collect_session_files(fixture.root(), &diagnostics);
 
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
@@ -111,7 +111,10 @@ mod tests {
         });
         symlink(external.path("external"), fixture.path("sessions/linked")).unwrap();
 
-        let files = collect_session_files(&fixture.path("sessions"), &Diagnostics::new("openclaw"));
+        let files = collect_session_files(
+            &fixture.path("sessions"),
+            &Diagnostics::at("openclaw", ccusage_core::utc_now()),
+        );
 
         assert_eq!(
             files,

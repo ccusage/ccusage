@@ -131,7 +131,7 @@ mod tests {
             let blocked = fixture.path("session-state/blocked");
             fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
             let denied = fs::metadata(blocked.join("events.jsonl")).is_err();
-            let diagnostics = Diagnostics::new("copilot");
+            let diagnostics = Diagnostics::at("copilot", ccusage_core::utc_now());
             let files = paths(&diagnostics);
             fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
             let files = files.unwrap();
@@ -170,7 +170,7 @@ mod tests {
             ),
         ])
         .run(|| {
-            let files = paths(&Diagnostics::new("copilot")).unwrap();
+            let files = paths(&Diagnostics::at("copilot", ccusage_core::utc_now())).unwrap();
 
             assert_eq!(
                 files,
@@ -216,7 +216,7 @@ mod tests {
             (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
         ])
         .run(|| {
-            let files = paths(&Diagnostics::new("copilot")).unwrap();
+            let files = paths(&Diagnostics::at("copilot", ccusage_core::utc_now())).unwrap();
 
             assert_eq!(
                 files,

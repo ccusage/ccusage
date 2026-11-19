@@ -1441,7 +1441,10 @@ mod tests {
                     provider: None,
                     timestamp: Some((TimestampMs::UNIX_EPOCH, 3)),
                     trajectory_timestamp: None,
-                    diagnostics: &ccusage_core::Diagnostics::new("antigravity"),
+                    diagnostics: &ccusage_core::Diagnostics::at(
+                        "antigravity",
+                        ccusage_core::utc_now(),
+                    ),
                     record: (std::path::Path::new("fixture.db"), 1),
                     session_id: "session",
                     fallback_identities: &[],

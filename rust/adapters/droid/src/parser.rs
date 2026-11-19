@@ -398,7 +398,7 @@ mod tests {
         let error = load_settings_file(&path)
             .err()
             .expect("missing timestamp must be diagnosed");
-        let diagnostics = ccusage_core::Diagnostics::new("droid");
+        let diagnostics = ccusage_core::Diagnostics::at("droid", ccusage_core::utc_now());
         error.record(&path, &diagnostics);
         assert_eq!(
             diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),

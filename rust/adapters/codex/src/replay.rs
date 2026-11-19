@@ -536,7 +536,7 @@ mod tests {
         });
         let selected = [fixture.path("current.jsonl")];
         let available = [selected[0].clone(), fixture.path("other.jsonl.zst")];
-        let diagnostics = Diagnostics::new("codex");
+        let diagnostics = Diagnostics::at("codex", ccusage_core::utc_now());
         let mut visited = false;
         let plan = CodexReplayPlan::for_selection(
             &[(fixture.root(), selected.as_slice())],
@@ -587,7 +587,7 @@ mod tests {
             let mut available = vec![child.clone(), fixture.path("other.jsonl.zst")];
             available.extend(parents);
             for single_thread in [true, false] {
-                let diagnostics = Diagnostics::new("codex");
+                let diagnostics = Diagnostics::at("codex", ccusage_core::utc_now());
                 let plan = CodexReplayPlan::for_selection(
                     &[(fixture.root(), &selected)],
                     [(fixture.root(), available.as_slice())],
@@ -644,7 +644,7 @@ mod tests {
             parent.clone(),
             fixture.path("other.jsonl.zst"),
         ];
-        let diagnostics = Diagnostics::new("codex");
+        let diagnostics = Diagnostics::at("codex", ccusage_core::utc_now());
         let plan = CodexReplayPlan::for_selection(
             &[(fixture.root(), selected.as_slice())],
             std::iter::once((fixture.root(), available.as_slice()))
