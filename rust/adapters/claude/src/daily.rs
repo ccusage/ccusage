@@ -122,6 +122,7 @@ struct Admitted {
 fn has_usage_marker(line: &[u8]) -> bool {
     const MARKER: &[u8] = br#""usage":{"#;
     static VERBATIM: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(MARKER));
+    // NOTE(2026-11-19, #2222): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`. A line without `\u00` cannot spell the usage key with escapes, so the escape-aware matcher can be skipped.
     static ASCII_UNICODE_ESCAPE: LazyLock<Finder<'static>> =
         LazyLock::new(|| Finder::new(br"\u00"));
     static FALLBACK: LazyLock<LinePrefilter> = LazyLock::new(|| LinePrefilter::all(&[MARKER]));
