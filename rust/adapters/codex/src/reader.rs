@@ -7,7 +7,7 @@ use std::{
 use ccusage_core::fast::LineReader;
 
 pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
-// NOTE(2026-11-16, #2102): Codex embeds `base_instructions` in the first `session_meta` line. Observed lines reached 49.4 KB, so a 16 KiB probe usually has to grow.
+// NOTE(2026-11-16, #2102): Codex embeds `base_instructions` in the first `session_meta` line. A 64 KiB probe fits the observed first lines of up to 49.4 KB without growing.
 pub(super) const PROBE_BUFFER_SIZE: usize = 64 * 1024;
 
 type RolloutLines = LineReader<Box<dyn Read>>;

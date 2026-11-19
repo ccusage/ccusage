@@ -107,7 +107,7 @@ fn resolve_model_label<'a>(aliases: &'a HashMap<String, String>, display_name: &
         .unwrap_or(display_name)
 }
 
-// NOTE(2026-07-08, Claude Code 2.1.202, #1405): Claude Code omits effort for models without an effort setting. Keep the model label when the hook omits it.
+// NOTE(2026-07-08, Claude Code 2.1.119, #1405): Claude Code omits effort for models without an effort setting. Keep the model label when the hook omits it.
 fn format_model_segment(model_label: &str, effort: Option<&HookEffort>) -> String {
     match effort {
         Some(effort) if !effort.level.is_empty() => format!("{model_label} ({})", effort.level),
