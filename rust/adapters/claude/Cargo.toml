@@ -15,6 +15,9 @@ serde.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.6", features = ["process"] }
+
 [dev-dependencies]
 ccusage-cli-parser.workspace = true
 ccusage-config.workspace = true

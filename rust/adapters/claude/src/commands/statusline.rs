@@ -543,15 +543,10 @@ fn cached_statusline_output(
 
 #[cfg(unix)]
 fn process_is_alive(pid: u32) -> bool {
-    unsafe extern "C" {
-        fn kill(pid: i32, sig: i32) -> i32;
-    }
-    // NOTE(2026-11-16): POSIX kill treats zero and negative PIDs as group or broadcast targets. Probe only a positive PID from the cache.
-    let Some(pid) = i32::try_from(pid).ok().filter(|pid| *pid > 0) else {
-        return false;
-    };
-    // SAFETY: signal 0 only checks that `pid` exists and may be signaled.
-    unsafe { kill(pid, 0) == 0 }
+    i32::try_from(pid)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+        .is_some_and(|pid| rustix::process::test_kill_process(pid).is_ok())
 }
 
 #[cfg(not(unix))]

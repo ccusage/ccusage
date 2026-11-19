@@ -206,6 +206,7 @@ dependencies = [
  "jiff",
  "memchr",
  "rustc-hash",
+ "rustix",
  "serde",
  "serde_json",
  "smallvec",
