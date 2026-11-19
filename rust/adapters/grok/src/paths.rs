@@ -10,7 +10,7 @@ pub(crate) const GROK_HOME_ENV: &str = "GROK_HOME";
 
 fn resolve_root() -> Option<PathBuf> {
     roots::resolve(RootsEnv::Single(GROK_HOME_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .map(|home| home.join(".grok"))
             .into_iter()
             .collect()

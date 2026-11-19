@@ -10,7 +10,7 @@ use crate::Result;
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
 fn paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List(GEMINI_DATA_DIR_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .into_iter()
             .flat_map(|home| [".gemini/tmp"].map(|path| home.join(path)))
             .collect()

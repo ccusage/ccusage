@@ -8,7 +8,6 @@ pub mod fast;
 pub mod logger;
 pub mod model_aliases;
 pub mod output;
-pub mod path_utils;
 pub mod pricing;
 pub mod progress;
 pub mod project_names;
@@ -23,8 +22,6 @@ mod test_support;
 pub mod cli {
     pub use ccusage_cli::*;
 }
-
-pub use ccusage_cli::{BUILT_IN_AGENT_NAMES, home};
 
 pub use agent_report::{agent_summary_json, first_column, summary_period};
 pub use cost::{missing_pricing_model_for_token_total, stored_cost_for_mode, sum_costs};

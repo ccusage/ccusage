@@ -8,7 +8,7 @@ const HERMES_HOME_ENV: &str = "HERMES_HOME";
 
 pub(super) fn hermes_state_db_paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List(HERMES_HOME_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .map(|home| home.join(".hermes"))
             .into_iter()
             .collect()

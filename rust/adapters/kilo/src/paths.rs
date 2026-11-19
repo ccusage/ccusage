@@ -9,7 +9,7 @@ pub(super) const KILO_DB_FILE_NAME: &str = "kilo.db";
 
 pub(super) fn paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List(KILO_DATA_DIR_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .into_iter()
             .flat_map(|home| [".local/share/kilo"].map(|path| home.join(path)))
             .collect()

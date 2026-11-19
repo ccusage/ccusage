@@ -554,9 +554,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        BUILT_IN_AGENT_NAMES, UsageSummary,
+        UsageSummary,
         adapter::codex,
-        cli::{CodexSpeed, CostMode},
+        cli::{BUILT_IN_AGENT_NAMES, CodexSpeed, CostMode},
         tests::{NO_SOURCES, aggregate_periods},
     };
     use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};

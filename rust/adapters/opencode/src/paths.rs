@@ -14,7 +14,7 @@ pub(super) fn paths() -> Result<Vec<PathBuf>> {
             let data_home = env::var_os(XDG_DATA_HOME_ENV)
                 .map(PathBuf::from)
                 .filter(|path| path.is_absolute())
-                .or_else(|| crate::home::home_dir().map(|home| home.join(".local/share")));
+                .or_else(|| crate::cli::home::home_dir().map(|home| home.join(".local/share")));
             data_home
                 .map(|home| home.join("opencode"))
                 .into_iter()

@@ -16,7 +16,7 @@ const COMPRESSED_SUFFIX: &str = ".zstd";
 
 fn roots() -> Vec<PathBuf> {
     roots::resolve(RootsEnv::List(DSH_HOME_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .map(|home| home.join(DSH_HOME_DIR_NAME))
             .into_iter()
             .collect()

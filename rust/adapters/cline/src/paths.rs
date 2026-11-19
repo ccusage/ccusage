@@ -81,7 +81,7 @@ fn data_roots() -> Result<Vec<PathBuf>> {
 
 fn default_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    if let Some(home) = crate::home::home_dir() {
+    if let Some(home) = crate::cli::home::home_dir() {
         roots.push(home.join(".cline"));
         let config_home = env::var_os("XDG_CONFIG_HOME")
             .filter(|value| !value.is_empty())
@@ -109,7 +109,7 @@ fn default_roots() -> Vec<PathBuf> {
         .or_else(|| {
             env::var_os("USERPROFILE")
                 .filter(|value| !value.is_empty())
-                .or_else(|| crate::home::home_dir().map(PathBuf::into_os_string))
+                .or_else(|| crate::cli::home::home_dir().map(PathBuf::into_os_string))
                 .map(PathBuf::from)
                 .map(|home| home.join("AppData/Roaming"))
         });

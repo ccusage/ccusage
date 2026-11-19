@@ -65,7 +65,7 @@ fn record_discovery_failure(diagnostics: &Diagnostics, path: &std::path::Path) {
 
 fn copilot_root() -> Option<PathBuf> {
     roots::resolve(RootsEnv::Single(COPILOT_HOME_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .map(|home| home.join(".copilot"))
             .into_iter()
             .collect()

@@ -28,7 +28,7 @@ fn codebuff_project_roots() -> Result<Vec<PathBuf>> {
     Ok(roots::directories(
         RootsEnv::List(CODEBUFF_DATA_DIR_ENV)
             .candidates(|| {
-                crate::home::home_dir()
+                crate::cli::home::home_dir()
                     .into_iter()
                     .flat_map(|home| {
                         CHANNELS

@@ -12,7 +12,13 @@ use ccusage_adapter_common::{
 use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
-use crate::{Result, cli::SharedArgs, date_range_bounds_ms, fast::FxHashSet, home, resolve_tz};
+use crate::{
+    Result,
+    cli::{SharedArgs, home},
+    date_range_bounds_ms,
+    fast::FxHashSet,
+    resolve_tz,
+};
 
 use super::reader::{is_rollout_file, uncompressed_rollout_path};
 

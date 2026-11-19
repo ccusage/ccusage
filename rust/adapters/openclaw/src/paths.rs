@@ -12,7 +12,7 @@ pub(super) fn paths(custom_path: Option<&str>) -> Vec<PathBuf> {
         return paths;
     }
     roots::resolve(RootsEnv::List(OPENCLAW_DIR_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .into_iter()
             .flat_map(|home| {
                 [".openclaw", ".clawdbot", ".moltbot", ".moldbot"].map(|path| home.join(path))

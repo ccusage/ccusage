@@ -10,7 +10,7 @@ const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
 
 fn paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List(QWEN_DATA_DIR_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .into_iter()
             .flat_map(|home| [".qwen"].map(|path| home.join(path)))
             .collect()

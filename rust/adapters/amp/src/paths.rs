@@ -8,7 +8,7 @@ const AMP_DATA_DIR_ENV: &str = "AMP_DATA_DIR";
 
 pub(super) fn paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List(AMP_DATA_DIR_ENV), || {
-        crate::home::home_dir()
+        crate::cli::home::home_dir()
             .into_iter()
             .flat_map(|home| [".local/share/amp"].map(|path| home.join(path)))
             .collect()

@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use ccusage_cli::{AgentCommandArgs, CliConfig, SourceArgs};
 use ccusage_config::ConfigContext;
-use ccusage_core::BUILT_IN_AGENT_NAMES;
+use ccusage_core::cli::BUILT_IN_AGENT_NAMES;
 
 pub(crate) fn resolve(
     unified: &mut AgentCommandArgs,

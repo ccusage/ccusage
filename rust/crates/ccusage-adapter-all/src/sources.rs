@@ -35,6 +35,6 @@ mod tests {
     #[test]
     fn registry_matches_the_cli_source_order() {
         let registered = SOURCES.iter().map(|source| source.id()).collect::<Vec<_>>();
-        assert_eq!(registered, ccusage_core::BUILT_IN_AGENT_NAMES);
+        assert_eq!(registered, ccusage_core::cli::BUILT_IN_AGENT_NAMES);
     }
 }

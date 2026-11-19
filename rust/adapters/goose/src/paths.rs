@@ -21,14 +21,14 @@ pub(super) fn goose_db_paths(debug: bool) -> Result<Vec<PathBuf>> {
     Ok(roots::directories(roots)
         .into_iter()
         .map(|root| root.join(GOOSE_DB_FILE_NAME))
-        .map(|path| crate::home::path_identity(&path))
+        .map(|path| crate::cli::home::path_identity(&path))
         .filter(|path| path.is_file())
         .filter(|path| seen.insert(path.clone()))
         .collect())
 }
 
 fn default_goose_db_candidates() -> Vec<PathBuf> {
-    crate::home::home_dir()
+    crate::cli::home::home_dir()
         .into_iter()
         .flat_map(|home| {
             [
@@ -52,7 +52,7 @@ mod tests {
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.path("unresolved/sessions.db");
         assert!(path.canonicalize().is_err());
-        assert_eq!(crate::home::path_identity(&path), path);
+        assert_eq!(crate::cli::home::path_identity(&path), path);
     }
 
     #[cfg(unix)]

@@ -30,7 +30,7 @@ fn conversation_dirs(debug: bool) -> Vec<PathBuf> {
             })
             .unwrap_or_else(|| {
                 roots::default_candidates(debug, || {
-                    crate::home::home_dir()
+                    crate::cli::home::home_dir()
                         .into_iter()
                         .flat_map(|home| {
                             DEFAULT_ANTIGRAVITY_ROOTS

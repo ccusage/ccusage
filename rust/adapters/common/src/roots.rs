@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ccusage_core::home;
+use ccusage_core::cli::home;
 
 #[derive(Clone, Copy)]
 pub enum RootsEnv<'a> {

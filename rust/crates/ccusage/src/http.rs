@@ -24,7 +24,7 @@ pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::R
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
         std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
-        ccusage_core::home::home_dir(),
+        ccusage_core::cli::home::home_dir(),
     )
 }
 
