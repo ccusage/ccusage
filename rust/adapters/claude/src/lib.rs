@@ -907,6 +907,53 @@ mod tests {
     }
 
     #[test]
+    fn windowed_calculate_mode_prices_entries_with_shared_display_mode() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "projects/project-a/pricing.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00Z","sessionId":"pricing","requestId":"known","message":{"id":"known","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":1000}}}"#,
+                r#"{"timestamp":"2026-01-02T10:01:00Z","sessionId":"pricing","requestId":"unknown","message":{"id":"unknown","model":"unlisted-fixture-model","usage":{"input_tokens":1000,"output_tokens":1000}}}"#,
+            ].join("\n"),
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            offline: true,
+            single_thread: true,
+            timezone: Some("UTC".to_owned()),
+            ..Default::default()
+        };
+        let loaded = super::load_windowed_entries(
+            &shared,
+            None,
+            &Diagnostics::new("claude"),
+            CostMode::Calculate,
+        )
+        .unwrap();
+        assert_eq!(loaded.entries.len(), 2);
+        let known = loaded
+            .entries
+            .iter()
+            .find(|entry| entry.model.as_deref() == Some("claude-sonnet-4-20250514"))
+            .unwrap();
+        assert!((known.cost - 0.018).abs() < 1e-12, "{}", known.cost);
+        assert_eq!(known.missing_pricing_model, None);
+        let unknown = loaded
+            .entries
+            .iter()
+            .find(|entry| entry.model.as_deref() == Some("unlisted-fixture-model"))
+            .unwrap();
+        assert_eq!(unknown.cost, 0.0);
+        assert_eq!(
+            unknown.missing_pricing_model.as_deref(),
+            Some("unlisted-fixture-model")
+        );
+    }
+
+    #[test]
     fn all_report_loaders_drop_timestamp_different_sidechain_replays() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": [

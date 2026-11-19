@@ -121,23 +121,6 @@ fn cost_at_speed(usage: crate::TokenUsageRaw, rates: Pricing) -> f64 {
     calculate_cost_from_pricing(usage, rates) * multiplier
 }
 
-pub fn calculate_cost_for_usage_at(
-    model: Option<&str>,
-    usage: crate::TokenUsageRaw,
-    cost_usd: Option<f64>,
-    timestamp: Option<crate::TimestampMs>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    match mode {
-        CostMode::Display => cost_usd.unwrap_or(0.0),
-        CostMode::Auto => {
-            cost_usd.unwrap_or_else(|| calculate_cost_from_tokens(model, usage, timestamp, pricing))
-        }
-        CostMode::Calculate => calculate_cost_from_tokens(model, usage, timestamp, pricing),
-    }
-}
-
 pub fn stored_cost_for_mode(cost_usd: Option<f64>, mode: CostMode) -> Option<f64> {
     cost_usd.filter(|_| mode == CostMode::Auto)
 }
@@ -156,26 +139,6 @@ pub fn missing_pricing_model_for_token_total(
         .find(model)
         .is_none()
         .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
-}
-
-fn calculate_cost_from_tokens(
-    model: Option<&str>,
-    usage: crate::TokenUsageRaw,
-    timestamp: Option<crate::TimestampMs>,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    let Some(model) = model else {
-        return 0.0;
-    };
-    let Some(pricing) = pricing.and_then(|pricing| {
-        timestamp.map_or_else(
-            || pricing.find(model),
-            |timestamp| pricing.find_at(model, timestamp),
-        )
-    }) else {
-        return 0.0;
-    };
-    cost_at_speed(usage, pricing)
 }
 
 fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing) -> f64 {
@@ -266,6 +229,42 @@ pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    fn calculate_cost_for_usage_at(
+        model: Option<&str>,
+        usage: crate::TokenUsageRaw,
+        cost_usd: Option<f64>,
+        timestamp: Option<crate::TimestampMs>,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> f64 {
+        match mode {
+            CostMode::Display => cost_usd.unwrap_or(0.0),
+            CostMode::Auto => cost_usd
+                .unwrap_or_else(|| calculate_cost_from_tokens(model, usage, timestamp, pricing)),
+            CostMode::Calculate => calculate_cost_from_tokens(model, usage, timestamp, pricing),
+        }
+    }
+
+    fn calculate_cost_from_tokens(
+        model: Option<&str>,
+        usage: crate::TokenUsageRaw,
+        timestamp: Option<crate::TimestampMs>,
+        pricing: Option<&PricingMap>,
+    ) -> f64 {
+        let Some(model) = model else {
+            return 0.0;
+        };
+        let Some(pricing) = pricing.and_then(|pricing| {
+            timestamp.map_or_else(
+                || pricing.find(model),
+                |timestamp| pricing.find_at(model, timestamp),
+            )
+        }) else {
+            return 0.0;
+        };
+        cost_at_speed(usage, pricing)
+    }
+
     fn calculate_cost_for_usage(
         model: Option<&str>,
         usage: crate::TokenUsageRaw,
@@ -593,8 +592,6 @@ mod tests {
         pricing::PricingMap,
         types::{CacheCreationRaw, TokenUsageRaw},
     };
-
-    use super::calculate_cost_for_usage_at;
 
     fn pricing() -> PricingMap {
         crate::test_support::install_pricing_snapshots();

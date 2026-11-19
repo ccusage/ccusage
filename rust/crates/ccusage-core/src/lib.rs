@@ -29,10 +29,7 @@ pub mod cli {
 pub use ccusage_cli::{BUILT_IN_AGENT_NAMES, home};
 
 pub use agent_report::{agent_summary_json, first_column, summary_period};
-pub use cost::{
-    calculate_cost_for_usage_at, missing_pricing_model_for_token_total, stored_cost_for_mode,
-    sum_costs,
-};
+pub use cost::{missing_pricing_model_for_token_total, stored_cost_for_mode, sum_costs};
 pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use logger::{debug_log, log_level};
