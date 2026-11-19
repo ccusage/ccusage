@@ -6,10 +6,8 @@ use crate::Result;
 use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
-/// Official Grok CLI home override (single root).
 pub(crate) const GROK_HOME_ENV: &str = "GROK_HOME";
 
-/// Resolve the Grok data root from `GROK_HOME`, then `~/.grok`.
 fn resolve_root() -> Option<PathBuf> {
     roots::resolve(RootsEnv::Single(GROK_HOME_ENV), || {
         crate::home::home_dir()
@@ -21,7 +19,6 @@ fn resolve_root() -> Option<PathBuf> {
     .next()
 }
 
-/// Discover every `sessions/**/updates.jsonl` under the resolved root.
 pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     if let Some(root) = resolve_root() {
@@ -97,7 +94,6 @@ mod tests {
         let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 2);
         assert!(files.iter().all(|file| file.ends_with("updates.jsonl")));
-        // Discovery sorts by path so load order is stable across runs.
         assert!(files[0] < files[1]);
     }
 
@@ -122,9 +118,6 @@ mod tests {
             ".grok/sessions/home/session-a/updates.jsonl": "{}\n",
         });
         let home = OsString::from(fixture.root().as_os_str());
-        // Pin HOME/USERPROFILE alongside the blank override so the fallback root
-        // is the fixture rather than whatever home the process inherits. Both go
-        // through one guard because each guard holds the same global env lock.
         let _guard = EnvVarsGuard::set_many([
             (GROK_HOME_ENV, Some(OsString::from("  "))),
             ("HOME", Some(home.clone())),

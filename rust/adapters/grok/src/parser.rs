@@ -141,43 +141,26 @@ struct SessionMeta {
     default_model: Option<String>,
 }
 
-/// `costUsdTicks` are fixed-point USD: one tick is 1e-10 USD.
-///
-/// Verified against 58 turns of Grok CLI 1.0.0 data: every turn's
-/// `costUsdTicks / 1e10` reproduced the xAI list price for `xai/grok-4.5`
-/// exactly. Grok bills each API request separately, but a `turn_completed` row
-/// only carries the sum over the requests in that turn. Recomputing from those
-/// totals therefore cannot place the long-context tier boundary where Grok did,
-/// and lands on either side of the real figure depending on how the turn split;
-/// the recorded ticks are the only value that survives the aggregation.
+// NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok bills each API request separately and sums them in a `turn_completed` row, where `costUsdTicks` uses units of 1e-10 USD. The recorded ticks preserve per-request long-context tiering.
 const COST_USD_TICKS_PER_USD: f64 = 1e10;
 
-/// Convert Grok's fixed-point `costUsdTicks` into USD, if the record carried any.
 fn cost_usd_from_ticks(ticks: u64) -> Option<f64> {
     (ticks > 0).then(|| ticks as f64 / COST_USD_TICKS_PER_USD)
 }
 
-/// Split OpenAI-style input that includes cache: uncached = input − cache.
 fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
     let cache = cached.min(input);
     let uncached = input.saturating_sub(cache);
     (uncached, cache)
 }
 
-/// Split `inputTokens` into its uncached, cache-read and cache-write parts.
-///
-/// `cachedReadTokens` is provably a subset of `inputTokens`: session totals match
-/// `logs/unified.jsonl`, where `cached_prompt_tokens` is part of `prompt_tokens`.
-/// `cacheCreationTokens` arrived later and has only ever been observed as zero, so
-/// it is treated as a sibling subset rather than an extra bucket on top; that keeps
-/// the three parts summing back to `inputTokens` either way.
+// NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok session totals match `logs/unified.jsonl` with `cachedReadTokens` inside `inputTokens`. Only zero `cacheCreationTokens` values were observed, so reserve cache creation from the same input total.
 fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64, u64, u64) {
     let (uncached, cache_read) = split_tokens(input, cached_read);
     let cache_creation = cache_creation.min(uncached);
     (uncached - cache_creation, cache_read, cache_creation)
 }
 
-/// Pricing lookup candidates for a raw Grok model id (e.g. `grok-4.5-build`).
 fn pricing_candidates(raw_model: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     let mut push = |value: String| {
@@ -290,11 +273,8 @@ pub(super) fn parse_session_files_with_diagnostics(
                 continue;
             }
 
-            // Display the raw modelUsage key (e.g. grok-4.5-build); Agent column already
-            // identifies the source in unified reports.
             let display_model = raw_model.clone();
             let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
-            // Cost bills full output_tokens only; reasoning is never added to billable output.
             let (cost, missing_pricing_model) = price_grok_usage(
                 &raw_model,
                 usage_raw,
@@ -333,10 +313,7 @@ pub(super) fn parse_session_files_with_diagnostics(
                     message_count: None,
                     usage_limit_reset_time: None,
                     missing_pricing_model,
-                    // Grok reports `totalTokens == inputTokens + outputTokens`, so its
-                    // reasoning tokens are already a subset of the output count. Adding
-                    // them to `extra_total_tokens` would bill them into the grand total a
-                    // second time.
+                    // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok's recorded total equals input plus output, with reasoning already included in output. Adding reasoning again would inflate the total.
                     extra_total_tokens: 0,
                     stored_cost: stored_cost_for_mode(cost_usd, mode),
                 },
@@ -418,8 +395,6 @@ fn load_session_meta(updates: &Path, diagnostics: &Diagnostics) -> SessionMeta {
     let mut project_path = project_from_path;
     let mut default_model = None;
 
-    // summary.json only refines metadata the session path already supplies,
-    // so a summary that cannot be read loses no usage and is not a skip.
     let summary_path = updates.with_file_name("summary.json");
     let summary = summary_path.is_file().then_some(&summary_path).and_then(|summary_path| {
         read_json::<GrokSummary>(summary_path)
@@ -457,6 +432,7 @@ fn load_session_meta(updates: &Path, diagnostics: &Diagnostics) -> SessionMeta {
     }
 }
 
+// NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok's metadata `agentTimestampMs` is Unix milliseconds and the envelope `timestamp` is Unix seconds. Convert each field in its own unit before using it for day attribution.
 fn resolve_timestamp_ms(line: &GrokUpdateLine, meta: Option<&GrokMeta>) -> Option<TimestampMs> {
     meta.and_then(|meta| meta.agent_timestamp_ms.as_ref())
         .and_then(value_as_i64)
@@ -562,11 +538,9 @@ fn price_grok_usage(
     )
 }
 
+// NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok uses URL-encoded working directories as session parent names. Decode the name to recover the original project path.
 fn url_decode_lightweight(value: &str) -> String {
-    // Session parents are URL-encoded cwd paths (e.g. `D%3A%5Cproj`).
     let bytes = value.as_bytes();
-    // Decode into bytes, not chars: a percent triplet is one UTF-8 byte, so
-    // pushing it as a `char` would turn a multi-byte path segment into mojibake.
     let mut out = Vec::with_capacity(value.len());
     let mut i = 0;
     while i < bytes.len() {
@@ -732,7 +706,6 @@ mod tests {
             })
         };
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        // Keep the fixture alive until parse finishes by reading paths first.
         let _root = fixture.root().to_path_buf();
         parse_session_files_with_diagnostics(
             &files,
@@ -814,11 +787,6 @@ mod tests {
     #[test]
     fn prices_via_the_stripped_candidate_when_the_build_form_is_missing() {
         ccusage_test_support::install_pricing_snapshots();
-        // The model is one no pricing table carries, so only the override key
-        // can answer it. That key carries a suffix of its own, which no
-        // `-build` candidate can reach: pricing the model therefore proves the
-        // stripped candidates ran, rather than the fuzzy lookup answering
-        // `xai/<raw>` with a key the raw form already contains.
         let pricing_override = crate::cli::PricingOverride {
             input_cost_per_token: Some(0.001),
             output_cost_per_token: Some(0.002),
@@ -956,9 +924,7 @@ mod tests {
         assert_eq!(entry.data.message.usage.cache_read_input_tokens, 40);
         assert_eq!(entry.data.message.usage.output_tokens, 20);
         assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
-        // Reasoning is already inside outputTokens, so it adds nothing to the total.
         assert_eq!(entry.extra_total_tokens, 0);
-        // This fixture records no costUsdTicks, so there is no precomputed cost.
         assert!(entry.data.cost_usd.is_none());
         assert_eq!(entry.session_id.as_ref(), "sess-1");
         assert_eq!(entry.project_path.as_ref(), "D:\\work\\proj");
@@ -1095,7 +1061,6 @@ mod tests {
     #[test]
     fn summary_cwd_overrides_path_derived_project_and_fills_session_when_line_omits_it() {
         ccusage_test_support::install_pricing_snapshots();
-        // No params.sessionId — meta from summary.json should supply the session id.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-meta"}}}"#;
         let summary = r#"{"info":{"id":"canonical-session","cwd":"D:\\canonical\\cwd"},"git_root_dir":"should-not-win"}"#;
         let entries = parse_lines(line, Some(summary));
@@ -1154,7 +1119,6 @@ mod tests {
     #[test]
     fn url_decodes_project_segment_when_summary_is_absent() {
         ccusage_test_support::install_pricing_snapshots();
-        // Omit params.sessionId so the session directory name becomes the id.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-url"}}}"#;
         let fixture = fs_fixture!({
             "sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl": line,
@@ -1186,7 +1150,6 @@ mod tests {
 
     #[test]
     fn url_decode_recombines_wide_scalars_and_tolerates_invalid_bytes() {
-        // Three triplets for one scalar, which is what a CJK path segment looks like.
         assert_eq!(
             url_decode_lightweight("%2Ftmp%2F%E6%97%A5%E6%9C%AC"),
             "/tmp/日本"
@@ -1195,15 +1158,12 @@ mod tests {
             url_decode_lightweight("D%3A%5Cwork%5Cproj"),
             "D:\\work\\proj"
         );
-        // A triplet that is not valid UTF-8 degrades to the replacement character
-        // rather than panicking or truncating the rest of the path.
         assert_eq!(url_decode_lightweight("%2Ftmp%2F%FFx"), "/tmp/\u{fffd}x");
     }
 
     #[test]
     fn url_decodes_multi_byte_project_segment() {
         ccusage_test_support::install_pricing_snapshots();
-        // `%C3%A9` is one UTF-8 code point split across two percent triplets.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-utf8"}}}"#;
         let fixture = fs_fixture!({
             "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl": line,
@@ -1282,8 +1242,6 @@ mod tests {
     #[test]
     fn keeps_rows_without_event_id_that_differ_only_in_cache_creation() {
         ccusage_test_support::install_pricing_snapshots();
-        // Both turns leave 80 uncached input, so cache creation is the only
-        // discriminator left; dropping one would undercount 20 tokens.
         let with_creation = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-cc","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":5,"cachedReadTokens":0,"cacheCreationTokens":20,"reasoningTokens":0}}}}}}"#;
         let without_creation = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-cc","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":80,"outputTokens":5,"cachedReadTokens":0,"reasoningTokens":0}}}}}}"#;
         let entries = parse_lines(&format!("{with_creation}\n{without_creation}\n"), None);
@@ -1333,8 +1291,6 @@ mod tests {
     #[test]
     fn reads_the_recorded_cost_usd_ticks() {
         ccusage_test_support::install_pricing_snapshots();
-        // Verbatim from a Grok CLI 1.0.0 turn: 185_192_000 ticks is $0.0185192,
-        // which is exactly the xAI list price for these token counts.
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"cachedReadTokens":11264,"reasoningTokens":73,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"cachedReadTokens":11264,"reasoningTokens":73,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#;
         let entries = parse_lines(line, None);
 
@@ -1383,9 +1339,7 @@ mod tests {
     #[test]
     fn splits_cache_creation_out_of_the_uncached_input() {
         assert_eq!(split_input_tokens(100, 40, 25), (35, 40, 25));
-        // Nothing to carve out when the field is absent, which is every turn observed so far.
         assert_eq!(split_input_tokens(100, 40, 0), (60, 40, 0));
-        // A cache-write larger than the remaining input is clamped rather than wrapping.
         assert_eq!(split_input_tokens(100, 40, 999), (0, 40, 60));
     }
 

@@ -20,6 +20,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         )
     });
 
+    // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok can export one server event into several sessions. Use its `eventId` to count that turn once across files.
     let mut seen_events = HashSet::new();
     let mut entries: Vec<_> = loaded
         .into_iter()
@@ -118,7 +119,6 @@ mod tests {
     #[test]
     fn dedupes_the_same_event_across_session_files() {
         ccusage_test_support::install_pricing_snapshots();
-        // The same server event can land in more than one session export; count it once.
         let shared_event = turn("evt-shared", "grok-4.5-build", 100, 20, 0, 0, 1_750_000_000);
         let other = turn("evt-other", "grok-4.5-build", 50, 5, 0, 0, 1_750_000_100);
         let fixture = fs_fixture!({
@@ -167,7 +167,6 @@ mod tests {
         )
         .unwrap();
 
-        // One corrupt file must not cost the rest of the home directory.
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 80);
     }
