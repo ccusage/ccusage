@@ -18,27 +18,22 @@ use ccusage_adapter_common::jsonl;
 
 const DEFAULT_MODEL: &str = "kimi-for-coding";
 const DEFAULT_PROVIDER: &str = "moonshot";
-// NOTE(2026-05-25, #1106): kimi-for-coding served kimi-k2.5 until 2026-04-20T15:28:10.072Z and kimi-k2.6 after.
+// NOTE(2026-05-25, #1106): The `kimi-for-coding` plan switched from Kimi K2.5 to K2.6 at 2026-04-20T15:28:10.072Z. Use the model the plan served at the recorded time for pricing.
 const KIMI_FOR_CODING_K2_6_FROM_MS: i64 = 1_776_698_890_072;
 
-/// Kimi `config.json` document, used to read the configured display model.
 #[derive(Debug, Deserialize)]
 struct KimiConfig {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
 }
 
-/// A single Kimi wire JSONL line. Only the fields ccusage consumes are declared;
-/// serde skips everything else.
 #[derive(Debug, Deserialize)]
 struct KimiWireLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     r#type: Option<String>,
-    // old format
     message: Option<KimiWireMessage>,
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
     timestamp: Option<f64>,
-    // new Kimi Code format
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
     usage: Option<KimiCodeUsage>,
@@ -52,7 +47,6 @@ struct KimiWireLine {
     time: Option<i64>,
 }
 
-/// The `message` block carried by a Kimi wire line.
 #[derive(Debug, Deserialize)]
 struct KimiWireMessage {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -60,7 +54,6 @@ struct KimiWireMessage {
     payload: Option<KimiWirePayload>,
 }
 
-/// The `message.payload` block carrying token usage and the message id.
 #[derive(Debug, Deserialize)]
 struct KimiWirePayload {
     token_usage: Option<KimiTokenUsage>,
@@ -68,7 +61,6 @@ struct KimiWirePayload {
     message_id: Option<String>,
 }
 
-/// Token counts reported under `message.payload.token_usage`.
 #[derive(Debug, Default, Deserialize)]
 struct KimiTokenUsage {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -130,7 +122,6 @@ pub(super) fn read_wire_file(
 ) -> std::result::Result<Vec<KimiUsageEntry>, UnitError> {
     let path = file.as_ref();
     let content = fs::read(path).map_err(UnitError::from)?;
-    // Usable Kimi wire lines carry either `token_usage` (old format) or `usage.record` (new).
     let prefilter = LinePrefilter::any(&[br#""token_usage""#, br#""usage.record""#]);
     Ok(
         jsonl::numbered_records_with_usage_diagnostics::<KimiWireLine>(
@@ -183,20 +174,20 @@ fn wire_line_to_entry(
     diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
     match line.r#type.as_deref() {
-        Some("usage.record") => wire_line_to_entry_new(line, file, number, diagnostics),
+        Some("usage.record") => entry_from_usage_record(line, file, number, diagnostics),
         Some("metadata") => None,
-        _ => wire_line_to_entry_old(line, file, number, diagnostics),
+        _ => entry_from_status_update(line, file, number, diagnostics),
     }
 }
 
-fn wire_line_to_entry_new(
+fn entry_from_usage_record(
     line: &KimiWireLine,
     file: &WireFile,
     number: u32,
     diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
     let file_path = file.as_ref();
-    // Only aggregate turn-level records; session records are cumulative totals.
+    // NOTE(2026-07-09, #1362): Kimi Code writes cumulative `usageScope: session` records alongside individual turns. Counting both would duplicate the turn usage.
     if line.usage_scope.as_deref() != Some("turn") {
         return None;
     }
@@ -240,7 +231,7 @@ fn wire_line_to_entry_new(
     })
 }
 
-fn wire_line_to_entry_old(
+fn entry_from_status_update(
     line: &KimiWireLine,
     file: &WireFile,
     number: u32,
@@ -585,7 +576,7 @@ mod tests {
                 "usage":{"inputOther":100}}"#,
         )
         .unwrap();
-        let entry = wire_line_to_entry_new(&line, &file, 1, &Diagnostics::new("kimi")).unwrap();
+        let entry = entry_from_usage_record(&line, &file, 1, &Diagnostics::new("kimi")).unwrap();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{

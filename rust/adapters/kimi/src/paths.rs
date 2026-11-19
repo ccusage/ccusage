@@ -41,6 +41,7 @@ pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<WireF
     Ok(WireFile::from_paths(files))
 }
 
+// NOTE(2026-07-09, #1362): Kimi CLI writes `sessions/<group>/<session>/wire.jsonl`. Kimi Code adds an `agents/<agent>` level under the session, so discovery accepts both depths.
 fn is_kimi_wire_file(sessions_path: &Path, file_path: &Path) -> bool {
     file_path
         .file_name()
