@@ -17,7 +17,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use super::{
     parser::{
         MissingTimestamp, OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageError,
-        SessionMessageKind, SessionMessageRow, message_value_to_entry,
+        SessionMessageKind, SessionMessageRow, message_time_created, message_value_to_entry,
         session_message_value_to_entry_checked, session_value_to_entry,
     },
     paths::paths,
@@ -479,10 +479,7 @@ fn load_message_rows(
              data,
          },
          statement| {
-            if !window.is_unbounded()
-                && let Some(millis) = extract_message_timestamp(&data)
-                && !window.contains(millis)
-            {
+            if !window.admits_payload(data.as_bytes()) {
                 return;
             }
             let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
@@ -583,10 +580,7 @@ fn load_session_message_rows(
             {
                 return;
             }
-            if !window.is_unbounded()
-                && let Some(millis) = extract_message_timestamp(&record.data)
-                && !window.contains(millis)
-            {
+            if !window.admits_payload(record.data.as_bytes()) {
                 return;
             }
             let SessionMessageRecord {
@@ -658,13 +652,8 @@ fn read_message_file(
     pricing: PriceTable<'_>,
     window: DateWindow,
 ) -> std::result::Result<Option<LoadedEntry>, UnitError> {
-    let value = read_filtered_json::<OpenCodeMessage>(path, |content| {
-        window.is_unbounded()
-            || std::str::from_utf8(content)
-                .ok()
-                .and_then(extract_message_timestamp)
-                .is_none_or(|millis| window.contains(millis))
-    })?;
+    let value =
+        read_filtered_json::<OpenCodeMessage>(path, |content| window.admits_payload(content))?;
     let Some(value) = value else {
         return Ok(None);
     };
@@ -947,24 +936,6 @@ fn entry_id(entry: &LoadedEntry) -> Option<&str> {
     entry.message_id.as_deref().filter(|id| !id.is_empty())
 }
 
-fn extract_message_timestamp(data: &str) -> Option<i64> {
-    const TIME_KEY: &str = "\"time\":";
-    const CREATED_KEY: &str = "\"created\":";
-
-    let time_object = data[data.find(TIME_KEY)? + TIME_KEY.len()..]
-        .trim_start()
-        .strip_prefix('{')?;
-    let time_object = &time_object[..time_object.find('}')?];
-    let after_key = time_object[time_object.find(CREATED_KEY)? + CREATED_KEY.len()..].trim_start();
-    let end = after_key
-        .find(|character: char| !character.is_ascii_digit())
-        .unwrap_or(after_key.len());
-    after_key[..end]
-        .parse::<i64>()
-        .ok()
-        .filter(|millis| *millis > 0)
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct DateWindow {
     start: Option<i64>,
@@ -999,6 +970,10 @@ impl DateWindow {
 
     fn contains(self, millis: i64) -> bool {
         self.start.is_none_or(|start| millis >= start) && self.end.is_none_or(|end| millis < end)
+    }
+
+    fn admits_payload(self, data: &[u8]) -> bool {
+        self.is_unbounded() || message_time_created(data).is_none_or(|millis| self.contains(millis))
     }
 }
 
@@ -3135,7 +3110,7 @@ mod tests {
         );
     }
 
-    // NOTE(2026-07-27, #1492): Legacy OpenCode pretty-prints message files. Exercise the timestamp scan with the whitespace it encounters on disk.
+    // NOTE(2026-07-27, #1492): Legacy OpenCode pretty-prints message files. Cover the window filter on the layout found on disk.
     const PRETTY_PRINTED_MESSAGE: &str = r#"{
   "id": "msg-pretty",
   "sessionID": "session-a",
@@ -3392,52 +3367,5 @@ mod tests {
         };
         assert!(load_entries_from_directory(db_only.root(), &shared).is_empty());
         assert!(super::has_source(db_only.root()));
-    }
-
-    #[test]
-    fn extracts_timestamp_from_minified_and_pretty_printed_payloads() {
-        assert_eq!(
-            super::extract_message_timestamp(r#"{"time":{"created":1767312000000}}"#),
-            Some(1_767_312_000_000)
-        );
-        assert_eq!(
-            super::extract_message_timestamp(PRETTY_PRINTED_MESSAGE),
-            Some(1_767_312_000_000)
-        );
-        assert_eq!(
-            super::extract_message_timestamp(r#"{"time":{"created": 42}}"#),
-            Some(42)
-        );
-    }
-
-    #[test]
-    fn ignores_a_time_object_that_is_not_the_messages_own() {
-        assert_eq!(
-            super::extract_message_timestamp(
-                r#"{"parts":[{"time":{"start":1}}],"time":{"created":1767312000000}}"#
-            ),
-            None
-        );
-        assert_eq!(
-            super::extract_message_timestamp(r#"{"unit":"time","created":1767312000000}"#),
-            None
-        );
-    }
-
-    #[test]
-    fn declines_to_extract_timestamps_it_cannot_trust() {
-        assert_eq!(
-            super::extract_message_timestamp(r#"{"time":{"created":"1767312000000"}}"#),
-            None
-        );
-        assert_eq!(
-            super::extract_message_timestamp(r#"{"time":{"created":-5}}"#),
-            None
-        );
-        assert_eq!(
-            super::extract_message_timestamp(r#"{"time":{"completed":1767312000000}}"#),
-            None
-        );
-        assert_eq!(super::extract_message_timestamp(r#"{"id":"msg-1"}"#), None);
     }
 }
