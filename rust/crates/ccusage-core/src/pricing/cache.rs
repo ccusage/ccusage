@@ -287,24 +287,26 @@ impl NameCache {
         pass: Pass,
         init: impl FnOnce(&NameSlot) -> Option<CachedHit>,
     ) -> Option<CachedHit> {
-        let guard = self.0.read().unwrap_or_else(|error| error.into_inner());
-        let slot = if let Some(slot) = guard.get(name) {
-            if let Some(result) = slot.result(lookup, pass).get() {
-                return result;
-            }
-            Arc::clone(slot)
-        } else {
-            drop(guard);
-            let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
-            match guard.get(name) {
-                Some(slot) => Arc::clone(slot),
-                None => {
-                    let slot = Arc::new(NameSlot::default());
-                    guard.insert(name.into(), Arc::clone(&slot));
-                    slot
+        let slot = {
+            let guard = self.0.read().unwrap_or_else(|error| error.into_inner());
+            if let Some(slot) = guard.get(name) {
+                if let Some(result) = slot.result(lookup, pass).get() {
+                    return result;
                 }
+                Some(Arc::clone(slot))
+            } else {
+                None
             }
         };
+        let slot = slot.unwrap_or_else(|| {
+            let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
+            if let Some(slot) = guard.get(name) {
+                return Arc::clone(slot);
+            }
+            let slot = Arc::new(NameSlot::default());
+            guard.insert(name.into(), Arc::clone(&slot));
+            slot
+        });
         slot.result(lookup, pass).get_or_init(|| init(&slot))
     }
 }
@@ -314,6 +316,39 @@ mod tests {
     use crate::pricing::PricingMap;
 
     use super::{Lookup, MatchKind, Pass};
+
+    #[test]
+    fn initializing_an_existing_slot_does_not_block_a_new_name() {
+        use std::{sync::mpsc, thread, time::Duration};
+
+        let cache = super::NameCache::default();
+        assert!(
+            cache
+                .get_or_init("existing", Lookup::Pricing, Pass::Label, |_| None)
+                .is_none()
+        );
+        let (entered, wait_for_init) = mpsc::channel();
+        let (release, wait_for_release) = mpsc::channel();
+        let (inserted, wait_for_insert) = mpsc::channel();
+        thread::scope(|scope| {
+            let cache = &cache;
+            scope.spawn(move || {
+                cache.get_or_init("existing", Lookup::Pricing, Pass::S2, |_| {
+                    entered.send(()).unwrap();
+                    wait_for_release.recv().unwrap();
+                    None
+                });
+            });
+            wait_for_init.recv_timeout(Duration::from_secs(5)).unwrap();
+            scope.spawn(move || {
+                cache.get_or_init("new", Lookup::Pricing, Pass::S2, |_| None);
+                inserted.send(()).unwrap();
+            });
+            let result = wait_for_insert.recv_timeout(Duration::from_secs(2));
+            release.send(()).unwrap();
+            result.unwrap();
+        });
+    }
 
     #[test]
     fn reuses_resolution_slots_across_ten_thousand_requests() {
