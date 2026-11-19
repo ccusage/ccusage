@@ -11,6 +11,7 @@ let
   version = "0.1.18";
   # NOTE(2026-11-19, 0.1.18, #2119): Hawk links rustc_private, so the archive requires the exact Rust channel it was built against.
   supportedRustChannel = "1.100.0";
+  toolchain = builtins.fromTOML (builtins.readFile ../rust-toolchain.toml);
   archives = {
     aarch64-darwin = {
       target = "aarch64-apple-darwin";
@@ -29,6 +30,8 @@ let
     archives.${stdenv.hostPlatform.system}
       or (throw "cargo-hawk has no release for ${stdenv.hostPlatform.system}");
 in
+assert lib.assertMsg (toolchain.toolchain.channel == supportedRustChannel)
+  "cargo-hawk ${version} requires Rust ${supportedRustChannel}, but rust-toolchain.toml pins ${toolchain.toolchain.channel}";
 stdenvNoCC.mkDerivation {
   pname = "cargo-hawk";
   inherit version;
@@ -67,8 +70,6 @@ stdenvNoCC.mkDerivation {
     ''}
     runHook postInstall
   '';
-
-  passthru = { inherit supportedRustChannel; };
 
   meta = {
     description = "Workspace-aware Cargo lint for unnecessary public Rust APIs";
