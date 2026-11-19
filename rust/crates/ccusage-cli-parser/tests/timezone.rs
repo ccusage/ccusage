@@ -71,13 +71,16 @@ fn checks_config_timezones_after_flags_override_them() {
         "ccusage.json": r#"{ "defaults": { "timezone": "Not/AZone" } }"#,
     });
     let config = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    let configured_rejection = Err(format!(
+        "Invalid value for ccusage config field {config}: defaults.timezone 'Not/AZone'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
+    ));
 
     for args in [
         &["daily", "--config", &config][..],
         &["claude", "weekly", "--config", &config],
         &["statusline", "--config", &config],
     ] {
-        assert_eq!(validated(args), rejection("Not/AZone"), "{args:?}");
+        assert_eq!(validated(args), configured_rejection, "{args:?}");
     }
     for args in [
         &["daily", "--config", &config, "--timezone", "UTC"][..],

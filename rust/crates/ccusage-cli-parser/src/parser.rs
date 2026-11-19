@@ -1066,8 +1066,16 @@ fn resolve_timezone(
         match resolved {
             Ok(timezone) => Some(timezone),
             Err(_) => {
+                let field = if parser.timezone.is_some() {
+                    "--timezone".to_owned()
+                } else {
+                    config.timezone_config_field().map_or_else(
+                        || "ccusage config field timezone".to_owned(),
+                        |field| format!("ccusage config field {field}"),
+                    )
+                };
                 let error = format!(
-                    "Invalid value for --timezone '{value}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
+                    "Invalid value for {field} '{value}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
                 );
                 if !statusline || parser.timezone.is_some() {
                     return Err(error);

@@ -186,6 +186,18 @@ impl ConfigContext {
         paths
     }
 
+    fn timezone_setting(&self) -> Option<(String, &str)> {
+        self.option_paths().into_iter().rev().find_map(|path| {
+            let layer = self.layers.get(&path)?;
+            let value = if self.command.report == "statusline" {
+                &layer.statusline.timezone
+            } else {
+                &layer.shared.timezone
+            };
+            Some((path, value.as_deref()?))
+        })
+    }
+
     fn option_maps(&self) -> Vec<&crate::layers::Layer> {
         if self.layers.is_empty() {
             return Vec::new();
@@ -601,13 +613,13 @@ impl ccusage_cli::CliConfig for ConfigContext {
     }
 
     fn timezone(&self) -> Option<&str> {
-        self.option_maps().into_iter().rev().find_map(|layer| {
-            if self.command.report == "statusline" {
-                layer.statusline.timezone.as_deref()
-            } else {
-                layer.shared.timezone.as_deref()
-            }
-        })
+        self.timezone_setting().map(|(_, value)| value)
+    }
+
+    fn timezone_config_field(&self) -> Option<String> {
+        let (file, _) = self.config_origin.as_ref()?;
+        let (path, _) = self.timezone_setting()?;
+        Some(format!("{}: {path}.timezone", file.display()))
     }
 
     fn recover_statusline_timezone(

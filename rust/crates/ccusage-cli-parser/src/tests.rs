@@ -800,6 +800,32 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
 }
 
 #[test]
+fn invalid_config_timezone_names_the_file_and_effective_field() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "defaults": { "timezone": "UTC" }, "commands": { "daily": { "timezone": "Not/AZone" } } }"#,
+    });
+    let path = fixture.path("ccusage.json");
+    let args = ["daily", "--config", path.to_str().unwrap()].map(str::to_owned);
+    let config = ccusage_config::ConfigContext::from_args(&args);
+    let result = parse_from_with_config(
+        std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
+        &config,
+        env!("CARGO_PKG_VERSION"),
+    );
+
+    let Err(error) = result else {
+        panic!("expected the configured timezone to be rejected");
+    };
+    assert_eq!(
+        error,
+        format!(
+            "Invalid value for ccusage config field {}: commands.daily.timezone 'Not/AZone'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone.",
+            path.display()
+        )
+    );
+}
+
+#[test]
 fn statusline_ignores_reversed_default_date_window() {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{ "defaults": { "since": "2026-09-14", "until": "2026-09-01" } }"#,

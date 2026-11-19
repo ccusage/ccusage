@@ -430,6 +430,10 @@ pub trait CliConfig {
         None
     }
 
+    fn timezone_config_field(&self) -> Option<String> {
+        None
+    }
+
     fn recover_statusline_timezone(
         &self,
         _rejected: &str,

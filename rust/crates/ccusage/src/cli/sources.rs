@@ -622,10 +622,9 @@ mod tests {
             .err()
             .expect("expected the source timezone to be rejected");
 
-        assert_eq!(
-            error,
-            "Invalid value for --timezone 'Not/AZone'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone. (in codex config)"
-        );
+        assert!(error.starts_with("Invalid value for ccusage config field "));
+        assert!(error.contains("ccusage.json: codex.defaults.timezone 'Not/AZone'."));
+        assert!(error.ends_with("(in codex config)"));
     }
 
     #[test]
