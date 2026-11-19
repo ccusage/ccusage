@@ -244,7 +244,9 @@ fn read_codex_session_file(
 /// Drops usage that one rollout copied from another, keeping file order.
 ///
 /// Identical events within one file are distinct requests, so each carries its
-/// ordinal among them in the key; only a copy in another file collides.
+/// ordinal among them in the key; only a copy in another file collides. A
+/// request record's response ID joins the key, because rollouts that recorded
+/// different requests with equal usage are not copies of each other.
 fn dedupe_codex_events(
     events_by_file: impl IntoIterator<Item = Vec<CodexTokenUsageEvent>>,
 ) -> Vec<CodexTokenUsageEvent> {
@@ -253,17 +255,14 @@ fn dedupe_codex_events(
     for events in events_by_file {
         let mut occurrences = CodexFileOccurrences::default();
         for event in events {
-            let key = match event
-                .response_id
-                .as_deref()
-                .or(event.linked_response_id.as_deref())
-            {
+            let key = match event.response_id.as_deref() {
                 Some(response_id) => {
                     CodexEventDeduplicationKey::Response(CompactString::new(response_id))
                 }
                 None => {
                     let usage = CodexEventUsage(
                         CompactString::new(&event.timestamp),
+                        event.record_response_id.as_deref().map(CompactString::new),
                         event.model.as_deref().map(CompactString::new),
                         event.input_tokens,
                         event.cached_input_tokens,
@@ -299,6 +298,7 @@ enum CodexEventDeduplicationKey {
 struct CodexEventUsage(
     CompactString,
     Option<CompactString>,
+    Option<CompactString>,
     u64,
     u64,
     u64,
@@ -320,7 +320,7 @@ mod tests {
         CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: None,
-            linked_response_id: None,
+            record_response_id: None,
             timestamp: "2026-01-02T00:00:00.000Z".to_string(),
             model: Some("gpt-5".to_string()),
             input_tokens: 100,
