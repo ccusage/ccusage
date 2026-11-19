@@ -29,8 +29,8 @@ export def implementation-schema []: nothing -> record {
             {
                 "properties": {
                     "implementation": {"const": "prepared"}
-                    "title": {"minLength": 1}
-                    "body": {"minLength": 1}
+                    "title": {"minLength": 1, "pattern": '^[^\r\n]*\S[^\r\n]*$'}
+                    "body": {"minLength": 1, "pattern": '\S'}
                 }
             }
             {
