@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Lookup, Name, NameSlot, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch,
+    Candidate, Lookup, Name, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch,
     Scope, Source, SpeedMultipliers, normalized_pricing_key, with_names,
 };
 
@@ -54,7 +54,7 @@ impl Overrides {
             .map(|row| RowMatch::new(id, row))
     }
 
-    pub(super) fn label_id(&self, label: &str, slot: &NameSlot) -> Option<usize> {
+    pub(super) fn label_id(&self, label: &str, slot: &Candidate<'_>) -> Option<usize> {
         if self.is_empty() {
             return None;
         }

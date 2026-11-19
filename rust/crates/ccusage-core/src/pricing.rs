@@ -15,7 +15,7 @@ use crate::{
 
 mod builtin_pricing;
 mod cache;
-use cache::{CachedHit, Name, NameCache, NameSlot, Pass};
+use cache::{CachedHit, Candidate, Name, NameCache, Pass};
 mod data;
 mod overrides;
 use overrides::Overrides;
@@ -533,12 +533,6 @@ pub enum ResolutionStep {
     ModelsDevIdentity,
     AuthoritativeFuzzy,
     ModelsDevFuzzy,
-}
-
-impl ResolutionStep {
-    fn scheduled(self) -> bool {
-        matches!(self, Self::ReportedOverride | Self::AuthoritativeIdentity)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1613,7 +1607,7 @@ impl PricingMap {
         reported_model: Option<&'a str>,
         candidates: &[(&'a str, MatchKind)],
     ) -> Option<Explanation<'a>> {
-        let (candidate, found, step) = self.resolve_row_with(
+        let (candidate, found, hit) = self.resolve_row_with(
             reported_model,
             candidates,
             Lookup::Pricing,
@@ -1621,7 +1615,7 @@ impl PricingMap {
         )?;
         Some(Explanation {
             candidate,
-            step,
+            step: hit.step()?,
             row_key: found.key,
             source: found.row.source,
         })
@@ -1633,7 +1627,7 @@ impl PricingMap {
         candidates: &[(&'a str, MatchKind)],
         timestamp: Option<TimestampMs>,
     ) -> Option<(&'a str, Pricing)> {
-        let (model, found, step) = self.resolve_row_with(
+        let (model, found, hit) = self.resolve_row_with(
             reported_model,
             candidates,
             Lookup::Pricing,
@@ -1641,9 +1635,7 @@ impl PricingMap {
         )?;
         let pricing = found.row.pricing;
         let rates = match (timestamp, found.row.schedule) {
-            (Some(timestamp), Some(schedule)) if step.scheduled() => {
-                pricing.at(schedule, timestamp)
-            }
+            (Some(timestamp), Some(schedule)) if hit.scheduled() => pricing.at(schedule, timestamp),
             _ => pricing,
         };
         Some((model, rates))
@@ -1701,7 +1693,7 @@ impl PricingMap {
         candidates: &[(&'a str, MatchKind)],
         lookup: Lookup,
         live: impl FnOnce() -> Option<&'live Self>,
-    ) -> Option<(&'a str, RowMatch<'_>, ResolutionStep)> {
+    ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
         let live = std::cell::Cell::new(Some(live));
         let models_dev = || self.select_models_dev(|| live.take().and_then(|load| load()));
         let cache = self.find_cache.get_or_init(NameCache::default);
@@ -1713,15 +1705,11 @@ impl PricingMap {
         if let &[(model, MatchKind::Fuzzy)] = candidates
             && (reported == Some(model) || (reported.is_none() && self.overrides.is_empty()))
         {
-            let hit = cache.get_or_init(model, lookup, Pass::Find, |slot| {
-                let search = |pass| {
-                    slot.result(lookup, pass)
-                        .get_or_init(|| self.search_pass(model, slot, lookup, pass, &models_dev))
-                };
-                search(Pass::Label)
-                    .or_else(|| search(Pass::S2))
-                    .or_else(|| search(Pass::S34))
-                    .or_else(|| search(Pass::S56))
+            let hit = cache.get_or_init(model, lookup, Pass::Find, |_| {
+                matching(model, Pass::Label)
+                    .or_else(|| matching(model, Pass::S2))
+                    .or_else(|| matching(model, Pass::S34))
+                    .or_else(|| matching(model, Pass::S56))
             })?;
             return self.cached_row(model, hit);
         }
@@ -1746,7 +1734,7 @@ impl PricingMap {
     fn search_pass<'a>(
         &'a self,
         model: &str,
-        slot: &NameSlot,
+        slot: &Candidate<'_>,
         lookup: Lookup,
         pass: Pass,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
@@ -1877,19 +1865,15 @@ impl PricingMap {
         &self,
         name: &'a str,
         hit: CachedHit,
-    ) -> Option<(&'a str, RowMatch<'_>, ResolutionStep)> {
-        let step = hit.step()?;
+    ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
         let row = if hit.overridden() {
             self.overrides.resolved(hit.id())
-        } else if matches!(
-            step,
-            ResolutionStep::ModelsDevIdentity | ResolutionStep::ModelsDevFuzzy
-        ) {
+        } else if hit.is_models_dev() {
             self.available_models_dev()?.at(hit.id())
         } else {
             self.rows.at(hit.id())
         }?;
-        Some((name, row, step))
+        Some((name, row, hit))
     }
 
     fn fuzzy<'a>(
@@ -1942,12 +1926,12 @@ impl PricingMap {
             Lookup::Pricing,
             models_dev_pricing,
         )
-        .is_some_and(|(_, found, step)| step.scheduled() && found.row.schedule.is_some())
+        .is_some_and(|(_, found, hit)| hit.scheduled() && found.row.schedule.is_some())
     }
 
     fn has_user_override(&self, model: &str) -> bool {
         self.overrides
-            .label_id(model, &NameSlot::default())
+            .label_id(model, &Candidate::default())
             .is_some()
     }
 

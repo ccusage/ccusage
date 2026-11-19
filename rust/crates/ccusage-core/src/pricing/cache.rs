@@ -1,8 +1,6 @@
 use std::borrow::Cow;
-use std::sync::{
-    Arc, OnceLock, RwLock,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::cell::OnceCell;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use rustc_hash::FxHashMap;
 
@@ -46,10 +44,22 @@ impl CachedHit {
         self.0 >> Self::ROW_SHIFT
     }
 
+    fn step_index(self) -> usize {
+        (self.0 >> Self::STEP_SHIFT) & Self::STEP_MASK
+    }
+
     pub(super) fn step(self) -> Option<ResolutionStep> {
-        Self::STEPS
-            .get((self.0 >> Self::STEP_SHIFT) & Self::STEP_MASK)
-            .copied()
+        Self::STEPS.get(self.step_index()).copied()
+    }
+
+    pub(super) fn scheduled(self) -> bool {
+        self.step_index() <= ResolutionStep::AuthoritativeIdentity as usize
+    }
+
+    pub(super) fn is_models_dev(self) -> bool {
+        let step = self.step_index();
+        step == ResolutionStep::ModelsDevIdentity as usize
+            || step == ResolutionStep::ModelsDevFuzzy as usize
     }
 
     pub(super) fn overridden(self) -> bool {
@@ -60,41 +70,27 @@ impl CachedHit {
 const _: () = assert!(size_of::<CachedHit>() <= 8);
 const _: () = assert!(size_of::<Row>() >= 1 << CachedHit::ROW_SHIFT);
 
-#[derive(Debug, Default)]
-pub(super) struct ResultCell(AtomicUsize);
+#[derive(Clone, Copy, Debug, Default)]
+struct ResultCell(usize);
 
 impl ResultCell {
     const UNSET: usize = 0;
     const MISS: usize = 1;
 
-    fn unpack(value: usize) -> Option<Option<CachedHit>> {
-        match value {
+    fn get(self) -> Option<Option<CachedHit>> {
+        match self.0 {
             Self::UNSET => None,
             Self::MISS => Some(None),
             hit => Some(Some(CachedHit(hit))),
         }
     }
 
-    pub(super) fn get(&self) -> Option<Option<CachedHit>> {
-        Self::unpack(self.0.load(Ordering::Acquire))
-    }
-
-    pub(super) fn get_or_init(
-        &self,
-        init: impl FnOnce() -> Option<CachedHit>,
-    ) -> Option<CachedHit> {
-        if let Some(hit) = self.get() {
-            return hit;
+    fn insert(&mut self, result: Option<CachedHit>) -> Option<CachedHit> {
+        if let Some(existing) = self.get() {
+            return existing;
         }
-        let hit = init();
-        let value = hit.map_or(Self::MISS, |hit| hit.0);
-        match self
-            .0
-            .compare_exchange(Self::UNSET, value, Ordering::Release, Ordering::Acquire)
-        {
-            Ok(_) => hit,
-            Err(existing) => Self::unpack(existing).flatten(),
-        }
+        self.0 = result.map_or(Self::MISS, |hit| hit.0);
+        result
     }
 }
 
@@ -128,7 +124,7 @@ pub(super) struct Name<'a> {
 #[derive(Clone, Copy)]
 enum Identity<'a> {
     Standalone(&'a OnceLock<Option<Box<str>>>),
-    Candidate(&'a NameSlot),
+    Candidate(&'a Candidate<'a>),
     Alias(Option<&'a str>),
 }
 
@@ -203,36 +199,71 @@ struct NameForms {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct NameSlot {
-    forms: OnceLock<Option<Box<NameForms>>>,
+struct NameSlot {
+    forms: Option<Option<Arc<NameForms>>>,
     prices: [ResultCell; 5],
-    limits: OnceLock<Box<[ResultCell; 5]>>,
+    limits: Option<Box<[ResultCell; 5]>>,
 }
 
 const _: () = assert!(size_of::<NameSlot>() <= 96);
 
 impl NameSlot {
+    fn result(&self, lookup: Lookup, pass: Pass) -> Option<Option<CachedHit>> {
+        let slots = match lookup {
+            Lookup::Pricing => &self.prices,
+            Lookup::Context => self.limits.as_deref()?,
+        };
+        slots[pass as usize].get()
+    }
+
+    fn insert(
+        &mut self,
+        lookup: Lookup,
+        pass: Pass,
+        result: Option<CachedHit>,
+    ) -> Option<CachedHit> {
+        let slots = match lookup {
+            Lookup::Pricing => &mut self.prices,
+            Lookup::Context => self.limits.get_or_insert_with(Box::default),
+        };
+        slots[pass as usize].insert(result)
+    }
+}
+
+impl NameForms {
+    fn new(text: &str) -> Option<Arc<Self>> {
+        let normalized = normalized(text);
+        let builtin = pricing_alias(text).map(Alias::new);
+        let alias = crate::model_aliases::resolve_model_name(text);
+        let configured = (alias != text).then(|| Alias::new(alias.into_owned().into_boxed_str()));
+        if normalized.is_none() && builtin.is_none() && configured.is_none() {
+            return None;
+        }
+        let configured_builtin = configured
+            .as_ref()
+            .and_then(|alias| pricing_alias(&alias.text))
+            .map(Alias::new);
+        Some(Arc::new(Self {
+            normalized,
+            builtin,
+            configured,
+            configured_builtin,
+        }))
+    }
+}
+
+#[derive(Default)]
+pub(super) struct Candidate<'a> {
+    cache: Option<&'a NameCache>,
+    forms: OnceCell<Option<Arc<NameForms>>>,
+}
+
+impl Candidate<'_> {
     fn forms(&self, text: &str) -> Option<&NameForms> {
         self.forms
-            .get_or_init(|| {
-                let normalized = normalized(text);
-                let builtin = pricing_alias(text).map(Alias::new);
-                let alias = crate::model_aliases::resolve_model_name(text);
-                let configured =
-                    (alias != text).then(|| Alias::new(alias.into_owned().into_boxed_str()));
-                if normalized.is_none() && builtin.is_none() && configured.is_none() {
-                    return None;
-                }
-                let configured_builtin = configured
-                    .as_ref()
-                    .and_then(|alias| pricing_alias(&alias.text))
-                    .map(Alias::new);
-                Some(Box::new(NameForms {
-                    normalized,
-                    builtin,
-                    configured,
-                    configured_builtin,
-                }))
+            .get_or_init(|| match self.cache {
+                Some(cache) => cache.forms(text),
+                None => NameForms::new(text),
             })
             .as_deref()
     }
@@ -266,48 +297,55 @@ impl NameSlot {
             .find_map(select)
         })
     }
-
-    pub(super) fn result(&self, lookup: Lookup, pass: Pass) -> &ResultCell {
-        let slots = match lookup {
-            Lookup::Pricing => &self.prices,
-            Lookup::Context => self.limits.get_or_init(Box::default),
-        };
-        &slots[pass as usize]
-    }
 }
 
 #[derive(Debug, Default)]
-pub(super) struct NameCache(RwLock<FxHashMap<Box<str>, Arc<NameSlot>>>);
+pub(super) struct NameCache(RwLock<FxHashMap<Box<str>, NameSlot>>);
 
 impl NameCache {
+    fn with_slot<T>(&self, text: &str, update: impl FnOnce(&mut NameSlot) -> T) -> T {
+        let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
+        if let Some(slot) = guard.get_mut(text) {
+            return update(slot);
+        }
+        let mut slot = NameSlot::default();
+        let result = update(&mut slot);
+        guard.insert(text.into(), slot);
+        result
+    }
+
+    fn forms(&self, text: &str) -> Option<Arc<NameForms>> {
+        {
+            let guard = self.0.read().unwrap_or_else(|error| error.into_inner());
+            if let Some(forms) = guard.get(text).and_then(|slot| slot.forms.as_ref()) {
+                return forms.clone();
+            }
+        }
+        let forms = NameForms::new(text);
+        self.with_slot(text, |slot| slot.forms.get_or_insert(forms).clone())
+    }
+
+    fn get(&self, name: &str, lookup: Lookup, pass: Pass) -> Option<Option<CachedHit>> {
+        let guard = self.0.read().unwrap_or_else(|error| error.into_inner());
+        guard.get(name)?.result(lookup, pass)
+    }
+
     pub(super) fn get_or_init(
         &self,
         name: &str,
         lookup: Lookup,
         pass: Pass,
-        init: impl FnOnce(&NameSlot) -> Option<CachedHit>,
+        init: impl FnOnce(&Candidate<'_>) -> Option<CachedHit>,
     ) -> Option<CachedHit> {
-        let slot = {
-            let guard = self.0.read().unwrap_or_else(|error| error.into_inner());
-            if let Some(slot) = guard.get(name) {
-                if let Some(result) = slot.result(lookup, pass).get() {
-                    return result;
-                }
-                Some(Arc::clone(slot))
-            } else {
-                None
-            }
+        if let Some(hit) = self.get(name, lookup, pass) {
+            return hit;
+        }
+        let candidate = Candidate {
+            cache: Some(self),
+            forms: OnceCell::new(),
         };
-        let slot = slot.unwrap_or_else(|| {
-            let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
-            if let Some(slot) = guard.get(name) {
-                return Arc::clone(slot);
-            }
-            let slot = Arc::new(NameSlot::default());
-            guard.insert(name.into(), Arc::clone(&slot));
-            slot
-        });
-        slot.result(lookup, pass).get_or_init(|| init(&slot))
+        let result = init(&candidate);
+        self.with_slot(name, |slot| slot.insert(lookup, pass, result))
     }
 }
 
@@ -388,20 +426,19 @@ mod tests {
 
             let cache = table.find_cache.get().unwrap().0.read().unwrap();
             assert_eq!(cache.len(), if multi { 60 } else { 20 });
-            assert!(cache.values().all(|slot| {
-                slot.limits.get().is_none() && matches!(slot.forms.get(), Some(None))
-            }));
-            assert_eq!(
+            assert!(
                 cache
                     .values()
-                    .filter(|slot| slot.forms.get().is_some())
-                    .count(),
+                    .all(|slot| { slot.limits.is_none() && matches!(slot.forms, Some(None)) })
+            );
+            assert_eq!(
+                cache.values().filter(|slot| slot.forms.is_some()).count(),
                 cache.len()
             );
             assert_eq!(
                 cache
                     .values()
-                    .filter(|slot| slot.result(Lookup::Pricing, Pass::S56).get().is_some())
+                    .filter(|slot| slot.result(Lookup::Pricing, Pass::S56).is_some())
                     .count(),
                 if multi { 40 } else { 20 }
             );
@@ -422,7 +459,6 @@ mod tests {
         assert!(
             table.find_cache.get().unwrap().0.read().unwrap()["provider/literal"]
                 .forms
-                .get()
                 .is_none()
         );
     }
