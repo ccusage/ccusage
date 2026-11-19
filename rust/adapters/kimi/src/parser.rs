@@ -402,7 +402,7 @@ fn price_kimi_usage(
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
-            reported_model: Some(entry.logged_model.as_deref().unwrap_or(&entry.model)),
+            reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(entry.timestamp),

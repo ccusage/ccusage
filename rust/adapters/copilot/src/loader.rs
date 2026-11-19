@@ -563,9 +563,9 @@ fn usage_entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let reported = entry.logged_model.as_deref().unwrap_or(&entry.model);
+    let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let model = (entry.model.as_str(), MatchKind::Fuzzy);
-    let with_logged = [(reported, MatchKind::Fuzzy), model];
+    let with_logged = [(logged, MatchKind::Fuzzy), model];
     let candidates: &[(_, _)] = if entry.logged_model.is_some() {
         &with_logged
     } else {
@@ -576,7 +576,7 @@ fn usage_entry_to_loaded(
             usage,
             reasoning_tokens: 0,
             residual_tokens: entry.extra_total_tokens,
-            reported_model: Some(reported),
+            reported_model: Some(&entry.model),
             candidates,
             stored_cost: cost_usd,
             timestamp: Some(entry.timestamp),

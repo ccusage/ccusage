@@ -146,11 +146,11 @@ fn settings_timestamp(
 
 pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
     let (direct, reseller) = provider_prefixes(&entry.provider);
-    let reported = entry.logged_model.as_deref().unwrap_or(&entry.model);
+    let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let locked: Vec<_> = direct
         .iter()
         .filter(|_| entry.provider_locked)
-        .map(|prefix| format!("{prefix}{reported}"))
+        .map(|prefix| format!("{prefix}{logged}"))
         .collect();
     let direct: Vec<_> = direct
         .into_iter()
@@ -185,7 +185,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
             usage: entry.usage,
             reasoning_tokens: 0,
             residual_tokens: entry.reasoning_tokens,
-            reported_model: Some(reported),
+            reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: None,
             timestamp: entry.pricing_timestamp,
@@ -578,6 +578,31 @@ mod pricing_identity_tests {
             assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
             assert_eq!(missing, None, "{case}");
         }
+    }
+
+    #[test]
+    fn a_report_label_override_still_wins_over_the_logged_catalogue_id() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "s.settings.json": r#"{"model":"host/Model.1","tokenUsage":{"inputTokens":100}}"#
+        });
+        let entry = load_settings_file(&fixture.path("s.settings.json"))
+            .unwrap()
+            .unwrap();
+        let mut prices = ccusage_core::PricingMap::default();
+        prices
+            .load_json(r#"{"host/Model.1":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        let prices = prices.with_user_overrides(&std::collections::BTreeMap::from([(
+            entry.model.clone(),
+            ccusage_core::cli::PricingOverride {
+                input_cost_per_token: Some(5.0),
+                ..Default::default()
+            },
+        )]));
+        assert_eq!(
+            price_droid(&entry, PriceTable::Calculate(&prices)),
+            (500.0, None)
+        );
     }
 
     #[test]
