@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod builtin_pricing;
+mod data;
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -109,7 +110,7 @@ pub struct Pricing {
     pub fast_multiplier: f64,
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
-    family: ProviderFamily,
+    cache_defaults: &'static CacheDefaults,
     overridden: bool,
     explicit_fields: u16,
 }
@@ -217,57 +218,38 @@ impl<'a> AgentModel<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProviderFamily {
-    Anthropic,
-    OpenAi,
-    Unrecorded,
+#[derive(Debug, PartialEq)]
+struct CacheDefaults {
+    write_x: f64,
+    write_1h_x: f64,
+    read_x: f64,
 }
 
-impl ProviderFamily {
-    fn from_model(model: &str, provider: Option<&str>) -> Self {
-        let mut anthropic = false;
-        for id in model.split(['/', '.']) {
-            anthropic |= id.starts_with("claude-");
-            let id = id.strip_prefix("openai-").unwrap_or(id);
-            if id.starts_with("codex-")
-                || id.starts_with("gpt-")
-                || id.starts_with("chatgpt-")
-                || ["o1", "o3", "o4"].into_iter().any(|prefix| {
-                    id == prefix
-                        || id
-                            .strip_prefix(prefix)
-                            .is_some_and(|tail| tail.starts_with('-'))
+fn cache_defaults(model: &str, provider: Option<&str>) -> &'static CacheDefaults {
+    use data::{
+        CACHE_DEFAULTS_BY_PROVIDER, CACHE_DEFAULTS_BY_SEGMENT, CACHE_DEFAULTS_BY_SEGMENT_PREFIX,
+    };
+    model
+        .split(['/', '.'])
+        .filter_map(|segment| {
+            CACHE_DEFAULTS_BY_SEGMENT_PREFIX
+                .iter()
+                .find(|(prefix, _)| segment.starts_with(prefix))
+                .or_else(|| {
+                    CACHE_DEFAULTS_BY_SEGMENT
+                        .iter()
+                        .find(|(key, _)| segment == *key)
                 })
-            {
-                return Self::OpenAi;
-            }
-        }
-        if anthropic {
-            return Self::Anthropic;
-        }
-        match provider {
-            Some("openai" | "text-completion-openai" | "azure" | "azure_text") => Self::OpenAi,
-            Some("anthropic" | "bedrock" | "bedrock_converse" | "vertex_ai-anthropic_models") => {
-                Self::Anthropic
-            }
-            _ => Self::Unrecorded,
-        }
-    }
-
-    fn absent_cache_write(self, input: f64) -> f64 {
-        match self {
-            Self::OpenAi => input,
-            Self::Anthropic | Self::Unrecorded => input * 1.25,
-        }
-    }
-
-    fn absent_one_hour_cache_write(self, input: f64) -> f64 {
-        match self {
-            Self::OpenAi => input,
-            Self::Anthropic | Self::Unrecorded => input * 2.0,
-        }
-    }
+                .map(|(_, defaults)| *defaults)
+        })
+        .min_by(|left, right| left.write_x.total_cmp(&right.write_x))
+        .or_else(|| {
+            CACHE_DEFAULTS_BY_PROVIDER
+                .iter()
+                .find(|(key, _)| Some(*key) == provider)
+                .map(|(_, defaults)| *defaults)
+        })
+        .unwrap_or(&data::WRITES_SURCHARGED)
 }
 
 impl Pricing {
@@ -280,12 +262,12 @@ impl Pricing {
 
     pub fn cache_creation_rate(self) -> f64 {
         self.cache_create
-            .unwrap_or_else(|| self.family.absent_cache_write(self.input))
+            .unwrap_or_else(|| self.input * self.cache_defaults.write_x)
     }
 
     pub(crate) fn one_hour_cache_creation_rate(self) -> f64 {
         self.cache_create_1h
-            .unwrap_or_else(|| self.family.absent_one_hour_cache_write(self.input))
+            .unwrap_or_else(|| self.input * self.cache_defaults.write_1h_x)
     }
 
     pub(crate) fn one_hour_cache_creation_rate_above_200k(self) -> Option<f64> {
@@ -293,14 +275,15 @@ impl Pricing {
         rates.cache_create_1h.or_else(|| {
             rates
                 .input
-                .map(|input| self.family.absent_one_hour_cache_write(input))
+                .map(|input| input * self.cache_defaults.write_1h_x)
         })
     }
 
     /// The cache-read rate for a request billed at `input_rate`: the published
     /// read rate, or the existing fallback relative to that input rate.
     pub fn cache_read_rate_at(self, input_rate: f64) -> f64 {
-        self.cache_read.unwrap_or(input_rate * 0.1)
+        self.cache_read
+            .unwrap_or(input_rate * self.cache_defaults.read_x)
     }
 
     const fn empty() -> Self {
@@ -314,7 +297,7 @@ impl Pricing {
             fast_multiplier: 1.0,
             ultrafast_multiplier: 1.0,
             flex_multiplier: 1.0,
-            family: ProviderFamily::Unrecorded,
+            cache_defaults: &data::WRITES_SURCHARGED,
             overridden: false,
             explicit_fields: 0,
         }
@@ -322,10 +305,7 @@ impl Pricing {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ScheduleId {
-    DeepSeekV4Flash,
-    DeepSeekV4Pro,
-}
+struct ScheduleId(&'static str, &'static PricingSchedule);
 
 impl ScheduleId {
     #[inline]
@@ -341,40 +321,22 @@ impl ScheduleId {
 
     fn for_model(model: &str) -> Option<Self> {
         let model = direct_deepseek_id(model).unwrap_or(model);
-        [Self::DeepSeekV4Flash, Self::DeepSeekV4Pro]
-            .into_iter()
-            .find(|schedule| {
-                let key = schedule.model();
-                model.len() == key.len()
-                    && model
-                        .bytes()
-                        .map(|byte| {
-                            if is_pricing_key_separator(byte) {
-                                b'-'
-                            } else {
-                                byte
-                            }
-                        })
-                        .eq(key.bytes())
-            })
+        let identity = normalized_pricing_key(model);
+        data::SCHEDULES
+            .iter()
+            .find_map(|(key, schedule)| (*key == identity).then_some(Self(key, schedule)))
     }
 
     fn model(self) -> &'static str {
-        match self {
-            Self::DeepSeekV4Flash => "deepseek-v4-flash",
-            Self::DeepSeekV4Pro => "deepseek-v4-pro",
-        }
+        self.0
     }
 
     fn data(self) -> &'static PricingSchedule {
-        match self {
-            Self::DeepSeekV4Flash => &DEEPSEEK_V4_FLASH,
-            Self::DeepSeekV4Pro => &DEEPSEEK_V4_PRO,
-        }
+        self.1
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct ScheduledRates {
     input: f64,
     output: f64,
@@ -382,6 +344,7 @@ struct ScheduledRates {
     cache_read: f64,
 }
 
+#[derive(Debug)]
 struct PricingSchedule {
     cutoff_ms: i64,
     peak_weekdays: std::ops::RangeInclusive<u32>,
@@ -390,55 +353,6 @@ struct PricingSchedule {
     off_peak: ScheduledRates,
     peak: ScheduledRates,
 }
-
-// NOTE(2026-08-31, #1679): Historical cutoff: https://github.com/ccusage/ccusage/pull/1679; rates: https://github.com/ccusage/ccusage/issues/1643.
-// NOTE(2026-11-17): https://api-docs.deepseek.com/quick_start/pricing/ confirms Monday-Friday peak windows at 01:00-04:00 and 06:00-10:00 UTC; preserve the historical schedule.
-const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
-    cutoff_ms: 1_786_896_000_000,
-    peak_weekdays: 1..=5,
-    peak_hours: &[1..4, 6..10],
-    before: ScheduledRates {
-        input: 0.14e-6,
-        output: 0.28e-6,
-        cache_create: 0.14e-6,
-        cache_read: 0.0028e-6,
-    },
-    off_peak: ScheduledRates {
-        input: 0.22e-6,
-        output: 0.66e-6,
-        cache_create: 0.22e-6,
-        cache_read: 0.007e-6,
-    },
-    peak: ScheduledRates {
-        input: 0.44e-6,
-        output: 1.32e-6,
-        cache_create: 0.44e-6,
-        cache_read: 0.014e-6,
-    },
-};
-const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
-    cutoff_ms: 1_786_896_000_000,
-    peak_weekdays: 1..=5,
-    peak_hours: &[1..4, 6..10],
-    before: ScheduledRates {
-        input: 0.435e-6,
-        output: 0.87e-6,
-        cache_create: 0.435e-6,
-        cache_read: 0.003625e-6,
-    },
-    off_peak: ScheduledRates {
-        input: 0.66e-6,
-        output: 1.98e-6,
-        cache_create: 0.66e-6,
-        cache_read: 0.022e-6,
-    },
-    peak: ScheduledRates {
-        input: 1.32e-6,
-        output: 3.96e-6,
-        cache_create: 1.32e-6,
-        cache_read: 0.044e-6,
-    },
-};
 
 impl PricingSchedule {
     fn rates_at(&self, timestamp: TimestampMs) -> ScheduledRates {
@@ -1535,10 +1449,7 @@ impl PricingMap {
                                 .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
                         }
                         .marginal(),
-                        family: ProviderFamily::from_model(
-                            &model,
-                            pricing.litellm_provider.as_deref(),
-                        ),
+                        cache_defaults: cache_defaults(&model, pricing.litellm_provider.as_deref()),
                         ..Pricing::empty()
                     }),
             );
@@ -1734,7 +1645,7 @@ impl PricingMap {
                             cache_create_1h: None,
                         },
                     }),
-                    family: ProviderFamily::from_model(&model_id, None),
+                    cache_defaults: cache_defaults(&model_id, None),
                     ..Pricing::empty()
                 }),
             );
@@ -2727,13 +2638,12 @@ fn model_without_date_suffix(model: &str) -> &str {
 
 /// Maps model aliases to canonical pricing keys before fuzzy matching.
 fn pricing_alias(model: &str) -> Option<&'static str> {
-    match model {
-        "deepseek-v4p1-flash" => Some("accounts/fireworks/models/deepseek-v4p1-flash"),
-        "gpt-reserve" => Some("gpt-5.6-luna"),
-        "gpt-5.6" => Some("gpt-5.6-sol"),
-        "gpt-5.3-spark" => Some("gpt-5.3-codex-spark"),
-        _ => None,
+    if model == "deepseek-v4p1-flash" {
+        return Some("accounts/fireworks/models/deepseek-v4p1-flash");
     }
+    data::ALIASES
+        .iter()
+        .find_map(|(key, alias)| (*key == model).then_some(*alias))
 }
 
 fn matches_model_suffix(part: &str, base: &str) -> bool {
@@ -7318,20 +7228,20 @@ mod tests {
 
     #[test]
     fn model_vendor_precedence_is_independent_of_segment_order() {
-        use super::ProviderFamily;
+        use super::{cache_defaults, data};
         for model in ["claude-proxy/openai.gpt-5", "openai.gpt-5/claude-proxy"] {
             assert_eq!(
-                ProviderFamily::from_model(model, Some("anthropic")),
-                ProviderFamily::OpenAi
+                cache_defaults(model, Some("anthropic")),
+                &data::WRITES_AT_INPUT_RATE
             );
         }
         assert_eq!(
-            ProviderFamily::from_model("proxy/anthropic.claude-sonnet-4", Some("openai")),
-            ProviderFamily::Anthropic
+            cache_defaults("proxy/anthropic.claude-sonnet-4", Some("openai")),
+            &data::WRITES_SURCHARGED
         );
         assert_eq!(
-            ProviderFamily::from_model("proxy/openai-claude-sonnet", None),
-            ProviderFamily::Unrecorded
+            cache_defaults("proxy/openai-claude-sonnet", None),
+            &data::WRITES_SURCHARGED
         );
     }
 
