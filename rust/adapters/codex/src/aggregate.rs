@@ -22,7 +22,7 @@ use crate::{
 
 use super::{
     parser, paths,
-    replay::{CodexReplayFile, CodexReplayPlan},
+    replay::{CodexReplayFile, CodexReplayPlan, read_codex_session_metadata},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -435,6 +435,7 @@ struct CodexModel {
 }
 
 struct CodexRollout<'a> {
+    group: usize,
     sessions_dir: &'a Path,
     path: PathBuf,
     index: usize,
@@ -471,31 +472,48 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    let dirs = sources
+        .iter()
+        .map(paths::CodexUsageSource::dir)
+        .collect::<Vec<_>>();
+    let discover = |emit: &mut dyn FnMut(usize, PathBuf)| {
+        paths::visit_deduped_codex_usage_files(sources, diagnostics, emit);
+    };
     if !has_date_bounds(shared) {
-        let dirs = sources
-            .iter()
-            .map(paths::CodexUsageSource::dir)
-            .collect::<Vec<_>>();
-        return aggregate_discovered(&dirs, shared, kind, pricing, diagnostics, |emit| {
-            paths::visit_deduped_codex_usage_files(sources, diagnostics, emit);
-        });
+        return aggregate_discovered(&dirs, shared, kind, pricing, diagnostics, discover);
     }
 
-    let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
-    let detected = file_groups.iter().any(|group| !group.files.is_empty());
-    let files_by_group = file_groups
-        .iter()
-        .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
-        .collect::<Vec<_>>();
-    load_groups_from_file_selection(
-        &file_groups,
-        &files_by_group,
-        shared,
-        kind,
-        pricing,
+    let eligibility = paths::CodexFileEligibility::from_shared(shared);
+    let loaded = read_discovered_rollouts(&dirs, shared.single_thread, discover, |file| {
+        eligibility
+            .is_none_or(|filter| filter.contains_file(file.sessions_dir, &file.path))
+            .then(|| read_codex_session_metadata(&file.path, Some(diagnostics)))
+    });
+    let detected = !loaded.is_empty();
+    let mut available = vec![Vec::new(); dirs.len()];
+    let mut selected = vec![Vec::new(); dirs.len()];
+    let mut probes = Vec::new();
+    for (file, probe) in loaded {
+        if let Some(metadata) = probe {
+            selected[file.group].push(file.path.clone());
+            probes.push((file.path.clone(), file.sessions_dir, metadata));
+        }
+        available[file.group].push(file.path);
+    }
+    let replay = CodexReplayPlan::for_probes(
+        probes,
+        dirs.iter()
+            .copied()
+            .zip(available.iter().map(Vec::as_slice)),
+        shared.single_thread,
         diagnostics,
-    )
-    .map(|groups| (groups, detected))
+    );
+    let selected = dirs
+        .into_iter()
+        .zip(selected.iter().map(Vec::as_slice))
+        .collect::<Vec<_>>();
+    aggregate_planned(&selected, shared, kind, pricing, diagnostics, &replay)
+        .map(|groups| (groups, detected))
 }
 
 pub(super) fn select_session_files(
@@ -592,6 +610,17 @@ fn aggregate_file_groups(
         shared.single_thread,
         diagnostics,
     );
+    aggregate_planned(selected, shared, kind, pricing, diagnostics, &replay)
+}
+
+fn aggregate_planned(
+    selected: &[(&Path, &[PathBuf])],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+    replay: &CodexReplayPlan,
+) -> Result<BTreeMap<String, CodexGroup>> {
     let seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum(), pricing);
     let mut file_offset = 0;
     for &(sessions_dir, files) in selected {
@@ -599,7 +628,7 @@ fn aggregate_file_groups(
             sessions_dir,
             files,
             shared,
-            replay: &replay,
+            replay,
             file_offset,
             diagnostics,
         };
@@ -618,19 +647,10 @@ fn aggregate_discovered(
     discover: impl FnOnce(&mut dyn FnMut(usize, PathBuf)),
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let seen = CodexDedupe::new(usize::MAX, pricing);
-    let mut loaded = ccusage_adapter_common::read_discovered_files(
+    let loaded = read_discovered_rollouts(
+        dirs,
         shared.single_thread,
-        |emit| {
-            let mut index = 0;
-            discover(&mut |group, path| {
-                emit(CodexRollout {
-                    sessions_dir: dirs[group],
-                    path,
-                    index,
-                });
-                index += 1;
-            });
-        },
+        discover,
         |file: &CodexRollout<'_>| {
             let mut provenance = CodexEventProvenance::new(file.index);
             let mut result = Ok(());
@@ -648,7 +668,6 @@ fn aggregate_discovered(
         },
     );
     let detected = !loaded.is_empty();
-    loaded.sort_unstable_by_key(|(file, _)| file.index);
     let mut replay_files = Vec::with_capacity(loaded.len());
     let mut forks = Vec::new();
     for (file, metadata) in loaded {
@@ -686,6 +705,32 @@ fn aggregate_discovered(
         .collect::<Result<()>>()?;
     }
     seen.fold(shared, kind).map(|groups| (groups, detected))
+}
+
+fn read_discovered_rollouts<'a, T: Send>(
+    dirs: &[&'a Path],
+    single_thread: bool,
+    discover: impl FnOnce(&mut dyn FnMut(usize, PathBuf)),
+    read: impl Fn(&CodexRollout<'a>) -> T + Sync,
+) -> Vec<(CodexRollout<'a>, T)> {
+    let mut loaded = ccusage_adapter_common::read_discovered_files(
+        single_thread,
+        |emit| {
+            let mut index = 0;
+            discover(&mut |group, path| {
+                emit(CodexRollout {
+                    group,
+                    sessions_dir: dirs[group],
+                    path,
+                    index,
+                });
+                index += 1;
+            });
+        },
+        read,
+    );
+    loaded.sort_unstable_by_key(|(file, _)| file.index);
+    loaded
 }
 
 fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe) -> Result<()> {

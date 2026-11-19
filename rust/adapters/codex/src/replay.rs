@@ -54,6 +54,39 @@ impl CodexReplayPlan {
             Some(diagnostics),
             &mut failed_parent_ids,
         );
+        Self::for_metadata(
+            files,
+            available,
+            single_thread,
+            diagnostics,
+            failed_parent_ids,
+        )
+    }
+
+    pub(super) fn for_probes<'a>(
+        probes: Vec<ReplayProbe<'a>>,
+        available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
+        single_thread: bool,
+        diagnostics: &Diagnostics,
+    ) -> Self {
+        let mut failed_parent_ids = HashSet::new();
+        let files = decode_probes(probes, &mut failed_parent_ids);
+        Self::for_metadata(
+            files,
+            available,
+            single_thread,
+            diagnostics,
+            failed_parent_ids,
+        )
+    }
+
+    fn for_metadata<'a>(
+        files: Vec<CodexReplayFile<'a>>,
+        available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
+        single_thread: bool,
+        diagnostics: &Diagnostics,
+        mut failed_parent_ids: HashSet<String>,
+    ) -> Self {
         let children = files
             .iter()
             .filter(|file| file.metadata.is_fork())
@@ -214,6 +247,8 @@ fn collect_replay_files<'a>(
         .collect()
 }
 
+pub(super) type ReplayProbe<'a> = (PathBuf, &'a Path, Option<CodexSessionMetadata>);
+
 fn read_replay_files<'a>(
     files: &[(PathBuf, &'a Path)],
     single_thread: bool,
@@ -227,28 +262,36 @@ fn read_replay_files<'a>(
             read_codex_session_metadata(path, diagnostics),
         )
     };
-    ccusage_adapter_common::map_parallel(
+    let probes = ccusage_adapter_common::map_parallel(
         files,
         single_thread,
         ccusage_adapter_common::Split::ByCount,
         read,
-    )
-    .into_iter()
-    .map(|(path, sessions_dir, metadata)| {
-        if metadata.is_none()
-            && let Some(name) = path.file_name().and_then(|name| name.to_str())
-        {
-            let id = super::rollout_identity(name)
-                .map_or_else(|| super::normalize_session_id(name), |(thread, _)| thread);
-            failed_parent_ids.insert(id.to_string());
-        }
-        CodexReplayFile {
-            path,
-            sessions_dir,
-            metadata: metadata.unwrap_or_default(),
-        }
-    })
-    .collect()
+    );
+    decode_probes(probes, failed_parent_ids)
+}
+
+fn decode_probes<'a>(
+    probes: Vec<ReplayProbe<'a>>,
+    failed_parent_ids: &mut HashSet<String>,
+) -> Vec<CodexReplayFile<'a>> {
+    probes
+        .into_iter()
+        .map(|(path, sessions_dir, metadata)| {
+            if metadata.is_none()
+                && let Some(name) = path.file_name().and_then(|name| name.to_str())
+            {
+                let id = super::rollout_identity(name)
+                    .map_or_else(|| super::normalize_session_id(name), |(thread, _)| thread);
+                failed_parent_ids.insert(id.to_string());
+            }
+            CodexReplayFile {
+                path,
+                sessions_dir,
+                metadata: metadata.unwrap_or_default(),
+            }
+        })
+        .collect()
 }
 
 fn read_parent_usage(
@@ -323,7 +366,7 @@ impl CodexSessionMetadata {
     }
 }
 
-fn read_codex_session_metadata(
+pub(super) fn read_codex_session_metadata(
     path: &Path,
     diagnostics: Option<&Diagnostics>,
 ) -> Option<CodexSessionMetadata> {

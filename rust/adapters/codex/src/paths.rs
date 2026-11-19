@@ -117,25 +117,20 @@ pub(super) fn filter_codex_usage_files(
     };
     files
         .iter()
-        .filter(|file| {
-            eligibility.contains(
-                codex_file_date(sessions_dir, file),
-                file_modified_millis(file),
-            )
-        })
+        .filter(|file| eligibility.contains_file(sessions_dir, file))
         .cloned()
         .collect()
 }
 
 #[derive(Clone, Copy)]
-struct CodexFileEligibility {
+pub(super) struct CodexFileEligibility {
     since_date: Option<Date>,
     until_path_date: Option<Date>,
     since_millis: Option<i64>,
 }
 
 impl CodexFileEligibility {
-    fn from_shared(shared: &SharedArgs) -> Option<Self> {
+    pub(super) fn from_shared(shared: &SharedArgs) -> Option<Self> {
         let timezone = resolve_tz(shared.timezone.as_deref());
         let since_date = shared.since.as_deref().and_then(parse_compact_date);
         let until_date = shared.until.as_deref().and_then(parse_compact_date);
@@ -152,6 +147,10 @@ impl CodexFileEligibility {
                 .and_then(utc_path_date),
             since_millis,
         })
+    }
+
+    pub(super) fn contains_file(self, dir: &Path, file: &Path) -> bool {
+        self.contains(codex_file_date(dir, file), file_modified_millis(file))
     }
 
     fn contains(self, start_date: Option<Date>, modified_millis: Option<i64>) -> bool {
