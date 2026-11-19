@@ -630,23 +630,28 @@ mod tests {
         );
     }
 
-    /// A spawned child replays its parent's request without the record. When the
-    /// child is read first, the parent's recorded request still owns the usage.
+    /// A spawned child replays its parent's request without the record. Whichever
+    /// file is read first, the parent's recorded request owns the usage.
     #[test]
     fn credits_a_replaced_stand_in_to_the_recording_session() {
         let stand_in = codex_event("session-b");
         let mut recorded = codex_event("session-a");
         recorded.record_response_id = Some("resp-a".to_string());
 
-        let events = dedupe_codex_events([vec![stand_in], vec![recorded]]);
+        for files in [
+            [vec![stand_in.clone()], vec![recorded.clone()]],
+            [vec![recorded.clone()], vec![stand_in.clone()]],
+        ] {
+            let events = dedupe_codex_events(files);
 
-        assert_eq!(
-            events
-                .iter()
-                .map(|event| (event.session_id.as_str(), event.input_tokens))
-                .collect::<Vec<_>>(),
-            [("session-a", 100)]
-        );
+            assert_eq!(
+                events
+                    .iter()
+                    .map(|event| (event.session_id.as_str(), event.input_tokens))
+                    .collect::<Vec<_>>(),
+                [("session-a", 100)]
+            );
+        }
     }
 
     #[test]
