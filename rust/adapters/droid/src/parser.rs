@@ -140,23 +140,21 @@ fn settings_timestamp(
 }
 
 pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
-    let qualified: Vec<_> = provider_prefixes(&entry.provider)
+    let (direct, reseller) = provider_prefixes(&entry.provider);
+    let direct: Vec<_> = direct
         .into_iter()
         .map(|prefix| format!("{prefix}{}", entry.model))
         .collect();
-    let candidates: Vec<_> = qualified
+    let reseller = reseller.map(|prefix| format!("{prefix}{}", entry.model));
+    let candidates: Vec<_> = direct
         .iter()
-        .filter(|model| {
-            entry.provider_locked
-                && pricing
-                    .as_map()
-                    .is_some_and(|map| map.has_primary_price(model))
-        })
-        .map(|name| (name.as_str(), MatchKind::Exact))
+        .filter(|_| entry.provider_locked)
+        .map(|name| (name.as_str(), MatchKind::StrictExact))
         .chain(std::iter::once((entry.model.as_str(), MatchKind::Fuzzy)))
         .chain(
-            qualified
+            direct
                 .iter()
+                .chain(&reseller)
                 .map(|name| (name.as_str(), MatchKind::Fuzzy)),
         )
         .collect();
@@ -180,22 +178,24 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
     )
 }
 
-fn provider_prefixes(provider: &str) -> Vec<String> {
-    match provider {
-        "anthropic" => vec![
-            "anthropic/".to_string(),
-            "openrouter/anthropic/".to_string(),
-        ],
-        "openai" => vec!["openai/".to_string(), "openrouter/openai/".to_string()],
-        "google" => vec![
-            "google/".to_string(),
-            "vertex_ai/".to_string(),
-            "openrouter/google/".to_string(),
-        ],
-        "xai" => vec!["xai/".to_string(), "openrouter/x-ai/".to_string()],
-        "unknown" => Vec::new(),
-        provider => vec![format!("{provider}/"), format!("openrouter/{provider}/")],
-    }
+fn provider_prefixes(provider: &str) -> (Vec<String>, Option<String>) {
+    let (direct, reseller): (&[&str], &str) = match provider {
+        "anthropic" => (&["anthropic/"], "openrouter/anthropic/"),
+        "openai" => (&["openai/"], "openrouter/openai/"),
+        "google" => (&["google/", "vertex_ai/"], "openrouter/google/"),
+        "xai" => (&["xai/"], "openrouter/x-ai/"),
+        "unknown" => return (Vec::new(), None),
+        provider => {
+            return (
+                vec![format!("{provider}/")],
+                Some(format!("openrouter/{provider}/")),
+            );
+        }
+    };
+    (
+        direct.iter().map(|prefix| (*prefix).to_owned()).collect(),
+        Some(reseller.to_owned()),
+    )
 }
 
 fn string_field(record: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -474,6 +474,37 @@ mod pricing_identity_tests {
             let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
             let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{name}: {cost}");
+            assert_eq!(missing, None);
+        }
+    }
+
+    #[test]
+    fn lock_uses_the_provider_tier_ahead_of_a_reseller_guess() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "gpt-5.5": {
+                "litellm_provider": "openai",
+                "input_cost_per_token": 0.000005,
+                "output_cost_per_token": 0.00003,
+                "input_cost_per_token_above_200k_tokens": 0.00001
+            },
+            "openrouter/openai/gpt-5.5": {
+                "litellm_provider": "openrouter",
+                "input_cost_per_token": 0.000002,
+                "output_cost_per_token": 0.00001
+            }
+        }"#,
+        );
+        let fixture = ccusage_test_support::fs_fixture!({
+            "unlocked.settings.json": r#"{"model":"gpt-5.5","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":300000,"outputTokens":1000}}"#,
+            "locked.settings.json": r#"{"model":"gpt-5.5","providerLock":"openai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":300000,"outputTokens":1000}}"#,
+        });
+        for label in ["unlocked.settings.json", "locked.settings.json"] {
+            let entry = load_settings_file(&fixture.path(label)).unwrap().unwrap();
+            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - 2.03).abs() < 1e-12, "{label}: {cost}");
             assert_eq!(missing, None);
         }
     }

@@ -232,12 +232,13 @@ fn model_candidates(entry: &HermesEntry) -> Vec<(String, MatchKind)> {
 mod tests {
     #[test]
     fn zero_rates_stop_candidate_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
             timestamp_text: String::new(),
             session_id: "s".into(),
             model: "sample".into(),
-            provider: "vendor".into(),
+            provider: "zai".into(),
             usage: TokenUsageRaw {
                 input_tokens: 100,
                 ..TokenUsageRaw::default()
@@ -247,7 +248,7 @@ mod tests {
             cost_usd: None,
         };
         let mut pricing = ccusage_core::PricingMap::default();
-        pricing.load_json(r#"{"vendor/sample":{"input_cost_per_token":0,"output_cost_per_token":0},"sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        pricing.load_json(r#"{"zai/sample":{"litellm_provider":"zai","input_cost_per_token":0,"output_cost_per_token":0},"sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
             price_hermes(&entry, PriceTable::Calculate(&pricing)),
             (0.0, None)
@@ -551,10 +552,12 @@ mod tests {
 
     #[test]
     fn accepts_normalized_provider_pricing_and_excludes_longer_fuzzy_matches() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek/deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028
                 }

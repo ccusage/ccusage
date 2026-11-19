@@ -1753,12 +1753,6 @@ impl PricingMap {
             .is_some_and(|result| result.schedule.is_some())
     }
 
-    pub fn has_primary_price(&self, model: &str) -> bool {
-        self.rows
-            .authoritative(model, Lookup::Pricing, true)
-            .is_some()
-    }
-
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
         self.overridden(model).or_else(|| {
             self.rows
