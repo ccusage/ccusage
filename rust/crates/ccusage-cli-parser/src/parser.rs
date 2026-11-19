@@ -222,10 +222,7 @@ fn parse_extra_command(
         AgentCommandKind::Blocks(options) => {
             parse_blocks_command(parser, root.shared(config, false), config, options)
         }
-        AgentCommandKind::ClaudeStatusline {
-            offline_by_default,
-            options,
-        } => {
+        AgentCommandKind::ClaudeStatusline { options, .. } => {
             let offline_override = root.shared_flags.iter().rev().find_map(|flag| {
                 if let SharedFlag::Offline(offline) = flag {
                     Some(*offline)
@@ -233,7 +230,7 @@ fn parse_extra_command(
                     None
                 }
             });
-            let shared = root.shared(config, offline_by_default);
+            let shared = root.shared(config, false);
             parse_statusline_command(parser, &shared, config, offline_override, options)
         }
         AgentCommandKind::CodexStatusline {
@@ -1005,13 +1002,6 @@ fn validate_date_window(
     parser: &ArgParser,
     config: &dyn CliConfig,
 ) -> Result<(), String> {
-    if let Command::Agent(_, AgentCommand::Statusline(args)) = command
-        && !args.mcp
-        && args.session_id.is_none()
-        && let Some(message) = config.date_config_error()
-    {
-        return Err(message.to_string());
-    }
     let Some((since, until)) = command
         .shared()
         .and_then(|shared| shared.since.as_deref().zip(shared.until.as_deref()))

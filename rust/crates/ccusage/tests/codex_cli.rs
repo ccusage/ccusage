@@ -430,31 +430,88 @@ fn codex_statusline_recovers_reversed_discovered_windows_as_a_pair() {
 }
 
 #[test]
-fn invalid_discovered_statusline_bounds_are_fatal_only_when_used() {
-    for field in ["since", "until"] {
+fn invalid_discovered_statusline_bounds_warn_in_every_mode() {
+    for (config, field, daily_exit) in [
+        (
+            json!({"defaults":{"since":"invalid-date"}}),
+            "defaults.since",
+            2,
+        ),
+        (
+            json!({"codex":{"commands":{"statusline":{"until":"invalid-date"}}}}),
+            "codex.commands.statusline.until",
+            0,
+        ),
+    ] {
         let fixture = codex_fixture();
-        let _ = fixture.write_file(
-            "cwd/.ccusage/ccusage.json",
-            json!({"codex":{"commands":{"statusline":{field:"invalid-date"}}}}).to_string(),
+        let path = fixture.write_file("cwd/.ccusage/ccusage.json", config.to_string());
+        let run = |args: &[&str]| {
+            support::hermetic_command(fixture.root())
+                .args(args)
+                .env("CODEX_HOME", fixture.path("codex"))
+                .env("CCUSAGE_TEST_NOW", "2026-09-19T23:30:00Z")
+                .output()
+                .unwrap()
+        };
+        let warning = format!(
+            "{}: Invalid ccusage config field: {field}: not a valid date",
+            path.display()
         );
-        let output = run_cli_output(&fixture, &["codex", "statusline"]);
-        assert_eq!(output.status.code(), Some(2));
-        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
-            "codex.commands.statusline.{field}: not a valid date"
-        )));
-        let output = run_cli_output(
-            &fixture,
-            &["codex", "statusline", "--id", SESSION_UUID, "--json"],
-        );
-        assert!(output.status.success());
-        let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(summary["totalTokens"], 150);
+        for (args, expected) in [
+            (
+                &["codex", "statusline", "--no-cost"][..],
+                "Codex | Today: 150 tokens\n",
+            ),
+            (
+                &["codex", "statusline", "--id", SESSION_UUID, "--no-cost"],
+                "Codex | Session: 150 tokens\n",
+            ),
+            (&["codex", "statusline", "--mcp"], ""),
+        ] {
+            let output = run(args);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{stderr}");
+            assert!(stderr.contains(&warning), "{stderr}");
+            assert_eq!(output.stdout, expected.as_bytes());
+        }
 
-        let output = run_cli_output(&fixture, &["codex", "statusline", "--mcp"]);
-        assert!(output.status.success());
+        let output = run(&["codex", "daily", "--offline", "--json"]);
+        assert_eq!(output.status.code(), Some(daily_exit));
+    }
+}
 
-        let output = run_cli_output(&fixture, &["codex", "daily", "--json"]);
-        assert!(output.status.success());
+#[test]
+fn invalid_explicit_statusline_bounds_are_errors_in_every_mode() {
+    let fixture = fs_fixture!({
+        "bad-config.json": r#"{"defaults":{"since":"invalid-date"}}"#,
+    });
+    let path = fixture.path("bad-config.json");
+    let config_error = format!("{}: defaults.since: not a valid date", path.display());
+    for mode in [&[][..], &["--id", SESSION_UUID], &["--mcp"]] {
+        for (bound, expected_error) in [
+            (
+                ["--since", "invalid-date"],
+                "Invalid value for --since 'invalid-date'",
+            ),
+            (
+                ["--until", "invalid-date"],
+                "Invalid value for --until 'invalid-date'",
+            ),
+            (["--config", path.to_str().unwrap()], config_error.as_str()),
+        ] {
+            let output = run_cli_output(
+                &fixture,
+                &["codex", "statusline"]
+                    .into_iter()
+                    .chain(mode.iter().copied())
+                    .chain(bound)
+                    .collect::<Vec<_>>(),
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(2), "{stderr}");
+            assert!(stderr.contains(expected_error), "{stderr}");
+            assert!(output.stdout.is_empty());
+        }
     }
 }
 
