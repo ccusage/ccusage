@@ -218,6 +218,9 @@ jobs:
         with:
           version: 0.114.1
 
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
       - name: Record the implementation base
         id: base
         shell: nu {0}

@@ -283,13 +283,14 @@ fn dedupe_codex_events(
             };
             if let Some((index, tier)) = retained {
                 let retained: &mut CodexTokenUsageEvent = &mut deduped[index];
-                retained.service_tier = match tier {
+                match tier {
                     CodexCopyTier::Merge => {
-                        merge_codex_service_tiers(retained.service_tier, event.service_tier)
+                        retained.service_tier =
+                            merge_codex_service_tiers(retained.service_tier, event.service_tier);
                     }
-                    CodexCopyTier::Replace => event.service_tier,
-                    CodexCopyTier::Keep => retained.service_tier,
-                };
+                    CodexCopyTier::Replace => *retained = event,
+                    CodexCopyTier::Keep => {}
+                }
             } else {
                 deduped.push(event);
             }
@@ -627,6 +628,30 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(20, None), (10, None)]
         );
+    }
+
+    /// A spawned child replays its parent's request without the record. Whichever
+    /// file is read first, the parent's recorded request owns the usage.
+    #[test]
+    fn credits_a_replaced_stand_in_to_the_recording_session() {
+        let stand_in = codex_event("session-b");
+        let mut recorded = codex_event("session-a");
+        recorded.record_response_id = Some("resp-a".to_string());
+
+        for files in [
+            [vec![stand_in.clone()], vec![recorded.clone()]],
+            [vec![recorded.clone()], vec![stand_in.clone()]],
+        ] {
+            let events = dedupe_codex_events(files);
+
+            assert_eq!(
+                events
+                    .iter()
+                    .map(|event| (event.session_id.as_str(), event.input_tokens))
+                    .collect::<Vec<_>>(),
+                [("session-a", 100)]
+            );
+        }
     }
 
     #[test]
