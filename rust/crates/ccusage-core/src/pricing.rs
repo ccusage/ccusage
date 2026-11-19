@@ -1727,8 +1727,8 @@ impl PricingMap {
                 if secondary.is_some_and(|rows| rows.contains_exact_only_spelling(name)) {
                     return None;
                 }
-                self.fuzzy(&self.rows, secondary, name, lookup)
-                    .or_else(|| self.fuzzy(secondary?, secondary, name, lookup))
+                Self::fuzzy(&self.rows, name, lookup)
+                    .or_else(|| Self::fuzzy(secondary?, name, lookup))
             }) {
                 return Some((candidate, found));
             }
@@ -1736,26 +1736,19 @@ impl PricingMap {
         None
     }
 
-    fn fuzzy<'a>(
-        &'a self,
-        rows: &'a PricingRows,
-        secondary: Option<&PricingRows>,
-        name: &str,
-        lookup: Lookup,
-    ) -> Option<RowMatch<'a>> {
+    fn fuzzy<'a>(rows: &'a PricingRows, name: &str, lookup: Lookup) -> Option<RowMatch<'a>> {
         let normalized = normalized_pricing_key(name);
+        let segment = last_segment(normalized.as_ref());
         rows.entries
             .iter()
             .filter(|(_, row)| !row.exact_only && lookup.includes(row))
             .filter(|(key, _)| pricing_key_matches(key, name, normalized.as_ref()))
-            .filter(|(key, _)| {
-                matches_service_plan(key, name, |key| {
-                    self.rows.literal(key, lookup).is_some()
-                        || secondary.is_some_and(|rows| rows.literal(key, lookup).is_some())
-                })
-            })
-            .max_by(|(left, _), (right, _)| {
-                left.len().cmp(&right.len()).then_with(|| right.cmp(left))
+            .max_by_key(|(key, _)| {
+                (
+                    normalized_pricing_key(last_segment(key)) == segment,
+                    key.len(),
+                    std::cmp::Reverse(*key),
+                )
             })
             .map(|(key, row)| RowMatch { key, row })
     }
@@ -2144,41 +2137,8 @@ fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<T>) -> Opti
         })
 }
 
-fn matches_service_plan(candidate: &str, request: &str, contains: impl Fn(&str) -> bool) -> bool {
-    const PLANS: [&str; 10] = [
-        "batch",
-        "flex",
-        "priority",
-        "ultrafast",
-        "nitro",
-        "highspeed",
-        "free",
-        "lightning",
-        "economy",
-        "spot",
-    ];
-
-    fn segments(id: &str) -> impl Iterator<Item = &str> {
-        id.split(['-', '.', '@', '/', ':', '_'])
-    }
-
-    let names_plan = |plan: &str| segments(request).any(|part| part.eq_ignore_ascii_case(plan));
-    if segments(candidate)
-        .any(|part| PLANS.iter().any(|plan| part.eq_ignore_ascii_case(plan)) && !names_plan(part))
-    {
-        return false;
-    }
-    let base = model_without_date_suffix(candidate);
-    let Some((standard, _)) = base
-        .rsplit_once(['-', '.', '@', ':', '_'])
-        .filter(|(_, suffix)| suffix.eq_ignore_ascii_case("fast"))
-    else {
-        return true;
-    };
-    names_plan("fast")
-        || ![standard, standard.rsplit('/').next().unwrap_or(standard)]
-            .into_iter()
-            .any(contains)
+fn last_segment(key: &str) -> &str {
+    key.rsplit_once('/').map_or(key, |(_, segment)| segment)
 }
 
 /// Matches pricing keys across provider/model aliases while preserving version boundaries.
@@ -2302,9 +2262,6 @@ fn model_without_date_suffix(model: &str) -> &str {
 
 /// Maps model aliases to canonical pricing keys before fuzzy matching.
 fn pricing_alias(model: &str) -> Option<&'static str> {
-    if model == "deepseek-v4p1-flash" {
-        return Some("accounts/fireworks/models/deepseek-v4p1-flash");
-    }
     data::ALIASES
         .iter()
         .find_map(|(key, alias)| (*key == model).then_some(*alias))
@@ -6686,34 +6643,45 @@ mod tests {
     }
 
     #[test]
-    fn service_plan_variants_require_the_requested_plan() {
+    fn same_last_segment_wins_over_a_longer_fuzzy_key() {
         let mut pricing = PricingMap::default();
-        pricing.load_json(
-            r#"{
-            "vendor/model-2.5-flex": {"input_cost_per_token": 1, "output_cost_per_token": 2},
-            "priority/vendor/model-2.5": {"input_cost_per_token": 7, "output_cost_per_token": 8},
-            "vendor/model-2.5-batch": {"input_cost_per_token": 9, "output_cost_per_token": 10},
-            "other/vendor/model-2.5-FAST": {"input_cost_per_token": 11, "output_cost_per_token": 12},
-            "model-2.5": {"input_cost_per_token": 3, "output_cost_per_token": 4}
-        }"#,
-        );
-
-        assert_eq!(pricing.find("vendor/model-2.5").unwrap().input, 3.0);
-        assert_eq!(pricing.find("vendor/model-2-5-flex").unwrap().input, 1.0);
-        assert_eq!(
-            pricing.find("priority/vendor/model-2.5").unwrap().input,
-            7.0
-        );
-        assert_eq!(pricing.find("vendor/model-2.5-batch").unwrap().input, 9.0);
+        pricing.load_json(r#"{
+            "short/model-2.5": {"input_cost_per_token": 3, "output_cost_per_token": 4},
+            "longer/catalog/model-2.5-extension": {"input_cost_per_token": 9, "output_cost_per_token": 10}
+        }"#);
+        for name in ["model-2.5", "model-2-5", "short/model-2@5"] {
+            let rate = pricing.find(name).unwrap();
+            assert_eq!((rate.input, rate.output), (3.0, 4.0), "{name}");
+        }
     }
 
     #[test]
-    fn fireworks_flash_label_uses_the_exact_standard_model_row() {
+    fn resolver_table_segment_matches() {
         crate::test_support::install_pricing_snapshots();
-        let entry = PricingMap::load_embedded()
-            .find("deepseek-v4p1-flash")
-            .unwrap();
-        assert_eq!((entry.input, entry.output), (0.0000003, 0.0000012));
+        let map = PricingMap::load_embedded();
+        for (case, model, expected) in [
+            (
+                "71_fireworks_short_flash",
+                "deepseek-v4p1-flash",
+                (0.3e-6, 1.2e-6),
+            ),
+            ("72_fireworks_short_glm", "glm-5p3", (1.4e-6, 4.4e-6)),
+        ] {
+            let entry = map.find(model).expect(case);
+            assert!(
+                (entry.input - expected.0).abs() < 1e-12,
+                "{case}: {entry:?}"
+            );
+            assert!(
+                (entry.output - expected.1).abs() < 1e-12,
+                "{case}: {entry:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_price_aliases_require_an_explicit_table_entry() {
+        assert_eq!(super::data::ALIASES.len(), 3);
     }
 
     #[test]
