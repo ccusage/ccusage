@@ -1989,13 +1989,24 @@ impl PricingMap {
     }
 
     pub fn context_limit(&self, model: &str) -> Option<u64> {
-        self.resolve_row_with(
-            Some(model),
-            &[(model, MatchKind::Fuzzy)],
-            Lookup::Context,
-            models_dev_pricing,
-        )
-        .and_then(|(_, found, _)| found.row.context_limit)
+        self.resolve_context_limit(model, MatchKind::Fuzzy, models_dev_pricing)
+    }
+
+    fn resolve_context_limit<'live>(
+        &self,
+        model: &str,
+        kind: MatchKind,
+        live: impl FnOnce() -> Option<&'live Self>,
+    ) -> Option<u64> {
+        let candidates = [(model, kind)];
+        let live = std::cell::Cell::new(Some(live));
+        let limit = |lookup| {
+            self.resolve_row_with(Some(model), &candidates, lookup, || {
+                live.take().and_then(|load| load())
+            })
+            .and_then(|(_, found, _)| found.row.context_limit)
+        };
+        limit(Lookup::Pricing).or_else(|| limit(Lookup::Context))
     }
 
     fn clear_find_cache(&mut self) {
@@ -2505,8 +2516,7 @@ mod tests {
         }
 
         fn context_limit_entry(&self, model: &str, kind: MatchKind) -> Option<u64> {
-            self.resolve_row_with(Some(model), &[(model, kind)], Lookup::Context, || None)
-                .and_then(|(_, found, _)| found.row.context_limit)
+            self.resolve_context_limit(model, kind, || None)
         }
 
         fn find_with_live<'a>(
@@ -2528,13 +2538,7 @@ mod tests {
             model: &str,
             live: impl FnOnce() -> Option<&'a Self>,
         ) -> Option<u64> {
-            self.resolve_row_with(
-                Some(model),
-                &[(model, MatchKind::Fuzzy)],
-                Lookup::Context,
-                live,
-            )
-            .and_then(|(_, found, _)| found.row.context_limit)
+            self.resolve_context_limit(model, MatchKind::Fuzzy, live)
         }
 
         fn with_live_layer<'a>(
@@ -7775,6 +7779,21 @@ mod tests {
             .find("qwen2.5-coder-7b")
             .unwrap();
         assert_eq!((entry.input, entry.output), (0.00000003, 0.00000009));
+    }
+
+    #[test]
+    fn context_limit_prefers_the_paid_host_listing_over_the_free_vendor_row() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, limit) in [
+            ("@cf/zai-org/glm-4.7-flash", 131_072),
+            ("cloudflare/@cf/zai-org/glm-4.7-flash", 131_072),
+            ("z-ai/glm-4.7-flash", 202_752),
+        ] {
+            let rates = pricing.find(model).unwrap();
+            assert!(rates.input > 0.0 && rates.output > 0.0, "{model}");
+            assert_eq!(pricing.context_limit(model), Some(limit), "{model}");
+        }
     }
 
     #[test]
