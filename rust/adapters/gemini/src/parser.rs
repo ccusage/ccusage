@@ -41,17 +41,9 @@ const TOKEN_KEYS: [&[&str]; 6] = [
     TOTAL_KEYS,
 ];
 
-/// A Gemini log record envelope, used both for whole-file JSON documents and for
-/// individual JSONL lines. Only the fields ccusage consumes are declared; serde
-/// skips everything else.
-///
-/// Token counts are intentionally kept as raw [`Value`] trees (`tokens`,
-/// `stats`, `result`) because [`parse_tokens`] accepts many key aliases and
-/// truncates floating-point token counts, semantics that differ from the shared
-/// integer-only [`jsonl::lenient_u64`] helper.
 #[derive(Debug, Default, Deserialize)]
 struct GeminiRecord {
-    #[serde(default, deserialize_with = "lenient_str")]
+    #[serde(default, deserialize_with = "lenient_untrimmed_string")]
     r#type: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     #[serde(rename = "sessionId")]
@@ -62,27 +54,27 @@ struct GeminiRecord {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
-    #[serde(default, deserialize_with = "lenient_str")]
+    #[serde(default, deserialize_with = "lenient_untrimmed_string")]
     timestamp: Option<String>,
-    #[serde(default, deserialize_with = "lenient_str")]
+    #[serde(default, deserialize_with = "lenient_untrimmed_string")]
     created_at: Option<String>,
-    #[serde(default, deserialize_with = "lenient_str")]
+    #[serde(default, deserialize_with = "lenient_untrimmed_string")]
     #[serde(rename = "startTime")]
     start_time: Option<String>,
-    #[serde(default, deserialize_with = "lenient_str")]
+    #[serde(default, deserialize_with = "lenient_untrimmed_string")]
     #[serde(rename = "lastUpdated")]
     last_updated: Option<String>,
     #[serde(default, deserialize_with = "jsonl::lenient_array")]
     messages: Option<Vec<GeminiRecord>>,
+    // NOTE(2026-05-19, #1021): Gemini token blocks accept multiple aliases and can contain floating-point counts. Raw values let the reader choose the first numeric alias and truncate fractional counts.
     tokens: Option<Value>,
     stats: Option<Value>,
     result: Option<Value>,
 }
 
-/// Deserialize a JSON string verbatim, and any other value as `None`. The
-/// `type` discriminator is compared exactly and [`crate::parse_ts_timestamp`]
-/// checks exact lengths, so these fields must stay untrimmed.
-fn lenient_str<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+fn lenient_untrimmed_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -94,15 +86,12 @@ where
 }
 
 impl GeminiRecord {
-    /// Resolve the session id, preferring `sessionId` then `session_id`.
     fn session_id(&self) -> Option<String> {
         self.session_id_camel
             .clone()
             .or_else(|| self.session_id.clone())
     }
 
-    /// Resolve the `stats` value, preferring the top-level `stats` then the
-    /// nested `result.stats`.
     fn stats(&self) -> Option<&Value> {
         self.stats
             .as_ref()
@@ -110,10 +99,7 @@ impl GeminiRecord {
     }
 }
 
-/// A whole-file Gemini JSON document. Gemini CLI writes other JSON next to its
-/// chats, such as each project's `logs.json` prompt array, so a document that
-/// is not an object is read, to tell it from malformed input, and holds no
-/// usage.
+// NOTE(2026-11-16): Gemini CLI also writes `logs.json` prompt arrays beside session documents. A valid array from discovery carries no chat usage.
 struct GeminiDocument(Option<GeminiRecord>);
 
 impl<'de> Deserialize<'de> for GeminiDocument {
@@ -800,20 +786,13 @@ mod tests {
 
     #[test]
     fn type_discriminator_is_untrimmed_and_tolerates_non_strings() {
-        // Exact match still works.
         let exact = serde_json::from_str::<GeminiRecord>(r#"{"type":"gemini"}"#).unwrap();
         assert_eq!(exact.r#type.as_deref(), Some("gemini"));
 
-        // Surrounding whitespace must NOT be trimmed, so a padded value does not
-        // spuriously match the "gemini" discriminator. This mirrors the original
-        // raw `Value::as_str` comparison rather than the trimming
-        // `non_empty_string` helper.
         let padded = serde_json::from_str::<GeminiRecord>(r#"{"type":" gemini "}"#).unwrap();
         assert_eq!(padded.r#type.as_deref(), Some(" gemini "));
         assert_ne!(padded.r#type.as_deref(), Some("gemini"));
 
-        // A non-string type becomes None without failing the line, so the record
-        // still falls through to stats parsing.
         let numeric = serde_json::from_str::<GeminiRecord>(r#"{"type":5,"stats":{}}"#).unwrap();
         assert_eq!(numeric.r#type, None);
         assert!(numeric.stats.is_some());

@@ -8,7 +8,6 @@ use ccusage_core::Diagnostics;
 use crate::Result;
 
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
-/// Returns all discovery candidate directories for Gemini CLI logs.
 fn paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List(GEMINI_DATA_DIR_ENV), || {
         crate::home::home_dir()
@@ -18,7 +17,6 @@ fn paths() -> Result<Vec<PathBuf>> {
     }))
 }
 
-/// Discovers all `.json` and `.jsonl` log files across known directories.
 pub(super) fn discover_log_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     let is_log = |path: &std::path::Path| {
