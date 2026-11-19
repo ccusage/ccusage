@@ -1163,6 +1163,41 @@ mod tests {
     }
 
     #[test]
+    fn prices_the_logged_model_before_its_normalized_form() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("conversations/session.db", "");
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                1,
+                metadata_blob(
+                    Some("GPT-Logged-Model"),
+                    Some(UsageFixture {
+                        input_tokens: 100,
+                        ..UsageFixture::default()
+                    }),
+                    Some((1_778_000_000, 0)),
+                    &[],
+                ),
+            )],
+            &[],
+            &[],
+        );
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "GPT-Logged-Model":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "gpt-logged-model":{"input_cost_per_token":2,"output_cost_per_token":2}
+            }"#,
+        );
+        let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("gpt-logged-model"));
+        assert_eq!(entries[0].cost, 100.0);
+    }
+
+    #[test]
     fn skips_zero_byte_databases_and_reports_valid_entries() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();

@@ -20,6 +20,7 @@ pub(super) struct DroidEntry {
     pricing_timestamp: Option<crate::TimestampMs>,
     pub(super) session_id: String,
     pub(super) model: String,
+    logged_model: Option<String>,
     provider: String,
     provider_locked: bool,
     pub(super) usage: TokenUsageRaw,
@@ -47,17 +48,20 @@ pub(super) fn load_settings_file(
     };
     let provider = normalize_droid_provider(string_field(settings, "providerLock").as_deref());
     let provider_locked = provider != "unknown";
-    let model = if let Some(model) = string_field(settings, "model") {
-        normalize_droid_model_name(&model)
-    } else {
-        extract_model_from_sidecar_jsonl(path)?
-            .unwrap_or_else(|| default_model_from_provider(&provider).to_string())
+    let logged_model = match settings
+        .get("model")
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+    {
+        Some(model) => Some(model.to_string()),
+        None => extract_model_from_sidecar_jsonl(path)?,
     };
-    let model = if model.is_empty() {
-        default_model_from_provider(&provider).to_string()
-    } else {
-        model
-    };
+    let model = logged_model
+        .as_deref()
+        .map(normalize_droid_model_name)
+        .filter(|model| !model.is_empty())
+        .unwrap_or_else(|| default_model_from_provider(&provider).to_string());
+    let logged_model = logged_model.filter(|logged| logged != &model);
     let provider = if provider == "unknown" {
         infer_droid_provider_from_model(&model).to_string()
     } else {
@@ -82,6 +86,7 @@ pub(super) fn load_settings_file(
         pricing_timestamp,
         session_id,
         model,
+        logged_model,
         provider,
         provider_locked,
         usage: TokenUsageRaw {
@@ -141,15 +146,32 @@ fn settings_timestamp(
 
 pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
     let (direct, reseller) = provider_prefixes(&entry.provider);
+    let reported = entry.logged_model.as_deref().unwrap_or(&entry.model);
+    let locked: Vec<_> = direct
+        .iter()
+        .filter(|_| entry.provider_locked)
+        .map(|prefix| format!("{prefix}{reported}"))
+        .collect();
     let direct: Vec<_> = direct
         .into_iter()
         .map(|prefix| format!("{prefix}{}", entry.model))
         .collect();
     let reseller = reseller.map(|prefix| format!("{prefix}{}", entry.model));
-    let candidates: Vec<_> = direct
+    let candidates: Vec<_> = locked
         .iter()
-        .filter(|_| entry.provider_locked)
         .map(|name| (name.as_str(), MatchKind::StrictExact))
+        .chain(
+            entry
+                .logged_model
+                .as_deref()
+                .map(|name| (name, MatchKind::Fuzzy)),
+        )
+        .chain(
+            direct
+                .iter()
+                .filter(|_| entry.provider_locked && entry.logged_model.is_some())
+                .map(|name| (name.as_str(), MatchKind::StrictExact)),
+        )
         .chain(std::iter::once((entry.model.as_str(), MatchKind::Fuzzy)))
         .chain(
             direct
@@ -163,7 +185,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
             usage: entry.usage,
             reasoning_tokens: 0,
             residual_tokens: entry.reasoning_tokens,
-            reported_model: Some(&entry.model),
+            reported_model: Some(reported),
             candidates: &candidates,
             stored_cost: None,
             timestamp: entry.pricing_timestamp,
@@ -317,8 +339,7 @@ fn extract_droid_model_from_line(line: &str) -> Option<String> {
     if raw.is_empty() {
         return None;
     }
-    let normalized = normalize_droid_model_name(raw);
-    (!normalized.is_empty()).then_some(normalized)
+    Some(raw.to_string())
 }
 
 #[cfg(test)]
@@ -332,6 +353,7 @@ mod tests {
             pricing_timestamp: None,
             session_id: "s".into(),
             model: "sample".into(),
+            logged_model: None,
             provider: "vendor".into(),
             provider_locked: false,
             usage: TokenUsageRaw {
@@ -398,6 +420,7 @@ mod tests {
             pricing_timestamp: None,
             session_id: "session".to_string(),
             model: "deepseek-v4-flash".to_string(),
+            logged_model: None,
             provider: "deepseek".to_string(),
             provider_locked: false,
             usage: TokenUsageRaw {

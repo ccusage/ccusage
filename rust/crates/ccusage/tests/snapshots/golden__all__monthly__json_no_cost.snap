@@ -273,13 +273,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "inputTokens": 940,
-          "modelName": "gemini-3.5-flash-high",
-          "outputTokens": 120
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 40,
           "inputTokens": 600,
           "modelName": "gpt-5.2-codex",
@@ -312,6 +305,13 @@ exit: 0
           "inputTokens": 1621,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,

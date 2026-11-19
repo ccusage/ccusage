@@ -233,14 +233,6 @@ exit: 0
           "outputTokens": 180
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "cost": 0.00279,
-          "inputTokens": 940,
-          "modelName": "gemini-3.5-flash-high",
-          "outputTokens": 120
-        },
-        {
           "cacheCreationTokens": 30,
           "cacheReadTokens": 250,
           "cost": 0.001563,
@@ -263,6 +255,14 @@ exit: 0
           "inputTokens": 1621,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00093,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,
@@ -379,7 +379,7 @@ exit: 0
       ],
       "outputTokens": 13468,
       "period": "2025-12",
-      "totalCost": 9.73586056,
+      "totalCost": 9.73400056,
       "totalTokens": 206942
     },
     {
@@ -1145,7 +1145,7 @@ exit: 0
     "cacheReadTokens": 1309867,
     "inputTokens": 1347024,
     "outputTokens": 58670,
-    "totalCost": 28.146135925,
+    "totalCost": 28.144275925,
     "totalTokens": 2736743,
     "unpricedModels": [
       "GLM-5.3",

@@ -437,6 +437,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         timestamp_text: crate::format_rfc3339_millis(snapshot.timestamp),
         session_id: snapshot.session_id.clone(),
         model: UNATTRIBUTED_MODEL.to_string(),
+        logged_model: None,
         input_tokens: 0,
         output_tokens: 0,
         cache_creation_tokens: 0,
@@ -475,6 +476,7 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         timestamp_text: current.timestamp_text.clone(),
         session_id: current.session_id.clone(),
         model: current.model.clone(),
+        logged_model: current.logged_model.clone(),
         input_tokens: current.input_tokens.saturating_sub(baseline.input_tokens),
         output_tokens: current.output_tokens.saturating_sub(baseline.output_tokens),
         cache_creation_tokens: current
@@ -561,14 +563,21 @@ fn usage_entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let candidates = [(entry.model.as_str(), MatchKind::Fuzzy)];
+    let reported = entry.logged_model.as_deref().unwrap_or(&entry.model);
+    let model = (entry.model.as_str(), MatchKind::Fuzzy);
+    let with_logged = [(reported, MatchKind::Fuzzy), model];
+    let candidates: &[(_, _)] = if entry.logged_model.is_some() {
+        &with_logged
+    } else {
+        std::slice::from_ref(&model)
+    };
     let priced = price_entry(
         EntryPricing {
             usage,
             reasoning_tokens: 0,
             residual_tokens: entry.extra_total_tokens,
-            reported_model: Some(&entry.model),
-            candidates: &candidates,
+            reported_model: Some(reported),
+            candidates,
             stored_cost: cost_usd,
             timestamp: Some(entry.timestamp),
         },
@@ -610,6 +619,44 @@ mod tests {
     use super::super::parser::parse_otel_file;
     use super::*;
     use crate::cli::AgentReportKind;
+
+    #[test]
+    fn prices_the_logged_model_before_its_normalized_form() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "copilot.jsonl": json!({
+                "type": "span",
+                "traceId": "trace-1",
+                "spanId": "span-1",
+                "name": "chat",
+                "endTime": [1_775_934_264_u64, 0_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "test-model-1m-internal",
+                    "gen_ai.usage.input_tokens": 100,
+                },
+            }).to_string(),
+        });
+        let mut pricing = crate::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "test-model-1m-internal":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "test-model":{"input_cost_per_token":2,"output_cost_per_token":2}
+            }"#,
+        );
+        let entry = parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot"))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let loaded = usage_entry_to_loaded(
+            entry,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+        assert_eq!(loaded.model.as_deref(), Some("test-model"));
+        assert_eq!(loaded.cost, 100.0);
+    }
 
     #[test]
     fn parses_copilot_chat_spans() {

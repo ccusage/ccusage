@@ -24,6 +24,7 @@ pub(super) struct AntigravityUsageEvent {
     timestamp_text: String,
     session_id: String,
     model: String,
+    logged_model: Option<String>,
     provider: Option<u64>,
     input_tokens: u64,
     output_tokens: u64,
@@ -515,17 +516,24 @@ fn append_usage_event(
         .reasoning_tokens
         .max(total_output_tokens.saturating_sub(output_tokens));
     let id_model = usage.model_id.and_then(model_from_id);
-    let same_model_row = context
-        .model
-        .filter(|_| context.model_id == usage.model_id)
-        .and_then(normalize_antigravity_model);
+    let row_model = context.model.and_then(normalize_antigravity_model);
+    let same_model_id = context.model_id == usage.model_id;
     let model = id_model
         .clone()
         .filter(|model| is_resolved_model(model))
-        .or_else(|| same_model_row.filter(|model| is_resolved_model(model)))
+        .or_else(|| {
+            row_model
+                .as_ref()
+                .filter(|model| same_model_id && is_resolved_model(model))
+                .cloned()
+        })
         .or(id_model)
-        .or_else(|| context.model.and_then(normalize_antigravity_model))
+        .or_else(|| row_model.clone())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let logged_model = context
+        .model
+        .filter(|raw| *raw != model && (same_model_id || row_model.as_ref() == Some(&model)))
+        .map(str::to_owned);
     let provider = usage.provider.or(context.provider);
     let (message_id, message_id_rank) = usage.preferred_message_id();
     let timestamp_value = timestamp;
@@ -546,6 +554,7 @@ fn append_usage_event(
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: context.session_id.to_string(),
         model,
+        logged_model,
         provider,
         input_tokens: usage.input_tokens,
         output_tokens,
@@ -587,6 +596,9 @@ pub(super) fn merge_usage_event(
         .saturating_add(target.total_output_tokens);
     if model_resolution(&duplicate.model) > model_resolution(&target.model) {
         target.model = duplicate.model.clone();
+        target.logged_model = duplicate.logged_model;
+    } else if target.model == duplicate.model && target.logged_model.is_none() {
+        target.logged_model = duplicate.logged_model;
     }
     if target.provider.is_none() {
         target.provider = duplicate.provider;
@@ -920,7 +932,8 @@ fn model_from_id(model_id: u64) -> Option<String> {
 
 fn row_model(model: Option<&str>, model_id: Option<u64>) -> Option<String> {
     model
-        .and_then(normalize_antigravity_model)
+        .filter(|model| !model.trim().is_empty())
+        .map(str::to_owned)
         .or_else(|| model_id.and_then(model_from_id))
 }
 
@@ -1054,6 +1067,7 @@ pub(super) fn event_to_loaded(
         .saturating_sub(event.output_tokens);
     let (cost, missing_pricing_model) = price_antigravity(
         &event.model,
+        event.logged_model.as_deref(),
         event.provider,
         cost_usage,
         event.timestamp,
@@ -1093,38 +1107,37 @@ pub(super) fn event_to_loaded(
 
 fn price_antigravity(
     model: &str,
+    logged_model: Option<&str>,
     provider: Option<u64>,
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
     pricing: PriceTable<'_>,
 ) -> (f64, Option<String>) {
     let exact = gemini_flash_pricing_alias(model).is_some();
+    let kind = if exact {
+        MatchKind::Exact
+    } else {
+        MatchKind::Fuzzy
+    };
     let candidates: Vec<_> = model_candidates(model, provider)
         .into_iter()
         .flat_map(|name| {
             let alias = crate::model_aliases::resolve_model_name(&name).into_owned();
             let extra = (exact && alias != name).then_some((alias, MatchKind::Exact));
-            std::iter::once((
-                name,
-                if exact {
-                    MatchKind::Exact
-                } else {
-                    MatchKind::Fuzzy
-                },
-            ))
-            .chain(extra)
+            std::iter::once((name, kind)).chain(extra)
         })
         .collect();
-    let candidates: Vec<_> = candidates
-        .iter()
-        .map(|(name, kind)| (name.as_str(), *kind))
+    let candidates: Vec<_> = logged_model
+        .map(|name| (name, kind))
+        .into_iter()
+        .chain(candidates.iter().map(|(name, kind)| (name.as_str(), *kind)))
         .collect();
     let priced = price_entry(
         EntryPricing {
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
-            reported_model: Some(model),
+            reported_model: Some(logged_model.unwrap_or(model)),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(timestamp),
@@ -1635,6 +1648,7 @@ mod tests {
             price_antigravity(
                 "antigravity-unpriced",
                 None,
+                None,
                 TokenUsageRaw {
                     input_tokens: u64::MAX,
                     output_tokens: u64::MAX,
@@ -1778,6 +1792,7 @@ mod tests {
         let cost = price_antigravity(
             "claude-opus-5-5",
             None,
+            None,
             usage,
             TimestampMs::UNIX_EPOCH,
             ccusage_core::cost::PriceTable::Calculate(&pricing),
@@ -1787,6 +1802,7 @@ mod tests {
         assert!(
             price_antigravity(
                 "claude-opus-5-5",
+                None,
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
@@ -1845,6 +1861,7 @@ mod tests {
 
         let cost = price_antigravity(
             "gemini-3.7-flash-medium",
+            None,
             Some(API_PROVIDER_GOOGLE_GEMINI),
             TokenUsageRaw {
                 input_tokens: 1,
@@ -1890,6 +1907,7 @@ mod tests {
             price_antigravity(
                 "gemini-3.8-flash-medium",
                 None,
+                None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 ccusage_core::cost::PriceTable::Calculate(&pricing)
@@ -1900,6 +1918,7 @@ mod tests {
         assert_eq!(
             price_antigravity(
                 "gemini-3.8-flash-medium",
+                None,
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
@@ -1943,6 +1962,7 @@ mod tests {
             price_antigravity(
                 "gemini-3.6-flash-medium",
                 None,
+                None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 ccusage_core::cost::PriceTable::Calculate(&pricing)
@@ -1954,6 +1974,7 @@ mod tests {
             price_antigravity(
                 "gemini-3.6-flash-medium",
                 None,
+                None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 ccusage_core::cost::PriceTable::Calculate(&pricing)
@@ -1964,6 +1985,7 @@ mod tests {
         assert_eq!(
             price_antigravity(
                 "gemini-3.8-flash-low",
+                None,
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
@@ -1986,6 +2008,7 @@ mod tests {
         let cost_at = |timestamp| {
             price_antigravity(
                 "deepseek-v4-flash",
+                None,
                 None,
                 usage,
                 parse_ts_timestamp(timestamp).unwrap(),
@@ -2011,6 +2034,7 @@ mod pricing_identity_tests {
         pricing.load_json(r#"{"gemini-3.6-flash":{"input_cost_per_token":0.00000075,"output_cost_per_token":0.00000375},"gemini/gemini-3.6-flash-lite":{"input_cost_per_token":0.0000001,"output_cost_per_token":0.0000004}}"#);
         let (cost, missing) = price_antigravity(
             &model,
+            None,
             None,
             TokenUsageRaw {
                 input_tokens: 1000,

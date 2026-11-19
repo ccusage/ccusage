@@ -58,6 +58,7 @@ pub(super) struct CopilotUsageEntry {
     pub(super) timestamp_text: String,
     pub(super) session_id: String,
     pub(super) model: String,
+    pub(super) logged_model: Option<String>,
     pub(super) input_tokens: u64,
     pub(super) output_tokens: u64,
     pub(super) cache_creation_tokens: u64,
@@ -174,6 +175,7 @@ struct CopilotUsageCandidate {
     response_id: Option<String>,
     service_request_id: Option<String>,
     model: String,
+    logged_model: Option<String>,
     session_id: String,
     timestamp: TimestampMs,
     input_tokens: u64,
@@ -222,6 +224,7 @@ pub(super) fn parse_otel_file(
             timestamp_text: crate::format_rfc3339_millis(candidate.timestamp),
             session_id: candidate.session_id,
             model: candidate.model,
+            logged_model: candidate.logged_model,
             input_tokens: candidate.input_tokens,
             output_tokens: candidate.output_tokens,
             cache_creation_tokens: candidate.cache_creation_tokens,
@@ -542,8 +545,8 @@ pub(super) fn parse_session_state_file(
             continue;
         }
         let mut models_report_credits = true;
-        for (model, metrics) in data.model_metrics.unwrap_or_default() {
-            let model = normalize_copilot_model(&model);
+        for (logged_model, metrics) in data.model_metrics.unwrap_or_default() {
+            let (model, logged_model) = copilot_model_names(logged_model);
             let request_count = metrics
                 .requests
                 .as_ref()
@@ -570,6 +573,7 @@ pub(super) fn parse_session_state_file(
                 timestamp_text,
                 session_id: session_id.clone(),
                 model,
+                logged_model,
                 input_tokens: uncached_session_input_tokens(&usage),
                 output_tokens: usage.output_tokens,
                 cache_creation_tokens: usage.cache_write_tokens,
@@ -608,6 +612,7 @@ struct UsageRecordCall {
     event_id: Option<String>,
     call_ids: CallIds,
     model: String,
+    logged_model: Option<String>,
     usage: CopilotSessionUsage,
     nano_aiu: Option<u64>,
 }
@@ -617,7 +622,7 @@ fn usage_record(
     timestamp: TimestampMs,
 ) -> Option<UsageRecordCall> {
     let record = event.data?.usage?;
-    let model = normalize_copilot_model(record.model.as_deref()?);
+    let (model, logged_model) = copilot_model_names(record.model?);
     let usage = record.tokens;
     let recorded_nano_aiu = nano_aiu(
         record
@@ -641,6 +646,7 @@ fn usage_record(
         event_id: event.id,
         call_ids,
         model,
+        logged_model,
         usage,
         nano_aiu: recorded_nano_aiu,
     })
@@ -670,6 +676,7 @@ fn usage_record_entries(
                     timestamp_text: crate::format_rfc3339_millis(record.timestamp),
                     session_id: session_id.to_string(),
                     model: record.model,
+                    logged_model: record.logged_model,
                     input_tokens: uncached_session_input_tokens(&call),
                     output_tokens: call.output_tokens,
                     cache_creation_tokens: call.cache_write_tokens,
@@ -787,9 +794,10 @@ fn to_candidate(
     let trace_context = trace_id.as_ref().and_then(|id| trace_contexts.get(id));
     let response_id = attr_string(attributes, "gen_ai.response.id");
     let service_request_id = attr_string(attributes, "github.copilot.service_request_id");
-    let model = first_non_empty_model_attr(attributes)
+    let logged_model = first_non_empty_model_attr(attributes)
         .or_else(|| trace_context.and_then(|context| context.model.clone()))
         .unwrap_or_else(|| "unknown".to_string());
+    let (model, logged_model) = copilot_model_names(logged_model);
     let session_id = best_session_attr(attributes)
         .map(|(session_id, _)| session_id)
         .or_else(|| trace_context.and_then(|context| context.session_id.clone()))
@@ -819,6 +827,7 @@ fn to_candidate(
         response_id,
         service_request_id,
         model,
+        logged_model,
         session_id,
         timestamp,
         input_tokens: usage.input_tokens,
@@ -963,8 +972,18 @@ fn normalize_copilot_model(model: &str) -> String {
         .to_string()
 }
 
+fn copilot_model_names(logged_model: String) -> (String, Option<String>) {
+    let model = normalize_copilot_model(&logged_model);
+    let logged_model = (logged_model != model).then_some(logged_model);
+    (model, logged_model)
+}
+
 fn first_non_empty_model_attr(attributes: &Map<String, Value>) -> Option<String> {
-    first_non_empty_attr(attributes, MODEL_ATTRS).map(|model| normalize_copilot_model(&model))
+    MODEL_ATTRS
+        .iter()
+        .filter_map(|key| attributes.get(*key)?.as_str())
+        .find(|model| !model.trim().is_empty())
+        .map(str::to_string)
 }
 
 fn uncached_session_input_tokens(usage: &CopilotSessionUsage) -> u64 {
@@ -1114,10 +1133,6 @@ fn attr_number_first(attributes: &Map<String, Value>, keys: &[&str]) -> u64 {
         .map(|key| attr_number(attributes, key))
         .find(|value| *value > 0)
         .unwrap_or_default()
-}
-
-fn first_non_empty_attr(attributes: &Map<String, Value>, keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| attr_string(attributes, key))
 }
 
 fn best_session_attr(attributes: &Map<String, Value>) -> Option<(String, u8)> {

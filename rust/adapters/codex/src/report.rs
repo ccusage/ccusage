@@ -188,6 +188,14 @@ pub(super) fn calculate_codex_model_cost(
     pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
+    if !usage.pricing_variants.is_empty() {
+        return sum_costs(
+            usage
+                .pricing_variants
+                .iter()
+                .map(|(model, usage)| calculate_codex_model_cost(model, usage, pricing, speed)),
+        );
+    }
     let Some(handle) = pricing.and_then(|table| table.find_handle(model)) else {
         return 0.0;
     };
@@ -331,6 +339,12 @@ pub(super) fn codex_model_missing_pricing(
     usage: &CodexModelUsage,
     pricing: Option<&PricingMap>,
 ) -> bool {
+    if !usage.pricing_variants.is_empty() {
+        return usage
+            .pricing_variants
+            .iter()
+            .any(|(model, usage)| codex_model_missing_pricing(model, usage, pricing));
+    }
     missing_pricing_model_for_token_total(
         Some(model),
         usage.total_tokens.max(

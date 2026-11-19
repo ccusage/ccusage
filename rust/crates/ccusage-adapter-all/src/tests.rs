@@ -2761,22 +2761,18 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
         total_tokens: 105,
         ..CodexGroup::default()
     };
-    group.models.insert(
-        "gpt-5".to_string(),
-        CodexModelUsage {
-            total_tokens: 105,
-            ..CodexModelUsage::from_buckets(
-                ccusage_adapter_codex::CodexUsageBucket {
-                    input_tokens: 100,
-                    cached_input_tokens: 70,
-                    cache_creation_tokens: 20,
-                    output_tokens: 5,
-                    ..Default::default()
-                },
-                Default::default(),
-            )
+    let mut usage = CodexModelUsage::from_buckets(
+        ccusage_adapter_codex::CodexUsageBucket {
+            input_tokens: 100,
+            cached_input_tokens: 70,
+            cache_creation_tokens: 20,
+            output_tokens: 5,
+            ..Default::default()
         },
+        Default::default(),
     );
+    usage.total_tokens = 105;
+    group.models.insert("gpt-5".to_string(), usage);
     let row = adapter::codex::unified_row_from_group(
         ccusage_adapter_common::source::LoadKind::Session,
         "2026-01-02",
@@ -2817,36 +2813,28 @@ fn includes_codex_model_breakdowns_in_all_rows() {
         total_tokens: 350,
         ..CodexGroup::default()
     };
-    group.models.insert(
-        "gpt-5-mini".to_string(),
-        CodexModelUsage {
-            total_tokens: 110,
-            ..CodexModelUsage::from_buckets(
-                ccusage_adapter_codex::CodexUsageBucket {
-                    input_tokens: 100,
-                    cached_input_tokens: 20,
-                    output_tokens: 10,
-                    ..Default::default()
-                },
-                Default::default(),
-            )
+    let mut usage = CodexModelUsage::from_buckets(
+        ccusage_adapter_codex::CodexUsageBucket {
+            input_tokens: 100,
+            cached_input_tokens: 20,
+            output_tokens: 10,
+            ..Default::default()
         },
+        Default::default(),
     );
-    group.models.insert(
-        "gpt-5".to_string(),
-        CodexModelUsage {
-            total_tokens: 240,
-            ..CodexModelUsage::from_buckets(
-                ccusage_adapter_codex::CodexUsageBucket {
-                    input_tokens: 200,
-                    cached_input_tokens: 80,
-                    output_tokens: 40,
-                    ..Default::default()
-                },
-                Default::default(),
-            )
+    usage.total_tokens = 110;
+    group.models.insert("gpt-5-mini".to_string(), usage);
+    let mut usage = CodexModelUsage::from_buckets(
+        ccusage_adapter_codex::CodexUsageBucket {
+            input_tokens: 200,
+            cached_input_tokens: 80,
+            output_tokens: 40,
+            ..Default::default()
         },
+        Default::default(),
     );
+    usage.total_tokens = 240;
+    group.models.insert("gpt-5".to_string(), usage);
 
     let row = adapter::codex::unified_row_from_group(
         ccusage_adapter_common::source::LoadKind::Session,
@@ -2868,19 +2856,17 @@ fn includes_codex_model_breakdowns_in_all_rows() {
 #[test]
 fn display_mode_omits_codex_missing_pricing_from_unified_json() {
     let mut group = CodexGroup::default();
-    group.models.insert(
-        "gpt-unknown-preview".to_string(),
-        CodexModelUsage {
-            total_tokens: 100,
-            ..CodexModelUsage::from_buckets(
-                ccusage_adapter_codex::CodexUsageBucket {
-                    input_tokens: 100,
-                    ..Default::default()
-                },
-                Default::default(),
-            )
+    let mut usage = CodexModelUsage::from_buckets(
+        ccusage_adapter_codex::CodexUsageBucket {
+            input_tokens: 100,
+            ..Default::default()
         },
+        Default::default(),
     );
+    usage.total_tokens = 100;
+    group
+        .models
+        .insert("gpt-unknown-preview".to_string(), usage);
     let row = adapter::codex::unified_row_from_group(
         ccusage_adapter_common::source::LoadKind::Session,
         "2026-01-02",

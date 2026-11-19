@@ -76,19 +76,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "cost": 0.00279,
-          "inputTokens": 940,
-          "modelName": "gemini-3.5-flash-high",
-          "outputTokens": 120
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0011200000000000001,
           "inputTokens": 500,
           "modelName": "gemini-3-pro",
           "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00093,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,
@@ -106,7 +106,7 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "outputTokens": 260,
-      "totalCost": 0.0074800000000000005,
+      "totalCost": 0.005620000000000001,
       "totalTokens": 4340
     },
     {
@@ -224,7 +224,7 @@ exit: 0
     "cacheReadTokens": 127500,
     "inputTokens": 257416,
     "outputTokens": 2680,
-    "totalCost": 0.7002495,
+    "totalCost": 0.6983895,
     "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",

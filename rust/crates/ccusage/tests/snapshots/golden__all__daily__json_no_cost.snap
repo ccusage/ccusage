@@ -584,13 +584,6 @@ exit: 0
           "outputTokens": 400
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "inputTokens": 940,
-          "modelName": "gemini-3.5-flash-high",
-          "outputTokens": 120
-        },
-        {
           "cacheCreationTokens": 1200,
           "cacheReadTokens": 24000,
           "inputTokens": 2850,
@@ -617,6 +610,13 @@ exit: 0
           "inputTokens": 500,
           "modelName": "gemini-3-pro",
           "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,

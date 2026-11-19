@@ -458,10 +458,10 @@ pub(crate) fn session_value_to_entry(
 fn open_code_model_candidates(model: &str, provider: &str) -> Vec<String> {
     let resolved = resolve_open_code_model_name(model);
     let normalized = normalize_open_code_model_name(&resolved);
-    let mut base = vec![resolved];
-    if normalized != base[0] {
-        base.push(normalized);
-    }
+    let normalized = (normalized != resolved && normalized != model).then_some(normalized);
+    let mut base = vec![model.to_string()];
+    base.extend((resolved != model).then_some(resolved));
+    base.extend(normalized);
     let mut candidates = base.clone();
     if provider != "unknown" {
         let provider = provider.replace('-', "_");
@@ -854,6 +854,33 @@ mod tests {
             assert_eq!(entry.cost, expected_cost, "{mode:?}");
             assert_eq!(entry.missing_pricing_model.as_deref(), missing, "{mode:?}");
         }
+    }
+
+    #[test]
+    fn prices_the_logged_id_before_its_opencode_alias() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "k2p6":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "kimi-k2.6":{"input_cost_per_token":2,"output_cost_per_token":2}
+            }"#,
+        );
+        let entry = message_value_to_entry(
+            message(json!({
+                "providerID": "openrouter", "modelID": "k2p6",
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 100 }
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.cost, 100.0);
     }
 
     #[test]

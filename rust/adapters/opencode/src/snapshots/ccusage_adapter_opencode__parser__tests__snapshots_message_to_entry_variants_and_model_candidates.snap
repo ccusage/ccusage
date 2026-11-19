@@ -43,7 +43,9 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
       "github_copilot/claude-sonnet-4-5"
     ],
     "geminiAlias": [
+      "gemini-3-pro-high",
       "gemini-3-pro-preview",
+      "google/gemini-3-pro-high",
       "google/gemini-3-pro-preview"
     ],
     "unknownProvider": [

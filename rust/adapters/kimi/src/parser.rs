@@ -113,6 +113,7 @@ pub(super) struct KimiUsageEntry {
     timestamp_text: String,
     session_id: String,
     model: String,
+    logged_model: Option<String>,
     message_id: Option<String>,
     input_tokens: u64,
     output_tokens: u64,
@@ -217,13 +218,15 @@ fn wire_line_to_entry_new(
         number,
         diagnostics,
     )?;
-    let model = line.model.as_deref().unwrap_or(DEFAULT_MODEL);
-    let model = model.trim_prefix("kimi-code/").to_string();
+    let logged = line.model.as_deref().unwrap_or(DEFAULT_MODEL);
+    let model = logged.trim_prefix("kimi-code/").to_string();
+    let logged_model = (logged != model).then(|| logged.to_string());
     Some(KimiUsageEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: file.session_id.clone(),
         model,
+        logged_model,
         message_id: None,
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
@@ -273,6 +276,7 @@ fn wire_line_to_entry_old(
             .model
             .get_or_init(|| read_model_from_config(file.config.root.as_deref()))
             .clone(),
+        logged_model: None,
         message_id: payload.message_id.clone(),
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
@@ -398,7 +402,7 @@ fn price_kimi_usage(
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
-            reported_model: Some(&entry.model),
+            reported_model: Some(entry.logged_model.as_deref().unwrap_or(&entry.model)),
             candidates: &candidates,
             stored_cost: None,
             timestamp: Some(entry.timestamp),
@@ -415,6 +419,7 @@ fn price_kimi_usage(
 
 fn model_candidates(entry: &KimiUsageEntry) -> Vec<String> {
     let mut candidates = Vec::new();
+    candidates.extend(entry.logged_model.clone());
     if entry.model == DEFAULT_MODEL {
         candidates.push(kimi_for_coding_pricing_model(entry.timestamp).to_string());
     }
@@ -552,6 +557,33 @@ mod tests {
     }
 
     #[test]
+    fn prices_the_logged_wire_id_before_stripping_its_prefix() {
+        ccusage_test_support::install_pricing_snapshots();
+        let path = std::path::PathBuf::from("project/session/wire.jsonl");
+        let file = WireFile::from_paths(vec![path]).pop().unwrap();
+        let line = serde_json::from_str(
+            r#"{"time":1794909600000,"usageScope":"turn","model":"kimi-code/test-model",
+                "usage":{"inputOther":100}}"#,
+        )
+        .unwrap();
+        let entry = wire_line_to_entry_new(&line, &file, 1, &Diagnostics::new("kimi")).unwrap();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "kimi-code/test-model":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "test-model":{"input_cost_per_token":2,"output_cost_per_token":2}
+            }"#,
+        );
+        let loaded = kimi_entry_to_loaded(
+            entry,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Calculate(&pricing),
+        );
+        assert_eq!(loaded.model.as_deref(), Some("test-model"));
+        assert_eq!(loaded.cost, 100.0);
+    }
+
+    #[test]
     fn prices_default_kimi_model_by_timestamp_without_changing_display_model() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
@@ -568,6 +600,7 @@ mod tests {
             timestamp_text: "2026-04-20T15:28:10.071Z".to_string(),
             session_id: "session-a".to_string(),
             model: DEFAULT_MODEL.to_string(),
+            logged_model: None,
             message_id: Some("msg-before".to_string()),
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
@@ -609,6 +642,7 @@ mod pricing_identity_tests {
             timestamp_text: String::new(),
             session_id: "s".into(),
             model: "kimi-for-coding".into(),
+            logged_model: None,
             message_id: None,
             input_tokens: 1000,
             output_tokens: 0,

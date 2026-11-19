@@ -10,6 +10,11 @@ report rendering, date handling, progress, pricing fetcher lifecycle, file
 walking, dedupe, and aggregation should stay in `ccusage-core` or
 `ccusage-adapter-common` when the source data allows it.
 
+Include the model ID exactly as logged in every pricing request and try it
+before any derived spelling. Include derived spellings as additional
+candidates. Use the source's provider information to construct
+provider-qualified candidates.
+
 Use one crate per agent, in `adapters/<agent>/`. The usual shape is:
 
 - `Cargo.toml` - narrow shared and source-specific dependencies.

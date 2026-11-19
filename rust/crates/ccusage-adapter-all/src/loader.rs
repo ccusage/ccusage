@@ -1079,29 +1079,26 @@ mod tests {
                 }
             }"#,
         );
-        let usage = CodexModelUsage {
-            total_tokens: 30,
-            ..CodexModelUsage::from_buckets(
-                ccusage_adapter_codex::CodexUsageBucket {
-                    input_tokens: 30,
-                    ..Default::default()
-                },
-                {
-                    let mut tiers = ccusage_adapter_codex::TierBuckets::default();
-                    tiers[ccusage_adapter_codex::CodexServiceTier::Standard] =
-                        codex::CodexUsageBucket {
-                            input_tokens: 10,
-                            ..codex::CodexUsageBucket::default()
-                        };
-                    tiers[ccusage_adapter_codex::CodexServiceTier::Fast] =
-                        codex::CodexUsageBucket {
-                            input_tokens: 10,
-                            ..codex::CodexUsageBucket::default()
-                        };
-                    tiers
-                },
-            )
-        };
+        let mut usage = CodexModelUsage::from_buckets(
+            ccusage_adapter_codex::CodexUsageBucket {
+                input_tokens: 30,
+                ..Default::default()
+            },
+            {
+                let mut tiers = ccusage_adapter_codex::TierBuckets::default();
+                tiers[ccusage_adapter_codex::CodexServiceTier::Standard] =
+                    codex::CodexUsageBucket {
+                        input_tokens: 10,
+                        ..codex::CodexUsageBucket::default()
+                    };
+                tiers[ccusage_adapter_codex::CodexServiceTier::Fast] = codex::CodexUsageBucket {
+                    input_tokens: 10,
+                    ..codex::CodexUsageBucket::default()
+                };
+                tiers
+            },
+        );
+        usage.total_tokens = 30;
         let mut group = CodexGroup {
             input_tokens: 30,
             total_tokens: 30,
@@ -1129,22 +1126,20 @@ mod tests {
     fn unified_row_reports_codex_cache_write_tokens_and_cost() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
-        let usage = CodexModelUsage {
-            total_tokens: 946_190,
-            ..CodexModelUsage::from_buckets(
-                ccusage_adapter_codex::CodexUsageBucket {
-                    input_tokens: 935_040,
-                    cached_input_tokens: 875_306,
-                    cache_creation_tokens: 57_610,
-                    output_tokens: 11_150,
-                    long_context_input_tokens: 935_040,
-                    long_context_cached_input_tokens: 875_306,
-                    long_context_cache_creation_tokens: 57_610,
-                    long_context_output_tokens: 11_150,
-                },
-                Default::default(),
-            )
-        };
+        let mut usage = CodexModelUsage::from_buckets(
+            ccusage_adapter_codex::CodexUsageBucket {
+                input_tokens: 935_040,
+                cached_input_tokens: 875_306,
+                cache_creation_tokens: 57_610,
+                output_tokens: 11_150,
+                long_context_input_tokens: 935_040,
+                long_context_cached_input_tokens: 875_306,
+                long_context_cache_creation_tokens: 57_610,
+                long_context_output_tokens: 11_150,
+            },
+            Default::default(),
+        );
+        usage.total_tokens = 946_190;
         let mut group = CodexGroup {
             input_tokens: 935_040,
             cached_input_tokens: 875_306,
