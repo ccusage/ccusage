@@ -48,9 +48,6 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         };
         match source {
             CopilotSourceKind::Otel => {
-                // Each file's parser already settles repeats within the file, so
-                // only a row an earlier file exported under a key built from the
-                // record's own IDs is a copy of the same call.
                 let new_rows = file_usage
                     .entries
                     .into_iter()
@@ -78,8 +75,6 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         since_millis,
         until_millis,
     );
-    // OpenTelemetry rows record every model call, so sessions that have them
-    // are left to that source rather than to the coarser credit totals.
     let otel_sessions = otel_entries
         .iter()
         .map(|entry| entry.session_id.clone())
@@ -116,13 +111,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     Ok(entries)
 }
 
-/// Each usage record replaces the one OTel row of its call. A service request
-/// ID names one request, so every record first claims the row with its own
-/// service request ID. VS Code reports the response ID of a turn on every call
-/// it makes, so a response ID can name several calls: only records still
-/// without a row then take, in time order, the nearest unclaimed row with
-/// their response ID. Rows must share the record's model, and rows no record
-/// takes are kept.
+// NOTE(2026-11-16, #2108): A Copilot service request ID names one request, while a VS Code response ID is shared across the turn. Match service request IDs first to preserve the unambiguous pairs.
 fn remove_recorded_otel_calls(
     otel_entries: &mut Vec<CopilotUsageEntry>,
     records: &[CopilotUsageEntry],
@@ -169,11 +158,6 @@ fn remove_recorded_otel_calls(
     });
 }
 
-/// A call's record can appear in more than one session file, such as the log
-/// of the session that ran it and the log of a session it is accounted to.
-/// Each call is kept once, in the session that assigned its accounting
-/// sequence, or else the lowest session ID, so the result does not depend on
-/// the order files are read in.
 fn deduplicate_usage_records(records: Vec<CopilotUsageRecordEntry>) -> Vec<CopilotUsageEntry> {
     let rank = |record: &CopilotUsageRecordEntry| {
         (
@@ -201,17 +185,10 @@ fn deduplicate_usage_records(records: Vec<CopilotUsageRecordEntry>) -> Vec<Copil
 
 struct SessionStateReconciliation {
     entries: Vec<CopilotUsageEntry>,
-    /// Per `(session, model)`, the time after which OpenTelemetry rows are
-    /// reported: the latest shutdown through `--until`, or the shutdown before
-    /// the intervals that OTel replaces. Without an entry, every row counts.
     otel_after: HashMap<(String, String), TimestampMs>,
-    /// Per-model credits reported at each shutdown, keyed by session and
-    /// shutdown timestamp, including shutdowns outside `--since`/`--until`.
     attributed_nano_aiu: HashMap<(String, i64), u64>,
 }
 
-/// OpenTelemetry has one row per model call; timestamps per `(session, model)`,
-/// sorted.
 fn otel_call_timestamps(
     entries: &[CopilotUsageEntry],
 ) -> HashMap<(String, String), Vec<TimestampMs>> {
@@ -228,14 +205,7 @@ fn otel_call_timestamps(
     calls
 }
 
-/// A Copilot process restores the breakdown of the session's last shutdown, so
-/// the calls of a process that ended without one (killed, crashed, or restarted
-/// by the app) are missing from every later shutdown, while OpenTelemetry still
-/// has a row for each of them. Counted from the first shutdown interval that has
-/// OTel rows, OTel replaces the shutdown intervals when it holds more calls than
-/// they report; returns the position of that interval in `sorted`. Shutdowns
-/// without request counts cannot be compared and keep their intervals. The
-/// comparison runs over every shutdown, so it does not depend on the date range.
+// NOTE(2026-10-10, #1858): Copilot restores the last shutdown's breakdown when resuming a session. In shutdown-only sessions, OpenTelemetry can therefore contain calls missing from every shutdown.
 fn otel_replacement_start(
     entries: &[CopilotUsageEntry],
     sorted: &[usize],
@@ -269,10 +239,6 @@ fn otel_replacement_start(
     start.filter(|_| otel_calls > reported_calls)
 }
 
-// Session-state usage is cumulative per `(session, model)`, so resumed sessions
-// emit one shutdown per resume. Each snapshot is turned into interval usage:
-// the first snapshot is kept as-is and every later snapshot subtracts its
-// predecessor, keeping daily attribution while preserving the total.
 fn reconcile_session_state_entries(
     entries: Vec<CopilotUsageEntry>,
     otel_calls: &HashMap<(String, String), Vec<TimestampMs>>,
@@ -290,7 +256,6 @@ fn reconcile_session_state_entries(
     let mut interval_indices = Vec::new();
     let mut otel_after = HashMap::new();
     let mut attributed_nano_aiu = HashMap::<(String, i64), u64>::new();
-    // Sort keys for deterministic output across HashMap iteration.
     let mut keys = grouped.keys().cloned().collect::<Vec<_>>();
     keys.sort();
     for key in keys {
@@ -310,8 +275,6 @@ fn reconcile_session_state_entries(
             otel_after.insert(key.clone(), entries[sorted[position]].timestamp);
         }
         let mut previous: Option<&CopilotUsageEntry> = None;
-        // Credits are collected past `--until` too, so a breakdown that a later
-        // shutdown catches up on is judged the same way in every date range.
         for (position, index) in sorted.iter().enumerate() {
             let current = &entries[*index];
             let reconciled = previous.map_or_else(
@@ -333,7 +296,6 @@ fn reconcile_session_state_entries(
             }
         }
     }
-    // Keep chronological order for downstream sorting stability.
     interval_indices.sort_by_key(|entry| (entry.timestamp, entry.dedup_key.clone()));
     SessionStateReconciliation {
         entries: interval_indices,
@@ -342,25 +304,9 @@ fn reconcile_session_state_entries(
     }
 }
 
-/// Model label for credits Copilot billed without saying which model used them.
 const UNATTRIBUTED_MODEL: &str = "unknown";
 
-/// Credits in the session-wide `totalNanoAiu` that no `modelMetrics` entry
-/// accounts for, as cost-only entries.
-///
-/// `modelMetrics` only covers the running Copilot process: a resumed session,
-/// or a session the client restarted, reports an empty or partial breakdown,
-/// while `totalNanoAiu` keeps the whole session. At every shutdown, and at the
-/// checkpoints after the last one (sessions still open or never shut down
-/// cleanly), the unexplained amount is the session total minus the per-model
-/// credits reported so far. A shutdown can carry a breakdown that a later one
-/// catches up on, so only what stays unexplained at every later snapshot is
-/// reported, dated at the first snapshot from which it stays. Checkpoints
-/// before a shutdown are already part of that shutdown's total.
-///
-/// Only sessions with checkpoints qualify: Copilot versions that predate them
-/// restart both totals on every resume, so the cumulative reading used for
-/// `modelMetrics` does not hold there and the two cannot be compared.
+// NOTE(2026-10-10, #1824): Copilot session `totalNanoAiu` covers the whole session while `modelMetrics` can omit the earlier process. Older versions without checkpoints restart both totals on resume, so the difference is only useful for sessions with checkpoints.
 fn credit_gap_entries(
     snapshots: Vec<CopilotCreditSnapshot>,
     attributed_nano_aiu: &HashMap<(String, i64), u64>,
@@ -380,9 +326,6 @@ fn credit_gap_entries(
     }
     let mut gaps = Vec::new();
     for (session_id, mut snapshots) in sessions {
-        // Sessions without checkpoints come from Copilot versions that restart
-        // their totals. Without a credit total on every shutdown, the token
-        // usage already reported cannot be told apart from what is missing.
         if skipped_sessions.contains(&session_id)
             || snapshots.iter().all(|snapshot| snapshot.is_shutdown)
             || snapshots
@@ -492,8 +435,6 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
             .extra_total_tokens
             .saturating_sub(baseline.extra_total_tokens),
         request_count: current.request_count.saturating_sub(baseline.request_count),
-        // The credits an interval adds are known only when both snapshots
-        // carry them; otherwise its tokens are priced.
         nano_aiu: current
             .nano_aiu
             .zip(baseline.nano_aiu)
@@ -529,7 +470,7 @@ fn read_source_file(
     }
 }
 
-/// One AIU is one GitHub AI credit, billed at $0.01.
+// NOTE(2026-10-10, #1824): One AIU is one GitHub AI credit worth USD 0.01. A nano-AIU is a billionth of that credit.
 fn nano_aiu_to_usd(nano_aiu: u64) -> f64 {
     nano_aiu as f64 / 1e11
 }
@@ -909,8 +850,6 @@ mod tests {
             "copilot.jsonl": [
                 chat_span(("trace-1", "span-1"), 1_775_934_264, "resp-1", 100),
                 chat_span(("trace-1", "span-2"), 1_775_934_300, "resp-2", 200),
-                // The CLI exports some calls a second time, with the response
-                // ID and usage of the call but a new trace or span ID.
                 chat_span(("trace-2", "span-3"), 1_775_934_368, "resp-1", 100),
                 chat_span(("trace-1", "span-4"), 1_775_934_370, "resp-2", 200),
                 chat_span(("trace-3", "span-5"), 1_775_934_500, "resp-3", 300),
@@ -930,7 +869,6 @@ mod tests {
 
     #[test]
     fn keeps_calls_of_one_turn_that_share_a_response_id() {
-        // VS Code reports the response ID of the turn on every call it makes.
         let fixture = fs_fixture!({
             "copilot.jsonl": [
                 chat_span(("trace-1", "span-1"), 1_775_934_264, "turn-1", 1_000),
@@ -1099,8 +1037,6 @@ mod tests {
 
     #[test]
     fn splits_otel_input_tokens_like_session_state() {
-        // Copilot counts cache reads and writes in the input tokens of both
-        // sources; one call, as each source records it.
         let fixture = fs_fixture!({
             "copilot.jsonl": json!({
                 "type": "span",
@@ -1854,7 +1790,6 @@ mod tests {
         }
     }
 
-    /// `(date, model, total tokens, cost in whole credits)` per entry.
     fn credit_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64)> {
         entries
             .iter()
@@ -1986,8 +1921,6 @@ mod tests {
 
         let entries = load_copilot_home(&fixture, &utc_args());
 
-        // Each shutdown's model row carries the credits it adds, so together
-        // they make up the session total with nothing left `unknown`.
         assert_eq!(
             credit_rows(&entries),
             [
@@ -2028,7 +1961,6 @@ mod tests {
 
     #[test]
     fn leaves_sessions_without_checkpoints_unchanged() {
-        // Copilot versions without checkpoints restart both totals on resume.
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": [
                 shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 60, Some(40)),
@@ -2113,8 +2045,6 @@ mod tests {
         );
     }
 
-    /// A shutdown whose `test-model` breakdown reports `requests` requests of
-    /// 100 input tokens each.
     fn shutdown_with_requests(id: &str, timestamp: &str, requests: u64) -> String {
         json!({
             "type": "session.shutdown",
@@ -2128,7 +2058,6 @@ mod tests {
         .to_string()
     }
 
-    /// One `test-model` call of `session-1` with a single input token.
     fn otel_call(span_id: &str, timestamp: &str) -> String {
         let seconds = crate::parse_ts_timestamp(timestamp).unwrap().as_millis() / 1_000;
         json!({
@@ -2148,8 +2077,6 @@ mod tests {
         .to_string()
     }
 
-    /// `(timestamp, input tokens)` per entry: OTel calls have one input token,
-    /// shutdown intervals 100 per request.
     fn usage_rows(entries: &[LoadedEntry]) -> Vec<(String, u64)> {
         entries
             .iter()
@@ -2169,10 +2096,6 @@ mod tests {
             .collect()
     }
 
-    /// The first process shuts down cleanly after two calls, the second makes
-    /// three calls and dies without a shutdown, and the third restores the
-    /// breakdown of the first shutdown, makes one call and shuts down with three
-    /// requests: the three calls of the second process are in no shutdown.
     fn crashed_process_fixture() -> ccusage_test_support::Fixture {
         fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": [
@@ -2296,9 +2219,6 @@ mod tests {
 
     #[test]
     fn does_not_double_count_calls_a_concurrent_process_shuts_down_with() {
-        // Process A resumes after shutdown-1 and makes two calls. Process B
-        // resumes the same session, makes none and shuts down first, with the
-        // breakdown of shutdown-1; A's later shutdown reports A's two calls.
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": [
                 shutdown_with_requests("shutdown-1", "2026-01-02T10:00:00.000Z", 1),
@@ -2357,8 +2277,6 @@ mod tests {
     const SHUTDOWN_THEN_RECEIPTS: &str =
         include_str!("../tests/fixtures/session-state/session-resumed-receipts/events.jsonl");
 
-    /// `(timestamp, model, input, output, cache write, cache read, requests)`
-    /// per entry.
     fn token_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64, u64, u64, u64)> {
         entries
             .iter()
@@ -2402,8 +2320,6 @@ mod tests {
 
         let entries = load_copilot_home(&fixture, &utc_args());
 
-        // Receipt input includes cache reads and writes, as shutdown input does.
-        // Checkpoint credits are not reported again as `unknown` cost.
         assert_eq!(
             token_rows(&entries),
             [
@@ -2456,8 +2372,6 @@ mod tests {
 
         let entries = load_copilot_home(&fixture, &utc_args());
 
-        // The first shutdown predates receipts and keeps its usage; the second
-        // one only repeats the receipt, which stays on its own day.
         assert_eq!(
             token_rows(&entries),
             [
@@ -2511,8 +2425,6 @@ mod tests {
 
         let entries = load_copilot_home(&fixture, &utc_args());
 
-        // The call keeps its own day and request count, and the shutdown that
-        // totals it neither repeats it nor turns its credits into `unknown` cost.
         assert_eq!(
             token_rows(&entries),
             [row("2026-02-05T09:00:00.000Z", "gpt-5.4", [0, 0, 0, 0, 1])]
@@ -2536,7 +2448,6 @@ mod tests {
         assert_eq!(token_rows(&entries).len(), 3);
     }
 
-    /// A `test-model` usage record of `session-1` with 100 input tokens.
     fn usage_record(id: &str, timestamp: &str, usage: serde_json::Value) -> String {
         let mut usage_json = json!({"model": "test-model", "inputTokens": 100});
         usage_json
@@ -2554,8 +2465,6 @@ mod tests {
 
     #[test]
     fn counts_a_usage_record_in_parent_and_child_files_once_for_its_source_session() {
-        // Both orders of the two session directories, so the result cannot
-        // depend on which file is read first.
         for (parent, child) in [("a-parent", "b-child"), ("b-parent", "a-child")] {
             let record = |id: &str| {
                 usage_record(
@@ -2588,10 +2497,6 @@ mod tests {
         }
     }
 
-    /// A checkpoint and a shutdown of `session-parent` whose `test-model`
-    /// breakdown totals one 100-token call worth one of its two credits.
-    /// `watermarks` are the shutdown's `usageAccountingWatermarks`, which only
-    /// processes that write usage records report.
     fn parent_snapshots(watermarks: Option<serde_json::Value>) -> Vec<String> {
         let mut checkpoint = json!({
             "type": "session.usage_checkpoint",
@@ -2616,8 +2521,6 @@ mod tests {
 
     #[test]
     fn a_shutdown_counts_no_call_that_another_sessions_usage_record_reports() {
-        // A shutdown keeps accounting watermarks per source session, so its
-        // totals include the child's call wherever that call's record is.
         let record = |id: &str| {
             usage_record(
                 id,
@@ -2650,9 +2553,6 @@ mod tests {
                 false,
                 vec![("session-parent", "test-model", 100)],
             ),
-            // A shutdown from before usage records covers none of them, so it
-            // keeps its usage and its unexplained credit, which also shows that
-            // the parent's snapshots are parsed.
             (
                 "parent shutdown predates usage records",
                 parent_snapshots(None),
@@ -2695,7 +2595,6 @@ mod tests {
         }
     }
 
-    /// A `test-model` OTel call of `session-1` with the given call ID attribute.
     fn otel_call_with(span_id: &str, timestamp: &str, attribute: (&str, &str)) -> String {
         let mut span: serde_json::Value =
             serde_json::from_str(&otel_call(span_id, timestamp)).unwrap();
@@ -2759,8 +2658,6 @@ mod tests {
 
     #[test]
     fn keeps_otel_calls_without_trace_and_span_ids_from_every_file() {
-        // Without trace and span IDs a row's key falls back to its line and
-        // time, which say nothing about whether two files hold the same call.
         let call = |input_tokens: u64| {
             let mut span: serde_json::Value =
                 serde_json::from_str(&otel_call("unused", "2026-01-02T09:00:00.000Z")).unwrap();
@@ -2814,7 +2711,6 @@ mod tests {
 
     #[test]
     fn a_usage_record_replaces_one_otel_call_of_a_shared_response_id() {
-        // VS Code reports the response ID of the turn on every call it makes.
         let call = |span_id: &str, timestamp: &str, input_tokens: u64| {
             let mut span: serde_json::Value =
                 serde_json::from_str(&otel_call(span_id, timestamp)).unwrap();
@@ -2878,8 +2774,6 @@ mod tests {
 
         let entries = load_copilot_home(&fixture, &utc_args());
 
-        // Record A's own service request ID claims call A, so the shared
-        // response ID is left for record B.
         assert_eq!(
             usage_rows(&entries),
             [
@@ -2954,7 +2848,6 @@ mod tests {
         }
     }
 
-    /// `test-model` costs $1 per input token and $2 per output token.
     fn test_model_pricing() -> crate::PricingMap {
         ccusage_test_support::install_pricing_snapshots();
         let mut pricing = crate::PricingMap::default();
@@ -2964,7 +2857,6 @@ mod tests {
         pricing
     }
 
-    /// Cost of each entry in hundredths of a dollar, which is whole credits.
     fn costs_in_credits(entries: &[LoadedEntry]) -> Vec<u64> {
         entries
             .iter()
@@ -2974,9 +2866,6 @@ mod tests {
 
     #[test]
     fn prices_a_usage_record_from_the_credits_it_recorded_per_cost_mode() {
-        // 100 input and 10 output tokens are $120 by token pricing, while
-        // Copilot billed the call 5 credits. `cost` is the premium-request
-        // multiplier, not dollars.
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": usage_record(
                 "record-1",
@@ -3024,8 +2913,6 @@ mod tests {
         assert_eq!(costs_in_credits(&entries), [12_000]);
     }
 
-    /// A shutdown whose cumulative `test-model` breakdown has `input` input
-    /// tokens and, when given, `credits` credits.
     fn shutdown_with_credits(
         id: &str,
         timestamp: &str,

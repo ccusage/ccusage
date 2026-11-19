@@ -6,8 +6,8 @@ use crate::Result;
 use ccusage_adapter_common::{collect_files_with_extension, dir_entries};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-pub const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
-pub const COPILOT_HOME_ENV: &str = "COPILOT_HOME";
+pub(crate) const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
+pub(crate) const COPILOT_HOME_ENV: &str = "COPILOT_HOME";
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub(super) enum CopilotSourceKind {

@@ -13,12 +13,7 @@ use crate::{
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::Diagnostics;
 
-/// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
-/// consumes are declared; serde skips everything else. The `attributes` block
-/// is kept as a dynamic map because Copilot addresses it by arbitrary dotted
-/// keys (for example `gen_ai.usage.input_tokens`), and the timestamp-bearing
-/// fields stay as raw values because they appear as both numeric scalars and
-/// `[seconds, nanos]` arrays depending on the exporter.
+// NOTE(2026-05-19, #1023): Copilot OpenTelemetry exporters write timestamps as scalars or `[seconds, nanos]` arrays. Keep both representations readable.
 #[derive(Debug, Deserialize)]
 struct CopilotRecord {
     #[serde(rename = "type")]
@@ -66,13 +61,8 @@ pub(super) struct CopilotUsageEntry {
     pub(super) reasoning_output_tokens: u64,
     pub(super) extra_total_tokens: u64,
     pub(super) request_count: u64,
-    /// Credits Copilot recorded for this entry, in nano-AIU: per call for a
-    /// usage record, cumulative per model for a shutdown. `None` when the
-    /// source has no credits, which leaves the cost to token pricing.
     pub(super) nano_aiu: Option<u64>,
     pub(super) dedup_key: String,
-    /// The key built from the IDs the record carries, which names the same
-    /// call in every file that holds it.
     pub(super) call_key: Option<CallKey>,
     pub(super) call_ids: CallIds,
 }
@@ -94,13 +84,10 @@ impl fmt::Display for CallKey {
     }
 }
 
-/// IDs of a single call that its usage record and its OpenTelemetry rows
-/// share. The two kinds are separate namespaces and only match their own kind.
+// NOTE(2026-11-16, #2108): Copilot `apiCallId` corresponds to OTel `gen_ai.response.id` and `serviceRequestId` corresponds to `github.copilot.service_request_id`. Match each ID in its own namespace.
 #[derive(Debug, Clone, Default)]
 pub(super) struct CallIds {
-    /// Record `apiCallId`, OTel `gen_ai.response.id`: the provider completion ID.
     response_id: Option<String>,
-    /// Record `serviceRequestId`, OTel `github.copilot.service_request_id`.
     service_request_id: Option<String>,
 }
 
@@ -124,16 +111,11 @@ impl CallIds {
     }
 }
 
-/// Session-wide credit total from a `session.shutdown` or
-/// `session.usage_checkpoint` event, in nano-AIU. One AIU is one GitHub AI
-/// credit, billed at $0.01.
 #[derive(Debug, Clone)]
 pub(super) struct CopilotCreditSnapshot {
     pub(super) timestamp: TimestampMs,
     pub(super) session_id: String,
     pub(super) is_shutdown: bool,
-    /// `None` for a shutdown whose session total or per-model totals are
-    /// missing, which makes its credits impossible to reconcile.
     pub(super) total_nano_aiu: Option<u64>,
     pub(super) dedup_key: String,
 }
@@ -141,15 +123,12 @@ pub(super) struct CopilotCreditSnapshot {
 #[derive(Debug, Clone)]
 pub(super) struct CopilotUsageRecordEntry {
     pub(super) entry: CopilotUsageEntry,
-    /// `accounting.sourceSessionId`: the session that assigned the call's
-    /// accounting sequence. `None` when the record has no usable identity.
     pub(super) source_session_id: Option<String>,
 }
 
 #[derive(Debug, Default)]
 pub(super) struct CopilotSourceUsage {
     pub(super) entries: Vec<CopilotUsageEntry>,
-    /// One entry per `session.usage_record` call.
     pub(super) usage_records: Vec<CopilotUsageRecordEntry>,
     pub(super) credit_snapshots: Vec<CopilotCreditSnapshot>,
 }
@@ -193,8 +172,6 @@ pub(super) fn parse_otel_file(
     diagnostics: &Diagnostics,
 ) -> Result<Vec<CopilotUsageEntry>, UnitError> {
     let content = fs::read(path)?;
-    // Every usable Copilot OTel record carries the `attributes` object, so
-    // lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
     let (numbers, records): (Vec<_>, Vec<_>) =
         jsonl::numbered_records_with_usage_diagnostics::<CopilotRecord>(
@@ -300,8 +277,6 @@ struct CopilotSessionStateData {
 }
 
 impl CopilotSessionStateData {
-    /// Watermarks name the usage records a snapshot's totals include, per
-    /// source session, wherever those records are stored.
     fn covers_usage_records(&self) -> bool {
         self.usage_accounting_watermarks
             .as_ref()
@@ -313,8 +288,6 @@ impl CopilotSessionStateData {
     }
 }
 
-/// One model call from `session.usage_record`. Its token fields have the same
-/// meaning as a `modelMetrics` usage, which sums them.
 #[derive(Debug, Default, Deserialize)]
 struct CopilotUsageRecord {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -508,9 +481,7 @@ pub(super) fn parse_session_state_file(
         };
         let carries_usage = event.carries_usage();
         let data = event.data.unwrap_or_default();
-        // Shutdowns and checkpoints written after a usage record, or by a
-        // process that reports watermarks, only total calls that usage records
-        // report, in this file or in the file of the session they belong to.
+        // NOTE(2026-11-16, #2108): Copilot shutdowns and checkpoints can total calls already represented by usage records. Watermarks can refer to receipts in a different session file, so those snapshots also overlap.
         covered_by_records |= data.covers_usage_records();
         if covered_by_records {
             continue;
@@ -532,7 +503,6 @@ pub(super) fn parse_session_state_file(
             )
         };
         if !is_shutdown {
-            // A checkpoint without a total carries nothing to reconcile.
             if let Some(total) = session_nano_aiu {
                 parsed.credit_snapshots.push(CopilotCreditSnapshot {
                     timestamp,
@@ -597,8 +567,6 @@ pub(super) fn parse_session_state_file(
         });
     }
     if covered_by_records {
-        // Usage records report every call with its own credits or tokens, so
-        // the session-wide credit totals have nothing left to explain.
         parsed.credit_snapshots.clear();
     }
     parsed.usage_records = usage_record_entries(records, &session_id);
@@ -607,7 +575,7 @@ pub(super) fn parse_session_state_file(
 
 struct UsageRecordCall {
     timestamp: TimestampMs,
-    /// `(sourceSessionId, sequence)`, unique across every session file.
+    // NOTE(2026-11-16, #2108): Copilot assigns `(sourceSessionId, sequence)` to a call across session files. Event IDs and line positions only identify a copy within its file.
     accounting: Option<(String, u64)>,
     event_id: Option<String>,
     call_ids: CallIds,
@@ -661,8 +629,6 @@ fn usage_record_entries(
         .enumerate()
         .map(|(index, record)| {
             let call = record.usage;
-            // An accounting identity names the call in every file it appears
-            // in; an event ID or line position names it only in this file.
             let dedup_key = match &record.accounting {
                 Some((source, sequence)) => format!("usage-record:{source}:{sequence}"),
                 None => record.event_id.map_or_else(
@@ -776,8 +742,7 @@ fn to_candidate(
     let cache_creation = attr_number_first(attributes, &CACHE_WRITE_ATTRIBUTES);
     let reasoning = attr_number_first(attributes, &REASONING_ATTRIBUTES);
     let total = attr_number_first(attributes, &TOTAL_TOKENS_ATTRIBUTES);
-    // Copilot counts cache reads and writes in the input tokens, as it does in
-    // session-state `inputTokens`.
+    // NOTE(2026-10-10, #1858): Copilot session-state and OpenTelemetry input counts already include cache reads and writes. Carve those buckets out of the reported input to avoid double counting.
     let usage = TokenUsageRaw {
         input_tokens: input.saturating_sub(cache_read.saturating_add(cache_creation)),
         output_tokens: output,
@@ -898,10 +863,7 @@ fn keep_best_source(
     }
 }
 
-/// The Copilot CLI exports some chat spans a second time, under a new trace or
-/// span ID but with the response ID and usage of the original call. VS Code
-/// reports one response ID on every call of a turn, so the usage tells calls
-/// apart. Returns the chat spans that repeat an earlier one.
+// NOTE(2026-10-10, #1858): Copilot CLI can re-export a chat span under new trace or span IDs with the original response ID and usage. VS Code reuses response IDs across a turn, so compare usage as well.
 fn repeated_chat_spans(candidates: &[CopilotUsageCandidate]) -> HashSet<usize> {
     let mut earliest = HashMap::new();
     let mut repeated = HashSet::new();
@@ -1329,8 +1291,6 @@ mod session_state_tests {
             })
             .to_string()
         };
-        // A repeated member is a data error that leaves the record's usage
-        // unread.
         let repeated = record("record-1").replacen(
             r#""id":"record-1""#,
             r#""id":"record-1","id":"record-1""#,
