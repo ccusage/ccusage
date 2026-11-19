@@ -5,6 +5,14 @@ use std::{
     thread,
 };
 
+const PLAIN_PATH_BACKLOG: usize = 1024;
+
+#[derive(Clone, Copy)]
+enum ReadWorkload {
+    PlainPaths,
+    GroupedFiles,
+}
+
 pub struct DiscoveredFile {
     pub group: usize,
     pub index: usize,
@@ -20,6 +28,7 @@ pub fn read_discovered_paths<T: Send>(
 ) -> Vec<(PathBuf, T)> {
     collect_discovered(
         single_thread,
+        ReadWorkload::PlainPaths,
         &mut |emit| discover(&mut |path| emit(0, path)),
         |file| {
             let result = read(&file.path);
@@ -34,14 +43,20 @@ pub fn read_discovered_files<T: Send>(
     discover: &mut DiscoverFiles<'_>,
     read: impl Fn(&DiscoveredFile) -> T + Sync,
 ) -> Vec<(DiscoveredFile, T)> {
-    collect_discovered(single_thread, discover, |file| {
-        let result = read(&file);
-        (file, result)
-    })
+    collect_discovered(
+        single_thread,
+        ReadWorkload::GroupedFiles,
+        discover,
+        |file| {
+            let result = read(&file);
+            (file, result)
+        },
+    )
 }
 
 fn collect_discovered<T: Send>(
     single_thread: bool,
+    workload: ReadWorkload,
     discover: &mut DiscoverFiles<'_>,
     read: impl Fn(DiscoveredFile) -> T + Sync,
 ) -> Vec<T> {
@@ -59,7 +74,7 @@ fn collect_discovered<T: Send>(
             .unwrap_or_else(PoisonError::into_inner)
             .push(results);
     };
-    read_discovered_in_parallel(discover, &consume);
+    read_discovered_in_parallel(workload, discover, &consume);
     let batches = batches.into_inner().unwrap_or_else(PoisonError::into_inner);
     let mut results = Vec::with_capacity(batches.iter().map(Vec::len).sum());
     for batch in batches {
@@ -79,11 +94,21 @@ fn index_discovered(discover: &mut DiscoverFiles<'_>, emit: &mut dyn FnMut(Disco
 type ConsumeFiles<'a> = dyn Fn(&mut dyn Iterator<Item = DiscoveredFile>) + Sync + 'a;
 
 #[inline(never)]
-fn read_discovered_in_parallel(discover: &mut DiscoverFiles<'_>, consume: &ConsumeFiles<'_>) {
+fn read_discovered_in_parallel(
+    workload: ReadWorkload,
+    discover: &mut DiscoverFiles<'_>,
+    consume: &ConsumeFiles<'_>,
+) {
     let parallelism = thread::available_parallelism().map_or(1, usize::from);
-    let reserved = (parallelism / 3).max(1);
-    let workers = parallelism.saturating_sub(reserved).max(1);
-    let queue = &WorkQueue::new(workers);
+    let (workers, capacity) = match workload {
+        ReadWorkload::PlainPaths => (parallelism, PLAIN_PATH_BACKLOG),
+        ReadWorkload::GroupedFiles => {
+            let reserved = (parallelism / 3).max(1);
+            let workers = parallelism.saturating_sub(reserved).max(1);
+            (workers, workers)
+        }
+    };
+    let queue = &WorkQueue::new(capacity, workers);
     thread::scope(|scope| {
         let _producer = QueueLifetime {
             queue,
@@ -120,11 +145,11 @@ struct QueueState {
 }
 
 impl WorkQueue {
-    fn new(capacity: usize) -> Self {
+    fn new(capacity: usize, workers: usize) -> Self {
         Self {
             capacity,
             state: Mutex::new(QueueState {
-                pending: VecDeque::with_capacity(capacity),
+                pending: VecDeque::with_capacity(workers.min(capacity)),
                 closed: false,
                 waiting_readers: 0,
             }),
