@@ -8,9 +8,8 @@ use crate::{
     CodexServiceTier, CodexSpeedPolicy, PricingMap,
     aggregate::load_groups_with_diagnostics,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    paths,
     report::report_from_groups,
-    test_support::load_groups_from_directory,
+    test_support::{collect_codex_usage_files, load_groups_from_directory},
 };
 
 fn write_compressed(fixture: &Fixture, path: &str, contents: &str) -> PathBuf {
@@ -146,7 +145,7 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
     );
 
     assert_eq!(
-        paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex")),
+        collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex")),
         vec![fixture.path("session.jsonl")]
     );
     let events = crate::test_support::rollout_events(fixture.root());
@@ -230,7 +229,7 @@ fn keeps_usage_decoded_before_a_truncated_frame() {
 fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     let fixture = Fixture::new();
     let plain = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:00Z", 100));
-    let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     write_compressed(
         &fixture,
@@ -262,7 +261,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
     }})
     .to_string();
     let plain = fixture.write_file("run.jsonl", &headless);
-    let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
     crate::test_support::set_file_modified(

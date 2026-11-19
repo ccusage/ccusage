@@ -19,7 +19,7 @@ pub use source::SOURCE;
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, LazyLock},
 };
 
@@ -264,7 +264,7 @@ fn load_entries_with_mode(
         ),
     );
     let context = UsageLoadContext::new(shared);
-    let read = |file: &Path| {
+    let read = |file: &PathBuf| {
         read_usage_file_with_diagnostics(
             file,
             context.window().timezone(),

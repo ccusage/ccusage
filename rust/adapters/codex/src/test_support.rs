@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs::{File, FileTimes},
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, UNIX_EPOCH},
 };
 
@@ -85,7 +85,7 @@ pub(crate) fn load_rollouts(
 
 pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
     let diagnostics = Diagnostics::new("codex");
-    let files = paths::collect_codex_usage_files(dir, &diagnostics);
+    let files = collect_codex_usage_files(dir, &diagnostics);
     let selection = [(dir, files.as_slice())];
     let plan = CodexReplayPlan::for_selection(&selection, selection, true, &diagnostics);
     let mut events = Vec::new();
@@ -113,4 +113,11 @@ pub(crate) fn set_file_modified(path: &Path, timestamp: TimestampMs) {
         .unwrap()
         .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
         .unwrap();
+}
+
+pub(super) fn collect_codex_usage_files(dir: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {
+    let source = paths::CodexUsageSource::new(dir.to_path_buf(), dir.to_path_buf());
+    let mut files = Vec::new();
+    paths::visit_deduped_codex_usage_files(&[source], diagnostics, |_, file| files.push(file));
+    files
 }

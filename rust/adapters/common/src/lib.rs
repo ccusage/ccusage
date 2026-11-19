@@ -72,7 +72,7 @@ pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics
     );
 }
 
-fn visit_files_matching(
+pub fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     visit: &mut dyn FnMut(PathBuf) -> ControlFlow<()>,
@@ -244,14 +244,15 @@ fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
 }
 
 /// Reads files as discovery yields them. Parallel results have no ordering guarantee.
-pub fn read_discovered_files<T, F>(
+pub fn read_discovered_files<I, T, F>(
     single_thread: bool,
-    discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
+    discover: impl FnOnce(&mut dyn FnMut(I)),
     read: F,
-) -> Vec<(PathBuf, T)>
+) -> Vec<(I, T)>
 where
+    I: Send,
     T: Send,
-    F: Fn(&Path) -> T + Sync,
+    F: Fn(&I) -> T + Sync,
 {
     if single_thread {
         let mut results = Vec::new();
@@ -262,7 +263,7 @@ where
         return results;
     }
     let worker_count = thread::available_parallelism().map_or(1, usize::from);
-    let (sender, receiver) = mpsc::channel::<PathBuf>();
+    let (sender, receiver) = mpsc::channel::<I>();
     let receiver = Mutex::new(receiver);
     let (read, receiver) = (&read, &receiver);
     thread::scope(|scope| {
@@ -449,7 +450,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let read = |path: &std::path::Path| std::fs::read_to_string(path).unwrap();
+        let read = |path: &PathBuf| std::fs::read_to_string(path).unwrap();
 
         for single_thread in [true, false] {
             let mut results = super::read_discovered_files(
@@ -466,6 +467,28 @@ mod tests {
             assert_eq!(results, expected, "single_thread={single_thread}");
         }
         assert!(super::read_discovered_files(false, |_| {}, read).is_empty());
+    }
+
+    #[test]
+    fn reads_discovered_work_before_discovery_returns() {
+        let (started, observed) = std::sync::mpsc::sync_channel(1);
+        let results = super::read_discovered_files(
+            false,
+            |emit| {
+                emit(7);
+                assert_eq!(
+                    observed
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap(),
+                    7
+                );
+            },
+            |work| {
+                started.send(*work).unwrap();
+                work * 2
+            },
+        );
+        assert_eq!(results, [(7, 14)]);
     }
 
     #[test]

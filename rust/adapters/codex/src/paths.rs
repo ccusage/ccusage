@@ -1,12 +1,13 @@
 use std::{
     fs,
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
 use ccusage_adapter_common::{
-    collect_files_matching,
     roots::{self, RootsEnv},
+    visit_files_matching,
 };
 use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
@@ -55,6 +56,10 @@ impl CodexUsageSource {
     pub(super) fn new(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
         Self { dir, dedupe_scope }
     }
+
+    pub(super) fn dir(&self) -> &Path {
+        &self.dir
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -63,32 +68,42 @@ pub(super) struct CodexUsageFileGroup {
     pub(super) files: Vec<PathBuf>,
 }
 
-pub(super) fn collect_codex_usage_files(dir: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_files_matching(dir, &is_rollout_file, &mut files, diagnostics);
-    files.sort();
-    // NOTE(2026-10-14, #1890): Codex restores the plain `.jsonl` before deleting the compressed copy on resume. Prefer the plain rollout while both exist.
+pub(super) fn visit_deduped_codex_usage_files(
+    sources: &[CodexUsageSource],
+    diagnostics: &Diagnostics,
+    mut visit: impl FnMut(usize, PathBuf),
+) {
     let mut seen = FxHashSet::default();
-    files.retain(|path| seen.insert(uncompressed_rollout_path(path)));
-    files
+    for (group, source) in sources.iter().enumerate() {
+        let _ = visit_files_matching(
+            &source.dir,
+            &is_rollout_file,
+            &mut |path| {
+                // NOTE(2026-10-14, #1890): Codex restores the plain `.jsonl` before deleting the compressed copy on resume. Prefer the plain rollout while both exist.
+                if seen.insert(codex_usage_file_key(source, &path)) {
+                    visit(group, path);
+                }
+                ControlFlow::Continue(())
+            },
+            diagnostics,
+        );
+    }
 }
 
 pub(super) fn collect_deduped_codex_usage_files(
     sources: &[CodexUsageSource],
     diagnostics: &Diagnostics,
 ) -> Vec<CodexUsageFileGroup> {
-    let mut seen = FxHashSet::default();
-    let mut groups = Vec::new();
-    for source in sources {
-        let files = collect_codex_usage_files(&source.dir, diagnostics)
-            .into_iter()
-            .filter(|file| seen.insert(codex_usage_file_key(source, file)))
-            .collect::<Vec<_>>();
-        groups.push(CodexUsageFileGroup {
+    let mut groups = sources
+        .iter()
+        .map(|source| CodexUsageFileGroup {
             dir: source.dir.clone(),
-            files,
-        });
-    }
+            files: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    visit_deduped_codex_usage_files(sources, diagnostics, |group, path| {
+        groups[group].files.push(path);
+    });
     groups
 }
 

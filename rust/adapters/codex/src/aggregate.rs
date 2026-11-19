@@ -22,7 +22,7 @@ use crate::{
 
 use super::{
     parser, paths,
-    replay::{CodexReplayFile, CodexReplayPlan, CodexSessionMetadata},
+    replay::{CodexReplayFile, CodexReplayPlan},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -434,65 +434,19 @@ struct CodexModel {
     time_dependent: bool,
 }
 
-#[derive(Clone, Copy)]
-enum CodexReplay<'a> {
-    Planned(&'a CodexReplayPlan),
-    Discover,
+struct CodexRollout<'a> {
+    sessions_dir: &'a Path,
+    path: PathBuf,
+    index: usize,
 }
 
 struct CodexAggregateRun<'a> {
     sessions_dir: &'a Path,
     files: &'a [PathBuf],
     shared: &'a SharedArgs,
-    replay: CodexReplay<'a>,
-    selection: Option<&'a [usize]>,
+    replay: &'a CodexReplayPlan,
     file_offset: usize,
     diagnostics: &'a Diagnostics,
-}
-
-impl CodexAggregateRun<'_> {
-    fn chunk_file_indexes(&self, worker_count: usize) -> Vec<Vec<usize>> {
-        if worker_count == 1 {
-            return vec![
-                self.selection
-                    .map_or_else(|| (0..self.files.len()).collect(), <[usize]>::to_vec),
-            ];
-        }
-        let Some(selection) = self.selection else {
-            return crate::chunk_file_indexes_by_size(self.files, worker_count);
-        };
-        let files = selection
-            .iter()
-            .map(|&index| self.files[index].clone())
-            .collect::<Vec<_>>();
-        crate::chunk_file_indexes_by_size(&files, worker_count)
-            .into_iter()
-            .map(|chunk| chunk.into_iter().map(|index| selection[index]).collect())
-            .collect()
-    }
-}
-
-type CodexFileMetadata = Vec<(usize, CodexSessionMetadata)>;
-
-fn fork_indexes<'a>(
-    files: &[PathBuf],
-    sessions_dir: &'a Path,
-    mut metadata: CodexFileMetadata,
-) -> (Vec<usize>, Vec<CodexReplayFile<'a>>) {
-    metadata.sort_unstable_by_key(|(index, _)| *index);
-    let forks = metadata
-        .iter()
-        .filter_map(|(index, metadata)| metadata.is_fork().then_some(*index))
-        .collect();
-    let files = metadata
-        .into_iter()
-        .map(|(index, metadata)| CodexReplayFile {
-            path: files[index].clone(),
-            sessions_dir,
-            metadata,
-        })
-        .collect();
-    (forks, files)
 }
 
 pub(super) fn load_groups_with_diagnostics(
@@ -517,6 +471,16 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    if !has_date_bounds(shared) {
+        let dirs = sources
+            .iter()
+            .map(paths::CodexUsageSource::dir)
+            .collect::<Vec<_>>();
+        return aggregate_discovered(&dirs, shared, kind, pricing, diagnostics, |emit| {
+            paths::visit_deduped_codex_usage_files(sources, diagnostics, emit);
+        });
+    }
+
     let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
     let detected = file_groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = file_groups
@@ -610,125 +574,172 @@ fn aggregate_file_groups(
         .iter()
         .zip(available)
         .any(|((_, files), (_, all_files))| files.len() != all_files.len());
-    let bounded_plan = (filtered || has_date_bounds(shared)).then(|| {
-        CodexReplayPlan::for_selection(
-            selected,
-            available.iter().copied(),
-            shared.single_thread,
-            diagnostics,
-        )
-    });
-    let replay = bounded_plan
-        .as_ref()
-        .map_or(CodexReplay::Discover, CodexReplay::Planned);
+    if !filtered && !has_date_bounds(shared) {
+        let dirs = selected.iter().map(|(dir, _)| *dir).collect::<Vec<_>>();
+        return aggregate_discovered(&dirs, shared, kind, pricing, diagnostics, |emit| {
+            for (group, (_, files)) in selected.iter().enumerate() {
+                for file in *files {
+                    emit(group, file.clone());
+                }
+            }
+        })
+        .map(|(groups, _)| groups);
+    }
+
+    let replay = CodexReplayPlan::for_selection(
+        selected,
+        available.iter().copied(),
+        shared.single_thread,
+        diagnostics,
+    );
     let seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum(), pricing);
-    let mut metadata_by_group = Vec::with_capacity(selected.len());
     let mut file_offset = 0;
     for &(sessions_dir, files) in selected {
         let run = CodexAggregateRun {
             sessions_dir,
             files,
             shared,
-            replay,
-            selection: None,
+            replay: &replay,
             file_offset,
             diagnostics,
         };
-        let metadata = aggregate_files_with_dedupe(&run, &seen)?;
-        metadata_by_group.push(fork_indexes(files, sessions_dir, metadata));
+        aggregate_files_with_dedupe(&run, &seen)?;
         file_offset += files.len();
-    }
-    if matches!(replay, CodexReplay::Discover) {
-        let (forks, metadata): (Vec<_>, Vec<_>) = metadata_by_group.into_iter().unzip();
-        let plan = CodexReplayPlan::new(
-            metadata.into_iter().flatten().collect(),
-            None,
-            shared.single_thread,
-            diagnostics,
-        );
-        let mut file_offset = 0;
-        for (&(sessions_dir, files), forks) in selected.iter().zip(&forks) {
-            if !forks.is_empty() {
-                let run = CodexAggregateRun {
-                    sessions_dir,
-                    files,
-                    shared,
-                    replay: CodexReplay::Planned(&plan),
-                    selection: Some(forks),
-                    file_offset,
-                    diagnostics,
-                };
-                aggregate_files_with_dedupe(&run, &seen)?;
-            }
-            file_offset += files.len();
-        }
     }
     seen.fold(shared, kind)
 }
 
-fn aggregate_files_with_dedupe(
-    run: &CodexAggregateRun<'_>,
-    seen: &CodexDedupe,
-) -> Result<CodexFileMetadata> {
-    let file_count = run.selection.map_or(run.files.len(), <[usize]>::len);
-    let chunks = run.chunk_file_indexes(ccusage_adapter_common::worker_count(
-        run.shared.single_thread,
-        file_count,
-    ));
+fn aggregate_discovered(
+    dirs: &[&Path],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+    discover: impl FnOnce(&mut dyn FnMut(usize, PathBuf)),
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    let seen = CodexDedupe::new(usize::MAX, pricing);
+    let mut loaded = ccusage_adapter_common::read_discovered_files(
+        shared.single_thread,
+        |emit| {
+            let mut index = 0;
+            discover(&mut |group, path| {
+                emit(CodexRollout {
+                    sessions_dir: dirs[group],
+                    path,
+                    index,
+                });
+                index += 1;
+            });
+        },
+        |file: &CodexRollout<'_>| {
+            let mut provenance = CodexEventProvenance::new(file.index);
+            let mut result = Ok(());
+            let metadata = parser::visit_codex_session_file_unless_fork(
+                file.sessions_dir,
+                &file.path,
+                |event| {
+                    if result.is_ok() {
+                        result = seen.record(&event, &mut provenance);
+                    }
+                },
+                diagnostics,
+            );
+            result.map(|()| metadata)
+        },
+    );
+    let detected = !loaded.is_empty();
+    loaded.sort_unstable_by_key(|(file, _)| file.index);
+    let mut replay_files = Vec::with_capacity(loaded.len());
+    let mut forks = Vec::new();
+    for (file, metadata) in loaded {
+        let metadata = metadata?;
+        if metadata.is_fork() {
+            forks.push(CodexRollout {
+                path: file.path.clone(),
+                ..file
+            });
+        }
+        replay_files.push(CodexReplayFile {
+            path: file.path,
+            sessions_dir: file.sessions_dir,
+            metadata,
+        });
+    }
+    if !forks.is_empty() {
+        let replay = CodexReplayPlan::new(replay_files, None, shared.single_thread, diagnostics);
+        ccusage_adapter_common::map_parallel(
+            &forks,
+            shared.single_thread,
+            ccusage_adapter_common::Split::BySize(|file| &file.path),
+            |file| {
+                fold_planned_rollout(
+                    &seen,
+                    &replay,
+                    file.sessions_dir,
+                    &file.path,
+                    file.index,
+                    diagnostics,
+                )
+            },
+        )
+        .into_iter()
+        .collect::<Result<()>>()?;
+    }
+    seen.fold(shared, kind).map(|groups| (groups, detected))
+}
+
+fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe) -> Result<()> {
+    let workers = ccusage_adapter_common::worker_count(run.shared.single_thread, run.files.len());
+    let chunks = if workers == 1 {
+        vec![(0..run.files.len()).collect()]
+    } else {
+        crate::chunk_file_indexes_by_size(run.files, workers)
+    };
     ccusage_adapter_common::map_parallel(
         &chunks,
         run.shared.single_thread,
         ccusage_adapter_common::Split::ByCount,
         |chunk| {
-            let mut metadata = Vec::new();
-            for &file_index in chunk {
-                let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-                let mut result = Ok(());
-                visit_run_file(run, file_index, &mut metadata, |event| {
-                    if result.is_ok() {
-                        result = seen.record(event, &mut provenance);
-                    }
-                });
-                result?;
+            for &index in chunk {
+                fold_planned_rollout(
+                    seen,
+                    run.replay,
+                    run.sessions_dir,
+                    &run.files[index],
+                    run.file_offset + index,
+                    run.diagnostics,
+                )?;
             }
-            Ok(metadata)
+            Ok(())
         },
     )
     .into_iter()
-    .collect::<Result<Vec<_>>>()
-    .map(|metadata| metadata.into_iter().flatten().collect())
+    .collect()
 }
 
-fn visit_run_file(
-    run: &CodexAggregateRun<'_>,
-    file_index: usize,
-    metadata: &mut CodexFileMetadata,
-    mut add: impl FnMut(&CodexTokenUsageEvent),
-) {
-    let file = &run.files[file_index];
-    match run.replay {
-        CodexReplay::Planned(plan) => parser::visit_codex_session_file_with_diagnostics(
-            run.sessions_dir,
-            file,
-            plan.fork_replay(file),
-            |event| {
-                if plan.is_replayed_compaction(file, event.response_id.as_deref()) {
-                    return;
-                }
-                add(&event)
-            },
-            run.diagnostics,
-        ),
-        CodexReplay::Discover => {
-            let file_metadata = parser::visit_codex_session_file_unless_fork(
-                run.sessions_dir,
-                file,
-                |event| add(&event),
-                run.diagnostics,
-            );
-            metadata.push((file_index, file_metadata));
-        }
-    }
+fn fold_planned_rollout(
+    seen: &CodexDedupe<'_>,
+    replay: &CodexReplayPlan,
+    sessions_dir: &Path,
+    path: &Path,
+    index: usize,
+    diagnostics: &Diagnostics,
+) -> Result<()> {
+    let mut provenance = CodexEventProvenance::new(index);
+    let mut result = Ok(());
+    parser::visit_codex_session_file_with_diagnostics(
+        sessions_dir,
+        path,
+        replay.fork_replay(path),
+        |event| {
+            if result.is_ok() && !replay.is_replayed_compaction(path, event.response_id.as_deref())
+            {
+                result = seen.record(&event, &mut provenance);
+            }
+        },
+        diagnostics,
+    );
+    result
 }
 
 fn codex_period_for(
