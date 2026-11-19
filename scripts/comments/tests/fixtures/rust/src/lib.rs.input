@@ -22,3 +22,22 @@ fn run() {
 mod nested {
     //! This is module documentation.
 }
+
+#[doc = "Internal attribute documentation."]
+fn private() {}
+
+#[doc = "Public attribute documentation."]
+pub fn public() {}
+
+mod private_module {
+    /// Unreachable public item.
+    pub fn hidden() {}
+
+    #[doc = "Unreachable public attribute documentation."]
+    pub fn also_hidden() {}
+}
+
+pub mod public_module {
+    /// Reachable public item.
+    pub fn visible() {}
+}

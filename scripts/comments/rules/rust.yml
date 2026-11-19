@@ -5,13 +5,20 @@ rule:
   any:
     - kind: line_comment
     - kind: block_comment
+    - kind: attribute_item
+      regex: '^#\[\s*doc\s*='
+    - kind: inner_attribute_item
+      regex: '^#!\[\s*doc\s*='
 ---
 id: rust-public-doc
 language: Rust
-message: Collect line doc comments on public declarations.
+message: Collect documentation on public declarations.
 rule:
-  kind: line_comment
-  regex: '^///(?:[^/]|$)'
+  any:
+    - kind: line_comment
+      regex: '^///(?:[^/]|$)'
+    - kind: attribute_item
+      regex: '^#\[\s*doc\s*='
   precedes:
     stopBy:
       not:
@@ -22,6 +29,14 @@ rule:
     has:
       kind: visibility_modifier
       regex: '^pub$'
+  not:
+    inside:
+      kind: mod_item
+      stopBy: end
+      not:
+        has:
+          kind: visibility_modifier
+          regex: '^pub$'
 ---
 id: rust-schema-doc
 language: Rust
@@ -29,8 +44,11 @@ message: Collect line doc comments on schema structs and fields.
 files:
   - '**/config_schema.rs'
 rule:
-  kind: line_comment
-  regex: '^///(?:[^/]|$)'
+  any:
+    - kind: line_comment
+      regex: '^///(?:[^/]|$)'
+    - kind: attribute_item
+      regex: '^#\[\s*doc\s*='
   precedes:
     stopBy:
       not:
@@ -57,7 +75,10 @@ id: rust-inner-doc
 language: Rust
 message: Collect top-level crate documentation.
 rule:
-  kind: line_comment
-  regex: '^//!'
+  any:
+    - kind: line_comment
+      regex: '^//!'
+    - kind: inner_attribute_item
+      regex: '^#!\[\s*doc\s*='
   inside:
     kind: source_file
