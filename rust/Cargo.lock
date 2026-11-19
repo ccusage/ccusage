@@ -470,6 +470,7 @@ name = "ccusage-config"
 version = "0.0.0"
 dependencies = [
  "ccusage-cli",
+ "ccusage-terminal",
  "ccusage-test-support",
  "insta",
  "schemars",

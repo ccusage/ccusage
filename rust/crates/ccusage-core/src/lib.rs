@@ -46,7 +46,10 @@ pub use utils::{
 };
 pub use window::ReportWindow;
 
-pub use ccusage_terminal::{Align, Color, ColumnKind, SimpleTable, TerminalStyle, terminal_width};
+pub use ccusage_terminal::{
+    Align, Color, ColumnKind, SimpleTable, TerminalStyle, outln, stdout, stdout_is_terminal,
+    terminal_width,
+};
 
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
@@ -90,8 +93,8 @@ pub fn color(shared: &cli::SharedArgs, value: impl AsRef<str>, color: Color) -> 
     ccusage_terminal::color(terminal_style(shared), value, color)
 }
 
-pub fn print_box_title(title: &str, shared: &cli::SharedArgs) {
-    ccusage_terminal::print_box_title(title, terminal_style(shared));
+pub fn print_box_title(title: &str, shared: &cli::SharedArgs) -> std::io::Result<()> {
+    ccusage_terminal::print_box_title(title, terminal_style(shared))
 }
 
 pub trait Context<T> {

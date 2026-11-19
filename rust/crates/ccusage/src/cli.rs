@@ -15,7 +15,7 @@ pub(crate) fn parse() -> Result<Option<Command>, ExitCode> {
         match parse_cli(args.clone(), &config, env!("CCUSAGE_VERSION")).map_err(usage_error)? {
             ControlFlow::Continue(command) => command,
             ControlFlow::Break(output) => {
-                println!("{output}");
+                ccusage_core::outln!("{output}").map_err(|_| ExitCode::FAILURE)?;
                 return Ok(None);
             }
         };

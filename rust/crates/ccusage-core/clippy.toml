@@ -15,4 +15,5 @@ disallowed-methods = [
 	{ path = "std::fs::read_dir", reason = "Use shared adapter discovery or the test-support fixture reader." },
 	{ path = "std::path::Path::read_dir", reason = "Use shared adapter discovery or the test-support fixture reader." },
 	{ path = "std::process::exit", reason = "Return an exit status from the entry point so resources are dropped." },
+	{ path = "std::io::stdout", reason = "Write standard output through ccusage_terminal." },
 ]

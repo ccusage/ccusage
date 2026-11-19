@@ -178,7 +178,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 
     if session_entries.is_empty() {
         if wants_json(shared) {
-            println!("null");
+            ccusage_core::outln!("null")?;
         } else {
             eprintln!("No session found with ID: {id}");
         }
@@ -267,7 +267,7 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
     }
 
     if args.active && blocks.is_empty() {
-        println!("No active session block found.");
+        ccusage_core::outln!("No active session block found.")?;
         return Ok(());
     }
     if args.active && blocks.len() == 1 {

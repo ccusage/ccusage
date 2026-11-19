@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    io::{self, IsTerminal, Write},
+    io::{self, Write},
     sync::{Arc, Condvar, Mutex},
     thread::JoinHandle,
     time::Duration,
@@ -81,7 +81,7 @@ fn fit_status_to_width(text: &str, terminal_width: usize) -> String {
 }
 
 pub fn usage_load_output_is_tty() -> bool {
-    io::stdout().is_terminal()
+    ccusage_terminal::stdout_is_terminal()
 }
 
 pub struct UsageLoadProgress {

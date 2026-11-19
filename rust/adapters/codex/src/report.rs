@@ -596,7 +596,7 @@ pub(super) fn print_table_from_groups(
             }
         ),
         shared,
-    );
+    )?;
     let terminal_width = crate::terminal_width();
     let (headers, columns) = codex_table_columns(first_column, shared.no_cost);
     let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))

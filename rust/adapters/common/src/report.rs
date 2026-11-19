@@ -1,5 +1,3 @@
-use std::io::IsTerminal;
-
 use ccusage_core::cli::{AgentReportKind, SharedArgs};
 use ccusage_core::{
     Color, ColumnKind, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
@@ -18,7 +16,7 @@ fn print_table_for_agent(
         return Ok(());
     }
     let terminal_width = terminal_width();
-    let is_tty = std::io::stdout().is_terminal();
+    let is_tty = ccusage_core::stdout_is_terminal();
     let compact = should_use_compact_layout(
         shared,
         is_tty,
@@ -31,7 +29,7 @@ fn print_table_for_agent(
             agent_report_label(kind)
         ),
         shared,
-    );
+    )?;
     let first_column = first_column(kind);
     let mut table = if compact {
         let mut headers = vec![

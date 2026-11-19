@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeSet,
-    io::{self, BufWriter, IsTerminal, Write},
+    io::{BufWriter, Write},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -94,8 +94,7 @@ pub fn write_json_or_jq(value: &impl Serialize, jq: Option<&str>) -> Result<()> 
             return Err(cli_error("jq failed"));
         }
     } else {
-        let stdout = std::io::stdout();
-        let mut stdout = BufWriter::new(stdout.lock());
+        let mut stdout = BufWriter::new(ccusage_terminal::stdout());
         serde_json::to_writer_pretty(&mut stdout, value)?;
         stdout.write_all(b"\n")?;
         stdout.flush()?;
@@ -149,7 +148,7 @@ pub fn print_usage_table_with_options(
         return Ok(());
     }
     let terminal_width = terminal_width();
-    let is_tty = io::stdout().is_terminal();
+    let is_tty = ccusage_terminal::stdout_is_terminal();
     let compact = should_use_compact_layout(
         shared,
         is_tty,
@@ -158,7 +157,7 @@ pub fn print_usage_table_with_options(
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
     let timezone = resolve_tz(shared.timezone.as_ref());
-    print_box_title(title, shared);
+    print_box_title(title, shared)?;
     let (mut headers, mut columns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
     if shared.no_cost {

@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, io::IsTerminal};
+use std::collections::BTreeSet;
 
 use serde::{
     Serialize,
@@ -179,13 +179,13 @@ pub(super) fn print_table(
     shared: &SharedArgs,
     detected_agents: &[&'static str],
 ) -> Result<()> {
-    print_box_title(&all_report_title(kind, detected_agents), shared);
+    print_box_title(&all_report_title(kind, detected_agents), shared)?;
     if rows.is_empty() {
         eprintln!("No usage data found.");
         return Ok(());
     }
     let terminal_width = crate::terminal_width();
-    let is_tty = std::io::stdout().is_terminal();
+    let is_tty = ccusage_core::stdout_is_terminal();
     let compact = should_use_compact_layout(
         shared,
         is_tty,
