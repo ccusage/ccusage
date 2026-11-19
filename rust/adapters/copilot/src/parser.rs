@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fmt, fs,
+    fmt,
     path::Path,
 };
 

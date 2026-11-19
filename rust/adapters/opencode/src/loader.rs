@@ -7,7 +7,6 @@ use ccusage_core::cost::PriceTable;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
