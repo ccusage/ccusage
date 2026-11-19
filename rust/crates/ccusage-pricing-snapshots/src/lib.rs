@@ -7,10 +7,8 @@
 //! refresh recompiles this crate and the binary rather than `ccusage-core` and
 //! every adapter built on it.
 
-pub const LITELLM_PRICING: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/litellm-primary-pricing.json.deflate"
-));
+pub const LITELLM_PRICING: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/litellm-pricing.json.deflate"));
 
 /// The committed models.dev pricing snapshot.
 pub const MODELS_DEV_PRICING: &[u8] =
