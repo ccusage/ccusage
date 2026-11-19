@@ -65,7 +65,7 @@ pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics
 
 /// Like [`collect_files_matching`], but hands each file to `visit` as the walk
 /// finds it, so reading can start before the walk ends.
-pub fn visit_files_matching(
+pub(crate) fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     visit: &mut dyn FnMut(PathBuf),
@@ -176,7 +176,7 @@ pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<
 }
 
 /// Reads `files` by applying `read` to each path and returns results in file order.
-pub fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
+pub(crate) fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
 where
     T: Send,
     F: Fn(&Path) -> T + Sync,

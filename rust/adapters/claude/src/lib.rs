@@ -340,13 +340,13 @@ fn load_entries_inner(
 /// The timezone and pricing a load prices entries with, resolved by the
 /// first file that needs them, so a load that finds no files skips both.
 pub(crate) struct UsageLoadContext<'a> {
-    pub(crate) shared: &'a SharedArgs,
+    shared: &'a SharedArgs,
     timezone: OnceLock<JiffTimeZone>,
     pricing: OnceLock<Option<PricingMap>>,
 }
 
 impl<'a> UsageLoadContext<'a> {
-    pub(crate) fn new(shared: &'a SharedArgs) -> Self {
+    fn new(shared: &'a SharedArgs) -> Self {
         Self {
             shared,
             timezone: OnceLock::new(),
@@ -354,12 +354,12 @@ impl<'a> UsageLoadContext<'a> {
         }
     }
 
-    pub(crate) fn timezone(&self) -> &JiffTimeZone {
+    fn timezone(&self) -> &JiffTimeZone {
         self.timezone
             .get_or_init(|| resolve_tz(self.shared.timezone.as_deref()))
     }
 
-    pub(crate) fn pricing(&self) -> Option<&PricingMap> {
+    fn pricing(&self) -> Option<&PricingMap> {
         self.pricing
             .get_or_init(|| {
                 (self.shared.mode != CostMode::Display).then(|| {

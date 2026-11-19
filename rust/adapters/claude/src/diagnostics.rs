@@ -15,7 +15,7 @@ pub(super) struct Line<'a> {
     pub(super) index: usize,
     pub(super) bytes: &'a [u8],
     /// The file ends inside this line, so its record may still be being written.
-    pub(super) unterminated: bool,
+    unterminated: bool,
 }
 
 /// Visits every line of `path` in order.

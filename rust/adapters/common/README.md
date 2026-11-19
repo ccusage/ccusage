@@ -39,7 +39,6 @@ layers.
 - `read_discovered_files`
 - `filter_loaded_entries_by_date`
 - `chunk_file_indexes_by_size`
-- `read_files_parallel`
 - `units::read_units`
 - `units::read_units_flat`
 - `units::UnitError`
