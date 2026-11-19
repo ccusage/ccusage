@@ -5,7 +5,6 @@ use ccusage_core::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::Path,
     sync::Arc,
 };
@@ -193,133 +192,132 @@ pub(super) fn parse_session_files_with_diagnostics(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<(GrokDedupeKey, LoadedEntry)>, UnitError> {
     let meta = load_session_meta(updates, diagnostics);
-    let content = fs::read(updates)?;
     let prefilter = LinePrefilter::all(&[br#""turn_completed""#]);
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
 
-    for (number, line) in jsonl::numbered_records_with_usage_diagnostics::<GrokUpdateLine>(
-        &content,
-        Some(&prefilter),
+    jsonl::read_records::<GrokUpdateLine>(
         updates,
+        Some(&prefilter),
         diagnostics,
         is_grok_usage,
-    ) {
-        let Some(params) = line.params.as_ref() else {
-            continue;
-        };
-        let Some(update) = params.update.as_ref() else {
-            continue;
-        };
-        if update.session_update.as_deref() != Some("turn_completed") {
-            continue;
-        }
-        let Some(usage) = update.usage.as_ref() else {
-            continue;
-        };
+        |number, line, diagnostics| {
+            let Some(params) = line.params.as_ref() else {
+                return;
+            };
+            let Some(update) = params.update.as_ref() else {
+                return;
+            };
+            if update.session_update.as_deref() != Some("turn_completed") {
+                return;
+            }
+            let Some(usage) = update.usage.as_ref() else {
+                return;
+            };
 
-        let model_rows = model_usage_rows(usage, meta.default_model.as_deref())
-            .into_iter()
-            .filter_map(|(raw_model, model_usage)| {
-                let (uncached, cache, cache_creation) = split_input_tokens(
-                    model_usage.input_tokens,
-                    model_usage.cached_read_tokens,
-                    model_usage.cache_creation_tokens,
-                );
-                let usage_raw = TokenUsageRaw {
-                    input_tokens: uncached,
-                    output_tokens: model_usage.output_tokens,
-                    cache_creation_input_tokens: cache_creation,
-                    cache_read_input_tokens: cache,
-                    speed: None,
-                    cache_creation: None,
-                };
-                let reasoning_tokens = model_usage.reasoning_tokens;
-                (ccusage_core::utils::total_usage_tokens(usage_raw)
-                    .saturating_add(reasoning_tokens)
-                    > 0)
-                .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
-            })
-            .collect::<Vec<_>>();
-        if model_rows.is_empty() {
-            continue;
-        }
-
-        let event_id = params.meta.as_ref().and_then(|meta| meta.event_id.clone());
-        let Some(timestamp_ms) = resolve_timestamp_ms(&line, params.meta.as_ref()) else {
-            diagnostics.record(ccusage_core::Skip::record(
-                updates,
-                number,
-                ccusage_core::SkipKind::InvalidTimestamp,
-                "Grok usage has no valid timestamp",
-            ));
-            continue;
-        };
-        let session_id = params
-            .session_id
-            .clone()
-            .unwrap_or_else(|| meta.session_id.clone());
-
-        for (raw_model, model_usage, usage_raw, reasoning_tokens) in model_rows {
-            let dedupe_key = GrokDedupeKey::new(
-                event_id.as_deref(),
-                &session_id,
-                timestamp_ms,
-                &raw_model,
-                usage_raw,
-                reasoning_tokens,
-            );
-            if !seen.insert(dedupe_key.clone()) {
-                continue;
+            let model_rows = model_usage_rows(usage, meta.default_model.as_deref())
+                .into_iter()
+                .filter_map(|(raw_model, model_usage)| {
+                    let (uncached, cache, cache_creation) = split_input_tokens(
+                        model_usage.input_tokens,
+                        model_usage.cached_read_tokens,
+                        model_usage.cache_creation_tokens,
+                    );
+                    let usage_raw = TokenUsageRaw {
+                        input_tokens: uncached,
+                        output_tokens: model_usage.output_tokens,
+                        cache_creation_input_tokens: cache_creation,
+                        cache_read_input_tokens: cache,
+                        speed: None,
+                        cache_creation: None,
+                    };
+                    let reasoning_tokens = model_usage.reasoning_tokens;
+                    (ccusage_core::utils::total_usage_tokens(usage_raw)
+                        .saturating_add(reasoning_tokens)
+                        > 0)
+                    .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
+                })
+                .collect::<Vec<_>>();
+            if model_rows.is_empty() {
+                return;
             }
 
-            let display_model = raw_model.clone();
-            let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
-            let (cost, missing_pricing_model) = price_grok_usage(
-                &raw_model,
-                usage_raw,
-                cost_usd,
-                Some(timestamp_ms),
-                mode,
-                pricing,
-            );
-            let timestamp_text = format_rfc3339_millis(timestamp_ms);
-            let data = UsageEntry {
-                session_id: Some(session_id.clone()),
-                timestamp: timestamp_text,
-                version: None,
-                message: UsageMessage {
-                    usage: usage_raw,
-                    model: Some(display_model.clone()),
-                    id: event_id.clone(),
-                },
-                cost_usd,
-                request_id: event_id.clone(),
-                is_api_error_message: None,
-                is_sidechain: None,
+            let event_id = params.meta.as_ref().and_then(|meta| meta.event_id.clone());
+            let Some(timestamp_ms) = resolve_timestamp_ms(&line, params.meta.as_ref()) else {
+                diagnostics.record(ccusage_core::Skip::record(
+                    updates,
+                    number,
+                    ccusage_core::SkipKind::InvalidTimestamp,
+                    "Grok usage has no valid timestamp",
+                ));
+                return;
             };
-            entries.push((
-                dedupe_key,
-                LoadedEntry {
-                    data,
-                    timestamp: timestamp_ms,
-                    date: format_date_tz(timestamp_ms, tz),
-                    project: Arc::from("grok"),
-                    session_id: Arc::from(session_id.clone()),
-                    project_path: Arc::from(meta.project_path.as_str()),
-                    cost,
-                    credits: None,
-                    model: Some(display_model),
-                    message_count: None,
-                    usage_limit_reset_time: None,
-                    missing_pricing_model,
-                    // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok's recorded total equals input plus output, with reasoning already included in output. Adding reasoning again would inflate the total.
-                    extra_total_tokens: 0,
-                    stored_cost: stored_cost_for_mode(cost_usd, mode),
-                },
-            ));
-        }
-    }
+            let session_id = params
+                .session_id
+                .clone()
+                .unwrap_or_else(|| meta.session_id.clone());
+
+            for (raw_model, model_usage, usage_raw, reasoning_tokens) in model_rows {
+                let dedupe_key = GrokDedupeKey::new(
+                    event_id.as_deref(),
+                    &session_id,
+                    timestamp_ms,
+                    &raw_model,
+                    usage_raw,
+                    reasoning_tokens,
+                );
+                if !seen.insert(dedupe_key.clone()) {
+                    continue;
+                }
+
+                let display_model = raw_model.clone();
+                let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
+                let (cost, missing_pricing_model) = price_grok_usage(
+                    &raw_model,
+                    usage_raw,
+                    cost_usd,
+                    Some(timestamp_ms),
+                    mode,
+                    pricing,
+                );
+                let timestamp_text = format_rfc3339_millis(timestamp_ms);
+                let data = UsageEntry {
+                    session_id: Some(session_id.clone()),
+                    timestamp: timestamp_text,
+                    version: None,
+                    message: UsageMessage {
+                        usage: usage_raw,
+                        model: Some(display_model.clone()),
+                        id: event_id.clone(),
+                    },
+                    cost_usd,
+                    request_id: event_id.clone(),
+                    is_api_error_message: None,
+                    is_sidechain: None,
+                };
+                entries.push((
+                    dedupe_key,
+                    LoadedEntry {
+                        data,
+                        timestamp: timestamp_ms,
+                        date: format_date_tz(timestamp_ms, tz),
+                        project: Arc::from("grok"),
+                        session_id: Arc::from(session_id.clone()),
+                        project_path: Arc::from(meta.project_path.as_str()),
+                        cost,
+                        credits: None,
+                        model: Some(display_model),
+                        message_count: None,
+                        usage_limit_reset_time: None,
+                        missing_pricing_model,
+                        // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok's recorded total equals input plus output, with reasoning already included in output. Adding reasoning again would inflate the total.
+                        extra_total_tokens: 0,
+                        stored_cost: stored_cost_for_mode(cost_usd, mode),
+                    },
+                ));
+            }
+        },
+    )?;
 
     Ok(entries)
 }
