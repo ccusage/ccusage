@@ -35,7 +35,7 @@ def diagnostics [file: string]: nothing -> list<record<file: string, line: int, 
         {
             file: $file
             line: ($preceding | length)
-            column: (($preceding | last | str length) + 1)
+            column: (($preceding | last | str length --chars) + 1)
             severity: $diagnostic.severity
             message: $diagnostic.message
         }
