@@ -144,20 +144,24 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
         .into_iter()
         .map(|prefix| format!("{prefix}{}", entry.model))
         .collect();
-    let candidates: Vec<_> = qualified
-        .iter()
-        .filter(|model| {
-            entry.provider_locked
-                && pricing
-                    .as_map()
-                    .is_some_and(|map| map.has_primary_price(model))
-        })
+    let map = pricing.as_map();
+    let locked = qualified.iter().filter(|model| {
+        entry.provider_locked && map.is_some_and(|map| map.has_primary_price(model))
+    });
+    let preserve_locked_plan = locked.clone().next().is_some()
+        && map.is_some_and(|map| map.has_base_rate_override_with_long_context(&entry.model));
+    let candidates: Vec<_> = locked
         .map(|name| (name.as_str(), MatchKind::Exact))
-        .chain(std::iter::once((entry.model.as_str(), MatchKind::Fuzzy)))
         .chain(
-            qualified
-                .iter()
-                .map(|name| (name.as_str(), MatchKind::Fuzzy)),
+            (!preserve_locked_plan)
+                .then_some((entry.model.as_str(), MatchKind::Fuzzy))
+                .into_iter()
+                .chain(
+                    qualified
+                        .iter()
+                        .filter(|_| !preserve_locked_plan)
+                        .map(|name| (name.as_str(), MatchKind::Fuzzy)),
+                ),
         )
         .collect();
     let priced = price_entry(
@@ -165,7 +169,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
             usage: entry.usage,
             reasoning_tokens: 0,
             residual_tokens: entry.reasoning_tokens,
-            reported_model: Some(&entry.model),
+            reported_model: (!preserve_locked_plan).then_some(entry.model.as_str()),
             candidates: &candidates,
             stored_cost: None,
             timestamp: entry.pricing_timestamp,
@@ -448,6 +452,32 @@ mod tests {
 #[cfg(test)]
 mod pricing_identity_tests {
     use super::*;
+
+    #[test]
+    fn locked_glm_preserves_provider_rates_with_a_bare_base_override() {
+        ccusage_test_support::install_pricing_snapshots();
+        let model = "glm-4.7".to_owned();
+        let rates = ccusage_core::cli::PricingOverride {
+            input_cost_per_token: Some(0.00005),
+            output_cost_per_token: Some(0.00005),
+            ..ccusage_core::cli::PricingOverride::default()
+        };
+        let pricing =
+            ccusage_core::PricingMap::load_embedded().with_user_overrides([(&model, &rates)]);
+        let fixture = ccusage_test_support::fs_fixture!({
+            "input.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":150000}}"#,
+            "output.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"outputTokens":150000}}"#
+        });
+        for (name, expected) in [
+            ("input.settings.json", 0.09),
+            ("output.settings.json", 0.33),
+        ] {
+            let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
+            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{name}: {cost}");
+            assert_eq!(missing, None);
+        }
+    }
 
     #[test]
     fn locked_model_prefers_a_primary_provider_rate() {
