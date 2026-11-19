@@ -23,19 +23,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00279,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0011200000000000001,
           "inputTokens": 500,
           "modelName": "gemini-3-pro",
           "outputTokens": 10
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "cost": 0.00093,
-          "inputTokens": 940,
-          "modelName": "gemini-3.5-flash-high",
-          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,
@@ -55,7 +55,7 @@ exit: 0
       "outputTokens": 1152,
       "projectPath": "Antigravity",
       "sessionId": "session-alpha",
-      "totalCost": 0.6671407500000001,
+      "totalCost": 0.66900075,
       "totalTokens": 354603
     },
     {
@@ -142,7 +142,7 @@ exit: 0
     "cacheReadTokens": 120000,
     "inputTokens": 255701,
     "outputTokens": 2351,
-    "totalCost": 0.6859882500000001,
+    "totalCost": 0.68784825,
     "totalTokens": 378272,
     "unpricedModels": [
       "antigravity-mystery-1"

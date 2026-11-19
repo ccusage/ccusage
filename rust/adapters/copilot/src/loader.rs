@@ -565,7 +565,7 @@ fn usage_entry_to_loaded(
     };
     let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let model = (entry.model.as_str(), MatchKind::Fuzzy);
-    let with_logged = [(logged, MatchKind::Fuzzy), model];
+    let with_logged = [(logged, MatchKind::Exact), model];
     let candidates: &[(_, _)] = if entry.logged_model.is_some() {
         &with_logged
     } else {

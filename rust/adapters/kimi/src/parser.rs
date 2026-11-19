@@ -220,7 +220,11 @@ fn wire_line_to_entry_new(
     )?;
     let logged = line.model.as_deref().unwrap_or(DEFAULT_MODEL);
     let model = logged.trim_prefix("kimi-code/").to_string();
-    let logged_model = (logged != model).then(|| logged.to_string());
+    let logged_model = line
+        .model
+        .as_deref()
+        .filter(|logged| *logged != model || model == DEFAULT_MODEL)
+        .map(str::to_owned);
     Some(KimiUsageEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
@@ -395,7 +399,7 @@ fn price_kimi_usage(
     let names = model_candidates(entry);
     let candidates: Vec<_> = names
         .iter()
-        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
     let priced = price_entry(
         EntryPricing {
@@ -417,19 +421,34 @@ fn price_kimi_usage(
     )
 }
 
-fn model_candidates(entry: &KimiUsageEntry) -> Vec<String> {
+fn model_candidates(entry: &KimiUsageEntry) -> Vec<(String, MatchKind)> {
     let mut candidates = Vec::new();
-    candidates.extend(entry.logged_model.clone());
-    if entry.model == DEFAULT_MODEL {
-        candidates.push(kimi_for_coding_pricing_model(entry.timestamp).to_string());
-    }
+    candidates.extend(
+        entry
+            .logged_model
+            .clone()
+            .map(|name| (name, MatchKind::Exact)),
+    );
+    let kind = if entry.model == DEFAULT_MODEL {
+        candidates.push((
+            kimi_for_coding_pricing_model(entry.timestamp).to_string(),
+            MatchKind::Fuzzy,
+        ));
+        if entry.logged_model.is_some() {
+            MatchKind::Exact
+        } else {
+            MatchKind::Fuzzy
+        }
+    } else {
+        MatchKind::Fuzzy
+    };
     candidates.extend([
-        format!("{DEFAULT_PROVIDER}/{}", entry.model),
-        format!("kimi/{}", entry.model),
-        entry.model.clone(),
+        (format!("{DEFAULT_PROVIDER}/{}", entry.model), kind),
+        (format!("kimi/{}", entry.model), kind),
+        (entry.model.clone(), kind),
     ]);
     let mut seen = std::collections::HashSet::new();
-    candidates.retain(|candidate| seen.insert(candidate.clone()));
+    candidates.retain(|(name, _)| seen.insert(name.clone()));
     candidates
 }
 
@@ -651,7 +670,10 @@ mod pricing_identity_tests {
             extra_total_tokens: 0,
         };
         assert_eq!(
-            model_candidates(&entry),
+            model_candidates(&entry)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
             [
                 "moonshot/kimi-k2.6",
                 "moonshot/kimi-for-coding",

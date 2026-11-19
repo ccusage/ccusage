@@ -1163,6 +1163,83 @@ mod tests {
     }
 
     #[test]
+    fn prices_flash_agent_routing_names_as_the_mapped_flash_model() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for model in [
+            "gemini-3-flash-agent",
+            "gemini-3-flash-agent-a",
+            "gemini-3-flash-agent-b",
+            "gemini-3-flash-a",
+            "gemini-3-flash-b",
+        ] {
+            let fixture = routing_model_fixture(model);
+            let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+            assert_eq!(entries.len(), 1, "{model}");
+            assert_eq!(entries[0].model.as_deref(), Some("gemini-3.5-flash-high"));
+            assert!(
+                (entries[0].cost - 0.00279).abs() < 1e-12,
+                "{model}: {}",
+                entries[0].cost
+            );
+        }
+    }
+
+    #[test]
+    fn prices_pro_agent_routing_name_as_the_mapped_pro_model_online() {
+        ccusage_test_support::install_pricing_snapshots();
+        ccusage_core::pricing::set_json_fetcher(|url, load| {
+            let live = if url.ends_with("/model_prices_and_context_window.json") {
+                r#"{
+                    "gemini-pro": {"input_cost_per_token": 0.0000005, "output_cost_per_token": 0.0000015},
+                    "gemini-3.1-pro": {"input_cost_per_token": 0.000002, "output_cost_per_token": 0.000012, "cache_read_input_token_cost": 0.0000002}
+                }"#
+            } else {
+                return Err(std::io::Error::other("no models.dev fixture"));
+            };
+            assert!(load(live), "{url}");
+            Ok(())
+        });
+        let pricing = PricingMap::load_with_overrides(false, false, []);
+        assert_eq!(pricing.find("gemini-pro").unwrap().input, 0.0000005);
+        let fixture = routing_model_fixture("gemini-pro-agent");
+        let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("gemini-3.1-pro"));
+        assert!(
+            (entries[0].cost - 0.00372).abs() < 1e-12,
+            "{}",
+            entries[0].cost
+        );
+    }
+
+    fn routing_model_fixture(model: &str) -> Fixture {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("conversations/session.db", "");
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                1,
+                metadata_blob(
+                    Some(model),
+                    Some(UsageFixture {
+                        input_tokens: 940,
+                        total_output_tokens: 120,
+                        visible_output_tokens: 120,
+                        cache_read_tokens: 2_000,
+                        ..UsageFixture::default()
+                    }),
+                    Some((1_778_000_000, 0)),
+                    &[],
+                ),
+            )],
+            &[],
+            &[],
+        );
+        fixture
+    }
+
+    #[test]
     fn prices_the_logged_model_before_its_normalized_form() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();

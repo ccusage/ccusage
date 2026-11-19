@@ -40,7 +40,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2000,
-          "cost": 0.00093,
+          "cost": 0.00279,
           "inputTokens": 940,
           "modelName": "gemini-3.5-flash-high",
           "outputTokens": 120
@@ -64,7 +64,7 @@ exit: 0
       "outputTokens": 1460,
       "projectPath": "Antigravity",
       "sessionId": "session-alpha",
-      "totalCost": 0.67952575,
+      "totalCost": 0.68138575,
       "totalTokens": 364451
     },
     {
@@ -187,7 +187,7 @@ exit: 0
     "cacheReadTokens": 127500,
     "inputTokens": 257416,
     "outputTokens": 2680,
-    "totalCost": 0.6983895,
+    "totalCost": 0.7002495,
     "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",

@@ -164,7 +164,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
             entry
                 .logged_model
                 .as_deref()
-                .map(|name| (name, MatchKind::Fuzzy)),
+                .map(|name| (name, MatchKind::Exact)),
         )
         .chain(
             direct

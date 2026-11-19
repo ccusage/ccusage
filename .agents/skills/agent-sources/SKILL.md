@@ -19,8 +19,7 @@ in `rust/crates/ccusage-core/src/cost.rs` only when their results are identical.
 LiteLLM with an embedded snapshot behind `--offline` (`pricing.rs`, and the
 `rust` skill for how both snapshots are built into the binary).
 
-Pass the model ID exactly as logged before any derived spelling.
-Include derived spellings as additional pricing candidates.
+Follow the pricing candidate contract in `rust/adapters/README.md`.
 
 ## Before Changing A Source
 

@@ -329,7 +329,7 @@ impl OpenCodeUsage {
         let candidates = open_code_model_candidates(&model, &provider);
         let candidates: Vec<_> = candidates
             .iter()
-            .map(|candidate| (candidate.as_str(), MatchKind::Fuzzy))
+            .map(|(name, kind)| (name.as_str(), *kind))
             .collect();
         let priced = price_entry(
             EntryPricing {
@@ -455,17 +455,25 @@ pub(crate) fn session_value_to_entry(
     OpenCodeUsage::from_aggregate(aggregate).into_entry(tz, mode, pricing)
 }
 
-fn open_code_model_candidates(model: &str, provider: &str) -> Vec<String> {
+fn open_code_model_candidates(model: &str, provider: &str) -> Vec<(String, MatchKind)> {
     let resolved = resolve_open_code_model_name(model);
     let normalized = normalize_open_code_model_name(&resolved);
     let normalized = (normalized != resolved && normalized != model).then_some(normalized);
-    let mut base = vec![model.to_string()];
-    base.extend((resolved != model).then_some(resolved));
-    base.extend(normalized);
+    let kind = if resolved != model || normalized.is_some() {
+        MatchKind::Exact
+    } else {
+        MatchKind::Fuzzy
+    };
+    let mut base = vec![(model.to_string(), kind)];
+    base.extend((resolved != model).then_some((resolved, MatchKind::Fuzzy)));
+    base.extend(normalized.map(|name| (name, MatchKind::Fuzzy)));
     let mut candidates = base.clone();
     if provider != "unknown" {
         let provider = provider.replace('-', "_");
-        candidates.extend(base.into_iter().map(|model| format!("{provider}/{model}")));
+        candidates.extend(
+            base.into_iter()
+                .map(|(model, kind)| (format!("{provider}/{model}"), kind)),
+        );
     }
     candidates.dedup();
     candidates
@@ -513,6 +521,13 @@ mod tests {
         session_message_value_to_entry_checked, session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
+
+    fn candidate_names(model: &str, provider: &str) -> Vec<String> {
+        open_code_model_candidates(model, provider)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect()
+    }
 
     fn v2_native_session(data: &str) -> Option<String> {
         session_message_value_to_entry_checked(
@@ -1005,7 +1020,7 @@ mod tests {
     #[test]
     fn creates_open_code_provider_and_normalized_model_candidates() {
         assert_eq!(
-            open_code_model_candidates("claude-sonnet-4.5", "github-copilot"),
+            candidate_names("claude-sonnet-4.5", "github-copilot"),
             vec![
                 "claude-sonnet-4.5",
                 "claude-sonnet-4-5",
@@ -1063,7 +1078,7 @@ mod tests {
             ] {
                 for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
                     let timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
-                    let old_cost = open_code_model_candidates(&model, provider)
+                    let old_cost = candidate_names(&model, provider)
                         .into_iter()
                         .map(|candidate| {
                             ccusage_core::cost::price_resolved_usage(
@@ -1202,10 +1217,10 @@ mod tests {
             "calculated": entry_snapshot(&calculated),
             "displayCost": entry_snapshot(&display_cost),
             "candidates": {
-                "anthropic": open_code_model_candidates("claude-sonnet-4.5", "anthropic"),
-                "copilot": open_code_model_candidates("claude-sonnet-4.5", "github-copilot"),
-                "geminiAlias": open_code_model_candidates("gemini-3-pro-high", "google"),
-                "unknownProvider": open_code_model_candidates("gpt-test", "unknown"),
+                "anthropic": candidate_names("claude-sonnet-4.5", "anthropic"),
+                "copilot": candidate_names("claude-sonnet-4.5", "github-copilot"),
+                "geminiAlias": candidate_names("gemini-3-pro-high", "google"),
+                "unknownProvider": candidate_names("gpt-test", "unknown"),
             }
         }));
     }

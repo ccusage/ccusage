@@ -60,7 +60,8 @@ time are file-local and never match across files. Copilot counts cache reads and
 cache buckets separate. Session-state reasoning tokens are already included in output tokens; OpenTelemetry
 reasoning is included when total usage metadata shows it is separate. Internal model suffixes such
 as `-1m` and `-1m-internal` are removed for reporting and source deduplication.
-Pricing tries the logged ID first, then the ID with the suffix removed.
+Pricing tries the logged ID first for identity matches. The ID with the
+suffix removed also supports fuzzy matches.
 
 Copilot records what it billed in nano-AIU (1 AIU is one GitHub AI credit, $0.01): a receipt's
 `copilotUsage.totalNanoAiu` for its call, and a shutdown's per-model `totalNanoAiu` for every call

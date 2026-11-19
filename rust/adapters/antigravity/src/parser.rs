@@ -1128,7 +1128,7 @@ fn price_antigravity(
         })
         .collect();
     let candidates: Vec<_> = logged_model
-        .map(|name| (name, kind))
+        .map(|name| (name, MatchKind::Exact))
         .into_iter()
         .chain(candidates.iter().map(|(name, kind)| (name.as_str(), *kind)))
         .collect();
