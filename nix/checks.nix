@@ -145,6 +145,9 @@ in
         gitleaks = mkRepoCheck "gitleaks-check" [ pkgs.gitleaks ] ''
           gitleaks detect --source . --config .gitleaks.toml --no-git
         '';
+        nushell-ide-check = mkRepoCheck "nushell-ide-check" [ pkgs.nushell ] ''
+          nu --no-config-file scripts/check-nushell.nu .
+        '';
         nushell-version = mkRepoCheck "nushell-version-check" [ ] ''
           if ! grep -qxF '        version: ${pkgs.nushell.version}' .github/actions/setup-nu/action.yaml; then
             echo "ERROR: .github/actions/setup-nu must install Nushell ${pkgs.nushell.version}, the flake's version." >&2
