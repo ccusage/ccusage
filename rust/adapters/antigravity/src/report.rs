@@ -3,31 +3,21 @@ mod tests {
     use std::sync::Arc;
 
     use crate::*;
-    use crate::{TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage};
+    use crate::{TimestampMs, TokenUsageRaw};
 
     fn entry(session_id: &str, date: &str, millis: i64, project_path: &str) -> LoadedEntry {
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.to_string()),
-                timestamp: format!("{date}T12:00:00.000Z"),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 10,
-                        output_tokens: 5,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("gemini-3-pro".to_string()),
-                    id: Some(format!("{session_id}-{millis}")),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some(format!("{session_id}-{millis}")),
+            version: None,
+            recorded_cost: None,
             timestamp: TimestampMs::from_millis(millis),
             date: date.to_string(),
             project: Arc::from("antigravity"),

@@ -108,9 +108,9 @@ mod tests {
         .unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2025-06-15");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 60);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 40);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 20);
+        assert_eq!(entries[0].usage.input_tokens, 60);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 40);
+        assert_eq!(entries[0].usage.output_tokens, 20);
         assert_eq!(entries[0].extra_total_tokens, 0);
         assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
         assert_eq!(entries[0].project_path.as_ref(), "/tmp/proj");
@@ -139,10 +139,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 2);
-        let input: u64 = entries
-            .iter()
-            .map(|entry| entry.data.message.usage.input_tokens)
-            .sum();
+        let input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
         assert_eq!(input, 150);
     }
 
@@ -168,7 +165,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 80);
+        assert_eq!(entries[0].usage.input_tokens, 80);
     }
 
     #[test]
@@ -196,10 +193,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 2);
-        let input: u64 = entries
-            .iter()
-            .map(|entry| entry.data.message.usage.input_tokens)
-            .sum();
+        let input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
         assert_eq!(input, 120);
     }
 
@@ -226,8 +220,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-early"));
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("evt-late"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("evt-early"));
+        assert_eq!(entries[1].message_id.as_deref(), Some("evt-late"));
     }
 
     #[test]

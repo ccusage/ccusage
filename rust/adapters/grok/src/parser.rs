@@ -14,8 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
-    format_date_tz, format_rfc3339_millis, stored_cost_for_mode, total_usage_tokens,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    total_usage_tokens,
 };
 
 use ccusage_adapter_common::{
@@ -280,25 +280,14 @@ pub(super) fn parse_session_files_with_diagnostics(
                     mode,
                     pricing,
                 );
-                let timestamp_text = format_rfc3339_millis(timestamp_ms);
-                let data = UsageEntry {
-                    session_id: Some(session_id.clone()),
-                    timestamp: timestamp_text,
-                    version: None,
-                    message: UsageMessage {
-                        usage: usage_raw,
-                        model: Some(display_model.clone()),
-                        id: event_id.clone(),
-                    },
-                    cost_usd,
-                    request_id: event_id.clone(),
-                    is_api_error_message: None,
-                    is_sidechain: None,
-                };
+
                 entries.push((
                     dedupe_key,
                     LoadedEntry {
-                        data,
+                        usage: usage_raw,
+                        message_id: event_id.clone(),
+                        version: None,
+                        recorded_cost: cost_usd,
                         timestamp: timestamp_ms,
                         date: format_date_tz(timestamp_ms, tz),
                         project: Arc::from("grok"),
@@ -852,7 +841,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("grok-never-priced-build"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 93);
+        assert_eq!(entries[0].usage.input_tokens, 93);
         assert_eq!(entries[0].cost, 0.0);
         assert_eq!(
             entries[0].missing_pricing_model.as_deref(),
@@ -888,7 +877,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, u64::MAX - 40);
+        assert_eq!(entries[0].usage.input_tokens, u64::MAX - 40);
     }
 
     #[test]
@@ -918,12 +907,12 @@ mod tests {
         assert_eq!(entries.len(), 1);
         let entry = &entries[0];
         assert_eq!(entry.model.as_deref(), Some("grok-4.5-build"));
-        assert_eq!(entry.data.message.usage.input_tokens, 60);
-        assert_eq!(entry.data.message.usage.cache_read_input_tokens, 40);
-        assert_eq!(entry.data.message.usage.output_tokens, 20);
-        assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.usage.input_tokens, 60);
+        assert_eq!(entry.usage.cache_read_input_tokens, 40);
+        assert_eq!(entry.usage.output_tokens, 20);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 0);
         assert_eq!(entry.extra_total_tokens, 0);
-        assert!(entry.data.cost_usd.is_none());
+        assert!(entry.recorded_cost.is_none());
         assert_eq!(entry.session_id.as_ref(), "sess-1");
         assert_eq!(entry.project_path.as_ref(), "D:\\work\\proj");
     }
@@ -941,8 +930,8 @@ mod tests {
         let entries = parse_lines(&line, None);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 0);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 0);
+        assert_eq!(entries[0].usage.input_tokens, 0);
+        assert_eq!(entries[0].usage.output_tokens, 0);
         assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
@@ -956,9 +945,9 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 40);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 5);
+        assert_eq!(entries[0].usage.input_tokens, 40);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.output_tokens, 5);
         assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
@@ -1201,7 +1190,7 @@ mod tests {
         .join("\n");
         let entries = parse_lines(&lines, None);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 60);
+        assert_eq!(entries[0].usage.input_tokens, 60);
     }
 
     #[test]
@@ -1212,11 +1201,11 @@ mod tests {
         entries.sort_by(|a, b| a.model.cmp(&b.model));
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].model.as_deref(), Some("model-a"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 0);
         assert_eq!(entries[1].model.as_deref(), Some("model-b"));
-        assert_eq!(entries[1].data.message.usage.input_tokens, 15);
-        assert_eq!(entries[1].data.message.usage.cache_read_input_tokens, 5);
+        assert_eq!(entries[1].usage.input_tokens, 15);
+        assert_eq!(entries[1].usage.cache_read_input_tokens, 5);
     }
 
     #[test]
@@ -1245,11 +1234,8 @@ mod tests {
         let entries = parse_lines(&format!("{with_creation}\n{without_creation}\n"), None);
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[1].data.message.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[1].usage.cache_creation_input_tokens, 0);
     }
 
     #[test]
@@ -1295,8 +1281,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert!(
             entries[0]
-                .data
-                .cost_usd
+                .recorded_cost
                 .is_some_and(|cost| (cost - 0.0185192).abs() < 1e-12)
         );
         assert!((entries[0].cost - 0.0185192).abs() < 1e-12);
@@ -1348,13 +1333,10 @@ mod tests {
         let entries = parse_lines(line, None);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 35);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 40);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            25
-        );
-        assert_eq!(entries[0].data.message.usage.output_tokens, 20);
+        assert_eq!(entries[0].usage.input_tokens, 35);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 40);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 25);
+        assert_eq!(entries[0].usage.output_tokens, 20);
     }
 
     #[test]

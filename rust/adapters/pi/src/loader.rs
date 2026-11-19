@@ -67,7 +67,7 @@ fn load_entries_for_context(
         });
     let mut entries = dedupe_first_wins(records, parser::entry_id);
     entries.sort_by_cached_key(|entry| (entry.timestamp, parser::entry_id(entry)));
-    Ok(entries)
+    Ok(entries.into_iter().map(|entry| entry.entry).collect())
 }
 
 struct ParentReplay {
@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .map(|entry| entry.data.message.usage.input_tokens)
+                .map(|entry| entry.usage.input_tokens)
                 .collect::<Vec<_>>(),
             [10, 20],
         );
@@ -448,7 +448,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_a_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_a_entries[0].data.message.usage.input_tokens, 50,
+                child_a_entries[0].usage.input_tokens, 50,
                 "single_thread={single_thread}"
             );
             let child_b_entries = entries
@@ -457,12 +457,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_b_entries.len(), 2, "single_thread={single_thread}");
             assert_eq!(
-                child_b_entries[0]
-                    .data
-                    .message
-                    .usage
-                    .cache_creation_input_tokens,
-                999,
+                child_b_entries[0].usage.cache_creation_input_tokens, 999,
                 "single_thread={single_thread}"
             );
         }
@@ -509,7 +504,7 @@ mod tests {
 
             assert_eq!(entries.len(), 5, "single_thread={single_thread}");
             assert!(entries.iter().any(|entry| {
-                entry.session_id.as_ref() == "root" && entry.data.message.usage.input_tokens == 200
+                entry.session_id.as_ref() == "root" && entry.usage.input_tokens == 200
             }));
             let child_entries = entries
                 .iter()
@@ -517,7 +512,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_entries[0].data.message.usage.input_tokens, 500,
+                child_entries[0].usage.input_tokens, 500,
                 "single_thread={single_thread}"
             );
         }
@@ -572,7 +567,7 @@ mod tests {
 
             assert_eq!(entries.len(), 4, "single_thread={single_thread}");
             assert!(entries.iter().any(|entry| {
-                entry.session_id.as_ref() == "root" && entry.data.message.usage.input_tokens == 50
+                entry.session_id.as_ref() == "root" && entry.usage.input_tokens == 50
             }));
             let child_entries = entries
                 .iter()
@@ -580,7 +575,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_entries[0].data.message.usage.input_tokens, 300,
+                child_entries[0].usage.input_tokens, 300,
                 "single_thread={single_thread}"
             );
         }
@@ -831,8 +826,6 @@ mod tests {
                     .iter()
                     .find(|entry| entry.session_id.as_ref() == "grandchild")
                     .unwrap()
-                    .data
-                    .message
                     .usage
                     .input_tokens,
                 400,
@@ -1099,7 +1092,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
             assert_eq!(
-                child_entries[0].data.message.usage.input_tokens, 1,
+                child_entries[0].usage.input_tokens, 1,
                 "single_thread={single_thread}"
             );
         }
@@ -1180,15 +1173,11 @@ mod tests {
 
             assert_eq!(entries.len(), 2, "single_thread={single_thread}");
             assert!(
-                entries
-                    .iter()
-                    .any(|entry| entry.data.message.usage.input_tokens == 100),
+                entries.iter().any(|entry| entry.usage.input_tokens == 100),
                 "single_thread={single_thread}"
             );
             assert!(
-                entries
-                    .iter()
-                    .any(|entry| entry.data.message.usage.input_tokens == 50),
+                entries.iter().any(|entry| entry.usage.input_tokens == 50),
                 "single_thread={single_thread}"
             );
             assert!(
@@ -1225,7 +1214,7 @@ mod tests {
         let entries = load_store(&shared, vec![store]);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.input_tokens, 100);
     }
 
     #[test]

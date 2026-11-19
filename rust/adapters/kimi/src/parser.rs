@@ -11,8 +11,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    fast::LinePrefilter, format_date_tz,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter,
+    format_date_tz,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -102,7 +102,7 @@ struct KimiCodeUsage {
 #[derive(Debug, Clone)]
 pub(super) struct KimiUsageEntry {
     timestamp: TimestampMs,
-    timestamp_text: String,
+
     session_id: String,
     model: String,
     logged_model: Option<String>,
@@ -216,7 +216,7 @@ fn entry_from_usage_record(
         .map(str::to_owned);
     Some(KimiUsageEntry {
         timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
+
         session_id: file.session_id.clone(),
         model,
         logged_model,
@@ -262,7 +262,7 @@ fn entry_from_status_update(
     )?;
     Some(KimiUsageEntry {
         timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
+
         session_id: file.session_id.clone(),
         model: file
             .config
@@ -348,20 +348,6 @@ pub(super) fn kimi_entry_to_loaded(
         cache_creation: None,
     };
     let (cost, missing_pricing_model) = price_kimi_usage(&entry, pricing, usage);
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(entry.model.clone()),
-            id: entry.message_id.clone(),
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -375,7 +361,10 @@ pub(super) fn kimi_entry_to_loaded(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
-        data,
+        usage,
+        message_id: entry.message_id.clone(),
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }
@@ -617,7 +606,7 @@ mod tests {
         };
         let before_cutoff = KimiUsageEntry {
             timestamp: TimestampMs::from_millis(1_776_698_890_071),
-            timestamp_text: "2026-04-20T15:28:10.071Z".to_string(),
+
             session_id: "session-a".to_string(),
             model: DEFAULT_MODEL.to_string(),
             logged_model: None,
@@ -630,7 +619,7 @@ mod tests {
         };
         let at_cutoff = KimiUsageEntry {
             timestamp: TimestampMs::from_millis(1_776_698_890_072),
-            timestamp_text: "2026-04-20T15:28:10.072Z".to_string(),
+
             message_id: Some("msg-at".to_string()),
             ..before_cutoff.clone()
         };
@@ -647,7 +636,7 @@ mod tests {
         assert!((before_cost - 0.000226).abs() < f64::EPSILON);
         assert!((at_cost - 0.00032035).abs() < f64::EPSILON);
         assert_eq!(loaded.model.as_deref(), Some(DEFAULT_MODEL));
-        assert_eq!(loaded.data.message.model.as_deref(), Some(DEFAULT_MODEL));
+        assert_eq!(loaded.model.as_deref(), Some(DEFAULT_MODEL));
     }
 }
 
@@ -659,7 +648,7 @@ mod pricing_identity_tests {
     fn adapter_pricing_identity() {
         let entry = KimiUsageEntry {
             timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
-            timestamp_text: String::new(),
+
             session_id: "s".into(),
             model: "kimi-for-coding".into(),
             logged_model: None,

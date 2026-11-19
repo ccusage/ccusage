@@ -644,24 +644,13 @@ mod tests {
     }
 
     #[test]
-    fn prices_summed_message_iteration_breakdowns() {
-        let usage = serde_json::from_str::<TokenUsageRaw>(
-            r#"{
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cache_creation_input_tokens": 30,
-                "cache_read_input_tokens": 30,
-                "cache_creation": {
-                    "ephemeral_5m_input_tokens": 10,
-                    "ephemeral_1h_input_tokens": 0
-                },
-                "iterations": [
-                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 10, "ephemeral_1h_input_tokens": 0}},
-                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 20}}
-                ]
-            }"#,
-        )
-        .unwrap();
+    fn prices_combined_cache_creation_durations() {
+        let usage = TokenUsageRaw {
+            cache_creation_input_tokens: 30,
+            cache_read_input_tokens: 30,
+            cache_creation: Some(CacheCreationRaw::from_splits(10, 20)),
+            ..TokenUsageRaw::default()
+        };
 
         let cost = calculate_cost_for_usage(
             Some("test-model"),
@@ -761,24 +750,6 @@ mod tests {
                 / 1_000_000.0;
             assert!((cost - expected).abs() < 1e-9, "{tier} cost was {cost}");
         }
-    }
-
-    #[test]
-    fn parses_cache_creation_breakdown_from_usage_json() {
-        let usage = serde_json::from_str::<TokenUsageRaw>(
-            r#"{
-                "input_tokens": 1,
-                "output_tokens": 2,
-                "cache_creation_input_tokens": 300,
-                "cache_creation": {
-                    "ephemeral_5m_input_tokens": 100,
-                    "ephemeral_1h_input_tokens": 200
-                }
-            }"#,
-        )
-        .unwrap();
-
-        assert_eq!(usage.cache_creation_token_count(), 300);
     }
 
     fn deepseek_pricing() -> PricingMap {

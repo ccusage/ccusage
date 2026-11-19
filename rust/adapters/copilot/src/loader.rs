@@ -25,8 +25,8 @@ use ccusage_adapter_common::{
 use ccusage_core::Diagnostics;
 
 use crate::{
-    LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
-    format_date_tz, stored_cost_for_mode,
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz,
+    stored_cost_for_mode,
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
@@ -377,7 +377,6 @@ fn credit_gap_entries(
 fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotUsageEntry {
     CopilotUsageEntry {
         timestamp: snapshot.timestamp,
-        timestamp_text: crate::format_rfc3339_millis(snapshot.timestamp),
         session_id: snapshot.session_id.clone(),
         model: UNATTRIBUTED_MODEL.to_string(),
         logged_model: None,
@@ -416,7 +415,6 @@ fn deduplicate_session_entries(entries: Vec<CopilotUsageEntry>) -> Vec<CopilotUs
 fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> CopilotUsageEntry {
     CopilotUsageEntry {
         timestamp: current.timestamp,
-        timestamp_text: current.timestamp_text.clone(),
         session_id: current.session_id.clone(),
         model: current.model.clone(),
         logged_model: current.logged_model.clone(),
@@ -490,20 +488,6 @@ fn usage_entry_to_loaded(
         cache_creation: None,
     };
     let cost_usd = entry.nano_aiu.map(nano_aiu_to_usd);
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(entry.model.clone()),
-            id: Some(entry.dedup_key),
-        },
-        cost_usd,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let model = (entry.model.as_str(), MatchKind::Fuzzy);
     let with_logged = [(logged, MatchKind::Exact), model];
@@ -540,7 +524,10 @@ fn usage_entry_to_loaded(
         credits: None,
         message_count: (entry.request_count > 0).then_some(entry.request_count),
         model: Some(entry.model),
-        data,
+        usage,
+        message_id: Some(entry.dedup_key),
+        version: None,
+        recorded_cost: cost_usd,
         usage_limit_reset_time: None,
         missing_pricing_model,
         stored_cost,
@@ -631,7 +618,10 @@ mod tests {
         let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp_text, "2026-04-11T19:04:24.967Z");
+        assert_eq!(
+            crate::format_rfc3339_millis(entries[0].timestamp),
+            "2026-04-11T19:04:24.967Z"
+        );
         assert_eq!(entries[0].session_id, "conv-1");
         assert_eq!(entries[0].model, "claude-sonnet-4");
         assert_eq!(entries[0].input_tokens, 19_304);
@@ -746,7 +736,7 @@ mod tests {
 
         let mut inputs = entries
             .iter()
-            .map(|entry| entry.data.message.usage.input_tokens)
+            .map(|entry| entry.usage.input_tokens)
             .collect::<Vec<_>>();
         inputs.sort_unstable();
         assert_eq!(inputs, [11, 21]);
@@ -1182,13 +1172,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 70);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 0);
         assert_eq!(entries[0].message_count, Some(3));
         assert_eq!(entries[0].cost, 270.0);
@@ -1269,10 +1256,10 @@ mod tests {
         ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 11);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 12);
+        assert_eq!(entries[0].usage.input_tokens, 70);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[1].usage.input_tokens, 11);
+        assert_eq!(entries[1].usage.output_tokens, 12);
     }
 
     #[test]
@@ -1356,16 +1343,13 @@ mod tests {
         ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 80);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 30);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            10
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 80);
+        assert_eq!(entries[0].usage.output_tokens, 30);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 10);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].message_count, Some(2));
-        assert_eq!(entries[1].data.message.usage.input_tokens, 13);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 14);
+        assert_eq!(entries[1].usage.input_tokens, 13);
+        assert_eq!(entries[1].usage.output_tokens, 14);
         assert_eq!(entries[1].message_count, Some(1));
     }
 
@@ -1439,13 +1423,10 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.6"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 70);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 0);
         assert!((entries[0].cost - 0.00173).abs() < 1e-12);
     }
@@ -1579,7 +1560,7 @@ mod tests {
                 (
                     entry.session_id.to_string(),
                     entry.model.clone().unwrap_or_default(),
-                    entry.data.message.usage.input_tokens,
+                    entry.usage.input_tokens,
                 )
             })
             .collect::<Vec<_>>();
@@ -1656,17 +1637,14 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].date, "2026-01-02");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 70);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].message_count, Some(1));
         assert_eq!(entries[1].date, "2026-01-03");
-        assert_eq!(entries[1].data.message.usage.input_tokens, 80);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 30);
+        assert_eq!(entries[1].usage.input_tokens, 80);
+        assert_eq!(entries[1].usage.output_tokens, 30);
         assert_eq!(entries[1].message_count, Some(2));
-        let total_input: u64 = entries
-            .iter()
-            .map(|entry| entry.data.message.usage.input_tokens)
-            .sum();
+        let total_input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
         assert_eq!(total_input, 150);
     }
 
@@ -1714,8 +1692,8 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].message_count, Some(1));
     }
 
@@ -1797,7 +1775,7 @@ mod tests {
                 (
                     entry.date.to_string(),
                     entry.model.clone().unwrap_or_default(),
-                    crate::total_usage_tokens(entry.data.message.usage),
+                    crate::total_usage_tokens(entry.usage),
                     (entry.cost * 100.0).round() as u64,
                 )
             })
@@ -2082,8 +2060,8 @@ mod tests {
             .iter()
             .map(|entry| {
                 (
-                    entry.data.timestamp.clone(),
-                    entry.data.message.usage.input_tokens,
+                    crate::format_rfc3339_millis(entry.timestamp),
+                    entry.usage.input_tokens,
                 )
             })
             .collect()
@@ -2281,9 +2259,9 @@ mod tests {
         entries
             .iter()
             .map(|entry| {
-                let usage = entry.data.message.usage;
+                let usage = entry.usage;
                 (
-                    entry.data.timestamp.clone(),
+                    crate::format_rfc3339_millis(entry.timestamp),
                     entry.model.clone().unwrap_or_default(),
                     usage.input_tokens,
                     usage.output_tokens,
@@ -2486,10 +2464,7 @@ mod tests {
             assert_eq!(
                 entries
                     .iter()
-                    .map(|entry| (
-                        entry.session_id.to_string(),
-                        entry.data.message.usage.input_tokens
-                    ))
+                    .map(|entry| (entry.session_id.to_string(), entry.usage.input_tokens))
                     .collect::<Vec<_>>(),
                 [(child.to_string(), 100)],
                 "parent {parent}, child {child}"
@@ -2583,7 +2558,7 @@ mod tests {
                     .map(|entry| (
                         entry.session_id.to_string(),
                         entry.model.clone().unwrap_or_default(),
-                        entry.data.message.usage.input_tokens
+                        entry.usage.input_tokens
                     ))
                     .collect::<Vec<_>>(),
                 expected

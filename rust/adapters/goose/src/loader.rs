@@ -213,8 +213,8 @@ INSERT INTO sessions (
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 30);
     }
 

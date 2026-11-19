@@ -1013,10 +1013,7 @@ fn focused_opencode_input(
     let (mut entries, _) =
         loader::load_opencode_entries(shared, kind, include_claude_agent, None).unwrap();
     filter_loaded_entries_by_date(&mut entries, shared);
-    entries
-        .iter()
-        .map(|entry| entry.data.message.usage.input_tokens)
-        .sum()
+    entries.iter().map(|entry| entry.usage.input_tokens).sum()
 }
 
 fn write_claude_agent_fixture(fixture: &ccusage_test_support::Fixture) {
@@ -1098,7 +1095,7 @@ fn focused_opencode_claims_use_claude_source_window_and_project() {
         assert_eq!(
             entries
                 .iter()
-                .map(|entry| entry.data.message.usage.input_tokens)
+                .map(|entry| entry.usage.input_tokens)
                 .sum::<u64>(),
             127
         );

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ccusage_core::{
-    LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, TokenUsageRaw,
     cli::{AgentReportKind, SortOrder, WeekDay},
     parse_ts_timestamp,
 };
@@ -10,27 +10,17 @@ use serde_json::json;
 #[test]
 fn builds_opencode_daily_json_report() {
     let entry = LoadedEntry {
-        data: UsageEntry {
-            session_id: Some("opencode-session".to_string()),
-            timestamp: "2026-01-02T00:00:00.000Z".to_string(),
-            version: None,
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    input_tokens: 100,
-                    output_tokens: 50,
-                    cache_creation_input_tokens: 20,
-                    cache_read_input_tokens: 10,
-                    speed: None,
-                    cache_creation: None,
-                },
-                model: Some("claude-sonnet-4-20250514".to_string()),
-                id: Some("msg-1".to_string()),
-            },
-            cost_usd: Some(0.02),
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+        usage: TokenUsageRaw {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 20,
+            cache_read_input_tokens: 10,
+            speed: None,
+            cache_creation: None,
         },
+        message_id: Some("msg-1".to_string()),
+        version: None,
+        recorded_cost: Some(0.02),
         timestamp: parse_ts_timestamp("2026-01-02T00:00:00.000Z").unwrap(),
         date: "2026-01-02".to_string(),
         project: Arc::from("opencode"),

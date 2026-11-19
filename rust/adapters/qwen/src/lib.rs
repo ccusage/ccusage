@@ -84,9 +84,9 @@ mod tests {
         assert_eq!(entries[0].session_id.as_ref(), "session-json");
         assert_eq!(entries[0].project_path.as_ref(), "myProject");
         assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 5);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 5);
         assert_eq!(entries[0].extra_total_tokens, 10);
     }
 

@@ -62,7 +62,10 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
 }
 
 pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
-    let entries = load_entries_since(&shared, None)?;
+    let entries = load_entries_since(&shared, None)?
+        .into_iter()
+        .map(|entry| entry.entry)
+        .collect::<Vec<_>>();
     let mut daily = summarize_by_key_target(
         &entries,
         |entry| entry.date.clone(),
@@ -168,7 +171,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
     let mut session_entries = entries
         .into_iter()
         .filter(|entry| {
-            entry.data.session_id.as_deref() == Some(id) || entry.session_id.as_ref() == id
+            entry.recorded_session_id.as_deref() == Some(id) || entry.session_id.as_ref() == id
         })
         .collect::<Vec<_>>();
     session_entries.sort_by_key(|entry| entry.timestamp);
@@ -200,13 +203,13 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
             "modelsUsed": summary.models_used,
             "modelBreakdowns": summary.model_breakdowns,
             "entries": session_entries.iter().map(|entry| json!({
-                "timestamp": entry.data.timestamp,
-                "inputTokens": entry.data.message.usage.input_tokens,
-                "outputTokens": entry.data.message.usage.output_tokens,
-                "cacheCreationTokens": entry.data.message.usage.cache_creation_input_tokens,
-                "cacheReadTokens": entry.data.message.usage.cache_read_input_tokens,
-                "model": entry.data.message.model.as_deref().unwrap_or("unknown"),
-                "costUSD": entry.data.cost_usd.unwrap_or(0.0),
+                "timestamp": entry.source_timestamp,
+                "inputTokens": entry.usage.input_tokens,
+                "outputTokens": entry.usage.output_tokens,
+                "cacheCreationTokens": entry.usage.cache_creation_input_tokens,
+                "cacheReadTokens": entry.usage.cache_read_input_tokens,
+                "model": entry.original_model.as_deref().unwrap_or("unknown"),
+                "costUSD": entry.recorded_cost.unwrap_or(0.0),
             })).collect::<Vec<_>>(),
         });
         print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost)?;

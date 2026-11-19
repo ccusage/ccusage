@@ -9,7 +9,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
     apply_total_token_fallback, fast::LinePrefilter, format_date_tz,
 };
 use ccusage_adapter_common::{
@@ -478,20 +478,6 @@ pub(super) fn dsh_entry_to_loaded(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned());
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: crate::format_rfc3339_millis(entry.timestamp),
-        version: None,
-        message: UsageMessage {
-            usage: entry.usage,
-            model: Some(entry.model.clone()),
-            id: None,
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -505,7 +491,10 @@ pub(super) fn dsh_entry_to_loaded(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
-        data,
+        usage: entry.usage,
+        message_id: None,
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }

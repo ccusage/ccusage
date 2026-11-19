@@ -18,7 +18,7 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
         }
       },
       "sessionId": "session-a",
-      "timestamp": "2026-01-02T00:00:00.000Z",
+      "timestamp": 1767312000000,
       "version": null
     },
     "date": "2026-01-02",
@@ -67,7 +67,7 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
         }
       },
       "sessionId": "explicit-session",
-      "timestamp": "2026-01-02T00:00:00.000Z",
+      "timestamp": 1767312000000,
       "version": null
     },
     "date": "2026-01-02",

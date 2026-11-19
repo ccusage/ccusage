@@ -1,36 +1,23 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use crate::{
-        TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, format_rfc3339_millis,
-        parse_ts_timestamp,
-    };
+    use crate::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
     use std::sync::Arc;
 
     fn entry(session_id: &str, date: &str, millis: i64) -> LoadedEntry {
         let timestamp = TimestampMs::from_millis(millis);
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.to_string()),
-                timestamp: format!("{date}T12:00:00.000Z"),
-                version: Some("0.16.3".to_string()),
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 60,
-                        output_tokens: 10,
-                        cache_creation_input_tokens: 15,
-                        cache_read_input_tokens: 25,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("GLM-5.3".to_string()),
-                    id: Some(format!("usage-{millis}")),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 60,
+                output_tokens: 10,
+                cache_creation_input_tokens: 15,
+                cache_read_input_tokens: 25,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some(format!("usage-{millis}")),
+            version: Some("0.16.3".to_string()),
+            recorded_cost: None,
             timestamp,
             date: date.to_string(),
             project: Arc::from("zcode"),
@@ -189,7 +176,7 @@ mod tests {
 
     fn extreme_entry(date: &str, millis: i64, tokens: u64) -> LoadedEntry {
         let mut entry = entry("session-extreme", date, millis);
-        entry.data.message.usage = TokenUsageRaw {
+        entry.usage = TokenUsageRaw {
             input_tokens: tokens,
             output_tokens: tokens,
             cache_creation_input_tokens: tokens,
@@ -256,27 +243,17 @@ mod tests {
                 let date = timestamp.get(..10).unwrap().to_string();
                 let timestamp = parse_ts_timestamp(timestamp).unwrap();
                 LoadedEntry {
-                    data: UsageEntry {
-                        session_id: Some(session_id.to_string()),
-                        timestamp: format_rfc3339_millis(timestamp),
-                        version: Some("0.16.3".to_string()),
-                        message: UsageMessage {
-                            usage: TokenUsageRaw {
-                                input_tokens,
-                                output_tokens,
-                                cache_creation_input_tokens: cache_creation_tokens,
-                                cache_read_input_tokens: cache_read_tokens,
-                                speed: None,
-                                cache_creation: None,
-                            },
-                            model: Some(model.to_string()),
-                            id: Some(id.to_string()),
-                        },
-                        cost_usd: None,
-                        request_id: None,
-                        is_api_error_message: None,
-                        is_sidechain: None,
+                    usage: TokenUsageRaw {
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens: cache_creation_tokens,
+                        cache_read_input_tokens: cache_read_tokens,
+                        speed: None,
+                        cache_creation: None,
                     },
+                    message_id: Some(id.to_string()),
+                    version: Some("0.16.3".to_string()),
+                    recorded_cost: None,
                     timestamp,
                     date,
                     project: Arc::from("zcode"),

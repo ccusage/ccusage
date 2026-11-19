@@ -349,8 +349,11 @@ mod tests {
         let entries = load(fixture.root());
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
-        assert_eq!(entries[0].data.timestamp, "2026-08-16T19:37:22.666Z");
+        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+        assert_eq!(
+            entries[0].timestamp,
+            crate::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
+        );
         assert_eq!(entries[0].project_path.as_ref(), "/project");
     }
 
@@ -388,7 +391,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
@@ -551,7 +554,7 @@ mod tests {
         let entries = crate::SOURCE.load_entries(&cx).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("healthy"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("healthy"));
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         let warnings = diagnostics
@@ -611,10 +614,10 @@ mod tests {
         let entries = load(fixture.root());
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.version, None);
+        assert_eq!(entries[0].version, None);
         assert_eq!(entries[0].project_path.as_ref(), "ZCode");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 75);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 25);
+        assert_eq!(entries[0].usage.input_tokens, 75);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 25);
     }
 
     #[test]
@@ -639,7 +642,7 @@ mod tests {
         let entries = load(fixture.root());
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
         assert_eq!(journal_mode(&db), "wal");
     }
 
@@ -692,8 +695,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("usage-2"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+        assert_eq!(entries[1].message_id.as_deref(), Some("usage-2"));
         drop(_guard);
 
         let invalid = fs_fixture!({});

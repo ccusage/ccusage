@@ -5,7 +5,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
     cli::CostMode,
     cost::{EntryPricing, price_entry},
     format_date_tz,
@@ -301,20 +301,6 @@ impl OpenCodeUsage {
             UsageKind::Message => Some(timestamp),
             UsageKind::Aggregate => None,
         };
-        let data = UsageEntry {
-            session_id: self.session_id,
-            timestamp: crate::format_rfc3339_millis(timestamp),
-            version: None,
-            message: UsageMessage {
-                usage,
-                model: Some(model.clone()),
-                id: self.id,
-            },
-            cost_usd: self.stored_cost,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
-        };
         let candidates = open_code_model_candidates(&model, &provider);
         let candidates: Vec<_> = candidates
             .iter()
@@ -334,10 +320,7 @@ impl OpenCodeUsage {
         );
         let missing_pricing_model = priced.missing_pricing.then(|| model.clone());
         let stored_cost = stored_cost_for_mode(recorded_cost, mode);
-        let loaded_session_id = data
-            .session_id
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
+        let loaded_session_id = self.session_id.unwrap_or_else(|| "unknown".to_string());
         Ok(Some(LoadedEntry {
             date: format_date_tz(timestamp, tz),
             timestamp,
@@ -352,7 +335,10 @@ impl OpenCodeUsage {
             usage_limit_reset_time: None,
             missing_pricing_model,
             stored_cost,
-            data,
+            usage,
+            message_id: self.id,
+            version: None,
+            recorded_cost: self.stored_cost,
         }))
     }
 }
@@ -615,20 +601,20 @@ mod tests {
             "extraTotalTokens": entry.extra_total_tokens,
             "model": entry.model.as_deref(),
             "data": {
-                "sessionId": entry.data.session_id.as_deref(),
-                "timestamp": entry.data.timestamp,
-                "version": entry.data.version.as_deref(),
+                "sessionId": Some(entry.session_id.as_ref()).filter(|id| *id != "unknown"),
+                "timestamp": entry.timestamp.as_millis(),
+                "version": entry.version.as_deref(),
                 "message": {
-                    "id": entry.data.message.id.as_deref(),
-                    "model": entry.data.message.model.as_deref(),
+                    "id": entry.message_id.as_deref(),
+                    "model": entry.model.as_deref(),
                     "usage": {
-                        "inputTokens": entry.data.message.usage.input_tokens,
-                        "outputTokens": entry.data.message.usage.output_tokens,
-                        "cacheCreationInputTokens": entry.data.message.usage.cache_creation_input_tokens,
-                        "cacheReadInputTokens": entry.data.message.usage.cache_read_input_tokens,
+                        "inputTokens": entry.usage.input_tokens,
+                        "outputTokens": entry.usage.output_tokens,
+                        "cacheCreationInputTokens": entry.usage.cache_creation_input_tokens,
+                        "cacheReadInputTokens": entry.usage.cache_read_input_tokens,
                     },
                 },
-                "costUSD": entry.data.cost_usd,
+                "costUSD": entry.recorded_cost,
             },
         })
     }
@@ -936,7 +922,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(entry.data.message.usage.output_tokens, 4);
+        assert_eq!(entry.usage.output_tokens, 4);
         assert_eq!(entry.extra_total_tokens, 8);
         assert_eq!(entry.cost, 4.0);
     }
@@ -969,10 +955,10 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.data.message.usage.input_tokens, 100);
-        assert_eq!(entry.data.message.usage.output_tokens, 10);
-        assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
-        assert_eq!(entry.data.message.usage.cache_read_input_tokens, 0);
+        assert_eq!(entry.usage.input_tokens, 100);
+        assert_eq!(entry.usage.output_tokens, 10);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.usage.cache_read_input_tokens, 0);
         assert_eq!(entry.cost, 0.02);
     }
 
@@ -1001,7 +987,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.data.message.usage.output_tokens, 123);
+        assert_eq!(entry.usage.output_tokens, 123);
         assert_eq!(entry.extra_total_tokens, 0);
     }
 

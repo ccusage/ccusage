@@ -8,7 +8,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
-use crate::{LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, format_date_tz};
+use crate::{LoadedEntry, TokenUsageRaw, format_date_tz};
 use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
@@ -84,21 +84,7 @@ pub(super) fn row_to_entry(
         speed: None,
         cache_creation: None,
     };
-    let timestamp_text = crate::format_rfc3339_millis(timestamp);
-    let data = UsageEntry {
-        session_id: Some(id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(model.clone()),
-            id: Some(id.clone()),
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
+
     let mut candidates = vec![(model.clone(), MatchKind::Fuzzy)];
     if provider_id != "goose" {
         candidates.push((format!("{provider_id}/{model}"), MatchKind::Fuzzy));
@@ -137,7 +123,10 @@ pub(super) fn row_to_entry(
         missing_pricing_model,
         extra_total_tokens: reasoning_tokens,
         message_count: None,
-        data,
+        usage,
+        message_id: Some(id.clone()),
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }))
 }

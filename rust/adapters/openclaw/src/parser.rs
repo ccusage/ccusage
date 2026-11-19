@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    cli::CostMode, fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
+    fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -160,7 +160,7 @@ struct OpenClawCost {
 #[derive(Debug, Clone)]
 pub(super) struct OpenClawEntry {
     timestamp: TimestampMs,
-    timestamp_text: String,
+
     session_id: String,
     model: String,
     provider: Option<String>,
@@ -364,7 +364,7 @@ fn parse_transcript_message(
         .or_else(|| current_provider.map(str::to_string));
     Some(Ok(OpenClawEntry {
         timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
+
         session_id: session_id.to_string(),
         model,
         provider,
@@ -392,20 +392,6 @@ pub(super) fn entry_to_loaded(
         cache_read_input_tokens: entry.cache_read_tokens,
         speed: None,
         cache_creation: None,
-    };
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text.clone(),
-        version: entry.provider.clone(),
-        message: UsageMessage {
-            usage,
-            model: Some(identity.display().to_owned()),
-            id: entry.event_id,
-        },
-        cost_usd: entry.cost,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
     };
     let candidates = identity.candidates();
     let priced = price_entry(
@@ -441,7 +427,10 @@ pub(super) fn entry_to_loaded(
         credits: None,
         message_count: None,
         model: Some(identity.into_display()),
-        data,
+        usage,
+        message_id: entry.event_id,
+        version: entry.provider.clone(),
+        recorded_cost: entry.cost,
         usage_limit_reset_time: None,
         missing_pricing_model,
         stored_cost,
@@ -509,16 +498,16 @@ pub(super) fn content_id(entry: &LoadedEntry) -> ContentId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct MigrationId {
     session_id: Arc<str>,
-    timestamp: String,
+    timestamp: TimestampMs,
     model: Option<String>,
     tokens: [u64; 5],
 }
 
 pub(super) fn migration_id(entry: &LoadedEntry) -> MigrationId {
-    let usage = entry.data.message.usage;
+    let usage = entry.usage;
     MigrationId {
         session_id: Arc::clone(&entry.session_id),
-        timestamp: entry.data.timestamp.clone(),
+        timestamp: entry.timestamp,
         model: entry.model.clone(),
         tokens: [
             usage.input_tokens,
@@ -597,7 +586,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert!(
             !diagnostics
@@ -665,8 +654,8 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
-        assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].version.as_deref(), Some("openai"));
+        assert_eq!(entries[0].usage.input_tokens, 10);
     }
 
     #[test]
@@ -692,7 +681,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
-        assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
+        assert_eq!(entries[0].version.as_deref(), Some("openai"));
         assert_eq!(
             diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
             1
@@ -787,7 +776,7 @@ mod tests {
             Some("[openclaw] deepseek-v4-flash")
         );
         assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("[openclaw] deepseek-v4-flash")
         );
         assert!((entries[0].cost - 0.44).abs() < 1e-12);

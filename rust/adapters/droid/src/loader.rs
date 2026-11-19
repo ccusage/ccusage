@@ -11,7 +11,7 @@ use ccusage_adapter_common::{
     dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
 };
 
-use crate::{LoadedEntry, Result, UsageEntry, UsageMessage, format_date_tz};
+use crate::{LoadedEntry, Result, format_date_tz};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pricing.table(cx.shared.mode);
@@ -34,20 +34,6 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
 
 fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_droid(&entry, pricing);
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text.clone(),
-        version: None,
-        message: UsageMessage {
-            usage: entry.usage,
-            model: Some(entry.model.clone()),
-            id: Some(format!("droid:{}", entry.session_id)),
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -61,7 +47,10 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>
         usage_limit_reset_time: None,
         missing_pricing_model,
         message_count: None,
-        data,
+        usage: entry.usage,
+        message_id: Some(format!("droid:{}", entry.session_id)),
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }
@@ -115,9 +104,7 @@ mod tests {
         paths::DROID_SESSIONS_DIR_ENV,
     };
     use super::*;
-    use crate::{
-        TokenUsageRaw, UsageEntry, UsageMessage, cli::AgentReportKind, parse_ts_timestamp,
-    };
+    use crate::{TokenUsageRaw, cli::AgentReportKind, parse_ts_timestamp};
     #[test]
     fn normalizes_droid_model_names() {
         assert_eq!(
@@ -182,13 +169,10 @@ mod tests {
         assert_eq!(entries[0].date, "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("claude-sonnet-4"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 5);
     }
 
@@ -270,7 +254,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-opus-4-5-thinking")
         );
     }
@@ -305,34 +289,24 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-c");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 200);
     }
 
     #[test]
     fn report_total_includes_thinking_tokens() {
         let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session-a".to_string()),
-                timestamp: "2026-05-01T01:02:03.000Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 100,
-                        output_tokens: 50,
-                        cache_creation_input_tokens: 20,
-                        cache_read_input_tokens: 10,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("claude-sonnet-4".to_string()),
-                    id: Some("droid:session-a".to_string()),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_input_tokens: 20,
+                cache_read_input_tokens: 10,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some("droid:session-a".to_string()),
+            version: None,
+            recorded_cost: None,
             timestamp: parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
             date: "2026-05-01".to_string(),
             project: Arc::from("droid"),

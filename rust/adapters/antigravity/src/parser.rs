@@ -10,7 +10,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use ccusage_adapter_common::{SqliteStage, UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, format_date_tz};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, format_date_tz};
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -21,7 +21,7 @@ const API_PROVIDER_GOOGLE_EVERGREEN: u64 = 30;
 #[derive(Debug, Clone)]
 pub(super) struct AntigravityUsageEvent {
     pub(super) timestamp: TimestampMs,
-    timestamp_text: String,
+
     session_id: String,
     model: String,
     logged_model: Option<String>,
@@ -549,7 +549,7 @@ fn append_usage_event(
     }
     events.push(AntigravityUsageEvent {
         timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
+
         session_id: context.session_id.to_string(),
         model,
         logged_model,
@@ -606,7 +606,7 @@ pub(super) fn merge_usage_event(
             && duplicate.timestamp < target.timestamp);
     if use_duplicate_timestamp {
         target.timestamp = duplicate.timestamp;
-        target.timestamp_text = duplicate.timestamp_text.clone();
+
         target.timestamp_rank = duplicate.timestamp_rank;
     }
     if duplicate.message_id_rank > target.message_id_rank {
@@ -1068,20 +1068,6 @@ pub(super) fn event_to_loaded(
         event.timestamp,
         pricing,
     );
-    let data = UsageEntry {
-        session_id: Some(event.session_id.clone()),
-        timestamp: event.timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(event.model.clone()),
-            id: event.message_id,
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(event.timestamp, timezone),
         timestamp: event.timestamp,
@@ -1095,7 +1081,10 @@ pub(super) fn event_to_loaded(
         model: Some(event.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
-        data,
+        usage,
+        message_id: event.message_id,
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }

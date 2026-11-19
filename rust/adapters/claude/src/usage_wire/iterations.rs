@@ -5,11 +5,11 @@ use serde::{
     de::{IgnoredAny, MapAccess, SeqAccess, Visitor},
 };
 
-use super::CacheCreationRaw;
+use super::WireCacheCreation;
 
 #[derive(Default)]
 pub(super) struct Iterations {
-    pub(super) message_cache_creation: Option<CacheCreationRaw>,
+    pub(super) message_cache_creation: Option<WireCacheCreation>,
     pub(super) has_advisor_message: bool,
 }
 
@@ -104,7 +104,7 @@ impl<'de, T: LenientValue> Visitor<'de> for LenientVisitor<T> {
 
 impl LenientValue for Iterations {
     fn from_seq<'de, A: SeqAccess<'de>>(mut seq: A) -> Result<Self, A::Error> {
-        let mut total = CacheCreationRaw::default();
+        let mut total = WireCacheCreation::default();
         let mut has_message = false;
         let mut every_message_has_split = true;
         let mut has_advisor_message = false;
@@ -136,7 +136,7 @@ impl LenientValue for Iterations {
 #[derive(Default)]
 struct Iteration {
     kind: IterationKind,
-    cache_creation: Option<CacheCreationRaw>,
+    cache_creation: Option<WireCacheCreation>,
 }
 
 #[derive(Deserialize)]
@@ -187,7 +187,7 @@ impl LenientValue for IterationKind {
 }
 
 #[derive(Default)]
-struct CacheCreationSplit(Option<CacheCreationRaw>);
+struct CacheCreationSplit(Option<WireCacheCreation>);
 
 #[derive(Deserialize)]
 #[serde(field_identifier)]
@@ -218,7 +218,7 @@ impl LenientValue for CacheCreationSplit {
             }
         }
         Ok(Self(five_minutes.zip(one_hour).map(
-            |(ephemeral_5m_input_tokens, ephemeral_1h_input_tokens)| CacheCreationRaw {
+            |(ephemeral_5m_input_tokens, ephemeral_1h_input_tokens)| WireCacheCreation {
                 ephemeral_5m_input_tokens,
                 ephemeral_1h_input_tokens,
             },

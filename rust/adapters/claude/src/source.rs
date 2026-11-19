@@ -81,7 +81,12 @@ impl Claude {
                     |entry| &entry.date,
                 );
             }
-            let summaries = summarize_entry_sessions(&deduped.entries)?;
+            let entries = deduped
+                .entries
+                .into_iter()
+                .map(|entry| entry.entry)
+                .collect::<Vec<_>>();
+            let summaries = summarize_entry_sessions(&entries)?;
             return Ok((
                 LoadedRows {
                     rows: summary_rows("claude", summaries, false),
@@ -222,7 +227,7 @@ mod diagnostic_tests {
         .remove(0);
         let at = |timestamp: &str| {
             let mut entry = probe.clone();
-            entry.timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
+            entry.entry.timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
             entry
         };
         let probes = [
@@ -234,7 +239,8 @@ mod diagnostic_tests {
             ("session-stale", "2026-01-03T12:00:00Z", false),
         ];
         for (session, timestamp, is_counted) in probes {
-            let kept = counted.retain_uncounted(vec![(at(timestamp), Some(Arc::from(session)))]);
+            let kept =
+                counted.retain_uncounted(vec![(at(timestamp).entry, Some(Arc::from(session)))]);
             assert_eq!(kept.is_empty(), is_counted, "{session} {timestamp}");
         }
         assert!(diagnostics.warnings(&shared).is_empty());

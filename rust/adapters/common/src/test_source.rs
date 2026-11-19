@@ -7,8 +7,8 @@ use std::{
 };
 
 use ccusage_core::{
-    LoadedEntry, Result, Skip, SkipKind, TokenUsageRaw, UsageEntry, UsageMessage, cli::SharedArgs,
-    format_date_tz, parse_ts_timestamp, resolve_tz,
+    LoadedEntry, Result, Skip, SkipKind, TokenUsageRaw, cli::SharedArgs, format_date_tz,
+    parse_ts_timestamp, resolve_tz,
 };
 
 use crate::source::{EntryDescriptor, EntrySource, LoadContext};
@@ -60,23 +60,13 @@ pub(crate) fn descriptor() -> EntryDescriptor {
 pub(crate) fn entry(session: &str, timestamp: &str, input_tokens: u64) -> LoadedEntry {
     let parsed = parse_ts_timestamp(timestamp).unwrap();
     LoadedEntry {
-        data: UsageEntry {
-            session_id: Some(session.to_string()),
-            timestamp: timestamp.to_string(),
-            version: None,
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    input_tokens,
-                    ..TokenUsageRaw::default()
-                },
-                model: Some("model".to_string()),
-                id: None,
-            },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+        usage: TokenUsageRaw {
+            input_tokens,
+            ..TokenUsageRaw::default()
         },
+        message_id: None,
+        version: None,
+        recorded_cost: None,
         timestamp: parsed,
         date: format_date_tz(
             parsed,

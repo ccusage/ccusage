@@ -139,13 +139,10 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 5);
         assert_eq!(entries[0].cost, 0.02);
     }
@@ -206,7 +203,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
     }
 
     #[test]

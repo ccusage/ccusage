@@ -2,34 +2,24 @@
 mod tests {
     use std::sync::Arc;
 
+    use crate::TokenUsageRaw;
     use crate::*;
-    use crate::{TokenUsageRaw, UsageEntry, UsageMessage};
     use serde_json::json;
 
     #[test]
     fn report_includes_message_count_and_reasoning_total() {
         let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session-1".to_string()),
-                timestamp: "2025-06-15T15:06:40.250Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 1200,
-                        output_tokens: 300,
-                        cache_creation_input_tokens: 20,
-                        cache_read_input_tokens: 50,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("claude-sonnet-4-20250514".to_string()),
-                    id: Some("hermes:session-1".to_string()),
-                },
-                cost_usd: Some(0.34),
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 1200,
+                output_tokens: 300,
+                cache_creation_input_tokens: 20,
+                cache_read_input_tokens: 50,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some("hermes:session-1".to_string()),
+            version: None,
+            recorded_cost: Some(0.34),
             timestamp: crate::parse_ts_timestamp("2025-06-15T15:06:40.250Z").unwrap(),
             date: "2025-06-15".to_string(),
             project: Arc::from("hermes"),

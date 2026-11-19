@@ -10,8 +10,8 @@ use std::{
 
 use ccusage_adapter_common::{jsonl, units::read_json};
 use ccusage_core::{
-    Color, Context, Diagnostics, LoadedEntry, MILLIS_PER_DAY, MILLIS_PER_MINUTE, ReportWindow,
-    Result, TimestampMs,
+    Color, Context, Diagnostics, MILLIS_PER_DAY, MILLIS_PER_MINUTE, ReportWindow, Result,
+    TimestampMs,
     cli::{CostSource, SharedArgs, StatuslineArgs, VisualBurnRate},
     cli_error, color, format_currency, format_number, format_rfc3339_millis,
     pricing::PricingMap,
@@ -20,6 +20,7 @@ use ccusage_core::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ClaudeEntry,
     blocks::{
         SessionBlock, calculate_burn_rate, format_remaining_time, identify_session_blocks,
         starts_fresh_block,
@@ -303,10 +304,14 @@ fn load_statusline_active_block(
     )
 }
 
-fn find_active_block(entries: Vec<LoadedEntry>, now: TimestampMs) -> Option<SessionBlock> {
-    identify_session_blocks(entries, ccusage_core::cli::SessionLength::DEFAULT, now)
-        .into_iter()
-        .find(|block| block.is_active && !block.is_gap)
+fn find_active_block(entries: Vec<ClaudeEntry>, now: TimestampMs) -> Option<SessionBlock> {
+    identify_session_blocks(
+        entries.into_iter().map(|entry| entry.entry).collect(),
+        ccusage_core::cli::SessionLength::DEFAULT,
+        now,
+    )
+    .into_iter()
+    .find(|block| block.is_active && !block.is_gap)
 }
 
 #[derive(Debug, PartialEq)]
@@ -359,12 +364,12 @@ fn statusline_block_shared(
     }
 }
 
-fn calculate_session_cost(session_id: &str, entries: &[LoadedEntry]) -> f64 {
+fn calculate_session_cost(session_id: &str, entries: &[ClaudeEntry]) -> f64 {
     sum_costs(
         entries
             .iter()
             .filter(|entry| {
-                entry.data.session_id.as_deref() == Some(session_id)
+                entry.recorded_session_id.as_deref() == Some(session_id)
                     || entry.session_id.as_ref() == session_id
             })
             .map(|entry| entry.cost),

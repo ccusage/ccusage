@@ -255,17 +255,14 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].model.as_deref(), Some("gemini-3-pro"));
         assert_eq!(entries[1].model.as_deref(), Some("gemini-3-pro"));
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("response-1"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 400);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            30
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 500);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 150);
+        assert_eq!(entries[0].message_id.as_deref(), Some("response-1"));
+        assert_eq!(entries[0].usage.input_tokens, 400);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 30);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 500);
+        assert_eq!(entries[0].usage.output_tokens, 150);
         assert_eq!(entries[0].extra_total_tokens, 50);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 300);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 75);
+        assert_eq!(entries[1].usage.input_tokens, 300);
+        assert_eq!(entries[1].usage.output_tokens, 75);
         assert_eq!(entries[1].extra_total_tokens, 25);
         assert!(entries[0].cost > 0.0);
     }
@@ -300,7 +297,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("gemini-2.5-pro"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 4);
+        assert_eq!(entries[0].usage.input_tokens, 4);
     }
 
     #[test]
@@ -365,11 +362,11 @@ mod tests {
         assert_eq!(
             single_threaded
                 .iter()
-                .map(|entry| entry.data.message.id.clone())
+                .map(|entry| entry.message_id.clone())
                 .collect::<Vec<_>>(),
             default_mode
                 .iter()
-                .map(|entry| entry.data.message.id.clone())
+                .map(|entry| entry.message_id.clone())
                 .collect::<Vec<_>>()
         );
         assert_eq!(single_threaded.len(), 2);
@@ -438,12 +435,9 @@ mod tests {
         let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("shared-response")
-        );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 200);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 350);
+        assert_eq!(entries[0].message_id.as_deref(), Some("shared-response"));
+        assert_eq!(entries[0].usage.input_tokens, 200);
+        assert_eq!(entries[0].usage.output_tokens, 350);
     }
 
     #[test]
@@ -521,14 +515,14 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 5);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 7);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 40);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 5);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 7);
+        assert_eq!(entries[0].usage.output_tokens, 40);
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].model.as_deref(), Some("gemini-3-pro"));
         assert_eq!(entries[1].model.as_deref(), Some("gemini-3.5-flash-high"));
-        assert_eq!(entries[1].data.message.usage.input_tokens, 11);
+        assert_eq!(entries[1].usage.input_tokens, 11);
     }
 
     #[test]
@@ -570,12 +564,9 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 15_027);
-        assert_eq!(
-            entries[0].data.message.usage.cache_read_input_tokens,
-            500_131
-        );
-        assert_eq!(entries[0].data.message.usage.output_tokens, 49);
+        assert_eq!(entries[0].usage.input_tokens, 15_027);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 500_131);
+        assert_eq!(entries[0].usage.output_tokens, 49);
     }
 
     #[test]
@@ -606,8 +597,8 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
     }
 
     #[test]
@@ -655,12 +646,7 @@ mod tests {
 
         let mut usages = entries
             .iter()
-            .map(|entry| {
-                (
-                    entry.data.message.usage.input_tokens,
-                    entry.data.message.usage.output_tokens,
-                )
-            })
+            .map(|entry| (entry.usage.input_tokens, entry.usage.output_tokens))
             .collect::<Vec<_>>();
         usages.sort_unstable();
         assert_eq!(usages, vec![(100, 10), (100, 50)]);
@@ -712,11 +698,11 @@ mod tests {
         assert_eq!(entries.len(), 2);
         let step = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("step-pro"))
+            .find(|entry| entry.message_id.as_deref() == Some("step-pro"))
             .unwrap();
         let retry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("retry-opus"))
+            .find(|entry| entry.message_id.as_deref() == Some("retry-opus"))
             .unwrap();
         assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
         assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
@@ -827,7 +813,10 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-09");
-        assert_eq!(entries[0].data.timestamp, "2026-05-09T04:13:20.456Z");
+        assert_eq!(
+            entries[0].timestamp,
+            crate::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()
+        );
     }
 
     #[test]
@@ -898,8 +887,8 @@ mod tests {
         let (entries, diagnostics) =
             load_with_diagnostics(&shared(true), &PricingMap::default()).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 20);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 20);
         assert_eq!(entries[0].timestamp.as_millis(), 1_778_300_000_000);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
     }
@@ -993,7 +982,7 @@ mod tests {
         for response_id in ["snapshot-opus-id", "snapshot-opus-placeholder"] {
             let entry = entries
                 .iter()
-                .find(|entry| entry.data.message.id.as_deref() == Some(response_id))
+                .find(|entry| entry.message_id.as_deref() == Some(response_id))
                 .unwrap();
             assert_eq!(entry.model.as_deref(), Some("claude-opus-5-5"));
             assert!(entry.cost > 0.0);
@@ -1076,7 +1065,7 @@ mod tests {
         for (_, model, response_id) in cases {
             let entry = entries
                 .iter()
-                .find(|entry| entry.data.message.id.as_deref() == Some(response_id))
+                .find(|entry| entry.message_id.as_deref() == Some(response_id))
                 .unwrap();
             assert_eq!(entry.model.as_deref(), Some(model));
             assert!(entry.cost > 0.0);
@@ -1084,7 +1073,7 @@ mod tests {
         }
         let retry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("unknown-retry"))
+            .find(|entry| entry.message_id.as_deref() == Some("unknown-retry"))
             .unwrap();
         assert_eq!(retry.model.as_deref(), Some("model_placeholder_m499"));
     }
@@ -1300,10 +1289,7 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("valid-response")
-        );
+        assert_eq!(entries[0].message_id.as_deref(), Some("valid-response"));
     }
 
     #[test]

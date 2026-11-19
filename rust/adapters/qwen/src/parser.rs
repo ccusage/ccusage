@@ -13,8 +13,8 @@ use ccusage_adapter_common::{jsonl, units::UnitError};
 
 use super::paths;
 use crate::{
-    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, fast::LinePrefilter, format_date_tz, parse_ts_timestamp,
+    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
+    fast::LinePrefilter, format_date_tz, parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -48,12 +48,25 @@ struct QwenUsageMetadata {
     total_token_count: u64,
 }
 
+pub(super) struct QwenEntry {
+    pub(super) entry: LoadedEntry,
+    source_timestamp: String,
+}
+
+impl std::ops::Deref for QwenEntry {
+    type Target = LoadedEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entry
+    }
+}
+
 pub(super) fn read_chat_file(
     file: &Path,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+) -> std::result::Result<Vec<QwenEntry>, UnitError> {
     let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
     let mut entries = Vec::new();
     jsonl::read_records::<QwenLine>(
@@ -88,7 +101,7 @@ fn parse_line(
     record: &QwenLine,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
-) -> std::result::Result<Option<LoadedEntry>, MissingTimestamp> {
+) -> std::result::Result<Option<QwenEntry>, MissingTimestamp> {
     if record.r#type.as_deref() != Some("assistant") {
         return Ok(None);
     }
@@ -140,35 +153,27 @@ fn parse_line(
         ..display_usage
     };
     let (cost, missing_pricing_model) = price_qwen(&model, billable_usage, timestamp, pricing);
-    let data = UsageEntry {
-        session_id: Some(session_id.clone()),
-        timestamp: timestamp_text.clone(),
-        version: None,
-        message: UsageMessage {
+    Ok(Some(QwenEntry {
+        source_timestamp: timestamp_text.clone(),
+        entry: LoadedEntry {
             usage: display_usage,
-            model: Some(model.clone()),
-            id: None,
+            message_id: None,
+            version: None,
+            recorded_cost: None,
+            timestamp,
+            date: format_date_tz(timestamp, tz),
+            project: Arc::from("qwen"),
+            session_id: Arc::from(session_id),
+            project_path: Arc::from(project),
+            cost,
+            credits: None,
+            model: Some(model),
+            message_count: None,
+            usage_limit_reset_time: None,
+            missing_pricing_model,
+            extra_total_tokens,
+            stored_cost: None,
         },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-    Ok(Some(LoadedEntry {
-        data,
-        timestamp,
-        date: format_date_tz(timestamp, tz),
-        project: Arc::from("qwen"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from(project),
-        cost,
-        credits: None,
-        model: Some(model),
-        message_count: None,
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        extra_total_tokens,
-        stored_cost: None,
     }))
 }
 
@@ -211,11 +216,11 @@ fn qwen_model_candidates(model: &str) -> Vec<String> {
     ]
 }
 
-pub(super) fn entry_id(entry: &LoadedEntry) -> String {
-    let usage = entry.data.message.usage;
+pub(super) fn entry_id(entry: &QwenEntry) -> String {
+    let usage = entry.usage;
     serde_json::json!([
         entry.session_id.as_ref(),
-        entry.data.timestamp.as_str(),
+        entry.source_timestamp.as_str(),
         entry.model.as_deref().unwrap_or_default(),
         usage.input_tokens,
         usage.output_tokens,
@@ -310,47 +315,40 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.data.message.usage.output_tokens, 321);
+        assert_eq!(entry.usage.output_tokens, 321);
         assert_eq!(entry.extra_total_tokens, 0);
     }
 
     #[test]
     fn entry_id_is_unambiguous_for_colon_fields() {
-        let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session:1".to_string()),
-                timestamp: "2026-01-02T00:00:00.000Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 1,
-                        output_tokens: 2,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 3,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("model:1".to_string()),
-                    id: None,
+        let entry = QwenEntry {
+            source_timestamp: "2026-01-02T00:00:00.000Z".to_string(),
+            entry: LoadedEntry {
+                usage: TokenUsageRaw {
+                    input_tokens: 1,
+                    output_tokens: 2,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 3,
+                    speed: None,
+                    cache_creation: None,
                 },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+                message_id: None,
+                version: None,
+                recorded_cost: None,
+                timestamp: TimestampMs::UNIX_EPOCH,
+                date: "2026-01-02".to_string(),
+                project: Arc::from("qwen"),
+                session_id: Arc::from("session:1"),
+                project_path: Arc::from("project"),
+                cost: 0.0,
+                extra_total_tokens: 4,
+                credits: None,
+                message_count: None,
+                model: Some("model:1".to_string()),
+                usage_limit_reset_time: None,
+                missing_pricing_model: None,
+                stored_cost: None,
             },
-            timestamp: TimestampMs::UNIX_EPOCH,
-            date: "2026-01-02".to_string(),
-            project: Arc::from("qwen"),
-            session_id: Arc::from("session:1"),
-            project_path: Arc::from("project"),
-            cost: 0.0,
-            extra_total_tokens: 4,
-            credits: None,
-            message_count: None,
-            model: Some("model:1".to_string()),
-            usage_limit_reset_time: None,
-            missing_pricing_model: None,
-            stored_cost: None,
         };
 
         assert_eq!(

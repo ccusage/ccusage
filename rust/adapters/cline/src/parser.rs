@@ -10,8 +10,7 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode,
-    format_date_tz, format_rfc3339_millis, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
 };
 
 use super::paths::{SourceFile, SourceKind};
@@ -192,7 +191,7 @@ fn loaded_entry(
         reported_cost,
         request_id,
     } = input;
-    let timestamp_text = format_rfc3339_millis(timestamp);
+
     let session_id = match source.kind {
         SourceKind::Extension | SourceKind::CliTask => {
             format!("task:{}", source.session_id)
@@ -223,21 +222,6 @@ fn loaded_entry(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
-    let data = UsageEntry {
-        session_id: Some(session_id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(model.clone()),
-            id: request_id.clone(),
-        },
-        cost_usd: reported_cost,
-        request_id,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-
     LoadedEntry {
         date: format_date_tz(timestamp, timezone),
         timestamp,
@@ -251,7 +235,10 @@ fn loaded_entry(
         missing_pricing_model,
         extra_total_tokens: 0,
         message_count: None,
-        data,
+        usage,
+        message_id: request_id.clone(),
+        version: None,
+        recorded_cost: reported_cost,
         stored_cost: stored_cost_for_mode(reported_cost, mode),
     }
 }
@@ -438,18 +425,15 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 25);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 25);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
         assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.cost_usd, Some(0.002));
+        assert_eq!(entries[0].recorded_cost, Some(0.002));
     }
 
     #[test]
@@ -586,8 +570,8 @@ mod tests {
             entries[0].missing_pricing_model.as_deref(),
             Some("vendor/custom-model")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 0);
+        assert_eq!(entries[0].usage.input_tokens, 1);
+        assert_eq!(entries[0].usage.output_tokens, 0);
     }
 
     #[test]
@@ -739,10 +723,10 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 8);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 2);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 3);
-        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 4);
+        assert_eq!(entries[0].usage.input_tokens, 8);
+        assert_eq!(entries[0].usage.output_tokens, 2);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 3);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 4);
         assert_eq!(
             entries[0].missing_pricing_model.as_deref(),
             Some("vendor/custom-model")
@@ -819,23 +803,20 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].date, "2026-10-01");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 0);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 30);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 80);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            30
-        );
-        assert_eq!(entries[0].data.cost_usd, Some(0.0));
+        assert_eq!(entries[0].usage.input_tokens, 0);
+        assert_eq!(entries[0].usage.output_tokens, 30);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 80);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 30);
+        assert_eq!(entries[0].recorded_cost, Some(0.0));
         assert_eq!(entries[0].stored_cost, Some(0.0));
         assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("assistant-2"));
+        assert_eq!(entries[1].message_id.as_deref(), Some("assistant-2"));
         assert_eq!(entries[1].timestamp, entries[0].timestamp);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 60);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 12);
+        assert_eq!(entries[1].usage.input_tokens, 60);
+        assert_eq!(entries[1].usage.output_tokens, 12);
     }
 
     #[test]
@@ -927,7 +908,7 @@ mod tests {
         assert!(auto[0].cost > 0.0);
         assert_eq!(display[0].cost, 0.0);
         assert_eq!(calculate[0].cost, auto[0].cost);
-        assert_eq!(auto[0].data.cost_usd, None);
+        assert_eq!(auto[0].recorded_cost, None);
         assert_eq!(auto[0].stored_cost, None);
     }
 
@@ -953,7 +934,7 @@ mod tests {
             &Diagnostics::new("cline"),
         );
 
-        assert_eq!(entries[0].data.cost_usd, None);
+        assert_eq!(entries[0].recorded_cost, None);
         assert_eq!(entries[0].stored_cost, None);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
         assert_eq!(
@@ -992,7 +973,7 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
     }
 

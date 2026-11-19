@@ -14,8 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    cli::CostMode, fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, fast::LinePrefilter,
+    format_date_tz, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -139,11 +139,24 @@ enum PiReplayUsagePath {
     Invalid,
 }
 
+pub(crate) struct PiLoadedEntry {
+    pub(crate) entry: LoadedEntry,
+    source_timestamp: String,
+}
+
+impl std::ops::Deref for PiLoadedEntry {
+    type Target = LoadedEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entry
+    }
+}
+
 pub(crate) struct PiSessionData {
     pub(crate) header: Option<PiSessionHeader>,
     usage: Vec<PiUsageRecord>,
     replay_usage_path: PiReplayUsagePath,
-    pub(crate) entries: Vec<LoadedEntry>,
+    pub(crate) entries: Vec<PiLoadedEntry>,
 }
 
 impl PiSessionData {
@@ -322,35 +335,27 @@ fn read_session_file_data_with_context(
         .flatten();
         let stored_cost = stored_cost_for_mode(source_cost, mode);
         let model = identity.map(AgentModel::into_display);
-        let data = UsageEntry {
-            session_id: Some(session_id.clone()),
-            timestamp: timestamp_text,
-            version: None,
-            message: UsageMessage {
+        entries.push(PiLoadedEntry {
+            source_timestamp: timestamp_text,
+            entry: LoadedEntry {
+                date: format_date_tz(timestamp, tz),
+                timestamp,
+                project: Arc::from(project.as_str()),
+                session_id: Arc::from(session_id.as_str()),
+                project_path: Arc::from(project.as_str()),
+                cost,
+                extra_total_tokens,
+                credits: None,
+                message_count: None,
+                model,
                 usage,
-                model: model.clone(),
-                id: None,
+                message_id: None,
+                version: None,
+                recorded_cost: display_cost,
+                usage_limit_reset_time: None,
+                missing_pricing_model,
+                stored_cost,
             },
-            cost_usd: display_cost,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
-        };
-        entries.push(LoadedEntry {
-            date: format_date_tz(timestamp, tz),
-            timestamp,
-            project: Arc::from(project.as_str()),
-            session_id: Arc::from(session_id.as_str()),
-            project_path: Arc::from(project.as_str()),
-            cost,
-            extra_total_tokens,
-            credits: None,
-            message_count: None,
-            model,
-            data,
-            usage_limit_reset_time: None,
-            missing_pricing_model,
-            stored_cost,
         });
     })?;
     Ok(PiSessionData {
@@ -551,12 +556,12 @@ pub(crate) struct PiEntryId {
     cost_bits: u64,
 }
 
-pub(crate) fn entry_id(entry: &LoadedEntry) -> PiEntryId {
-    let usage = entry.data.message.usage;
+pub(crate) fn entry_id(entry: &PiLoadedEntry) -> PiEntryId {
+    let usage = entry.usage;
     PiEntryId {
         project: Arc::clone(&entry.project),
         session_id: Arc::clone(&entry.session_id),
-        timestamp: entry.data.timestamp.clone(),
+        timestamp: entry.source_timestamp.clone(),
         model: entry.model.clone(),
         tokens: [
             usage.input_tokens,
@@ -582,7 +587,7 @@ mod tests {
         tz: &JiffTimeZone,
         mode: CostMode,
         pricing: PriceTable<'_>,
-    ) -> crate::Result<Vec<LoadedEntry>> {
+    ) -> crate::Result<Vec<PiLoadedEntry>> {
         read_session_file_data_for_store_with_diagnostics(
             path,
             path.parent().and_then(Path::parent).unwrap(),
@@ -603,7 +608,7 @@ mod tests {
         mode: CostMode,
         pricing: PriceTable<'_>,
         store_name: &str,
-    ) -> crate::Result<Vec<LoadedEntry>> {
+    ) -> crate::Result<Vec<PiLoadedEntry>> {
         read_session_file_data_for_store_with_diagnostics(
             path,
             store_root,
@@ -670,7 +675,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(auto[0].cost, 5.0);
-        assert_eq!(auto[0].data.cost_usd, Some(0.0));
+        assert_eq!(auto[0].recorded_cost, Some(0.0));
         assert_eq!(auto[0].missing_pricing_model, None);
 
         let display = read_session_file(
@@ -702,7 +707,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(auto[0].cost, 5.0);
-        assert_eq!(auto[0].data.cost_usd, Some(0.0));
+        assert_eq!(auto[0].recorded_cost, Some(0.0));
         assert_eq!(auto[0].missing_pricing_model, None);
 
         let display = read_session_file_for_store(
@@ -806,7 +811,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 333);
+        assert_eq!(entries[0].usage.output_tokens, 333);
         assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
@@ -995,8 +1000,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 200);
     }
 
     #[test]
@@ -1018,10 +1023,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[omp] gpt-5"));
-        assert_eq!(
-            entries[0].data.message.model.as_deref(),
-            Some("[omp] gpt-5")
-        );
+        assert_eq!(entries[0].model.as_deref(), Some("[omp] gpt-5"));
     }
 
     #[test]
@@ -1097,9 +1099,9 @@ mod tests {
         .unwrap();
         assert_eq!(default_entries.len(), 2);
         assert_eq!(default_entries[0].cost, expected_cost);
-        assert_eq!(default_entries[0].data.cost_usd, Some(-1.25));
+        assert_eq!(default_entries[0].recorded_cost, Some(-1.25));
         assert_eq!(default_entries[1].cost, 0.0);
-        assert_eq!(default_entries[1].data.cost_usd, Some(0.0));
+        assert_eq!(default_entries[1].recorded_cost, Some(0.0));
 
         let named_entries = read_session_file_for_store(
             &file,
@@ -1112,9 +1114,9 @@ mod tests {
         .unwrap();
         assert_eq!(named_entries.len(), 2);
         assert_eq!(named_entries[0].cost, expected_cost);
-        assert_eq!(named_entries[0].data.cost_usd, Some(-1.25));
+        assert_eq!(named_entries[0].recorded_cost, Some(-1.25));
         assert_eq!(named_entries[1].cost, 0.0);
-        assert_eq!(named_entries[1].data.cost_usd, Some(0.0));
+        assert_eq!(named_entries[1].recorded_cost, Some(0.0));
     }
 
     #[test]

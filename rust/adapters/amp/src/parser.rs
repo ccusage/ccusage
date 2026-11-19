@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
     apply_total_token_fallback, format_date_tz,
 };
 
@@ -145,7 +145,6 @@ struct AmpUsage {
     usage: TokenUsageRaw,
     extra_total_tokens: u64,
     model: String,
-    timestamp_text: String,
     timestamp: TimestampMs,
     id: Option<String>,
     credits: Option<f64>,
@@ -184,10 +183,6 @@ impl ThreadUnit<'_> {
             "Amp usage record has no model",
         ));
     }
-}
-
-fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
-    crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp))
 }
 
 pub(crate) fn read_thread(
@@ -302,7 +297,10 @@ fn parse_ledger_events(
             unit.missing_model(index);
             continue;
         };
-        let Some((timestamp_text, timestamp)) = event.timestamp.clone().and_then(placed_timestamp)
+        let Some(timestamp) = event
+            .timestamp
+            .as_deref()
+            .and_then(crate::parse_ts_timestamp)
         else {
             unit.invalid_timestamp(index);
             continue;
@@ -312,7 +310,6 @@ fn parse_ledger_events(
                 usage,
                 extra_total_tokens,
                 model,
-                timestamp_text,
                 timestamp,
                 id: event.id.clone(),
                 credits: event.credits,
@@ -343,10 +340,15 @@ fn parse_message_usage(
         };
         let timestamp = record
             .timestamp
-            .clone()
-            .and_then(placed_timestamp)
-            .or_else(|| message.timestamp.clone().and_then(placed_timestamp));
-        let Some((timestamp_text, timestamp)) = timestamp else {
+            .as_deref()
+            .and_then(crate::parse_ts_timestamp)
+            .or_else(|| {
+                message
+                    .timestamp
+                    .as_deref()
+                    .and_then(crate::parse_ts_timestamp)
+            });
+        let Some(timestamp) = timestamp else {
             unit.invalid_timestamp(index);
             continue;
         };
@@ -355,7 +357,6 @@ fn parse_message_usage(
                 usage,
                 extra_total_tokens,
                 model,
-                timestamp_text,
                 timestamp,
                 id: message.message_id.as_ref().map(AmpMessageId::to_text),
                 credits: record.credits,
@@ -374,20 +375,6 @@ fn amp_entry(
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
-    let data = UsageEntry {
-        session_id: Some(thread_id.to_string()),
-        timestamp: record.timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage: record.usage,
-            model: Some(record.model.clone()),
-            id: record.id,
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     let candidates = [(record.model.as_str(), MatchKind::Fuzzy)];
     let priced = price_entry(
         EntryPricing {
@@ -421,7 +408,10 @@ fn amp_entry(
         model: Some(record.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
-        data,
+        usage: record.usage,
+        message_id: record.id,
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }
@@ -562,7 +552,10 @@ mod tests {
         let entries = parse(content, &diagnostics).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.timestamp, "2026-01-31T11:42:10Z");
+        assert_eq!(
+            entries[0].timestamp,
+            crate::parse_ts_timestamp("2026-01-31T11:42:10Z").unwrap()
+        );
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
     }
 
@@ -626,13 +619,10 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].credits, Some(1.25));
     }
 
@@ -655,7 +645,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 345);
+        assert_eq!(entries[0].usage.output_tokens, 345);
         assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
@@ -700,19 +690,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 178);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.output_tokens, 178);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 986);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 11372);
         assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            986
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 11372);
-        assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("claude-haiku-4-5-20251001")
         );
         assert_eq!(entries[0].session_id.as_ref(), "T-thread-a");
-        assert_eq!(entries[1].data.message.usage.input_tokens, 5);
+        assert_eq!(entries[1].usage.input_tokens, 5);
     }
 
     #[test]
@@ -750,8 +737,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.model.as_deref(), Some("gpt-5"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1);
+        assert_eq!(entries[0].model.as_deref(), Some("gpt-5"));
+        assert_eq!(entries[0].usage.input_tokens, 1);
     }
 
     #[test]
@@ -815,7 +802,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 345);
+        assert_eq!(entries[0].usage.output_tokens, 345);
         assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
@@ -849,8 +836,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 178);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.output_tokens, 178);
     }
 
     #[test]
@@ -884,8 +871,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 178);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.output_tokens, 178);
     }
 }
 

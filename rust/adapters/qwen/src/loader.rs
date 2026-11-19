@@ -16,5 +16,5 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     );
     let mut entries = dedupe_first_wins(loaded, parser::entry_id);
     entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+    Ok(entries.into_iter().map(|entry| entry.entry).collect())
 }

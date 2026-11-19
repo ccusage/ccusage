@@ -2,8 +2,8 @@
 mod tests {
     use std::sync::Arc;
 
+    use crate::TokenUsageRaw;
     use crate::*;
-    use crate::{TokenUsageRaw, UsageEntry, UsageMessage};
 
     #[test]
     fn snapshots_daily_weekly_monthly_and_session_json_reports() {
@@ -195,23 +195,13 @@ mod tests {
         missing_pricing_model: Option<&str>,
     ) -> LoadedEntry {
         let timestamp = crate::parse_ts_timestamp(timestamp).expect("valid snapshot timestamp");
-        let timestamp_text = crate::format_rfc3339_millis(timestamp);
+
         let date = crate::format_date_tz(timestamp, &jiff::tz::TimeZone::system());
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.to_string()),
-                timestamp: timestamp_text,
-                version: None,
-                message: UsageMessage {
-                    usage,
-                    model: Some(model.to_string()),
-                    id: Some(format!("request-{date}")),
-                },
-                cost_usd: stored_cost,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
-            },
+            usage,
+            message_id: Some(format!("request-{date}")),
+            version: None,
+            recorded_cost: stored_cost,
             timestamp,
             date,
             project: Arc::from("cline"),

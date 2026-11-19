@@ -13,10 +13,7 @@ use serde::{
 };
 use serde_json::{Map, Value};
 
-use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    format_date_tz,
-};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, format_date_tz};
 
 const DEFAULT_MODEL: &str = "unknown";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -165,7 +162,7 @@ struct GeminiTokens {
 #[derive(Debug, Clone)]
 pub(super) struct GeminiUsageEvent {
     pub(super) timestamp: TimestampMs,
-    timestamp_text: String,
+
     session_id: String,
     model: String,
     input_tokens: u64,
@@ -191,7 +188,7 @@ impl GeminiUsage {
     fn at(self, session_id: &str, timestamp: TimestampMs) -> GeminiUsageEvent {
         GeminiUsageEvent {
             timestamp,
-            timestamp_text: crate::format_rfc3339_millis(timestamp),
+
             session_id: session_id.to_string(),
             model: self.model,
             input_tokens: self.input_tokens,
@@ -591,20 +588,6 @@ pub(super) fn event_to_loaded(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&event.model).into_owned());
-    let data = UsageEntry {
-        session_id: Some(event.session_id.clone()),
-        timestamp: event.timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(event.model.clone()),
-            id: event.message_id,
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(event.timestamp, tz),
         timestamp: event.timestamp,
@@ -618,7 +601,10 @@ pub(super) fn event_to_loaded(
         model: Some(event.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
-        data,
+        usage,
+        message_id: event.message_id,
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }

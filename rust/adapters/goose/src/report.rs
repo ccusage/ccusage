@@ -2,33 +2,23 @@
 mod tests {
     use std::sync::Arc;
 
+    use crate::TokenUsageRaw;
     use crate::*;
-    use crate::{TokenUsageRaw, UsageEntry, UsageMessage};
 
     #[test]
     fn includes_goose_reasoning_remainder_in_report_total() {
         let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session-a".to_string()),
-                timestamp: "2026-05-01T01:02:03.000Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 100,
-                        output_tokens: 50,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("claude-sonnet-4-20250514".to_string()),
-                    id: Some("session-a".to_string()),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some("session-a".to_string()),
+            version: None,
+            recorded_cost: None,
             timestamp: crate::parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
             date: "2026-05-01".to_string(),
             project: Arc::from("goose"),

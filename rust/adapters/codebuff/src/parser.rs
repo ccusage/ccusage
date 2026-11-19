@@ -26,7 +26,7 @@ pub(super) struct AssistantUsage {
 
 pub(super) struct CodebuffEntry {
     pub(super) timestamp: crate::TimestampMs,
-    pub(super) timestamp_text: String,
+
     pub(super) session_id: String,
     pub(super) model: String,
     provider: String,
@@ -83,7 +83,7 @@ pub(super) fn load_chat_file(
         );
         entries.push(CodebuffEntry {
             timestamp,
-            timestamp_text: format_rfc3339_millis(timestamp),
+
             session_id: context.session_id.clone(),
             provider: infer_provider(&model).to_string(),
             model,
@@ -458,7 +458,7 @@ mod pricing_identity_tests {
     fn adapter_pricing_identity() {
         let entry = CodebuffEntry {
             timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
-            timestamp_text: String::new(),
+
             session_id: "s".into(),
             model: "gpt-5.2".into(),
             provider: "openai".into(),

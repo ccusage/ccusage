@@ -944,7 +944,7 @@ fn parse_session_model(value: Option<&str>) -> Option<(String, String)> {
 }
 
 fn entry_id(entry: &LoadedEntry) -> Option<&str> {
-    entry.data.message.id.as_deref().filter(|id| !id.is_empty())
+    entry.message_id.as_deref().filter(|id| !id.is_empty())
 }
 
 fn extract_message_timestamp(data: &str) -> Option<i64> {
@@ -1221,7 +1221,7 @@ mod tests {
             &diagnostics,
         );
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].0.data.message.usage.input_tokens, 10);
+        assert_eq!(loaded[0].0.usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert!(
             !diagnostics
@@ -1403,7 +1403,7 @@ mod tests {
 
             let ids = entries
                 .iter()
-                .map(|(entry, _)| entry.data.message.id.as_deref())
+                .map(|(entry, _)| entry.message_id.as_deref())
                 .collect::<Vec<_>>();
             assert_eq!(ids, [Some("timed"), Some("v2-timed")], "{since:?}");
             assert_eq!(
@@ -1726,13 +1726,10 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].cost, 0.02);
     }
 
@@ -1756,14 +1753,11 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
         assert_eq!(entries[0].session_id.as_ref(), "db-session-a");
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("db-msg-1"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 60);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            24
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 12);
+        assert_eq!(entries[0].message_id.as_deref(), Some("db-msg-1"));
+        assert_eq!(entries[0].usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.output_tokens, 60);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 24);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 12);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -1819,18 +1813,12 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.id.as_deref(),
-            Some("msg-v2-assistant")
-        );
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-v2-assistant"));
         assert_eq!(entries[0].session_id.as_ref(), "v2-session");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 60);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            24
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 12);
+        assert_eq!(entries[0].usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.output_tokens, 60);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 24);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 12);
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].cost, 0.03);
     }
@@ -1862,7 +1850,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("msg-v2-no-time-column")
         );
     }
@@ -1899,7 +1887,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -1932,7 +1920,7 @@ mod tests {
         entries
             .iter()
             .map(|entry| {
-                let usage = &entry.data.message.usage;
+                let usage = &entry.usage;
                 usage.input_tokens
                     + usage.output_tokens
                     + usage.cache_creation_input_tokens
@@ -1981,7 +1969,7 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].0.data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].0.usage.input_tokens, 10);
     }
 
     #[test]
@@ -2043,7 +2031,7 @@ mod tests {
 
         let mut ids: Vec<_> = entries
             .iter()
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         ids.sort_unstable();
         assert_eq!(ids, vec!["msg-assistant", "msg-compaction"]);
@@ -2095,7 +2083,7 @@ mod tests {
         );
         assert_eq!(session_entries.len(), 1);
         assert_ne!(
-            session_entries[0].data.message.id.as_deref(),
+            session_entries[0].message_id.as_deref(),
             Some("msg-compaction")
         );
         assert_eq!(total_tokens(&session_entries), 174);
@@ -2104,7 +2092,7 @@ mod tests {
         let daily_entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(daily_entries.len(), 1);
         assert_eq!(
-            daily_entries[0].data.message.id.as_deref(),
+            daily_entries[0].message_id.as_deref(),
             Some("msg-compaction")
         );
         assert_eq!(total_tokens(&daily_entries), 162);
@@ -2142,7 +2130,7 @@ mod tests {
         let fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         assert_eq!(fork_ids, vec!["fork-own"]);
     }
@@ -2238,7 +2226,7 @@ mod tests {
         let parent_input: u64 = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "parent")
-            .map(|entry| entry.data.message.usage.input_tokens)
+            .map(|entry| entry.usage.input_tokens)
             .sum();
         assert_eq!(parent_input, 1000);
         let fork_entries: Vec<_> = entries
@@ -2246,8 +2234,8 @@ mod tests {
             .filter(|entry| entry.session_id.as_ref() == "fork")
             .collect();
         assert_eq!(fork_entries.len(), 1);
-        assert_eq!(fork_entries[0].data.message.id.as_deref(), Some("fork-own"));
-        assert_eq!(fork_entries[0].data.message.usage.input_tokens, 40);
+        assert_eq!(fork_entries[0].message_id.as_deref(), Some("fork-own"));
+        assert_eq!(fork_entries[0].usage.input_tokens, 40);
     }
 
     #[test]
@@ -2262,7 +2250,7 @@ mod tests {
         let mut fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         fork_ids.sort_unstable();
         assert_eq!(fork_ids, vec!["fork-copy-boundary", "fork-own"]);
@@ -2392,7 +2380,7 @@ mod tests {
         let grandchild_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "grandchild")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         assert_eq!(grandchild_ids, vec!["grand-own"]);
         assert_eq!(entries.len(), 6);
@@ -2432,7 +2420,7 @@ mod tests {
         let fork_input: Vec<u64> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .map(|entry| entry.data.message.usage.input_tokens)
+            .map(|entry| entry.usage.input_tokens)
             .collect();
         assert_eq!(fork_input, vec![40]);
         assert_eq!(entries.len(), 5);
@@ -2476,7 +2464,7 @@ mod tests {
         let fork_ids: Vec<_> = entries
             .iter()
             .filter(|entry| entry.session_id.as_ref() == "fork")
-            .filter_map(|entry| entry.data.message.id.as_deref())
+            .filter_map(|entry| entry.message_id.as_deref())
             .collect();
         assert_eq!(fork_ids, vec!["fork-own"]);
     }
@@ -2517,10 +2505,10 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "legacy-json-session");
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("legacy-json-message")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -2558,11 +2546,11 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "aggregate-session");
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("session:aggregate-session")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 5);
         assert_eq!(entries[0].cost, 0.25);
     }
@@ -2639,7 +2627,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
-            entries[0].data.message.id.as_deref(),
+            entries[0].message_id.as_deref(),
             Some("cross-directory-message")
         );
         assert_eq!(entries[0].cost, 0.03);
@@ -2685,10 +2673,7 @@ mod tests {
             let entries =
                 load_entries_from_directory_for_report(fixture.root(), &shared, report_kind);
             assert_eq!(entries.len(), 1);
-            assert_eq!(
-                entries[0].data.message.id.as_deref(),
-                Some("period-message")
-            );
+            assert_eq!(entries[0].message_id.as_deref(), Some("period-message"));
         }
 
         let session_entries = load_entries_from_directory_for_report(
@@ -2698,7 +2683,7 @@ mod tests {
         );
         assert_eq!(session_entries.len(), 2);
         assert!(session_entries.iter().any(|entry| {
-            entry.data.message.id.as_deref() == Some("session:period-aggregate-session")
+            entry.message_id.as_deref() == Some("session:period-aggregate-session")
         }));
     }
 
@@ -2762,7 +2747,7 @@ mod tests {
             .iter()
             .map(|(entry, native_session)| {
                 (
-                    entry.data.message.id.as_deref().unwrap(),
+                    entry.message_id.as_deref().unwrap(),
                     native_session.as_deref(),
                 )
             })
@@ -2805,7 +2790,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "current-session");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 200);
+        assert_eq!(entries[0].usage.input_tokens, 200);
         assert_eq!(entries[0].cost, 0.5);
     }
 
@@ -2824,7 +2809,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "channel-session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 80);
+        assert_eq!(entries[0].usage.input_tokens, 80);
     }
 
     #[test]
@@ -2847,7 +2832,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "db-session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
     }
 
@@ -2873,16 +2858,16 @@ mod tests {
         assert_eq!(entries.len(), 2);
         let db_entry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("msg-db"))
+            .find(|entry| entry.message_id.as_deref() == Some("msg-db"))
             .expect("db-covered message present");
         assert_eq!(db_entry.session_id.as_ref(), "db-session");
-        assert_eq!(db_entry.data.message.usage.input_tokens, 120);
+        assert_eq!(db_entry.usage.input_tokens, 120);
         let file_entry = entries
             .iter()
-            .find(|entry| entry.data.message.id.as_deref() == Some("msg-file"))
+            .find(|entry| entry.message_id.as_deref() == Some("msg-file"))
             .expect("db-uncovered message present");
         assert_eq!(file_entry.session_id.as_ref(), "file-session");
-        assert_eq!(file_entry.data.message.usage.input_tokens, 50);
+        assert_eq!(file_entry.usage.input_tokens, 50);
     }
 
     #[test]
@@ -2932,9 +2917,9 @@ mod tests {
                 .map(|entry| {
                     (
                         entry.timestamp.as_millis(),
-                        entry.data.message.id.clone(),
+                        entry.message_id.clone(),
                         entry.session_id.to_string(),
-                        entry.data.message.usage.input_tokens,
+                        entry.usage.input_tokens,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -2970,7 +2955,7 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-new"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-new"));
     }
 
     #[test]
@@ -3000,7 +2985,7 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-early"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-early"));
     }
 
     #[test]
@@ -3023,7 +3008,7 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-in-range"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-in-range"));
     }
 
     #[test]
@@ -3202,7 +3187,7 @@ mod tests {
         };
         let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-pretty"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-pretty"));
     }
 
     const NOON_UTC_2026_01_01: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
@@ -3315,7 +3300,7 @@ mod tests {
             1,
             "an unrecognized time_created scale must fall back to scanning, not drop rows"
         );
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-seconds"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("msg-seconds"));
     }
 
     #[test]

@@ -155,21 +155,18 @@ mod tests {
             entries[1].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[1].data.message.usage.cache_read_input_tokens, 25);
-        assert_eq!(
-            entries[1].data.message.usage.cache_creation_input_tokens,
-            10
-        );
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("assistant-1"));
-        assert_eq!(entries[1].data.message.usage.input_tokens, 65);
-        assert_eq!(entries[1].data.cost_usd, Some(0.0));
+        assert_eq!(entries[1].usage.cache_read_input_tokens, 25);
+        assert_eq!(entries[1].usage.cache_creation_input_tokens, 10);
+        assert_eq!(entries[1].message_id.as_deref(), Some("assistant-1"));
+        assert_eq!(entries[1].usage.input_tokens, 65);
+        assert_eq!(entries[1].recorded_cost, Some(0.0));
         assert_eq!(entries[1].stored_cost, Some(0.0));
-        assert_eq!(entries[2].data.message.id.as_deref(), Some("assistant-2"));
-        assert_eq!(entries[2].data.message.usage.input_tokens, 90);
-        assert_eq!(entries[2].data.message.usage.output_tokens, 16);
-        assert_eq!(entries[2].data.cost_usd, Some(0.0002));
-        assert_eq!(entries[3].data.message.usage.input_tokens, 8);
-        assert_eq!(entries[3].data.message.usage.output_tokens, 4);
+        assert_eq!(entries[2].message_id.as_deref(), Some("assistant-2"));
+        assert_eq!(entries[2].usage.input_tokens, 90);
+        assert_eq!(entries[2].usage.output_tokens, 16);
+        assert_eq!(entries[2].recorded_cost, Some(0.0002));
+        assert_eq!(entries[3].usage.input_tokens, 8);
+        assert_eq!(entries[3].usage.output_tokens, 4);
         assert_eq!(entries[3].model.as_deref(), Some("vendor/legacy-model"));
         assert_eq!(
             entries[3].missing_pricing_model.as_deref(),

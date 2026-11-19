@@ -46,8 +46,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        LoadedEntry, ModelBreakdown, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-        UsageSummary, agent_summary_json, cli::AgentReportKind, format_rfc3339_millis,
+        LoadedEntry, ModelBreakdown, TimestampMs, TokenUsageRaw, UsageSummary, agent_summary_json,
+        cli::AgentReportKind,
     };
 
     #[test]
@@ -149,27 +149,17 @@ mod tests {
     fn loaded_entry(session_id: &str, timestamp_millis: i64, input_tokens: u64) -> LoadedEntry {
         let timestamp = TimestampMs::from_millis(timestamp_millis);
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.to_string()),
-                timestamp: format_rfc3339_millis(timestamp),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens,
-                        output_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0,
-                        cache_creation: None,
-                        speed: None,
-                    },
-                    model: Some("gpt-5.2-codex".to_string()),
-                    id: Some(format!("msg-{timestamp_millis}")),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                cache_creation: None,
+                speed: None,
             },
+            message_id: Some(format!("msg-{timestamp_millis}")),
+            version: None,
+            recorded_cost: None,
             timestamp,
             date: "2026-01-02".to_string(),
             project: Arc::from("opencode"),

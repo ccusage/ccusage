@@ -58,13 +58,10 @@ mod tests {
         assert_eq!(entries[0].date, "2026-02-13");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("kimi-k2"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
     }
 
     #[test]
@@ -93,10 +90,10 @@ mod tests {
         assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
         assert_eq!(entries[0].session_id.as_ref(), "session-b");
         assert_eq!(entries[0].model.as_deref(), Some("kimi-for-coding"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 3064);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 76);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 14848);
-        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entries[0].usage.input_tokens, 3064);
+        assert_eq!(entries[0].usage.output_tokens, 76);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 14848);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 0);
     }
 
     #[test]

@@ -12,14 +12,13 @@ use ccusage_adapter_common::{
 use serde_json::Value;
 
 use crate::{
-    Result, TokenUsageRaw, apply_total_token_fallback, format_rfc3339_millis, json_value_u64,
-    parse_ts_timestamp,
+    Result, TokenUsageRaw, apply_total_token_fallback, json_value_u64, parse_ts_timestamp,
 };
 
 #[derive(Clone)]
 pub(super) struct DroidEntry {
     pub(super) timestamp: crate::TimestampMs,
-    pub(super) timestamp_text: String,
+
     pricing_timestamp: Option<crate::TimestampMs>,
     pub(super) session_id: String,
     pub(super) model: String,
@@ -70,13 +69,12 @@ pub(super) fn load_settings_file(
     } else {
         provider
     };
-    let (timestamp, timestamp_text, pricing_timestamp) = settings_timestamp(settings, path)
-        .ok_or_else(|| {
-            UnitError::new(
-                ccusage_core::SkipKind::InvalidTimestamp,
-                "Droid settings have no valid timestamp or file modification time",
-            )
-        })?;
+    let (timestamp, pricing_timestamp) = settings_timestamp(settings, path).ok_or_else(|| {
+        UnitError::new(
+            ccusage_core::SkipKind::InvalidTimestamp,
+            "Droid settings have no valid timestamp or file modification time",
+        )
+    })?;
     let session_id = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -85,7 +83,7 @@ pub(super) fn load_settings_file(
         .to_string();
     Ok(Some(DroidEntry {
         timestamp,
-        timestamp_text,
+
         pricing_timestamp,
         session_id,
         model,
@@ -137,14 +135,14 @@ pub(super) fn parse_token_usage(value: Option<&Value>) -> Option<DroidTokenUsage
 fn settings_timestamp(
     settings: &serde_json::Map<String, Value>,
     path: &Path,
-) -> Option<(crate::TimestampMs, String, Option<crate::TimestampMs>)> {
+) -> Option<(crate::TimestampMs, Option<crate::TimestampMs>)> {
     if let Some(timestamp_text) = string_field(settings, "providerLockTimestamp")
         && let Some(timestamp) = parse_ts_timestamp(&timestamp_text)
     {
-        return Some((timestamp, format_rfc3339_millis(timestamp), Some(timestamp)));
+        return Some((timestamp, Some(timestamp)));
     }
     let timestamp = ccusage_adapter_common::timestamps::file_mtime(path)?;
-    Some((timestamp, format_rfc3339_millis(timestamp), None))
+    Some((timestamp, None))
 }
 
 pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
@@ -361,7 +359,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let entry = DroidEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
-            timestamp_text: String::new(),
+
             pricing_timestamp: None,
             session_id: "s".into(),
             model: "sample".into(),
@@ -428,7 +426,7 @@ mod tests {
         let timestamp = parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap();
         let entry = DroidEntry {
             timestamp,
-            timestamp_text: format_rfc3339_millis(timestamp),
+
             pricing_timestamp: None,
             session_id: "session".to_string(),
             model: "deepseek-v4-flash".to_string(),

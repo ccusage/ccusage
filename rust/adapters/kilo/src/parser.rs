@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
+    format_date_tz, stored_cost_for_mode,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -119,7 +119,7 @@ pub(super) fn message_value_to_entry(
         .and_then(|time| time.created)
         .and_then(normalize_timestamp)
         .ok_or(MissingTimestamp)?;
-    let timestamp_text = crate::format_rfc3339_millis(timestamp);
+
     let session_id = value
         .session_id
         .clone()
@@ -129,20 +129,6 @@ pub(super) fn message_value_to_entry(
         .clone()
         .unwrap_or_else(|| format!("{}:{row_id}", db_path.display()));
     let cost_usd = value.cost;
-    let data = UsageEntry {
-        session_id: Some(session_id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(model.clone()),
-            id: Some(message_id.clone()),
-        },
-        cost_usd,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     let candidates = model_candidates(&model, value.provider_id.as_deref());
     let candidates: Vec<_> = candidates
         .iter()
@@ -166,7 +152,7 @@ pub(super) fn message_value_to_entry(
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
     Ok(Some((
-        message_id,
+        message_id.clone(),
         LoadedEntry {
             date: format_date_tz(timestamp, tz),
             timestamp,
@@ -181,7 +167,10 @@ pub(super) fn message_value_to_entry(
             missing_pricing_model,
             stored_cost,
             message_count: None,
-            data,
+            usage,
+            message_id: Some(message_id),
+            version: None,
+            recorded_cost: cost_usd,
         },
     )))
 }
@@ -247,10 +236,10 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.data.message.usage.input_tokens, 100);
-        assert_eq!(entry.data.message.usage.output_tokens, 10);
-        assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
-        assert_eq!(entry.data.message.usage.cache_read_input_tokens, 0);
+        assert_eq!(entry.usage.input_tokens, 100);
+        assert_eq!(entry.usage.output_tokens, 10);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.usage.cache_read_input_tokens, 0);
     }
 
     #[test]
@@ -277,7 +266,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.data.message.usage.output_tokens, 234);
+        assert_eq!(entry.usage.output_tokens, 234);
         assert_eq!(entry.extra_total_tokens, 0);
     }
 
@@ -296,48 +285,34 @@ mod tests {
         pricing
     }
 
-    fn usage_entry(timestamp: &str) -> UsageEntry {
-        UsageEntry {
-            session_id: Some("session-a".to_string()),
-            timestamp: timestamp.to_string(),
-            version: None,
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    input_tokens: 1_000_000,
-                    ..TokenUsageRaw::default()
-                },
-                model: Some("deepseek-v4-flash".to_string()),
-                id: Some("message-a".to_string()),
-            },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+    fn usage() -> TokenUsageRaw {
+        TokenUsageRaw {
+            input_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
         }
     }
 
     #[test]
     fn uses_raw_model_for_timestamped_pricing_when_provider_match_is_not_exact() {
         let pricing = deepseek_pricing();
-        let data = usage_entry("2026-08-17T01:00:00Z");
+        let timestamp = "2026-08-17T01:00:00Z";
 
         assert!(
             ({
-                let candidates =
-                    model_candidates(data.message.model.as_deref().unwrap(), Some("deepseek"));
+                let candidates = model_candidates("deepseek-v4-flash", Some("deepseek"));
                 let candidates: Vec<_> = candidates
                     .iter()
                     .map(|(name, kind)| (name.as_str(), *kind))
                     .collect();
                 price_entry(
                     EntryPricing {
-                        usage: data.message.usage,
+                        usage: usage(),
                         reasoning_tokens: 0,
                         residual_tokens: 0,
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(&data.timestamp),
+                        timestamp: crate::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -350,24 +325,24 @@ mod tests {
     #[test]
     fn falls_back_to_static_pricing_when_kilo_timestamp_is_invalid() {
         let pricing = deepseek_pricing();
-        let data = usage_entry("not-a-timestamp");
+        let timestamp = "not-a-timestamp";
 
         assert_eq!(
             {
-                let candidates = model_candidates(data.message.model.as_deref().unwrap(), None);
+                let candidates = model_candidates("deepseek-v4-flash", None);
                 let candidates: Vec<_> = candidates
                     .iter()
                     .map(|(name, kind)| (name.as_str(), *kind))
                     .collect();
                 price_entry(
                     EntryPricing {
-                        usage: data.message.usage,
+                        usage: usage(),
                         reasoning_tokens: 0,
                         residual_tokens: 0,
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(&data.timestamp),
+                        timestamp: crate::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -389,25 +364,24 @@ mod tests {
                 }
             }"#,
         );
-        let data = usage_entry("2026-08-17T01:00:00Z");
+        let timestamp = "2026-08-17T01:00:00Z";
 
         assert_eq!(
             {
-                let candidates =
-                    model_candidates(data.message.model.as_deref().unwrap(), Some("reseller"));
+                let candidates = model_candidates("deepseek-v4-flash", Some("reseller"));
                 let candidates: Vec<_> = candidates
                     .iter()
                     .map(|(name, kind)| (name.as_str(), *kind))
                     .collect();
                 price_entry(
                     EntryPricing {
-                        usage: data.message.usage,
+                        usage: usage(),
                         reasoning_tokens: 0,
                         residual_tokens: 0,
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(&data.timestamp),
+                        timestamp: crate::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )

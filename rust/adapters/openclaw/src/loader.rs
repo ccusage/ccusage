@@ -37,14 +37,14 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     // NOTE(2026-09-16, #1727): `openclaw doctor --fix` leaves the original JSONL files after migrating their events into SQLite. Prefer the SQLite copies because they can carry corrected provider-billed cost.
     let (identified, id_less): (Vec<_>, Vec<_>) = sqlite_entries
         .into_iter()
-        .partition(|entry| entry.data.message.id.is_some());
+        .partition(|entry| entry.message_id.is_some());
     let mut events = HashSet::new();
     let mut contents = HashSet::new();
     let mut sqlite_events = HashSet::new();
     let mut entries = Vec::new();
     for entry in identified.into_iter().chain(id_less) {
         let content = content_id(&entry);
-        let is_new = match &entry.data.message.id {
+        let is_new = match &entry.message_id {
             Some(event_id) => events.insert((Arc::clone(&entry.session_id), event_id.clone())),
             None => !contents.contains(&content),
         };
@@ -96,13 +96,10 @@ mod tests {
         assert_eq!(entries[0].date, "2026-01-30");
         assert_eq!(entries[0].session_id.as_ref(), "abc");
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
-        assert_eq!(entries[0].data.version.as_deref(), Some("openai-codex"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1660);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 55);
-        assert_eq!(
-            entries[0].data.message.usage.cache_read_input_tokens,
-            108_928
-        );
+        assert_eq!(entries[0].version.as_deref(), Some("openai-codex"));
+        assert_eq!(entries[0].usage.input_tokens, 1660);
+        assert_eq!(entries[0].usage.output_tokens, 55);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 108_928);
         assert_eq!(entries[0].extra_total_tokens, 0);
         assert!((entries[0].cost - 0.02).abs() < f64::EPSILON);
     }
@@ -162,7 +159,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert!((entries[0].cost - 0.002).abs() < f64::EPSILON);
-        assert_eq!(entries[0].data.cost_usd, Some(0.99));
+        assert_eq!(entries[0].recorded_cost, Some(0.99));
     }
 
     #[test]
@@ -214,9 +211,9 @@ mod tests {
             entries[0].model.as_deref(),
             Some("[openclaw] deepseek-v4-flash")
         );
-        assert_eq!(entries[0].data.version.as_deref(), Some("deepseek"));
+        assert_eq!(entries[0].version.as_deref(), Some("deepseek"));
         assert!((entries[0].cost - 1.80).abs() < f64::EPSILON);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-2"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("evt-2"));
     }
 
     #[test]
@@ -257,7 +254,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-sqlite"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("evt-sqlite"));
         assert!((entries[0].cost - 0.51).abs() < f64::EPSILON);
     }
 
@@ -312,7 +309,7 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .map(|entry| entry.data.cost_usd)
+                .map(|entry| entry.recorded_cost)
                 .collect::<Vec<_>>(),
             [Some(0.50), Some(0.49)]
         );
@@ -341,7 +338,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-sqlite"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("evt-sqlite"));
     }
 
     #[test]
@@ -368,7 +365,7 @@ mod tests {
 
         let ids = entries
             .iter()
-            .map(|entry| entry.data.message.id.as_deref())
+            .map(|entry| entry.message_id.as_deref())
             .collect::<Vec<_>>();
         assert_eq!(ids, [Some("evt-1"), Some("evt-2")]);
     }
@@ -394,7 +391,7 @@ mod tests {
 
             let ids = entries
                 .iter()
-                .map(|entry| entry.data.message.id.as_deref())
+                .map(|entry| entry.message_id.as_deref())
                 .collect::<Vec<_>>();
             assert_eq!(ids, [Some("evt-x")]);
         }

@@ -116,8 +116,8 @@ mod tests {
         assert_eq!(entries[0].date, "2026-07-25");
         assert_eq!(entries[0].session_id.as_ref(), "sid-1");
         assert_eq!(entries[0].model.as_deref(), Some("deepseek-v4-pro"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1200);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 8000);
+        assert_eq!(entries[0].usage.input_tokens, 1200);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 8000);
         assert!(entries[0].cost > 0.0);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert!(
@@ -141,7 +141,7 @@ mod tests {
         let (entries, diagnostics) = load(&fixture);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1200);
+        assert_eq!(entries[0].usage.input_tokens, 1200);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert!(
             debug_warnings(&diagnostics)

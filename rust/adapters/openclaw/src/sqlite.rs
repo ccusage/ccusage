@@ -235,15 +235,12 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
-        assert_eq!(entries[0].data.version.as_deref(), Some("openai-codex"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 1660);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 55);
-        assert_eq!(
-            entries[0].data.message.usage.cache_read_input_tokens,
-            108_928
-        );
+        assert_eq!(entries[0].version.as_deref(), Some("openai-codex"));
+        assert_eq!(entries[0].usage.input_tokens, 1660);
+        assert_eq!(entries[0].usage.output_tokens, 55);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 108_928);
         assert!((entries[0].cost - 0.02).abs() < f64::EPSILON);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-2"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("evt-2"));
     }
 
     #[test]
@@ -317,8 +314,8 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[1].data.message.usage.input_tokens, 30);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(entries[1].usage.input_tokens, 30);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         let warnings = diagnostics
             .warnings(&ccusage_core::cli::SharedArgs {
@@ -365,7 +362,7 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 

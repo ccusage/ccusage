@@ -60,7 +60,7 @@ struct UsageAccumulator {
 
 impl UsageAccumulator {
     fn add_entry(&mut self, entry: &LoadedEntry) {
-        let usage = entry.data.message.usage;
+        let usage = entry.usage;
         self.counts.add_usage(usage);
         self.counts.extra_total_tokens = self
             .counts
@@ -155,7 +155,7 @@ impl SessionAccumulator {
         {
             self.earliest = Some(entry.timestamp);
         }
-        if let Some(version) = &entry.data.version {
+        if let Some(version) = &entry.version {
             self.versions.insert(version.clone());
         }
     }
@@ -296,7 +296,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{ModelBreakdown, TokenUsageRaw, UsageEntry, UsageMessage, format_rfc3339_millis};
+    use crate::{ModelBreakdown, TokenUsageRaw};
 
     #[test]
     fn key_target_keeps_project_sessions_separate_without_activity_metadata() {
@@ -670,20 +670,10 @@ mod tests {
         };
         let timestamp = TimestampMs::from_millis(fixture.timestamp);
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(fixture.session_id.to_string()),
-                timestamp: format_rfc3339_millis(timestamp),
-                version: fixture.version.map(str::to_string),
-                message: UsageMessage {
-                    usage,
-                    model: fixture.model.map(str::to_string),
-                    id: Some(format!("msg-{}", fixture.timestamp)),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
-            },
+            usage,
+            message_id: Some(format!("msg-{}", fixture.timestamp)),
+            version: fixture.version.map(str::to_string),
+            recorded_cost: None,
             timestamp,
             date: fixture.date.to_string(),
             project: Arc::from(fixture.project_path),

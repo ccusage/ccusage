@@ -8,9 +8,9 @@ use std::{collections::BTreeMap, sync::Arc};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
     cli::{CostMode, PricingOverride},
-    format_date_tz, format_rfc3339_millis, total_usage_tokens,
+    format_date_tz, total_usage_tokens,
 };
 
 pub(super) struct ZcodeUsageRow {
@@ -123,20 +123,10 @@ pub(super) fn row_to_entry(
     Ok(Some((
         id.clone(),
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.clone()),
-                timestamp: format_rfc3339_millis(timestamp),
-                version: row.version,
-                message: UsageMessage {
-                    usage,
-                    model: Some(raw_model.clone()),
-                    id: Some(id),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
-            },
+            usage,
+            message_id: Some(id),
+            version: row.version,
+            recorded_cost: None,
             date: format_date_tz(timestamp, tz),
             timestamp,
             project: Arc::from("zcode"),
@@ -254,17 +244,20 @@ mod tests {
         .unwrap()
         .expect("test row has usage");
         assert_eq!(id, "usage-1");
-        assert_eq!(entry.data.message.id.as_deref(), Some(id.as_str()));
-        let usage = entry.data.message.usage;
+        assert_eq!(entry.message_id.as_deref(), Some(id.as_str()));
+        let usage = entry.usage;
 
         assert_eq!(usage.input_tokens, 60);
         assert_eq!(usage.cache_creation_input_tokens, 15);
         assert_eq!(usage.cache_read_input_tokens, 25);
         assert_eq!(usage.output_tokens, 10);
         assert_eq!(total_usage_tokens(usage), 110);
-        assert_eq!(entry.data.message.model.as_deref(), Some("GLM-5.3"));
-        assert_eq!(entry.data.version.as_deref(), Some("0.16.3"));
-        assert_eq!(entry.data.timestamp, "2026-08-16T19:37:22.666Z");
+        assert_eq!(entry.model.as_deref(), Some("GLM-5.3"));
+        assert_eq!(entry.version.as_deref(), Some("0.16.3"));
+        assert_eq!(
+            entry.timestamp,
+            crate::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
+        );
     }
 
     #[test]
@@ -375,13 +368,13 @@ mod tests {
 
         let glm_52 = priced("GLM-5.2");
         assert_eq!(glm_52.cost, 0.00015549999999999999);
-        assert_eq!(glm_52.data.message.usage.input_tokens, 60);
-        assert_eq!(glm_52.data.message.usage.cache_creation_input_tokens, 15);
+        assert_eq!(glm_52.usage.input_tokens, 60);
+        assert_eq!(glm_52.usage.cache_creation_input_tokens, 15);
 
         let glm_53 = priced("GLM-5.3");
         assert_eq!(glm_53.cost, 0.00015549999999999999);
-        assert_eq!(glm_53.data.message.usage.input_tokens, 60);
-        assert_eq!(glm_53.data.message.usage.cache_creation_input_tokens, 15);
+        assert_eq!(glm_53.usage.input_tokens, 60);
+        assert_eq!(glm_53.usage.cache_creation_input_tokens, 15);
     }
 
     #[test]
@@ -433,7 +426,7 @@ mod tests {
         .expect("test row has usage")
         .1;
         assert_eq!(entry.extra_total_tokens, 13);
-        assert_eq!(entry.data.message.usage.output_tokens, 10);
+        assert_eq!(entry.usage.output_tokens, 10);
     }
 
     #[test]

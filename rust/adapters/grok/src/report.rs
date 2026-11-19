@@ -3,7 +3,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::*;
-    use crate::{TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage};
+    use crate::{TimestampMs, TokenUsageRaw};
 
     fn entry(
         session_id: &str,
@@ -15,27 +15,17 @@ mod tests {
     ) -> LoadedEntry {
         let timestamp = TimestampMs::from_millis(millis);
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.to_string()),
-                timestamp: format!("{date}T12:43:06.355Z"),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: input,
-                        output_tokens: 20,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: cache_read,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("grok-4.5-build".to_string()),
-                    id: Some(format!("evt-{millis}")),
-                },
-                cost_usd: None,
-                request_id: Some(format!("evt-{millis}")),
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: input,
+                output_tokens: 20,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: cache_read,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some(format!("evt-{millis}")),
+            version: None,
+            recorded_cost: None,
             timestamp,
             date: date.to_string(),
             project: Arc::from("grok"),

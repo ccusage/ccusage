@@ -50,7 +50,6 @@ struct CopilotRecord {
 #[derive(Debug, Clone)]
 pub(super) struct CopilotUsageEntry {
     pub(super) timestamp: TimestampMs,
-    pub(super) timestamp_text: String,
     pub(super) session_id: String,
     pub(super) model: String,
     pub(super) logged_model: Option<String>,
@@ -200,7 +199,6 @@ pub(super) fn parse_otel_file(
         .filter(|(index, candidate)| should_emit_candidate(*index, candidate, &sets))
         .map(|(_, candidate)| CopilotUsageEntry {
             timestamp: candidate.timestamp,
-            timestamp_text: crate::format_rfc3339_millis(candidate.timestamp),
             session_id: candidate.session_id,
             model: candidate.model,
             logged_model: candidate.logged_model,
@@ -540,7 +538,7 @@ pub(super) fn parse_session_state_file(
                 );
                 parsed.entries.push(CopilotUsageEntry {
                     timestamp,
-                    timestamp_text,
+
                     session_id: session_id.clone(),
                     model,
                     logged_model,
@@ -640,7 +638,6 @@ fn usage_record_entries(
             CopilotUsageRecordEntry {
                 entry: CopilotUsageEntry {
                     timestamp: record.timestamp,
-                    timestamp_text: crate::format_rfc3339_millis(record.timestamp),
                     session_id: session_id.to_string(),
                     model: record.model,
                     logged_model: record.logged_model,
@@ -1384,7 +1381,10 @@ mod session_state_tests {
         .entries;
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp_text, "2026-04-15T09:52:27.352Z");
+        assert_eq!(
+            crate::format_rfc3339_millis(entries[0].timestamp),
+            "2026-04-15T09:52:27.352Z"
+        );
         assert_eq!(entries[0].session_id, "session-1");
         assert_eq!(entries[0].model, "test-model");
         assert_eq!(entries[0].input_tokens, 70);

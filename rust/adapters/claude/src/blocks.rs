@@ -124,7 +124,7 @@ fn create_block(
     let mut seen_models = FxHashSet::default();
     let mut usage_limit_reset_time = None;
     for entry in &entries {
-        token_counts.add_usage(entry.data.message.usage);
+        token_counts.add_usage(entry.usage);
         cost += entry.cost;
         if let Some(model) = &entry.model {
             let model = model_aliases::resolve_model_name(model).into_owned();

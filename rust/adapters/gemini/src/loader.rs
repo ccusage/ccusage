@@ -59,12 +59,9 @@ mod tests {
         assert_eq!(entries[0].date, "2026-05-17");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("gemini-3-flash-preview"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 3_808);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 23);
-        assert_eq!(
-            entries[0].data.message.usage.cache_read_input_tokens,
-            11_526
-        );
+        assert_eq!(entries[0].usage.input_tokens, 3_808);
+        assert_eq!(entries[0].usage.output_tokens, 23);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 11_526);
         assert_eq!(entries[0].extra_total_tokens, 919);
     }
 }

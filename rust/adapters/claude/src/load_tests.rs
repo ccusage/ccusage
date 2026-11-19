@@ -116,8 +116,8 @@ fn keeps_most_complete_duplicate_usage_entry() {
     let entries = load_entries(&display_shared(), None).unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-    assert_eq!(entries[0].data.message.usage.output_tokens, 250);
+    assert_eq!(entries[0].usage.input_tokens, 100);
+    assert_eq!(entries[0].usage.output_tokens, 250);
     assert_eq!(entries[0].cost, 0.01);
 }
 
@@ -135,7 +135,7 @@ fn keeps_reused_message_id_from_distinct_sessions_at_same_timestamp() {
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.data.message.usage.output_tokens)
+            .map(|entry| entry.usage.output_tokens)
             .sum::<u64>(),
         275
     );
@@ -155,7 +155,7 @@ fn dedupes_anthropic_message_id_from_same_session_without_request_id() {
     let entries = load_entries(&display_shared(), None).unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].data.message.usage.output_tokens, 250);
+    assert_eq!(entries[0].usage.output_tokens, 250);
     assert_eq!(entries[0].cost, 0.01);
 }
 
@@ -176,7 +176,7 @@ fn keeps_gateway_message_id_from_same_session_without_request_id() {
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.data.message.usage.output_tokens)
+            .map(|entry| entry.usage.output_tokens)
             .sum::<u64>(),
         275
     );
@@ -197,7 +197,7 @@ fn dedupes_repeated_requestless_writes_from_same_session_at_the_same_timestamp()
     let entries = load_entries(&display_shared(), None).unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].data.message.usage.output_tokens, 250);
+    assert_eq!(entries[0].usage.output_tokens, 250);
     assert_eq!(entries[0].cost, 0.01);
 }
 
@@ -230,11 +230,11 @@ fn loads_advisor_usage_as_a_separate_model_entry() {
         entries[0].model.as_deref(),
         Some("claude-sonnet-4-20250514")
     );
-    assert_eq!(entries[0].data.message.usage.input_tokens, 2);
-    assert_eq!(entries[0].data.message.usage.output_tokens, 491);
+    assert_eq!(entries[0].usage.input_tokens, 2);
+    assert_eq!(entries[0].usage.output_tokens, 491);
     assert_eq!(entries[1].model.as_deref(), Some("claude-opus-4-20250514"));
-    assert_eq!(entries[1].data.message.usage.input_tokens, 159_419);
-    assert_eq!(entries[1].data.message.usage.output_tokens, 7_805);
+    assert_eq!(entries[1].usage.input_tokens, 159_419);
+    assert_eq!(entries[1].usage.output_tokens, 7_805);
 }
 
 #[test]
@@ -376,7 +376,7 @@ fn wrapped_advisors_share_daily_and_full_parsing_and_dedupe() {
         assert_eq!(
             entries
                 .iter()
-                .map(|entry| entry.data.message.usage.input_tokens)
+                .map(|entry| entry.usage.input_tokens)
                 .sum::<u64>(),
             110
         );
@@ -415,7 +415,7 @@ fn wrapped_advisors_dedupe_with_a_top_level_twin_and_ignore_outer_iterations() {
         assert_eq!(
             entries
                 .iter()
-                .map(|entry| entry.data.message.usage.input_tokens)
+                .map(|entry| entry.usage.input_tokens)
                 .sum::<u64>(),
             110
         );
@@ -443,7 +443,7 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.data.message.usage.input_tokens)
+            .map(|entry| entry.usage.input_tokens)
             .sum::<u64>(),
         110
     );

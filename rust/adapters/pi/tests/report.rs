@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ccusage_adapter_common::source::SourceOptions;
 use ccusage_core::{
-    LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, TokenUsageRaw,
     cli::{AgentReportKind, CostMode, SharedArgs},
     parse_ts_timestamp,
 };
@@ -41,40 +41,27 @@ fn loads_pi_agent_jsonl_usage_entries() {
     assert_eq!(entries[0].project.as_ref(), "project-a");
     assert_eq!(entries[0].session_id.as_ref(), "session-a");
     assert_eq!(entries[0].model.as_deref(), Some("[pi] gpt-5.4"));
-    assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-    assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-    assert_eq!(
-        entries[0].data.message.usage.cache_creation_input_tokens,
-        20
-    );
-    assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+    assert_eq!(entries[0].usage.input_tokens, 100);
+    assert_eq!(entries[0].usage.output_tokens, 50);
+    assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+    assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
     assert_eq!(entries[0].cost, 0.05);
 }
 
 #[test]
 fn builds_pi_daily_json_report() {
     let entry = LoadedEntry {
-        data: UsageEntry {
-            session_id: Some("session-a".to_string()),
-            timestamp: "2026-04-22T01:02:03.000Z".to_string(),
-            version: None,
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    input_tokens: 100,
-                    output_tokens: 50,
-                    cache_creation_input_tokens: 20,
-                    cache_read_input_tokens: 10,
-                    speed: None,
-                    cache_creation: None,
-                },
-                model: Some("[pi] gpt-5.4".to_string()),
-                id: None,
-            },
-            cost_usd: Some(0.05),
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+        usage: TokenUsageRaw {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 20,
+            cache_read_input_tokens: 10,
+            speed: None,
+            cache_creation: None,
         },
+        message_id: None,
+        version: None,
+        recorded_cost: Some(0.05),
         timestamp: parse_ts_timestamp("2026-04-22T01:02:03.000Z").unwrap(),
         date: "2026-04-22".to_string(),
         project: Arc::from("project-a"),

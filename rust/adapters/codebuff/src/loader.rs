@@ -11,7 +11,7 @@ use ccusage_adapter_common::{
     dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
 };
 
-use crate::{LoadedEntry, Result, UsageEntry, UsageMessage, format_date_tz};
+use crate::{LoadedEntry, Result, format_date_tz};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pricing.table(cx.shared.mode);
@@ -37,20 +37,6 @@ fn to_loaded_entry(
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_codebuff(&entry, pricing);
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text.clone(),
-        version: None,
-        message: UsageMessage {
-            usage: entry.usage,
-            model: Some(entry.model.clone()),
-            id: Some(entry.dedup_key.clone()),
-        },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -64,7 +50,10 @@ fn to_loaded_entry(
         usage_limit_reset_time: None,
         missing_pricing_model,
         message_count: None,
-        data,
+        usage: entry.usage,
+        message_id: Some(entry.dedup_key.clone()),
+        version: None,
+        recorded_cost: None,
         stored_cost: None,
     }
 }
@@ -109,9 +98,7 @@ mod tests {
     use super::super::{parser::parse_usage_object, paths::CODEBUFF_DATA_DIR_ENV};
     use super::*;
     use crate::cli::SharedArgs;
-    use crate::{
-        TokenUsageRaw, UsageEntry, UsageMessage, cli::AgentReportKind, parse_ts_timestamp,
-    };
+    use crate::{TokenUsageRaw, cli::AgentReportKind, parse_ts_timestamp};
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
@@ -155,9 +142,7 @@ mod tests {
                 .iter()
                 .map(|entry| {
                     entry
-                        .data
-                        .message
-                        .id
+                        .message_id
                         .as_deref()
                         .unwrap()
                         .rsplit(':')
@@ -171,7 +156,7 @@ mod tests {
                     .map(|index| format!("message-{index:02}"))
                     .collect::<Vec<_>>()
             );
-            assert_eq!(entries[0].data.message.usage.input_tokens, 99);
+            assert_eq!(entries[0].usage.input_tokens, 99);
         }
     }
 
@@ -249,13 +234,10 @@ mod tests {
             entries[0].session_id.as_ref(),
             format!("{channel}/project-a/2026-01-02T03-04-05.000Z")
         );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].credits, Some(1.25));
     }
 
@@ -334,13 +316,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].data.message.model.as_deref(),
-            Some("openai/gpt-5")
-        );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].model.as_deref(), Some("openai/gpt-5"));
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
     }
 
     #[test]
@@ -356,27 +335,17 @@ mod tests {
     #[test]
     fn report_includes_credits() {
         let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session-a".to_string()),
-                timestamp: "2026-01-02T03:04:06.000Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 100,
-                        output_tokens: 50,
-                        cache_creation_input_tokens: 20,
-                        cache_read_input_tokens: 10,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("claude-sonnet-4-20250514".to_string()),
-                    id: Some("message-a".to_string()),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_input_tokens: 20,
+                cache_read_input_tokens: 10,
+                speed: None,
+                cache_creation: None,
             },
+            message_id: Some("message-a".to_string()),
+            version: None,
+            recorded_cost: None,
             timestamp: parse_ts_timestamp("2026-01-02T03:04:06.000Z").unwrap(),
             date: "2026-01-02".to_string(),
             project: Arc::from("codebuff"),

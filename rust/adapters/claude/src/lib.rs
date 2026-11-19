@@ -12,6 +12,8 @@ mod diagnostics;
 mod load_tests;
 mod paths;
 mod source;
+mod usage_wire;
+use usage_wire::IteratedTokenUsage;
 
 pub use commands::{run_blocks, run_bucket, run_daily, run_session, run_statusline};
 pub use source::SOURCE;
@@ -36,7 +38,7 @@ use serde::{
 use smallvec::SmallVec;
 
 use crate::{
-    LoadedEntry, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry, UsageSummary,
+    LoadedEntry, Result, Speed, TimestampMs, TokenUsageRaw, UsageSummary,
     cli::{CostMode, SharedArgs},
     daily::DedupEntry as _,
     debug_log,
@@ -60,7 +62,13 @@ type DedupeIndexVec = SmallVec<[DedupeIndex; 1]>;
 /// Use this when a report reads history before the `--since` window, such as
 /// billing blocks anchored on earlier entries or whole-session totals.
 pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result<Vec<LoadedEntry>> {
-    load_deduped_entries(shared, project_filter).map(|deduped| deduped.entries)
+    load_deduped_entries(shared, project_filter).map(|deduped| {
+        deduped
+            .entries
+            .into_iter()
+            .map(|entry| entry.entry)
+            .collect()
+    })
 }
 
 pub(crate) fn load_deduped_entries(
@@ -90,9 +98,27 @@ fn load_deduped_entries_with_progress(
 
 #[derive(Default)]
 pub(crate) struct DedupedEntries {
-    entries: Vec<LoadedEntry>,
+    entries: Vec<ClaudeEntry>,
     detected: bool,
     copies: Vec<(usize, Arc<str>)>,
+}
+
+#[derive(Debug, Clone)]
+struct ClaudeEntry {
+    source_timestamp: String,
+    recorded_session_id: Option<String>,
+    original_model: Option<String>,
+    request_id: Option<String>,
+    is_sidechain: Option<bool>,
+    entry: LoadedEntry,
+}
+
+impl std::ops::Deref for ClaudeEntry {
+    type Target = LoadedEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entry
+    }
 }
 
 impl DedupedEntries {
@@ -114,7 +140,7 @@ impl DedupedEntries {
 pub(crate) fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<ClaudeEntry>> {
     let diagnostics = Diagnostics::for_report("claude", shared.clock);
     let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
     diagnostics.emit(shared.debug);
@@ -125,7 +151,7 @@ pub(crate) fn load_entries_since_with_diagnostics(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<ClaudeEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         load_windowed_entries(shared, project_filter, diagnostics, shared.mode)
     })
@@ -403,10 +429,9 @@ fn sidechain_entry_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64
     hasher.finish()
 }
 
-fn loaded_entry_session_id(entry: &LoadedEntry) -> &str {
+fn loaded_entry_session_id(entry: &ClaudeEntry) -> &str {
     entry
-        .data
-        .session_id
+        .recorded_session_id
         .as_deref()
         .unwrap_or(entry.session_id.as_ref())
 }
@@ -456,7 +481,7 @@ fn push_deduped_session_alias(
     }
 }
 
-impl daily::DedupEntry for LoadedEntry {
+impl daily::DedupEntry for ClaudeEntry {
     fn timestamp(&self) -> TimestampMs {
         self.timestamp
     }
@@ -466,30 +491,30 @@ impl daily::DedupEntry for LoadedEntry {
     }
 
     fn owned_session_id(&self) -> Arc<str> {
-        match self.data.session_id.as_deref() {
+        match self.recorded_session_id.as_deref() {
             Some(session_id) => Arc::from(session_id),
             None => Arc::clone(&self.session_id),
         }
     }
 
     fn message_id(&self) -> Option<&str> {
-        self.data.message.id.as_deref()
+        self.message_id.as_deref()
     }
 
     fn request_id(&self) -> Option<&str> {
-        self.data.request_id.as_deref()
+        self.request_id.as_deref()
     }
 
     fn is_sidechain(&self) -> bool {
-        self.data.is_sidechain == Some(true)
+        self.is_sidechain == Some(true)
     }
 
     fn usage(&self) -> &TokenUsageRaw {
-        &self.data.message.usage
+        &self.usage
     }
 
     fn records_cost(&self) -> bool {
-        self.data.cost_usd.is_some()
+        self.recorded_cost.is_some()
     }
 }
 
@@ -498,41 +523,41 @@ fn read_usage_file_with_diagnostics(
     tz: &JiffTimeZone,
     pricing: ccusage_core::cost::PriceTable<'_>,
     diagnostics: &Diagnostics,
-) -> Vec<LoadedEntry> {
+) -> Vec<ClaudeEntry> {
     let (session_id, project_path) = extract_session_parts(path);
     let session_id: Arc<str> = Arc::from(session_id);
     let project_path: Arc<str> = Arc::from(project_path);
-    daily::read_usage_file(path, tz, pricing, diagnostics, |parsed, line| LoadedEntry {
-        model: daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage),
-        usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
-            line,
-            parsed.is_api_error_message,
-        ),
-        data: UsageEntry {
-            timestamp: parsed.timestamp_text,
-            version: parsed.version,
-            session_id: parsed.recorded_session_id,
-            message: UsageMessage {
-                id: parsed.key.message_id,
-                model: parsed.raw_model,
-                usage: parsed.usage,
-            },
+    daily::read_usage_file(path, tz, pricing, diagnostics, |parsed, line| {
+        let model = daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage);
+        ClaudeEntry {
+            source_timestamp: parsed.timestamp_text,
+            recorded_session_id: parsed.recorded_session_id,
+            original_model: parsed.raw_model,
             request_id: parsed.key.request_id,
             is_sidechain: parsed.key.is_sidechain,
-            cost_usd: parsed.cost_usd,
-            is_api_error_message: parsed.is_api_error_message,
-        },
-        timestamp: parsed.key.timestamp,
-        date: parsed.date,
-        project: parsed.project,
-        session_id: Arc::clone(&session_id),
-        project_path: Arc::clone(&project_path),
-        cost: parsed.cost,
-        extra_total_tokens: 0,
-        credits: None,
-        message_count: None,
-        missing_pricing_model: parsed.missing_pricing_model,
-        stored_cost: parsed.stored_cost,
+            entry: LoadedEntry {
+                model,
+                usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
+                    line,
+                    parsed.is_api_error_message,
+                ),
+                usage: parsed.usage,
+                message_id: parsed.key.message_id,
+                version: parsed.version,
+                recorded_cost: parsed.cost_usd,
+                timestamp: parsed.key.timestamp,
+                date: parsed.date,
+                project: parsed.project,
+                session_id: Arc::clone(&session_id),
+                project_path: Arc::clone(&project_path),
+                cost: parsed.cost,
+                extra_total_tokens: 0,
+                credits: None,
+                message_count: None,
+                missing_pricing_model: parsed.missing_pricing_model,
+                stored_cost: parsed.stored_cost,
+            },
+        }
     })
 }
 
@@ -848,8 +873,8 @@ mod tests {
         usage_limit_reset_time_from_line_bytes,
     };
     use crate::{
-        Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
-        UsageEntry, UsageMessage,
+        ClaudeEntry, Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs,
+        TokenUsageRaw,
         cli::{CostMode, SharedArgs},
         format_rfc3339_millis,
     };
@@ -857,7 +882,7 @@ mod tests {
     use jiff::tz::TimeZone as JiffTimeZone;
 
     struct LoadedFile {
-        entries: Vec<LoadedEntry>,
+        entries: Vec<ClaudeEntry>,
     }
 
     fn read_usage_file_with_diagnostics(
@@ -957,7 +982,7 @@ mod tests {
         };
         let entries = super::load_entries(&shared, None).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         let daily = super::load_daily_summaries(&shared, None, false).unwrap();
         assert_eq!(daily[0].input_tokens, 10);
     }
@@ -979,7 +1004,7 @@ mod tests {
         };
         let entries = super::load_entries(&shared, None).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 7);
+        assert_eq!(entries[0].usage.input_tokens, 7);
         let daily = super::load_daily_summaries(&shared, None, false).unwrap();
         assert_eq!(daily[0].input_tokens, 7);
     }
@@ -1026,7 +1051,7 @@ mod tests {
         };
         let entries = super::load_entries(&shared, None).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].usage.input_tokens, 10);
         let daily = super::load_daily_summaries(&shared, None, false).unwrap();
         assert_eq!(daily[0].input_tokens, 10);
     }
@@ -1336,7 +1361,7 @@ mod tests {
 
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].model.as_deref(), Some("claude-fable-5-1"));
-        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 289);
+        assert_eq!(loaded.entries[0].usage.output_tokens, 289);
     }
 
     #[test]
@@ -1371,10 +1396,10 @@ mod tests {
         assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
         assert_eq!(loaded.entries[1].cost, 26.0);
         assert_eq!(
-            loaded.entries[1].data.message.model.as_deref(),
+            loaded.entries[1].original_model.as_deref(),
             Some("advisor-model")
         );
-        assert_eq!(loaded.entries[1].data.cost_usd, None);
+        assert_eq!(loaded.entries[1].recorded_cost, None);
     }
 
     #[test]
@@ -1391,7 +1416,7 @@ mod tests {
         );
 
         assert_eq!(loaded.entries.len(), 2);
-        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 2);
+        assert_eq!(loaded.entries[0].usage.output_tokens, 2);
         assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
     }
 
@@ -1423,7 +1448,7 @@ mod tests {
         assert_eq!(
             deduped
                 .iter()
-                .map(|entry| entry.data.message.usage.input_tokens)
+                .map(|entry| entry.usage.input_tokens)
                 .sum::<u64>(),
             400
         );
@@ -1455,7 +1480,7 @@ mod tests {
         assert_eq!(
             deduped
                 .iter()
-                .map(|entry| entry.data.message.usage.output_tokens)
+                .map(|entry| entry.usage.output_tokens)
                 .sum::<u64>(),
             275
         );
@@ -1490,7 +1515,7 @@ mod tests {
 
             assert_eq!(deduped.entries.len(), 1);
             let mut breakdown = ModelBreakdown::default();
-            breakdown.add_usage(&deduped.entries[0].data.message.usage);
+            breakdown.add_usage(&deduped.entries[0].usage);
             assert_eq!(breakdown.cache_creation_tokens, 100);
             assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
         }
@@ -1525,7 +1550,7 @@ mod tests {
             }
 
             assert_eq!(deduped.len(), 1);
-            assert_matches!(deduped[0].data.message.usage.speed, Some(Speed::Fast));
+            assert_matches!(deduped[0].usage.speed, Some(Speed::Fast));
         }
     }
 
@@ -1552,7 +1577,7 @@ mod tests {
         }
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.message.usage.output_tokens, 25);
+        assert_eq!(deduped[0].usage.output_tokens, 25);
     }
 
     #[test]
@@ -1578,7 +1603,7 @@ mod tests {
         }
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.message.usage.output_tokens, 25);
+        assert_eq!(deduped[0].usage.output_tokens, 25);
     }
 
     #[test]
@@ -1604,7 +1629,7 @@ mod tests {
         }
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.message.usage.output_tokens, 250);
+        assert_eq!(deduped[0].usage.output_tokens, 250);
     }
 
     #[test]
@@ -1632,7 +1657,7 @@ mod tests {
         }
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.message.usage.input_tokens, 200);
+        assert_eq!(deduped[0].usage.input_tokens, 200);
     }
 
     #[test]
@@ -1660,7 +1685,7 @@ mod tests {
         }
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.message.usage.input_tokens, 200);
+        assert_eq!(deduped[0].usage.input_tokens, 200);
     }
 
     #[test]
@@ -1757,8 +1782,8 @@ mod tests {
             cache_read_tokens: 20,
             output_tokens: 10,
         });
-        copied_parent.data.session_id = Some("session-b".to_string());
-        copied_parent.session_id = Arc::from("session-b");
+        copied_parent.recorded_session_id = Some("session-b".to_string());
+        copied_parent.entry.session_id = Arc::from("session-b");
         push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
 
         push_deduped_entry(
@@ -1785,8 +1810,8 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
-        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
     #[test]
@@ -1801,8 +1826,8 @@ mod tests {
             cache_read_tokens: 20,
             output_tokens: 10,
         });
-        copied_parent.data.session_id = Some("session-b".to_string());
-        copied_parent.session_id = Arc::from("session-b");
+        copied_parent.recorded_session_id = Some("session-b".to_string());
+        copied_parent.entry.session_id = Arc::from("session-b");
         push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
 
         push_deduped_entry(
@@ -1824,14 +1849,14 @@ mod tests {
             cache_read_tokens: 50_000,
             output_tokens: 10,
         });
-        copied_session_replay.data.session_id = Some("session-b".to_string());
-        copied_session_replay.session_id = Arc::from("session-b");
+        copied_session_replay.recorded_session_id = Some("session-b".to_string());
+        copied_session_replay.entry.session_id = Arc::from("session-b");
         push_deduped_entry(copied_session_replay, &mut deduped_indexes, &mut deduped);
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].session_id.as_ref(), "session-a");
-        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 30);
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
     }
 
     #[test]
@@ -1874,14 +1899,14 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 2);
-        assert_eq!(deduped[0].data.message.id.as_deref(), Some("msg-parent"));
-        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
-        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
+        assert_eq!(deduped[0].message_id.as_deref(), Some("msg-parent"));
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
         assert_eq!(
-            deduped[1].data.message.id.as_deref(),
+            deduped[1].message_id.as_deref(),
             Some("msg-sidechain-answer")
         );
-        assert_eq!(deduped[1].data.message.usage.cache_read_input_tokens, 700);
+        assert_eq!(deduped[1].usage.cache_read_input_tokens, 700);
     }
 
     #[test]
@@ -1924,8 +1949,8 @@ mod tests {
         );
 
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
-        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
     struct UsageEntryFixture {
@@ -1936,42 +1961,39 @@ mod tests {
         output_tokens: u64,
     }
 
-    fn loaded_usage_entry(fixture: UsageEntryFixture) -> LoadedEntry {
-        LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session-a".to_string()),
-                timestamp: "2026-03-29T07:00:00.000Z".to_string(),
-                version: Some("1.0.0".to_string()),
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 0,
-                        output_tokens: fixture.output_tokens,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: fixture.cache_read_tokens,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("claude-sonnet-4-20250514".to_string()),
-                    id: Some(fixture.message_id.to_string()),
+    fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
+        ClaudeEntry {
+            source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
+            recorded_session_id: Some("session-a".to_string()),
+            original_model: Some("claude-sonnet-4-20250514".to_string()),
+            request_id: Some(fixture.request_id.to_string()),
+            is_sidechain: Some(fixture.is_sidechain),
+            entry: LoadedEntry {
+                usage: TokenUsageRaw {
+                    input_tokens: 0,
+                    output_tokens: fixture.output_tokens,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: fixture.cache_read_tokens,
+                    speed: None,
+                    cache_creation: None,
                 },
-                cost_usd: None,
-                request_id: Some(fixture.request_id.to_string()),
-                is_api_error_message: None,
-                is_sidechain: Some(fixture.is_sidechain),
+                message_id: Some(fixture.message_id.to_string()),
+                version: Some("1.0.0".to_string()),
+                recorded_cost: None,
+                timestamp: TimestampMs::from_millis(1_775_000_000_000),
+                date: "2026-03-29".to_string(),
+                project: Arc::from("project-a"),
+                session_id: Arc::from("session-a"),
+                project_path: Arc::from("project-a"),
+                cost: 0.0,
+                extra_total_tokens: 0,
+                credits: None,
+                message_count: None,
+                model: Some("claude-sonnet-4-20250514".to_string()),
+                usage_limit_reset_time: None,
+                missing_pricing_model: None,
+                stored_cost: None,
             },
-            timestamp: TimestampMs::from_millis(1_775_000_000_000),
-            date: "2026-03-29".to_string(),
-            project: Arc::from("project-a"),
-            session_id: Arc::from("session-a"),
-            project_path: Arc::from("project-a"),
-            cost: 0.0,
-            extra_total_tokens: 0,
-            credits: None,
-            message_count: None,
-            model: Some("claude-sonnet-4-20250514".to_string()),
-            usage_limit_reset_time: None,
-            missing_pricing_model: None,
-            stored_cost: None,
         }
     }
 }
