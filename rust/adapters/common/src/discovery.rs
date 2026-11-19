@@ -107,7 +107,6 @@ fn read_discovered_in_parallel(discover: &mut DiscoverFiles<'_>, consume: &Consu
 
 struct WorkQueue {
     capacity: usize,
-    refill_at: usize,
     state: Mutex<QueueState>,
     readable: Condvar,
     writable: Condvar,
@@ -117,20 +116,16 @@ struct QueueState {
     pending: VecDeque<DiscoveredFile>,
     closed: bool,
     waiting_readers: usize,
-    waiting_writer: bool,
 }
 
 impl WorkQueue {
-    fn new(workers: usize) -> Self {
-        let capacity = workers.saturating_mul(4);
+    fn new(capacity: usize) -> Self {
         Self {
             capacity,
-            refill_at: capacity / 2,
             state: Mutex::new(QueueState {
                 pending: VecDeque::with_capacity(capacity),
                 closed: false,
                 waiting_readers: 0,
-                waiting_writer: false,
             }),
             readable: Condvar::new(),
             writable: Condvar::new(),
@@ -138,17 +133,13 @@ impl WorkQueue {
     }
 
     fn push(&self, file: DiscoveredFile) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.pending.len() == self.capacity {
-            state.waiting_writer = true;
-            state = self
-                .writable
-                .wait_while(state, |state| {
-                    state.pending.len() > self.refill_at && !state.closed
-                })
-                .unwrap_or_else(PoisonError::into_inner);
-            state.waiting_writer = false;
-        }
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut state = self
+            .writable
+            .wait_while(state, |state| {
+                state.pending.len() == self.capacity && !state.closed
+            })
+            .unwrap_or_else(PoisonError::into_inner);
         if !state.closed {
             state.pending.push_back(file);
             let wake_reader = state.waiting_readers != 0;
@@ -169,7 +160,7 @@ impl WorkQueue {
                 .unwrap_or_else(PoisonError::into_inner);
             state.waiting_readers -= 1;
         }
-        let wake_producer = state.waiting_writer && state.pending.len() == self.refill_at + 1;
+        let wake_producer = state.pending.len() == self.capacity;
         let file = state.pending.pop_front();
         drop(state);
         if wake_producer {
