@@ -824,16 +824,19 @@ mod tests {
     }
 
     fn deepseek_pricing() -> PricingMap {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028,
                     "cache_creation_input_token_cost": 0.000000123,
                     "cache_read_input_token_cost": 0.0000000028
                 },
                 "deepseek-v4-pro": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.000000435,
                     "output_cost_per_token": 0.00000087,
                     "cache_creation_input_token_cost": 0.000000456,

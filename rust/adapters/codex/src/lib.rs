@@ -432,6 +432,7 @@ mod tests {
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028,
                     "cache_creation_input_token_cost": 0.000000123,
@@ -1272,6 +1273,7 @@ mod tests {
                     model: {
                         "input_cost_per_token": 0.000001,
                         "output_cost_per_token": 0.000002,
+                        "litellm_provider": if model == "deepseek-v4-flash" { "deepseek" } else { "openai" },
                         "provider_specific_entry": { "fast": 2, "flex": 0.5 },
                     },
                 })

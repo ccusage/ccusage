@@ -232,7 +232,9 @@ impl<'a> CodexDedupe<'a> {
                             crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
                             |entry| entry.long_context_split_threshold(),
                         ),
-                    time_dependent: crate::has_time_dependent_pricing(&model),
+                    time_dependent: self
+                        .pricing
+                        .is_some_and(|pricing| pricing.is_time_dependent(&model)),
                 },
             )?,
             usage: event.raw_usage(),

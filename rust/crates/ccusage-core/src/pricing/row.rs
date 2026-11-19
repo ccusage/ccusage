@@ -1,9 +1,10 @@
-use super::{CacheDefaults, Pricing, data};
+use super::{CacheDefaults, Pricing, PricingSchedule, data, normalized_pricing_key};
 
 #[derive(Clone, Debug)]
 pub(super) struct Row {
     pub(super) pricing: Pricing,
     pub(super) source: Source,
+    pub(super) schedule: Option<&'static PricingSchedule>,
     pub(super) context_limit: Option<u64>,
     pub(super) exact_only: bool,
     pub(super) scope: Scope,
@@ -15,6 +16,7 @@ impl Default for Row {
         Self {
             pricing: Pricing::empty(),
             source: Source::LiteLlm,
+            schedule: None,
             context_limit: None,
             exact_only: false,
             scope: Scope::Hosted,
@@ -86,4 +88,11 @@ pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static Ca
                 .map(|(_, defaults)| *defaults)
         })
         .unwrap_or(&data::WRITES_SURCHARGED)
+}
+
+pub(super) fn schedule_for(model: &str) -> Option<&'static PricingSchedule> {
+    let identity = normalized_pricing_key(model);
+    data::SCHEDULES
+        .iter()
+        .find_map(|(id, rates)| (*id == identity).then_some(rates))
 }

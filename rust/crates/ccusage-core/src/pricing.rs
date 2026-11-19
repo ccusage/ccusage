@@ -16,7 +16,7 @@ use crate::{
 mod builtin_pricing;
 mod data;
 mod row;
-use row::{Row, Scope, Source, cache_defaults, row_scope, vendor_id};
+use row::{Row, Scope, Source, cache_defaults, row_scope, schedule_for, vendor_id};
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -307,38 +307,6 @@ impl Pricing {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ScheduleId(&'static str, &'static PricingSchedule);
-
-impl ScheduleId {
-    #[inline]
-    fn for_request(model: &str) -> Option<(Self, Cow<'_, str>)> {
-        let resolved = crate::model_aliases::resolve_model_name(model);
-        let schedule = Self::for_model(model).or_else(|| {
-            (resolved.as_ref() != model)
-                .then(|| Self::for_model(resolved.as_ref()))
-                .flatten()
-        })?;
-        Some((schedule, resolved))
-    }
-
-    fn for_model(model: &str) -> Option<Self> {
-        let model = direct_deepseek_id(model).unwrap_or(model);
-        let identity = normalized_pricing_key(model);
-        data::SCHEDULES
-            .iter()
-            .find_map(|(key, schedule)| (*key == identity).then_some(Self(key, schedule)))
-    }
-
-    fn model(self) -> &'static str {
-        self.0
-    }
-
-    fn data(self) -> &'static PricingSchedule {
-        self.1
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 struct ScheduledRates {
     input: f64,
     output: f64,
@@ -375,10 +343,6 @@ impl PricingSchedule {
     }
 }
 
-pub fn has_time_dependent_pricing(model: &str) -> bool {
-    ScheduleId::for_request(model).is_some()
-}
-
 struct OverrideFields;
 
 impl OverrideFields {
@@ -396,8 +360,9 @@ impl OverrideFields {
 }
 
 impl Pricing {
-    fn at(mut self, schedule: ScheduleId, timestamp: TimestampMs, explicit: Option<Self>) -> Self {
-        let rates = schedule.data().rates_at(timestamp);
+    fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
+        let explicit = self.overridden.then_some(self);
+        let rates = schedule.rates_at(timestamp);
         let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
@@ -560,6 +525,22 @@ impl Lookup {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    ReportedOverride,
+    AuthoritativeIdentity,
+    AuthoritativeSuffix,
+    ModelsDevIdentity,
+    AuthoritativeFuzzy,
+    ModelsDevFuzzy,
+}
+
+impl Step {
+    fn scheduled(self) -> bool {
+        matches!(self, Self::ReportedOverride | Self::AuthoritativeIdentity)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct RowMatch<'a> {
     key: &'a str,
@@ -573,7 +554,7 @@ type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<ResolvedPricing>>>
 #[derive(Clone, Copy, Debug)]
 struct ResolvedPricing {
     rates: Pricing,
-    schedule: Option<ScheduleId>,
+    schedule: Option<&'static PricingSchedule>,
 }
 
 #[derive(Debug)]
@@ -1322,6 +1303,7 @@ impl PricingMap {
             let row = self.rows_mut().entries.entry(model).or_default();
             row.source = Source::LiteLlm;
             row.scope = scope;
+            row.schedule = vendor_id.as_deref().and_then(schedule_for);
             row.vendor_id = vendor_id;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);
             row.pricing = published_speed.applied_to(Pricing {
@@ -1538,6 +1520,7 @@ impl PricingMap {
                     source: Source::ModelsDev,
                     scope: Scope::Direct,
                     vendor_id: None,
+                    schedule: None,
                 },
             );
             // Replacing a weaker claim is not a new model, so it must not count
@@ -1585,16 +1568,15 @@ impl PricingMap {
                 .or_default(),
         );
         *slot.get_or_init(|| {
-            let (_, found) = self.resolve_row_with(
+            let (_, found, step) = self.resolve_row_with(
                 Some(model),
                 &[(model, MatchKind::Fuzzy)],
                 Lookup::Pricing,
                 models_dev_pricing,
             )?;
-            let schedule = ScheduleId::for_request(model).map(|(schedule, _)| schedule);
             Some(ResolvedPricing {
                 rates: found.row.pricing,
-                schedule,
+                schedule: found.row.schedule.filter(|_| step.scheduled()),
             })
         })
     }
@@ -1618,22 +1600,20 @@ impl PricingMap {
             }?;
             return Some((model, rates));
         }
-        let (model, found) = self.resolve_row_with(
+        let (model, found, step) = self.resolve_row_with(
             reported_model,
             candidates,
             Lookup::Pricing,
             models_dev_pricing,
         )?;
         let pricing = found.row.pricing;
-        Some((
-            model,
-            timestamp.map_or(pricing, |timestamp| match ScheduleId::for_request(model) {
-                Some((schedule, resolved)) => {
-                    self.scheduled_at(model, resolved.as_ref(), schedule, timestamp, pricing)
-                }
-                None => pricing,
-            }),
-        ))
+        let rates = match (timestamp, found.row.schedule) {
+            (Some(timestamp), Some(schedule)) if step.scheduled() => {
+                pricing.at(schedule, timestamp)
+            }
+            _ => pricing,
+        };
+        Some((model, rates))
     }
 
     fn available_models_dev(&self) -> Option<&PricingRows> {
@@ -1686,17 +1666,17 @@ impl PricingMap {
         candidates: &[(&'a str, MatchKind)],
         lookup: Lookup,
         live: impl FnOnce() -> Option<&'live Self>,
-    ) -> Option<(&'a str, RowMatch<'_>)> {
+    ) -> Option<(&'a str, RowMatch<'_>, Step)> {
         if let Some(label) = reported
             && let Some(found) = self.label_override(label, lookup)
         {
-            return Some((label, found));
+            return Some((label, found, Step::ReportedOverride));
         }
         for &(candidate, _) in candidates {
             if let Some(found) =
                 with_names(candidate, |name| self.authoritative(name, lookup, true))
             {
-                return Some((candidate, found));
+                return Some((candidate, found, Step::AuthoritativeIdentity));
             }
         }
         let mut live = Some(live);
@@ -1709,11 +1689,13 @@ impl PricingMap {
                 name.match_indices('/')
                     .find_map(|(offset, _)| self.authoritative(&name[offset + 1..], lookup, false))
             });
-            if let Some(found) = suffix.or_else(|| {
-                let rows = models_dev()?;
-                with_names(candidate, |name| rows.exact(name, lookup))
-            }) {
-                return Some((candidate, found));
+            if let Some(found) = suffix {
+                return Some((candidate, found, Step::AuthoritativeSuffix));
+            }
+            if let Some(rows) = models_dev()
+                && let Some(found) = with_names(candidate, |name| rows.exact(name, lookup))
+            {
+                return Some((candidate, found, Step::ModelsDevIdentity));
             }
         }
         for &(candidate, kind) in candidates {
@@ -1721,14 +1703,17 @@ impl PricingMap {
                 continue;
             }
             let secondary = self.available_models_dev();
-            if let Some(found) = with_names(candidate, |name| {
+            if let Some((found, step)) = with_names(candidate, |name| {
                 if secondary.is_some_and(|rows| rows.contains_exact_only_spelling(name)) {
                     return None;
                 }
                 Self::fuzzy(&self.rows, name, lookup)
-                    .or_else(|| Self::fuzzy(secondary?, name, lookup))
+                    .map(|row| (row, Step::AuthoritativeFuzzy))
+                    .or_else(|| {
+                        Self::fuzzy(secondary?, name, lookup).map(|row| (row, Step::ModelsDevFuzzy))
+                    })
             }) {
-                return Some((candidate, found));
+                return Some((candidate, found, step));
             }
         }
         None
@@ -1755,33 +1740,17 @@ impl PricingMap {
             .map(|(key, row)| RowMatch { key, row })
     }
 
-    /// Finds the pricing that applies to one usage event.
-    ///
-    /// The timestamp-aware DeepSeek schedule is applied to the two direct model
-    /// ids and aliases that resolve to them.
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
         let resolved = self.find_resolved(model)?;
         Some(match resolved.schedule {
-            Some(schedule) => {
-                let alias = crate::model_aliases::resolve_model_name(model);
-                self.scheduled_at(model, alias.as_ref(), schedule, timestamp, resolved.rates)
-            }
+            Some(schedule) => resolved.rates.at(schedule, timestamp),
             None => resolved.rates,
         })
     }
 
-    fn scheduled_at(
-        &self,
-        model: &str,
-        resolved: &str,
-        schedule: ScheduleId,
-        timestamp: TimestampMs,
-        pricing: Pricing,
-    ) -> Pricing {
-        let explicit = [model, resolved, schedule.model()]
-            .into_iter()
-            .find_map(|key| self.overridden(key));
-        pricing.at(schedule, timestamp, explicit)
+    pub fn is_time_dependent(&self, model: &str) -> bool {
+        self.find_resolved(model)
+            .is_some_and(|result| result.schedule.is_some())
     }
 
     pub fn has_primary_price(&self, model: &str) -> bool {
@@ -1821,7 +1790,7 @@ impl PricingMap {
             Lookup::Context,
             models_dev_pricing,
         )
-        .and_then(|(_, found)| found.row.context_limit)
+        .and_then(|(_, found, _)| found.row.context_limit)
     }
 
     fn apply_overrides<'a, I>(&mut self, overrides: I)
@@ -1854,11 +1823,16 @@ impl PricingMap {
             let is_exact_only = self
                 .available_models_dev()
                 .is_some_and(|rows| rows.contains_exact_only_spelling(model));
+            let schedule = with_names(model, |name| {
+                self.rows.authoritative(name, Lookup::Pricing, true)
+            })
+            .and_then(|found| found.row.schedule);
             let row = self
                 .rows_mut()
                 .entries
                 .entry(model.to_string())
                 .or_default();
+            row.schedule = schedule;
             row.exact_only = is_exact_only;
             row.source = Source::Override;
             row.scope = Scope::Direct;
@@ -2039,6 +2013,7 @@ impl PricingMap {
                     source: Source::Curated,
                     scope: Scope::Direct,
                     vendor_id: Some(vendor_id(model, provider).into()),
+                    schedule: schedule_for(vendor_id(model, provider)),
                     ..Row::default()
                 });
             }
@@ -2222,12 +2197,6 @@ fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(value)
     }
-}
-
-fn direct_deepseek_id(value: &str) -> Option<&str> {
-    value
-        .strip_prefix("deepseek/")
-        .filter(|model| model.starts_with("deepseek-") || model.starts_with("deepseek."))
 }
 
 #[derive(Clone, Copy)]
@@ -2451,7 +2420,7 @@ mod tests {
 
         fn context_limit_entry(&self, model: &str, kind: MatchKind) -> Option<u64> {
             self.resolve_row_with(Some(model), &[(model, kind)], Lookup::Context, || None)
-                .and_then(|(_, found)| found.row.context_limit)
+                .and_then(|(_, found, _)| found.row.context_limit)
         }
 
         fn find_with_live<'a>(
@@ -2465,7 +2434,7 @@ mod tests {
                 Lookup::Pricing,
                 live,
             )
-            .map(|(_, found)| found.row.pricing)
+            .map(|(_, found, _)| found.row.pricing)
         }
 
         fn context_limit_with_live<'a>(
@@ -2479,7 +2448,7 @@ mod tests {
                 Lookup::Context,
                 live,
             )
-            .and_then(|(_, found)| found.row.context_limit)
+            .and_then(|(_, found, _)| found.row.context_limit)
         }
 
         fn with_live_layer<'a>(
@@ -3085,16 +3054,24 @@ mod tests {
     }
 
     fn direct_deepseek_pricing() -> PricingMap {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
+                "deepseek/deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028
+                },
                 "deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028,
                     "cache_creation_input_token_cost": 0.000000123,
                     "cache_read_input_token_cost": 0.0000000028
                 },
                 "deepseek-v4-pro": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.000000435,
                     "output_cost_per_token": 0.00000087,
                     "cache_creation_input_token_cost": 0.000000456,
@@ -3290,12 +3267,65 @@ mod tests {
     }
 
     #[test]
+    fn resolver_table_schedules_only_a_vendor_identity_hit() {
+        crate::test_support::install_pricing_snapshots();
+        let mut map = PricingMap::default();
+        map.load_json(r#"{
+            "deepseek-v4-flash": {"litellm_provider":"bedrock","input_cost_per_token":0.00000062,"output_cost_per_token":0.00000185},
+            "deepseek/deepseek-v4-pro": {"litellm_provider":"deepseek","input_cost_per_token":0.00000132,"output_cost_per_token":0.00000396},
+            "deepseek-v4-pro": {"litellm_provider":"deepseek","input_cost_per_token":0.00000132,"output_cost_per_token":0.00000396}
+        }"#);
+        for (case, model, peak, off_peak) in [
+            (
+                "hosted_exact_is_static",
+                "deepseek.v4.flash",
+                (0.62, 1.85),
+                (0.62, 1.85),
+            ),
+            (
+                "39_vendor_identity",
+                "deepseek.v4.pro",
+                (1.32, 3.96),
+                (0.66, 1.98),
+            ),
+            (
+                "89_path_suffix_is_static",
+                "host/deepseek/deepseek-v4-pro",
+                (1.32, 3.96),
+                (1.32, 3.96),
+            ),
+            (
+                "87_longer_fuzzy_is_static",
+                "deepseek-v4-pro-0812",
+                (1.32, 3.96),
+                (1.32, 3.96),
+            ),
+        ] {
+            for (instant, expected) in [
+                ("2026-11-17T03:00:00Z", peak),
+                ("2026-11-17T10:00:00Z", off_peak),
+            ] {
+                let rates = map.find_at(model, timestamp(instant)).expect(case);
+                assert!(
+                    (rates.input * 1e6 - expected.0).abs() < 1e-12,
+                    "{case}: {rates:?}"
+                );
+                assert!(
+                    (rates.output * 1e6 - expected.1).abs() < 1e-12,
+                    "{case}: {rates:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn time_dependent_pricing_excludes_reseller_models() {
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
             "deepseek-latest",
             "deepseek-v4-flash",
         )]);
 
+        let pricing = direct_deepseek_pricing();
         for model in [
             "deepseek-v4-flash",
             "deepseek.v4.flash",
@@ -3303,23 +3333,25 @@ mod tests {
             "deepseek-latest",
             "deepseek/deepseek-v4-flash",
         ] {
-            assert!(super::has_time_dependent_pricing(model));
+            assert!(pricing.is_time_dependent(model));
         }
         for model in [
             "openrouter/deepseek-v4-flash",
             "openrouter/deepseek.v4.flash",
             "gpt-5",
         ] {
-            assert!(!super::has_time_dependent_pricing(model));
+            assert!(!pricing.is_time_dependent(model));
         }
     }
 
     #[test]
     fn find_at_replaces_stale_deepseek_long_context_rates() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028,
                     "cache_creation_input_token_cost": 0.00000014,

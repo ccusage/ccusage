@@ -42,7 +42,7 @@ pub use output::{
     print_usage_table, print_usage_table_with_options, sanitize_terminal_text,
     should_use_compact_layout, totals_json, wants_json,
 };
-pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
+pub use pricing::{Pricing, PricingMap};
 pub(crate) use project_names::parse_project_aliases;
 pub(crate) use project_names::short_model_name;
 pub use project_names::{format_breakdown_model_label, format_project_name};

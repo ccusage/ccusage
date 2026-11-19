@@ -286,10 +286,12 @@ mod tests {
     }
 
     fn deepseek_pricing() -> ccusage_core::PricingMap {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
                     "input_cost_per_token": 0.00000014,
                     "output_cost_per_token": 0.00000028
                 }
