@@ -53,12 +53,12 @@ impl SkipKind {
 #[derive(Clone, Debug)]
 pub struct Skip {
     /// The file or database the skip happened in.
-    pub unit: PathBuf,
+    unit: PathBuf,
     /// The 1-based line or row inside the unit; `None` when the whole unit, or
     /// the rest of it, was skipped.
-    pub line: Option<u32>,
-    pub kind: SkipKind,
-    pub detail: String,
+    line: Option<u32>,
+    kind: SkipKind,
+    detail: String,
 }
 
 impl Skip {

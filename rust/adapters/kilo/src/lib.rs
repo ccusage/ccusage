@@ -9,7 +9,7 @@ mod report;
 use crate::{LoadedEntry, PricingMap, Result, UsageSummary, cli::AgentCommandArgs};
 
 pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
+pub(crate) use report::summarize_entries;
 
 pub struct Kilo;
 
@@ -58,7 +58,7 @@ impl EntrySource for Kilo {
 }
 
 #[cfg(test)]
-pub(crate) fn load_entries(
+fn load_entries(
     shared: &crate::cli::SharedArgs,
     pricing: &crate::PricingMap,
 ) -> crate::Result<Vec<crate::LoadedEntry>> {

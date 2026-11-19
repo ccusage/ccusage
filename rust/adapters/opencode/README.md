@@ -31,7 +31,6 @@ lenient field conversions are unchanged.
 
 - `loader::load_entries`
 - `report::report_json`
-- `report::summarize_entries`
 - `run`
 
 ## Depends on

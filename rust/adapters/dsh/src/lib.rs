@@ -57,7 +57,7 @@ impl EntrySource for Dsh {
 }
 
 #[cfg(test)]
-pub(crate) fn load_entries(
+fn load_entries(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<(Vec<LoadedEntry>, Diagnostics)> {

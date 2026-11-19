@@ -86,7 +86,7 @@ pub struct SourceOptions<'a> {
 
 impl<'a> SourceOptions<'a> {
     /// The options of `ccusage <agent> <kind>`.
-    pub fn from_command(args: &'a AgentCommandArgs) -> Self {
+    pub(crate) fn from_command(args: &'a AgentCommandArgs) -> Self {
         Self {
             claude_project: None,
             pi_path: args.pi_path.as_deref(),

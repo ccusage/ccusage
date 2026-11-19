@@ -114,7 +114,7 @@ pub(crate) fn descriptor() -> EntryDescriptor {
     }
 }
 
-pub(crate) fn entry(session: &str, timestamp: &str, input_tokens: u64) -> LoadedEntry {
+fn entry(session: &str, timestamp: &str, input_tokens: u64) -> LoadedEntry {
     let parsed = parse_ts_timestamp(timestamp).unwrap();
     LoadedEntry {
         data: UsageEntry {

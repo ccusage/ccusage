@@ -26,9 +26,7 @@ chunking, and ordered parallel reads.
 
 - `loader::load_entries`
 - `report::report_from_rows`
-- `report::summarize_entries`
 - `run`
-- `has_data`
 
 ## Depends on
 

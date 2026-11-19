@@ -47,7 +47,8 @@ pub(crate) fn load_codex_events_from_directory(
 
 /// Loads Codex usage events and reports whether any source file existed before
 /// date filtering narrowed the files to parse.
-pub fn load_codex_events_with_detection(
+#[cfg(test)]
+pub(super) fn load_codex_events_with_detection(
     shared: &SharedArgs,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
     load_codex_events_with_detection_progress(shared, ProgressOwner::Source)
@@ -351,7 +352,8 @@ struct CodexEventUsage(
     u64,
 );
 
-pub(super) fn load_codex_events_with_detection_progress(
+#[cfg(test)]
+fn load_codex_events_with_detection_progress(
     shared: &SharedArgs,
     owner: ProgressOwner,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {

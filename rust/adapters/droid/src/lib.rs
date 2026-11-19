@@ -8,8 +8,6 @@ mod parser;
 mod paths;
 mod report;
 
-pub use report::summarize_entries;
-
 pub struct Droid;
 
 pub static SOURCE: Droid = Droid;

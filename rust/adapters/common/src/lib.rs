@@ -4,15 +4,13 @@ use std::{
     thread,
 };
 
-use ccusage_core::{
-    Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, UsageSummary, cli::SharedArgs,
-};
+use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs};
 
 pub mod claims;
 pub mod jsonl;
 #[cfg(any(test, feature = "testing"))]
 pub mod parity;
-pub mod pipeline;
+pub(crate) mod pipeline;
 pub mod report;
 pub mod rows;
 pub mod source;
@@ -112,8 +110,9 @@ pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &Sh
 /// Keeps the sessions whose last activity falls on a day inside the
 /// `--since`/`--until` window, with the day taken in the report timezone the
 /// same way `LoadedEntry::date` is.
-pub fn filter_session_summaries_by_last_activity(
-    rows: &mut Vec<UsageSummary>,
+#[cfg(test)]
+fn filter_session_summaries_by_last_activity(
+    rows: &mut Vec<ccusage_core::UsageSummary>,
     shared: &SharedArgs,
 ) {
     pipeline::retain_sessions_last_active_in(rows, &ReportWindow::from_shared(shared));

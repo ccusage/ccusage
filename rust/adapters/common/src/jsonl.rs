@@ -69,7 +69,7 @@ where
 ///
 /// The prefilter selects possible records; it does not prove a record carries
 /// usage. A caller decides how to classify a decoding failure.
-pub fn try_records<'data, T>(
+pub(crate) fn try_records<'data, T>(
     content: &'data [u8],
     prefilter: Option<&'data LinePrefilter>,
 ) -> impl Iterator<Item = (u32, serde_json::Result<T>)> + 'data
@@ -108,7 +108,8 @@ fn selected_lines<'data>(
 ///
 /// Lines rejected by `prefilter` are never parsed or counted as skipped. JSON
 /// error details retain only the category and source location, not input text.
-pub fn records_with_diagnostics<'data, T>(
+#[cfg(test)]
+fn records_with_diagnostics<'data, T>(
     content: &'data [u8],
     prefilter: Option<&'data LinePrefilter>,
     unit: &'data Path,

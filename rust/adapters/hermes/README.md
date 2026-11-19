@@ -23,7 +23,6 @@ most adapters do not.
 ## Public surface
 
 - `SOURCE` — the shared `EntrySource` interface
-- `summarize_entries`
 - `run`
 
 ## Depends on

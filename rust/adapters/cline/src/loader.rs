@@ -17,7 +17,7 @@ pub(super) struct EntryInput {
 }
 
 #[cfg(test)]
-pub(crate) fn load_entries(
+fn load_entries(
     shared: &crate::cli::SharedArgs,
     pricing: &crate::PricingMap,
 ) -> crate::Result<Vec<crate::LoadedEntry>> {

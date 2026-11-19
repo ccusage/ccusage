@@ -57,7 +57,7 @@ pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result
 
 /// Loads every deduplicated Claude usage entry like [`load_entries`], keeping
 /// the sessions of the copies dedup merged into them.
-pub fn load_deduped_entries(
+pub(crate) fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
@@ -93,7 +93,7 @@ pub(crate) fn load_deduped_entries_with_progress(
 /// a turn.
 #[derive(Default)]
 pub struct DedupedEntries {
-    pub entries: Vec<LoadedEntry>,
+    entries: Vec<LoadedEntry>,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -101,10 +101,7 @@ pub struct DedupedEntries {
 impl DedupedEntries {
     /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. As in
     /// the daily loader, a merged copy's session counts on the day its survivor does.
-    pub fn main_thread_session_days(
-        &self,
-        is_counted: impl Fn(&LoadedEntry) -> bool,
-    ) -> SessionDays {
+    fn main_thread_session_days(&self, is_counted: impl Fn(&LoadedEntry) -> bool) -> SessionDays {
         self.entries
             .iter()
             .map(|entry| (loaded_entry_session_id(entry), entry))
@@ -179,7 +176,7 @@ pub fn load_daily_summaries(
 /// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
 /// runs Claude Code, such as OpenCode's `claude-agent` provider, can skip its
 /// copy of the turns this source counts.
-pub type SessionDays = HashSet<(Arc<str>, String)>;
+pub(crate) type SessionDays = HashSet<(Arc<str>, String)>;
 
 /// Takes `(session ID, date, is_sidechain)` per entry and leaves out sidechain
 /// (subagent) usage, which a wrapping tool does not record. Dedups the borrowed
@@ -197,35 +194,15 @@ fn main_thread_session_days<'a>(
 }
 
 /// Daily Claude summaries plus whether any Claude usage exists at all.
-pub struct DailySummaries {
+pub(crate) struct DailySummaries {
     /// Summaries, possibly missing dates before `since`.
-    pub summaries: Vec<UsageSummary>,
+    summaries: Vec<UsageSummary>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
-    pub detected: bool,
+    detected: bool,
     /// Session days of the summarized main-thread entries, possibly missing
     /// dates before `since`.
-    pub session_days: SessionDays,
-}
-
-/// Loads daily Claude summaries like [`load_daily_summaries`], reports
-/// whether Claude usage was detected independently of the date window, and
-/// collects the summarized session days.
-pub fn load_daily_summaries_with_detection(
-    shared: &SharedArgs,
-    project_filter: Option<&str>,
-    group_by_project: bool,
-) -> Result<DailySummaries> {
-    let diagnostics = Diagnostics::new("claude");
-    let loaded = load_daily_summaries_with_detection_progress(
-        shared,
-        project_filter,
-        group_by_project,
-        ProgressOwner::Source,
-        &diagnostics,
-    )?;
-    diagnostics.emit(shared);
-    Ok(loaded)
+    session_days: SessionDays,
 }
 
 /// Loads daily summaries with progress owned by the caller or source.
