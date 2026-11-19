@@ -110,7 +110,7 @@ where
         }
     };
     parser.finish()?;
-    if let Some(message) = last_option_error(&command, &shared, parser.saw_flag(&["--last"])) {
+    if let Some(message) = last_option_error(&command, &shared) {
         return Err(message);
     }
     validate_date_window(&mut command, &parser, config)?;
@@ -919,14 +919,8 @@ fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
     })
 }
 
-fn last_option_error(
-    command: &Command,
-    root_shared: &SharedArgs,
-    explicit: bool,
-) -> Option<String> {
-    if matches!(command, Command::Statusline(_))
-        || (!explicit && matches!(command, Command::Agent(_, AgentCommand::Statusline(_))))
-    {
+fn last_option_error(command: &Command, root_shared: &SharedArgs) -> Option<String> {
+    if matches!(command, Command::Statusline(_)) {
         return None;
     }
     let shared = command.shared().unwrap_or(root_shared);
