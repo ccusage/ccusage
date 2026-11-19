@@ -158,6 +158,32 @@ pub fn read<B>(
     policy: ReadPolicy,
     mut visit: impl FnMut(Line<'_>, &Path, Option<&Diagnostics>) -> ControlFlow<B>,
 ) -> Result<Option<B>, UnitError> {
+    let mut found = None;
+    read_with(
+        path,
+        diagnostics,
+        policy,
+        &mut |line, opened_path, local| {
+            if let ControlFlow::Break(value) = visit(line, opened_path, local) {
+                found = Some(value);
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    )?;
+    Ok(found)
+}
+
+type LineVisitor<'a> = dyn FnMut(Line<'_>, &Path, Option<&Diagnostics>) -> ControlFlow<()> + 'a;
+
+#[inline(never)]
+fn read_with(
+    path: &Path,
+    diagnostics: Option<&Diagnostics>,
+    policy: ReadPolicy,
+    visit: &mut LineVisitor<'_>,
+) -> Result<(), UnitError> {
     let (input, opened_path) = open(path, policy, diagnostics)?;
     let staged = if policy.stage_diagnostics {
         diagnostics.map(Diagnostics::isolated)
@@ -167,12 +193,31 @@ pub fn read<B>(
     let local = staged.as_ref().or(diagnostics);
     let capacity = policy.capacity.max(1);
     let mut reader = line_reader(capacity, input);
-    let (found, failure) = fold(&mut reader, policy.keep_interrupted_tail, |line| {
-        visit(line, &opened_path, local)
-    });
+    let mut index = 0;
+    let failure = loop {
+        match reader.next_line() {
+            Ok(Some(raw)) => {
+                if visit(Line { index, raw }, &opened_path, local).is_break() {
+                    break None;
+                }
+            }
+            Ok(None) => break None,
+            Err(error) => {
+                let tail = reader.rest();
+                if !tail.is_empty() && (policy.keep_interrupted_tail)(error.kind()) {
+                    let _ = visit(Line { index, raw: tail }, &opened_path, local);
+                }
+                break Some(ReadFailure {
+                    error,
+                    complete_lines: index,
+                    tail_bytes: tail.len(),
+                });
+            }
+        }
+        index += 1;
+    };
     recycle_line_buffer(capacity, reader);
-    finish(path, diagnostics, staged.as_ref(), policy, failure)?;
-    Ok(found)
+    finish(path, diagnostics, staged.as_ref(), policy, failure)
 }
 
 #[inline(never)]
@@ -344,50 +389,6 @@ impl<'a> Line<'a> {
 #[inline]
 pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
     serde_json::from_slice(bytes)
-}
-
-#[inline(never)]
-fn next_line(lines: &mut LineReader<Input>) -> io::Result<Option<&[u8]>> {
-    lines.next_line()
-}
-
-fn fold<B>(
-    lines: &mut LineReader<Input>,
-    keep_interrupted_tail: fn(io::ErrorKind) -> bool,
-    mut visit: impl FnMut(Line<'_>) -> ControlFlow<B>,
-) -> (Option<B>, Option<ReadFailure>) {
-    let mut index = 0;
-    loop {
-        match next_line(lines) {
-            Ok(Some(raw)) => {
-                if let ControlFlow::Break(value) = visit(Line { index, raw }) {
-                    return (Some(value), None);
-                }
-            }
-            Ok(None) => return (None, None),
-            Err(error) => {
-                let remaining = lines.rest();
-                let found = if !remaining.is_empty() && keep_interrupted_tail(error.kind()) {
-                    visit(Line {
-                        index,
-                        raw: remaining,
-                    })
-                    .break_value()
-                } else {
-                    None
-                };
-                return (
-                    found,
-                    Some(ReadFailure {
-                        error,
-                        complete_lines: index,
-                        tail_bytes: remaining.len(),
-                    }),
-                );
-            }
-        }
-        index += 1;
-    }
 }
 
 pub fn read_records<T: DeserializeOwned>(
