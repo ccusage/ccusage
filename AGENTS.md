@@ -53,3 +53,12 @@ Read the nearest `AGENTS.md` before editing:
   `git commit --amend` unless the user asks for an amend.
 - Work happens inside the pinned Nix dev shell: run `direnv allow` when first initializing this
   environment, and prefix one-offs with `direnv exec .` from outside it.
+
+## Pull Requests
+
+- Fix the root cause, not the symptom, and keep the diff on the task: no unrelated clean-up or refactoring.
+- A bug fix starts with a regression test that fails on `main` for the reported reason (`tdd`).
+- Report output and existing snapshots stay unchanged; when one must move, the PR body names the rows and why.
+- Run `just fmt`, `just typecheck`, and `just test` before opening the PR.
+- Commits are small, atomic Conventional Commits (`commit`).
+- The PR body states the root cause, names the regression test, and lists the checks run.
