@@ -237,8 +237,8 @@ exit: 0
         {
           "agent": "claude",
           "cacheCreationTokens": 1200,
-          "cacheReadTokens": 27100,
-          "inputTokens": 8470,
+          "cacheReadTokens": 27250,
+          "inputTokens": 8550,
           "modelBreakdowns": [
             {
               "cacheCreation1hTokens": 400,
@@ -260,11 +260,12 @@ exit: 0
             },
             {
               "cacheCreationTokens": 0,
-              "cacheReadTokens": 100,
-              "cost": 0.00016,
-              "inputTokens": 50,
+              "cacheReadTokens": 250,
+              "cost": 0.0071600000000000006,
+              "inputTokens": 130,
               "modelName": "claude-haiku-4-5-20251001",
-              "outputTokens": 20
+              "outputTokens": 45,
+              "storedCost": 0.007
             }
           ],
           "modelsUsed": [
@@ -272,9 +273,9 @@ exit: 0
             "claude-opus-4-20250514",
             "claude-sonnet-4-20250514"
           ],
-          "outputTokens": 2470,
-          "totalCost": 0.35546999999999995,
-          "totalTokens": 39240
+          "outputTokens": 2495,
+          "totalCost": 0.36246999999999996,
+          "totalTokens": 39495
         },
         {
           "agent": "cline",
@@ -1233,8 +1234,8 @@ exit: 0
         }
       ],
       "cacheCreationTokens": 13525,
-      "cacheReadTokens": 299309,
-      "inputTokens": 115780,
+      "cacheReadTokens": 299459,
+      "inputTokens": 115860,
       "metadata": {
         "agents": [
           "amp",
@@ -1262,12 +1263,12 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1020,
-          "cacheReadTokens": 35700,
-          "cost": 4.017273,
-          "inputTokens": 6763,
+          "cacheReadTokens": 35850,
+          "cost": 4.024273,
+          "inputTokens": 6843,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 2673,
-          "storedCost": 4.0
+          "outputTokens": 2698,
+          "storedCost": 4.007
         },
         {
           "cacheCreationTokens": 401,
@@ -1739,10 +1740,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 30266,
+      "outputTokens": 30291,
       "period": "2025-12",
-      "totalCost": 21.669557529999995,
-      "totalTokens": 459950
+      "totalCost": 21.676557529999993,
+      "totalTokens": 460205
     },
     {
       "agent": "all",
@@ -3709,11 +3710,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316617,
-    "inputTokens": 1349391,
-    "outputTokens": 59241,
-    "totalCost": 28.646206969999994,
-    "totalTokens": 2746731,
+    "cacheReadTokens": 1316767,
+    "inputTokens": 1349471,
+    "outputTokens": 59266,
+    "totalCost": 28.653206969999992,
+    "totalTokens": 2746986,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

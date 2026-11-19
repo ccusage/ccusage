@@ -48,8 +48,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13525,
-      "cacheReadTokens": 299309,
-      "inputTokens": 114780,
+      "cacheReadTokens": 299459,
+      "inputTokens": 114860,
       "metadata": {
         "agents": [
           "amp",
@@ -77,11 +77,11 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1020,
-          "cacheReadTokens": 35700,
-          "cost": 4.011405,
-          "inputTokens": 6763,
+          "cacheReadTokens": 35850,
+          "cost": 4.018405,
+          "inputTokens": 6843,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 2673
+          "outputTokens": 2698
         },
         {
           "cacheCreationTokens": 401,
@@ -521,10 +521,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 30166,
+      "outputTokens": 30191,
       "period": "2025-12",
-      "totalCost": 21.124243499999995,
-      "totalTokens": 458850
+      "totalCost": 21.131243499999997,
+      "totalTokens": 459105
     },
     {
       "agent": "all",
@@ -1195,11 +1195,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316617,
-    "inputTokens": 1348391,
-    "outputTokens": 59141,
-    "totalCost": 24.748788249999993,
-    "totalTokens": 2745631,
+    "cacheReadTokens": 1316767,
+    "inputTokens": 1348471,
+    "outputTokens": 59166,
+    "totalCost": 24.755788249999995,
+    "totalTokens": 2745886,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

@@ -502,8 +502,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 6111,
-      "cacheReadTokens": 185616,
-      "inputTokens": 66794,
+      "cacheReadTokens": 185766,
+      "inputTokens": 66874,
       "metadata": {
         "agents": [
           "amp",
@@ -531,11 +531,11 @@ exit: 0
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 1020,
-          "cacheReadTokens": 35600,
-          "cost": 2.02072,
-          "inputTokens": 6580,
+          "cacheReadTokens": 35750,
+          "cost": 2.02094,
+          "inputTokens": 6660,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 2631
+          "outputTokens": 2656
         },
         {
           "cacheCreationTokens": 200,
@@ -867,10 +867,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19832,
+      "outputTokens": 19857,
       "period": "2025-12-31",
-      "totalCost": 2.5806228550000005,
-      "totalTokens": 278963
+      "totalCost": 2.580842855,
+      "totalTokens": 279218
     },
     {
       "agent": "all",
@@ -1797,11 +1797,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17725,
-    "cacheReadTokens": 1312587,
-    "inputTokens": 1347381,
-    "outputTokens": 58921,
-    "totalCost": 8.789225970000002,
-    "totalTokens": 2740031,
+    "cacheReadTokens": 1312737,
+    "inputTokens": 1347461,
+    "outputTokens": 58946,
+    "totalCost": 8.789445970000001,
+    "totalTokens": 2740286,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

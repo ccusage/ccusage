@@ -95,25 +95,26 @@ exit: 0
     {
       "actualEndTime": "2025-12-31T12:00:00.000Z",
       "burnRate": null,
-      "costUSD": 0.12080999999999999,
+      "costUSD": 0.12780999999999998,
       "endTime": "2025-12-31T14:00:00.000Z",
-      "entries": 2,
+      "entries": 3,
       "id": "2025-12-31T09:00:00.000Z",
       "isActive": false,
       "isGap": false,
       "models": [
         "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
         "claude-opus-4-20250514"
       ],
       "projection": null,
       "startTime": "2025-12-31T09:00:00.000Z",
       "tokenCounts": {
         "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 2000,
-        "inputTokens": 5220,
-        "outputTokens": 850
+        "cacheReadInputTokens": 2150,
+        "inputTokens": 5300,
+        "outputTokens": 875
       },
-      "totalTokens": 8070
+      "totalTokens": 8325
     },
     {
       "actualEndTime": "2025-12-31T15:30:00.000Z",

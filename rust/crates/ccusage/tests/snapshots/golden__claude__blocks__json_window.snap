@@ -7,26 +7,27 @@ exit: 0
 {
   "blocks": [
     {
-      "actualEndTime": "2025-12-31T09:00:02.000Z",
+      "actualEndTime": "2025-12-31T09:30:00.000Z",
       "burnRate": null,
-      "costUSD": 0.00606,
+      "costUSD": 0.01306,
       "endTime": "2025-12-31T14:00:00.000Z",
-      "entries": 1,
+      "entries": 2,
       "id": "2025-12-31T09:00:00.000Z",
       "isActive": false,
       "isGap": false,
       "models": [
-        "claude-sonnet-4-20250514"
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001"
       ],
       "projection": null,
       "startTime": "2025-12-31T09:00:00.000Z",
       "tokenCounts": {
         "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 2000,
-        "inputTokens": 120,
-        "outputTokens": 340
+        "cacheReadInputTokens": 2150,
+        "inputTokens": 200,
+        "outputTokens": 365
       },
-      "totalTokens": 2460
+      "totalTokens": 2715
     },
     {
       "actualEndTime": null,
@@ -34,12 +35,12 @@ exit: 0
       "costUSD": 0,
       "endTime": "2025-12-31T15:30:00.000Z",
       "entries": 0,
-      "id": "gap-2025-12-31T14:00:02.000Z",
+      "id": "gap-2025-12-31T14:30:00.000Z",
       "isActive": false,
       "isGap": true,
       "models": [],
       "projection": null,
-      "startTime": "2025-12-31T14:00:02.000Z",
+      "startTime": "2025-12-31T14:30:00.000Z",
       "tokenCounts": {
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
