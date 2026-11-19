@@ -328,17 +328,19 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         &[("speed", json!("auto"))],
     );
 
-    let extra_section = |kind| match kind {
-        AgentCommandKind::Blocks(_) => blocks_section.clone(),
-        AgentCommandKind::ClaudeStatusline {
-            offline_by_default, ..
-        } => with_defaults(
-            statusline_section.clone(),
-            &[("offline", json!(offline_by_default))],
-        ),
-        AgentCommandKind::CodexStatusline {
-            offline_by_default, ..
-        } => codex_statusline_section(&shared, &codex, offline_by_default),
+    let extra_section = |kind| -> serde_json::Result<Value> {
+        Ok(match kind {
+            AgentCommandKind::Blocks(_) => blocks_section.clone(),
+            AgentCommandKind::ClaudeStatusline {
+                offline_by_default, ..
+            } => with_defaults(
+                statusline_section.clone(),
+                &[("offline", json!(offline_by_default))],
+            ),
+            AgentCommandKind::CodexStatusline {
+                offline_by_default, ..
+            } => codex_statusline_section(&shared, &codex, offline_by_default)?,
+        })
     };
 
     let mut root_commands = AgentId::Claude
@@ -358,13 +360,9 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
             (report.name().to_string(), section)
         })
         .collect::<Map<_, _>>();
-    root_commands.extend(
-        AgentId::Claude
-            .spec()
-            .extra_commands
-            .iter()
-            .map(|command| (command.name.to_string(), extra_section(command.kind))),
-    );
+    for command in AgentId::Claude.spec().extra_commands {
+        root_commands.insert(command.name.to_string(), extra_section(command.kind)?);
+    }
 
     let mut properties = Map::from_iter([
         (
@@ -414,12 +412,9 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
                 (report.name().to_string(), section)
             })
             .collect::<Map<_, _>>();
-        commands.extend(
-            agent
-                .extra_commands
-                .iter()
-                .map(|command| (command.name.to_string(), extra_section(command.kind))),
-        );
+        for command in agent.extra_commands {
+            commands.insert(command.name.to_string(), extra_section(command.kind)?);
+        }
         let mut agent_properties = Map::from_iter([
             ("defaults".to_string(), defaults),
             ("commands".to_string(), object_schema(commands)),
@@ -504,7 +499,7 @@ fn codex_statusline_section(
     shared: &Map<String, Value>,
     codex: &Map<String, Value>,
     offline_by_default: bool,
-) -> Value {
+) -> serde_json::Result<Value> {
     let properties = [
         "json",
         "jq",
@@ -519,20 +514,26 @@ fn codex_statusline_section(
         "pricingOverrides",
     ]
     .into_iter()
-    .map(|key| (key, &shared[key]))
-    .chain([("speed", &codex["speed"])])
-    .map(|(key, schema)| {
-        let mut schema = schema.clone();
-        if let Value::Object(fields) = &mut schema {
-            fields.remove("description");
+    .map(|key| (key, shared))
+    .chain([("speed", codex)])
+    .map(|(key, options)| {
+        let mut schema = options
+            .get(key)
+            .and_then(Value::as_object)
+            .cloned()
+            .ok_or_else(|| {
+                <serde_json::Error as serde::de::Error>::custom(format!(
+                    "missing object schema for Codex statusline option '{key}'"
+                ))
+            })?;
+        schema.remove("description");
+        if key == "offline" {
+            schema.insert("default".to_string(), json!(offline_by_default));
         }
-        (key.to_string(), schema)
+        Ok((key.to_string(), Value::Object(schema)))
     })
-    .collect();
-    with_defaults(
-        object_schema(properties),
-        &[("offline", json!(offline_by_default))],
-    )
+    .collect::<serde_json::Result<_>>()?;
+    Ok(object_schema(properties))
 }
 
 pub(crate) fn legacy_all_schema() -> Value {
@@ -779,10 +780,13 @@ fn add_agent_command_keys(schema: &mut Value) {
 mod tests {
     use std::collections::BTreeSet;
 
-    use serde_json::{Value, json};
+    use schemars::r#gen::SchemaSettings;
+    use serde_json::{Map, Value, json};
 
-    use super::StatuslineSpecificOptions;
-    use super::generate_config_schema_json;
+    use super::{
+        SharedOptions, StatuslineSpecificOptions, codex_statusline_section,
+        generate_config_schema_json, option_properties,
+    };
 
     #[test]
     fn published_example_uses_valid_config_keys() {
@@ -1285,6 +1289,17 @@ mod tests {
         for name in ["codex statusline", "codex:statusline"] {
             assert!(schema_property(&schema, &["commands", name]).is_some());
         }
+    }
+
+    #[test]
+    fn codex_statusline_schema_reports_a_missing_option() {
+        let mut generator = SchemaSettings::draft07().into_generator();
+        let shared = option_properties::<SharedOptions>(&mut generator).unwrap();
+        let error = codex_statusline_section(&shared, &Map::new(), true).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "missing object schema for Codex statusline option 'speed'"
+        );
     }
 
     #[test]
