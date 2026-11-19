@@ -5,19 +5,14 @@ use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LineReader};
 
 const READ_BUFFER_SIZE: usize = 256 * 1024;
 
-/// One line of a transcript, without its `\n`.
 #[derive(Clone, Copy)]
 pub(super) struct Line<'a> {
     pub(super) index: usize,
     pub(super) bytes: &'a [u8],
-    /// The file ends inside this line, so its record may still be being written.
+    // NOTE(2026-11-16): Claude Code appends to the transcript while it runs. An unterminated final line can still be in flight, so defer its malformed-record warning.
     unterminated: bool,
 }
 
-/// Visits every line of `path` in order.
-///
-/// A read failure still visits the bytes received before it as a final line,
-/// so a valid unterminated record survives an interrupted read.
 pub(super) fn for_each_line(path: &Path, diagnostics: &Diagnostics, visit: impl FnMut(Line<'_>)) {
     let Ok(file) = File::open(path) else {
         UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
@@ -94,7 +89,6 @@ pub(super) fn visit_lines(
     }
 }
 
-/// Records that line `index` of `path` carried a timestamp no day holds.
 pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
     diagnostics.record(Skip::record(
         path,
@@ -104,7 +98,6 @@ pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnos
     ));
 }
 
-/// Records why `line` of `path` was not counted.
 #[cold]
 pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
     let number = Skip::line_number(line.index);
@@ -236,8 +229,6 @@ mod tests {
     const CUT_LAST_LINE: &str = r#"{"message":{"usage":{"input_tokens":10}}}
 {"message":{"usage":{"input_tok"#;
 
-    /// Streams `path` and rejects its unterminated last line the way the
-    /// loaders do.
     fn reject_last_line(path: &Path, diagnostics: &Diagnostics) {
         let mut rejected_lines = 0;
         for_each_line(path, diagnostics, |line| {

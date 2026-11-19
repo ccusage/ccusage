@@ -15,40 +15,38 @@ use jiff::tz::TimeZone;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-/// A block is warned about once it passes this share of the token limit.
 const BLOCKS_WARNING_THRESHOLD: f64 = 0.8;
-/// Terminal width below which the blocks table drops columns.
 const BLOCKS_COMPACT_WIDTH_THRESHOLD: usize = 120;
 
 #[derive(Debug, Clone)]
-pub struct SessionBlock {
-    pub id: String,
-    pub start_time: TimestampMs,
-    pub end_time: TimestampMs,
-    pub actual_end_time: Option<TimestampMs>,
-    pub is_active: bool,
-    pub is_gap: bool,
-    pub entries: Vec<LoadedEntry>,
-    pub token_counts: TokenCounts,
-    pub cost_usd: f64,
-    pub models: Vec<String>,
-    pub usage_limit_reset_time: Option<TimestampMs>,
+pub(crate) struct SessionBlock {
+    pub(crate) id: String,
+    pub(crate) start_time: TimestampMs,
+    pub(crate) end_time: TimestampMs,
+    pub(crate) actual_end_time: Option<TimestampMs>,
+    pub(crate) is_active: bool,
+    pub(crate) is_gap: bool,
+    pub(crate) entries: Vec<LoadedEntry>,
+    pub(crate) token_counts: TokenCounts,
+    pub(crate) cost_usd: f64,
+    pub(crate) models: Vec<String>,
+    pub(crate) usage_limit_reset_time: Option<TimestampMs>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BurnRate {
-    pub tokens_per_minute: f64,
-    pub tokens_per_minute_for_indicator: f64,
-    pub cost_per_hour: f64,
+pub(crate) struct BurnRate {
+    pub(crate) tokens_per_minute: f64,
+    pub(crate) tokens_per_minute_for_indicator: f64,
+    pub(crate) cost_per_hour: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Projection {
-    pub total_tokens: u64,
-    pub total_cost: f64,
-    pub remaining_minutes: u64,
+pub(crate) struct Projection {
+    pub(crate) total_tokens: u64,
+    pub(crate) total_cost: f64,
+    pub(crate) remaining_minutes: u64,
 }
 
 pub(crate) fn identify_session_blocks(
@@ -168,20 +166,20 @@ fn create_gap_block(last: TimestampMs, next: TimestampMs, duration: i64) -> Sess
     }
 }
 
-pub fn filter_blocks_by_date(blocks: &mut Vec<SessionBlock>, window: &ReportWindow) {
+pub(crate) fn filter_blocks_by_date(blocks: &mut Vec<SessionBlock>, window: &ReportWindow) {
     if !window.is_unbounded() {
         blocks.retain(|block| window.contains_timestamp(block.start_time));
     }
 }
 
-pub fn sort_blocks(blocks: &mut [SessionBlock], order: &SortOrder) {
+pub(crate) fn sort_blocks(blocks: &mut [SessionBlock], order: &SortOrder) {
     blocks.sort_by_key(|block| block.start_time);
     if *order == SortOrder::Desc {
         blocks.reverse();
     }
 }
 
-pub fn block_json(
+pub(crate) fn block_json(
     block: &SessionBlock,
     token_limit: Option<NonZeroU64>,
     now: TimestampMs,
@@ -346,7 +344,7 @@ fn format_block_started(timestamp: TimestampMs, zone: &TimeZone) -> Result<Strin
     ))
 }
 
-pub fn print_blocks_table(
+pub(crate) fn print_blocks_table(
     blocks: &[SessionBlock],
     token_limit: Option<NonZeroU64>,
     shared: &SharedArgs,
@@ -487,7 +485,7 @@ pub fn print_blocks_table(
     Ok(())
 }
 
-pub fn print_active_block_detail(
+pub(crate) fn print_active_block_detail(
     block: &SessionBlock,
     token_limit: Option<NonZeroU64>,
     shared: &SharedArgs,
@@ -592,7 +590,7 @@ pub fn print_active_block_detail(
     Ok(())
 }
 
-pub fn calculate_burn_rate(block: &SessionBlock) -> Option<BurnRate> {
+pub(crate) fn calculate_burn_rate(block: &SessionBlock) -> Option<BurnRate> {
     if block.entries.is_empty() || block.is_gap {
         return None;
     }
@@ -647,7 +645,7 @@ fn limit_status(projected: u64, limit: NonZeroU64) -> LimitStatus {
     }
 }
 
-pub fn format_remaining_time(minutes: i64) -> String {
+pub(crate) fn format_remaining_time(minutes: i64) -> String {
     let hours = minutes / 60;
     let mins = minutes % 60;
     if hours > 0 {

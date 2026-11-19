@@ -137,9 +137,6 @@ fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
     })
 }
 
-/// Deduplicated daily entries plus the sessions of main-thread copies dedup
-/// merged into them from other sessions, such as a resumed or forked
-/// transcript repeating a turn, as `(survivor index, copy session)` pairs.
 pub(super) struct DedupedDailyEntries {
     entries: Vec<ClaudeEntry>,
     copies: Vec<(usize, Arc<str>)>,
@@ -169,8 +166,6 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
     )
 }
 
-/// Loads and deduplicates the files `discover` yields, or `None` when it
-/// yields none.
 fn load_deduped_daily_entries(
     discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
     context: &UsageLoadContext<'_>,
@@ -194,7 +189,6 @@ fn load_deduped_daily_entries(
 pub(super) fn dedupe_files<E: DedupEntry>(
     mut files: Vec<(PathBuf, Vec<E>)>,
 ) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
-    // Dedup keeps the first copy it meets, so files are folded in listing order.
     files.sort_by_cached_key(|(path, _)| usage_file_order(path));
     let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
@@ -288,7 +282,6 @@ pub(super) struct ClaudeEntry {
     recorded_cost: RecordedCost,
 }
 
-/// A record's `costUSD`: absent, carried but not billed by `--mode`, or billed.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum RecordedCost {
     Absent,
@@ -468,11 +461,6 @@ impl RawUsageMessage {
     }
 }
 
-/// Parses a direct assistant line, falling back to the AgentProgress wrapper.
-///
-/// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
-/// use; the derive would first buffer every line, message content included, into an
-/// intermediate tree.
 pub(super) fn parse_usage_line(
     line: &[u8],
 ) -> std::result::Result<(ClaudeUsageRecord, AdvisorLookup), Rejection> {
@@ -516,6 +504,7 @@ impl AdvisorLookup {
     }
 }
 
+// NOTE(2026-05-19, #977): Claude Code also writes assistant usage under `data.message.message` in AgentProgress records. Read that envelope for subagent usage.
 #[derive(Debug, Deserialize)]
 struct AgentProgressEntry {
     #[serde(rename = "sessionId")]
@@ -797,8 +786,7 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                 })
             })
             .or_else(|| {
-                // /btw sidechain logs can replay parent messages with new request IDs. A parent
-                // candidate only has to look through sidechain entries.
+                // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
                 let candidate_is_sidechain = entry.is_sidechain();
                 let route_hash = if candidate_is_sidechain {
                     sidechain_replay_dedupe_hash(message_id, entry.session_id())
@@ -826,8 +814,6 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
         if deduped[index].session_id() != entry.session_id()
             && let Some(message_id) = entry.message_id()
         {
-            // Cross-session copies can become the survivor, so keep every session route used by
-            // later sidechain replays.
             let existing_session_id = deduped[index].session_id();
             for session_id in [entry.session_id(), existing_session_id] {
                 for route_hash in [
@@ -840,8 +826,6 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
         }
         let discarded = if should_replace_deduped_entry(&entry, &deduped[index]) {
             let previous = std::mem::replace(&mut deduped[index], entry);
-            // The survivor is already indexed under its previous keys. Only register the keys
-            // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
             if entry_exact_hash(&previous) != Some(hash) {
                 push_deduped_index(deduped_indexes, hash, index);
             }
@@ -874,7 +858,6 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
     let index = deduped.len();
     deduped.push(entry);
     if let Some((hash, None)) = dedupe_lookup {
-        // `index` is new, so none of these buckets can already hold it.
         push_new_deduped_index(deduped_indexes, hash, index);
         let survivor = &deduped[index];
         if let Some(message_id) = survivor.message_id() {

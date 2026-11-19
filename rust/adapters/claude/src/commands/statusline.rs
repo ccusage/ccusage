@@ -100,12 +100,6 @@ fn statusline_shared(args: &StatuslineArgs) -> SharedArgs {
     }
 }
 
-/// Resolve the model label shown in the statusline.
-///
-/// Looks up the model's `display_name` in the user-configured alias map and
-/// returns the matching short label when present. Long identifiers such as AWS
-/// Bedrock inference profile ARNs can therefore be displayed as a concise name.
-/// Falls back to the original `display_name` when no alias matches.
 fn resolve_model_label<'a>(aliases: &'a HashMap<String, String>, display_name: &'a str) -> &'a str {
     aliases
         .get(display_name)
@@ -113,12 +107,7 @@ fn resolve_model_label<'a>(aliases: &'a HashMap<String, String>, display_name: &
         .unwrap_or(display_name)
 }
 
-/// Format the model segment of the statusline.
-///
-/// Appends the reasoning effort level reported by Claude Code (e.g.
-/// `Fable 5 (high)`) when present. Claude Code omits the `effort` field for
-/// models without the effort parameter, so the segment falls back to the bare
-/// model label in that case.
+// NOTE(2026-07-08, Claude Code 2.1.202, #1405): Claude Code omits effort for models without an effort setting. Keep the model label when the hook omits it.
 fn format_model_segment(model_label: &str, effort: Option<&HookEffort>) -> String {
     match effort {
         Some(effort) if !effort.level.is_empty() => format!("{model_label} ({})", effort.level),
@@ -275,17 +264,8 @@ fn statusline_today_shared(
     }
 }
 
-/// Lookback windows, in days behind the session window, tried in turn before
-/// the active block falls back to the full history.
 const STATUSLINE_BLOCK_LOOKBACK_DAYS: [i64; 3] = [1, 7, 30];
 
-/// Finds the active billing block, reading only recent usage files when the
-/// history allows it.
-///
-/// Block boundaries chain from earlier entries until usage pauses for longer
-/// than a session window, so a bounded load only reproduces the unbounded
-/// blocks once it reaches back past such a pause. Each window is widened until
-/// it does, and the full history is read as a last resort.
 fn load_statusline_active_block(
     args: &StatuslineArgs,
     shared: &SharedArgs,
@@ -326,30 +306,17 @@ fn find_active_block(entries: Vec<LoadedEntry>, now: TimestampMs) -> Option<Sess
 
 #[derive(Debug, PartialEq)]
 enum BlockAnchor {
-    /// No entry falls inside the last session window, so no block is active.
     NoActiveBlock,
-    /// Blocks from this entry onward match an unbounded load.
     From(TimestampMs),
-    /// The window holds no pause long enough to anchor block boundaries.
     NeedsMoreHistory,
-    /// Future-dated entries can form blocks after the current one, so only
-    /// the unbounded selection is safe.
     NeedsFullHistory,
 }
 
-/// Decides whether the entries inside a window pin down the active block.
-///
-/// @param timestamps Sorted timestamps of every entry dated inside the window.
-/// @param now Current time.
-/// @param session_ms Session block length in milliseconds.
-/// @returns Where block boundaries become independent of older history.
 fn statusline_block_anchor(
     timestamps: &[TimestampMs],
     now: TimestampMs,
     session_ms: i64,
 ) -> BlockAnchor {
-    // The window reaches further back than one session, so without an entry in
-    // the last session window no block can be active, whatever lies before it.
     let Some(&last) = timestamps.last() else {
         return BlockAnchor::NoActiveBlock;
     };
@@ -367,9 +334,6 @@ fn statusline_block_anchor(
         })
 }
 
-/// Bounds a statusline load to the session window plus `lookback_days`.
-///
-/// `until` stays open because an active block ends in the future.
 fn statusline_block_shared(
     args: &StatuslineArgs,
     shared: &SharedArgs,
@@ -564,8 +528,7 @@ fn process_is_alive(pid: u32) -> bool {
     unsafe extern "C" {
         fn kill(pid: i32, sig: i32) -> i32;
     }
-    // `kill` reads a pid of 0 or below as a process group, so a cached pid
-    // that is not a positive `pid_t` names no single process.
+    // NOTE(2026-11-16): POSIX kill treats zero and negative PIDs as group or broadcast targets. Probe only a positive PID from the cache.
     let Some(pid) = i32::try_from(pid).ok().filter(|pid| *pid > 0) else {
         return false;
     };
@@ -908,7 +871,6 @@ mod tests {
             offline: true,
             ..SharedArgs::default()
         };
-        // 2026-05-22T01:27:00+09:00
         let now = TimestampMs::from_millis(1_779_380_820_000);
 
         let block_shared = statusline_block_shared(&args, &shared, now, 1);
@@ -940,7 +902,6 @@ mod tests {
             statusline_block_anchor(&[at(30), at(6)], now, session),
             BlockAnchor::NoActiveBlock
         );
-        // Only the latest pause longer than a session counts.
         assert_eq!(
             statusline_block_anchor(&[at(40), at(30), at(20), at(18), at(1)], now, session),
             BlockAnchor::From(at(1))
@@ -953,12 +914,10 @@ mod tests {
             ),
             BlockAnchor::From(at(20))
         );
-        // A pause of exactly one session keeps the chain going.
         assert_eq!(
             statusline_block_anchor(&[at(9), at(4), at(1)], now, session),
             BlockAnchor::NeedsMoreHistory
         );
-        // A gap before a future-dated entry must not hide the current block.
         assert_eq!(
             statusline_block_anchor(&[at(1), at(-8)], now, session),
             BlockAnchor::NeedsFullHistory

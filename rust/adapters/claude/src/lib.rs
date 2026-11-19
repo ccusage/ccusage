@@ -63,8 +63,6 @@ pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result
     load_deduped_entries(shared, project_filter).map(|deduped| deduped.entries)
 }
 
-/// Loads every deduplicated Claude usage entry like [`load_entries`], keeping
-/// the sessions of the copies dedup merged into them.
 pub(crate) fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -80,7 +78,6 @@ pub(crate) fn load_deduped_entries(
     Ok(loaded)
 }
 
-/// Loads deduplicated entries with progress owned by the caller or source.
 fn load_deduped_entries_with_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -91,14 +88,10 @@ fn load_deduped_entries_with_progress(
     owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)
 }
 
-/// Deduplicated Claude entries plus the main-thread copies dedup merged into
-/// them from other sessions, such as a resumed or forked transcript repeating
-/// a turn.
 #[derive(Default)]
 pub(crate) struct DedupedEntries {
     entries: Vec<LoadedEntry>,
     detected: bool,
-    /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
 
@@ -118,8 +111,6 @@ impl DedupedEntries {
     }
 }
 
-/// Loads deduplicated entries inside the requested report window, skipping
-/// files last written before its lower bound.
 pub(crate) fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -130,7 +121,6 @@ pub(crate) fn load_entries_since(
     Ok(entries)
 }
 
-/// Loads bounded entries into caller-owned diagnostics without emitting warnings.
 pub(crate) fn load_entries_since_with_diagnostics(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -142,7 +132,6 @@ pub(crate) fn load_entries_since_with_diagnostics(
     .map(|deduped| deduped.entries)
 }
 
-/// Loads daily Claude summaries inside the requested report window.
 pub(crate) fn load_daily_summaries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -169,17 +158,12 @@ fn main_thread_sessions<'a>(entries: impl Iterator<Item = (&'a str, bool)>) -> M
         .collect()
 }
 
-/// Daily Claude summaries plus whether any Claude usage exists at all.
 pub(crate) struct DailySummaries {
-    /// Summaries inside the requested report window.
     summaries: Vec<UsageSummary>,
-    /// Whether any usage file holds an entry, including files skipped as
-    /// outside the `--since` window.
     detected: bool,
     sessions: MainThreadSessions,
 }
 
-/// Loads daily summaries with progress owned by the caller or source.
 pub(crate) fn load_daily_summaries_with_detection_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -349,11 +333,7 @@ fn load_entries_with_mode(
     })
 }
 
-/// Breaks a tie between duplicates with equal token totals by keeping the copy
-/// that reports more of the request: the speed tier, with `Fast` above
-/// `Standard` because only `Fast` carries the fast-mode price multiplier, then
-/// the cache-write TTL split, then a recorded `costUSD`. Every key is a fact of
-/// the record, so the survivor does not depend on `--mode` or on pricing.
+// NOTE(2026-03-09, #886): Claude Code bills fast-mode usage at a higher rate. Prefer the fast record when otherwise equal copies disagree on speed.
 fn reports_more_of_the_request<E: daily::DedupEntry>(candidate: &E, existing: &E) -> bool {
     let detail = |entry: &E| {
         let usage = entry.usage();
@@ -371,13 +351,7 @@ fn reports_more_of_the_request<E: daily::DedupEntry>(candidate: &E, existing: &E
     detail(candidate) > detail(existing)
 }
 
-/// Exact-match dedupe key shared by every report path.
-///
-/// Matching message and request IDs identify one response across sessions. Without a request
-/// ID, gateways can reuse one message ID for every response, so the key is scoped to the
-/// session and timestamp instead. Per-response IDs are unique per response, so requestless
-/// entries with one collapse by session across timestamps: Claude Code writes one line per
-/// content block with the same `message.id` but distinct timestamps.
+// NOTE(2026-09-18, #1765): Claude Code can copy a response into multiple transcripts with the same message and request IDs. Match those IDs across sessions.
 fn usage_dedupe_hash(
     message_id: &str,
     request_id: Option<&str>,
@@ -389,6 +363,7 @@ fn usage_dedupe_hash(
     request_id.hash(&mut hasher);
     if request_id.is_none() {
         session_id.hash(&mut hasher);
+        // NOTE(2026-09-25, #1799): Some gateways reuse a message ID for independent responses without request IDs. Keep their distinct timestamps separate.
         if !is_per_response_message_id(message_id) {
             timestamp.hash(&mut hasher);
         }
@@ -396,8 +371,7 @@ fn usage_dedupe_hash(
     hasher.finish()
 }
 
-/// The prefix is a heuristic: only a request ID proves two lines belong to one response, so a
-/// gateway that reused a `msg_`-shaped placeholder would collapse to one entry per session.
+// NOTE(2026-10-10, #1838): Claude Code writes content blocks of one response on separate lines with the same response ID and different timestamps. Match those IDs across timestamps, including OpenAI Responses IDs (#1935).
 pub(crate) fn is_per_response_message_id(message_id: &str) -> bool {
     message_id.starts_with("msg_") || message_id.starts_with("resp_")
 }
@@ -410,7 +384,6 @@ fn sidechain_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
     hasher.finish()
 }
 
-/// Replay route that only indexes sidechain entries, for parent candidates.
 fn sidechain_entry_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
     let mut hasher = FxHasher::default();
     "sidechain-replay-entry".hash(&mut hasher);
@@ -618,9 +591,11 @@ fn advisor_usages_from_envelope(envelope: UsageIterationsEnvelope) -> AdvisorUsa
     let mut advisors = AdvisorUsages::default();
     for iteration in &iterations {
         let text = |key: &str| iteration.get(key).and_then(serde_json::Value::as_str);
+        // NOTE(2026-09-16, Claude Code 2.1.268, #1719): Claude Code 2.1.266 onward can write a null model on Fable 5.1 main-model iterations. Require a model only for advisor usage.
         let Some(model) = text("model").filter(|model| !model.is_empty()) else {
             continue;
         };
+        // NOTE(2026-07-10, #1423): Claude Code reports advisor usage separately from the top-level main-model totals. Count only advisor iterations in this additional pass.
         if text("type") != Some("advisor_message") {
             continue;
         }
@@ -641,9 +616,7 @@ fn advisor_usages_from_envelope(envelope: UsageIterationsEnvelope) -> AdvisorUsa
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Rejection {
-    // NOTE(2026-11-16): Claude Code itself writes `<synthetic>` API-error, refusal and
-    // interrupt lines with `"speed":null` and zero tokens, so a null in a field the loader
-    // reads is skipped quietly rather than reported as invalid data.
+    // NOTE(2026-11-16): Claude Code writes synthetic error, refusal and interrupt records with null speed and zero tokens. Skip these quietly to avoid invalid-data warnings during normal operation.
     NullContract,
     Malformed,
 }
@@ -1276,8 +1249,6 @@ mod tests {
         }
     }
 
-    /// Duplicate handling is the typed parse's alone, so it must not depend on whether
-    /// the line also carries an allowed or exempted `null`.
     #[test]
     fn handles_duplicate_members_the_same_with_or_without_nulls() {
         for nulls in [
@@ -1339,7 +1310,6 @@ mod tests {
         .is_err());
     }
 
-    /// The repro line from #1710 loads as one Fable 5.1 entry with its own token counts.
     #[test]
     fn counts_entries_whose_iteration_model_is_null() {
         let fixture = fs_fixture!({

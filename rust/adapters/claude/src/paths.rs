@@ -16,7 +16,7 @@ use crate::{
 };
 use ccusage_adapter_common::visit_usage_files as visit_usage_files_in;
 
-pub fn claude_paths() -> Result<Vec<PathBuf>> {
+pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
         home::ClaudeConfigDirs::Env { value, dirs } => (Some(value), dirs),
         home::ClaudeConfigDirs::Default(dirs) => (None, dirs),
@@ -52,7 +52,6 @@ pub(crate) fn usage_files(
     files
 }
 
-/// Hands each usage file to `visit` as the walk finds it, unsorted.
 pub(crate) fn visit_usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
@@ -80,47 +79,18 @@ pub(crate) fn visit_usage_files(
     }
 }
 
-/// The order [`usage_files`] lists files in, which deduplication depends on.
 pub(crate) fn usage_file_order(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Margin subtracted from the `--since` lower bound before comparing it with
-/// file mtimes. It absorbs the gap between the timezone-resolved bound and
-/// wall-clock mtimes, plus sessions flushed well after the entries they hold.
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 
-/// Usage files split by whether they can hold entries inside a `--since`
-/// window.
 pub(super) struct SinceFiles {
-    /// Files that may hold entries inside the window, in discovery order.
     pub(super) kept: Vec<PathBuf>,
-    /// Files skipped because their whole session was last written before it.
     pub(super) pruned: Vec<PathBuf>,
 }
 
-/// Drops sessions whose files were all last written before the `--since`
-/// window.
-///
-/// Claude session JSONL files are append-only, so a file last written before
-/// the window opened cannot hold an entry inside it. Deduplication matches
-/// sidechain replays against their parent messages by session ID, which spans
-/// files (subagent and workflow transcripts, legacy flat `agent-*.jsonl`
-/// files, copies in another config root), so files are kept or dropped per
-/// connected group of session IDs: dropping a parent file alone would let its
-/// replay count twice. Copies of a message in other sessions, such as resumed
-/// transcripts, keep the original timestamp, so they fall on the same side of
-/// the window as the original.
-///
-/// Only the file list is narrowed; entries parsed from a surviving file are
-/// untouched. Every file is kept when `since` is unset or unparsable, when the
-/// window opens ahead of the current clock, or when a file's mtime cannot be
-/// read.
-///
-/// @param files Discovered usage files.
-/// @param shared Report arguments providing `since` and `timezone`.
-/// @param now Current wall-clock time.
-/// @returns The kept files and the pruned ones, each in discovery order.
+// NOTE(2026-09-25, #1794): Claude Code appends session JSONL, and a transcript can record a session ID different from its directory. Keep related transcripts together when pruning by mtime so a replay still has its parent.
 pub(super) fn split_files_before_since(
     files: Vec<PathBuf>,
     shared: &SharedArgs,
@@ -134,21 +104,18 @@ pub(super) fn split_files_before_since(
     let (Some(since_ms), _) = date_range_bounds_ms(shared.since.as_deref(), None, &timezone) else {
         return keep_all(files);
     };
-    // Entry timestamps can outrun any mtime the filesystem reports when the
-    // window starts in the future, so an mtime cannot rule a file out.
     if since_ms > now.as_millis() {
         return keep_all(files);
     }
     let threshold = since_ms.saturating_sub(MTIME_PRUNE_MARGIN_MS);
 
-    // Union every file's session IDs so files sharing any ID share a group.
     let mut sessions = SessionGroups::default();
     let file_groups = files
         .iter()
         .map(|file| {
             let (path_session, _) = extract_session_parts(file);
             let group = sessions.id(&path_session);
-            if let Some(recorded) = recorded_session_id(file) {
+            if let Some(recorded) = first_recorded_session_id(file) {
                 let recorded = sessions.id(&recorded);
                 sessions.union(group, recorded);
             }
@@ -176,7 +143,6 @@ pub(super) fn split_files_before_since(
     split
 }
 
-/// Union-find over session IDs.
 #[derive(Default)]
 struct SessionGroups {
     ids: FxHashMap<String, usize>,
@@ -196,7 +162,6 @@ impl SessionGroups {
 
     fn root(&mut self, mut id: usize) -> usize {
         while self.parents[id] != id {
-            // Path halving: point each visited node at its grandparent.
             self.parents[id] = self.parents[self.parents[id]];
             id = self.parents[id];
         }
@@ -209,10 +174,7 @@ impl SessionGroups {
     }
 }
 
-/// Returns the first `sessionId` a transcript records, which is the session
-/// the loaders attribute its entries to. Transcripts record a single session,
-/// so reading stops at the first line that names one.
-fn recorded_session_id(path: &Path) -> Option<String> {
+fn first_recorded_session_id(path: &Path) -> Option<String> {
     #[derive(Deserialize)]
     struct SessionIdProbe {
         #[serde(rename = "sessionId")]
@@ -259,7 +221,7 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-pub fn extract_project(path: &Path) -> String {
+pub(crate) fn extract_project(path: &Path) -> String {
     let mut saw_projects = false;
     for part in path
         .components()
@@ -280,7 +242,7 @@ pub fn extract_project(path: &Path) -> String {
     "unknown".to_string()
 }
 
-pub fn extract_session_parts(path: &Path) -> (String, String) {
+pub(crate) fn extract_session_parts(path: &Path) -> (String, String) {
     let parts = path
         .components()
         .filter_map(|component| component.as_os_str().to_str())
@@ -520,7 +482,6 @@ mod tests {
         let live_agent = root.join("projects/p/live/subagents/agent-a.jsonl");
         let stale_parent = root.join("projects/p/stale.jsonl");
         let stale_agent = root.join("projects/p/stale/subagents/agent-b.jsonl");
-        // Only the live session's subagent was written inside the window.
         set_modified(&live_parent, instant("2026-09-01T12:00:00Z"));
         set_modified(&live_agent, instant("2026-09-21T12:00:00Z"));
         set_modified(&stale_parent, instant("2026-09-01T12:00:00Z"));
@@ -604,7 +565,8 @@ mod tests {
         });
 
         assert_eq!(
-            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            super::first_recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl"))
+                .as_deref(),
             Some("parent")
         );
     }
@@ -620,7 +582,8 @@ mod tests {
         });
 
         assert_eq!(
-            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            super::first_recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl"))
+                .as_deref(),
             Some("parent")
         );
     }
