@@ -15,23 +15,24 @@ const LOADED_FIELDS: [&str; 12] = [
     "litellm_provider",
 ];
 
+// NOTE(2026-11-19): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai and https://docs.litellm.ai/docs/providers/moonshot.
+const SOURCES: &str = include_str!("litellm-sources.json");
+
 pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
     let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
         return None;
     };
+    let sources: Value = serde_json::from_str(SOURCES).ok()?;
+    let admissions = sources.get("embedded")?.as_array()?;
     let mut filtered = Map::new();
     for (model, pricing) in raw {
-        if !is_embedded_model(&model) {
-            continue;
-        }
         let Value::Object(pricing) = pricing else {
             continue;
         };
-        if (model.starts_with("deepseek-") || model.starts_with("deepseek/"))
-            && (pricing.get("litellm_provider").and_then(Value::as_str) != Some("deepseek")
-                || ["input_cost_per_token", "output_cost_per_token"]
-                    .into_iter()
-                    .all(|field| pricing.get(field).and_then(Value::as_f64) == Some(0.0)))
+        let provider = pricing.get("litellm_provider").and_then(Value::as_str);
+        if !admissions
+            .iter()
+            .any(|rule| is_admitted(rule, &model, provider))
         {
             continue;
         }
@@ -63,27 +64,14 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
     serde_json::to_string(&Value::Object(filtered)).ok()
 }
 
-fn is_embedded_model(model: &str) -> bool {
-    model.starts_with("claude-")
-        || model.starts_with("anthropic.")
-        || model.starts_with("anthropic/")
-        || model.starts_with("us.anthropic.")
-        || model.starts_with("eu.anthropic.")
-        || model.starts_with("global.anthropic.")
-        || model.starts_with("jp.anthropic.")
-        || model.starts_with("au.anthropic.")
-        || model.starts_with("gpt-")
-        || model == "o3"
-        || model.starts_with("o3-")
-        || model == "o4-mini"
-        || model.starts_with("o4-mini-")
-        || model.starts_with("openai/")
-        || model.starts_with("azure/")
-        || model.starts_with("zai/")
-        || model.starts_with("deepseek-")
-        || model.starts_with("deepseek/")
-        || model.starts_with("openrouter/openai/")
-        || matches!(model, "gemini-2.5-flash" | "gemini-2.5-flash-lite")
+fn is_admitted(rule: &Value, key: &str, provider: Option<&str>) -> bool {
+    rule.get("key").and_then(Value::as_str) == Some(key)
+        || rule
+            .get("keyPrefix")
+            .and_then(Value::as_str)
+            .is_some_and(|prefix| key.starts_with(prefix))
+        || provider
+            .is_some_and(|provider| rule.get("provider").and_then(Value::as_str) == Some(provider))
 }
 
 #[cfg(test)]
@@ -92,7 +80,7 @@ mod tests {
     use ccusage_core::PricingMap;
 
     #[test]
-    fn retains_only_paid_direct_deepseek_rows() {
+    fn admits_free_direct_rows_and_excludes_same_prefix_hosted_rows() {
         let json = serde_json::json!({
             "deepseek-chat": {"litellm_provider":"deepseek","input_cost_per_token":0.00000028,"output_cost_per_token":0.00000042},
             "deepseek/deepseek-v3": {"litellm_provider":"deepseek","input_cost_per_token":0.00000027,"output_cost_per_token":0.0000011},
@@ -110,8 +98,23 @@ mod tests {
                 .keys()
                 .map(String::as_str)
                 .collect::<Vec<_>>(),
-            ["deepseek-chat", "deepseek/deepseek-v3"]
+            [
+                "deepseek-chat",
+                "deepseek/deepseek-test",
+                "deepseek/deepseek-v3"
+            ]
         );
+    }
+
+    #[test]
+    fn keeps_the_two_existing_exact_key_admissions() {
+        let sources: serde_json::Value = serde_json::from_str(super::SOURCES).unwrap();
+        let rules = sources["embedded"].as_array().unwrap();
+        let keys: Vec<_> = rules
+            .iter()
+            .filter_map(|rule| rule["key"].as_str())
+            .collect();
+        assert_eq!(keys, ["o3", "o4-mini"]);
     }
 
     #[test]

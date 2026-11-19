@@ -35,6 +35,7 @@ fn main() {
     fs::write(out_path, deflate(pricing_json.as_bytes()))
         .expect("write build-time pricing snapshot");
 
+    embed_snapshot("src/litellm-sources.json", "litellm-sources.json.deflate");
     embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON);
     embed_snapshot(
         MODELS_DEV_CATALOG_RULES_JSON,

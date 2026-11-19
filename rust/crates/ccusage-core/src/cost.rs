@@ -311,8 +311,9 @@ mod tests {
 
     #[test]
     fn candidate_entry_modes_keep_stored_costs_separate_from_lookup_results() {
+        crate::test_support::install_pricing_snapshots();
         let mut map = PricingMap::default();
-        map.load_json(r#"{"free": {"input_cost_per_token": 0, "output_cost_per_token": 0}}"#);
+        map.load_json(r#"{"free": {"litellm_provider": "openai", "input_cost_per_token": 0, "output_cost_per_token": 0}}"#);
         let candidates = [("free", crate::pricing::MatchKind::Exact)];
         for (mode, stored_cost, expected, matched) in [
             (CostMode::Display, Some(7.0), 7.0, None),
@@ -498,6 +499,7 @@ mod tests {
 
     #[test]
     fn absent_cache_writes_follow_family_and_reads_preserve_their_fallback() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -530,9 +532,10 @@ mod tests {
 
     #[test]
     fn zero_rate_pricing_is_not_missing_pricing() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
-            r#"{ "free-model": { "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
+            r#"{ "free-model": { "litellm_provider": "openai", "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
         );
 
         assert_eq!(

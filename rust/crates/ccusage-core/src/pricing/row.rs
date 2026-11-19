@@ -1,11 +1,12 @@
 use super::{CacheDefaults, Pricing, data};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct Row {
     pub(super) pricing: Pricing,
     pub(super) context_limit: Option<u64>,
     pub(super) exact_only: bool,
-    pub(super) literal_only: bool,
+    pub(super) scope: Scope,
+    pub(super) vendor_id: Option<Box<str>>,
 }
 
 impl Default for Row {
@@ -14,8 +15,35 @@ impl Default for Row {
             pricing: Pricing::empty(),
             context_limit: None,
             exact_only: false,
-            literal_only: false,
+            scope: Scope::Hosted,
+            vendor_id: None,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Scope {
+    Direct,
+    Hosted,
+}
+
+impl Row {
+    pub(super) fn is_bare_hosted(&self, key: &str) -> bool {
+        self.scope == Scope::Hosted && !key.contains('/')
+    }
+}
+
+pub(super) fn vendor_id<'a>(key: &'a str, provider: &str) -> &'a str {
+    key.strip_prefix(provider)
+        .and_then(|suffix| suffix.strip_prefix('/'))
+        .unwrap_or(key)
+}
+
+pub(super) fn row_scope(key: &str, provider: &str, direct: &[String]) -> (Scope, Option<Box<str>>) {
+    if direct.iter().any(|id| id == provider) {
+        (Scope::Direct, Some(vendor_id(key, provider).into()))
+    } else {
+        (Scope::Hosted, None)
     }
 }
 

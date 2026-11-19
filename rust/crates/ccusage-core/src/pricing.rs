@@ -16,7 +16,7 @@ use crate::{
 mod builtin_pricing;
 mod data;
 mod row;
-use row::{Row, cache_defaults};
+use row::{Row, Scope, cache_defaults, row_scope, vendor_id};
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -35,6 +35,7 @@ const ULTRAFAST_MULTIPLIER_OVERRIDES_JSON: &str =
 /// crate and every adapter built on it.
 #[derive(Clone, Copy, Debug)]
 pub struct EmbeddedSnapshots {
+    pub litellm_sources: &'static [u8],
     pub litellm_pricing: &'static [u8],
     /// The committed models.dev pricing snapshot.
     pub models_dev_pricing: &'static [u8],
@@ -54,6 +55,7 @@ static EMBEDDED_SNAPSHOTS: OnceLock<EmbeddedSnapshots> = OnceLock::new();
 ///
 /// ```ignore
 /// ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
+///     litellm_sources: ccusage_pricing_snapshots::LITELLM_SOURCES,
 ///     litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
 ///     models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
 ///     models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
@@ -94,6 +96,31 @@ fn models_dev_catalog_rules_json() -> &'static str {
     static JSON: OnceLock<String> = OnceLock::new();
     inflate_snapshot(&JSON, embedded_snapshots().models_dev_catalog_rules)
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiteLlmSources {
+    direct_providers: Vec<String>,
+}
+
+fn litellm_sources() -> Option<&'static LiteLlmSources> {
+    static JSON: OnceLock<String> = OnceLock::new();
+    static SOURCES: OnceLock<Option<LiteLlmSources>> = OnceLock::new();
+    SOURCES
+        .get_or_init(|| {
+            match serde_json::from_str(inflate_snapshot(
+                &JSON,
+                embedded_snapshots().litellm_sources,
+            )) {
+                Ok(sources) => Some(sources),
+                Err(error) => {
+                    eprintln!("WARN  Failed to parse embedded pricing source rules ({error}).");
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
 const LITELLM_PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
@@ -101,7 +128,7 @@ const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
 // suffixes are treated as distinct model versions.
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pricing {
     pub input: f64,
     pub output: f64,
@@ -126,7 +153,7 @@ pub enum LongContextMode {
     WholeRequest,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct LongContextRates {
     pub input: Option<f64>,
     pub output: Option<f64>,
@@ -135,7 +162,7 @@ pub struct LongContextRates {
     pub cache_read: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LongContext {
     pub(crate) threshold: u64,
     pub rates: LongContextRates,
@@ -564,38 +591,45 @@ impl<'a, T: 'a> TablePart<'a, T> {
 }
 impl<'a, T: 'a> TablePart<'a, T> {
     fn same_id(self, model: &str) -> Option<&'a str> {
-        if let Some(key) = self.key(model) {
-            return Some(key);
+        if self.pricing_rows.is_none() {
+            return self.key(model);
         }
-        let rows = self.pricing_rows?;
-        let id = normalized_models_dev_model_id(model);
-        (id.as_ref() != model)
-            .then(|| self.key(id.as_ref()))
-            .flatten()
-            .filter(|key| !rows.entries.get(*key).is_some_and(|row| row.literal_only))
-            .or_else(|| {
-                let key = rows
-                    .respelled_keys
-                    .get_or_init(|| {
-                        let mut keys = FxHashMap::default();
-                        for key in rows
-                            .entries
-                            .iter()
-                            .filter(|(_, row)| !row.literal_only)
-                            .map(|(key, _)| key)
-                        {
-                            let id = normalized_models_dev_model_id(key);
-                            if id != key.as_str() {
-                                keys.entry(id.into_owned())
-                                    .and_modify(|current| *current = None)
-                                    .or_insert_with(|| Some(key.clone()));
-                            }
-                        }
-                        keys
-                    })
-                    .get(id.as_ref())?;
-                self.key(key.as_deref()?)
-            })
+        let literal = self.row(model);
+        if let Some(row) = &literal
+            && !self.rows.entries[row.key].is_bare_hosted(row.key)
+        {
+            return self.key(model);
+        }
+        let identity = normalized_pricing_key(model);
+        let indexes = self.rows.indexes();
+        let by_key = |index: &IdentityIndex| {
+            index
+                .get(identity.as_ref())?
+                .iter()
+                .filter_map(|key| self.key(key))
+                .min()
+        };
+        by_key(&indexes.by_identity)
+            .or_else(|| self.vendor_match(indexes.by_vendor_id.get(identity.as_ref())?))
+            .or_else(|| literal.map(|row| row.key))
+            .or_else(|| by_key(&indexes.bare_hosted))
+    }
+
+    fn vendor_match(self, keys: &[String]) -> Option<&'a str> {
+        let mut rows = keys.iter().filter_map(|key| self.key(key)).filter(|key| {
+            let rates = self.rows.entries[*key].pricing;
+            rates.input != 0.0 || rates.output != 0.0 || rates.overridden
+        });
+        let first = rows.next()?;
+        let price = self.rows.entries[first].pricing;
+        let mut best = first;
+        for key in rows {
+            if self.rows.entries[key].pricing != price {
+                return None;
+            }
+            best = best.min(key);
+        }
+        Some(best)
     }
 }
 
@@ -698,11 +732,45 @@ pub struct PricingMap {
 struct PricingRows {
     entries: FxHashMap<String, Row>,
     override_keys: FxHashMap<String, String>,
-    respelled_keys: OnceLock<FxHashMap<String, Option<String>>>,
+    indexes: OnceLock<RowIndexes>,
     exact_only_by_identity: OnceLock<FxHashMap<String, Option<String>>>,
 }
 
+type IdentityIndex = FxHashMap<String, smallvec::SmallVec<[String; 1]>>;
+
+#[derive(Clone, Debug, Default)]
+struct RowIndexes {
+    by_identity: IdentityIndex,
+    by_vendor_id: IdentityIndex,
+    bare_hosted: IdentityIndex,
+}
+
 impl PricingRows {
+    fn indexes(&self) -> &RowIndexes {
+        self.indexes.get_or_init(|| {
+            let mut indexes = RowIndexes::default();
+            for (key, row) in &self.entries {
+                let index = if row.is_bare_hosted(key) {
+                    &mut indexes.bare_hosted
+                } else {
+                    &mut indexes.by_identity
+                };
+                index
+                    .entry(normalized_pricing_key(key).into_owned())
+                    .or_default()
+                    .push(key.clone());
+                if let Some(id) = row.vendor_id.as_deref().filter(|id| *id != key) {
+                    indexes
+                        .by_vendor_id
+                        .entry(normalized_pricing_key(id).into_owned())
+                        .or_default()
+                        .push(key.clone());
+                }
+            }
+            indexes
+        })
+    }
+
     fn exact_only_by_identity(&self) -> &FxHashMap<String, Option<String>> {
         self.exact_only_by_identity.get_or_init(|| {
             let mut index = FxHashMap::default();
@@ -1197,7 +1265,7 @@ impl PricingMap {
 
     fn rows_mut(&mut self) -> &mut PricingRows {
         let rows = Arc::make_mut(&mut self.rows);
-        rows.respelled_keys.take();
+        rows.indexes.take();
         rows.exact_only_by_identity.take();
         rows
     }
@@ -1215,18 +1283,6 @@ impl PricingMap {
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
-        if let Some(&rates) = embedded_models_dev
-            .rows
-            .entries
-            .get("deepseek-v3.2")
-            .filter(|row| row.pricing.input != 0.0 || row.pricing.output != 0.0)
-        {
-            let rows = self.rows_mut();
-            for key in ["deepseek-v3.2", "deepseek/deepseek-v3.2"] {
-                let row = rows.entries.entry(key.to_string()).or_default();
-                row.pricing = rates.pricing;
-            }
-        }
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
         self.models_dev[1] = Some(ModelsDevLayer {
             rows: Arc::clone(&embedded_models_dev.rows),
@@ -1327,13 +1383,18 @@ impl PricingMap {
             let Some(output) = pricing.output_cost_per_token else {
                 continue;
             };
-            if input == 0.0 && output == 0.0 && is_direct_deepseek_model(&model) {
+            let provider = pricing.litellm_provider.as_deref();
+            let (scope, vendor_id) = if let Some(provider) = provider {
+                let Some(sources) = litellm_sources() else {
+                    return 0;
+                };
+                row_scope(&model, provider, &sources.direct_providers)
+            } else {
+                (Scope::Hosted, None)
+            };
+            if scope == Scope::Hosted && input == 0.0 && output == 0.0 && !model.contains('/') {
                 continue;
             }
-            let literal_only = matches!(
-                pricing.litellm_provider.as_deref(),
-                Some("bedrock" | "bedrock_converse")
-            );
 
             let provider_specific = pricing
                 .provider_specific_entry
@@ -1347,7 +1408,8 @@ impl PricingMap {
             let published_speed = provider_specific.or(speed.for_model(&model));
             let defaults = cache_defaults(&model, pricing.litellm_provider.as_deref());
             let row = self.rows_mut().entries.entry(model).or_default();
-            row.literal_only |= literal_only;
+            row.scope = scope;
+            row.vendor_id = vendor_id;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);
             row.pricing = published_speed.applied_to(Pricing {
                 input,
@@ -1560,7 +1622,8 @@ impl PricingMap {
                     }),
                     exact_only,
                     context_limit,
-                    literal_only: false,
+                    scope: Scope::Direct,
+                    vendor_id: None,
                 },
             );
             // Replacing a weaker claim is not a new model, so it must not count
@@ -1639,8 +1702,7 @@ impl PricingMap {
 
     fn exact_candidate_price(&self, model: &str) -> Option<Pricing> {
         let prices = self.prices();
-        self.exact_normalized_key(model)
-            .or_else(|| direct_deepseek_id(model).and_then(|id| prices.primary.same_id(id)))?;
+        self.exact_normalized_key(model)?;
         self.lookup(prices, model, Fuzzy::ShorterKeys)
     }
 
@@ -1729,7 +1791,7 @@ impl PricingMap {
             .iter()
             .filter(|(key, pricing)| {
                 !pricing.pricing.overridden
-                    && !pricing.literal_only
+                    && !pricing.is_bare_hosted(key)
                     && !requires_full_vendor_id(key)
             })
             .map(|(key, _)| normalized_pricing_key(key))
@@ -1834,7 +1896,11 @@ impl PricingMap {
     }
 
     fn lookup<T: Copy>(&self, table: Table<'_, T>, model: &str, fuzzy: Fuzzy) -> Option<T> {
-        if let Some(row) = table.primary.row(model) {
+        if let Some(row) = table
+            .primary
+            .same_id(model)
+            .and_then(|key| table.primary.row(key))
+        {
             return Some(*row.value);
         }
         self.resolve_row(table, model, fuzzy).map(|row| *row.value)
@@ -1876,25 +1942,24 @@ impl PricingMap {
         };
         if table.primary.pricing_rows.is_some() {
             if let Some(exact) = models_dev_exact {
-                let shorter_primary =
-                    (fuzzy != Fuzzy::Denied)
-                        .then(|| {
-                            resolved
-                                .match_indices(['/', '-'])
-                                .find_map(|(separator, _)| {
-                                    let suffix = &resolved[separator + 1..];
-                                    table
-                                        .primary
-                                        .same_id(suffix)
-                                        .filter(|key| {
-                                            table.primary.rows.entries.get(*key).is_some_and(
-                                                |row| !row.exact_only && !row.literal_only,
-                                            )
+                let shorter_primary = (fuzzy != Fuzzy::Denied)
+                    .then(|| {
+                        resolved
+                            .match_indices(['/', '-'])
+                            .find_map(|(separator, _)| {
+                                let suffix = &resolved[separator + 1..];
+                                table
+                                    .primary
+                                    .same_id(suffix)
+                                    .filter(|key| {
+                                        table.primary.rows.entries.get(*key).is_some_and(|row| {
+                                            !row.exact_only && !row.is_bare_hosted(key)
                                         })
-                                        .and_then(|key| table.primary.row(key))
-                                })
-                        })
-                        .flatten();
+                                    })
+                                    .and_then(|key| table.primary.row(key))
+                            })
+                    })
+                    .flatten();
                 return shorter_primary.or(Some(exact));
             }
             return [Layer::Primary, Layer::ModelsDev]
@@ -2282,7 +2347,13 @@ impl PricingMap {
             })
     }
 
-    fn supplement_pricing(&mut self, model: &str, pricing: Pricing, context_limit: Option<u64>) {
+    fn supplement_pricing(
+        &mut self,
+        model: &str,
+        pricing: Pricing,
+        context_limit: Option<u64>,
+        provider: &str,
+    ) {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
         match self.rows_mut().entries.entry(model.to_string()) {
             std::collections::hash_map::Entry::Occupied(mut existing) => {
@@ -2296,6 +2367,8 @@ impl PricingMap {
                 slot.insert(Row {
                     pricing,
                     context_limit,
+                    scope: Scope::Direct,
+                    vendor_id: Some(vendor_id(model, provider).into()),
                     ..Row::default()
                 });
             }
@@ -2309,12 +2382,14 @@ impl PricingMap {
                 supplement.model,
                 supplement.pricing,
                 supplement.context_limit,
+                supplement.provider,
             );
         }
     }
 }
 
 struct Supplement {
+    provider: &'static str,
     model: &'static str,
     pricing: Pricing,
     context_limit: Option<u64>,
@@ -2690,6 +2765,36 @@ mod tests {
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[test]
+    fn direct_litellm_row_beats_the_bare_hosted_spelling() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "deepseek/deepseek-v3.2": {
+                "litellm_provider": "deepseek",
+                "input_cost_per_token": 0.00000028,
+                "output_cost_per_token": 0.00000040
+            },
+            "deepseek.v3.2": {
+                "litellm_provider": "bedrock_converse",
+                "input_cost_per_token": 0.00000062,
+                "output_cost_per_token": 0.00000185
+            }
+        }"#,
+        );
+        for model in [
+            "deepseek-v3-2",
+            "deepseek-v3.2",
+            "deepseek.v3.2",
+            "deepseek/deepseek-v3.2",
+        ] {
+            let price = pricing.find(model).unwrap();
+            assert_eq!(price.input, 0.28e-6, "{model}");
+            assert_eq!(price.output, 0.40e-6, "{model}");
+        }
+    }
+
     impl PricingMap {
         fn insert_test_pricing(&mut self, key: String, pricing: Pricing) {
             self.rows_mut().entries.entry(key).or_default().pricing = pricing;
@@ -2807,6 +2912,7 @@ mod tests {
 
     #[test]
     fn direct_deepseek_pricing_does_not_replace_a_different_model() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{
             "deepseek-v3.2": {"litellm_provider":"deepseek","input_cost_per_token": 1, "output_cost_per_token": 2}
@@ -2867,22 +2973,19 @@ mod tests {
     }
 
     #[test]
-    fn bedrock_dotted_keys_are_distinct_from_vendor_ids() {
-        let mut primary = PricingMap::default();
-        primary.load_json(r#"{
-            "deepseek.v3.2": {"litellm_provider":"bedrock_converse","input_cost_per_token": 0.62, "output_cost_per_token": 1.85}
+    fn bare_hosted_rows_price_each_separator_spelling_when_no_direct_row_exists() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{
+            "deepseek.v3.2": {"litellm_provider":"bedrock_converse","input_cost_per_token": 0.62, "output_cost_per_token": 1.85},
+            "free-hosted": {"litellm_provider":"bedrock","input_cost_per_token": 0, "output_cost_per_token": 0}
         }"#);
-        primary.load_json(r#"{"anthropic.claude-classic": {"litellm_provider":"bedrock","input_cost_per_token": 7, "output_cost_per_token": 8}}"#);
-        assert_eq!(primary.find("anthropic-claude-classic").unwrap().input, 7.0);
-        let mut embedded = PricingMap::default();
-        embedded.load_json(
-            r#"{
-            "deepseek-v3.2": {"input_cost_per_token": 0.28, "output_cost_per_token": 0.42}
-        }"#,
-        );
-        primary.complete_layers(&embedded);
-        assert_eq!(primary.find("deepseek-v3-2").unwrap().input, 0.28);
-        assert_eq!(primary.find("deepseek.v3.2").unwrap().input, 0.62);
+        for model in ["deepseek.v3.2", "deepseek-v3-2", "deepseek-v3.2"] {
+            let price = pricing.find(model).unwrap();
+            assert_eq!(price.input, 0.62, "{model}");
+            assert_eq!(price.output, 1.85, "{model}");
+        }
+        assert!(pricing.find("free-hosted").is_none());
     }
 
     #[test]
@@ -2975,6 +3078,7 @@ mod tests {
 
     #[test]
     fn gpt_vendor_defaults_do_not_depend_on_the_serving_host() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         for host in ["azure_ai", "github_copilot", "bedrock_mantle", "databricks"] {
             let model = format!("{host}/gpt-5.4");
@@ -3152,7 +3256,7 @@ mod tests {
     fn primary_fuzzy_pricing_beats_an_embedded_exact_reseller_listing() {
         crate::test_support::install_pricing_snapshots();
         let mut primary = PricingMap::default();
-        primary.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
+        primary.load_json(r#"{"sample": {"litellm_provider":"openai","input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
         let mut embedded = PricingMap::default();
         embedded.load_models_dev_json_for_tests(
             r#"{
@@ -3752,10 +3856,11 @@ mod tests {
 
     #[test]
     fn ordered_candidates_keep_free_prices_and_per_candidate_match_kinds() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
-            "free": {"input_cost_per_token": 0, "output_cost_per_token": 0},
+            "free": {"litellm_provider":"openai","input_cost_per_token": 0, "output_cost_per_token": 0},
             "paid": {"input_cost_per_token": 1, "output_cost_per_token": 2},
             "provider/paid-version": {"input_cost_per_token": 9, "output_cost_per_token": 10}
         }"#,
@@ -3877,7 +3982,7 @@ mod tests {
     fn strict_candidates_gate_literal_names_and_use_standard_price_precedence() {
         crate::test_support::install_pricing_snapshots();
         let mut primary = PricingMap::default();
-        primary.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2},"grok-4-1-x":{"input_cost_per_token":3,"output_cost_per_token":4}}"#);
+        primary.load_json(r#"{"sample":{"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2},"grok-4-1-x":{"input_cost_per_token":3,"output_cost_per_token":4}}"#);
         let mut embedded = PricingMap::default();
         embedded.load_models_dev_json_for_tests(
             r#"{"vendor/sample":{"cost":{"input":3000000,"output":4000000}}}"#,
@@ -4398,6 +4503,7 @@ mod tests {
                 ..Pricing::empty()
             },
             None,
+            "",
         );
         let resolved = pricing
             .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
@@ -4412,13 +4518,24 @@ mod tests {
                 ..Pricing::empty()
             },
             None,
+            "",
         );
 
-        assert!(
+        assert_eq!(
             pricing
                 .resolve(&[("acme-alpha-1-5", MatchKind::Exact)])
-                .map(|(_, pricing)| pricing)
-                .is_none()
+                .unwrap()
+                .1
+                .input,
+            1e-6
+        );
+        assert_eq!(
+            pricing
+                .resolve(&[("acme.alpha@1.5", MatchKind::Exact)])
+                .unwrap()
+                .1
+                .input,
+            2e-6
         );
     }
 
@@ -4446,6 +4563,7 @@ mod tests {
                 ..Pricing::empty()
             },
             None,
+            "",
         );
 
         let after = pricing
@@ -4596,7 +4714,7 @@ mod tests {
             ..Pricing::empty()
         };
 
-        pricing.supplement_pricing("zai/glm-test-model", zeroed, None);
+        pricing.supplement_pricing("zai/glm-test-model", zeroed, None, "");
 
         let entry = pricing.find_exact("zai/glm-test-model").unwrap();
         assert_eq!(entry.cache_create, Some(0.25));
@@ -7233,6 +7351,7 @@ mod tests {
 
     #[test]
     fn hosted_openai_model_names_keep_openai_cache_write_defaults() {
+        crate::test_support::install_pricing_snapshots();
         for (model, provider) in [
             ("bedrock_mantle/openai.gpt-5.4", "bedrock_mantle"),
             ("global.openai.gpt-5.4", "bedrock_converse"),

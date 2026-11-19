@@ -612,6 +612,7 @@ mod tests {
 
     #[test]
     fn absent_cache_read_rates_preserve_the_shared_read_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{

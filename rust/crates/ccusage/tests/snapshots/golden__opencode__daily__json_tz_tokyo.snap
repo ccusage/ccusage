@@ -187,7 +187,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00033749999999999996,
+          "cost": 0.0003375,
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
@@ -207,7 +207,7 @@ exit: 0
         "gpt-5"
       ],
       "outputTokens": 278,
-      "totalCost": 0.0018150000000000002,
+      "totalCost": 0.0018150000000000004,
       "totalTokens": 686
     }
   ],
