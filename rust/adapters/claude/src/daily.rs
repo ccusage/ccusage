@@ -29,7 +29,7 @@ use super::{
         claude_paths, extract_project, usage_file_order, usage_files_before_since,
         visit_usage_files,
     },
-    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_files,
+    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_paths,
     reports_more_of_the_request, sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash,
     usage_dedupe_hash,
 };
@@ -61,9 +61,9 @@ pub(super) fn load_daily_entries(
         let since_files =
             usage_files_before_since(&paths, project_filter, diagnostics, shared, utc_now());
         pruned = since_files.pruned;
-        let kept = since_files.kept;
+        let mut kept = since_files.kept;
         load_deduped_daily_entries(
-            |visit| kept.into_iter().for_each(visit),
+            |visit| std::mem::take(&mut kept).into_iter().for_each(visit),
             &context,
             diagnostics,
         )
@@ -170,11 +170,11 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
 }
 
 fn load_deduped_daily_entries(
-    discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
+    discover: impl FnMut(&mut dyn FnMut(PathBuf)),
     context: &UsageLoadContext<'_>,
     diagnostics: &Diagnostics,
 ) -> Option<DedupedDailyEntries> {
-    let loaded_files = read_discovered_files(context.shared.single_thread, discover, |file| {
+    let loaded_files = read_discovered_paths(context.shared.single_thread, discover, |file| {
         read_daily_usage_file_with_diagnostics(
             file,
             context.window().timezone(),

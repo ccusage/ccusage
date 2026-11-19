@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{
-    read_discovered_files,
+    read_discovered_paths,
     source::{ProgressOwner, UsageLoadContext},
 };
 use ccusage_core::*;
@@ -284,7 +284,7 @@ fn load_entries_with_mode(
             ),
         );
         pruned = split.pruned;
-        let files = split.kept;
+        let mut files = split.kept;
         debug_log(
             shared,
             format!(
@@ -292,13 +292,13 @@ fn load_entries_with_mode(
                 files.len()
             ),
         );
-        read_discovered_files(
+        read_discovered_paths(
             shared.single_thread,
-            |visit| files.into_iter().for_each(visit),
+            |visit| std::mem::take(&mut files).into_iter().for_each(visit),
             read,
         )
     } else {
-        let loaded_files = read_discovered_files(
+        let loaded_files = read_discovered_paths(
             shared.single_thread,
             |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
             read,

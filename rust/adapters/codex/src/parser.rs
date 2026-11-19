@@ -272,7 +272,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
         visit,
         diagnostics,
         None,
-    )
+    );
 }
 
 pub(super) fn visit_codex_session_file_with_diagnostics(
@@ -290,7 +290,7 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
         visit,
         diagnostics,
         None,
-    )
+    );
 }
 
 pub(super) fn visit_codex_session_file_unless_fork(
@@ -298,9 +298,9 @@ pub(super) fn visit_codex_session_file_unless_fork(
     path: &Path,
     visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-) -> CodexSessionMetadata {
+) -> Option<CodexSessionMetadata> {
     let mut metadata = CodexSessionMetadata::default();
-    visit_codex_session_file_inner(
+    let opened = visit_codex_session_file_inner(
         sessions_dir,
         path,
         None,
@@ -309,7 +309,7 @@ pub(super) fn visit_codex_session_file_unless_fork(
         diagnostics,
         Some(&mut metadata),
     );
-    metadata
+    opened.then_some(metadata)
 }
 
 fn visit_codex_session_file_inner(
@@ -320,7 +320,7 @@ fn visit_codex_session_file_inner(
     mut visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
     mut stop_at_fork: Option<&mut CodexSessionMetadata>,
-) {
+) -> bool {
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
@@ -422,7 +422,10 @@ fn visit_codex_session_file_inner(
                 add_codex_exec_event(
                     &session_id,
                     &value,
-                    *fallback_timestamp.get_or_insert_with(|| file_modified_timestamp(opened_path)),
+                    || {
+                        *fallback_timestamp
+                            .get_or_insert_with(|| file_modified_timestamp(opened_path))
+                    },
                     &mut state.current_model,
                     &mut state.current_model_is_fallback,
                     &mut |event| replay.visit(event, &mut visit),
@@ -432,8 +435,10 @@ fn visit_codex_session_file_inner(
             ControlFlow::Continue(())
         },
     );
-    if !matches!(result, Ok(None)) {
-        return;
+    match result {
+        Err(_) => return false,
+        Ok(Some(())) => return true,
+        Ok(None) => {}
     }
 
     replay.finish(&mut visit);
@@ -449,6 +454,7 @@ fn visit_codex_session_file_inner(
         });
         history.extend(timestamps);
     }
+    true
 }
 
 fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
@@ -716,7 +722,7 @@ fn visit_codex_session_entry(
 fn add_codex_exec_event(
     session_id: &str,
     value: &CodexLogEntry<'_>,
-    fallback_timestamp: TimestampMs,
+    fallback_timestamp: impl FnOnce() -> TimestampMs,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent),
@@ -735,7 +741,7 @@ fn add_codex_exec_event(
         session_id,
         raw_usage,
         parsed_model,
-        codex_timestamp_from_result(value).unwrap_or(fallback_timestamp),
+        codex_timestamp_from_result(value).unwrap_or_else(fallback_timestamp),
         current_model,
         current_model_is_fallback,
         visit,

@@ -243,29 +243,54 @@ fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
-/// Reads files as discovery yields them. Parallel results have no ordering guarantee.
-pub fn read_discovered_files<I, T, F>(
+pub struct DiscoveredFile {
+    pub group: usize,
+    pub index: usize,
+    pub path: PathBuf,
+}
+
+pub type DiscoverFiles<'a> = dyn FnMut(&mut dyn FnMut(usize, PathBuf)) + 'a;
+
+pub fn read_discovered_paths<T: Send>(
     single_thread: bool,
-    discover: impl FnOnce(&mut dyn FnMut(I)),
-    read: F,
-) -> Vec<(I, T)>
-where
-    I: Send,
-    T: Send,
-    F: Fn(&I) -> T + Sync,
-{
+    mut discover: impl FnMut(&mut dyn FnMut(PathBuf)),
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> Vec<(PathBuf, T)> {
+    read_discovered_files(
+        single_thread,
+        &mut |emit| discover(&mut |path| emit(0, path)),
+        &|file| read(&file.path),
+    )
+    .into_iter()
+    .map(|(file, result)| (file.path, result))
+    .collect()
+}
+
+/// Reads files as discovery yields them. Parallel results have no ordering guarantee.
+pub fn read_discovered_files<T: Send>(
+    single_thread: bool,
+    discover: &mut DiscoverFiles<'_>,
+    read: &(dyn Fn(&DiscoveredFile) -> T + Sync),
+) -> Vec<(DiscoveredFile, T)> {
+    let mut index = 0;
+    let mut discover = |emit: &mut dyn FnMut(DiscoveredFile)| {
+        discover(&mut |group, path| {
+            emit(DiscoveredFile { group, index, path });
+            index += 1;
+        });
+    };
     if single_thread {
         let mut results = Vec::new();
-        discover(&mut |path| {
-            let result = read(&path);
-            results.push((path, result));
+        discover(&mut |file| {
+            let result = read(&file);
+            results.push((file, result));
         });
         return results;
     }
     let worker_count = thread::available_parallelism().map_or(1, usize::from);
-    let (sender, receiver) = mpsc::channel::<I>();
+    let (sender, receiver) = mpsc::channel::<DiscoveredFile>();
     let receiver = Mutex::new(receiver);
-    let (read, receiver) = (&read, &receiver);
+    let receiver = &receiver;
     thread::scope(|scope| {
         let mut workers = Vec::new();
         discover(&mut |path| {
@@ -453,7 +478,7 @@ mod tests {
         let read = |path: &PathBuf| std::fs::read_to_string(path).unwrap();
 
         for single_thread in [true, false] {
-            let mut results = super::read_discovered_files(
+            let mut results = super::read_discovered_paths(
                 single_thread,
                 |visit| files.iter().cloned().for_each(visit),
                 read,
@@ -466,7 +491,7 @@ mod tests {
             expected.sort();
             assert_eq!(results, expected, "single_thread={single_thread}");
         }
-        assert!(super::read_discovered_files(false, |_| {}, read).is_empty());
+        assert!(super::read_discovered_paths(false, |_| {}, read).is_empty());
     }
 
     #[test]
@@ -474,8 +499,8 @@ mod tests {
         let (started, observed) = std::sync::mpsc::sync_channel(1);
         let results = super::read_discovered_files(
             false,
-            |emit| {
-                emit(7);
+            &mut |emit| {
+                emit(7, PathBuf::from("rollout.jsonl"));
                 assert_eq!(
                     observed
                         .recv_timeout(std::time::Duration::from_secs(5))
@@ -483,12 +508,14 @@ mod tests {
                     7
                 );
             },
-            |work| {
-                started.send(*work).unwrap();
-                work * 2
+            &|file| {
+                started.send(file.group).unwrap();
+                file.group * 2
             },
         );
-        assert_eq!(results, [(7, 14)]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.index, 0);
+        assert_eq!(results[0].1, 14);
     }
 
     #[test]

@@ -45,18 +45,25 @@ pub(super) fn rollout_policy(path: &Path, capacity: usize, keep_records: bool) -
         retry_missing: Some(other_encoding_path),
         open_failure: Some("rollout open failed"),
         interrupted: if keep_records {
-            |_| Interruption::KeepRecords(SkipKind::ReadInterrupted, "rollout read failed")
-        } else {
             |failure| {
-                Interruption::RejectRecords(
-                    SkipKind::ReadInterrupted,
-                    "rollout read failed",
-                    failure.error.into(),
-                )
+                if failure.complete_lines == 0 {
+                    return reject_interruption(failure);
+                }
+                Interruption::KeepRecords(SkipKind::ReadInterrupted, "rollout read failed")
             }
+        } else {
+            reject_interruption
         },
         ..ReadPolicy::PLAIN
     }
+}
+
+fn reject_interruption(failure: ccusage_adapter_common::jsonl::ReadFailure) -> Interruption {
+    Interruption::RejectRecords(
+        SkipKind::ReadInterrupted,
+        "rollout read failed",
+        failure.error.into(),
+    )
 }
 
 #[cfg(test)]
