@@ -576,7 +576,7 @@ pub(super) fn print_table_from_groups(
 ) -> Result<()> {
     let pricing = pricing.filter(|_| shared.mode != CostMode::Display);
     if groups.is_empty() {
-        eprintln!("No Codex usage data found.");
+        ccusage_core::errln!("No Codex usage data found.");
         return Ok(());
     }
     let first_column = match kind {

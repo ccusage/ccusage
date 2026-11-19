@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    io::{self, Write},
     sync::{Arc, Condvar, Mutex},
     thread::JoinHandle,
     time::Duration,
@@ -206,8 +205,7 @@ impl UsageLoadProgress {
             && let Ok(mut state) = controller.state.lock()
         {
             if state.rendered {
-                let _ = write!(io::stderr(), "\r\x1b[K\x1b[?25h");
-                let _ = io::stderr().flush();
+                ccusage_terminal::write_stderr(format_args!("\r\x1b[K\x1b[?25h"));
             }
             state.status = None;
             state.states.clear();
@@ -267,11 +265,9 @@ impl ProgressState {
         );
         let frame = SPINNER_FRAMES[self.frame % SPINNER_FRAMES.len()];
         self.frame = self.frame.wrapping_add(1);
-        let _ = write!(
-            io::stderr(),
+        ccusage_terminal::write_stderr(format_args!(
             "\r\x1b[K\x1b[?25l\x1b[36m{frame}\x1b[39m {text}"
-        );
-        let _ = io::stderr().flush();
+        ));
         self.rendered = true;
     }
 }

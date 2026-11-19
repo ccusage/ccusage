@@ -180,7 +180,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
         if wants_json(shared) {
             ccusage_core::outln!("null")?;
         } else {
-            eprintln!("No session found with ID: {id}");
+            ccusage_core::errln!("No session found with ID: {id}");
         }
         return Ok(());
     }

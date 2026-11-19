@@ -144,7 +144,7 @@ pub fn print_usage_table_with_options(
     options: UsageTableOptions,
 ) -> Result<()> {
     if rows.is_empty() {
-        eprintln!("{}", empty_usage_table_message());
+        ccusage_terminal::errln!("{}", empty_usage_table_message());
         return Ok(());
     }
     let terminal_width = terminal_width();
@@ -269,8 +269,8 @@ pub fn print_usage_table_with_options(
         shared.offline,
     );
     if compact {
-        eprintln!("\nRunning in Compact Mode");
-        eprintln!("Expand terminal width to see cache metrics and total tokens");
+        ccusage_terminal::errln!("\nRunning in Compact Mode");
+        ccusage_terminal::errln!("Expand terminal width to see cache metrics and total tokens");
     }
     Ok(())
 }
@@ -314,7 +314,7 @@ pub fn print_missing_pricing_warnings_for_models<'a>(
     offline: bool,
 ) {
     for warning in missing_pricing_warnings_for_models(models, offline) {
-        eprintln!("{warning}");
+        ccusage_terminal::errln!("{warning}");
     }
 }
 

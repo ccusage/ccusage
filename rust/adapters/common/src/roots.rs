@@ -41,7 +41,7 @@ pub fn default_candidates(debug: bool, defaults: impl FnOnce() -> Vec<PathBuf>) 
     {
         static NO_HOME: std::sync::Once = std::sync::Once::new();
         NO_HOME.call_once(|| {
-            eprintln!("Unable to resolve default data roots: home directory is not set")
+            ccusage_core::errln!("Unable to resolve default data roots: home directory is not set")
         });
     }
     paths

@@ -47,7 +47,7 @@ pub use utils::{
 pub use window::ReportWindow;
 
 pub use ccusage_terminal::{
-    Align, Color, ColumnKind, SimpleTable, TerminalStyle, outln, stdout, stdout_is_terminal,
+    Align, Color, ColumnKind, SimpleTable, TerminalStyle, errln, outln, stdout, stdout_is_terminal,
     terminal_width,
 };
 

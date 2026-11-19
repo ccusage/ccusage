@@ -12,7 +12,7 @@ fn print_table_for_agent(
     shared: &SharedArgs,
 ) -> Result<()> {
     if rows.is_empty() {
-        eprintln!("No {agent_name} usage data found.");
+        ccusage_core::errln!("No {agent_name} usage data found.");
         return Ok(());
     }
     let terminal_width = terminal_width();

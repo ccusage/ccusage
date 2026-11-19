@@ -339,7 +339,7 @@ impl Diagnostics {
 
     pub fn emit(&self, debug: bool) {
         for warning in self.render(log_level() != Some(0), debug) {
-            eprintln!("{warning}");
+            ccusage_terminal::errln!("{warning}");
         }
     }
 

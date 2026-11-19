@@ -18,4 +18,5 @@ disallowed-methods = [
 	{ path = "std::thread::Scope::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
 	{ path = "std::thread::Builder::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
 	{ path = "std::io::stdout", reason = "Write standard output through ccusage_terminal." },
+	{ path = "std::io::stderr", reason = "Write standard error through ccusage_terminal." },
 ]

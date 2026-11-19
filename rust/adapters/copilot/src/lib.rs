@@ -32,7 +32,7 @@ impl EntrySource for Copilot {
         shared: &SharedArgs,
     ) -> Result<()> {
         if rows.is_empty() {
-            eprintln!("{}", empty_usage_message());
+            ccusage_core::errln!("{}", empty_usage_message());
             return Ok(());
         }
         crate::print_usage_table(

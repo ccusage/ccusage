@@ -353,7 +353,7 @@ pub(crate) fn print_blocks_table(
     zone: &TimeZone,
 ) -> Result<()> {
     if blocks.is_empty() {
-        eprintln!("No Claude usage data found.");
+        ccusage_core::errln!("No Claude usage data found.");
         return Ok(());
     }
     let terminal_width = terminal_width();

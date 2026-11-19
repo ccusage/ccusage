@@ -59,7 +59,7 @@ impl NativeUsageReader {
                 let (output, warnings) =
                     refresh_output(result, &diagnostics, &args.shared, &mut last_warnings);
                 for warning in warnings {
-                    eprintln!("{warning}");
+                    ccusage_core::errln!("{warning}");
                 }
                 let mut state = worker.0.lock().unwrap_or_else(PoisonError::into_inner);
                 state.output.insert(thread_id, output);

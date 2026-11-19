@@ -181,7 +181,7 @@ pub(super) fn print_table(
 ) -> Result<()> {
     print_box_title(&all_report_title(kind, detected_agents), shared)?;
     if rows.is_empty() {
-        eprintln!("No usage data found.");
+        ccusage_core::errln!("No usage data found.");
         return Ok(());
     }
     let terminal_width = crate::terminal_width();
@@ -250,8 +250,8 @@ pub(super) fn print_table(
         shared.offline,
     );
     if compact {
-        eprintln!("\nRunning in Compact Mode");
-        eprintln!("Expand terminal width to see cache metrics and total tokens");
+        ccusage_core::errln!("\nRunning in Compact Mode");
+        ccusage_core::errln!("Expand terminal width to see cache metrics and total tokens");
     }
     Ok(())
 }

@@ -20,13 +20,13 @@ pub(crate) fn parse() -> Result<Option<Command>, ExitCode> {
             }
         };
     let clock = ccusage::report_clock().map_err(|message| {
-        eprintln!("{message}");
+        ccusage_core::errln!("{message}");
         ExitCode::from(2)
     })?;
     resolve_report_clock(&mut command, clock).map_err(usage_error)?;
     if ccusage_core::log_level() != Some(0) {
         for warning in config.warnings() {
-            eprintln!("WARN {warning}");
+            ccusage_core::errln!("WARN {warning}");
         }
     }
     if let Command::All(unified) = &mut command {
@@ -70,8 +70,8 @@ fn try_parse_report_with(
 }
 
 fn usage_error(message: String) -> ExitCode {
-    eprintln!("{message}");
-    eprintln!("Run 'ccusage --help' for usage.");
+    ccusage_core::errln!("{message}");
+    ccusage_core::errln!("Run 'ccusage --help' for usage.");
     ExitCode::from(2)
 }
 
