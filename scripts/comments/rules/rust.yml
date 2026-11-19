@@ -1,0 +1,63 @@
+id: rust-comment
+language: Rust
+message: Collect Rust comments.
+rule:
+  any:
+    - kind: line_comment
+    - kind: block_comment
+---
+id: rust-public-doc
+language: Rust
+message: Collect line doc comments on public declarations.
+rule:
+  kind: line_comment
+  regex: '^///(?:[^/]|$)'
+  precedes:
+    stopBy:
+      not:
+        any:
+          - kind: attribute_item
+          - kind: line_comment
+          - kind: block_comment
+    has:
+      kind: visibility_modifier
+      regex: '^pub$'
+---
+id: rust-schema-doc
+language: Rust
+message: Collect line doc comments on schema structs and fields.
+files:
+  - '**/config_schema.rs'
+rule:
+  kind: line_comment
+  regex: '^///(?:[^/]|$)'
+  precedes:
+    stopBy:
+      not:
+        any:
+          - kind: attribute_item
+          - kind: line_comment
+          - kind: block_comment
+    any:
+      - kind: struct_item
+      - all:
+          - kind: field_declaration
+          - inside:
+              kind: field_declaration_list
+              inside:
+                kind: struct_item
+---
+id: rust-unsafe
+language: Rust
+message: Collect unsafe blocks.
+rule:
+  kind: unsafe_block
+---
+id: rust-inner-doc
+language: Rust
+message: Collect top-level crate documentation.
+rule:
+  kind: line_comment
+  regex: '^//!'
+  inside:
+    kind: source_file

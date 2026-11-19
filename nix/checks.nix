@@ -112,16 +112,29 @@ in
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
-        infra-scripts = mkRepoCheck "infra-script-tests" [ pkgs.nushell pkgs.just pkgs.jq pkgs.git ] ''
-          nu scripts/validate-commit-scope.test.nu
-          nu scripts/check-models-dev-dependencies.test.nu
-          nu .github/scripts/contribution-gate.test.nu
-          nu .github/scripts/pricing-lock.test.nu
-          nu .github/scripts/upsert-pr-comment.test.nu
-          nu .github/scripts/check-links.test.nu
-          nu .github/scripts/workflow-shell.test.nu
-          nu .github/scripts/install.test.nu
+        comments = mkRepoCheck "comment-report" [ pkgs.nushell pkgs.ast-grep pkgs.just ] ''
+          nu --no-config-file scripts/comments/check.nu --source-tree --report-only > "$out"
         '';
+        infra-scripts =
+          mkRepoCheck "infra-script-tests"
+            [
+              pkgs.ast-grep
+              pkgs.nushell
+              pkgs.just
+              pkgs.jq
+              pkgs.git
+            ]
+            ''
+              nu --no-config-file scripts/comments/tests/check.test.nu
+              nu scripts/validate-commit-scope.test.nu
+              nu scripts/check-models-dev-dependencies.test.nu
+              nu .github/scripts/contribution-gate.test.nu
+              nu .github/scripts/pricing-lock.test.nu
+              nu .github/scripts/upsert-pr-comment.test.nu
+              nu .github/scripts/check-links.test.nu
+              nu .github/scripts/workflow-shell.test.nu
+              nu .github/scripts/install.test.nu
+            '';
         inherit
           bun-nix
           ccusage-clippy

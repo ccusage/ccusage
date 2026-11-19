@@ -1,0 +1,15 @@
+id: nix-comment
+language: Nix
+message: Collect Nix comments.
+rule:
+  kind: comment
+---
+id: nix-shell-script
+language: Nix
+message: Collect shell scripts from Nix build and hook attributes.
+rule:
+  kind: indented_string_expression
+  inside:
+    stopBy: end
+    kind: binding
+    regex: '^(?:shellHook|buildPhaseCargoCommand|(?:pre|post)[A-Z]\w*|\w+Phase)\s*='

@@ -1,0 +1,12 @@
+jobs:
+  build:
+    steps:
+      - run: |
+          cat <<'DATA'
+          # Payload data
+          DATA
+          # A shell comment.
+      - env:
+          PAYLOAD: |
+            # YAML scalar data.
+        run: echo "$PAYLOAD"

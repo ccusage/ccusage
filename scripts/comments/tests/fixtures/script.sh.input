@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034
+data='a # quoted'
+echo ${data#prefix}
+cat <<'DATA'
+# here document data
+DATA
+# NOTE(2026-11-19): The input uses CRLF. Keep its original bytes.
+echo '# still quoted' # HACK
