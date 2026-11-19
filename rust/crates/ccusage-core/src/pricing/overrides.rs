@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 use super::{
     Candidate, Lookup, Name, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch,
-    Scope, Source, SpeedMultipliers, normalized_pricing_key, with_names,
+    Scope, Source, SpeedMultipliers, normalized_pricing_key, row::cache_defaults, with_names,
 };
 
 #[derive(Debug, Default)]
@@ -224,11 +224,19 @@ impl PricingMap {
                         None => {
                             let speed = SpeedMultipliers::get();
                             let alias = crate::model_aliases::resolve_model_name(&slot.key);
+                            let model = slot
+                                .key
+                                .strip_prefix('[')
+                                .and_then(|label| label.split_once("] "))
+                                .map_or(slot.key.as_ref(), |(_, model)| model);
                             (
                                 speed
                                     .for_model(&slot.key)
                                     .or(speed.for_model(&alias))
-                                    .applied_to(Pricing::empty()),
+                                    .applied_to(Pricing {
+                                        cache_defaults: cache_defaults(model, None),
+                                        ..Pricing::empty()
+                                    }),
                                 None,
                                 None,
                             )

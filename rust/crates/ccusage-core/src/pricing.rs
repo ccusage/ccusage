@@ -7959,6 +7959,22 @@ mod tests {
         }
 
         #[test]
+        fn override_only_openai_models_charge_cache_writes_at_input_rate() {
+            let input_rate = 1e-6;
+            for model in ["gpt-5.5-private", "[pi] gpt-5.5-private"] {
+                let mut pricing = PricingMap::default();
+                let overrides = build_overrides(model, |value| {
+                    value.input_cost_per_token = Some(input_rate);
+                });
+                pricing.apply_overrides(overrides.iter());
+
+                let entry = pricing.find(model).unwrap();
+                assert_eq!(entry.cache_creation_rate(), input_rate, "{model}");
+                assert_eq!(entry.one_hour_cache_creation_rate(), input_rate, "{model}");
+            }
+        }
+
+        #[test]
         fn exact_override_wins_over_gpt_5_6_alias() {
             crate::test_support::install_pricing_snapshots();
             let mut pricing = PricingMap::load_embedded();
