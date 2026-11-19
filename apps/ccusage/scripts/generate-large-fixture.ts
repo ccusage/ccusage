@@ -231,9 +231,10 @@ function interpolateFileSize(profile: SizeProfile, percentile: number): number {
 		}
 		// Sizes span six orders of magnitude, so a straight line between two
 		// tail quantiles would overstate the bytes inside that interval.
+		// log1p keeps a profiled empty file from turning every size into NaN.
 		const ratio = (percentile - previous.percentile) / (current.percentile - previous.percentile);
-		return Math.exp(
-			Math.log(previous.size) + (Math.log(current.size) - Math.log(previous.size)) * ratio,
+		return Math.expm1(
+			Math.log1p(previous.size) + (Math.log1p(current.size) - Math.log1p(previous.size)) * ratio,
 		);
 	}
 	return quantiles.at(-1)?.size ?? 0;
