@@ -3,7 +3,7 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -54,17 +54,14 @@ pub(super) fn read_chat_file(
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let content = fs::read(file)?;
     let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
     let mut entries = Vec::new();
-    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<QwenLine>(
-        &content,
-        Some(&prefilter),
+    jsonl::read_records::<QwenLine>(
         file,
+        Some(&prefilter),
         diagnostics,
         is_qwen_usage,
-    ) {
-        match parse_line(file, &record, tz, pricing) {
+        |number, record, diagnostics| match parse_line(file, &record, tz, pricing) {
             Ok(Some(entry)) => entries.push(entry),
             Ok(None) => {}
             Err(MissingTimestamp) => diagnostics.record(ccusage_core::Skip::record(
@@ -73,8 +70,8 @@ pub(super) fn read_chat_file(
                 ccusage_core::SkipKind::InvalidTimestamp,
                 "Qwen usage record has no valid timestamp",
             )),
-        }
-    }
+        },
+    )?;
     Ok(entries)
 }
 
