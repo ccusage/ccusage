@@ -79,16 +79,12 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
         reason: $reason
     }
 
-    # Security reports must remain visible even when the model is uncertain
-    # about their impact or underestimates their priority.
     let verdict = if $verdict.kind == security and $verdict.priority != 'priority:critical' {
         $verdict | update priority 'priority:high'
     } else {
         $verdict
     }
 
-    # The workflow owns product-scope decisions so prompt drift cannot turn an
-    # optional feature or uncertain classification into an automatic PR.
     let verdict = if $verdict.confidence != high {
         mark-for-review $verdict
         | update reason $"Pullfrog was not highly confident; maintainer review is required. ($verdict.reason)"
@@ -132,8 +128,6 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
         $verdict
     }
 
-    # The workflow, rather than the model, also owns the hard permission
-    # constraints for automatic closure and implementation.
     let verdict = if not $close_allowed {
         let verdict = if $verdict.decision == 'close' {
             mark-for-review $verdict

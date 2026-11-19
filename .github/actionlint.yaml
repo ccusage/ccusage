@@ -6,8 +6,7 @@ self-hosted-runner:
     - blacksmith-32vcpu-windows-2025
 
 paths:
-  # NOTE(2026-11-17, actionlint 1.7.12): actionlint does not model
-  # `parallel:` steps yet and reports them as steps without run or uses.
+  # NOTE(2026-11-17): Actionlint 1.7.12 flags GitHub Actions parallel steps as missing run or uses. Scope the ignore to workflows that use parallel.
   .github/workflows/ci.yaml:
     ignore:
       - 'step must run script with "run" section or run action with "uses" section'

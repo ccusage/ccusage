@@ -29,9 +29,6 @@ runs:
         ARCH: ${{ inputs.arch }}
       run: nix build ".#ccusage-release-linux-$ARCH"
 
-    # The link lives inside the store's own gcroots, so it persists with the
-    # sticky disk and protects these artifacts (and, through keep-outputs, their
-    # toolchain) from the next trim until a later run replaces it.
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'
       shell: bash

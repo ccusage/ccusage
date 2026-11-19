@@ -43,7 +43,6 @@ def main []: nothing -> nothing {
                 GITHUB_OUTPUT: $output
                 TEST_FAIL: $case.fail
             } {
-                # NOTE(2026-11-17): GitHub runs `shell: bash` steps as `bash --noprofile --norc -eo pipefail {0}`.
                 bash --noprofile --norc -eo pipefail -c $step.run | complete
             }
             assert equal ($result.exit_code == 0) $case.valid $result.stderr

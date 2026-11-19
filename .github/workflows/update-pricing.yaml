@@ -9,8 +9,6 @@ on:
 
 permissions: {}
 
-# Both legs push to main, so overlapping runs from pushes, the schedule, or a
-# manual dispatch would otherwise race each other's push.
 concurrency:
   group: update-pricing
   cancel-in-progress: false
@@ -32,8 +30,6 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
-      # The legs push to the same branch, so they must not race each other's
-      # rebase onto main.
       max-parallel: 1
       matrix:
         include:
@@ -64,6 +60,4 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         with:
           message: ${{ matrix.message }}
-          # The update script reports the files it owns, so the list is not
-          # repeated here where it can drift out of the Rust tree.
           paths: ${{ steps.update.outputs.paths }}

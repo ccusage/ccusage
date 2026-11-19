@@ -1,8 +1,5 @@
 name: PR Gate
 
-# Use pull_request_target so outside-contributor PRs receive the base
-# repository's write permissions. This workflow checks out only the base branch
-# and gives Pullfrog the PR diff as data; it never executes code from the PR.
 on:
   pull_request_target:
     types:

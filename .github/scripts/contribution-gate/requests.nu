@@ -531,7 +531,6 @@ def resolve-coauthor-attribution [username: string, user_id: int, user: record]:
         let created_at = $created_at | into datetime
         let legacy_cutoff = '2017-07-18T00:00:00Z' | into datetime
         if $created_at < $legacy_cutoff {
-            # GitHub does not expose whether a legacy account switched no-reply formats, so age alone cannot yield a reliable address.
             {email: '', trailer: ''}
         } else {
             let email = $"($user_id)+($username)@users.noreply.github.com"

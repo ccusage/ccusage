@@ -1,7 +1,5 @@
 name: Gate Close PR
 
-# Manually close a PR when a maintainer explicitly requests it.
-
 on:
   workflow_dispatch:
     inputs:

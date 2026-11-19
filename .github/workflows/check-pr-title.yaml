@@ -7,13 +7,8 @@ on:
       - reopened
       - edited
       - synchronize
-  # Both jobs are required checks, so they also pass, without validating, on
-  # merge groups, whose pull requests were already judged.
   merge_group:
     types: [checks_requested]
-  # release.yaml dispatches this for tagpr's release PR, whose pull_request runs
-  # wait for an approval, and a person pushing to that branch starts it through
-  # `push`; see release-pr-statuses.
   workflow_dispatch:
   push:
     branches: ['tagpr-from-*']
@@ -46,9 +41,6 @@ jobs:
         with:
           ignoreLabels: ${{ env.TITLE_EXEMPT_LABELS }}
 
-  # The job above only checks the title's shape. A squash merge turns that title
-  # into the subject on main, so it also has to survive the scope rules
-  # scripts/validate-commit-scope.nu applies to local commits.
   scope:
     name: Validate PR title scope
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -73,12 +65,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: nu scripts/validate-commit-scope.nu pr
 
-  # Check runs from a dispatch are not attached to the release PR, so they cannot
-  # satisfy main's required title checks. Commit statuses on the same SHA are, so
-  # this posts both contexts. The release PR's title comes from
-  # .github/tagpr-template.md, so there is nothing to validate; the statuses are
-  # posted only when this SHA is the head of an open PR that tagpr opened from
-  # this branch.
   release-pr-statuses:
     name: Release PR title statuses
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'

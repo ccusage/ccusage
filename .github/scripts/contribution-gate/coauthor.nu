@@ -86,8 +86,6 @@ def validate-commit [
     expected_email: string
     issue_author_id: int
 ]: nothing -> record {
-
-    # Match the expected trailer email to GitHub's resolved author identity so a primary author cannot satisfy a co-author check.
     let attributions = commit-attributions $repo $commit.sha
     let validation = (coauthor-validation
         $commit.commit.message
