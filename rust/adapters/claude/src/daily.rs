@@ -29,7 +29,7 @@ use super::{
     advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
     main_thread_sessions, non_null,
     paths::{
-        claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
+        claude_paths, extract_project, usage_file_order, usage_files_before_since,
         visit_usage_files,
     },
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_files,
@@ -61,11 +61,8 @@ pub(super) fn load_daily_entries(
     let context = UsageLoadContext::new(shared);
     let mut pruned = Vec::new();
     let deduped = if shared.since.is_some() {
-        let since_files = split_files_before_since(
-            usage_files(&paths, project_filter, diagnostics),
-            shared,
-            utc_now(),
-        );
+        let since_files =
+            usage_files_before_since(&paths, project_filter, diagnostics, shared, utc_now());
         pruned = since_files.pruned;
         let kept = since_files.kept;
         load_deduped_daily_entries(

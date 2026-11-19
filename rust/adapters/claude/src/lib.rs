@@ -45,7 +45,7 @@ use crate::{
 };
 
 pub(crate) use paths::{
-    claude_paths, extract_session_parts, split_files_before_since, usage_files, visit_usage_files,
+    claude_paths, extract_session_parts, usage_files_before_since, visit_usage_files,
 };
 
 struct DedupeIndex {
@@ -274,9 +274,15 @@ fn load_entries_with_mode(
     };
     let mut pruned = Vec::new();
     let loaded_files = if skip_files_before_since && shared.since.is_some() {
-        let files = usage_files(&paths, project_filter, diagnostics);
-        debug_log(shared, format!("Found {} JSONL usage files", files.len()));
-        let split = split_files_before_since(files, shared, utc_now());
+        let split =
+            usage_files_before_since(&paths, project_filter, diagnostics, shared, utc_now());
+        debug_log(
+            shared,
+            format!(
+                "Found {} JSONL usage files",
+                split.kept.len() + split.pruned.len()
+            ),
+        );
         pruned = split.pruned;
         let files = split.kept;
         debug_log(
@@ -833,7 +839,7 @@ mod tests {
     use std::{path::Path, sync::Arc};
 
     use super::{
-        extract_session_parts, load_deduped_entries, paths::is_project_path_segment, usage_files,
+        extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
         usage_limit_reset_time_from_line_bytes,
     };
     use crate::{
@@ -1078,7 +1084,7 @@ mod tests {
             "projects/project-b/session-b/b.jsonl": "{}",
         });
 
-        let files = usage_files(
+        let files = super::paths::usage_files(
             &[fixture.root().to_path_buf()],
             Some("project-a"),
             &ccusage_core::Diagnostics::new("claude"),
@@ -1095,7 +1101,7 @@ mod tests {
             "projects/project-b/session-b/b.jsonl": "{}",
         });
 
-        let files = usage_files(
+        let files = super::paths::usage_files(
             &[fixture.root().to_path_buf()],
             Some("project-a/session-a"),
             &ccusage_core::Diagnostics::new("claude"),
