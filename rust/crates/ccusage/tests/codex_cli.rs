@@ -474,10 +474,20 @@ fn codex_statusline_marks_incomplete_pricing_and_can_hide_costs() {
         summary["unpricedModels"],
         json!(["unknown-statusline-model"])
     );
-    assert_eq!(
-        run_cli(&fixture, &[&args[..], &["--jq", ".totalTokens"]].concat()),
-        "150\n"
+    let output = codex_command(
+        support::hermetic_command_with_tools(fixture.root(), &["jq"]),
+        &fixture,
+    )
+    .args(args)
+    .args(["--jq", ".totalTokens"])
+    .output()
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(output.stdout, b"150\n");
 }
 
 #[test]
@@ -823,12 +833,17 @@ fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
 }
 
 fn run_cli_output(fixture: &Fixture, args: &[&str]) -> Output {
-    support::hermetic_command(fixture.root())
-        .args(["--offline", "--no-color", "--timezone", "UTC"])
+    codex_command(support::hermetic_command(fixture.root()), fixture)
         .args(args)
-        .env("CODEX_HOME", fixture.path("codex"))
-        .env("LOG_LEVEL", "0")
-        .env("COLUMNS", "240")
         .output()
         .expect("ccusage CLI should run")
+}
+
+fn codex_command(mut command: std::process::Command, fixture: &Fixture) -> std::process::Command {
+    command
+        .args(["--offline", "--no-color", "--timezone", "UTC"])
+        .env("CODEX_HOME", fixture.path("codex"))
+        .env("LOG_LEVEL", "0")
+        .env("COLUMNS", "240");
+    command
 }

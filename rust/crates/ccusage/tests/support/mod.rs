@@ -1,6 +1,6 @@
 //! The one way an integration test runs the `ccusage` binary.
 
-use std::{fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 /// Builds a `ccusage` command that can see nothing outside `root`: a cleared
 /// environment, every home directory inside `root`, and a working directory
@@ -11,6 +11,10 @@ use std::{fs, path::Path, process::Command};
 /// the test sets `CCUSAGE_TEST_NOW`, and `COLUMNS` and `LOG_LEVEL` keep their
 /// production defaults unless the test sets them.
 pub fn hermetic_command(root: &Path) -> Command {
+    hermetic_command_with_tools(root, &[])
+}
+
+pub fn hermetic_command_with_tools(root: &Path, tools: &[&str]) -> Command {
     let dir = |name: &str| {
         let path = root.join(name);
         fs::create_dir_all(&path).expect("failed to create hermetic directory");
@@ -32,5 +36,21 @@ pub fn hermetic_command(root: &Path) -> Command {
         // which the Nix test sandbox only provides through TZDIR.
         .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
         .env("NO_COLOR", "1");
+    if !tools.is_empty() {
+        let path = env::var_os("PATH").expect("external test tools require a PATH");
+        let directories = tools.iter().map(|tool| {
+            let executable = format!("{tool}{}", env::consts::EXE_SUFFIX);
+            env::split_paths(&path)
+                .filter(|dir| dir.is_absolute())
+                .find(|dir| dir.join(&executable).is_file())
+                .unwrap_or_else(|| {
+                    panic!("required external test tool {tool} is missing from PATH")
+                })
+        });
+        command.env(
+            "PATH",
+            env::join_paths(directories).expect("invalid test tool path"),
+        );
+    }
     command
 }
