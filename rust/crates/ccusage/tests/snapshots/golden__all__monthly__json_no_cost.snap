@@ -489,8 +489,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
-      "cacheReadTokens": 1015408,
-      "inputTokens": 1232978,
+      "cacheReadTokens": 1015508,
+      "inputTokens": 1233378,
       "metadata": {
         "agents": [
           "amp",
@@ -655,6 +655,13 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 1570,
+          "inputTokens": 1700,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 327
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 300,
           "inputTokens": 200,
           "modelName": "claude-opus-5-fast",
@@ -673,13 +680,6 @@ exit: 0
           "inputTokens": 650,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 125
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 1470,
-          "inputTokens": 1300,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 277
         },
         {
           "cacheCreationTokens": 0,
@@ -1069,9 +1069,9 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 28516,
+      "outputTokens": 28566,
       "period": "2026-01",
-      "totalTokens": 2283789
+      "totalTokens": 2284339
     },
     {
       "agent": "all",
@@ -1102,10 +1102,10 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 18065,
-    "cacheReadTokens": 1316867,
-    "inputTokens": 1349871,
-    "outputTokens": 59316,
-    "totalTokens": 2747536,
+    "cacheReadTokens": 1316967,
+    "inputTokens": 1350271,
+    "outputTokens": 59366,
+    "totalTokens": 2748086,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

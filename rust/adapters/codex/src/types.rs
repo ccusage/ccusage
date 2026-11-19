@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData};
+use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData, sync::Arc};
 
 use serde::Deserialize;
 
@@ -147,6 +147,12 @@ pub const fn merge_codex_service_tiers(
 pub struct CodexTokenUsageEvent {
     pub session_id: String,
     pub response_id: Option<String>,
+    /// Response ID of the `token_usage_record` this `token_count` reports.
+    ///
+    /// Unlike `response_id`, it does not make the event a compaction: the event
+    /// stays normal usage that replay filtering can skip, and only the
+    /// cross-file dedupe uses it to tell requests with equal usage apart.
+    pub record_response_id: Option<Arc<str>>,
     pub timestamp: String,
     pub model: Option<String>,
     pub input_tokens: u64,

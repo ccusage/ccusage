@@ -9,11 +9,11 @@ use compact_str::CompactString;
 
 use crate::{
     CodexTokenUsageEvent, Result, chunk_file_indexes_by_size, cli::SharedArgs, fast::FxHashMap,
-    merge_codex_service_tiers, progress,
+    progress,
 };
 
 use super::{
-    aggregate::CodexFileOccurrences,
+    aggregate::{CodexCopyTier, CodexFileOccurrences, CodexUsageCopies},
     parser::visit_codex_session_file_with_diagnostics,
     paths,
     paths::{
@@ -292,52 +292,52 @@ fn read_codex_session_file(
 
 /// Drops usage that one rollout copied from another, keeping file order.
 ///
-/// Identical events within one file are distinct requests, so each carries its
-/// ordinal among them in the key; only a copy in another file collides.
+/// Identical events within one file are distinct requests, so a recordless one
+/// carries its ordinal among them in the key; only a copy in another file
+/// collides. A request record's response ID identifies its event wherever the
+/// copy sits, and tells distinct requests with equal usage apart.
 fn dedupe_codex_events(
     events_by_file: impl IntoIterator<Item = Vec<CodexTokenUsageEvent>>,
 ) -> Vec<CodexTokenUsageEvent> {
-    let mut indexes = FxHashMap::<_, usize>::default();
+    let mut responses = FxHashMap::<CompactString, usize>::default();
+    let mut copies = FxHashMap::<CodexEventUsage, CodexUsageCopies<_, usize>>::default();
     let mut deduped = Vec::<CodexTokenUsageEvent>::new();
     for events in events_by_file {
         let mut occurrences = CodexFileOccurrences::default();
         for event in events {
-            let key = match event.response_id.as_deref() {
-                Some(response_id) => {
-                    CodexEventDeduplicationKey::Response(CompactString::new(response_id))
+            let retained = if let Some(response_id) = event.response_id.as_deref() {
+                let retained = responses.get(response_id).copied();
+                if retained.is_none() {
+                    responses.insert(CompactString::new(response_id), deduped.len());
                 }
-                None => {
-                    let usage = CodexEventUsage(
-                        CompactString::new(&event.timestamp),
-                        event.model.as_deref().map(CompactString::new),
-                        event.input_tokens,
-                        event.cached_input_tokens,
-                        event.cache_creation_tokens,
-                        event.output_tokens,
-                        event.reasoning_output_tokens,
-                        event.total_tokens,
-                    );
-                    let occurrence = occurrences.next(&usage);
-                    CodexEventDeduplicationKey::Usage(usage, occurrence)
-                }
-            };
-            if let Some(index) = indexes.get(&key).copied() {
-                let retained: &mut CodexTokenUsageEvent = &mut deduped[index];
-                retained.service_tier =
-                    merge_codex_service_tiers(retained.service_tier, event.service_tier);
+                retained.map(|index| (index, CodexCopyTier::Merge))
             } else {
-                indexes.insert(key, deduped.len());
+                let usage = CodexEventUsage(
+                    CompactString::new(&event.timestamp),
+                    event.model.as_deref().map(CompactString::new),
+                    event.input_tokens,
+                    event.cached_input_tokens,
+                    event.cache_creation_tokens,
+                    event.output_tokens,
+                    event.reasoning_output_tokens,
+                    event.total_tokens,
+                );
+                let occurrence = occurrences.next(&usage);
+                copies.entry(usage).or_default().retain(
+                    event.record_response_id.clone(),
+                    occurrence,
+                    deduped.len(),
+                )
+            };
+            if let Some((index, tier)) = retained {
+                let retained: &mut CodexTokenUsageEvent = &mut deduped[index];
+                retained.service_tier = tier.apply(retained.service_tier, event.service_tier);
+            } else {
                 deduped.push(event);
             }
         }
     }
     deduped
-}
-
-#[derive(Hash, PartialEq, Eq)]
-enum CodexEventDeduplicationKey {
-    Response(CompactString),
-    Usage(CodexEventUsage, u32),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -376,6 +376,7 @@ mod tests {
         CodexTokenUsageEvent {
             session_id: session_id.to_string(),
             response_id: None,
+            record_response_id: None,
             timestamp: "2026-01-02T00:00:00.000Z".to_string(),
             model: Some("gpt-5".to_string()),
             input_tokens: 100,
@@ -637,6 +638,48 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "session-a");
+    }
+
+    /// A record names only the request whose snapshot follows it. Once another
+    /// request advanced the totals, a later count with the same usage is not it.
+    #[test]
+    fn attributes_a_record_only_to_the_snapshot_that_follows_it() {
+        let usage = |input_tokens: u64| json!({"input_tokens": input_tokens, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": input_tokens + 1});
+        let token_count = |timestamp: &str, last: u64, total: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "token_count", "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": usage(last),
+                    "total_token_usage": usage(total),
+                }},
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-11-01T09:00:00.000Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_unmatched", "usage": usage(10)},
+                })
+                .to_string(),
+                token_count("2026-11-01T09:00:01.000Z", 20, 20),
+                token_count("2026-11-01T09:00:02.000Z", 10, 30),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (event.input_tokens, event.record_response_id.as_deref()))
+                .collect::<Vec<_>>(),
+            [(20, None), (10, None)]
+        );
     }
 
     #[test]

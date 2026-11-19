@@ -292,6 +292,7 @@ mod tests {
             &[CodexTokenUsageEvent {
                 session_id: "session-1".to_string(),
                 response_id: None,
+                record_response_id: None,
                 timestamp: "2026-01-02T00:00:00.000Z".to_string(),
                 model: Some("gpt-5".to_string()),
                 input_tokens: 100,
@@ -342,6 +343,7 @@ mod tests {
         let event = |timestamp: &str| CodexTokenUsageEvent {
             session_id: "session-1".to_string(),
             response_id: None,
+            record_response_id: None,
             timestamp: timestamp.to_string(),
             model: Some("deepseek-v4-flash".to_string()),
             input_tokens: 1_000_000,
@@ -481,6 +483,7 @@ mod tests {
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
                     response_id: None,
+                    record_response_id: None,
                     timestamp: "2026-01-02T00:00:00.000Z".to_string(),
                     model: Some("private-codex-alpha".to_string()),
                     input_tokens: 100,
@@ -495,6 +498,7 @@ mod tests {
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
                     response_id: None,
+                    record_response_id: None,
                     timestamp: "2026-01-02T00:00:01.000Z".to_string(),
                     model: Some("private-codex-beta".to_string()),
                     input_tokens: 50,
@@ -1208,6 +1212,7 @@ mod tests {
             CodexTokenUsageEvent {
                 session_id: "/workspace/api/session-a.jsonl".to_string(),
                 response_id: None,
+                record_response_id: None,
                 timestamp: "2026-01-02T00:00:00.000Z".to_string(),
                 model: Some("gpt-5.3-codex".to_string()),
                 input_tokens: 140,
@@ -1222,6 +1227,7 @@ mod tests {
             CodexTokenUsageEvent {
                 session_id: "/workspace/api/session-a.jsonl".to_string(),
                 response_id: None,
+                record_response_id: None,
                 timestamp: "2026-01-02T00:05:00.000Z".to_string(),
                 model: Some("gpt-5.3-codex".to_string()),
                 input_tokens: 70,
@@ -1236,6 +1242,7 @@ mod tests {
             CodexTokenUsageEvent {
                 session_id: "/workspace/web/session-b.jsonl".to_string(),
                 response_id: None,
+                record_response_id: None,
                 timestamp: "2026-01-05T23:59:59.000Z".to_string(),
                 model: Some("gpt-5-mini".to_string()),
                 input_tokens: 10,
@@ -1250,6 +1257,7 @@ mod tests {
             CodexTokenUsageEvent {
                 session_id: "ignored-missing-model".to_string(),
                 response_id: None,
+                record_response_id: None,
                 timestamp: "2026-01-06T00:00:00.000Z".to_string(),
                 model: None,
                 input_tokens: 999,

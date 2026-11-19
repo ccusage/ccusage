@@ -1,15 +1,16 @@
 use ccusage_core::Diagnostics;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, hash_map::Entry},
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     thread,
 };
 
 use compact_str::CompactString;
 use jiff::tz::TimeZone as JiffTimeZone;
 use rustc_hash::FxHasher;
+use smallvec::SmallVec;
 
 use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
@@ -31,7 +32,7 @@ enum CodexEventKey {
     Usage(CodexUsageKey),
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 struct CodexUsageKey {
     session_hash: u64,
     session_len: usize,
@@ -45,6 +46,12 @@ struct CodexUsageKey {
     reasoning_output_tokens: u64,
     total_tokens: u64,
     occurrence: u32,
+}
+
+impl CodexUsageKey {
+    fn with_occurrence(self, occurrence: u32) -> Self {
+        Self { occurrence, ..self }
+    }
 }
 
 /// Numbers the identical usage events of one rollout file.
@@ -70,6 +77,102 @@ impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
         self.0.insert(key.clone(), 1);
         0
     }
+}
+
+/// The copies of one usage signature seen across rollouts.
+///
+/// A record ID names one request wherever it appears. A recordless event is
+/// either a copy of a recorded request, as a spawned child replays its parent's
+/// counts without their records, or legacy usage matched by its ordinal. Each
+/// recordless request pairs with at most one recorded request, which keeps the
+/// kept count independent of file order.
+pub(super) struct CodexUsageCopies<I, R> {
+    records: SmallVec<[CodexUsageCopy<I, R>; 1]>,
+    recordless: SmallVec<[CodexUsageCopy<u32, R>; 1]>,
+}
+
+struct CodexUsageCopy<K, R> {
+    key: K,
+    retained: R,
+    paired: bool,
+}
+
+/// How a duplicate's service tier applies to the event retained for it.
+pub(super) enum CodexCopyTier {
+    /// The duplicate is known to be the same request.
+    Merge,
+    /// A recorded request replaces the recordless event that stood in for it.
+    Replace,
+    /// A recordless copy cannot name which recorded request it copied.
+    Keep,
+}
+
+impl CodexCopyTier {
+    pub(super) fn apply(
+        self,
+        retained: Option<CodexServiceTier>,
+        duplicate: Option<CodexServiceTier>,
+    ) -> Option<CodexServiceTier> {
+        match self {
+            Self::Merge => merge_codex_service_tiers(retained, duplicate),
+            Self::Replace => duplicate,
+            Self::Keep => retained,
+        }
+    }
+}
+
+impl<I, R> Default for CodexUsageCopies<I, R> {
+    fn default() -> Self {
+        Self {
+            records: SmallVec::new(),
+            recordless: SmallVec::new(),
+        }
+    }
+}
+
+impl<I: PartialEq, R: Clone> CodexUsageCopies<I, R> {
+    /// Returns the retained event this one duplicates, or registers `kept` as
+    /// a new request and returns `None`.
+    pub(super) fn retain(
+        &mut self,
+        record: Option<I>,
+        occurrence: u32,
+        kept: R,
+    ) -> Option<(R, CodexCopyTier)> {
+        let Some(record) = record else {
+            if let Some(copy) = self.recordless.iter().find(|copy| copy.key == occurrence) {
+                let tier = if copy.paired {
+                    CodexCopyTier::Keep
+                } else {
+                    CodexCopyTier::Merge
+                };
+                return Some((copy.retained.clone(), tier));
+            }
+            let named = pair_first(&mut self.records);
+            self.recordless.push(CodexUsageCopy {
+                key: occurrence,
+                retained: named.clone().unwrap_or(kept),
+                paired: named.is_some(),
+            });
+            return named.map(|retained| (retained, CodexCopyTier::Keep));
+        };
+        if let Some(copy) = self.records.iter().find(|copy| copy.key == record) {
+            return Some((copy.retained.clone(), CodexCopyTier::Merge));
+        }
+        let stand_in = pair_first(&mut self.recordless);
+        self.records.push(CodexUsageCopy {
+            key: record,
+            retained: stand_in.clone().unwrap_or(kept),
+            paired: stand_in.is_some(),
+        });
+        stand_in.map(|retained| (retained, CodexCopyTier::Replace))
+    }
+}
+
+fn pair_first<K, R: Clone>(copies: &mut [CodexUsageCopy<K, R>]) -> Option<R> {
+    let copy = copies.iter_mut().find(|copy| !copy.paired)?;
+    copy.paired = true;
+    Some(copy.retained.clone())
 }
 
 /// Where an event was read from: the file's position in the run, and the
@@ -115,7 +218,60 @@ struct CodexCompactionEvent {
     event: CodexTokenUsageEvent,
 }
 
-type CodexDedupeMap = FxHashMap<CodexEventKey, CodexDedupeRecord>;
+#[derive(Default)]
+struct CodexDedupeMap {
+    records: FxHashMap<CodexEventKey, CodexDedupeRecord>,
+    named: FxHashMap<CodexUsageKey, CodexNamedUsage>,
+}
+
+#[derive(Default)]
+struct CodexNamedUsage {
+    copies: CodexUsageCopies<Arc<str>, u32>,
+    next_slot: u32,
+}
+
+impl CodexDedupeMap {
+    fn match_named_usage(
+        &mut self,
+        usage: &mut CodexUsageKey,
+        response_id: Option<&Arc<str>>,
+    ) -> Option<CodexCopyTier> {
+        let signature = usage.with_occurrence(0);
+        let named = if response_id.is_some() {
+            self.named.entry(signature).or_insert_with(|| {
+                // Before the first ID arrives, each retained slot is its
+                // original recordless ordinal. Move into copy tracking only
+                // when the signature needs it.
+                let mut named = CodexNamedUsage::default();
+                while self.records.contains_key(&CodexEventKey::Usage(
+                    signature.with_occurrence(named.next_slot),
+                )) {
+                    let slot = named.next_slot;
+                    named.copies.retain(None, slot, slot);
+                    named.next_slot += 1;
+                }
+                named
+            })
+        } else {
+            self.named.get_mut(&signature)?
+        };
+        match named
+            .copies
+            .retain(response_id.cloned(), usage.occurrence, named.next_slot)
+        {
+            Some((slot, tier)) => {
+                usage.occurrence = slot;
+                Some(tier)
+            }
+            None => {
+                usage.occurrence = named.next_slot;
+                named.next_slot += 1;
+                None
+            }
+        }
+    }
+}
+
 type CodexDedupeShards = [Mutex<CodexDedupeMap>];
 
 struct CodexAggregation {
@@ -561,7 +717,7 @@ fn aggregate_files_local(
         aggregation = aggregate_files_local_with_seen(&fork_run, Some(aggregation))?.0;
     }
     let CodexAggregation { mut groups, seen } = aggregation;
-    apply_recorded_usage_entries(&mut groups, seen.iter(), shared, kind);
+    apply_recorded_usage_entries(&mut groups, seen.records.iter(), shared, kind);
     Ok(groups)
 }
 
@@ -571,7 +727,7 @@ fn aggregate_files_local_with_seen(
 ) -> Result<(CodexAggregation, CodexFileMetadata)> {
     let mut aggregation = aggregation.unwrap_or_else(|| CodexAggregation {
         groups: BTreeMap::new(),
-        seen: FxHashMap::default(),
+        seen: CodexDedupeMap::default(),
     });
     let mut metadata = Vec::new();
     let timezone = resolve_tz(run.shared.timezone.as_deref());
@@ -880,7 +1036,7 @@ fn apply_recorded_usage_from_shards(
 ) {
     for shard in seen {
         let records = shard.lock().unwrap();
-        apply_recorded_usage_entries(groups, records.iter(), shared, kind);
+        apply_recorded_usage_entries(groups, records.records.iter(), shared, kind);
     }
 }
 
@@ -974,7 +1130,7 @@ fn create_dedupe_shards() -> Vec<Mutex<CodexDedupeMap>> {
         .map(usize::from)
         .unwrap_or(1);
     (0..shard_count.max(1))
-        .map(|_| Mutex::new(FxHashMap::default()))
+        .map(|_| Mutex::new(CodexDedupeMap::default()))
         .collect()
 }
 
@@ -988,7 +1144,11 @@ fn insert_event_key(
 ) -> bool {
     let key = provenance.event_key(event, timestamp, model, kind);
     let mut hasher = FxHasher::default();
-    key.hash(&mut hasher);
+    // Every copy of a usage signature, whatever its ordinal, meets in one shard.
+    match &key {
+        CodexEventKey::Usage(usage) => usage.with_occurrence(0).hash(&mut hasher),
+        key => key.hash(&mut hasher),
+    }
     let shard_index = hasher.finish() as usize % seen.len();
     insert_dedupe_record(
         &mut seen[shard_index].lock().unwrap(),
@@ -1003,43 +1163,52 @@ fn insert_event_key(
 
 fn insert_dedupe_record(
     seen: &mut CodexDedupeMap,
-    key: CodexEventKey,
+    mut key: CodexEventKey,
     event: &CodexTokenUsageEvent,
     model: &str,
     kind: AgentReportKind,
     timestamp: crate::TimestampMs,
     file_index: usize,
 ) -> bool {
-    if let Some(record) = seen.get_mut(&key) {
-        record.service_tier = merge_codex_service_tiers(record.service_tier, event.service_tier);
-        if let Some(compaction) = record.compaction.as_mut()
-            && file_index < compaction.file_index
-        {
-            compaction.file_index = file_index;
-            compaction.timestamp = timestamp;
-            compaction.event = event.clone();
-            record.model = CompactString::new(model);
-            record.session_id =
-                (kind == AgentReportKind::Session).then(|| CompactString::new(&event.session_id));
+    let tier = match &mut key {
+        CodexEventKey::Usage(usage) => {
+            seen.match_named_usage(usage, event.record_response_id.as_ref())
         }
-        return false;
-    }
-    seen.insert(
-        key,
-        CodexDedupeRecord {
-            service_tier: event.service_tier,
-            model: CompactString::new(model),
-            session_id: (kind == AgentReportKind::Session)
-                .then(|| CompactString::new(&event.session_id)),
-            compaction: event.response_id.as_ref().map(|_| {
-                Box::new(CodexCompactionEvent {
-                    file_index,
-                    timestamp,
-                    event: event.clone(),
-                })
-            }),
-        },
-    );
+        CodexEventKey::Response(_) => None,
+    };
+    let slot = match seen.records.entry(key) {
+        Entry::Vacant(slot) => slot,
+        Entry::Occupied(mut slot) => {
+            let record = slot.get_mut();
+            record.service_tier = tier
+                .unwrap_or(CodexCopyTier::Merge)
+                .apply(record.service_tier, event.service_tier);
+            if let Some(compaction) = record.compaction.as_mut()
+                && file_index < compaction.file_index
+            {
+                compaction.file_index = file_index;
+                compaction.timestamp = timestamp;
+                compaction.event = event.clone();
+                record.model = CompactString::new(model);
+                record.session_id = (kind == AgentReportKind::Session)
+                    .then(|| CompactString::new(&event.session_id));
+            }
+            return false;
+        }
+    };
+    slot.insert(CodexDedupeRecord {
+        service_tier: event.service_tier,
+        model: CompactString::new(model),
+        session_id: (kind == AgentReportKind::Session)
+            .then(|| CompactString::new(&event.session_id)),
+        compaction: event.response_id.as_ref().map(|_| {
+            Box::new(CodexCompactionEvent {
+                file_index,
+                timestamp,
+                event: event.clone(),
+            })
+        }),
+    });
     event.response_id.is_none()
 }
 
@@ -1267,6 +1436,7 @@ mod tests {
         let first = CodexTokenUsageEvent {
             session_id: "first-session".into(),
             response_id: Some("response-1".into()),
+            record_response_id: None,
             timestamp: "2026-09-01T00:00:01Z".into(),
             model: Some("gpt-5".into()),
             input_tokens: 300,
@@ -1346,6 +1516,7 @@ mod tests {
         let event = |model: &str| CodexTokenUsageEvent {
             session_id: "session-1".to_string(),
             response_id: None,
+            record_response_id: None,
             timestamp: "2026-08-17T01:00:00.000Z".to_string(),
             model: Some(model.to_string()),
             input_tokens: 1_000_000,
@@ -1384,6 +1555,7 @@ mod tests {
             is_fallback_model: false,
             service_tier: Some(CodexServiceTier::Flex),
             response_id: None,
+            record_response_id: None,
         };
 
         let groups = aggregate_events(&[event], AgentReportKind::Daily, Some("UTC")).unwrap();
@@ -2405,6 +2577,211 @@ mod tests {
                     daily_input_tokens(&sessions, single_thread),
                     [("2026-11-01".to_string(), 2_000)],
                     "{name}, single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
+    /// #2184: two spawned siblings of one parent, each with its own session and
+    /// response IDs, but the same usage at the same instant as the other.
+    #[test]
+    fn counts_spawned_siblings_with_identical_usage_and_dedupes_copied_records() {
+        let sibling = IDENTICAL_REQUESTS_ROLLOUT
+            .replace("00000000000a", "00000000000b")
+            .replace("resp_child_1", "resp_child_3")
+            .replace("resp_child_2", "resp_child_4");
+        // Same records under another session ID: a copy whose replay was not
+        // recognized, so only the copied response IDs identify it.
+        let copy = IDENTICAL_REQUESTS_ROLLOUT.replace("00000000000a", "00000000000c");
+        let scenarios = [
+            ("distinct sibling", sibling, 4, (32_000, 8_000, 400, 40_400)),
+            ("copied records", copy, 2, (16_000, 4_000, 200, 20_200)),
+        ];
+
+        for (name, second, event_count, expected) in scenarios {
+            let fixture = fs_fixture!({
+                "sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000a.jsonl":
+                    IDENTICAL_REQUESTS_ROLLOUT,
+                "sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000b.jsonl":
+                    &second,
+            });
+            let sessions = fixture.path("sessions");
+
+            for single_thread in [true, false] {
+                let events =
+                    crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+                assert_eq!(
+                    events.len(),
+                    event_count,
+                    "{name}, single_thread={single_thread}"
+                );
+
+                let shared = SharedArgs {
+                    single_thread,
+                    timezone: Some("UTC".to_string()),
+                    ..SharedArgs::default()
+                };
+                let groups =
+                    load_groups_from_directory(&sessions, &shared, AgentReportKind::Daily).unwrap();
+                let group = &groups["2026-11-01"];
+                assert_eq!(
+                    (
+                        group.input_tokens - group.cached_input_tokens,
+                        group.cached_input_tokens,
+                        group.output_tokens,
+                        group.total_tokens,
+                    ),
+                    expected,
+                    "{name}, single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
+    /// Requests with equal usage at one instant, so they share a usage signature,
+    /// each optionally preceded by the `token_usage_record` Codex writes for it.
+    fn recorded_requests(service_tier: Option<&str>, response_ids: &[Option<&str>]) -> String {
+        let mut lines = vec![
+            json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}})
+                .to_string(),
+        ];
+        if let Some(service_tier) = service_tier {
+            lines.push(
+                json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "event_msg", "payload": {"type": "thread_settings_applied", "thread_settings": {"service_tier": service_tier}}})
+                    .to_string(),
+            );
+        }
+        let timestamp = "2026-11-01T09:01:00.000Z";
+        for (index, response_id) in response_ids.iter().enumerate() {
+            let usage = json!({"input_tokens": 1_000, "cached_input_tokens": 100, "output_tokens": 10, "total_tokens": 1_010});
+            let total = (index as u64 + 1) * 1_000;
+            if let Some(response_id) = response_id {
+                lines.push(
+                    json!({"timestamp": timestamp, "type": "token_usage_record", "payload": {"response_id": response_id, "usage": usage}})
+                        .to_string(),
+                );
+            }
+            lines.push(
+                json!({
+                    "timestamp": timestamp,
+                    "type": "event_msg",
+                    "payload": {"type": "token_count", "info": {
+                        "last_token_usage": usage,
+                        "total_token_usage": {"input_tokens": total, "cached_input_tokens": total / 10, "output_tokens": total / 100, "total_tokens": total + total / 100},
+                    }},
+                })
+                .to_string(),
+            );
+        }
+        lines.join("\n")
+    }
+
+    /// A copy can lack the records of the rollout it copied, as a spawned child
+    /// replays its parent's counts without them. The two still describe the
+    /// same requests, whichever file is read first, while a sibling that recorded
+    /// other requests stays distinct.
+    #[test]
+    fn matches_recordless_copies_to_recorded_requests_in_either_file_order() {
+        let original = recorded_requests(None, &[Some("resp_a1"), Some("resp_a2")]);
+        let sibling = recorded_requests(None, &[Some("resp_b1"), Some("resp_b2")]);
+        let copy = recorded_requests(None, &[None, None]);
+        // Only the second request, so its record sits at another ordinal.
+        let partial = recorded_requests(None, &[Some("resp_a2")]);
+        let scenarios = [
+            ("recorded first", vec![&original, &copy], 2),
+            ("recordless first", vec![&copy, &original], 2),
+            ("siblings, then copy", vec![&original, &sibling, &copy], 4),
+            ("copy between siblings", vec![&original, &copy, &sibling], 4),
+            (
+                "copy first, then siblings",
+                vec![&copy, &original, &sibling],
+                4,
+            ),
+            ("partial copy last", vec![&original, &partial], 2),
+            ("partial copy first", vec![&partial, &original], 2),
+            (
+                "partial and recordless copies",
+                vec![&partial, &copy, &original],
+                2,
+            ),
+        ];
+
+        for (name, files, event_count) in scenarios {
+            let fixture = ccusage_test_support::Fixture::new();
+            for (index, contents) in files.iter().enumerate() {
+                let _ = fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
+            }
+            let sessions = fixture.path("sessions");
+
+            for single_thread in [true, false] {
+                let events =
+                    crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+                assert_eq!(
+                    events.len(),
+                    event_count,
+                    "{name}, single_thread={single_thread}"
+                );
+                assert_eq!(
+                    daily_input_tokens(&sessions, single_thread),
+                    [("2026-11-01".to_string(), 1_000 * event_count as u64)],
+                    "{name}, single_thread={single_thread}"
+                );
+            }
+        }
+    }
+
+    /// A recordless copy cannot say which of several recorded requests it copied,
+    /// so it must not lend its tier to whichever one happened to arrive first.
+    #[test]
+    fn keeps_recorded_tiers_when_a_recordless_copy_cannot_name_its_request() {
+        let fast = recorded_requests(Some("priority"), &[Some("resp_fast")]);
+        let flex = recorded_requests(Some("flex"), &[Some("resp_flex")]);
+        let copy = recorded_requests(Some("priority"), &[None]);
+        let orders = [
+            [&fast, &flex, &copy],
+            [&fast, &copy, &flex],
+            [&flex, &fast, &copy],
+            [&flex, &copy, &fast],
+            [&copy, &fast, &flex],
+            [&copy, &flex, &fast],
+        ];
+
+        for (order, files) in orders.iter().enumerate() {
+            let fixture = ccusage_test_support::Fixture::new();
+            for (index, contents) in files.iter().enumerate() {
+                let _ = fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
+            }
+            let sessions = fixture.path("sessions");
+
+            for single_thread in [true, false] {
+                let mut tiers = crate::load_codex_events_from_directory(&sessions, single_thread)
+                    .unwrap()
+                    .into_iter()
+                    .map(|event| format!("{:?}", event.service_tier))
+                    .collect::<Vec<_>>();
+                tiers.sort();
+                assert_eq!(
+                    tiers,
+                    ["Some(Fast)", "Some(Flex)"],
+                    "order={order}, single_thread={single_thread}"
+                );
+
+                let shared = SharedArgs {
+                    single_thread,
+                    timezone: Some("UTC".to_string()),
+                    ..SharedArgs::default()
+                };
+                let groups =
+                    load_groups_from_directory(&sessions, &shared, AgentReportKind::Daily).unwrap();
+                let usage = &groups["2026-11-01"].models["gpt-5.2"];
+                assert_eq!(
+                    (
+                        usage.input_tokens,
+                        usage.recorded_fast_usage.input_tokens,
+                        usage.recorded_flex_usage.input_tokens,
+                    ),
+                    (2_000, 1_000, 1_000),
+                    "order={order}, single_thread={single_thread}"
                 );
             }
         }
