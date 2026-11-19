@@ -78,6 +78,8 @@ struct CodexCompactionUsageState {
     pending_usage: HashMap<String, CodexPendingUsage>,
     emitted_response_ids: HashSet<String>,
     latest_usage_response_id: Option<String>,
+    /// Whether no snapshot advanced the totals since the latest record.
+    latest_record_awaits_snapshot: bool,
     recorded_usage_timestamps: Option<HashMap<String, Option<TimestampMs>>>,
 }
 
@@ -491,6 +493,7 @@ fn visit_codex_session_entry(
         };
 
         compaction_usage.latest_usage_response_id = Some(response_id.clone());
+        compaction_usage.latest_record_awaits_snapshot = true;
 
         if compaction_usage
             .compacted_response_ids
@@ -563,6 +566,8 @@ fn visit_codex_session_entry(
     // unrelated request with identical token counts from consuming it.
     // Codex writes every request's record just before its token_count, so the
     // consumed record also names the request this token_count reports.
+    let record_awaits_snapshot =
+        cumulative_advanced && std::mem::take(&mut compaction_usage.latest_record_awaits_snapshot);
     let mut record_response_id = None;
     if cumulative_advanced
         && let Some(response_id) = compaction_usage.latest_usage_response_id.as_ref()
@@ -580,7 +585,7 @@ fn visit_codex_session_entry(
         compaction_usage
             .emitted_response_ids
             .insert(response_id.clone());
-        record_response_id = Some(response_id.clone());
+        record_response_id = record_awaits_snapshot.then(|| response_id.clone());
     }
 
     let parsed_model =

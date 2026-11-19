@@ -581,6 +581,48 @@ mod tests {
         assert_eq!(events[0].session_id, "session-a");
     }
 
+    /// A record names only the request whose snapshot follows it. Once another
+    /// request advanced the totals, a later count with the same usage is not it.
+    #[test]
+    fn attributes_a_record_only_to_the_snapshot_that_follows_it() {
+        let usage = |input_tokens: u64| json!({"input_tokens": input_tokens, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": input_tokens + 1});
+        let token_count = |timestamp: &str, last: u64, total: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "token_count", "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": usage(last),
+                    "total_token_usage": usage(total),
+                }},
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-11-01T09:00:00.000Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_unmatched", "usage": usage(10)},
+                })
+                .to_string(),
+                token_count("2026-11-01T09:00:01.000Z", 20, 20),
+                token_count("2026-11-01T09:00:02.000Z", 10, 30),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (event.input_tokens, event.record_response_id.as_deref()))
+                .collect::<Vec<_>>(),
+            [(20, None), (10, None)]
+        );
+    }
+
     #[test]
     fn dedupes_compaction_usage_by_response_id() {
         let mut first = codex_event("session-a");
