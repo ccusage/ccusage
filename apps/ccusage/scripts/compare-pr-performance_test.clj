@@ -52,7 +52,10 @@
           (command-argv "/tmp/ccusage" "claude daily"))))
   (testing "fixture runs start from an empty environment"
     (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
-           (benchmark-command-text (fixture-env "/f/c" "/f/x" "/e") (command-argv "/b" "daily"))))))
+           (benchmark-command-text (fixture-env "/f/c" "/f/x" "/e") (command-argv "/b" "daily")))))
+  (testing "a Grok fixture is pointed at through GROK_HOME"
+    (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x GROK_HOME=/f/g HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
+           (benchmark-command-text (fixture-env "/f/c" "/f/x" "/f/g" "/e") (command-argv "/b" "daily"))))))
 
 (deftest statistics
   (is (= 4 (median [9 1 2 4 7])))
@@ -147,7 +150,12 @@
     (is (.contains markdown "PR: `222222222222` merged onto Base: `111111111111`"))
     (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
-    (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))))
+    (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))
+    (is (.contains markdown "Claude logs (1.00 GiB on disk, 10 files) and Codex logs"))
+    (testing "a Grok fixture is listed with the others"
+      (is (.contains (fixture-line {:fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}
+                                    :grok-fixture-stats {:bytes 2097152 :files 3}})
+                     "Claude logs (1.00 GiB on disk, 10 files), Codex logs (1.00 MiB on disk, 2 files, mostly zstd-compressed), and Grok logs (2.00 MiB on disk, 3 files) shaped")))))
 
 (deftest overall-verdicts
   (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]

@@ -29,9 +29,12 @@
     {:bytes (reduce + 0 (map fs/size files)) :files (count files)}))
 
 (defn fixture-env
-  "Points Claude and Codex at the fixture and every other agent at an empty
-  HOME, in an otherwise empty environment."
-  [fixture-dir codex-fixture-dir empty-home]
-  {:clean? true
-   :vars (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home
-                    "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC")})
+  "Points Claude, Codex, and Grok when given at the fixture and every other
+  agent at an empty HOME, in an otherwise empty environment."
+  ([fixture-dir codex-fixture-dir empty-home]
+   (fixture-env fixture-dir codex-fixture-dir nil empty-home))
+  ([fixture-dir codex-fixture-dir grok-fixture-dir empty-home]
+   {:clean? true
+    :vars (cond-> (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir)
+            grok-fixture-dir (assoc "GROK_HOME" grok-fixture-dir)
+            true (assoc "HOME" empty-home "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC"))}))

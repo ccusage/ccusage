@@ -193,16 +193,16 @@
   [repo cache size-mib layout]
   (let [generator (path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
         dir (path cache "fixture" (str (or size-mib "profiled") "-" layout "-" (subs (file-sha256 generator) 0 12)))
-        claude (path dir "claude") codex (path dir "codex") done (path dir ".complete")]
+        claude (path dir "claude") codex (path dir "codex") grok (path dir "grok") done (path dir ".complete")]
     (with-file-lock (str dir ".lock")
       #(when-not (fs/exists? done)
          (fs/delete-tree dir)
          (write-progress (str "generating " (if size-mib (str size-mib " MiB") "real-sized") " fixtures in " dir))
-         (run-checked (into [generator "--output-dir" claude "--codex-output-dir" codex "--codex-layout" layout]
-                            (when size-mib ["--size-mib" (str size-mib) "--codex-size-mib" (str size-mib)]))
+         (run-checked (into [generator "--output-dir" claude "--codex-output-dir" codex "--grok-output-dir" grok "--codex-layout" layout]
+                            (when size-mib ["--size-mib" (str size-mib) "--codex-size-mib" (str size-mib) "--grok-size-mib" (str size-mib)]))
                       {:dir repo} "generate-large-fixture")
          (spit done "")))
-    {:claude claude :codex codex}))
+    {:claude claude :codex codex :grok grok}))
 
 (defn history-section [title variants env commands options]
   (str "## " title "\n\n"
@@ -227,8 +227,9 @@
             empty-home (temp-dir "ccusage-perf-home.")
             stats (fn [dir] (let [s (summarize-directory dir)] (format "%s, %d files" (format-data-size (:bytes s)) (:files s))))]
         (try
-          (let [synthetic (history-section (format "Synthetic fixture (Claude %s; Codex %s)" (stats (:claude fixture)) (stats (:codex fixture)))
-                                           variants (fixture-env (:claude fixture) (:codex fixture) (str empty-home)) commands options)
+          (let [synthetic (history-section (str "Synthetic fixture (Claude " (stats (:claude fixture)) "; Codex " (stats (:codex fixture))
+                                                (when (:grok fixture) (str "; Grok " (stats (:grok fixture)))) ")")
+                                           variants (fixture-env (:claude fixture) (:codex fixture) (:grok fixture) (str empty-home)) commands options)
                 real (when (:real options)
                        (history-section "Local logs" variants (local-logs-env) commands options))
                 real-warning (when (and real (not= "current" (:layout compatibility)))

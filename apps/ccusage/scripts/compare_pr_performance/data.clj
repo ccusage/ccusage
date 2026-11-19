@@ -13,6 +13,7 @@
    :head-sha {:ref "SHA"}
    :fixture-dir {:ref "DIR" :desc "Claude fixture (CLAUDE_CONFIG_DIR)"}
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture (CODEX_HOME)"}
+   :grok-fixture-dir {:ref "DIR" :desc "Grok fixture (GROK_HOME); optional"}
    :output {:ref "FILE"}
    :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}

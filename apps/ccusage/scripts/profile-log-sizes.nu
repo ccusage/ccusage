@@ -78,6 +78,9 @@ def main []: nothing -> nothing {
     let codex_roots = env-roots 'CODEX_HOME' [
         ($home | path join '.codex')
     ]
+    let grok_roots = env-roots 'GROK_HOME' [
+        ($home | path join '.grok')
+    ]
 
     {
         claude: (profile (files-under $claude_roots ['projects/**/*.jsonl']))
@@ -91,6 +94,7 @@ def main []: nothing -> nothing {
                 ]
             )
         )
+        grok: (profile (files-under $grok_roots ['sessions/**/updates.jsonl']))
     }
     | to json
     | print
