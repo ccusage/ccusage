@@ -455,6 +455,21 @@ pub(crate) fn extra_cases(root: &Path) -> Vec<Case> {
         ),
         Case::new(
             "blocks",
+            "table_token_limit_narrow",
+            &[
+                "claude",
+                "blocks",
+                "--offline",
+                "--no-color",
+                "--since",
+                "20260102",
+                "--token-limit",
+                "100",
+            ],
+        )
+        .columns(80),
+        Case::new(
+            "blocks",
             "json_recent",
             &["claude", "blocks", "--offline", "--json", "--recent"],
         ),
