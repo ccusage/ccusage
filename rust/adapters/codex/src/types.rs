@@ -363,20 +363,20 @@ impl TierBuckets {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct CodexTimestampedUsage {
+pub(crate) struct CodexTimestampedUsage {
     pub(crate) usage: CodexUsageBucket,
     pub(crate) recorded_usage: TierBuckets,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CodexModelUsage {
-    pub usage: CodexUsageBucket,
-    pub recorded_usage: TierBuckets,
-    pub reasoning_output_tokens: u64,
+    pub(crate) usage: CodexUsageBucket,
+    pub(crate) recorded_usage: TierBuckets,
+    pub(crate) reasoning_output_tokens: u64,
     pub total_tokens: u64,
     /// Exact event timestamps keep time-dependent pricing available after aggregation.
-    pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
-    pub is_fallback: bool,
+    pub(crate) timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
+    pub(crate) is_fallback: bool,
     pub(crate) pricing_variants: BTreeMap<String, Self>,
 }
 
