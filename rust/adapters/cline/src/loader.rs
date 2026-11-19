@@ -22,9 +22,9 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
 
 #[cfg(test)]
 mod tests {
-    use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
+    use ccusage_core::PricingMap;
     use ccusage_test_support::{Environment, Fixture};
 
     #[test]

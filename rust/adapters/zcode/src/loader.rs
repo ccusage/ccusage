@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
         assert_eq!(
             entries[0].timestamp,
-            crate::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
+            ccusage_core::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
         );
         assert_eq!(entries[0].project_path.as_ref(), "/project");
     }

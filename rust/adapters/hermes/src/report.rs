@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use ccusage_core::cli::AgentReportKind;
     use std::sync::Arc;
 
     use crate::TokenUsageRaw;
@@ -20,7 +21,7 @@ mod tests {
             message_id: Some("hermes:session-1".to_string()),
             version: None,
             recorded_cost: Some(0.34),
-            timestamp: crate::parse_ts_timestamp("2025-06-15T15:06:40.250Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2025-06-15T15:06:40.250Z").unwrap(),
             date: "2025-06-15".to_string(),
             project: Arc::from("hermes"),
             session_id: Arc::from("session-1"),

@@ -103,11 +103,12 @@ mod tests {
     use ccusage_core::{Diagnostics, SkipKind};
 
     use super::*;
+    use crate::cli::SharedArgs;
     use crate::parser::test_support::{
         UsageFixture, create_database, metadata_blob, metadata_blob_with_steps, step_metadata_blob,
         trajectory_metadata_blob,
     };
-    use crate::{PricingMap, cli::SharedArgs};
+    use ccusage_core::PricingMap;
 
     fn shared(single_thread: bool) -> SharedArgs {
         SharedArgs {
@@ -820,7 +821,7 @@ mod tests {
         assert_eq!(entries[0].date, "2026-05-09");
         assert_eq!(
             entries[0].timestamp,
-            crate::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()
+            ccusage_core::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()
         );
     }
 
