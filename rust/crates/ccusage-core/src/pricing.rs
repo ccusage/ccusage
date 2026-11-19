@@ -1715,8 +1715,7 @@ impl PricingMap {
         {
             let hit = cache.get_or_init(model, lookup, Pass::Find, |slot| {
                 let search = |pass| {
-                    *slot
-                        .result(lookup, pass)
+                    slot.result(lookup, pass)
                         .get_or_init(|| self.search_pass(model, slot, lookup, pass, &models_dev))
                 };
                 search(Pass::Label)
@@ -1879,17 +1878,18 @@ impl PricingMap {
         name: &'a str,
         hit: CachedHit,
     ) -> Option<(&'a str, RowMatch<'_>, ResolutionStep)> {
-        let row = if hit.overridden {
-            self.overrides.resolved(hit.id)
+        let step = hit.step()?;
+        let row = if hit.overridden() {
+            self.overrides.resolved(hit.id())
         } else if matches!(
-            hit.step,
+            step,
             ResolutionStep::ModelsDevIdentity | ResolutionStep::ModelsDevFuzzy
         ) {
-            self.available_models_dev()?.at(hit.id)
+            self.available_models_dev()?.at(hit.id())
         } else {
-            self.rows.at(hit.id)
+            self.rows.at(hit.id())
         }?;
-        Some((name, row, hit.step))
+        Some((name, row, step))
     }
 
     fn fuzzy<'a>(
