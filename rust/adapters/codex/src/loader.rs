@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::{
-    aggregate::{CodexFileOccurrences, CodexUsageCopies},
+    aggregate::{CodexCopyTier, CodexFileOccurrences, CodexUsageCopies},
     parser::visit_codex_session_file,
     paths,
     paths::{
@@ -243,16 +243,16 @@ fn read_codex_session_file(
 
 /// Drops usage that one rollout copied from another, keeping file order.
 ///
-/// Identical events within one file are distinct requests, so each carries its
-/// ordinal among them in the key; only a copy in another file collides. Among
-/// colliding events, the response IDs of their request records tell distinct
-/// requests apart.
+/// Identical events within one file are distinct requests, so a recordless one
+/// carries its ordinal among them in the key; only a copy in another file
+/// collides. A request record's response ID identifies its event wherever the
+/// copy sits, and tells distinct requests with equal usage apart.
 fn dedupe_codex_events(
     events_by_file: impl IntoIterator<Item = Vec<CodexTokenUsageEvent>>,
 ) -> Vec<CodexTokenUsageEvent> {
     let mut responses = FxHashMap::<CompactString, usize>::default();
     let mut copies =
-        FxHashMap::<(CodexEventUsage, u32), CodexUsageCopies<CompactString, usize>>::default();
+        FxHashMap::<CodexEventUsage, CodexUsageCopies<CompactString, usize>>::default();
     let mut deduped = Vec::<CodexTokenUsageEvent>::new();
     for events in events_by_file {
         let mut occurrences = CodexFileOccurrences::default();
@@ -262,7 +262,7 @@ fn dedupe_codex_events(
                 if retained.is_none() {
                     responses.insert(CompactString::new(response_id), deduped.len());
                 }
-                retained
+                retained.map(|index| (index, CodexCopyTier::Merge))
             } else {
                 let usage = CodexEventUsage(
                     CompactString::new(&event.timestamp),
@@ -275,15 +275,21 @@ fn dedupe_codex_events(
                     event.total_tokens,
                 );
                 let occurrence = occurrences.next(&usage);
-                copies.entry((usage, occurrence)).or_default().retain(
+                copies.entry(usage).or_default().retain(
                     event.record_response_id.as_deref().map(CompactString::new),
+                    occurrence,
                     deduped.len(),
                 )
             };
-            if let Some(index) = retained {
+            if let Some((index, tier)) = retained {
                 let retained: &mut CodexTokenUsageEvent = &mut deduped[index];
-                retained.service_tier =
-                    merge_codex_service_tiers(retained.service_tier, event.service_tier);
+                retained.service_tier = match tier {
+                    CodexCopyTier::Merge => {
+                        merge_codex_service_tiers(retained.service_tier, event.service_tier)
+                    }
+                    CodexCopyTier::Replace => event.service_tier,
+                    CodexCopyTier::Keep => retained.service_tier,
+                };
             } else {
                 deduped.push(event);
             }
