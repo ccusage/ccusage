@@ -15,6 +15,7 @@ in
       ...
     }:
     let
+      # NOTE(2026-06-11, #1260): On Linux this glibc-dynamic build has a runpath into /nix/store. Release binaries use the static build so they run without a Nix store.
       ccusage = import ../default.nix {
         inherit
           craneLib

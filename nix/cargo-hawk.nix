@@ -9,6 +9,7 @@
 }:
 let
   version = "0.1.18";
+  # NOTE(2026-11-16, #2119): Hawk links rustc_private. Its archive needs the exact Rust channel it was built against.
   supportedRustChannel = "1.100.0";
   toolchain = builtins.fromTOML (builtins.readFile ../rust-toolchain.toml);
   archives = {

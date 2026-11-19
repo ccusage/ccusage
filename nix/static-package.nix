@@ -20,6 +20,7 @@
     lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       packages = {
         "ccusage-release-linux-${arch}" = config.packages.ccusage-static;
+        # NOTE(2026-06-11, #1279): Blacksmith trims the sticky disk to Nix GC roots. Expose the static build artifacts so CI can root them across runs.
         ccusage-static = import ./target-package.nix {
           package = config.packages.ccusage;
           inherit pkgs target;

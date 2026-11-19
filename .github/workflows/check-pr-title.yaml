@@ -65,6 +65,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: nu scripts/validate-commit-scope.nu pr
 
+  # NOTE(2026-11-10, #2062): Dispatch check runs do not attach to the release PR. Post commit statuses on the same SHA to satisfy the required title checks.
   release-pr-statuses:
     name: Release PR title statuses
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'

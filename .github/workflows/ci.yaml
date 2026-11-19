@@ -314,6 +314,7 @@ jobs:
           - pnpm
           - bun
         exclude:
+          # NOTE(2026-11-17, #1293): pnpm dlx on Windows skips the optional native binary in its temporary store. Exclude that leg because the launcher fails with spawn ENOENT.
           - os: blacksmith-32vcpu-windows-2025
             runner: pnpm
 
@@ -348,7 +349,9 @@ jobs:
         shell: pwsh
         env:
           RUNNER_KIND: ${{ matrix.runner }}
+          # NOTE(2026-06-12, #1293): pnpm's minimumReleaseAge blocks freshly published tarballs (https://pnpm.io/settings#minimumreleaseage). Allow the preview to install immediately.
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
+          # NOTE(2026-06-12, #1293): pnpm's blockExoticSubdeps rejects URL-resolved dependencies (https://pnpm.io/settings#blockexoticsubdeps). Allow the native optional dependencies injected by pkg.pr.new.
           PNPM_CONFIG_BLOCK_EXOTIC_SUBDEPS: 'false'
         run: |
           $url = $env:CCUSAGE_PREVIEW_URL
@@ -356,6 +359,7 @@ jobs:
             switch ($env:RUNNER_KIND) {
               'npm' { return (npx --yes $url @ccArgs) }
               'pnpm' { return (pnpm dlx $url @ccArgs) }
+              # NOTE(2026-10-15, #1900): bunx rejects a bare URL as the package argument. Use --package and name the binary explicitly.
               'bun' { return (bunx --package $url ccusage @ccArgs) }
             }
           }
@@ -526,6 +530,7 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
 
+  # NOTE(2026-11-10, #2062): Dispatch check runs do not attach to the release PR. Post a commit status on the same SHA to satisfy the required ci gate.
   release-dispatch-status-pending:
     name: release dispatch status (pending)
     if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-')
