@@ -7,6 +7,7 @@ use std::{
 #[cfg(test)]
 use std::cell::RefCell;
 
+use ccusage_core::Diagnostics;
 use serde_json::Value;
 
 use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
@@ -98,6 +99,7 @@ impl CodexReplayPlan {
     pub(super) fn new<'a>(
         groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
+        diagnostics: &Diagnostics,
     ) -> Self {
         let files = collect_replay_files(groups);
         let metadata = read_session_metadata(&files, single_thread);
@@ -115,7 +117,7 @@ impl CodexReplayPlan {
 
         Self {
             parent_by_child,
-            usage_by_parent: read_parent_usage(&parents, single_thread),
+            usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
         }
     }
 
@@ -123,6 +125,7 @@ impl CodexReplayPlan {
         children: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         available_files: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
+        diagnostics: &Diagnostics,
     ) -> Self {
         let children = collect_replay_files(children);
         let child_metadata = read_session_metadata(&children, single_thread);
@@ -167,7 +170,7 @@ impl CodexReplayPlan {
 
         Self {
             parent_by_child,
-            usage_by_parent: read_parent_usage(&parents, single_thread),
+            usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
         }
     }
 
@@ -338,16 +341,19 @@ fn read_session_metadata(
 fn read_parent_usage(
     parents: &[(PathBuf, &Path)],
     single_thread: bool,
+    diagnostics: &Diagnostics,
 ) -> HashMap<PathBuf, ParentUsage> {
     if parents.is_empty() {
         return HashMap::new();
     }
     let worker_count = replay_worker_count(parents.len(), single_thread);
+    // A parent the report also reads records the same skips again, which
+    // `Diagnostics` counts once.
+    let read = |(path, sessions_dir): &(PathBuf, &Path)| {
+        read_parent_usage_file(path, sessions_dir, diagnostics)
+    };
     if worker_count <= 1 {
-        return parents
-            .iter()
-            .map(|(path, sessions_dir)| read_parent_usage_file(path, sessions_dir))
-            .collect();
+        return parents.iter().map(read).collect();
     }
     let paths = parents
         .iter()
@@ -358,13 +364,11 @@ fn read_parent_usage(
         chunks
             .into_iter()
             .map(|chunk| {
+                let read = &read;
                 scope.spawn(move || {
                     chunk
                         .into_iter()
-                        .map(|index| {
-                            let (path, sessions_dir) = &parents[index];
-                            read_parent_usage_file(path, sessions_dir)
-                        })
+                        .map(|index| read(&parents[index]))
                         .collect::<Vec<_>>()
                 })
             })
@@ -375,11 +379,18 @@ fn read_parent_usage(
     })
 }
 
-fn read_parent_usage_file(path: &Path, sessions_dir: &Path) -> (PathBuf, ParentUsage) {
-    (path.to_path_buf(), read_usage_events(sessions_dir, path))
+fn read_parent_usage_file(
+    path: &Path,
+    sessions_dir: &Path,
+    diagnostics: &Diagnostics,
+) -> (PathBuf, ParentUsage) {
+    (
+        path.to_path_buf(),
+        read_usage_events(sessions_dir, path, diagnostics),
+    )
 }
 
-fn read_usage_events(sessions_dir: &Path, path: &Path) -> ParentUsage {
+fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics) -> ParentUsage {
     observe_parent_usage(path);
     let mut stream = ParentUsage {
         timestamps: Vec::new(),
@@ -406,6 +417,7 @@ fn read_usage_events(sessions_dir: &Path, path: &Path) -> ParentUsage {
             usage.push(event.raw_usage());
             Ok(())
         },
+        diagnostics,
     );
     stream
 }
@@ -549,6 +561,7 @@ mod tests {
             [(fixture.root(), selected.as_slice())],
             [(fixture.root(), available.as_slice())],
             true,
+            &Diagnostics::new("codex"),
         );
 
         let probes = take_observed_file_read_events()
@@ -575,6 +588,7 @@ mod tests {
             [(fixture.root(), selected.as_slice())],
             [(fixture.root(), available.as_slice())],
             true,
+            &Diagnostics::new("codex"),
         );
 
         assert!(plan.parent_by_child.is_empty());

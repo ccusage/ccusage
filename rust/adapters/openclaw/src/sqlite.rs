@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::parser::{OpenClawLine, parse_transcript_message, sqlite_entry_to_loaded};
@@ -19,28 +21,22 @@ struct AgentDatabase {
 /// stays lexical (no symlink following, no canonicalization): discovery must
 /// agree with the JSONL walk in `paths.rs`, which also refuses symlinks.
 /// Reads open read-only.
-fn collect_agent_databases(root: &Path) -> Vec<AgentDatabase> {
+fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentDatabase> {
     let mut databases = Vec::new();
     let agents_path = root.join("agents");
-    if !is_directory_without_symlink(&agents_path) {
+    if !lexical_type(&agents_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
         return databases;
     }
-    let Ok(agents) = std::fs::read_dir(agents_path) else {
-        return databases;
-    };
-    for agent in agents.filter_map(std::result::Result::ok) {
-        let Ok(file_type) = agent.file_type() else {
-            continue;
-        };
+    for (agent, file_type) in dir_entries(&agents_path, diagnostics) {
         if !file_type.is_dir() {
             continue;
         }
-        let agent_path = agent.path().join("agent");
-        if !is_directory_without_symlink(&agent_path) {
+        let agent_path = agent.join("agent");
+        if !lexical_type(&agent_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
             continue;
         }
         let path = agent_path.join("openclaw-agent.sqlite");
-        if is_file_without_symlink(&path) {
+        if lexical_type(&path, diagnostics).is_some_and(|kind| kind.is_file()) {
             databases.push(AgentDatabase { path });
         }
     }
@@ -48,12 +44,22 @@ fn collect_agent_databases(root: &Path) -> Vec<AgentDatabase> {
     databases
 }
 
-fn is_directory_without_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_dir())
-}
-
-fn is_file_without_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+/// The type of `path` itself, not of a symlink's target; `None` when it is
+/// missing, or cannot be inspected, which is recorded in `diagnostics`.
+fn lexical_type(path: &Path, diagnostics: &Diagnostics) -> Option<std::fs::FileType> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => Some(metadata.file_type()),
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                diagnostics.record(Skip::unit(
+                    path,
+                    SkipKind::Unreadable,
+                    "cannot read file type",
+                ));
+            }
+            None
+        }
+    }
 }
 
 pub(super) fn collect_sqlite_entries(
@@ -61,11 +67,17 @@ pub(super) fn collect_sqlite_entries(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    debug: &dyn Fn(String),
+    diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
-    for database in collect_agent_databases(root) {
-        entries.extend(read_agent_database(&database, tz, mode, pricing, debug));
+    for database in collect_agent_databases(root, diagnostics) {
+        entries.extend(read_agent_database(
+            &database,
+            tz,
+            mode,
+            pricing,
+            diagnostics,
+        ));
     }
     entries
 }
@@ -82,45 +94,62 @@ fn read_agent_database(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    debug: &dyn Fn(String),
+    diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
-    let Ok(connection) = sqlite::Connection::open_with_flags(
+    let connection = match sqlite::Connection::open_with_flags(
         &database.path,
         sqlite::OpenFlags::new().with_read_only(),
-    ) else {
-        debug(format!(
-            "Failed to open OpenClaw agent database: {}",
-            database.path.display()
-        ));
-        return Vec::new();
+    ) {
+        Ok(connection) => connection,
+        Err(error) => {
+            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
+            return Vec::new();
+        }
     };
-    if !table_exists(&connection) {
-        debug(format!(
-            "OpenClaw agent database has no transcript_events table: {}",
-            database.path.display()
-        ));
-        return Vec::new();
+    match table_exists(&connection) {
+        Ok(true) => {}
+        Ok(false) => {
+            diagnostics.record(Skip::unit(
+                &database.path,
+                SkipKind::Invariant,
+                "OpenClaw database has no transcript_events table",
+            ));
+            return Vec::new();
+        }
+        Err(error) => {
+            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
+            return Vec::new();
+        }
     }
-    let Ok(mut statement) = connection.prepare(
+    let mut statement = match connection.prepare(
         "SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC",
-    ) else {
-        debug(format!(
-            "Failed to query OpenClaw agent database: {}",
-            database.path.display()
-        ));
-        return Vec::new();
+    ) {
+        Ok(statement) => statement,
+        Err(error) => {
+            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
+            return Vec::new();
+        }
     };
     // Model/provider tracking is per session in the JSONL path (state resets
     // per file). SQLite rows arrive in session order, so track the current
     // session and reset the tracked model/provider on session boundaries.
+    let prefilter = super::parser::record_prefilter();
     let mut current_session: Option<String> = None;
     let mut current_model: Option<String> = None;
     let mut current_provider: Option<String> = None;
     let mut entries = Vec::new();
+    let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
+                row_number = row_number.saturating_add(1);
                 let Ok(session_id) = statement.read::<String, _>(0) else {
+                    diagnostics.record(Skip::record(
+                        &database.path,
+                        row_number,
+                        SkipKind::InvalidData,
+                        "OpenClaw transcript row has no session id",
+                    ));
                     continue;
                 };
                 if current_session.as_deref() != Some(&session_id) {
@@ -138,11 +167,32 @@ fn read_agent_database(
                     .unwrap_or(0);
                 let fallback_timestamp = TimestampMs::from_millis(created_at.max(0));
                 let Ok(event_json) = statement.read::<String, _>(2) else {
+                    diagnostics.record(Skip::record(
+                        &database.path,
+                        row_number,
+                        SkipKind::InvalidData,
+                        "OpenClaw transcript row has no event data",
+                    ));
                     continue;
                 };
-                let Ok(record) = serde_json::from_str::<OpenClawLine>(&event_json) else {
+                if !prefilter.matches(event_json.as_bytes()) {
+                    continue;
+                }
+                let Some(record) = jsonl::decode_record::<OpenClawLine>(
+                    event_json.as_bytes(),
+                    &database.path,
+                    row_number,
+                    diagnostics,
+                    Some(super::parser::is_usage_envelope),
+                ) else {
                     continue;
                 };
+                super::parser::record_message_error(
+                    &record,
+                    &database.path,
+                    row_number,
+                    diagnostics,
+                );
                 if super::parser::is_model_change(&record) {
                     let (model, provider) = super::parser::model_change_source(&record);
                     if let Some(model) = model {
@@ -165,11 +215,9 @@ fn read_agent_database(
                 entries.push(sqlite_entry_to_loaded(entry, message_id, tz, mode, pricing));
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                debug(format!(
-                    "Failed to read OpenClaw agent database: {}",
-                    database.path.display()
-                ));
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code)
+                    .record(&database.path, diagnostics);
                 break;
             }
         }
@@ -177,25 +225,27 @@ fn read_agent_database(
     entries
 }
 
-fn table_exists(connection: &sqlite::Connection) -> bool {
-    let Ok(mut statement) = connection
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-    else {
-        return false;
-    };
-    if statement.bind((1, "transcript_events")).is_err() {
-        return false;
+fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sqlite::Error> {
+    let mut statement = connection
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")?;
+    statement.bind((1, "transcript_events"))?;
+    match statement.next()? {
+        sqlite::State::Row => Ok(true),
+        sqlite::State::Done => Ok(false),
     }
-    matches!(statement.next(), Ok(sqlite::State::Row))
 }
 
 #[cfg(test)]
 mod tests {
+    use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
+    use ccusage_core::{PricingMap, ReportWindow, cli::AgentReportKind};
     use ccusage_test_support::{Fixture, fs_fixture};
 
     use super::*;
 
-    fn no_debug(_: String) {}
+    fn diagnostics() -> Diagnostics {
+        Diagnostics::new("openclaw")
+    }
 
     fn create_agent_db(path: &Path, rows: &[(&str, i64, &str)]) {
         let db = sqlite::open(path).unwrap();
@@ -246,7 +296,7 @@ mod tests {
             None,
             CostMode::Auto,
             None,
-            &no_debug,
+            &diagnostics(),
         );
 
         assert_eq!(entries.len(), 1);
@@ -276,7 +326,11 @@ mod tests {
                     1_769_753_935_279,
                     r#"{"id":"evt-1","type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20},"timestamp":1769753935279}}"#,
                 ),
-                ("session-a", 1_769_753_935_279, "not json"),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    "{\"usage\":\"SECRET_CANARY\",}",
+                ),
                 (
                     "session-a",
                     1_769_753_935_279,
@@ -285,17 +339,100 @@ mod tests {
             ],
         );
 
+        let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
             None,
             CostMode::Auto,
             None,
-            &no_debug,
+            &diagnostics,
         );
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
         assert_eq!(entries[1].data.message.usage.input_tokens, 30);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("invalid data"));
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn diagnoses_nested_usage_errors_and_skips_events_without_markers() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        create_agent_db(
+            &db_path,
+            &[
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20}}}"#,
+                ),
+            ],
+        );
+        let diagnostics = diagnostics();
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn malformed_message_object_keeps_sqlite_model_tracking() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        create_agent_db(
+            &db_path,
+            &[
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":{"role":1}}"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                ),
+            ],
+        );
+        let diagnostics = diagnostics();
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
     }
 
     #[test]
@@ -307,7 +444,7 @@ mod tests {
             .unwrap()
             .execute("CREATE TABLE other (id TEXT)")
             .unwrap();
-        let debug = std::cell::RefCell::new(Vec::new());
+        let diagnostics = diagnostics();
 
         let entries = read_agent_database(
             &AgentDatabase {
@@ -316,17 +453,63 @@ mod tests {
             None,
             CostMode::Auto,
             None,
-            &|message| debug.borrow_mut().push(message),
+            &diagnostics,
         );
 
         assert!(entries.is_empty());
-        assert_eq!(
-            debug.into_inner(),
-            vec![format!(
-                "OpenClaw agent database has no transcript_events table: {}",
-                db_path.display()
-            )]
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn reports_sqlite_corruption_during_schema_probe_as_invalid_data() {
+        let fixture = fs_fixture!({
+            "agents/main/agent/openclaw-agent.sqlite": "not a SQLite database",
+        });
+        let db_path = sqlite_root(&fixture);
+        let connection = sqlite::Connection::open_with_flags(
+            &db_path,
+            sqlite::OpenFlags::new().with_read_only(),
+        )
+        .expect("SQLite should open the damaged file before probing its schema");
+        let probe = connection
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
+            .and_then(|mut statement| {
+                statement.bind((1, "transcript_events"))?;
+                statement.next()
+            });
+        assert!(
+            probe.is_err(),
+            "the schema probe must fail for this fixture"
         );
+        drop(connection);
+
+        let custom_path = fixture.root().to_str().unwrap();
+        let shared = ccusage_core::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..Default::default()
+        };
+        let window = ReportWindow::from_shared(&shared);
+        let pricing = PricingMap::load_embedded();
+        let diagnostics = diagnostics();
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions {
+                open_claw_path: Some(custom_path),
+                ..SourceOptions::default()
+            },
+            diagnostics: &diagnostics,
+        };
+
+        let entries = crate::SOURCE.load_entries(&cx).unwrap();
+
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
     }
 
     #[test]
@@ -338,7 +521,7 @@ mod tests {
         });
 
         let root = fixture.root();
-        let databases = collect_agent_databases(root);
+        let databases = collect_agent_databases(root, &diagnostics());
 
         assert_eq!(databases.len(), 2);
         assert_eq!(
@@ -349,6 +532,28 @@ mod tests {
             databases[1].path,
             fixture.path("agents/worker/agent/openclaw-agent.sqlite")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_agents_directory_is_reported() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = fs_fixture!({
+            "agents/main/agent/openclaw-agent.sqlite": "",
+        });
+        let agents = fixture.path("agents");
+        fs::set_permissions(&agents, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&agents).is_err();
+        let diagnostics = diagnostics();
+        let databases = collect_agent_databases(fixture.root(), &diagnostics);
+        fs::set_permissions(&agents, fs::Permissions::from_mode(0o700)).unwrap();
+        if !denied {
+            return;
+        }
+
+        assert!(databases.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[cfg(unix)]
@@ -376,6 +581,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(collect_agent_databases(fixture.root()).is_empty());
+        assert!(collect_agent_databases(fixture.root(), &diagnostics()).is_empty());
     }
 }

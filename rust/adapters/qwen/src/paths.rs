@@ -4,7 +4,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{Result, collect_files_with_extension};
+use crate::Result;
+use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_core::Diagnostics;
 
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
 
@@ -29,7 +31,7 @@ fn paths() -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-pub(super) fn discover_chat_files() -> Result<Vec<PathBuf>> {
+pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in paths()? {
         let projects = root.join("projects");
@@ -37,7 +39,7 @@ pub(super) fn discover_chat_files() -> Result<Vec<PathBuf>> {
             continue;
         }
         let mut root_files = Vec::new();
-        collect_files_with_extension(&projects, "jsonl", &mut root_files);
+        collect_files_with_extension(&projects, "jsonl", &mut root_files, diagnostics);
         root_files.retain(|file| is_chat_file(&projects, file));
         files.extend(root_files);
     }
@@ -91,4 +93,97 @@ pub(super) fn project_from_file(file: &Path) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use ccusage_adapter_common::source::{
+        ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
+    };
+    use ccusage_test_support::{EnvVarGuard, Fixture};
+
+    use super::{discover_chat_files, project_from_file};
+    use crate::{
+        SOURCE,
+        cli::{AgentReportKind, CostMode, SharedArgs},
+    };
+
+    #[test]
+    fn discovers_direct_and_flat_archive_chats_only() {
+        let fixture = Fixture::new();
+        let direct = fixture.write_file("qwen/projects/project-a/chats/live.jsonl", "");
+        let archived =
+            fixture.write_file("qwen/projects/project-a/chats/archive/archived.jsonl", "");
+        let _ = fixture.write_file(
+            "qwen/projects/project-a/chats/archive/nested/ignored.jsonl",
+            "",
+        );
+        let _ = fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
+        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
+
+        assert_eq!(
+            discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
+            [archived.clone(), direct]
+        );
+        assert_eq!(project_from_file(&archived).as_deref(), Some("project-a"));
+    }
+
+    #[test]
+    fn archived_chats_keep_session_ids_and_remain_detected_outside_the_window() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file(
+            "qwen/projects/project-a/chats/archive/arch-0002.jsonl",
+            r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"arch-0002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
+        );
+        let _ = fixture.write_file(
+            "qwen/projects/project-a/chats/archive/file-stem.jsonl",
+            r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
+        );
+        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        let entries = crate::load_entries(&shared).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].session_id.as_ref(), "arch-0002");
+        assert_eq!(entries[0].project_path.as_ref(), "project-a");
+        assert_eq!(entries[1].session_id.as_ref(), "project-a-file-stem");
+        assert_eq!(entries[1].project_path.as_ref(), "project-a");
+
+        ccusage_adapter_common::parity::assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        for kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Monthly,
+            AgentReportKind::Session,
+        ] {
+            let rows = crate::report::summarize_entries(&entries, kind).unwrap();
+            let report = crate::report::report_from_rows(&rows, kind);
+            assert_eq!(report["totals"]["inputTokens"], 20);
+            assert_eq!(report["totals"]["outputTokens"], 10);
+        }
+
+        let outside_window = SharedArgs {
+            since: Some("20270101".to_string()),
+            ..shared
+        };
+        let report = SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind: AgentReportKind::Daily,
+                shared: &outside_window,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap();
+
+        assert!(report.detected);
+        assert!(report.rows.is_empty());
+    }
 }

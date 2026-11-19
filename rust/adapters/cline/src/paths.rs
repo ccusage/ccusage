@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::Result;
+use ccusage_core::Diagnostics;
 
 pub(super) const CLINE_DATA_DIR_ENV: &str = "CLINE_DATA_DIR";
 const CLINE_EXTENSION_ID: &str = "saoudrizwan.claude-dev";
@@ -24,7 +25,7 @@ pub(super) struct SourceFile {
     pub session_id: String,
 }
 
-pub(super) fn discover_files() -> Result<Vec<SourceFile>> {
+pub(super) fn discover_files(diagnostics: &Diagnostics) -> Result<Vec<SourceFile>> {
     let roots = data_roots()?;
     let mut files = Vec::new();
     let mut seen = HashSet::new();
@@ -32,17 +33,20 @@ pub(super) fn discover_files() -> Result<Vec<SourceFile>> {
     for root in roots {
         let mut candidates = Vec::new();
         for relative_root in ["tasks", "data/tasks", "data/sessions", "sessions"] {
+            let matches = |path: &Path| {
+                path.file_name().is_some_and(|name| {
+                    name == "ui_messages.json"
+                        || name
+                            .to_str()
+                            .is_some_and(|name| name.ends_with(".messages.json"))
+                })
+            };
+            let dir = root.join(relative_root);
             ccusage_adapter_common::collect_files_matching(
-                &root.join(relative_root),
-                &|path| {
-                    path.file_name().is_some_and(|name| {
-                        name == "ui_messages.json"
-                            || name
-                                .to_str()
-                                .is_some_and(|name| name.ends_with(".messages.json"))
-                    })
-                },
+                &dir,
+                &matches,
                 &mut candidates,
+                diagnostics,
             );
         }
         candidates.sort();
@@ -176,6 +180,32 @@ mod tests {
     use super::*;
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
+    #[cfg(unix)]
+    #[test]
+    fn diagnosed_discovery_keeps_healthy_tasks_when_a_sibling_is_unreadable() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = fs_fixture!({
+            "tasks/blocked/ui_messages.json": "[]",
+            "tasks/healthy/ui_messages.json": "[]",
+        });
+        let _guard = EnvVarGuard::set(CLINE_DATA_DIR_ENV, fixture.root());
+        let blocked = fixture.path("tasks/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let diagnostics = Diagnostics::new("cline");
+        let files = discover_files(&diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        let files = files.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].session_id, "healthy");
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 1);
+    }
+
     #[test]
     fn discovers_extension_cli_task_and_both_cli_session_layouts_from_configured_roots() {
         let extension = fs_fixture!({
@@ -202,7 +232,7 @@ mod tests {
         );
         let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, configured);
 
-        let files = discover_files().unwrap();
+        let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
         let mut expected = vec![
             SourceFile {
@@ -238,7 +268,7 @@ mod tests {
         let configured = format!("{},{}", fixture.root().display(), fixture.root().display());
         let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, configured);
 
-        let files = discover_files().unwrap();
+        let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].session_id, "task-a");
@@ -248,7 +278,11 @@ mod tests {
     fn empty_configured_roots_disable_default_discovery() {
         let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, " , ");
 
-        assert!(discover_files().unwrap().is_empty());
+        assert!(
+            discover_files(&Diagnostics::new("cline"))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

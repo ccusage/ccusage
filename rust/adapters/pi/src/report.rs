@@ -64,6 +64,16 @@ pub fn summarize_entries(
     }
 }
 
+pub(crate) fn summarize_unified_entries(
+    entries: &[LoadedEntry],
+    kind: AgentReportKind,
+) -> Result<Vec<crate::UsageSummary>> {
+    if kind != AgentReportKind::Session {
+        return summarize_entries(entries, kind);
+    }
+    ccusage_adapter_common::rows::summarize_entry_sessions(entries)
+}
+
 fn rows_key(kind: AgentReportKind) -> &'static str {
     match kind {
         AgentReportKind::Daily => "daily",

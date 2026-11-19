@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs,
     path::Path,
     sync::Arc,
@@ -8,18 +7,18 @@ use std::{
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
+use serde_json::Value;
 
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{jsonl, units::UnitError};
 
 use super::paths;
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    Diagnostics, LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
-    debug_log,
     fast::LinePrefilter,
     format_date_tz, format_rfc3339_millis, missing_pricing_model_for_candidates,
-    parse_ts_timestamp, parse_tz, read_files_parallel,
+    parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -56,64 +55,37 @@ struct QwenUsageMetadata {
     total_token_count: u64,
 }
 
-pub(super) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
-    let pricing = if shared.mode == CostMode::Display {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
-    };
-    let tz = parse_tz(shared.timezone.as_deref());
-    let files = paths::discover_chat_files()?;
-    // Read chat files in parallel; the first-wins dedup runs sequentially over
-    // the original discovery order so the surviving record per id matches the
-    // single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_chat_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared).unwrap_or_else(
-            |error| {
-                debug_log(
-                    shared,
-                    format!("Failed to read Qwen chat file {}: {error}", file.display()),
-                );
-                Vec::new()
-            },
-        )
-    });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for file_entries in loaded {
-        for entry in file_entries {
-            if seen.insert(entry_id(&entry)) {
-                entries.push(entry);
-            }
-        }
-    }
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
-}
-
-fn read_chat_file(
+pub(super) fn read_chat_file(
     file: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
-) -> Result<Vec<LoadedEntry>> {
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let fallback = file_timestamp(file, shared);
     let content = fs::read(file)?;
     // Every usable Qwen line carries token counts under the `usageMetadata`
     // key, so lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
     let mut entries = Vec::new();
-    for record in jsonl::records::<QwenLine>(&content, Some(&prefilter)) {
+    for record in jsonl::records_with_usage_diagnostics::<QwenLine>(
+        &content,
+        Some(&prefilter),
+        file,
+        diagnostics,
+        is_qwen_usage,
+    ) {
         if let Some(entry) = parse_line(file, fallback, &record, tz, mode, pricing) {
             entries.push(entry);
         }
     }
     Ok(entries)
+}
+
+fn is_qwen_usage(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("assistant")
+        && value.get("usageMetadata").is_some()
 }
 
 fn parse_line(
@@ -288,7 +260,7 @@ fn system_time_timestamp(time: SystemTime) -> TimestampMs {
     )
 }
 
-fn entry_id(entry: &LoadedEntry) -> String {
+pub(super) fn entry_id(entry: &LoadedEntry) -> String {
     let usage = entry.data.message.usage;
     serde_json::json!([
         entry.session_id.as_ref(),

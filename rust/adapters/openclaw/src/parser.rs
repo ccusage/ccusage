@@ -1,15 +1,16 @@
 use std::{fs, path::Path, sync::Arc};
 
+use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
     format_date_tz, missing_pricing_model_for_usage, stored_cost_for_mode,
 };
-use ccusage_adapter_common::jsonl;
 
 /// A single parsed OpenClaw session line. Only the fields ccusage consumes are
 /// declared; serde skips everything else. Both `model_change`/`model-snapshot`
@@ -38,13 +39,64 @@ pub(super) struct OpenClawLine {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     provider: Option<String>,
-    // A non-object `message` previously navigated to no usage without dropping
-    // the line, so deserialize it leniently. Otherwise a malformed `message` on
-    // a model-tracking line would fail the whole record and lose the
-    // model/provider state update for subsequent usage entries.
-    #[serde(default, deserialize_with = "jsonl::lenient_object")]
-    message: Option<OpenClawMessage>,
+    // Message failures must not discard the model/provider state on the same
+    // record; readers diagnose the rejected field after decoding the envelope.
+    #[serde(default, deserialize_with = "deserialize_message")]
+    message: DecodedMessage,
     timestamp: Option<Value>,
+}
+
+#[derive(Debug, Default)]
+struct DecodedMessage {
+    value: Option<OpenClawMessage>,
+    rejected: bool,
+    usage_envelope: bool,
+}
+
+fn deserialize_message<'de, D>(deserializer: D) -> std::result::Result<DecodedMessage, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match Option::<Value>::deserialize(deserializer)? {
+        Some(value @ Value::Object(_)) => {
+            let usage_envelope = value.get("role").and_then(Value::as_str) == Some("assistant")
+                && value.get("usage").is_some();
+            Ok(match serde_json::from_value(value) {
+                Ok(message) => DecodedMessage {
+                    value: Some(message),
+                    ..Default::default()
+                },
+                Err(_) => DecodedMessage {
+                    rejected: true,
+                    usage_envelope,
+                    ..Default::default()
+                },
+            })
+        }
+        _ => Ok(DecodedMessage::default()),
+    }
+}
+
+pub(super) fn record_message_error(
+    record: &OpenClawLine,
+    path: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+) {
+    if !record.message.rejected {
+        return;
+    }
+    let kind = if record.r#type.as_deref() == Some("message") && record.message.usage_envelope {
+        SkipKind::InvalidData
+    } else {
+        SkipKind::UndecodedUsage
+    };
+    diagnostics.record(Skip::record(
+        path,
+        number,
+        kind,
+        "message object did not decode",
+    ));
 }
 
 /// Deserialize the `data` block of a model-change record, mirroring the
@@ -177,19 +229,23 @@ pub(super) fn parse_session_file(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let session_id = extract_session_id(path);
     let fallback_timestamp = file_modified_timestamp(path);
-    let content = fs::read(path)?;
-    // OpenClaw lines that matter are either model-tracking records
-    // (`model_change`/`model-snapshot`) or assistant records carrying `usage`,
-    // so admit lines containing any of those substrings before JSON parsing.
-    let prefilter =
-        LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#]);
+    let content = fs::read(path).map_err(UnitError::from)?;
+    let prefilter = record_prefilter();
     let mut current_model = None::<String>;
     let mut current_provider = None::<String>;
     let mut entries = Vec::new();
-    for record in jsonl::records::<OpenClawLine>(&content, Some(&prefilter)) {
+    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<OpenClawLine>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_usage_envelope,
+    ) {
+        record_message_error(&record, path, number, diagnostics);
         if is_model_change(&record) {
             let (model, provider) = model_change_source(&record);
             if let Some(model) = model {
@@ -211,6 +267,27 @@ pub(super) fn parse_session_file(
         }
     }
     Ok(entries)
+}
+
+/// Admits the records a transcript reader needs before JSON parsing: the
+/// model-tracking records (`model_change`/`model-snapshot`) and assistant
+/// records carrying `usage`. The JSONL and SQLite readers share it so both
+/// select the same records.
+pub(super) fn record_prefilter() -> LinePrefilter {
+    LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#])
+}
+
+pub(super) fn is_usage_envelope(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("message")
+        && value
+            .get("message")
+            .and_then(|message| message.get("role"))
+            .and_then(Value::as_str)
+            == Some("assistant")
+        && value
+            .get("message")
+            .and_then(|message| message.get("usage"))
+            .is_some()
 }
 
 pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
@@ -274,7 +351,7 @@ pub(super) fn parse_transcript_message(
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
-    let message = record.message.as_ref()?;
+    let message = record.message.value.as_ref()?;
     if message.role.as_deref() != Some("assistant") {
         return None;
     }
@@ -499,6 +576,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn diagnoses_nested_usage_failure_and_skips_lines_without_markers() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred\u001b[0m C:\\users"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert!(
+            !diagnostics
+                .warnings(&ccusage_core::cli::SharedArgs {
+                    debug: true,
+                    ..Default::default()
+                })
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
+    }
+
+    #[test]
+    fn diagnoses_malformed_usage_line_and_keeps_later_usage() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","customType":{"secret":"SECRET_CANARY"},"message":{"role":"assistant","usage":{"input":1}}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20},"timestamp":1769753935279}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
     fn malformed_message_does_not_drop_model_tracking_line() {
         // A `model_change` line whose `message` field is a non-object must still
         // deserialize and update the tracked model/provider, instead of being
@@ -513,12 +659,57 @@ mod tests {
         });
         let file = fixture.path("session.jsonl");
 
-        let entries = parse_session_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries = parse_session_file(
+            &file,
+            None,
+            CostMode::Auto,
+            None,
+            &Diagnostics::new("openclaw"),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
         assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+    }
+
+    #[test]
+    fn malformed_message_object_keeps_model_state_and_its_own_diagnostic() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                "{}\n\n",
+                r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":{"role":1,"secret":"SECRET_CANARY"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
+        assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            1
+        );
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("session.jsonl:3:"));
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 
     #[test]
@@ -553,6 +744,7 @@ mod tests {
             None,
             CostMode::Calculate,
             Some(&pricing),
+            &Diagnostics::new("openclaw"),
         )
         .unwrap();
 

@@ -20,12 +20,11 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
-chunking, and ordered parallel reads.
+chunking, ordered parallel reads, and recording the files that could not be read.
 
 ## Public surface
 
-- `loader::load_entries`
-- `parser::read_thread_file`
+- `SOURCE` — the `UsageSource` both reports go through
 - `report::report_from_rows`
 - `report::summarize_entries`
 - `run`

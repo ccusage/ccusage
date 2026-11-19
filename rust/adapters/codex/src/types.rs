@@ -12,6 +12,105 @@ pub struct CodexRawUsage {
     pub(crate) total_tokens: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum CodexUsageCandidate {
+    #[default]
+    Missing,
+    Malformed,
+    Decoded(CodexRawUsage),
+}
+
+impl<'de> Deserialize<'de> for CodexUsageCandidate {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct UsageCandidateVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for UsageCandidateVisitor {
+            type Value = CodexUsageCandidate;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an optional Codex usage object")
+            }
+
+            fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Missing)
+            }
+
+            fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Missing)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                deserializer.deserialize_any(self)
+            }
+
+            fn visit_map<A>(self, map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                CodexRawUsage::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(CodexUsageCandidate::Decoded)
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                while sequence.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+                Ok(CodexUsageCandidate::Malformed)
+            }
+
+            fn visit_bool<E>(self, _: bool) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Malformed)
+            }
+
+            fn visit_i64<E>(self, _: i64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Malformed)
+            }
+
+            fn visit_u64<E>(self, _: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Malformed)
+            }
+
+            fn visit_f64<E>(self, _: f64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Malformed)
+            }
+
+            fn visit_str<E>(self, _: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(CodexUsageCandidate::Malformed)
+            }
+        }
+
+        deserializer.deserialize_any(UsageCandidateVisitor)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodexServiceTier {
     Standard,
@@ -178,8 +277,8 @@ pub(super) struct CodexLogEntry<'a> {
         deserialize_with = "deserialize_optional_object_lossy"
     )]
     pub(super) response: Option<CodexResultFields<'a>>,
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) usage: Option<CodexRawUsage>,
+    #[serde(default)]
+    pub(super) usage: CodexUsageCandidate,
     #[serde(borrow, default)]
     pub(super) model: Option<Cow<'a, str>>,
     #[serde(rename = "model_name", borrow, default)]
@@ -217,8 +316,8 @@ pub(super) struct CodexPayload<'a> {
     pub(super) response_id: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     pub(super) compaction_response_id: Option<Cow<'a, str>>,
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) usage: Option<CodexRawUsage>,
+    #[serde(default)]
+    pub(super) usage: CodexUsageCandidate,
     #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
     pub(super) thread_token_usage: Option<CodexRawUsage>,
     #[serde(
@@ -267,8 +366,8 @@ pub(super) struct CodexResultFields<'a> {
     pub(super) created_at: Option<CodexTimestamp<'a>>,
     #[serde(rename = "createdAt", borrow, default)]
     pub(super) created_at_camel: Option<CodexTimestamp<'a>>,
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) usage: Option<CodexRawUsage>,
+    #[serde(default)]
+    pub(super) usage: CodexUsageCandidate,
     #[serde(borrow, default)]
     pub(super) model: Option<Cow<'a, str>>,
     #[serde(rename = "model_name", borrow, default)]

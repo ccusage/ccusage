@@ -3,6 +3,7 @@ use std::{fmt, io};
 pub mod agent_report;
 pub mod cost;
 pub mod date_utils;
+pub mod diagnostics;
 pub mod fast;
 pub mod logger;
 pub mod model_aliases;
@@ -14,6 +15,7 @@ pub mod project_names;
 pub mod summary;
 pub mod types;
 pub mod utils;
+pub mod window;
 
 pub mod cli {
     pub use ccusage_cli::*;
@@ -30,6 +32,7 @@ pub use cost::{
     missing_pricing_model_for_usage, stored_cost_for_mode, sum_costs,
 };
 pub use date_utils::*;
+pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use logger::{debug_log, log_level};
 pub use output::{
     UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
@@ -49,6 +52,7 @@ pub use types::*;
 pub use utils::{
     apply_total_token_fallback, json_value_u64, non_empty_json_string, total_usage_tokens,
 };
+pub use window::ReportWindow;
 
 pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_width};
 

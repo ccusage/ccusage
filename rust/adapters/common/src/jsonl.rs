@@ -14,14 +14,19 @@
 //!    `serde_json::from_slice`, so unused fields are skipped instead of being
 //!    materialized into an intermediate `Value` tree.
 
-use std::{fmt, marker::PhantomData};
+use std::{fmt, marker::PhantomData, path::Path};
 
 use serde::{
     Deserialize, Deserializer,
     de::{self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor},
 };
 
-use ccusage_core::fast::{LinePrefilter, byte_lines};
+use ccusage_core::{
+    Diagnostics, Skip, SkipKind,
+    fast::{LinePrefilter, byte_lines},
+};
+
+use crate::units::being_written;
 
 /// Iterate over deserialized JSONL records contained in `content`.
 ///
@@ -56,14 +61,231 @@ pub fn records<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
-    byte_lines(content).filter_map(move |line| {
-        if let Some(prefilter) = prefilter
-            && !prefilter.matches(line)
-        {
-            return None;
-        }
-        serde_json::from_slice::<T>(line).ok()
+    try_records(content, prefilter).filter_map(|(_, record)| record.ok())
+}
+
+/// Like [`records`], but keeps the lines that pass the prefilter and then fail
+/// to deserialize, each with its 1-based line number.
+///
+/// The prefilter selects possible records; it does not prove a record carries
+/// usage. A caller decides how to classify a decoding failure.
+pub(crate) fn try_records<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+) -> impl Iterator<Item = (u32, serde_json::Result<T>)> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    selected_lines(content, prefilter)
+        .map(|(number, line)| (number, serde_json::from_slice::<T>(line)))
+}
+
+fn selected_lines<'data>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+) -> impl Iterator<Item = (u32, &'data [u8])> + 'data {
+    byte_lines(content)
+        .enumerate()
+        .filter_map(move |(index, line)| {
+            if line
+                .iter()
+                .all(|byte| matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
+            {
+                return None;
+            }
+            if let Some(prefilter) = prefilter
+                && !prefilter.matches(line)
+            {
+                return None;
+            }
+            let number = ccusage_core::Skip::line_number(index);
+            Some((number, line))
+        })
+}
+
+/// Iterates over decoded JSONL records, diagnosing malformed JSON separately
+/// from selected records that a typed decoder rejects.
+///
+/// Lines rejected by `prefilter` are never parsed or counted as skipped. JSON
+/// error details retain only the category and source location, not input text.
+#[cfg(test)]
+fn records_with_diagnostics<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+) -> impl Iterator<Item = T> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    diagnosed_records::<T>(content, prefilter, unit, diagnostics, None).map(|(_, record)| record)
+}
+
+/// Adds a normal warning for a decoding failure whose JSON envelope the source
+/// confirms carries usage. The confirmation runs only on decoding failures.
+pub fn records_with_usage_diagnostics<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+    is_usage: fn(&serde_json::Value) -> bool,
+) -> impl Iterator<Item = T> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    numbered_records_with_usage_diagnostics::<T>(content, prefilter, unit, diagnostics, is_usage)
+        .map(|(_, record)| record)
+}
+
+/// Retains source line numbers so callers can diagnose rejected fields while
+/// preserving independently decoded state in the same record.
+pub fn numbered_records_with_usage_diagnostics<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+    is_usage: fn(&serde_json::Value) -> bool,
+) -> impl Iterator<Item = (u32, T)> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    diagnosed_records(content, prefilter, unit, diagnostics, Some(is_usage))
+}
+
+fn diagnosed_records<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> impl Iterator<Item = (u32, T)> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    selected_lines(content, prefilter).filter_map(move |(number, line)| {
+        decode_line::<T>(content, line, unit, number, diagnostics, is_usage)
+            .map(|record| (number, record))
     })
+}
+
+/// Decodes one JSON record held whole, such as a database JSON column. Usage
+/// confirmation runs only after a rejection.
+pub fn decode_record<T: DeserializeOwned>(
+    content: &[u8],
+    unit: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> Option<T> {
+    match serde_json::from_slice(content) {
+        Ok(record) => Some(record),
+        Err(error) => {
+            record_decode_error(content, error, unit, number, false, diagnostics, is_usage);
+            None
+        }
+    }
+}
+
+/// Decodes `line`, one line of the JSONL file `content`, like
+/// [`decode_record`]. The last line of a file that does not end in a newline
+/// may still be being written, so a record it cuts short is not a skip.
+pub fn decode_line<T: DeserializeOwned>(
+    content: &[u8],
+    line: &[u8],
+    unit: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> Option<T> {
+    match serde_json::from_slice(line) {
+        Ok(record) => Some(record),
+        Err(error) => {
+            let unterminated =
+                !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
+            record_decode_error(
+                line,
+                error,
+                unit,
+                number,
+                unterminated,
+                diagnostics,
+                is_usage,
+            );
+            None
+        }
+    }
+}
+
+/// Records why `record`, record `number` of `unit`, failed to decode.
+///
+/// `unterminated` says the record is the last line of a JSONL file that does
+/// not end in a newline yet. An agent appends its log while ccusage reads it,
+/// so a record such a line cuts short is noted under `--debug` instead of
+/// skipped while `unit` is still being written: the next run reads it whole.
+/// Once `unit` has been left unchanged past
+/// [`IN_PROGRESS_WINDOW`](crate::units::IN_PROGRESS_WINDOW), the line stays
+/// truncated and is skipped as invalid data.
+///
+/// A data error is invalid data when `is_usage` confirms that the record, read
+/// as plain JSON, carries usage, and undecoded usage otherwise. `is_usage`
+/// runs only for a data error, so a source may also take what it needs from
+/// the rejected record there.
+#[cold]
+pub fn record_decode_error(
+    record: &[u8],
+    error: serde_json::Error,
+    unit: &Path,
+    number: u32,
+    unterminated: bool,
+    diagnostics: &Diagnostics,
+    is_usage: Option<impl FnOnce(&serde_json::Value) -> bool>,
+) {
+    use serde_json::error::Category;
+    let (kind, category) = match error.classify() {
+        Category::Eof if unterminated && being_written(unit) => {
+            diagnostics.debug_note(
+                unit,
+                format!(
+                    "{}: {}:{number}: last line is incomplete, read as still being written",
+                    diagnostics.source(),
+                    unit.display()
+                ),
+            );
+            return;
+        }
+        Category::Eof if unterminated => {
+            diagnostics.record(Skip::record(
+                unit,
+                number,
+                SkipKind::InvalidData,
+                format!("last line is truncated at column {}", error.column()),
+            ));
+            return;
+        }
+        Category::Io => (SkipKind::Unreadable, "I/O"),
+        Category::Syntax => (SkipKind::InvalidData, "syntax"),
+        Category::Eof => (SkipKind::InvalidData, "EOF"),
+        Category::Data => {
+            let confirmed = is_usage.is_some_and(|confirm| {
+                serde_json::from_slice::<serde_json::Value>(record)
+                    .is_ok_and(|value| confirm(&value))
+            });
+            (
+                if confirmed {
+                    SkipKind::InvalidData
+                } else {
+                    SkipKind::UndecodedUsage
+                },
+                "data",
+            )
+        }
+    };
+    diagnostics.record(Skip::record(
+        unit,
+        number,
+        kind,
+        format!("JSON {category} error at column {}", error.column()),
+    ));
 }
 
 /// Deserialize a JSON value into `u64` with the same lenient rules as
@@ -420,11 +642,19 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use serde::Deserialize;
+
+    use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
+    use ccusage_test_support::{EnvVarGuard, Fixture};
+
+    use crate::units::tests::age_past_write_window;
 
     use super::{
         FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
         lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
+        records_with_diagnostics, records_with_usage_diagnostics, try_records,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -459,6 +689,98 @@ mod tests {
     }
 
     #[test]
+    fn try_records_numbers_the_marked_lines_that_do_not_decode() {
+        let content = b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n\n{\"model\":\"b\",\"tok";
+        let prefilter = LinePrefilter::all(&[b"model"]);
+
+        let parsed = try_records::<Record>(content, Some(&prefilter))
+            .map(|(line, record)| (line, record.ok().map(|record| record.tokens)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(parsed, [(1, Some(1)), (4, None)]);
+    }
+
+    const CUT_LAST_LINE: &str = "{\"tokens\":1}\n{\"tokens\":2,\"mod";
+
+    #[test]
+    fn a_record_cut_short_by_the_end_of_a_file_being_written_is_noted_not_skipped() {
+        let fixture = Fixture::new();
+        let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
+        let diagnostics = Diagnostics::new("test");
+        let records =
+            records_with_diagnostics::<Record>(CUT_LAST_LINE.as_bytes(), None, &live, &diagnostics)
+                .map(|record| record.tokens)
+                .collect::<Vec<_>>();
+
+        assert_eq!(records, [1]);
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
+        assert_eq!(
+            diagnostics.warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            }),
+            [format!(
+                "test: {}:2: last line is incomplete, read as still being written",
+                live.display()
+            )]
+        );
+    }
+
+    #[test]
+    fn a_record_cut_short_by_the_end_of_a_file_left_unchanged_is_skipped_as_truncated() {
+        let fixture = Fixture::new();
+        let stale = fixture.write_file("stale.jsonl", CUT_LAST_LINE);
+        age_past_write_window(&stale);
+        let diagnostics = Diagnostics::new("test");
+        let records = records_with_diagnostics::<Record>(
+            CUT_LAST_LINE.as_bytes(),
+            None,
+            &stale,
+            &diagnostics,
+        )
+        .map(|record| record.tokens)
+        .collect::<Vec<_>>();
+
+        assert_eq!(records, [1]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(&format!(
+                "{}:2: last line is truncated at column 16",
+                stale.display()
+            )),
+            "{warnings}"
+        );
+        assert!(!warnings.contains("still being written"), "{warnings}");
+    }
+
+    #[test]
+    fn a_record_cut_short_before_a_newline_is_invalid_data() {
+        for content in [
+            b"{\"tokens\":2,\"mod\n{\"tokens\":1}".as_slice(),
+            b"{\"tokens\":1}\n{\"tokens\":2,\"mod\n",
+        ] {
+            let diagnostics = Diagnostics::new("test");
+            let _ = records_with_diagnostics::<Record>(
+                content,
+                None,
+                Path::new("/logs/torn.jsonl"),
+                &diagnostics,
+            )
+            .count();
+
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        }
+    }
+
+    #[test]
     fn records_skips_unparsable_lines() {
         let content = b"{\"tokens\":1}\nnot json\n{\"tokens\":2}\n";
         let parsed = records::<Record>(content, None).collect::<Vec<_>>();
@@ -469,6 +791,123 @@ mod tests {
                 .map(|record| record.tokens)
                 .collect::<Vec<_>>(),
             [1, 2]
+        );
+    }
+
+    #[test]
+    fn records_with_diagnostics_skips_bad_selected_lines_without_leaking_input() {
+        #[derive(Debug, Deserialize)]
+        struct StrictRecord {
+            model: String,
+            tokens: u64,
+        }
+
+        let content = b"{\"model\":\"before\",\"tokens\":1}\n{\"other\":\"SECRET_CANARY\",\"tokens\":}\n{\"model\":\"broken\",\"tokens\":\"SECRET_CANARY\"}\n{\"model\":\"after\",\"tokens\":2}";
+        let prefilter = LinePrefilter::all(&[b"model"]);
+        let diagnostics = Diagnostics::new("test");
+
+        let records = records_with_diagnostics::<StrictRecord>(
+            content,
+            Some(&prefilter),
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+        )
+        .map(|record| (record.model, record.tokens))
+        .collect::<Vec<_>>();
+
+        assert_eq!(
+            records,
+            [("before".to_string(), 1), ("after".to_string(), 2)]
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at column"));
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn confirmed_usage_decode_failures_warn_without_labeling_other_records_as_usage() {
+        #[derive(Deserialize)]
+        struct Record {
+            tokens: u64,
+        }
+        let diagnostics = Diagnostics::new("test");
+        let records = super::records_with_usage_diagnostics::<Record>(
+            b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
+            None,
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+            |value| value.get("type").and_then(serde_json::Value::as_str) == Some("usage"),
+        ).map(|record| record.tokens).collect::<Vec<_>>();
+
+        assert_eq!(records, [3]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+    }
+
+    #[test]
+    fn ignores_blank_jsonl_lines_and_keeps_physical_line_numbers() {
+        #[derive(Debug, Deserialize)]
+        struct UsageRecord {
+            tokens: u64,
+        }
+
+        let content = concat!(
+            r#"{"kind":"usage","tokens":1}"#,
+            "\n \t\r\n",
+            r#"{"kind":"usage","tokens":"SECRET_CANARY"}"#,
+            "\n",
+            r#"{"kind":"usage","tokens":2}"#,
+        )
+        .as_bytes();
+        let diagnostics = Diagnostics::new("test");
+        let records = records_with_usage_diagnostics::<UsageRecord>(
+            content,
+            None,
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+            |value| value.get("kind").and_then(serde_json::Value::as_str) == Some("usage"),
+        )
+        .map(|record| record.tokens)
+        .collect::<Vec<_>>();
+
+        assert_eq!(records, [1, 2]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("skipped 1 record in 1 input (invalid data)"));
+        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error"));
+        assert!(!warnings.contains("/logs/session.jsonl:2:"));
+        assert!(!warnings.contains("SECRET_CANARY"));
+
+        let database_diagnostics = Diagnostics::new("test");
+        assert!(
+            super::decode_record::<UsageRecord>(
+                b" \t\r",
+                Path::new("/logs/state.db"),
+                1,
+                &database_diagnostics,
+                Some(|_| true),
+            )
+            .is_none()
+        );
+        assert_eq!(
+            database_diagnostics.skipped(SkipKind::InvalidData),
+            1,
+            "blank database cells are not JSONL blank lines"
         );
     }
 

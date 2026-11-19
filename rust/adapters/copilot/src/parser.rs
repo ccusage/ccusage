@@ -12,6 +12,7 @@ use crate::{
     parse_ts_timestamp,
 };
 use ccusage_adapter_common::jsonl;
+use ccusage_core::Diagnostics;
 
 /// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
 /// consumes are declared; serde skips everything else. The `attributes` block
@@ -168,12 +169,22 @@ struct CopilotUsageCandidate {
     file_independent_key: bool,
 }
 
-pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
+pub(super) fn parse_otel_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Result<Vec<CopilotUsageEntry>> {
     let content = fs::read(path)?;
     // Every usable Copilot OTel record carries the `attributes` object, so
     // lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
-    let records = jsonl::records::<CopilotRecord>(&content, Some(&prefilter)).collect::<Vec<_>>();
+    let records = jsonl::records_with_usage_diagnostics::<CopilotRecord>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_otel_usage_envelope,
+    )
+    .collect::<Vec<_>>();
     let trace_contexts = collect_trace_contexts(&records);
     let fallback_timestamp = file_modified_timestamp(path);
     let candidates = records
@@ -221,6 +232,26 @@ struct CopilotSessionStateEvent {
     timestamp: Option<String>,
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     data: Option<CopilotSessionStateData>,
+}
+
+impl CopilotSessionStateEvent {
+    fn carries_usage(&self) -> bool {
+        let Some(data) = &self.data else {
+            return false;
+        };
+        match self.event_type.as_deref() {
+            Some(USAGE_RECORD_EVENT) => data.usage.is_some(),
+            Some(SHUTDOWN_EVENT | USAGE_CHECKPOINT_EVENT) => {
+                data.total_nano_aiu.is_some()
+                    || data.model_metrics.as_ref().is_some_and(|models| {
+                        models
+                            .values()
+                            .any(|metrics| metrics.usage.is_some() || metrics.requests.is_some())
+                    })
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -359,7 +390,48 @@ const SHUTDOWN_EVENT: &str = "session.shutdown";
 const USAGE_CHECKPOINT_EVENT: &str = "session.usage_checkpoint";
 const USAGE_RECORD_EVENT: &str = "session.usage_record";
 
-pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage> {
+const INPUT_TOKENS_ATTRIBUTE: &str = "gen_ai.usage.input_tokens";
+const OUTPUT_TOKENS_ATTRIBUTE: &str = "gen_ai.usage.output_tokens";
+const CACHE_READ_ATTRIBUTE: &str = "gen_ai.usage.cache_read.input_tokens";
+const CACHE_WRITE_ATTRIBUTES: [&str; 2] = [
+    "gen_ai.usage.cache_write.input_tokens",
+    "gen_ai.usage.cache_creation.input_tokens",
+];
+const REASONING_ATTRIBUTES: [&str; 2] = [
+    "gen_ai.usage.reasoning.output_tokens",
+    "gen_ai.usage.reasoning_tokens",
+];
+const TOTAL_TOKENS_ATTRIBUTES: [&str; 2] = [
+    "gen_ai.usage.total_tokens",
+    "gen_ai.usage.total.token_count",
+];
+
+fn is_otel_usage_envelope(value: &Value) -> bool {
+    value
+        .get("attributes")
+        .and_then(Value::as_object)
+        .is_some_and(|attributes| {
+            [
+                INPUT_TOKENS_ATTRIBUTE,
+                OUTPUT_TOKENS_ATTRIBUTE,
+                CACHE_READ_ATTRIBUTE,
+            ]
+            .into_iter()
+            .chain(CACHE_WRITE_ATTRIBUTES)
+            .chain(REASONING_ATTRIBUTES)
+            .chain(TOTAL_TOKENS_ATTRIBUTES)
+            .any(|key| attributes.contains_key(key))
+        })
+}
+
+fn is_session_state_usage_envelope(value: &Value) -> bool {
+    CopilotSessionStateEvent::deserialize(value).is_ok_and(|event| event.carries_usage())
+}
+
+pub(super) fn parse_session_state_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Result<CopilotSourceUsage> {
     let session_id = path
         .parent()
         .and_then(Path::file_name)
@@ -380,7 +452,13 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
     let mut parsed = CopilotSourceUsage::default();
     let mut records = Vec::new();
     let mut covered_by_records = false;
-    for event in jsonl::records::<CopilotSessionStateEvent>(&content, Some(&prefilter)) {
+    for event in jsonl::records_with_usage_diagnostics::<CopilotSessionStateEvent>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_session_state_usage_envelope,
+    ) {
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
@@ -649,30 +727,12 @@ fn to_candidate(
     } else {
         return None;
     };
-    let input = attr_number(attributes, "gen_ai.usage.input_tokens");
-    let output = attr_number(attributes, "gen_ai.usage.output_tokens");
-    let cache_read = attr_number(attributes, "gen_ai.usage.cache_read.input_tokens");
-    let cache_creation = attr_number_first(
-        attributes,
-        &[
-            "gen_ai.usage.cache_write.input_tokens",
-            "gen_ai.usage.cache_creation.input_tokens",
-        ],
-    );
-    let reasoning = attr_number_first(
-        attributes,
-        &[
-            "gen_ai.usage.reasoning.output_tokens",
-            "gen_ai.usage.reasoning_tokens",
-        ],
-    );
-    let total = attr_number_first(
-        attributes,
-        &[
-            "gen_ai.usage.total_tokens",
-            "gen_ai.usage.total.token_count",
-        ],
-    );
+    let input = attr_number(attributes, INPUT_TOKENS_ATTRIBUTE);
+    let output = attr_number(attributes, OUTPUT_TOKENS_ATTRIBUTE);
+    let cache_read = attr_number(attributes, CACHE_READ_ATTRIBUTE);
+    let cache_creation = attr_number_first(attributes, &CACHE_WRITE_ATTRIBUTES);
+    let reasoning = attr_number_first(attributes, &REASONING_ATTRIBUTES);
+    let total = attr_number_first(attributes, &TOTAL_TOKENS_ATTRIBUTES);
     // Copilot counts cache reads and writes in the input tokens, as it does in
     // session-state `inputTokens`.
     let usage = TokenUsageRaw {
@@ -1101,6 +1161,130 @@ mod session_state_tests {
     use super::*;
 
     #[test]
+    fn confirms_usage_diagnostics_from_token_or_credit_fields() {
+        assert!(is_otel_usage_envelope(&json!({
+            "attributes": {"gen_ai.usage.input_tokens": 0}
+        })));
+        assert!(!is_otel_usage_envelope(&json!({
+            "attributes": {"gen_ai.request.model": "gpt-5"}
+        })));
+        assert!(!is_otel_usage_envelope(
+            &json!({"attributes": "SECRET_CANARY"})
+        ));
+
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.shutdown",
+            "data": {"modelMetrics": {"gpt-5": {"usage": {"inputTokens": 0}}}}
+        })));
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.usage_checkpoint",
+            "data": {"totalNanoAiu": 0}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "tool",
+            "data": {"modelMetrics": {"gpt-5": {"usage": {"inputTokens": 1}}}}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "session.shutdown",
+            "data": {"message": "SECRET_CANARY"}
+        })));
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"usage": {"model": "gpt-5", "inputTokens": 0}}
+        })));
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"usage": {"model": "gpt-5"}}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"usage": "SECRET_CANARY"}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"modelMetrics": {"gpt-5": {"usage": {"inputTokens": 1}}}}
+        })));
+    }
+
+    #[test]
+    fn reports_a_usage_record_that_does_not_decode_and_keeps_the_next_one() {
+        let record = |id: &str| {
+            json!({
+                "type": "session.usage_record",
+                "id": id,
+                "timestamp": "2026-02-05T09:00:00.000Z",
+                "data": {"usage": {
+                    "model": "gpt-5",
+                    "inputTokens": 100,
+                    "outputTokens": 10,
+                    "accounting": {"sourceSessionId": "session-1", "sequence": 1},
+                }},
+            })
+            .to_string()
+        };
+        // A repeated member is a data error that leaves the record's usage
+        // unread.
+        let repeated = record("record-1").replacen(
+            r#""id":"record-1""#,
+            r#""id":"record-1","id":"record-1""#,
+            1,
+        );
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": format!("{repeated}
+{}
+", record("record-2")),
+        });
+        let diagnostics = Diagnostics::new("copilot");
+
+        let parsed =
+            parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics)
+                .unwrap();
+
+        assert_eq!(parsed.usage_records.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            0
+        );
+    }
+
+    #[test]
+    fn reports_a_tokenless_usage_record_that_does_not_decode() {
+        let record = |id: &str| {
+            json!({
+                "type": "session.usage_record",
+                "id": id,
+                "timestamp": "2026-02-05T09:00:00.000Z",
+                "data": {"usage": {"model": "gpt-5"}},
+            })
+            .to_string()
+        };
+        let repeated = record("record-1").replacen(
+            r#""id":"record-1""#,
+            r#""id":"record-1","id":"record-1""#,
+            1,
+        );
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": format!("{repeated}
+{}
+", record("record-2")),
+        });
+        let diagnostics = Diagnostics::new("copilot");
+
+        let parsed =
+            parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics)
+                .unwrap();
+
+        assert_eq!(parsed.usage_records.len(), 1);
+        assert_eq!(parsed.usage_records[0].entry.request_count, 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            0
+        );
+    }
+
+    #[test]
     fn parses_session_shutdown_model_metrics() {
         let fixture = fs_fixture!({
             "session-1/events.jsonl": json!({
@@ -1124,9 +1308,12 @@ mod session_state_tests {
             .to_string(),
         });
 
-        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-            .expect("session-state file should parse")
-            .entries;
+        let entries = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .expect("session-state file should parse")
+        .entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp_text, "2026-04-15T09:52:27.352Z");
@@ -1182,9 +1369,12 @@ mod session_state_tests {
             ),
         });
 
-        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-            .unwrap()
-            .entries;
+        let entries = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap()
+        .entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].input_tokens, 1);
@@ -1230,9 +1420,12 @@ mod session_state_tests {
             .to_string(),
         });
 
-        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-            .unwrap()
-            .entries;
+        let entries = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap()
+        .entries;
 
         assert_eq!(
             entries
@@ -1283,7 +1476,11 @@ mod session_state_tests {
             .join("\n"),
         });
 
-        let parsed = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
+        let parsed = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap();
 
         assert_eq!(parsed.entries.len(), 1);
         assert_eq!(parsed.entries[0].nano_aiu, Some(42_202_140_000));
@@ -1336,7 +1533,11 @@ mod session_state_tests {
             .join("\n"),
         });
 
-        let parsed = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
+        let parsed = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap();
 
         assert_eq!(
             parsed

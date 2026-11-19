@@ -24,7 +24,6 @@ most adapters do not.
 
 - `loader::load_entries`
 - `report::report_from_rows`
-- `report::summarize_entries`
 - `run`
 
 ## Depends on

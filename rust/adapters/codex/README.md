@@ -34,27 +34,21 @@ Uses `ccusage-adapter-common` for walking and size-balanced chunking. `loader.rs
 the ordered parallel reads, and `reader.rs` streams `.jsonl.zst` rollouts through `zstd`
 without unpacking them to disk.
 
+Read failures and rejected usage records produce sanitized diagnostics while readable usage is
+retained. Focused loaders print the warnings after loading; unified reports return them with the
+source rows. Optional missing sources and deliberately suppressed records stay quiet. Existing
+lenient field conversions are unchanged.
+
 ## Public surface
 
 - `run_statusline`
-- `aggregate::aggregate_events`
-- `aggregate::filter_events_by_date`
-- `aggregate::load_groups`
-- `loader::load_codex_events_with_detection`
-- `loader::load_codex_events_from_directory`
-- `report::calculate_codex_model_cost`
 - `report::calculate_group_cost`
-- `report::codex_model_missing_pricing`
-- `report::non_cached_input_tokens`
 - `speed::CodexSpeedPolicy`
-- `speed::resolve_codex_speed`
 - `types::CodexGroup`
 - `types::CodexModelUsage`
-- `types::CodexRawUsage`
 - `types::CodexServiceTier`
 - `types::CodexTokenUsageEvent`
 - `types::CodexUsageBucket`
-- `types::merge_codex_service_tiers`
 - `run`
 - `report_json`
 

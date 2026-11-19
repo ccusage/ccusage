@@ -1,15 +1,18 @@
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, fmt, fs, path::Path, sync::Arc};
 
+use ccusage_adapter_common::{jsonl, units::UnitError};
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor, value::MapAccessDeserializer},
+};
 use serde_json::{Map, Value};
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
     missing_pricing_model_for_candidates, non_empty_json_string,
 };
-use ccusage_adapter_common::jsonl;
 
 const DEFAULT_MODEL: &str = "unknown";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -88,6 +91,62 @@ impl GeminiRecord {
     }
 }
 
+/// A whole-file Gemini JSON document. Gemini CLI writes other JSON next to its
+/// chats, such as each project's `logs.json` prompt array, so a document that
+/// is not an object is read, to tell it from malformed input, and holds no
+/// usage.
+struct GeminiDocument(Option<GeminiRecord>);
+
+impl<'de> Deserialize<'de> for GeminiDocument {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct DocumentVisitor;
+
+        impl<'de> Visitor<'de> for DocumentVisitor {
+            type Value = GeminiDocument;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON document")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                GeminiRecord::deserialize(MapAccessDeserializer::new(map))
+                    .map(|record| GeminiDocument(Some(record)))
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                while seq.next_element::<IgnoredAny>()?.is_some() {}
+                Ok(GeminiDocument(None))
+            }
+
+            fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
+                Ok(GeminiDocument(None))
+            }
+
+            fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
+                Ok(GeminiDocument(None))
+            }
+
+            fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
+                Ok(GeminiDocument(None))
+            }
+
+            fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
+                Ok(GeminiDocument(None))
+            }
+
+            fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
+                Ok(GeminiDocument(None))
+            }
+
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(GeminiDocument(None))
+            }
+        }
+
+        deserializer.deserialize_any(DocumentVisitor)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct GeminiTokens {
     input: u64,
@@ -112,10 +171,13 @@ pub(super) struct GeminiUsageEvent {
     message_id: Option<String>,
 }
 
-pub(super) fn parse_json_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
+pub(super) fn parse_json_file(
+    path: &Path,
+) -> std::result::Result<Vec<GeminiUsageEvent>, UnitError> {
     let fallback_timestamp = file_modified_timestamp(path);
-    let content = fs::read_to_string(path)?;
-    let Ok(record) = serde_json::from_str::<GeminiRecord>(&content) else {
+    let GeminiDocument(Some(record)) =
+        ccusage_adapter_common::units::read_json::<GeminiDocument>(path)?
+    else {
         return Ok(Vec::new());
     };
     let session_id = record.session_id().unwrap_or_else(|| {
@@ -162,7 +224,10 @@ pub(super) fn parse_json_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     ))
 }
 
-pub(super) fn parse_jsonl_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
+pub(super) fn parse_jsonl_file(
+    path: &Path,
+    diagnostics: &ccusage_core::Diagnostics,
+) -> std::result::Result<Vec<GeminiUsageEvent>, UnitError> {
     let fallback_timestamp = file_modified_timestamp(path);
     let mut session_id = path
         .file_stem()
@@ -172,8 +237,14 @@ pub(super) fn parse_jsonl_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     let mut current_model = None::<String>;
     let mut events = Vec::new();
     let mut direct_event_indexes = HashMap::<String, usize>::new();
-    let content = fs::read(path)?;
-    for record in jsonl::records::<GeminiRecord>(&content, None) {
+    let content = fs::read(path).map_err(UnitError::from)?;
+    for record in jsonl::records_with_usage_diagnostics::<GeminiRecord>(
+        &content,
+        None,
+        path,
+        diagnostics,
+        is_usage_envelope,
+    ) {
         if let Some(value) = record.session_id() {
             session_id = value;
         }
@@ -216,6 +287,53 @@ pub(super) fn parse_jsonl_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
         }
     }
     Ok(events)
+}
+
+fn is_usage_envelope(value: &Value) -> bool {
+    if value.get("type").and_then(Value::as_str) == Some("gemini") {
+        return true;
+    }
+
+    let stats = value
+        .get("stats")
+        .or_else(|| value.get("result").and_then(|result| result.get("stats")));
+    let Some(stats) = stats.and_then(Value::as_object) else {
+        return false;
+    };
+    let has_token_count = |tokens: &Map<String, Value>| {
+        [
+            "input",
+            "prompt",
+            "input_tokens",
+            "prompt_tokens",
+            "output",
+            "candidates",
+            "output_tokens",
+            "candidates_tokens",
+            "cached",
+            "cached_tokens",
+            "thoughts",
+            "reasoning",
+            "thoughts_tokens",
+            "reasoning_tokens",
+            "tool",
+            "tool_tokens",
+            "total",
+            "total_tokens",
+        ]
+        .iter()
+        .any(|key| tokens.contains_key(*key))
+    };
+    has_token_count(stats)
+        || stats
+            .get("models")
+            .and_then(Value::as_object)
+            .is_some_and(|models| {
+                models
+                    .values()
+                    .filter_map(|model| model.get("tokens").and_then(Value::as_object))
+                    .any(&has_token_count)
+            })
 }
 
 fn parse_direct_event(
@@ -554,6 +672,71 @@ fn model_candidates(model: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ccusage_core::Diagnostics;
+    use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn diagnoses_malformed_whole_file_json() {
+        let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":}"});
+        let diagnostics = Diagnostics::new("gemini");
+
+        let loaded = ccusage_adapter_common::units::read_units(
+            &[fixture.path("chat.json")],
+            true,
+            &diagnostics,
+            parse_json_file,
+        );
+
+        assert!(loaded[0].is_none());
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn reads_json_that_is_not_an_object_as_holding_no_usage() {
+        let fixture = fs_fixture!({
+            "logs.json": r#"[{"sessionId":"s1","messageId":0,"type":"user","message":"hi","timestamp":"2026-05-17T11:07:32.000Z"}]"#,
+            "empty-logs.json": "[]",
+            "scalar.json": "7",
+            "broken-logs.json": r#"[{"sessionId":"s1"},]"#,
+        });
+        let files = [
+            "logs.json",
+            "empty-logs.json",
+            "scalar.json",
+            "broken-logs.json",
+        ]
+        .map(|name| fixture.path(name));
+        let diagnostics = Diagnostics::new("gemini");
+
+        let loaded =
+            ccusage_adapter_common::units::read_units(&files, true, &diagnostics, parse_json_file);
+
+        assert!(
+            loaded[..3]
+                .iter()
+                .all(|events| events.as_ref().is_some_and(Vec::is_empty))
+        );
+        assert!(loaded[3].is_none());
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn diagnoses_malformed_jsonl_and_keeps_later_usage() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                "{\"type\":\"gemini\",\"tokens\":}\n",
+                r#"{"type":"gemini","timestamp":"2026-05-17T11:07:32.000Z","model":"gemini-3-flash-preview","tokens":{"input":100,"output":20}}"#,
+                "\n",
+            ),
+        });
+        let path = fixture.path("session.jsonl");
+        let diagnostics = Diagnostics::new("gemini");
+
+        let events = parse_jsonl_file(&path, &diagnostics).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_gemini_parts_are_missing() {

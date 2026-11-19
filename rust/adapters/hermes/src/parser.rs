@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
+use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
@@ -20,15 +21,32 @@ pub(super) struct HermesEntry {
     cost_usd: Option<f64>,
 }
 
-pub(super) fn read_session_row(statement: &sqlite::Statement<'_>) -> Option<HermesEntry> {
-    let session_id = statement.read::<String, _>(0).ok()?;
-    let model = statement.read::<String, _>(1).ok()?.trim().to_string();
-    if session_id.is_empty() || model.is_empty() {
-        return None;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SessionRowError {
+    InvalidIdentity,
+    InvalidTimestamp,
+}
+
+impl SessionRowError {
+    pub(super) const fn kind(self) -> SkipKind {
+        match self {
+            Self::InvalidIdentity => SkipKind::InvalidData,
+            Self::InvalidTimestamp => SkipKind::InvalidTimestamp,
+        }
     }
+
+    pub(super) const fn detail(self) -> &'static str {
+        match self {
+            Self::InvalidIdentity => "Hermes usage row has no valid session identity",
+            Self::InvalidTimestamp => "Hermes usage row has an invalid timestamp",
+        }
+    }
+}
+
+pub(super) fn read_session_row(
+    statement: &sqlite::Statement<'_>,
+) -> Result<Option<HermesEntry>, SessionRowError> {
     let provider_raw = statement.read::<String, _>(2).ok();
-    let started_at = read_f64(statement, 3)?;
-    let timestamp = timestamp_from_number(started_at)?;
     let message_count = read_u64(statement, 4);
     let input_tokens = read_u64(statement, 5);
     let output_tokens = read_u64(statement, 6);
@@ -45,9 +63,24 @@ pub(super) fn read_session_row(statement: &sqlite::Statement<'_>) -> Option<Herm
         && reasoning_tokens == 0
         && cost_usd.unwrap_or(0.0) == 0.0
     {
-        return None;
+        return Ok(None);
     }
-    Some(HermesEntry {
+
+    let session_id = statement
+        .read::<String, _>(0)
+        .map_err(|_| SessionRowError::InvalidIdentity)?;
+    let model = statement
+        .read::<String, _>(1)
+        .map_err(|_| SessionRowError::InvalidIdentity)?
+        .trim()
+        .to_string();
+    if session_id.is_empty() || model.is_empty() {
+        return Err(SessionRowError::InvalidIdentity);
+    }
+    let started_at = read_f64(statement, 3).ok_or(SessionRowError::InvalidTimestamp)?;
+    let timestamp = timestamp_from_number(started_at).ok_or(SessionRowError::InvalidTimestamp)?;
+
+    Ok(Some(HermesEntry {
         timestamp,
         timestamp_text: format_rfc3339_millis(timestamp),
         session_id,
@@ -64,7 +97,7 @@ pub(super) fn read_session_row(statement: &sqlite::Statement<'_>) -> Option<Herm
         reasoning_tokens,
         message_count,
         cost_usd,
-    })
+    }))
 }
 
 fn read_u64(statement: &sqlite::Statement<'_>, index: usize) -> u64 {

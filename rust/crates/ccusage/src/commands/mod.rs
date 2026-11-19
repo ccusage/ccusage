@@ -7,6 +7,7 @@ use std::{
 };
 
 use ccusage_adapter_common::filter_loaded_entries_by_date;
+use ccusage_core::Diagnostics;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -24,10 +25,10 @@ use crate::{
     fast::FxHashMap,
     filter_and_sort_summaries, filter_blocks_by_date, format_currency, format_date, format_number,
     format_remaining_time, format_rfc3339_millis, group_project_output, identify_session_blocks,
-    load_daily_summaries, load_entries, load_entries_since, print_active_block_detail,
-    print_blocks_table, print_json_or_jq, print_usage_table, session_summary_json, sort_blocks,
-    sort_summaries, sum_costs, summarize_by_key, summarize_summaries_by_bucket, summary_json,
-    totals_json, utc_now, wants_json,
+    load_daily_summaries, load_entries, load_entries_since, load_entries_since_with_diagnostics,
+    print_active_block_detail, print_blocks_table, print_json_or_jq, print_usage_table,
+    session_summary_json, sort_blocks, sort_summaries, sum_costs, summarize_by_key,
+    summarize_summaries_by_bucket, summary_json, totals_json, utc_now, wants_json,
 };
 
 pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
@@ -350,7 +351,15 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
         mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
-    let statusline_result = render_statusline(&hook, &args, &shared);
+    // Every load records into one Diagnostics, so a skip that several windows
+    // read is reported once.
+    let diagnostics = Diagnostics::new("claude");
+    let statusline_result = render_statusline(&hook, &args, &shared, &diagnostics);
+    let shared = SharedArgs {
+        debug: args.debug,
+        ..shared
+    };
+    diagnostics.emit(&shared);
     match statusline_result {
         Ok(statusline) => {
             println!("{statusline}");
@@ -420,20 +429,21 @@ fn render_statusline(
     hook: &StatuslineHook,
     args: &StatuslineArgs,
     shared: &SharedArgs,
+    diagnostics: &Diagnostics,
 ) -> Result<String> {
     let session_cost = match args.cost_source {
         CostSource::Cc => hook.cost.as_ref().map(|cost| cost.total_cost_usd),
-        CostSource::Ccusage => calculate_session_cost(&hook.session_id, shared).ok(),
+        CostSource::Ccusage => calculate_session_cost(&hook.session_id, shared, diagnostics).ok(),
         CostSource::Auto => hook
             .cost
             .as_ref()
             .map(|cost| cost.total_cost_usd)
-            .or_else(|| calculate_session_cost(&hook.session_id, shared).ok()),
+            .or_else(|| calculate_session_cost(&hook.session_id, shared, diagnostics).ok()),
         CostSource::Both => None,
     };
 
     let ccusage_cost = if args.cost_source == CostSource::Both {
-        calculate_session_cost(&hook.session_id, shared).ok()
+        calculate_session_cost(&hook.session_id, shared, diagnostics).ok()
     } else {
         None
     };
@@ -444,7 +454,7 @@ fn render_statusline(
     };
 
     let today_shared = statusline_today_shared(args, shared, utc_now());
-    let today_cost = load_entries_since(&today_shared, None)
+    let today_cost = load_entries_since_with_diagnostics(&today_shared, None, diagnostics)
         .map(|entries| {
             sum_costs(
                 entries
@@ -458,7 +468,7 @@ fn render_statusline(
         })
         .unwrap_or(0.0);
 
-    let active_block = load_statusline_active_block(args, shared, utc_now());
+    let active_block = load_statusline_active_block(args, shared, utc_now(), diagnostics);
     let (block_info, burn_rate_info) = if let Some(block) = active_block.as_ref() {
         let remaining = block.end_time.duration_since(utc_now()) / MILLIS_PER_MINUTE;
         let mut burn = String::new();
@@ -575,12 +585,14 @@ fn load_statusline_active_block(
     args: &StatuslineArgs,
     shared: &SharedArgs,
     now: TimestampMs,
+    diagnostics: &Diagnostics,
 ) -> Option<SessionBlock> {
     let session_ms = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64;
     for lookback_days in STATUSLINE_BLOCK_LOOKBACK_DAYS {
         let window_shared = statusline_block_shared(args, shared, now, lookback_days);
         let since = window_shared.since.clone().unwrap_or_default();
-        let mut entries = load_entries_since(&window_shared, None).ok()?;
+        let mut entries =
+            load_entries_since_with_diagnostics(&window_shared, None, diagnostics).ok()?;
         // Entries dated before the window may come from partially skipped
         // sessions; only the ones inside it are complete.
         entries.retain(|entry| entry.date.replace('-', "") >= since);
@@ -599,7 +611,7 @@ fn load_statusline_active_block(
             BlockAnchor::NeedsFullHistory => break,
         }
     }
-    find_active_block(load_entries(shared, None).ok()?)
+    find_active_block(load_entries_since_with_diagnostics(shared, None, diagnostics).ok()?)
 }
 
 fn find_active_block(entries: Vec<LoadedEntry>) -> Option<SessionBlock> {
@@ -676,9 +688,13 @@ fn statusline_block_shared(
     }
 }
 
-fn calculate_session_cost(session_id: &str, shared: &SharedArgs) -> Result<f64> {
+fn calculate_session_cost(
+    session_id: &str,
+    shared: &SharedArgs,
+    diagnostics: &Diagnostics,
+) -> Result<f64> {
     Ok(sum_costs(
-        load_entries(shared, None)?
+        load_entries_since_with_diagnostics(shared, None, diagnostics)?
             .into_iter()
             .filter(|entry| {
                 entry.data.session_id.as_deref() == Some(session_id)
@@ -856,7 +872,13 @@ fn process_is_alive(pid: u32) -> bool {
     unsafe extern "C" {
         fn kill(pid: i32, sig: i32) -> i32;
     }
-    unsafe { kill(pid as i32, 0) == 0 }
+    // `kill` reads a pid of 0 or below as a process group, so a cached pid
+    // that is not a positive `pid_t` names no single process.
+    let Some(pid) = i32::try_from(pid).ok().filter(|pid| *pid > 0) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that `pid` exists and may be signaled.
+    unsafe { kill(pid, 0) == 0 }
 }
 
 #[cfg(not(unix))]
@@ -967,6 +989,14 @@ mod tests {
 
     use super::*;
     use crate::cli::{Cli, Command, CostMode};
+
+    #[test]
+    fn a_cached_pid_is_alive_only_when_it_names_one_running_process() {
+        assert!(process_is_alive(std::process::id()));
+        for pid in [0, i32::MAX as u32 + 1, u32::MAX] {
+            assert!(!process_is_alive(pid), "pid {pid}");
+        }
+    }
 
     #[test]
     fn claude_session_totals_only_include_entries_inside_date_window() {
@@ -1128,7 +1158,7 @@ mod tests {
             }),
             effort: None,
         };
-        let output = render_statusline(&hook, &args, &shared).unwrap();
+        let output = render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
     }
 

@@ -1,51 +1,35 @@
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use ccusage_adapter_common::{read_units_flat, source::LoadContext};
+
+use crate::{LoadedEntry, Result};
 
 use super::{
     parser::{event_to_loaded, parse_json_file, parse_jsonl_file},
     paths::discover_log_files,
 };
 
-/// Loads Gemini CLI entries with progress tracking.
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Gemini CLI"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
-    )
-}
-
-/// Internal loader function that discovers and parses Gemini CLI log files in parallel.
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let files = discover_log_files()?;
-    // Read each log file in parallel; the events keep their original file order
-    // before the stable sort, so output is identical to the sequential read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        let parsed = match file.extension().and_then(|extension| extension.to_str()) {
-            Some("jsonl") => parse_jsonl_file(file),
-            _ => parse_json_file(file),
-        };
-        parsed.unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!("Failed to read Gemini log file {}: {error}", file.display()),
-            );
-            Vec::new()
-        })
-    });
-    let mut events: Vec<_> = loaded.into_iter().flatten().collect();
+pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let files = discover_log_files(cx.diagnostics)?;
+    let pricing = cx.pipeline_pricing()?;
+    let mut events =
+        read_units_flat(
+            &files,
+            cx.shared.single_thread,
+            cx.diagnostics,
+            |file| match file.extension().and_then(|extension| extension.to_str()) {
+                Some("jsonl") => parse_jsonl_file(file, cx.diagnostics),
+                _ => parse_json_file(file),
+            },
+        );
     events.sort_by_key(|event| event.timestamp);
     Ok(events
         .into_iter()
-        .map(|event| event_to_loaded(event, tz.as_ref(), shared.mode, pricing))
+        .map(|event| event_to_loaded(event, Some(cx.window.timezone()), cx.shared.mode, pricing))
         .collect())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use ccusage_core::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::fs_fixture;
 
     #[test]
@@ -62,7 +46,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-17");

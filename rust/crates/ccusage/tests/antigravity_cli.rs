@@ -106,12 +106,8 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
         "expected a warning in stderr: {stderr}"
     );
     assert!(
-        stderr.contains("partial.db"),
-        "expected the skipped database filename in stderr: {stderr}"
-    );
-    assert!(
-        stderr.contains("not-a-database.db"),
-        "expected the skipped database filename in stderr: {stderr}"
+        stderr.contains("antigravity: skipped 2 inputs (invalid data)"),
+        "expected both skipped databases in the warning count: {stderr}"
     );
     assert!(
         !stderr.contains("empty.db"),
@@ -120,10 +116,10 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
 }
 
 #[test]
-fn unified_report_warns_once_per_skipped_antigravity_database() {
+fn unified_report_counts_skipped_antigravity_databases_and_lists_each_debug_sample_once() {
     let fixture = corrupt_antigravity_fixture();
 
-    let output = run_ccusage(&fixture, &["session"]);
+    let output = run_ccusage(&fixture, &["session", "--debug"]);
 
     assert!(
         output.status.success(),
@@ -136,8 +132,12 @@ fn unified_report_warns_once_per_skipped_antigravity_database() {
     assert_eq!(report["session"][0]["inputTokens"], 10);
 
     let stderr = String::from_utf8(output.stderr).expect("CLI stderr was not UTF-8");
-    assert_eq!(stderr.matches("WARN  ").count(), 2, "{stderr}");
+    assert_eq!(stderr.matches("WARN  ").count(), 1, "{stderr}");
+    assert!(
+        stderr.contains("antigravity: skipped 2 inputs (invalid data)"),
+        "{stderr}"
+    );
     assert_eq!(stderr.matches("partial.db").count(), 1, "{stderr}");
     assert_eq!(stderr.matches("not-a-database.db").count(), 1, "{stderr}");
-    assert!(!stderr.contains("empty.db"), "{stderr}");
+    assert_eq!(stderr.matches("empty.db").count(), 1, "{stderr}");
 }

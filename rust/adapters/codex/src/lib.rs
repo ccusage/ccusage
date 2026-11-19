@@ -8,6 +8,7 @@ mod paths;
 mod reader;
 mod replay;
 mod report;
+mod source;
 mod speed;
 mod statusline;
 mod types;
@@ -19,15 +20,21 @@ mod compression_tests;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
-pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
-#[doc(hidden)]
-pub use loader::load_codex_events_from_directory;
-pub use loader::load_codex_events_with_detection;
-pub use report::{
-    calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
-    non_cached_input_tokens,
+pub(crate) use aggregate::{aggregate_events, filter_events_by_date, load_groups};
+#[cfg(test)]
+use loader::load_codex_events_from_directory;
+#[cfg(test)]
+pub(crate) use loader::load_codex_events_with_detection;
+
+pub use report::calculate_group_cost;
+pub(crate) use report::{
+    calculate_codex_model_cost, codex_model_missing_pricing, non_cached_input_tokens,
 };
-pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
+pub use source::SOURCE;
+#[doc(hidden)]
+pub use source::unified_row_from_group;
+pub use speed::CodexSpeedPolicy;
+pub(crate) use speed::resolve_codex_speed;
 pub use statusline::run_statusline;
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,

@@ -1,3 +1,4 @@
+use ccusage_core::Diagnostics;
 use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
@@ -217,37 +218,60 @@ struct CodexAggregateRun<'a> {
     kind: AgentReportKind,
     replay_plan: &'a CodexReplayPlan,
     file_offset: usize,
+    diagnostics: &'a Diagnostics,
 }
 
 pub fn load_groups(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    let sources = paths::codex_usage_sources()?;
-    if sources.len() == 1 && !wants_json(shared) {
-        return load_groups_from_directory(&sources[0].dir, shared, kind);
-    }
-    load_groups_from_sources(&sources, shared, kind)
+    let diagnostics = Diagnostics::new("codex");
+    let (groups, _) = load_groups_with_diagnostics(shared, kind, wants_json(shared), &diagnostics)?;
+    diagnostics.emit(shared);
+    Ok(groups)
 }
 
-fn load_groups_from_sources(
+pub(super) fn load_groups_with_diagnostics(
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    multi_source_driver: bool,
+    diagnostics: &Diagnostics,
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    let sources = paths::codex_usage_sources()?;
+    if sources.len() == 1 && !multi_source_driver {
+        return load_groups_from_directory_with_diagnostics(
+            &sources[0].dir,
+            shared,
+            kind,
+            diagnostics,
+        );
+    }
+    load_groups_from_sources_with_diagnostics(&sources, shared, kind, diagnostics)
+}
+
+fn load_groups_from_sources_with_diagnostics(
     sources: &[paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    load_selected_groups(sources, shared, kind, None)
+    diagnostics: &Diagnostics,
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    load_selected_groups(sources, shared, kind, None, diagnostics)
 }
 
 pub(super) fn load_session_groups(
     shared: &SharedArgs,
     session_id: &str,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    load_selected_groups(
+    let diagnostics = Diagnostics::new("codex");
+    let (groups, _) = load_selected_groups(
         &paths::codex_usage_sources()?,
         shared,
         AgentReportKind::Session,
         Some(super::normalize_session_id(session_id)),
-    )
+        &diagnostics,
+    )?;
+    diagnostics.emit(shared);
+    Ok(groups)
 }
 
 fn load_selected_groups(
@@ -255,8 +279,10 @@ fn load_selected_groups(
     shared: &SharedArgs,
     kind: AgentReportKind,
     session_id: Option<&str>,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    let file_groups = paths::collect_deduped_codex_usage_files(sources);
+    diagnostics: &Diagnostics,
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
+    let detected = file_groups.iter().any(|group| !group.files.is_empty());
     let logical_session = session_id.is_some_and(|requested| {
         file_groups.iter().any(|group| {
             group.files.iter().any(|path| {
@@ -280,7 +306,9 @@ fn load_selected_groups(
             files
         })
         .collect::<Vec<_>>();
-    load_groups_from_file_selection(&file_groups, &files_by_group, shared, kind)
+    let groups =
+        load_groups_from_file_selection(&file_groups, &files_by_group, shared, kind, diagnostics)?;
+    Ok((groups, detected))
 }
 
 pub(super) fn load_groups_from_file_selection(
@@ -288,6 +316,7 @@ pub(super) fn load_groups_from_file_selection(
     files_by_group: &[Vec<PathBuf>],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let filtered = file_groups
         .iter()
@@ -303,6 +332,7 @@ pub(super) fn load_groups_from_file_selection(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             shared.single_thread,
+            diagnostics,
         )
     } else {
         CodexReplayPlan::new(
@@ -310,6 +340,7 @@ pub(super) fn load_groups_from_file_selection(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             shared.single_thread,
+            diagnostics,
         )
     };
     let mut groups = BTreeMap::new();
@@ -329,6 +360,7 @@ pub(super) fn load_groups_from_file_selection(
                     kind,
                     replay_plan: &replay_plan,
                     file_offset,
+                    diagnostics,
                 },
                 &seen,
             )?,
@@ -339,21 +371,28 @@ pub(super) fn load_groups_from_file_selection(
     Ok(groups)
 }
 
-pub(super) fn load_groups_from_directory(
+pub(super) fn load_groups_from_directory_with_diagnostics(
     sessions_dir: &Path,
     shared: &SharedArgs,
     kind: AgentReportKind,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    let all_files = paths::collect_codex_usage_files(sessions_dir);
+    diagnostics: &Diagnostics,
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    let all_files = paths::collect_codex_usage_files(sessions_dir, diagnostics);
+    let detected = !all_files.is_empty();
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
     let replay_plan = if shared.since.is_some() || shared.until.is_some() {
         CodexReplayPlan::for_bounded_files(
             [(sessions_dir, files.as_slice())],
             [(sessions_dir, all_files.as_slice())],
             shared.single_thread,
+            diagnostics,
         )
     } else {
-        CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
+        CodexReplayPlan::new(
+            [(sessions_dir, all_files.as_slice())],
+            shared.single_thread,
+            diagnostics,
+        )
     };
     let run = CodexAggregateRun {
         sessions_dir,
@@ -362,14 +401,15 @@ pub(super) fn load_groups_from_directory(
         kind,
         replay_plan: &replay_plan,
         file_offset: 0,
+        diagnostics,
     };
     if shared.single_thread {
-        return aggregate_files_local(&run);
+        return aggregate_files_local(&run).map(|groups| (groups, detected));
     }
     let seen = create_dedupe_shards();
     let mut groups = aggregate_files_parallel(&run, &seen)?;
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok(groups)
+    Ok((groups, detected))
 }
 
 fn aggregate_files_with_dedupe(
@@ -444,7 +484,7 @@ fn aggregate_file(
 ) -> Result<()> {
     let file = &run.files[file_index];
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    parser::visit_codex_session_file(
+    parser::visit_codex_session_file_with_diagnostics(
         run.sessions_dir,
         file,
         run.replay_plan.fork_replay(file),
@@ -465,6 +505,7 @@ fn aggregate_file(
                 &mut provenance,
             )
         },
+        run.diagnostics,
     )
 }
 
@@ -495,7 +536,7 @@ fn aggregate_file_local(
 ) -> Result<()> {
     let file = &run.files[file_index];
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    parser::visit_codex_session_file(
+    parser::visit_codex_session_file_with_diagnostics(
         run.sessions_dir,
         file,
         run.replay_plan.fork_replay(file),
@@ -515,6 +556,7 @@ fn aggregate_file_local(
                 &mut provenance,
             )
         },
+        run.diagnostics,
     )
 }
 
@@ -1183,6 +1225,31 @@ pub fn filter_events_by_date(
     }
     *events = kept;
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) fn load_groups_from_directory(
+    sessions_dir: &Path,
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    load_groups_from_directory_with_diagnostics(
+        sessions_dir,
+        shared,
+        kind,
+        &Diagnostics::new("codex"),
+    )
+    .map(|(groups, _)| groups)
+}
+
+#[cfg(test)]
+fn load_groups_from_sources(
+    sources: &[paths::CodexUsageSource],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    load_groups_from_sources_with_diagnostics(sources, shared, kind, &Diagnostics::new("codex"))
+        .map(|(groups, _)| groups)
 }
 
 #[cfg(test)]

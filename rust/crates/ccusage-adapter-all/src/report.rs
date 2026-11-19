@@ -18,15 +18,15 @@ use crate::{
     print_box_title, should_use_compact_layout, sum_costs, unpriced_models,
 };
 
-use super::types::AllRow;
+use ccusage_adapter_common::rows::UnifiedRow;
 
 #[cfg(test)]
-pub(super) fn report_json(rows: &[AllRow], kind: AgentReportKind) -> Value {
+pub(super) fn report_json(rows: &[UnifiedRow], kind: AgentReportKind) -> Value {
     report_json_with_agents(rows, kind, false)
 }
 
 pub(super) fn report_json_with_agents(
-    rows: &[AllRow],
+    rows: &[UnifiedRow],
     kind: AgentReportKind,
     include_agents: bool,
 ) -> Value {
@@ -37,7 +37,7 @@ pub(super) fn report_json_with_agents(
 }
 
 pub(super) fn sections_report_json(
-    sections: &[(AgentReportKind, Vec<AllRow>)],
+    sections: &[(AgentReportKind, Vec<UnifiedRow>)],
     command_kind: AgentReportKind,
     include_agents: bool,
 ) -> OrderedJsonMap {
@@ -61,7 +61,7 @@ pub(super) fn sections_report_json(
 }
 
 pub(super) fn print_sections_report_json(
-    sections: &[(AgentReportKind, Vec<AllRow>)],
+    sections: &[(AgentReportKind, Vec<UnifiedRow>)],
     command_kind: AgentReportKind,
     include_agents: bool,
     jq: Option<&str>,
@@ -130,7 +130,7 @@ impl Serialize for OrderedJsonMap {
     }
 }
 
-fn row_json(row: &AllRow, include_agents: bool) -> Value {
+fn row_json(row: &UnifiedRow, include_agents: bool) -> Value {
     let mut value = agent_json(row);
     if let Some(obj) = value.as_object_mut() {
         obj.insert("period".to_string(), json!(row.period));
@@ -157,7 +157,7 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
     value
 }
 
-fn agent_json(row: &AllRow) -> Value {
+fn agent_json(row: &UnifiedRow) -> Value {
     json!({
         "agent": row.agent,
         "modelsUsed": row.models_used,
@@ -171,7 +171,7 @@ fn agent_json(row: &AllRow) -> Value {
     })
 }
 
-fn totals_json(rows: &[AllRow]) -> Value {
+fn totals_json(rows: &[UnifiedRow]) -> Value {
     let mut totals = json!({
         "inputTokens": rows
             .iter()
@@ -212,7 +212,7 @@ fn rows_key(kind: AgentReportKind) -> &'static str {
 }
 
 pub(super) fn print_table(
-    rows: &[AllRow],
+    rows: &[UnifiedRow],
     kind: AgentReportKind,
     shared: &SharedArgs,
     detected_agents: &[&'static str],
@@ -340,7 +340,7 @@ pub(super) fn print_table(
     Ok(())
 }
 
-fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {
+fn all_rows_as_usage_summaries(rows: &[UnifiedRow]) -> Vec<UsageSummary> {
     rows.iter()
         .map(|row| UsageSummary {
             date: None,
@@ -368,7 +368,7 @@ fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {
 
 pub(super) fn all_report_title(
     kind: AgentReportKind,
-    rows: &[AllRow],
+    rows: &[UnifiedRow],
     detected_agents: &[&'static str],
 ) -> String {
     format!(
@@ -383,7 +383,7 @@ pub(super) fn all_report_title(
     )
 }
 
-fn detected_agent_labels(rows: &[AllRow], detected_agents: &[&'static str]) -> String {
+fn detected_agent_labels(rows: &[UnifiedRow], detected_agents: &[&'static str]) -> String {
     let mut agents = BTreeSet::new();
     if detected_agents.is_empty() {
         for row in rows {
@@ -410,7 +410,7 @@ fn detected_agent_labels(rows: &[AllRow], detected_agents: &[&'static str]) -> S
 }
 
 pub(super) fn all_table_row(
-    row: &AllRow,
+    row: &UnifiedRow,
     compact: bool,
     breakdown: bool,
     no_cost: bool,
@@ -465,7 +465,7 @@ pub(super) fn all_table_row(
     values
 }
 
-fn component_total_tokens(row: &AllRow) -> u64 {
+fn component_total_tokens(row: &UnifiedRow) -> u64 {
     row.input_tokens
         .saturating_add(row.output_tokens)
         .saturating_add(row.cache_creation_tokens)
@@ -575,7 +575,7 @@ pub(super) fn all_table_columns(
     (headers, aligns)
 }
 
-pub(super) fn sort_rows(rows: &mut [AllRow], order: &SortOrder) {
+pub(super) fn sort_rows(rows: &mut [UnifiedRow], order: &SortOrder) {
     rows.sort_by(|a, b| match a.period.cmp(&b.period) {
         std::cmp::Ordering::Equal => a.agent.cmp(b.agent),
         order => order,

@@ -1,15 +1,16 @@
-use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
-};
+use ccusage_adapter_common::{collect_files_with_extension, filter_loaded_entries_by_date};
 use ccusage_core::*;
 
 mod loader;
 mod parser;
 mod paths;
 mod report;
+mod source;
 
 pub use loader::{LinkedEntry, load_entries_with_native_sessions};
-pub use report::{report_json, summarize_entries};
+pub use report::report_json;
+pub(crate) use report::summarize_entries;
+pub use source::SOURCE;
 
 use crate::{
     Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries, wants_json,
@@ -21,7 +22,7 @@ use crate::{
 /// The aggregate report lists which agents it found, and the loader narrows to
 /// `--since`/`--until` as it reads, so an out-of-range query cannot answer that
 /// question from the loaded entries alone.
-pub fn has_data() -> bool {
+pub(crate) fn has_data() -> bool {
     paths::paths().is_ok_and(|paths| paths.iter().any(|path| loader::has_source(path)))
 }
 

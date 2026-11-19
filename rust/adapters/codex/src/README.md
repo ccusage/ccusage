@@ -19,6 +19,8 @@ Relevant JSONL event:
 - `payload.info.total_token_usage` is cumulative.
 - `payload.info.last_token_usage` is the current turn delta.
 - If only cumulative totals exist, subtract prior totals to recover deltas.
+- Valid cumulative token counts advance the baseline even when their record has no usable
+  timestamp. The rejected record is not emitted and its usage is not shifted to a later dated delta.
 
 Automatic compaction usage is recorded separately:
 

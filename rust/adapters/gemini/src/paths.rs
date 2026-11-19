@@ -1,6 +1,9 @@
 use std::{collections::HashSet, env, path::PathBuf};
 
-use crate::{Result, collect_files_with_extension};
+use ccusage_adapter_common::collect_files_matching;
+use ccusage_core::Diagnostics;
+
+use crate::Result;
 
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
 /// Returns all discovery candidate directories for Gemini CLI logs.
@@ -32,11 +35,14 @@ fn paths() -> Result<Vec<PathBuf>> {
 }
 
 /// Discovers all `.json` and `.jsonl` log files across known directories.
-pub(super) fn discover_log_files() -> Result<Vec<PathBuf>> {
+pub(super) fn discover_log_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
+    let is_log = |path: &std::path::Path| {
+        path.extension()
+            .is_some_and(|extension| extension == "json" || extension == "jsonl")
+    };
     for path in paths()? {
-        collect_files_with_extension(&path, "json", &mut files);
-        collect_files_with_extension(&path, "jsonl", &mut files);
+        collect_files_matching(&path, &is_log, &mut files, diagnostics);
     }
     files.sort();
     files.dedup();
@@ -58,7 +64,7 @@ mod tests {
             "chats/ignore.txt": "no",
         });
         let _env_guard = super::super::GeminiDataDirEnvGuard::set(fixture.root());
-        let files = discover_log_files().unwrap();
+        let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
         assert_eq!(
             files,
@@ -83,7 +89,7 @@ mod tests {
             ),
         ]);
 
-        let files = discover_log_files().unwrap();
+        let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
         assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
     }

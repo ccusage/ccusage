@@ -10,6 +10,32 @@ const SESSION_FILE: &str = "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-
 const OTHER_UUID: &str = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
 
 #[test]
+fn codex_statusline_keeps_valid_usage_when_a_replacement_rollout_is_corrupt() {
+    let fixture = codex_fixture();
+    let _ = fixture.write_file(
+        format!("codex/sessions/rollout-2026-09-20T12-00-00-{SESSION_UUID}_{OTHER_UUID}.jsonl.zst"),
+        "corrupt-rollout-canary",
+    );
+    let output = run_cli_output(
+        &fixture,
+        &[
+            "codex",
+            "statusline",
+            "--id",
+            SESSION_UUID,
+            "--json",
+            "--debug",
+        ],
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+    let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["totalTokens"], 150);
+    assert!(stderr.contains("codex: read interrupted:"), "{stderr}");
+    assert!(!stderr.contains("corrupt-rollout-canary"), "{stderr}");
+}
+
+#[test]
 fn codex_statusline_reports_today_without_reading_stdin() {
     let today = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
     let fixture = fs_fixture!({

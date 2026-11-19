@@ -1,3 +1,5 @@
+use ccusage_adapter_common::{UnitError, jsonl};
+use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -18,7 +20,7 @@ use super::{
     reader::{open_rollout_reader, uncompressed_rollout_path},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
-        CodexSessionLogEntry, CodexTimestamp,
+        CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
     },
 };
 
@@ -45,6 +47,22 @@ static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""input_tokens":"#));
 static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
+static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
+    LinePrefilter::any(&[
+        br#""type""#,
+        b"turn_context",
+        b"event_msg",
+        b"token_count",
+        b"thread_settings_applied",
+        b"token_usage_record",
+        b"compacted",
+        br#""usage""#,
+        br#""input_tokens""#,
+        br#""prompt_tokens""#,
+    ])
+});
+static SESSION_META_MARKER: LazyLock<LinePrefilter> =
+    LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
 
@@ -61,7 +79,7 @@ struct CodexAutoReviewFallback<'a> {
     model: &'a str,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CodexLineKind {
     Session,
     Headless,
@@ -164,7 +182,7 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         if bytes_read == 0 {
             return None;
         }
-        if memchr::memmem::find(&line, b"session_meta").is_some()
+        if SESSION_META_MARKER.matches(&line)
             && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line)
             && value.entry_type.as_deref() == Some("session_meta")
         {
@@ -287,13 +305,38 @@ impl CodexReplayFilter<'_> {
 ///
 /// `fork_replay` carries the usage a forked session copied from its parent so it
 /// is not counted twice, and is `None` for sessions that are not forks.
+#[cfg(test)]
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    visit_codex_session_file_with_compaction_history(sessions_dir, path, fork_replay, None, visit)
+    visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        &Diagnostics::new("codex"),
+    )
+}
+
+pub(super) fn visit_codex_session_file_with_diagnostics(
+    sessions_dir: &Path,
+    path: &Path,
+    fork_replay: Option<CodexForkReplay<'_>>,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
+) -> Result<()> {
+    visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        diagnostics,
+    )
 }
 
 /// Visits usage while optionally retaining matched compaction identities,
@@ -304,9 +347,15 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
 ) -> Result<()> {
-    let Ok((mut reader, opened_path)) = open_rollout_reader(path) else {
-        return Ok(());
+    let (mut reader, opened_path) = match open_rollout_reader(path) {
+        Ok(opened) => opened,
+        Err(failed_path) => {
+            UnitError::new(SkipKind::Unreadable, "rollout open failed")
+                .record(&failed_path, diagnostics);
+            return Ok(());
+        }
     };
     let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
@@ -327,28 +376,54 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
             .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
     };
 
+    let mut line_number = 0_u32;
     loop {
         line.clear();
         let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
+            diagnostics.record(Skip::unit(
+                path,
+                SkipKind::ReadInterrupted,
+                "rollout read failed",
+            ));
             break;
         };
         if bytes_read == 0 {
             break;
         }
+        line_number = line_number.saturating_add(1);
         let Some(line_kind) = codex_line_usage_kind(&line) else {
             continue;
         };
         match line_kind {
             CodexLineKind::Session => {
-                let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
-                    continue;
+                let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        record_decode_failure(
+                            path,
+                            line_number,
+                            &line,
+                            error,
+                            diagnostics,
+                            Some(&mut state.previous_totals),
+                        );
+                        continue;
+                    }
                 };
                 if value.entry_type.as_deref() == Some("token_usage_record") {
                     replay.observe_usage_record();
                 }
-                visit_codex_session_entry(&session_id, value, &mut state, &mut |event| {
-                    replay.visit(event, &mut visit)
-                })?;
+                visit_codex_session_entry(
+                    &session_id,
+                    value,
+                    &mut state,
+                    &mut |event| replay.visit(event, &mut visit),
+                    &RecordLocation {
+                        path,
+                        line: line_number,
+                        diagnostics,
+                    },
+                )?;
             }
             CodexLineKind::Headless => {
                 if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
@@ -359,6 +434,11 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
                         &mut state.current_model,
                         &mut state.current_model_is_fallback,
                         &mut |event| replay.visit(event, &mut visit),
+                        &RecordLocation {
+                            path,
+                            line: line_number,
+                            diagnostics,
+                        },
                     )?;
                 } else {
                     add_codex_exec_event_from_value(
@@ -368,6 +448,11 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
                         &mut state.current_model,
                         &mut state.current_model_is_fallback,
                         &mut |event| replay.visit(event, &mut visit),
+                        &RecordLocation {
+                            path,
+                            line: line_number,
+                            diagnostics,
+                        },
                     )?;
                 };
             }
@@ -396,6 +481,7 @@ fn visit_codex_session_entry(
     value: CodexSessionLogEntry<'_>,
     state: &mut CodexSessionUsageState,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
 ) -> Result<()> {
     let CodexSessionUsageState {
         previous_totals,
@@ -442,10 +528,16 @@ fn visit_codex_session_entry(
         if compaction_usage.emitted_response_ids.contains(&response_id) {
             return Ok(());
         }
-        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
-            return Ok(());
+        let raw_usage = match payload.usage {
+            CodexUsageCandidate::Missing => return Ok(()),
+            CodexUsageCandidate::Malformed => {
+                location.invalid_usage("compaction usage did not decode");
+                return Ok(());
+            }
+            CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
         };
-        let Some(raw_usage) = payload.usage.map(normalize_codex_raw_usage) else {
+        let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
+            location.invalid_timestamp();
             return Ok(());
         };
         if raw_usage.input_tokens == 0
@@ -523,13 +615,13 @@ fn visit_codex_session_entry(
     if entry_type != Some("event_msg") {
         return Ok(());
     }
-    let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
-        return Ok(());
-    };
     let Some(payload) = value.payload.as_ref() else {
         return Ok(());
     };
     if payload.payload_type.as_deref() == Some("thread_settings_applied") {
+        if codex_session_timestamp(value.timestamp.as_ref()).is_none() {
+            return Ok(());
+        }
         // A settings event that carries no `service_tier` at all says nothing
         // about the tier, so the previous one stands. Codex emits such events
         // for auto-review threads. A tier that is present but unrecognized is
@@ -547,12 +639,21 @@ fn visit_codex_session_entry(
     if payload.payload_type.as_deref() != Some("token_count") {
         return Ok(());
     }
+    // Rejected timestamps must not move this usage into the next cumulative delta.
     let info = payload.info.as_ref();
     let CodexTokenCountUsage {
         total_usage,
         cumulative_advanced,
         delta,
     } = codex_token_count_usage(info, previous_totals);
+    let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
+        if info
+            .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
+        {
+            location.invalid_timestamp();
+        }
+        return Ok(());
+    };
     let Some(raw_usage) = delta else {
         return Ok(());
     };
@@ -621,9 +722,15 @@ fn add_codex_exec_event(
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
 ) -> Result<()> {
-    let Some(raw_usage) = normalize_headless_codex_usage(value) else {
-        return Ok(());
+    let raw_usage = match normalize_headless_codex_usage(value) {
+        Ok(Some(raw_usage)) => raw_usage,
+        Ok(None) => return Ok(()),
+        Err(()) => {
+            location.invalid_usage("headless usage did not decode");
+            return Ok(());
+        }
     };
     let parsed_model = codex_model_from_result(value);
     let timestamps = CodexExecTimestamps {
@@ -649,12 +756,29 @@ fn add_codex_exec_event_from_value(
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
 ) -> Result<()> {
-    let Ok(value) = serde_json::from_slice::<Value>(line) else {
-        return Ok(());
+    let value = match serde_json::from_slice::<Value>(line) {
+        Ok(value) => value,
+        Err(error) => {
+            record_decode_failure(
+                location.path,
+                location.line,
+                line,
+                error,
+                location.diagnostics,
+                None,
+            );
+            return Ok(());
+        }
     };
-    let Some(raw_usage) = normalize_headless_codex_usage_value(&value) else {
-        return Ok(());
+    let raw_usage = match normalize_headless_codex_usage_value(&value) {
+        Ok(Some(raw_usage)) => raw_usage,
+        Ok(None) => return Ok(()),
+        Err(()) => {
+            location.invalid_usage("headless usage did not decode");
+            return Ok(());
+        }
     };
     let parsed_model = codex_model_from_result_value(&value);
     let timestamps = CodexExecTimestamps {
@@ -721,6 +845,19 @@ fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
+    if !ESCAPED_USAGE_MARKERS.matches_escaped(line) {
+        return verbatim_line_usage_kind(line);
+    }
+    match serde_json::from_slice::<serde_json::Value>(line)
+        .ok()
+        .and_then(|value| serde_json::to_vec(&value).ok())
+    {
+        Some(canonical) => verbatim_line_usage_kind(&canonical),
+        None => verbatim_line_usage_kind(line),
+    }
+}
+
+fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     let has_event_msg = EVENT_MSG_TYPE_FINDER.find(line).is_some();
     let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
     let has_thread_settings_applied =
@@ -853,6 +990,12 @@ fn codex_session_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String>
         }
         CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
     }
+}
+
+fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
+    let timestamp = codex_session_timestamp(value)?;
+    parse_ts_timestamp(&timestamp)?;
+    Some(timestamp)
 }
 
 fn parsed_model_is_missing(
@@ -1061,52 +1204,65 @@ fn non_empty_value_string(value: Option<&Value>) -> Option<String> {
     })
 }
 
-fn usage_from_result(value: &CodexLogEntry<'_>) -> Option<CodexRawUsage> {
-    value
-        .usage
-        .as_ref()
-        .copied()
-        .or_else(|| {
-            value
-                .data
-                .as_ref()
-                .and_then(|data| data.usage.as_ref().copied())
-        })
-        .or_else(|| {
-            value
-                .result
-                .as_ref()
-                .and_then(|result| result.usage.as_ref().copied())
-        })
-        .or_else(|| {
-            value
-                .response
-                .as_ref()
-                .and_then(|response| response.usage.as_ref().copied())
-        })
+fn usage_from_result(value: &CodexLogEntry<'_>) -> CodexUsageCandidate {
+    first_decoded_usage([
+        value.usage,
+        value
+            .data
+            .as_ref()
+            .map_or(CodexUsageCandidate::Missing, |data| data.usage),
+        value
+            .result
+            .as_ref()
+            .map_or(CodexUsageCandidate::Missing, |result| result.usage),
+        value
+            .response
+            .as_ref()
+            .map_or(CodexUsageCandidate::Missing, |response| response.usage),
+    ])
 }
 
-fn usage_from_result_value(value: &Value) -> Option<CodexRawUsage> {
-    usage_from_value(value.get("usage"))
-        .or_else(|| {
-            value
-                .get("data")
-                .and_then(|data| usage_from_value(data.get("usage")))
-        })
-        .or_else(|| {
-            value
-                .get("result")
-                .and_then(|result| usage_from_value(result.get("usage")))
-        })
-        .or_else(|| {
+fn usage_from_result_value(value: &Value) -> CodexUsageCandidate {
+    first_decoded_usage(
+        [
+            value.get("usage"),
+            value.get("data").and_then(|data| data.get("usage")),
+            value.get("result").and_then(|result| result.get("usage")),
             value
                 .get("response")
-                .and_then(|response| usage_from_value(response.get("usage")))
-        })
+                .and_then(|response| response.get("usage")),
+        ]
+        .into_iter()
+        .map(usage_from_value),
+    )
 }
 
-fn usage_from_value(value: Option<&Value>) -> Option<CodexRawUsage> {
-    serde_json::from_value(value?.clone()).ok()
+fn first_decoded_usage(
+    candidates: impl IntoIterator<Item = CodexUsageCandidate>,
+) -> CodexUsageCandidate {
+    let mut malformed = false;
+    for candidate in candidates {
+        match candidate {
+            decoded @ CodexUsageCandidate::Decoded(_) => return decoded,
+            CodexUsageCandidate::Malformed => malformed = true,
+            CodexUsageCandidate::Missing => {}
+        }
+    }
+    if malformed {
+        CodexUsageCandidate::Malformed
+    } else {
+        CodexUsageCandidate::Missing
+    }
+}
+
+fn usage_from_value(value: Option<&Value>) -> CodexUsageCandidate {
+    match value {
+        None | Some(Value::Null) => CodexUsageCandidate::Missing,
+        Some(value @ Value::Object(_)) => serde_json::from_value(value.clone())
+            .map(CodexUsageCandidate::Decoded)
+            .unwrap_or(CodexUsageCandidate::Malformed),
+        Some(_) => CodexUsageCandidate::Malformed,
+    }
 }
 
 fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
@@ -1304,22 +1460,26 @@ fn normalize_value_timestamp(value: Option<&Value>) -> Option<String> {
     )))
 }
 
-fn normalize_headless_codex_usage(value: &CodexLogEntry<'_>) -> Option<CodexRawUsage> {
-    let usage = normalize_codex_raw_usage(usage_from_result(value)?);
-    if usage.input_tokens == 0
-        && usage.cached_input_tokens == 0
-        && usage.cache_creation_tokens == 0
-        && usage.output_tokens == 0
-        && usage.reasoning_output_tokens == 0
-        && usage.total_tokens == 0
-    {
-        return None;
-    }
-    Some(usage)
+fn normalize_headless_codex_usage(
+    value: &CodexLogEntry<'_>,
+) -> std::result::Result<Option<CodexRawUsage>, ()> {
+    normalize_headless_usage_candidate(usage_from_result(value))
 }
 
-fn normalize_headless_codex_usage_value(value: &Value) -> Option<CodexRawUsage> {
-    let usage = normalize_codex_raw_usage(usage_from_result_value(value)?);
+fn normalize_headless_codex_usage_value(
+    value: &Value,
+) -> std::result::Result<Option<CodexRawUsage>, ()> {
+    normalize_headless_usage_candidate(usage_from_result_value(value))
+}
+
+fn normalize_headless_usage_candidate(
+    candidate: CodexUsageCandidate,
+) -> std::result::Result<Option<CodexRawUsage>, ()> {
+    let usage = match candidate {
+        CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
+        CodexUsageCandidate::Malformed => return Err(()),
+        CodexUsageCandidate::Missing => return Ok(None),
+    };
     if usage.input_tokens == 0
         && usage.cached_input_tokens == 0
         && usage.cache_creation_tokens == 0
@@ -1327,9 +1487,9 @@ fn normalize_headless_codex_usage_value(value: &Value) -> Option<CodexRawUsage> 
         && usage.reasoning_output_tokens == 0
         && usage.total_tokens == 0
     {
-        return None;
+        return Ok(None);
     }
-    Some(usage)
+    Ok(Some(usage))
 }
 
 fn file_modified_timestamp(path: &Path) -> String {
@@ -1411,6 +1571,68 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
         .cache_creation_tokens
         .min(usage.input_tokens.saturating_sub(usage.cached_input_tokens));
     usage
+}
+
+/// Classifies a rollout line that did not decode like every other JSONL
+/// source does. A rejected `token_count` still advances the cumulative
+/// baseline, so the next record's delta does not count its tokens again.
+fn record_decode_failure(
+    path: &Path,
+    line: u32,
+    content: &[u8],
+    error: serde_json::Error,
+    diagnostics: &Diagnostics,
+    previous_totals: Option<&mut Option<CodexRawUsage>>,
+) {
+    jsonl::record_decode_error(
+        content,
+        error,
+        path,
+        line,
+        !content.ends_with(b"\n"),
+        diagnostics,
+        Some(|value: &Value| {
+            let token_count = value.get("type").and_then(Value::as_str) == Some("event_msg")
+                && value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count");
+            if let Some(previous_totals) = previous_totals
+                && token_count
+                && let Some(total) = value.pointer("/payload/info/total_token_usage")
+                && let Ok(total) = serde_json::from_value::<CodexRawUsage>(total.clone())
+            {
+                *previous_totals = Some(total);
+            }
+            value.get("type").and_then(Value::as_str) == Some("token_usage_record")
+                || (token_count
+                    && value
+                        .pointer("/payload/info")
+                        .is_some_and(|info| !info.is_null()))
+        }),
+    );
+}
+
+struct RecordLocation<'a> {
+    path: &'a Path,
+    line: u32,
+    diagnostics: &'a Diagnostics,
+}
+impl RecordLocation<'_> {
+    fn invalid_usage(&self, detail: &'static str) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            self.line,
+            SkipKind::InvalidData,
+            detail,
+        ));
+    }
+
+    fn invalid_timestamp(&self) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            self.line,
+            SkipKind::InvalidTimestamp,
+            "invalid usage timestamp",
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -1637,6 +1859,55 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_usage_lines_whose_markers_are_spelled_with_escapes() {
+        for (line, kind) in [
+            (
+                br#"{"type":"turn\u005fcontext","payload":{}}"#.as_slice(),
+                CodexLineKind::Session,
+            ),
+            (
+                br#"{"type":"event_msg","payload":{"type":"token\u005fcount"}}"#.as_slice(),
+                CodexLineKind::Session,
+            ),
+            (
+                br#"{"type":"compact\u0065d","payload":{}}"#.as_slice(),
+                CodexLineKind::Session,
+            ),
+            (
+                br#"{"type":"turn.completed","us\u0061ge":{"input_tokens":1}}"#.as_slice(),
+                CodexLineKind::Headless,
+            ),
+        ] {
+            assert_eq!(
+                codex_line_usage_kind(line),
+                Some(kind),
+                "{}",
+                String::from_utf8_lossy(line)
+            );
+        }
+        assert_eq!(
+            codex_line_usage_kind(
+                br#"{"type":"response_item","payload":{"text":"a\nb \u001b[1m"}}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn loads_token_counts_whose_types_are_spelled_with_escapes() {
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                r#"{"type":"turn\u005fcontext","payload":{"model":"gpt-5-mini"}}"#,
+                r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event\u005fmsg","payload":{"type":"token\u005fcount","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
+            ].join("\n"),
+        });
+        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].total_tokens, 120);
+        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
+    }
+
+    #[test]
     fn loads_token_counts_with_spaces_after_type_colons() {
         let fixture = fs_fixture!({
             "session.jsonl": [
@@ -1673,5 +1944,157 @@ mod tests {
         assert_eq!(events[1].cached_input_tokens, 200);
         assert_eq!(events[1].model.as_deref(), Some("gpt-5"));
         assert!(events[1].is_fallback_model);
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use ccusage_test_support::Fixture;
+
+    #[test]
+    fn a_rollout_removed_after_discovery_is_noted_not_skipped() {
+        let fixture = Fixture::new();
+        let path = fixture.path("session.jsonl");
+        let diagnostics = Diagnostics::new("codex");
+
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        let debug = crate::cli::SharedArgs {
+            debug: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug),
+            [format!(
+                "codex: {}: removed after discovery, read as absent",
+                path.display()
+            )]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_sibling_encoding_of_a_removed_rollout_is_a_skip() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = Fixture::new();
+        let path = fixture.path("session.jsonl");
+        let compressed = fixture.write_file("session.jsonl.zst", "rollout");
+        fs::set_permissions(&compressed, fs::Permissions::from_mode(0o000)).unwrap();
+        let diagnostics = Diagnostics::new("codex");
+
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+        fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        let warnings = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(&format!("{}: rollout open failed", compressed.display())),
+            "{warnings}"
+        );
+    }
+
+    #[test]
+    fn a_rollout_line_still_being_written_is_not_a_skip() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file(
+            "session.jsonl",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_tok"#,
+        );
+        let diagnostics = Diagnostics::new("codex");
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn malformed_usage_lines_skip_the_same_whether_or_not_a_marker_is_escaped() {
+        for malformed in [
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","note":"compact\u0065d","info":{"secret":"#,
+        ] {
+            let fixture = Fixture::new();
+            let path = fixture.write_file(
+                "session.jsonl",
+                [
+                    malformed,
+                    r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+                ]
+                .join("\n"),
+            );
+            let diagnostics = Diagnostics::new("codex");
+            visit_codex_session_file_with_diagnostics(
+                fixture.root(),
+                &path,
+                None,
+                |_| Ok(()),
+                &diagnostics,
+            )
+            .unwrap();
+
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{malformed}");
+        }
+    }
+
+    #[test]
+    fn nonusage_and_suppressed_session_records_stay_quiet() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("session.jsonl", [
+            r#"{"type":"turn_context","timestamp":{},"payload":{"model":"SECRET_CANARY"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0}}}}"#,
+        ].join("\n"));
+        let diagnostics = Diagnostics::new("codex");
+        let mut events = Vec::new();
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |event| {
+                events.push(event);
+                Ok(())
+            },
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(events.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+        // Like every JSONL source, a selected record that does not decode and
+        // carries no usage is listed only under `--debug`.
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+        let _log_level = ccusage_test_support::EnvVarGuard::set("LOG_LEVEL", "1");
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs::default())
+                .is_empty()
+        );
     }
 }

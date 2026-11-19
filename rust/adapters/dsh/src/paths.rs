@@ -4,7 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Result, collect_files_matching};
+use ccusage_adapter_common::collect_files_matching;
+
+use crate::{Diagnostics, Result};
 
 pub(super) const DSH_HOME_ENV: &str = "DSH_HOME";
 const DSH_HOME_DIR_NAME: &str = ".dsh";
@@ -44,7 +46,7 @@ fn roots() -> Vec<PathBuf> {
 /// dsh keeps each format generation as its own immutable file and leaves the
 /// older ones behind after migrating a session, so reading every generation
 /// would count the same requests more than once.
-pub(super) fn discover_session_files() -> Result<Vec<PathBuf>> {
+pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in roots() {
         let mut newest_by_dir = BTreeMap::<PathBuf, (u32, PathBuf)>::new();
@@ -53,6 +55,7 @@ pub(super) fn discover_session_files() -> Result<Vec<PathBuf>> {
             &root.join(DSH_SESSIONS_DIR_NAME),
             &|path| session_generation(path).is_some(),
             &mut candidates,
+            diagnostics,
         );
         for file in candidates {
             let (Some(generation), Some(dir)) = (session_generation(&file), file.parent()) else {
@@ -125,7 +128,7 @@ mod tests {
         let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
 
         assert_eq!(
-            discover_session_files().unwrap(),
+            discover_session_files(&Diagnostics::new("dsh")).unwrap(),
             vec![
                 fixture.path("sessions/--home-u-proj--/s1/session.v4.jsonl.zstd"),
                 fixture.path("sessions/--home-u-proj--/s2/session.jsonl"),
@@ -146,7 +149,7 @@ mod tests {
         let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, &value);
 
         assert_eq!(
-            discover_session_files().unwrap(),
+            discover_session_files(&Diagnostics::new("dsh")).unwrap(),
             vec![
                 first.path("sessions/p/a/session.v4.jsonl"),
                 second.path("sessions/p/b/session.v4.jsonl"),

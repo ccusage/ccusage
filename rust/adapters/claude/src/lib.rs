@@ -1,15 +1,20 @@
-use ccusage_adapter_common::{chunk_file_indexes_by_size, read_files_parallel};
+use ccusage_adapter_common::{
+    chunk_file_indexes_by_size, read_files_parallel, source::ProgressOwner,
+};
 use ccusage_core::*;
 
 mod daily;
+mod diagnostics;
 mod paths;
+mod source;
+
+pub use source::SOURCE;
 
 use std::{
     collections::HashSet,
-    fs,
     hash::{Hash, Hasher},
     path::Path,
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -23,7 +28,7 @@ use crate::{
     UsageSummary, calculate_cost, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
-    fast::{FxHashMap, byte_lines, suffix_string},
+    fast::{FxHashMap, LinePrefilter, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
     progress, stored_cost_for_mode,
 };
@@ -52,13 +57,35 @@ pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result
 
 /// Loads every deduplicated Claude usage entry like [`load_entries`], keeping
 /// the sessions of the copies dedup merged into them.
-pub fn load_deduped_entries(
+pub(crate) fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        load_entries_inner(shared, project_filter, false)
-    })
+    let diagnostics = Diagnostics::new("claude");
+    let loaded = load_deduped_entries_with_progress(
+        shared,
+        project_filter,
+        ProgressOwner::Source,
+        &diagnostics,
+    )?;
+    diagnostics.emit(shared);
+    Ok(loaded)
+}
+
+/// Loads deduplicated entries with progress owned by the caller or source.
+pub(crate) fn load_deduped_entries_with_progress(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    owner: ProgressOwner,
+    diagnostics: &Diagnostics,
+) -> Result<DedupedEntries> {
+    let load = || load_entries_inner(shared, project_filter, false, diagnostics);
+    match owner {
+        ProgressOwner::Source => {
+            progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
+        }
+        ProgressOwner::Caller => load(),
+    }
 }
 
 /// Deduplicated Claude entries plus the main-thread copies dedup merged into
@@ -66,7 +93,7 @@ pub fn load_deduped_entries(
 /// a turn.
 #[derive(Default)]
 pub struct DedupedEntries {
-    pub entries: Vec<LoadedEntry>,
+    entries: Vec<LoadedEntry>,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -74,10 +101,7 @@ pub struct DedupedEntries {
 impl DedupedEntries {
     /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. As in
     /// the daily loader, a merged copy's session counts on the day its survivor does.
-    pub fn main_thread_session_days(
-        &self,
-        is_counted: impl Fn(&LoadedEntry) -> bool,
-    ) -> SessionDays {
+    fn main_thread_session_days(&self, is_counted: impl Fn(&LoadedEntry) -> bool) -> SessionDays {
         self.entries
             .iter()
             .map(|entry| (loaded_entry_session_id(entry), entry))
@@ -109,8 +133,20 @@ pub fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<Vec<LoadedEntry>> {
+    let diagnostics = Diagnostics::new("claude");
+    let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
+    diagnostics.emit(shared);
+    Ok(entries)
+}
+
+/// Loads bounded entries into caller-owned diagnostics without emitting warnings.
+pub fn load_entries_since_with_diagnostics(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Result<Vec<LoadedEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        load_entries_inner(shared, project_filter, true)
+        load_entries_inner(shared, project_filter, true, diagnostics)
     })
     .map(|deduped| deduped.entries)
 }
@@ -122,18 +158,25 @@ pub fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, |_| {
-            SessionDays::default()
-        })
-    })
-    .map(|daily| daily.summaries)
+    let diagnostics = Diagnostics::new("claude");
+    let daily =
+        progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+            daily::load_daily_summaries_inner(
+                shared,
+                project_filter,
+                group_by_project,
+                |_| SessionDays::default(),
+                &diagnostics,
+            )
+        })?;
+    diagnostics.emit(shared);
+    Ok(daily.summaries)
 }
 
 /// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
 /// runs Claude Code, such as OpenCode's `claude-agent` provider, can skip its
 /// copy of the turns this source counts.
-pub type SessionDays = HashSet<(Arc<str>, String)>;
+pub(crate) type SessionDays = HashSet<(Arc<str>, String)>;
 
 /// Takes `(session ID, date, is_sidechain)` per entry and leaves out sidechain
 /// (subagent) usage, which a wrapping tool does not record. Dedups the borrowed
@@ -151,39 +194,47 @@ fn main_thread_session_days<'a>(
 }
 
 /// Daily Claude summaries plus whether any Claude usage exists at all.
-pub struct DailySummaries {
+pub(crate) struct DailySummaries {
     /// Summaries, possibly missing dates before `since`.
-    pub summaries: Vec<UsageSummary>,
+    summaries: Vec<UsageSummary>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
-    pub detected: bool,
+    detected: bool,
     /// Session days of the summarized main-thread entries, possibly missing
     /// dates before `since`.
-    pub session_days: SessionDays,
+    session_days: SessionDays,
 }
 
-/// Loads daily Claude summaries like [`load_daily_summaries`], reports
-/// whether Claude usage was detected independently of the date window, and
-/// collects the summarized session days.
-pub fn load_daily_summaries_with_detection(
+/// Loads daily summaries with progress owned by the caller or source.
+pub(crate) fn load_daily_summaries_with_detection_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
+    owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+    let load = || {
         daily::load_daily_summaries_inner(
             shared,
             project_filter,
             group_by_project,
             daily::session_days,
+            diagnostics,
         )
-    })
+    };
+    match owner {
+        ProgressOwner::Source => {
+            progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
+        }
+        ProgressOwner::Caller => load(),
+    }
 }
 
 fn load_entries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     skip_files_before_since: bool,
+    diagnostics: &Diagnostics,
 ) -> Result<DedupedEntries> {
     let paths = claude_paths()?;
     debug_log(
@@ -197,7 +248,7 @@ fn load_entries_inner(
                 .join(", ")
         ),
     );
-    let files = usage_files(&paths, project_filter);
+    let files = usage_files(&paths, project_filter, diagnostics);
     debug_log(shared, format!("Found {} JSONL usage files", files.len()));
     let files = if skip_files_before_since {
         split_files_before_since(files, shared, utc_now()).kept
@@ -229,7 +280,7 @@ fn load_entries_inner(
     let tz = parse_tz(shared.timezone.as_deref());
     let mode = shared.mode;
     let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file(file, tz.as_ref(), mode, pricing.as_ref())
+        read_usage_file_with_diagnostics(file, tz.as_ref(), mode, pricing.as_ref(), diagnostics)
     });
     let loaded_entry_count = loaded_files
         .iter()
@@ -595,11 +646,22 @@ fn push_deduped_session_alias(
     }
 }
 
+#[cfg(test)]
 fn read_usage_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+) -> LoadedFile {
+    read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+}
+
+fn read_usage_file_with_diagnostics(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
 ) -> LoadedFile {
     let project: Arc<str> = Arc::from(extract_project(path));
     let (session_id, project_path) = extract_session_parts(path);
@@ -609,23 +671,28 @@ fn read_usage_file(
         timestamp: None,
         entries: Vec::new(),
     };
-    let Ok(content) = fs::read(path) else {
-        return loaded_file;
-    };
+    let content = diagnostics::read_content(path, diagnostics);
 
-    let usage_marker = memmem::Finder::new(br#""usage":{"#);
-    for line in byte_lines(&content) {
-        if usage_marker.find(line).is_none() {
+    let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
+    for (index, line) in byte_lines(&content).enumerate() {
+        if !usage_marker.matches(line) {
             continue;
         }
-        let Some(data) = deserialize_usage_line::<UsageEntry>(line) else {
-            continue;
+        let data = match deserialize_usage_line::<UsageEntry>(line) {
+            Ok(data) => data,
+            Err(Rejection::NullContract) => continue,
+            Err(Rejection::Malformed) => {
+                diagnostics::rejected(path, &content, index, line, diagnostics, false);
+                continue;
+            }
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
+            diagnostics::invalid_timestamp(path, index, diagnostics);
             continue;
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
         if !is_valid_usage_entry(&data) {
+            diagnostics::rejected(path, &content, index, line, diagnostics, false);
             continue;
         }
         let date = format_date_tz(timestamp, tz);
@@ -743,7 +810,9 @@ pub(crate) struct AdvisorUsage {
 }
 
 pub(crate) fn advisor_usages_from_line(line: &[u8]) -> Vec<AdvisorUsage> {
-    if memmem::find(line, br#""advisor_message""#).is_none() {
+    static ADVISOR_MARKER: LazyLock<LinePrefilter> =
+        LazyLock::new(|| LinePrefilter::all(&[br#""advisor_message""#]));
+    if !ADVISOR_MARKER.matches(line) {
         return Vec::new();
     }
     let Ok(envelope) = serde_json::from_slice::<UsageIterationsEnvelope>(line) else {
@@ -836,19 +905,34 @@ fn has_unsupported_null_field(line: &[u8]) -> bool {
     unsupported
 }
 
+/// Why [`deserialize_usage_line`] did not return a record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Rejection {
+    /// A member the nullable-field contract guards is `null`. Claude Code
+    /// writes such lines itself, such as `<synthetic>` records with
+    /// `"speed":null`, so skipping one is by design rather than a sign of bad
+    /// input.
+    NullContract,
+    /// The line did not decode as the record type.
+    Malformed,
+}
+
 /// Deserializes a transcript line while enforcing Claude's nullable-field contract.
 ///
 /// Every other rejection, such as a duplicate known field, comes from the typed parse
 /// of the raw line, so a line is loaded or skipped the same way whether or not it
 /// also needed the null check.
-pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option<T> {
+pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
+    line: &[u8],
+) -> std::result::Result<T, Rejection> {
     if may_have_unsupported_null_field(line) {
-        let root = serde_json::from_slice::<serde_json::Value>(line).ok()?;
+        let root =
+            serde_json::from_slice::<serde_json::Value>(line).map_err(|_| Rejection::Malformed)?;
         if has_unsupported_null_field_in_value(&root) {
-            return None;
+            return Err(Rejection::NullContract);
         }
     }
-    serde_json::from_slice(line).ok()
+    serde_json::from_slice(line).map_err(|_| Rejection::Malformed)
 }
 
 /// Whether a `null` in `line` could be the value of a member that
@@ -1013,6 +1097,38 @@ mod tests {
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
+    pub(crate) const SYNTHETIC_NULL_SPEED_LINE: &str = r#"{"timestamp":"2026-01-02T10:00:01.000Z","sessionId":"session-a","isApiErrorMessage":true,"message":{"id":"msg-synthetic","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"service_tier":null,"speed":null}}}"#;
+
+    #[test]
+    fn null_contract_rejections_claude_code_writes_stay_quiet() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+                SYNTHETIC_NULL_SPEED_LINE,
+            ]
+            .join("\n"),
+        });
+        let diagnostics = ccusage_core::Diagnostics::new("claude");
+
+        let loaded = super::read_usage_file_with_diagnostics(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(
+            diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .is_empty()
+        );
+    }
+
     #[test]
     fn limits_usage_file_discovery_to_requested_project() {
         let fixture = fs_fixture!({
@@ -1020,7 +1136,11 @@ mod tests {
             "projects/project-b/session-b/b.jsonl": "{}",
         });
 
-        let files = usage_files(&[fixture.root().to_path_buf()], Some("project-a"));
+        let files = usage_files(
+            &[fixture.root().to_path_buf()],
+            Some("project-a"),
+            &ccusage_core::Diagnostics::new("claude"),
+        );
 
         assert_eq!(files.len(), 1);
         assert!(files[0].to_string_lossy().contains("project-a"));
@@ -1033,7 +1153,11 @@ mod tests {
             "projects/project-b/session-b/b.jsonl": "{}",
         });
 
-        let files = usage_files(&[fixture.root().to_path_buf()], Some("project-a/session-a"));
+        let files = usage_files(
+            &[fixture.root().to_path_buf()],
+            Some("project-a/session-a"),
+            &ccusage_core::Diagnostics::new("claude"),
+        );
 
         assert_eq!(files.len(), 2);
     }
@@ -1235,11 +1359,11 @@ null,"usage":{"input_tokens":1}}}"#
             );
 
             assert!(
-                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_none(),
+                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_err(),
                 "{duplicate_known}"
             );
             assert!(
-                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_some(),
+                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_ok(),
                 "{duplicate_unknown}"
             );
         }
@@ -1250,7 +1374,7 @@ null,"usage":{"input_tokens":1}}}"#
         assert!(deserialize_usage_line::<UsageEntry>(
             br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
         )
-        .is_none());
+        .is_err());
     }
 
     /// The repro line from #1710 loads as one Fable 5.1 entry with its own token counts.
@@ -1302,6 +1426,24 @@ null,"usage":{"input_tokens":1}}}"#
         assert_eq!(loaded.entries[0].cost, 1.23);
         assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
         assert_eq!(loaded.entries[1].cost, 26.0);
+    }
+
+    #[test]
+    fn reads_usage_and_advisor_iterations_under_escaped_keys() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg-parent","model":"main-model","us\u0061ge":{"input_tokens":1,"output_tokens":2,"iterations":[{"type":"advisor\u005fmessage","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"requestId":"req-parent"}"#,
+        });
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 2);
+        assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
     }
 
     #[test]

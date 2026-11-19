@@ -1,13 +1,12 @@
 mod loader;
 mod report;
+mod sources;
 mod types;
 
-use ccusage_adapter_codex::CodexGroup;
 #[cfg(test)]
-use ccusage_adapter_codex::CodexModelUsage;
-use ccusage_adapter_common::{
-    filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
-};
+use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+#[cfg(test)]
+use ccusage_adapter_common::filter_loaded_entries_by_date;
 use ccusage_core::*;
 
 mod adapter {
@@ -48,7 +47,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
         let result = loader::load_sections(&sections, &shared, &sources, start_of_week)?;
-        print_warnings(&result.warnings);
+        emit_diagnostics(&result.diagnostics, &shared, &sources);
         if wants_json(&shared) {
             return report::print_sections_report_json(
                 &result.sections,
@@ -69,7 +68,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         return Ok(());
     }
     let result = loader::load_rows(kind, &shared, &sources, start_of_week)?;
-    print_warnings(&result.warnings);
+    emit_diagnostics(&result.diagnostics, &shared, &sources);
     if wants_json(&shared) {
         let output = report::report_json_with_agents(&result.rows, kind, include_agents);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
@@ -80,13 +79,26 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 /// Runs `ccusage opencode`, leaving Claude Agent turns to the Claude source
 /// unless `--include-claude-agent` keeps them.
 pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
-    let entries =
+    let (entries, claude_diagnostics) =
         loader::load_opencode_entries(&args.shared, args.kind, args.include_claude_agent)?;
+    if let Some(diagnostics) = claude_diagnostics {
+        diagnostics.emit(&args.shared);
+    }
     adapter::opencode::print_report(&args, entries)
 }
 
-fn print_warnings(warnings: &[String]) {
-    warnings.iter().for_each(|warning| eprintln!("{warning}"));
+/// Prints each source's skips with the options that source loaded with.
+fn emit_diagnostics(
+    diagnostics: &[Diagnostics],
+    shared: &cli::SharedArgs,
+    sources: &std::collections::BTreeMap<String, cli::SourceArgs>,
+) {
+    for diagnostics in diagnostics {
+        let shared = sources
+            .get(diagnostics.source())
+            .map_or(shared, |source| &source.shared);
+        diagnostics.emit(shared);
+    }
 }
 
 fn requested_sections(
@@ -108,6 +120,8 @@ fn requested_sections(
 }
 
 #[cfg(test)]
+use ccusage_adapter_common::rows::UnifiedRow;
+#[cfg(test)]
 use loader::{aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections};
 #[cfg(test)]
 use report::{
@@ -115,7 +129,7 @@ use report::{
     sections_report_json,
 };
 #[cfg(test)]
-use types::{AgentLoadSpec, AgentRows, AllRow};
+use types::{AgentLoadSpec, AgentRows};
 
 #[cfg(test)]
 mod tests;

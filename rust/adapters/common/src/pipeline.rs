@@ -1,0 +1,460 @@
+//! The order every [`EntrySource`] report runs in: pricing, load, detection,
+//! date window, summarize, then sort and render for a focused report or row
+//! conversion for the unified one.
+//!
+//! Both entry points share the stages up to summarizing, so a focused report
+//! is the unified pipeline for one source: a window or detection rule cannot
+//! be applied in one and missed in the other.
+
+use ccusage_core::{
+    Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
+    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
+    log_level, parse_ts_timestamp, print_json_or_jq,
+    progress::{UsageLoadAgent, track_usage_load},
+    sort_summaries, wants_json,
+};
+
+use crate::{
+    rows::summary_rows,
+    source::{
+        Detection, EntrySource, LoadContext, PricingSupply, ProgressOwner, SourceOptions,
+        SourceRows, UnifiedRequest, WindowMode,
+    },
+};
+
+/// Runs `ccusage <agent> <kind>` for an [`EntrySource`].
+pub(crate) fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> Result<()> {
+    let rows = focused_rows(source, &args)?;
+    let shared = &args.shared;
+    if wants_json(shared) {
+        return print_json_or_jq(
+            source.report_json(&rows, args.kind),
+            shared.jq.as_deref(),
+            shared.no_cost,
+        );
+    }
+    source.print_table(&rows, args.kind, shared)
+}
+
+/// The rows of a focused report, sorted, before they are rendered. Prints what
+/// the load skipped to stderr.
+pub(crate) fn focused_rows(
+    source: &dyn EntrySource,
+    args: &AgentCommandArgs,
+) -> Result<Vec<UsageSummary>> {
+    let descriptor = source.descriptor();
+    let shared = &args.shared;
+    let pricing = (descriptor.pricing == PricingSupply::Pipeline).then(|| load_pricing(shared));
+    let window = ReportWindow::from_shared(shared);
+    let diagnostics = Diagnostics::new(descriptor.id);
+    let cx = LoadContext {
+        shared,
+        kind: args.kind,
+        window: &window,
+        pricing: pricing.as_ref(),
+        options: SourceOptions::from_command(args),
+        diagnostics: &diagnostics,
+    };
+    let entries = load(source, &cx, ProgressOwner::Source)?;
+    diagnostics.emit(shared);
+    let mut rows = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
+        source.summarize(entries, kind)
+    })?;
+    sort_summaries(&mut rows, &shared.order, |row| source.sort_key(row));
+    Ok(rows)
+}
+
+/// Loads the rows an [`EntrySource`] contributes to the unified report.
+pub(crate) fn unified_rows(
+    source: &dyn EntrySource,
+    request: &UnifiedRequest<'_>,
+) -> Result<SourceRows> {
+    let descriptor = source.descriptor();
+    let shared = request.shared;
+    let own_pricing = (descriptor.pricing == PricingSupply::Pipeline && request.pricing.is_none())
+        .then(|| load_pricing(shared));
+    let window = ReportWindow::from_shared(shared);
+    let diagnostics = Diagnostics::new(descriptor.id);
+    let cx = LoadContext {
+        shared,
+        kind: request.kind,
+        window: &window,
+        pricing: request.pricing.or(own_pricing.as_ref()),
+        options: request.options,
+        diagnostics: &diagnostics,
+    };
+    let entries = load(source, &cx, request.progress)?;
+    let detected = detect(descriptor.detection, &entries);
+    let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
+        source.summarize_unified(entries, kind)
+    })?;
+    Ok(SourceRows {
+        rows: summary_rows(descriptor.id, summaries, descriptor.unified_project_path),
+        detected,
+        diagnostics,
+        claude_counted: None,
+    })
+}
+
+fn load_pricing(shared: &SharedArgs) -> PricingMap {
+    PricingMap::load_with_overrides(
+        shared.offline,
+        log_level() != Some(0),
+        shared.pricing_overrides.iter(),
+    )
+}
+
+fn load(
+    source: &dyn EntrySource,
+    cx: &LoadContext<'_>,
+    progress: ProgressOwner,
+) -> Result<Vec<LoadedEntry>> {
+    match progress {
+        ProgressOwner::Source => track_usage_load(
+            UsageLoadAgent(source.descriptor().label),
+            cx.shared.json,
+            || source.load_entries(cx),
+        ),
+        ProgressOwner::Caller => source.load_entries(cx),
+    }
+}
+
+/// Decided on the entries as loaded, before the window drops any, so asking
+/// for a range without usage does not make the source look absent.
+fn detect(detection: Detection, entries: &[LoadedEntry]) -> bool {
+    match detection {
+        Detection::NonEmpty => !entries.is_empty(),
+        Detection::NonEmptyOrHasData(has_data) => !entries.is_empty() || has_data(),
+    }
+}
+
+fn summarize_in_window(
+    mode: WindowMode,
+    mut entries: Vec<LoadedEntry>,
+    cx: &LoadContext<'_>,
+    summarize: impl FnOnce(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
+) -> Result<Vec<UsageSummary>> {
+    if mode == WindowMode::SessionLastActivity && cx.kind == AgentReportKind::Session {
+        let mut rows = summarize(&entries, cx.kind)?;
+        retain_sessions_last_active_in(&mut rows, cx.window);
+        return Ok(rows);
+    }
+    retain_entries_in(&mut entries, cx.window);
+    summarize(&entries, cx.kind)
+}
+
+pub(crate) fn retain_entries_in(entries: &mut Vec<LoadedEntry>, window: &ReportWindow) {
+    if window.is_unbounded() {
+        return;
+    }
+    entries.retain(|entry| window.contains_date(&entry.date));
+}
+
+pub(crate) fn retain_sessions_last_active_in(rows: &mut Vec<UsageSummary>, window: &ReportWindow) {
+    if window.is_unbounded() {
+        return;
+    }
+    rows.retain(|row| {
+        row.last_activity
+            .as_deref()
+            .and_then(parse_ts_timestamp)
+            .is_some_and(|timestamp| window.contains_timestamp(timestamp))
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeMap, sync::atomic::Ordering};
+
+    use serde_json::json;
+
+    use ccusage_core::{
+        PricingMap,
+        cli::{AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder},
+    };
+
+    use super::{focused_rows, unified_rows};
+    use crate::{
+        source::{
+            Detection, EntryDescriptor, ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
+            WindowMode,
+        },
+        test_source::{Fake, descriptor, entries, shared},
+    };
+
+    fn command(kind: AgentReportKind, shared: SharedArgs) -> AgentCommandArgs {
+        AgentCommandArgs {
+            shared,
+            kind,
+            session_id: None,
+            sections: None,
+            by_agent: false,
+            pi_path: None,
+            open_claw_path: None,
+            codex_speed: Default::default(),
+            include_claude_agent: false,
+            start_of_week: ccusage_core::cli::WeekDay::Sunday,
+            sources: BTreeMap::new(),
+        }
+    }
+
+    fn request(kind: AgentReportKind, shared: &SharedArgs) -> UnifiedRequest<'_> {
+        UnifiedRequest {
+            kind,
+            shared,
+            options: SourceOptions::default(),
+            pricing: None,
+            progress: ProgressOwner::Caller,
+            multi_source_driver: true,
+            claude_counted: None,
+        }
+    }
+
+    fn focused_tokens(
+        source: &Fake,
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Vec<(String, u64)> {
+        focused_rows(source, &command(kind, shared.clone()))
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    ccusage_core::summary_period(&row).to_string(),
+                    row.input_tokens,
+                )
+            })
+            .collect()
+    }
+
+    fn unified_tokens(
+        source: &Fake,
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Vec<(String, u64)> {
+        unified_rows(source, &request(kind, shared))
+            .unwrap()
+            .rows
+            .into_iter()
+            .map(|row| (row.period, row.input_tokens))
+            .collect()
+    }
+
+    #[test]
+    fn both_reports_drop_entries_outside_the_window() {
+        let source = Fake::new(descriptor(), entries());
+        let shared = shared(Some("20260102"), Some("20260102"));
+        let expected = [("2026-01-02".to_string(), 100)];
+
+        assert_eq!(
+            focused_tokens(&source, AgentReportKind::Daily, &shared),
+            expected
+        );
+        assert_eq!(
+            unified_tokens(&source, AgentReportKind::Daily, &shared),
+            expected
+        );
+    }
+
+    #[test]
+    fn entries_mode_cuts_a_session_at_the_window_edge() {
+        let source = Fake::new(descriptor(), entries());
+        let shared = shared(Some("20260102"), Some("20260102"));
+        let expected = [("long".to_string(), 100)];
+
+        assert_eq!(
+            focused_tokens(&source, AgentReportKind::Session, &shared),
+            expected
+        );
+        assert_eq!(
+            unified_tokens(&source, AgentReportKind::Session, &shared),
+            expected
+        );
+    }
+
+    #[test]
+    fn last_activity_mode_keeps_whole_sessions_that_end_in_the_window() {
+        let source = Fake::new(
+            EntryDescriptor {
+                window: WindowMode::SessionLastActivity,
+                ..descriptor()
+            },
+            entries(),
+        );
+        let ends_inside = shared(Some("20260102"), None);
+        let ends_after = shared(None, Some("20260102"));
+
+        for (shared, expected) in [
+            (&ends_inside, vec![("long".to_string(), 1110)]),
+            (&ends_after, vec![("early".to_string(), 1)]),
+        ] {
+            assert_eq!(
+                focused_tokens(&source, AgentReportKind::Session, shared),
+                expected
+            );
+            assert_eq!(
+                unified_tokens(&source, AgentReportKind::Session, shared),
+                expected
+            );
+        }
+        assert_eq!(
+            unified_tokens(&source, AgentReportKind::Daily, &ends_inside),
+            [
+                ("2026-01-02".to_string(), 100),
+                ("2026-01-03".to_string(), 1000)
+            ],
+            "other kinds still filter entries"
+        );
+    }
+
+    #[test]
+    fn focused_rows_follow_the_requested_order() {
+        let source = Fake::new(descriptor(), entries());
+        let shared = SharedArgs {
+            order: SortOrder::Desc,
+            ..shared(None, None)
+        };
+
+        let periods = focused_tokens(&source, AgentReportKind::Daily, &shared)
+            .into_iter()
+            .map(|(period, _)| period)
+            .collect::<Vec<_>>();
+
+        assert_eq!(periods, ["2026-01-03", "2026-01-02", "2026-01-01"]);
+    }
+
+    #[test]
+    fn detection_ignores_the_window() {
+        let source = Fake::new(descriptor(), entries());
+        let shared = shared(Some("20300101"), None);
+
+        let rows = unified_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
+
+        assert!(rows.rows.is_empty());
+        assert!(rows.detected);
+    }
+
+    #[test]
+    fn detection_can_fall_back_to_a_probe_of_the_source() {
+        let shared = shared(None, None);
+        let request = request(AgentReportKind::Daily, &shared);
+        let absent = Fake::new(descriptor(), Vec::new());
+        let narrowed_by_its_loader = Fake::new(
+            EntryDescriptor {
+                window: WindowMode::LoaderApplied,
+                detection: Detection::NonEmptyOrHasData(|| true),
+                ..descriptor()
+            },
+            Vec::new(),
+        );
+
+        assert!(!unified_rows(&absent, &request).unwrap().detected);
+        assert!(!absent.has_data());
+        assert!(
+            unified_rows(&narrowed_by_its_loader, &request)
+                .unwrap()
+                .detected
+        );
+        assert!(narrowed_by_its_loader.has_data());
+    }
+
+    #[test]
+    fn pricing_reaches_only_the_loaders_that_ask_the_pipeline_for_it() {
+        let shared = shared(None, None);
+        let prices_itself = Fake::new(descriptor(), entries());
+        let priced_by_pipeline = Fake::new(EntryDescriptor::standard("fake", "Fake"), entries());
+        let pricing = PricingMap::default();
+
+        focused_rows(
+            &prices_itself,
+            &command(AgentReportKind::Daily, shared.clone()),
+        )
+        .unwrap();
+        assert!(!prices_itself.saw_pricing.load(Ordering::Relaxed));
+
+        focused_rows(
+            &priced_by_pipeline,
+            &command(AgentReportKind::Daily, shared.clone()),
+        )
+        .unwrap();
+        assert!(priced_by_pipeline.saw_pricing.load(Ordering::Relaxed));
+
+        priced_by_pipeline
+            .saw_pricing
+            .store(false, Ordering::Relaxed);
+        unified_rows(
+            &priced_by_pipeline,
+            &UnifiedRequest {
+                pricing: Some(&pricing),
+                ..request(AgentReportKind::Daily, &shared)
+            },
+        )
+        .unwrap();
+        assert!(priced_by_pipeline.saw_pricing.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn unified_rows_carry_what_the_load_skipped() {
+        let source = Fake {
+            skips_a_unit: true,
+            ..Fake::new(descriptor(), entries())
+        };
+        // `--debug` lists the unit whatever LOG_LEVEL the test runs under.
+        let shared = SharedArgs {
+            debug: true,
+            ..shared(None, None)
+        };
+
+        let rows = unified_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
+
+        assert_eq!(rows.rows.len(), 3, "the rest of the source still reports");
+        let warnings = rows.diagnostics.warnings(&shared);
+        assert!(
+            warnings
+                .contains(&"fake: unreadable: /data/broken.json: permission denied".to_string()),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn unified_session_rows_carry_the_project_path_on_request() {
+        let shared = shared(None, None);
+        let request = request(AgentReportKind::Session, &shared);
+        let with_path = Fake::new(
+            EntryDescriptor {
+                unified_project_path: true,
+                ..descriptor()
+            },
+            entries(),
+        );
+        let without_path = Fake::new(descriptor(), entries());
+
+        let project_path = |source: &Fake| {
+            unified_rows(source, &request).unwrap().rows[0]
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("projectPath").cloned())
+        };
+
+        assert_eq!(project_path(&with_path), Some(json!("project")));
+        assert_eq!(project_path(&without_path), None);
+    }
+
+    #[test]
+    fn an_entry_source_is_a_usage_source() {
+        let source = Fake::new(descriptor(), entries());
+        let source: &dyn UsageSource = &source;
+
+        assert_eq!(source.id(), "fake");
+        assert_eq!(source.label(), "Fake");
+        assert_eq!(source.reports(), crate::source::STANDARD_REPORTS);
+        assert_eq!(
+            source
+                .unified_rows(&request(AgentReportKind::Daily, &shared(None, None)))
+                .unwrap()
+                .rows
+                .len(),
+            3
+        );
+    }
+}

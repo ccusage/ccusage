@@ -144,6 +144,17 @@ ccusage daily --debug
 ccusage daily --debug --debug-samples 10
 ```
 
+Skipped-input warnings summarize files or usage records left out of a report;
+healthy input continues to count. `--debug` adds a bounded sample of file paths
+and record locations, including usage lines that could not be decoded. JSON
+decoding details show the error category and location without echoing log
+contents. These diagnostics go to stderr, keeping JSON output on stdout.
+
+A log that ends part-way through a record is treated as still being written
+while it was modified within the last minute, and only `--debug` mentions it;
+the next run reads the record whole. A log left truncated longer than that, for
+example after an agent crash, is reported as invalid data.
+
 ### Configuration File
 
 Use a custom configuration file:

@@ -3,65 +3,40 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, collect_files_with_extension, debug_log,
-    parse_tz, read_files_parallel,
-};
+use ccusage_adapter_common::{collect_files_with_extension, read_units, source::LoadContext};
+
+use crate::{LoadedEntry, Result};
 
 use super::{parser, paths};
 
-pub fn load_entries(
-    shared: &SharedArgs,
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
     custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("pi-agent"),
-        shared.json,
-        || load_entries_inner(shared, custom_path, pricing),
-    )
-}
-
-fn load_entries_inner(
-    shared: &SharedArgs,
-    custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_paths(
+    pricing: Option<&crate::PricingMap>,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
+        &crate::SOURCE,
         shared,
-        paths::paths(custom_path)?,
+        ccusage_adapter_common::source::SourceOptions {
+            pi_path: custom_path,
+            ..ccusage_adapter_common::source::SourceOptions::default()
+        },
         pricing,
-        PiLoadScope::Default,
     )
+    .map(|(entries, _)| entries)
 }
 
-#[doc(hidden)]
-pub fn load_entries_for_store_path(
-    shared: &SharedArgs,
-    store_path: &str,
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, PiLoadScope::Default)
+}
+
+pub(crate) fn load_named_store_entries(
+    cx: &LoadContext<'_>,
+    store_paths: &[PathBuf],
     store_name: &str,
-    pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
-    load_entries_for_store_paths(
-        shared,
-        paths::named_store_paths(store_path)?,
-        store_name,
-        pricing,
-    )
-}
-
-pub fn load_entries_for_store_paths(
-    shared: &SharedArgs,
-    store_paths: Vec<PathBuf>,
-    store_name: &str,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_paths(
-        shared,
-        store_paths,
-        pricing,
-        PiLoadScope::Named { store_name },
-    )
+    load_entries_for_context(cx, store_paths, PiLoadScope::Named { store_name })
 }
 
 #[derive(Clone, Copy)]
@@ -77,29 +52,21 @@ impl<'a> PiLoadScope<'a> {
             Self::Named { store_name } => store_name,
         }
     }
-
-    fn debug_label(self) -> String {
-        match self {
-            Self::Default => "pi".to_string(),
-            Self::Named { store_name } => format!("pi-format store '{store_name}'"),
-        }
-    }
 }
 
-fn load_entries_from_paths(
-    shared: &SharedArgs,
-    paths: Vec<PathBuf>,
-    pricing: Option<&PricingMap>,
+fn load_entries_for_context(
+    cx: &LoadContext<'_>,
+    paths: &[PathBuf],
     scope: PiLoadScope<'_>,
 ) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
+    let shared = cx.shared;
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();
     for path in paths {
         let mut files = Vec::new();
-        collect_files_with_extension(&path, "jsonl", &mut files);
+        collect_files_with_extension(path, "jsonl", &mut files, cx.diagnostics);
         // pi-subagents writes derived debug transcripts under a
         // `subagent-artifacts/` directory inside the sessions tree. They are
         // pure copies of calls already recorded in the primary session files
@@ -111,35 +78,31 @@ fn load_entries_from_paths(
         // Read session files in parallel; the first-wins dedup runs sequentially
         // over the original file order so the surviving record per id matches the
         // single-threaded read.
-        let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-            let result = match scope {
-                PiLoadScope::Default => {
-                    parser::read_session_file_data(file, tz.as_ref(), shared.mode, pricing)
-                }
-                PiLoadScope::Named { store_name } => parser::read_session_file_data_for_store(
+        let loaded = read_units(
+            &files,
+            shared.single_thread,
+            cx.diagnostics,
+            |file| match scope {
+                PiLoadScope::Default => parser::read_session_file_data_with_diagnostics(
                     file,
-                    &path,
-                    tz.as_ref(),
+                    Some(cx.window.timezone()),
                     shared.mode,
-                    pricing,
-                    store_name,
+                    cx.pricing,
+                    cx.diagnostics,
                 ),
-            };
-            match result {
-                Ok(data) => Some(data),
-                Err(error) => {
-                    let label = scope.debug_label();
-                    debug_log(
-                        shared,
-                        format!(
-                            "Failed to read {label} session file {}: {error}",
-                            file.display()
-                        ),
-                    );
-                    None
+                PiLoadScope::Named { store_name } => {
+                    parser::read_session_file_data_for_store_with_diagnostics(
+                        file,
+                        path,
+                        Some(cx.window.timezone()),
+                        shared.mode,
+                        cx.pricing,
+                        store_name,
+                        cx.diagnostics,
+                    )
                 }
-            }
-        });
+            },
+        );
         discovered_files.extend(files.into_iter().map(|file| DiscoveredFile { path: file }));
         loaded_files.extend(loaded);
     }
@@ -326,10 +289,43 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::{CostMode, SharedArgs};
+    use crate::{
+        PricingMap,
+        cli::{CostMode, SharedArgs},
+    };
+    use ccusage_adapter_common::source::SourceOptions;
     use ccusage_test_support::Fixture;
     use serde_json::json;
     use std::path::Path;
+
+    fn load_default(
+        shared: &SharedArgs,
+        path: PathBuf,
+        pricing: Option<&PricingMap>,
+    ) -> Vec<LoadedEntry> {
+        ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            shared,
+            SourceOptions {
+                pi_path: path.to_str(),
+                ..SourceOptions::default()
+            },
+            pricing,
+        )
+        .unwrap()
+        .0
+    }
+
+    fn load_store(shared: &SharedArgs, paths: Vec<PathBuf>) -> Vec<LoadedEntry> {
+        ccusage_adapter_common::testing::load_entries(
+            &crate::NamedStore::new("omp", paths),
+            shared,
+            SourceOptions::default(),
+            None,
+        )
+        .unwrap()
+        .0
+    }
 
     fn session_line(id: &str, timestamp: &str, parent: Option<&Path>) -> String {
         let mut line = json!({
@@ -469,13 +465,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 6, "single_thread={single_thread}");
             let child_a_entries = entries
@@ -541,13 +531,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 5, "single_thread={single_thread}");
             assert!(entries.iter().any(|entry| {
@@ -610,13 +594,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 4, "single_thread={single_thread}");
             assert!(entries.iter().any(|entry| {
@@ -726,13 +704,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 8, "single_thread={single_thread}");
             assert_eq!(
@@ -815,13 +787,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 3, "single_thread={single_thread}");
         }
@@ -867,13 +833,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 4, "single_thread={single_thread}");
             assert_eq!(
@@ -959,13 +919,7 @@ mod tests {
             single_thread: false,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_paths(
-            &shared,
-            vec![fixture.path("sessions")],
-            None,
-            PiLoadScope::Default,
-        )
-        .unwrap();
+        let entries = load_default(&shared, fixture.path("sessions"), None);
 
         assert_eq!(entries.len(), 1 + variants.len() * 2);
         for (name, ..) in variants {
@@ -1006,13 +960,7 @@ mod tests {
                 mode,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 2, "mode={mode:?}");
             assert_eq!(
@@ -1050,13 +998,7 @@ mod tests {
             mode: CostMode::Calculate,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_paths(
-            &shared,
-            vec![fixture.path("sessions")],
-            None,
-            PiLoadScope::Default,
-        )
-        .unwrap();
+        let entries = load_default(&shared, fixture.path("sessions"), None);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "root");
@@ -1087,13 +1029,7 @@ mod tests {
                 mode,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 1, "mode={mode:?}");
             assert_eq!(entries[0].session_id.as_ref(), "root", "mode={mode:?}");
@@ -1131,13 +1067,7 @@ mod tests {
             mode: CostMode::Display,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_paths(
-            &shared,
-            vec![fixture.path("sessions")],
-            None,
-            PiLoadScope::Default,
-        )
-        .unwrap();
+        let entries = load_default(&shared, fixture.path("sessions"), None);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "root");
@@ -1186,13 +1116,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 2, "single_thread={single_thread}");
             let child_entries = entries
@@ -1235,9 +1159,7 @@ mod tests {
             single_thread: false,
             ..SharedArgs::default()
         };
-        let entries =
-            load_entries_for_store_paths(&shared, vec![first_store, second_store], "omp", None)
-                .unwrap();
+        let entries = load_store(&shared, vec![first_store, second_store]);
 
         assert_eq!(entries.len(), 2);
         assert_eq!(
@@ -1283,13 +1205,7 @@ mod tests {
                 single_thread,
                 ..SharedArgs::default()
             };
-            let entries = load_entries_from_paths(
-                &shared,
-                vec![fixture.path("sessions")],
-                None,
-                PiLoadScope::Default,
-            )
-            .unwrap();
+            let entries = load_default(&shared, fixture.path("sessions"), None);
 
             assert_eq!(entries.len(), 2, "single_thread={single_thread}");
             assert!(
@@ -1335,7 +1251,7 @@ mod tests {
             single_thread: false,
             ..SharedArgs::default()
         };
-        let entries = load_entries_for_store_paths(&shared, vec![store], "omp", None).unwrap();
+        let entries = load_store(&shared, vec![store]);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);

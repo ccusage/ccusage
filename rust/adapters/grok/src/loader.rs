@@ -1,48 +1,56 @@
 use std::collections::HashSet;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use ccusage_adapter_common::{read_units, source::LoadContext};
 
-use super::{
-    parser::parse_session_files,
-    paths::{GrokSessionFiles, discover_session_files},
-};
+use crate::{LoadedEntry, Result};
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(crate::progress::UsageLoadAgent("Grok"), shared.json, || {
-        load_entries_inner(shared, pricing)
-    })
+use super::paths::{GrokSessionFiles, discover_session_files};
+
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
+    )
+    .map(|(entries, _)| entries)
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let sessions = discover_session_files()?;
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
+    let pricing = cx.pipeline_pricing()?;
+    let sessions = super::paths::discover_session_files(cx.diagnostics)?;
     let updates_paths: Vec<_> = sessions
         .iter()
         .map(|session| session.updates.clone())
         .collect();
-    let loaded = read_files_parallel(&updates_paths, shared.single_thread, |updates| {
-        let session = GrokSessionFiles {
-            updates: updates.to_path_buf(),
-            summary: {
-                let summary = updates.with_file_name("summary.json");
-                summary.is_file().then_some(summary)
-            },
-        };
-        parse_session_files(&session, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Grok session file {}: {error}",
-                    session.updates.display()
-                ),
-            );
-            Vec::new()
-        })
-    });
+    let loaded = read_units(
+        &updates_paths,
+        shared.single_thread,
+        cx.diagnostics,
+        |updates| {
+            let session = GrokSessionFiles {
+                updates: updates.to_path_buf(),
+                summary: {
+                    let summary = updates.with_file_name("summary.json");
+                    summary.is_file().then_some(summary)
+                },
+            };
+            super::parser::parse_session_files_with_diagnostics(
+                &session,
+                Some(cx.window.timezone()),
+                shared.mode,
+                pricing,
+                cx.diagnostics,
+            )
+        },
+    );
 
-    let mut entries: Vec<_> = loaded.into_iter().flatten().collect();
+    let mut entries: Vec<_> = loaded.into_iter().flatten().flatten().collect();
     // Global dedupe across files: the same server event can be exported into more
     // than one session, and `eventId` is what identifies it. Entries without one
     // are left alone rather than matched on their token counts, because
@@ -64,12 +72,14 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
 }
 
 pub fn has_data() -> bool {
-    discover_session_files().is_ok_and(|files| !files.is_empty())
+    discover_session_files(&ccusage_core::Diagnostics::new("grok"))
+        .is_ok_and(|files| !files.is_empty())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use std::ffi::OsString;
 

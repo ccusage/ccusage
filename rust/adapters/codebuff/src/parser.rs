@@ -1,9 +1,10 @@
 use std::{fs, path::Path};
 
+use ccusage_adapter_common::units::{UnitError, read_json};
 use serde_json::Value;
 
 use crate::{
-    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
+    PricingMap, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
     cli::CostMode, format_rfc3339_millis, missing_pricing_model_for_candidates, parse_ts_timestamp,
 };
 
@@ -37,11 +38,8 @@ struct CodebuffContext {
     session_id: String,
 }
 
-pub(super) fn load_chat_file(path: &Path) -> Result<Vec<CodebuffEntry>> {
-    let content = fs::read(path)?;
-    let Ok(messages) = serde_json::from_slice::<Vec<Value>>(&content) else {
-        return Ok(Vec::new());
-    };
+pub(super) fn load_chat_file(path: &Path) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
+    let messages = read_json::<Vec<Value>>(path)?;
     let context = derive_context(path);
     let chat_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id);
     let file_timestamp = file_modified_timestamp(path).unwrap_or(crate::TimestampMs::UNIX_EPOCH);

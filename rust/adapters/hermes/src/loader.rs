@@ -1,58 +1,51 @@
 use std::{collections::HashSet, path::Path};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, read_files_parallel};
+use ccusage_adapter_common::{
+    source::LoadContext,
+    units::{SqliteStage, UnitError, read_units_flat},
+};
+use ccusage_core::{Diagnostics, LoadedEntry, Result, Skip};
 
 use super::{
     parser::{HermesEntry, read_session_row, to_loaded_entry},
     paths::hermes_state_db_paths,
 };
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Hermes"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
-    )
-}
-
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = crate::parse_tz(shared.timezone.as_deref());
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx.pipeline_pricing()?;
+    let tz = Some(cx.window.timezone());
     let db_paths = hermes_state_db_paths()?;
     // Load each state database in parallel (a fresh read-only connection per DB),
     // then run the sequential session dedup over the original path order so the
     // surviving session matches the single-threaded read.
-    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
-        load_state_db_entries(db_path, shared)
-    });
+    let loaded = read_units_flat(
+        &db_paths,
+        cx.shared.single_thread,
+        cx.diagnostics,
+        |db_path| load_state_db_entries(db_path, cx.diagnostics),
+    );
     let mut entries = Vec::new();
     let mut seen_sessions = HashSet::new();
-    for db_entries in loaded {
-        for entry in db_entries {
-            if !seen_sessions.insert(entry.session_id.clone()) {
-                continue;
-            }
-            entries.push(to_loaded_entry(entry, tz.as_ref(), shared.mode, pricing));
+    for entry in loaded {
+        if !seen_sessions.insert(entry.session_id.clone()) {
+            continue;
         }
+        entries.push(to_loaded_entry(entry, tz, cx.shared.mode, pricing));
     }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-fn load_state_db_entries(db_path: &Path, shared: &SharedArgs) -> Vec<HermesEntry> {
-    let Ok(connection) =
+fn load_state_db_entries(
+    db_path: &Path,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<HermesEntry>, UnitError> {
+    let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-    else {
-        crate::debug_log(
-            shared,
-            format!(
-                "Failed to open Hermes state database: {}",
-                db_path.display()
-            ),
-        );
-        return Vec::new();
-    };
-    let Ok(mut statement) = connection.prepare(
-        "
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
+    let mut statement = connection
+        .prepare(
+            "
             SELECT
                 id,
                 model,
@@ -70,38 +63,33 @@ fn load_state_db_entries(db_path: &Path, shared: &SharedArgs) -> Vec<HermesEntry
             WHERE model IS NOT NULL
                 AND TRIM(model) != ''
         ",
-    ) else {
-        crate::debug_log(
-            shared,
-            format!(
-                "Failed to read Hermes state database: {}",
-                db_path.display()
-            ),
-        );
-        return Vec::new();
-    };
+        )
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     let mut entries = Vec::new();
+    let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
-                if let Some(entry) = read_session_row(&statement) {
-                    entries.push(entry);
+                row_number = row_number.saturating_add(1);
+                match read_session_row(&statement) {
+                    Ok(Some(entry)) => entries.push(entry),
+                    Ok(None) => {}
+                    Err(error) => diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        error.kind(),
+                        error.detail(),
+                    )),
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                crate::debug_log(
-                    shared,
-                    format!(
-                        "Failed to query Hermes state database: {}",
-                        db_path.display()
-                    ),
-                );
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
                 break;
             }
         }
     }
-    entries
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -109,7 +97,13 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use ccusage_test_support::fs_fixture;
+    use ccusage_adapter_common::source::EntrySource;
+    use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
+    use ccusage_core::{
+        PricingMap, ReportWindow, SkipKind,
+        cli::{AgentReportKind, SharedArgs},
+    };
+    use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     fn create_state_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -173,7 +167,9 @@ mod tests {
             ..SharedArgs::default()
         };
         let tz = crate::parse_tz(shared.timezone.as_deref());
-        let entries = load_state_db_entries(&db_path, &shared)
+        let diagnostics = Diagnostics::new("hermes");
+        let entries = load_state_db_entries(&db_path, &diagnostics)
+            .unwrap()
             .into_iter()
             .map(|entry| to_loaded_entry(entry, tz.as_ref(), shared.mode, &pricing))
             .collect::<Vec<_>>();
@@ -195,5 +191,124 @@ mod tests {
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].message_count, Some(42));
         assert_eq!(entries[0].cost, 0.34);
+    }
+
+    #[test]
+    fn classifies_state_database_query_failures_and_keeps_healthy_sessions() {
+        let fixture = fs_fixture!({
+            "good/state.db": "",
+            "broken/state.db": "not a SQLite database",
+            "schema/state.db": "",
+        });
+        let good_db = fixture.path("good/state.db");
+        create_state_db(&good_db);
+        sqlite::open(&good_db)
+            .unwrap()
+            .execute(
+                "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('session-a', 'cli', 'gpt-5', 1750000000, 100, 50)",
+            )
+            .unwrap();
+        sqlite::open(fixture.path("schema/state.db"))
+            .unwrap()
+            .execute("CREATE TABLE unrelated (id TEXT)")
+            .unwrap();
+        let homes = format!(
+            "{},{},{}",
+            fixture.root().join("good").display(),
+            fixture.root().join("broken").display(),
+            fixture.root().join("schema").display()
+        );
+        let _cleanup = EnvVarGuard::set("HERMES_HOME", homes);
+        let shared = SharedArgs::default();
+        let pricing = PricingMap::load_embedded();
+        let window = ReportWindow::from_shared(&shared);
+        let diagnostics = Diagnostics::new("hermes");
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions::default(),
+            diagnostics: &diagnostics,
+        };
+
+        let entries = crate::SOURCE.load_entries(&cx).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "session-a");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn diagnoses_invalid_identity_or_timestamp_only_for_nonempty_usage_rows() {
+        let fixture = fs_fixture!({"state.db": ""});
+        let db_path = fixture.path("state.db");
+        create_state_db(&db_path);
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('before', 'cli', 'gpt-5', 1750000000, 100, 50), ('', 'cli', 'gpt-5', 1750000001, 100, 50), ('bad-time', 'cli', 'gpt-5', 'SECRET_CANARY', 100, 50), (NULL, 'cli', 'gpt-5', 'SECRET_CANARY', 0, 0), ('after', 'cli', 'gpt-5', 1750000002, 100, 50)",
+            )
+            .unwrap();
+        let diagnostics = Diagnostics::new("hermes");
+
+        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].session_id, "before");
+        assert_eq!(entries[1].session_id, "after");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("session identity"));
+        assert!(warnings.contains("timestamp"));
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn counts_a_session_whose_id_is_only_whitespace() {
+        let fixture = fs_fixture!({"state.db": ""});
+        let db_path = fixture.path("state.db");
+        create_state_db(&db_path);
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES (' ', 'cli', 'gpt-5', 1750000000, 100, 50)",
+            )
+            .unwrap();
+        let diagnostics = Diagnostics::new("hermes");
+
+        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id, " ");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn focused_and_unified_reports_agree() {
+        let fixture = fs_fixture!({"state.db": ""});
+        let db_path = fixture.path("state.db");
+        create_state_db(&db_path);
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('session-a', 'cli', 'gpt-5', 1750000000, 100, 50)",
+            )
+            .unwrap();
+        let _cleanup = EnvVarGuard::set("HERMES_HOME", fixture.root());
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
     }
 }

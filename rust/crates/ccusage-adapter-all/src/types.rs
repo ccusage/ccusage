@@ -1,37 +1,22 @@
 use std::collections::BTreeSet;
 
-use serde_json::Value;
+use ccusage_adapter_common::rows::UnifiedRow;
 
-use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
-
-#[derive(Debug, Clone)]
-pub(super) struct AllRow {
-    pub(super) period: String,
-    pub(super) agent: &'static str,
-    pub(super) models_used: Vec<String>,
-    pub(super) input_tokens: u64,
-    pub(super) output_tokens: u64,
-    pub(super) cache_creation_tokens: u64,
-    pub(super) cache_read_tokens: u64,
-    pub(super) total_tokens: u64,
-    pub(super) total_cost: f64,
-    pub(super) metadata: Option<Value>,
-    pub(super) metadata_agents: Option<Vec<&'static str>>,
-    pub(super) agent_breakdowns: Option<Vec<AllRow>>,
-    pub(super) model_breakdowns: Vec<ModelBreakdown>,
-}
+use crate::{Diagnostics, ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
 
 pub(super) struct AllLoadResult {
-    pub(super) rows: Vec<AllRow>,
+    pub(super) rows: Vec<UnifiedRow>,
     pub(super) detected_agents: Vec<&'static str>,
-    pub(super) warnings: Vec<String>,
+    /// One per source, in source order.
+    pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 pub(super) struct AllSectionsLoadResult {
-    pub(super) sections: Vec<(AgentReportKind, Vec<AllRow>)>,
+    pub(super) sections: Vec<(AgentReportKind, Vec<UnifiedRow>)>,
     pub(super) daily_detected_agents: Vec<&'static str>,
     pub(super) session_detected_agents: Vec<&'static str>,
-    pub(super) warnings: Vec<String>,
+    /// One per source, in source order, each covering both loads.
+    pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 impl AllSectionsLoadResult {
@@ -46,9 +31,9 @@ impl AllSectionsLoadResult {
 }
 
 pub(super) struct AgentRows {
-    pub(super) rows: Vec<AllRow>,
+    pub(super) rows: Vec<UnifiedRow>,
     pub(super) detected: bool,
-    pub(super) warnings: Vec<String>,
+    pub(super) diagnostics: Diagnostics,
 }
 
 pub(super) struct AgentLoadSpec<'scope> {
@@ -74,12 +59,12 @@ pub(super) struct AllAccumulator {
     total_cost: f64,
     models: BTreeSet<String>,
     agents: BTreeSet<&'static str>,
-    agent_breakdowns: Vec<AllRow>,
+    agent_breakdowns: Vec<UnifiedRow>,
     agent_indexes: FxHashMap<&'static str, usize>,
 }
 
 impl AllAccumulator {
-    pub(super) fn add(&mut self, row: AllRow) {
+    pub(super) fn add(&mut self, row: UnifiedRow) {
         self.input_tokens = self.input_tokens.saturating_add(row.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(row.output_tokens);
         self.cache_creation_tokens = self
@@ -99,7 +84,7 @@ impl AllAccumulator {
             None => {
                 self.agent_indexes
                     .insert(row.agent, self.agent_breakdowns.len());
-                self.agent_breakdowns.push(AllRow {
+                self.agent_breakdowns.push(UnifiedRow {
                     metadata_agents: Some(vec![row.agent]),
                     agent_breakdowns: None,
                     ..row
@@ -108,7 +93,7 @@ impl AllAccumulator {
         }
     }
 
-    pub(super) fn into_row(self, period: String) -> AllRow {
+    pub(super) fn into_row(self, period: String) -> UnifiedRow {
         let mut agent_breakdowns = self.agent_breakdowns;
         for breakdown in &mut agent_breakdowns {
             breakdown.period = period.clone();
@@ -116,7 +101,7 @@ impl AllAccumulator {
         agent_breakdowns.sort_by(|a, b| a.agent.cmp(b.agent));
         let mut model_breakdowns = aggregate_model_breakdowns(&agent_breakdowns);
         model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        AllRow {
+        UnifiedRow {
             period,
             agent: "all",
             models_used: self.models.into_iter().collect(),
@@ -134,7 +119,7 @@ impl AllAccumulator {
     }
 }
 
-fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
+fn merge_agent_breakdown(target: &mut UnifiedRow, source: UnifiedRow) {
     target.input_tokens = target.input_tokens.saturating_add(source.input_tokens);
     target.output_tokens = target.output_tokens.saturating_add(source.output_tokens);
     target.cache_creation_tokens = target
@@ -173,7 +158,7 @@ fn merge_model_breakdowns(
     breakdowns
 }
 
-fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
+fn aggregate_model_breakdowns(rows: &[UnifiedRow]) -> Vec<ModelBreakdown> {
     let mut indexes = FxHashMap::<String, usize>::default();
     let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
     for row in rows {

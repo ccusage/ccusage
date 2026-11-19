@@ -1,28 +1,39 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
 };
 
-use serde_json::{Value, json};
+#[cfg(test)]
+use serde_json::json;
+
+use ccusage_adapter_common::{
+    claims::ClaudeCounted,
+    rows::UnifiedRow,
+    source::{
+        PricingSupply, ProgressOwner, SourceOptions, SourceRows, UnifiedRequest, UsageSource,
+    },
+};
 
 use crate::{
-    BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
-    SessionAccumulator, UsageSummary,
-    adapter::{
-        amp, antigravity, claude, cline, codebuff, codex, copilot, droid, dsh, gemini, goose, grok,
-        hermes, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
-    },
-    cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
-    date_within_range, filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
-    format_date_tz, json_float, parse_tz,
+    BUILT_IN_AGENT_NAMES, Diagnostics, LoadedEntry, PricingMap, Result,
+    adapter::{claude, opencode, pi},
+    cli::{AgentReportKind, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
 };
+
+#[cfg(test)]
+use crate::{
+    CodexGroup, UsageSummary, adapter::codex, cli::CodexSpeed, filter_loaded_entries_by_date,
+};
+#[cfg(test)]
+use ccusage_adapter_common::rows::summary_rows;
 
 use super::{
     report::sort_rows,
+    sources::SOURCES,
     types::{
-        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllRow, AllSectionsLoadResult,
+        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult,
         LoadedAgentRows,
     },
 };
@@ -53,7 +64,7 @@ pub(super) fn load_rows(
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
-        warnings: loaded.warnings,
+        diagnostics: loaded.diagnostics,
     })
 }
 
@@ -66,7 +77,7 @@ pub(super) fn load_sections(
     let source_shared = shared_by_source(sources, shared);
     let (pricing, unified_pricing) =
         load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
-    let daily_base = needs_daily_family(kinds)
+    let mut daily_base = needs_daily_family(kinds)
         .then(|| {
             load_base_rows(
                 AgentReportKind::Daily,
@@ -78,7 +89,7 @@ pub(super) fn load_sections(
             )
         })
         .transpose()?;
-    let session_base = needs_session(kinds)
+    let mut session_base = needs_session(kinds)
         .then(|| {
             load_base_rows(
                 AgentReportKind::Session,
@@ -99,6 +110,20 @@ pub(super) fn load_sections(
         .as_ref()
         .map(|base| base.detected_agents.clone())
         .unwrap_or_default();
+    // The two loads read different files for one source, so their skips are
+    // merged per source rather than listed twice.
+    let mut diagnostics = Vec::new();
+    for base in daily_base.iter_mut().chain(&mut session_base) {
+        for loaded in std::mem::take(&mut base.diagnostics) {
+            match diagnostics
+                .iter()
+                .find(|merged: &&Diagnostics| merged.source() == loaded.source())
+            {
+                Some(merged) => merged.merge(&loaded),
+                None => diagnostics.push(loaded),
+            }
+        }
+    }
 
     let mut sections = Vec::with_capacity(kinds.len());
     for kind in kinds {
@@ -116,22 +141,11 @@ pub(super) fn load_sections(
         sections.push((*kind, rows));
     }
 
-    let warnings = daily_base
-        .iter()
-        .chain(&session_base)
-        .flat_map(|base| &base.warnings)
-        .fold(Vec::new(), |mut warnings, warning| {
-            if !warnings.contains(warning) {
-                warnings.push(warning.clone());
-            }
-            warnings
-        });
-
     Ok(AllSectionsLoadResult {
         sections,
         daily_detected_agents,
         session_detected_agents,
-        warnings,
+        diagnostics,
     })
 }
 
@@ -182,12 +196,13 @@ fn load_pricing(
 ) {
     let mut bases = BTreeMap::new();
     let mut cached = Vec::new();
-    let pricing_by_source = BUILT_IN_AGENT_NAMES
+    let pricing_by_source = SOURCES
         .iter()
-        .filter(|agent| !["claude", "opencode", "qwen"].contains(agent))
-        .map(|agent| {
+        .filter(|source| source.pricing_supply() == PricingSupply::Pipeline)
+        .map(|source| {
+            let agent = source.id();
             (
-                *agent,
+                agent,
                 cached_pricing_map(&source_shared[agent], &mut bases, &mut cached),
             )
         })
@@ -206,9 +221,7 @@ fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
 }
 
 /// The shared options each source loads with: the ones the config resolved for
-/// it, or the unified ones for a source the config does not address. `json` is
-/// forced the way `load_base_rows` forces it on the unified options, since the
-/// sources only feed the unified report.
+/// it, or the unified ones for a source the config does not address.
 fn shared_by_source(
     sources: &BTreeMap<String, SourceArgs>,
     shared: &SharedArgs,
@@ -217,13 +230,7 @@ fn shared_by_source(
         .iter()
         .map(|agent| {
             let options = sources.get(*agent).map_or(shared, |source| &source.shared);
-            (
-                *agent,
-                SharedArgs {
-                    json: true,
-                    ..options.clone()
-                },
-            )
+            (*agent, options.clone())
         })
         .collect()
 }
@@ -243,345 +250,92 @@ fn load_base_rows(
                 crate::progress::usage_load_output_is_tty(),
             ),
     );
-    let loader_shared = SharedArgs {
-        json: true,
-        ..shared.clone()
-    };
-    let codex_speed = sources
-        .get("codex")
-        .map_or(CodexSpeed::Auto, |source| source.codex_speed);
-    let claude_project = sources
-        .get("claude")
-        .and_then(|source| source.claude_project.as_deref());
     let pi_path = sources
         .get("pi")
         .and_then(|source| source.pi_path.as_deref());
-    let open_claw_path = sources
-        .get("openclaw")
-        .and_then(|source| source.open_claw_path.as_deref());
-    let (claude_counted_sender, claude_counted) = mpsc::sync_channel(1);
-    let mut specs = vec![
-        AgentLoadSpec {
-            index: 0,
-            agent: BUILT_IN_AGENT_NAMES[0],
-            progress_agent: crate::progress::UsageLoadAgent("Claude"),
-            load: Box::new(move || {
-                let (rows, counted) =
-                    load_claude_rows(load_kind, &source_shared["claude"], claude_project)?;
-                let _ = claude_counted_sender.send(counted);
-                Ok(rows)
-            }),
-        },
-        AgentLoadSpec {
-            index: 1,
-            agent: BUILT_IN_AGENT_NAMES[1],
-            progress_agent: crate::progress::UsageLoadAgent("Codex"),
-            load: Box::new(|| {
-                load_codex_rows(
+    let (claude_counted_sender, claude_counted_receiver) = mpsc::sync_channel(1);
+    let mut claude_sender = Some(claude_counted_sender);
+    let mut claude_receiver = Some(claude_counted_receiver);
+    let mut specs = Vec::with_capacity(SOURCES.len() + shared.pi_stores.len());
+    for (index, source) in SOURCES.iter().copied().enumerate() {
+        let id = source.id();
+        let source_shared = &source_shared[id];
+        let source_args = sources.get(id);
+        let source_pricing = pricing.get(id).map(|pricing| pricing.as_ref());
+        let progress_agent = crate::progress::UsageLoadAgent(source.label());
+        let load: Box<dyn FnOnce() -> Result<AgentRows> + Send + '_> = match id {
+            "claude" => {
+                let sender = claude_sender.take().expect("Claude source is registered");
+                Box::new(move || {
+                    let source_rows = load_source_result(
+                        source,
+                        load_kind,
+                        source_shared,
+                        source_args,
+                        source_pricing,
+                        None,
+                    )?;
+                    let ccusage_adapter_common::source::SourceRows {
+                        rows,
+                        detected,
+                        diagnostics,
+                        claude_counted,
+                    } = source_rows;
+                    let counted = claude_counted.ok_or_else(|| {
+                        crate::cli_error("Claude source did not return counted usage")
+                    })?;
+                    let _ = sender.send(counted);
+                    Ok(AgentRows {
+                        rows,
+                        detected,
+                        diagnostics,
+                    })
+                })
+            }
+            "opencode" => {
+                let receiver = claude_receiver
+                    .take()
+                    .expect("OpenCode source is registered");
+                Box::new(move || {
+                    let claude_counted =
+                        move || receiver.recv().unwrap_or_else(|_| ClaudeCounted::nothing());
+                    let source_rows = load_source_result(
+                        source,
+                        load_kind,
+                        source_shared,
+                        source_args,
+                        source_pricing,
+                        Some(&claude_counted),
+                    )?;
+                    Ok(agent_rows(source_rows))
+                })
+            }
+            _ => Box::new(move || {
+                let source_rows = load_source_result(
+                    source,
                     load_kind,
-                    &source_shared["codex"],
-                    &pricing["codex"],
-                    codex_speed,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 2,
-            agent: BUILT_IN_AGENT_NAMES[2],
-            progress_agent: crate::progress::UsageLoadAgent("OpenCode"),
-            load: Box::new(move || {
-                let shared = &source_shared["opencode"];
-                let mut rows = load_summary_agent_rows(
-                    "opencode",
-                    load_kind,
-                    shared,
-                    || {
-                        let entries =
-                            opencode::load_entries_with_native_sessions(shared, load_kind)?;
-                        // A failed or panicked Claude load drops the sender, so `recv`
-                        // returns instead of blocking; the report then fails on that error.
-                        let claude_counted = claude_counted
-                            .recv()
-                            .unwrap_or_else(|_| ClaudeCounted::Sessions(HashSet::new()));
-                        Ok(without_turns_counted_by_claude(
-                            entries,
-                            &claude_counted,
-                            &source_shared["claude"],
-                        ))
-                    },
-                    opencode::summarize_entries,
+                    source_shared,
+                    source_args,
+                    source_pricing,
+                    None,
                 )?;
-                // The OpenCode loader narrows to the date window as it reads, so
-                // an out-of-range query yields no entries and the usual
-                // "entries are non-empty" test would drop OpenCode from the
-                // report's detected agents. Ask the source instead.
-                rows.detected = rows.detected || opencode::has_data();
-                Ok(rows)
+                Ok(agent_rows(source_rows))
             }),
-        },
-        AgentLoadSpec {
-            index: 3,
-            agent: BUILT_IN_AGENT_NAMES[3],
-            progress_agent: crate::progress::UsageLoadAgent("Amp"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "amp",
-                    load_kind,
-                    &source_shared["amp"],
-                    &pricing["amp"],
-                    amp::load_entries,
-                    amp::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 4,
-            agent: BUILT_IN_AGENT_NAMES[4],
-            progress_agent: crate::progress::UsageLoadAgent("Droid"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "droid",
-                    load_kind,
-                    &source_shared["droid"],
-                    &pricing["droid"],
-                    droid::load_entries,
-                    droid::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 5,
-            agent: BUILT_IN_AGENT_NAMES[5],
-            progress_agent: crate::progress::UsageLoadAgent("Codebuff"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "codebuff",
-                    load_kind,
-                    &source_shared["codebuff"],
-                    &pricing["codebuff"],
-                    codebuff::load_entries,
-                    codebuff::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 6,
-            agent: BUILT_IN_AGENT_NAMES[6],
-            progress_agent: crate::progress::UsageLoadAgent("Hermes"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "hermes",
-                    load_kind,
-                    &source_shared["hermes"],
-                    &pricing["hermes"],
-                    hermes::load_entries,
-                    hermes::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 7,
-            agent: BUILT_IN_AGENT_NAMES[7],
-            progress_agent: crate::progress::UsageLoadAgent("pi-agent"),
-            load: Box::new(|| {
-                load_pi_format_agent_rows(
-                    "pi",
-                    pi_path,
-                    load_kind,
-                    &source_shared["pi"],
-                    &pricing["pi"],
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 8,
-            agent: BUILT_IN_AGENT_NAMES[8],
-            progress_agent: crate::progress::UsageLoadAgent("Goose"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "goose",
-                    load_kind,
-                    &source_shared["goose"],
-                    &pricing["goose"],
-                    goose::load_entries,
-                    goose::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 9,
-            agent: BUILT_IN_AGENT_NAMES[9],
-            progress_agent: crate::progress::UsageLoadAgent("OpenClaw"),
-            load: Box::new(|| {
-                let shared = &source_shared["openclaw"];
-                load_summary_agent_rows(
-                    "openclaw",
-                    load_kind,
-                    shared,
-                    || {
-                        openclaw::load_entries(
-                            shared,
-                            open_claw_path,
-                            Some(pricing["openclaw"].as_ref()),
-                        )
-                    },
-                    openclaw::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 10,
-            agent: BUILT_IN_AGENT_NAMES[10],
-            progress_agent: crate::progress::UsageLoadAgent("Kilo"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "kilo",
-                    load_kind,
-                    &source_shared["kilo"],
-                    &pricing["kilo"],
-                    kilo::load_entries,
-                    kilo::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 11,
-            agent: BUILT_IN_AGENT_NAMES[11],
-            progress_agent: crate::progress::UsageLoadAgent("GitHub Copilot CLI"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "copilot",
-                    load_kind,
-                    &source_shared["copilot"],
-                    &pricing["copilot"],
-                    copilot::load_entries,
-                    copilot::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 12,
-            agent: BUILT_IN_AGENT_NAMES[12],
-            progress_agent: crate::progress::UsageLoadAgent("Gemini CLI"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "gemini",
-                    load_kind,
-                    &source_shared["gemini"],
-                    &pricing["gemini"],
-                    gemini::load_entries,
-                    gemini::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 13,
-            agent: BUILT_IN_AGENT_NAMES[13],
-            progress_agent: crate::progress::UsageLoadAgent("Antigravity"),
-            load: Box::new(|| {
-                let shared = &source_shared["antigravity"];
-                let (entries, warnings) =
-                    antigravity::load_entries_with_warnings(shared, &pricing["antigravity"])?;
-                let rows = load_summary_agent_rows(
-                    "antigravity",
-                    load_kind,
-                    shared,
-                    || Ok(entries),
-                    antigravity::summarize_entries,
-                )?;
-                Ok(AgentRows { warnings, ..rows })
-            }),
-        },
-        AgentLoadSpec {
-            index: 14,
-            agent: BUILT_IN_AGENT_NAMES[14],
-            progress_agent: crate::progress::UsageLoadAgent("Kimi"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "kimi",
-                    load_kind,
-                    &source_shared["kimi"],
-                    &pricing["kimi"],
-                    kimi::load_entries,
-                    kimi::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 15,
-            agent: BUILT_IN_AGENT_NAMES[15],
-            progress_agent: crate::progress::UsageLoadAgent("Qwen"),
-            load: Box::new(|| load_qwen_rows(load_kind, &source_shared["qwen"])),
-        },
-        AgentLoadSpec {
-            index: 16,
-            agent: BUILT_IN_AGENT_NAMES[16],
-            progress_agent: crate::progress::UsageLoadAgent("Grok"),
-            load: Box::new(|| {
-                let shared = &source_shared["grok"];
-                let mut rows = load_summary_agent_rows(
-                    "grok",
-                    load_kind,
-                    shared,
-                    || grok::load_entries(shared, &pricing["grok"]),
-                    grok::summarize_entries,
-                )?;
-                rows.detected = rows.detected || grok::has_data();
-                Ok(rows)
-            }),
-        },
-        AgentLoadSpec {
-            index: 17,
-            agent: BUILT_IN_AGENT_NAMES[17],
-            progress_agent: crate::progress::UsageLoadAgent("ZCode"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "zcode",
-                    load_kind,
-                    &source_shared["zcode"],
-                    &pricing["zcode"],
-                    zcode::load_entries,
-                    zcode::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 18,
-            agent: BUILT_IN_AGENT_NAMES[18],
-            progress_agent: crate::progress::UsageLoadAgent("Cline"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "cline",
-                    load_kind,
-                    &source_shared["cline"],
-                    &pricing["cline"],
-                    cline::load_entries,
-                    cline::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 19,
-            agent: BUILT_IN_AGENT_NAMES[19],
-            progress_agent: crate::progress::UsageLoadAgent("DeepSeek Harness"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "dsh",
-                    load_kind,
-                    &source_shared["dsh"],
-                    &pricing["dsh"],
-                    dsh::load_entries,
-                    dsh::summarize_entries,
-                )
-            }),
-        },
-    ];
+        };
+        specs.push(AgentLoadSpec {
+            index,
+            agent: id,
+            progress_agent,
+            load,
+        });
+    }
+    drop(claude_sender);
+    drop(claude_receiver);
     let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores, pi_path)?;
     for store in named_pi_stores {
         let agent = leak_agent_name(&store.name);
-        let paths = store.paths;
+        let store = pi::NamedStore::new(agent, store.paths);
         let index = specs.len();
-        let loader_shared_ref = &loader_shared;
         let pricing_ref =
             unified_pricing.expect("unified pricing is loaded when named pi stores are configured");
         specs.push(AgentLoadSpec {
@@ -589,42 +343,40 @@ fn load_base_rows(
             agent,
             progress_agent: crate::progress::UsageLoadAgent(agent),
             load: Box::new(move || {
-                load_named_pi_store_rows_from_paths(
-                    agent,
-                    paths,
-                    load_kind,
-                    loader_shared_ref,
-                    pricing_ref,
-                )
+                load_source_result(&store, load_kind, shared, None, Some(pricing_ref), None)
+                    .map(agent_rows)
             }),
         });
     }
     let loaded = load_agent_rows_parallel(specs, &mut progress)?;
     let mut detected_agents = Vec::new();
     let mut rows = Vec::new();
-    let mut warnings = Vec::new();
+    let mut diagnostics = Vec::with_capacity(loaded.len());
     for loaded in loaded {
-        warnings.extend(loaded.agent_rows.warnings.iter().cloned());
-        append_agent_rows(
-            &mut rows,
-            &mut detected_agents,
-            loaded.agent,
-            loaded.agent_rows,
-        );
+        let AgentRows {
+            rows: agent_rows,
+            detected,
+            diagnostics: agent_diagnostics,
+        } = loaded.agent_rows;
+        if detected {
+            detected_agents.push(loaded.agent);
+        }
+        rows.extend(agent_rows);
+        diagnostics.push(agent_diagnostics);
     }
     Ok(AllLoadResult {
         rows,
         detected_agents,
-        warnings,
+        diagnostics,
     })
 }
 
 fn finish_rows(
     kind: AgentReportKind,
-    mut rows: Vec<AllRow>,
+    mut rows: Vec<UnifiedRow>,
     shared: &SharedArgs,
     start_of_week: WeekDay,
-) -> Vec<AllRow> {
+) -> Vec<UnifiedRow> {
     if kind == AgentReportKind::Session {
         for row in &mut rows {
             row.metadata_agents = None;
@@ -708,18 +460,6 @@ pub(super) fn load_agent_rows_parallel(
     })
 }
 
-fn append_agent_rows(
-    rows: &mut Vec<AllRow>,
-    detected_agents: &mut Vec<&'static str>,
-    agent: &'static str,
-    agent_rows: AgentRows,
-) {
-    if agent_rows.detected {
-        detected_agents.push(agent);
-    }
-    rows.extend(agent_rows.rows);
-}
-
 fn leak_agent_name(name: &str) -> &'static str {
     Box::leak(name.to_string().into_boxed_str())
 }
@@ -784,45 +524,55 @@ fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
 }
 
-fn load_summary_agent_rows(
-    agent: &'static str,
-    kind: AgentReportKind,
+/// Asks a source that implements the contract for its unified rows.
+fn load_source_result(
+    source: &dyn UsageSource,
+    load_kind: AgentReportKind,
     shared: &SharedArgs,
-    load_entries: impl FnOnce() -> Result<Vec<LoadedEntry>>,
-    summarize_entries: impl FnOnce(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
-) -> Result<AgentRows> {
-    let mut entries = load_entries()?;
-    let detected = !entries.is_empty();
-    filter_loaded_entries_by_date(&mut entries, shared);
-    let summaries = summarize_entries(&entries, kind)?;
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, false),
-        detected,
-        warnings: Vec::new(),
+    source_args: Option<&SourceArgs>,
+    pricing: Option<&PricingMap>,
+    claude_counted: Option<&(dyn Fn() -> ClaudeCounted + Send)>,
+) -> Result<SourceRows> {
+    source.unified_rows(&UnifiedRequest {
+        kind: load_kind,
+        shared,
+        options: SourceOptions::from_source(source_args),
+        pricing,
+        progress: ProgressOwner::Caller,
+        multi_source_driver: true,
+        claude_counted,
     })
 }
 
+fn agent_rows(rows: SourceRows) -> AgentRows {
+    AgentRows {
+        rows: rows.rows,
+        detected: rows.detected,
+        diagnostics: rows.diagnostics,
+    }
+}
+
+#[cfg(test)]
 fn load_pi_format_agent_rows(
-    agent: &'static str,
     custom_path: Option<&str>,
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let mut entries = pi::load_entries(shared, custom_path, Some(pricing))?;
-    let detected = !entries.is_empty();
-    let summaries = if kind == AgentReportKind::Session {
-        filter_loaded_entries_by_date(&mut entries, shared);
-        summarize_entry_sessions(&entries)?
-    } else {
-        filter_loaded_entries_by_date(&mut entries, shared);
-        pi::summarize_entries(&entries, kind)?
-    };
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, true),
-        detected,
-        warnings: Vec::new(),
-    })
+    pi::SOURCE
+        .unified_rows(&UnifiedRequest {
+            kind,
+            shared,
+            options: SourceOptions {
+                pi_path: custom_path,
+                ..SourceOptions::default()
+            },
+            pricing: Some(pricing),
+            progress: ProgressOwner::Caller,
+            multi_source_driver: true,
+            claude_counted: None,
+        })
+        .map(agent_rows)
 }
 
 #[cfg(test)]
@@ -833,76 +583,24 @@ fn load_named_pi_store_rows(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let entries = pi::load_entries_for_store_path(shared, store_path, agent, Some(pricing))?;
-    filtered_pi_format_agent_rows(agent, kind, shared, entries, true)
-}
-
-fn load_named_pi_store_rows_from_paths(
-    agent: &'static str,
-    store_paths: Vec<PathBuf>,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<AgentRows> {
-    let entries = pi::load_entries_for_store_paths(shared, store_paths, agent, Some(pricing))?;
-    filtered_pi_format_agent_rows(agent, kind, shared, entries, true)
-}
-
-fn filtered_pi_format_agent_rows(
-    agent: &'static str,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    mut entries: Vec<LoadedEntry>,
-    include_project_path: bool,
-) -> Result<AgentRows> {
-    let detected = !entries.is_empty();
-    filter_loaded_entries_by_date(&mut entries, shared);
-    let summaries = pi::summarize_entries(&entries, kind)?;
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, include_project_path),
-        detected,
-        warnings: Vec::new(),
-    })
-}
-
-/// The Claude Code usage the Claude source counts, so a source that runs
-/// Claude Code, such as OpenCode's `claude-agent` provider, can skip its copy.
-enum ClaudeCounted {
-    /// Daily-family reports count usage on the day Claude logged it.
-    SessionDays(claude::SessionDays),
-    /// A session report counts every session with in-window usage.
-    Sessions(HashSet<Arc<str>>),
-}
-
-impl ClaudeCounted {
-    fn covers(
-        &self,
-        session: &Arc<str>,
-        date: impl FnOnce() -> String,
-        claude: &SharedArgs,
-    ) -> bool {
-        match self {
-            Self::SessionDays(days) => days.contains(&(Arc::clone(session), date())),
-            // Claude counts only the session's in-window days, so a row outside them stays.
-            Self::Sessions(sessions) => {
-                sessions.contains(session)
-                    && date_within_range(&date(), claude.since.as_deref(), claude.until.as_deref())
-            }
-        }
-    }
+    let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
+    load_source_result(&store, kind, shared, None, Some(pricing), None).map(agent_rows)
 }
 
 /// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
 /// source counts are left to it unless `include_claude_agent` is set, so the
 /// focused reports add up to the unified one.
+///
+/// Also returns what the Claude load skipped, if it ran: a skipped transcript
+/// leaves its turns to OpenCode, so the skip changes these totals too.
 pub(super) fn load_opencode_entries(
     shared: &SharedArgs,
     kind: AgentReportKind,
     include_claude_agent: bool,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<(Vec<LoadedEntry>, Option<Diagnostics>)> {
     let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
     if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
-        return Ok(entries.into_iter().map(|(entry, _)| entry).collect());
+        return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
     let claude_shared = SharedArgs {
         json: true,
@@ -911,102 +609,26 @@ pub(super) fn load_opencode_entries(
     };
     // Focused Claude reports, sessions included, count only in-window days, so match by
     // session day. Missing Claude directories load as no session days, so those turns stay.
-    let (_, claude_counted) = load_claude_rows(AgentReportKind::Daily, &claude_shared, None)?;
-    Ok(without_turns_counted_by_claude(
-        entries,
-        &claude_counted,
-        &claude_shared,
-    ))
-}
-
-/// Claude rows plus the usage they count.
-fn load_claude_rows(
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    project_filter: Option<&str>,
-) -> Result<(AgentRows, ClaudeCounted)> {
-    if kind == AgentReportKind::Session {
-        // Like `ccusage claude session`, a session counts only its in-window usage.
-        let deduped = claude::load_deduped_entries(shared, project_filter)?;
-        let detected = !deduped.entries.is_empty();
-        let in_window = |entry: &LoadedEntry| {
-            date_within_range(
-                &entry.date,
-                shared.since.as_deref(),
-                shared.until.as_deref(),
-            )
-        };
-        let sessions = deduped
-            .main_thread_session_days(in_window)
-            .into_iter()
-            .map(|(session, _)| session)
-            .collect();
-        let entries = deduped
-            .entries
-            .into_iter()
-            .filter(|entry| in_window(entry))
-            .collect::<Vec<_>>();
-        let summaries = summarize_entry_sessions(&entries)?;
-        return Ok((
-            AgentRows {
-                rows: summary_rows("claude", summaries, false),
-                detected,
-                warnings: Vec::new(),
-            },
-            ClaudeCounted::Sessions(sessions),
-        ));
-    }
-
-    let claude::DailySummaries {
-        mut summaries,
-        detected,
-        session_days,
-    } = claude::load_daily_summaries_with_detection(shared, project_filter, false)?;
-    filter_daily_summaries_by_date(&mut summaries, shared);
-    let session_days = session_days
-        .into_iter()
-        .filter(|(_, date)| {
-            date_within_range(date, shared.since.as_deref(), shared.until.as_deref())
-        })
-        .collect();
+    let claude_rows = claude::SOURCE.unified_rows(&UnifiedRequest {
+        kind: AgentReportKind::Daily,
+        shared: &claude_shared,
+        options: SourceOptions::default(),
+        pricing: None,
+        progress: ProgressOwner::Source,
+        multi_source_driver: true,
+        claude_counted: None,
+    })?;
+    let claude_counted = claude_rows
+        .claude_counted
+        .ok_or_else(|| crate::cli_error("Claude source did not return counted usage"))?;
     Ok((
-        AgentRows {
-            rows: summary_rows("claude", summaries, false),
-            detected,
-            warnings: Vec::new(),
-        },
-        ClaudeCounted::SessionDays(session_days),
+        claude_counted.retain_uncounted(entries),
+        Some(claude_rows.diagnostics),
     ))
 }
 
-/// Drops OpenCode `claude-agent` rows whose Claude Code session the Claude
-/// source counted, so each turn is counted once, priced by the resolved model
-/// the Claude transcript records. OpenCode stores only the usage of turns
-/// Claude Code also writes to that session's transcript, so a counted session
-/// holds every turn of its OpenCode rows. Daily-family reports match per day,
-/// and a row is dated by its turn's start, so a turn whose calls Claude logs
-/// after midnight lands on a day Claude may not have counted and is kept.
-fn without_turns_counted_by_claude(
-    entries: Vec<opencode::LinkedEntry>,
-    claude_counted: &ClaudeCounted,
-    claude_shared: &SharedArgs,
-) -> Vec<LoadedEntry> {
-    let claude_tz = parse_tz(claude_shared.timezone.as_deref());
-    entries
-        .into_iter()
-        .filter(|(entry, native_session)| {
-            native_session.as_ref().is_none_or(|session| {
-                !claude_counted.covers(
-                    session,
-                    || format_date_tz(entry.timestamp, claude_tz.as_ref()),
-                    claude_shared,
-                )
-            })
-        })
-        .map(|(entry, _)| entry)
-        .collect()
-}
-
+/// Retains the daily summaries inside the requested date bounds.
+#[cfg(test)]
 fn filter_daily_summaries_by_date(rows: &mut Vec<UsageSummary>, shared: &SharedArgs) {
     if shared.since.is_none() && shared.until.is_none() {
         return;
@@ -1018,92 +640,6 @@ fn filter_daily_summaries_by_date(rows: &mut Vec<UsageSummary>, shared: &SharedA
     });
 }
 
-fn load_codex_rows(
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-    requested_speed: CodexSpeed,
-) -> Result<AgentRows> {
-    if shared.since.is_none() && shared.until.is_none() {
-        let groups = codex::load_groups(shared, kind)?;
-        let detected = !groups.is_empty();
-        let speed = codex::resolve_codex_speed(requested_speed);
-        return Ok(AgentRows {
-            rows: groups
-                .iter()
-                .map(|(period, group)| codex_group_row(period, group, pricing, speed, shared.mode))
-                .collect(),
-            detected,
-            warnings: Vec::new(),
-        });
-    }
-
-    let (mut events, detected) = codex::load_codex_events_with_detection(shared)?;
-    codex::filter_events_by_date(&mut events, shared)?;
-    let groups = codex::aggregate_events(&events, kind, shared.timezone.as_deref())?;
-    let speed = codex::resolve_codex_speed(requested_speed);
-    Ok(AgentRows {
-        rows: groups
-            .iter()
-            .map(|(period, group)| codex_group_row(period, group, pricing, speed, shared.mode))
-            .collect(),
-        detected,
-        warnings: Vec::new(),
-    })
-}
-
-fn load_priced_summary_agent_rows(
-    agent: &'static str,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-    load_entries: impl FnOnce(&SharedArgs, &PricingMap) -> Result<Vec<LoadedEntry>>,
-    summarize_entries: impl FnOnce(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
-) -> Result<AgentRows> {
-    load_summary_agent_rows(
-        agent,
-        kind,
-        shared,
-        || load_entries(shared, pricing),
-        summarize_entries,
-    )
-}
-
-fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
-    let mut entries = qwen::load_entries(shared)?;
-    let detected = !entries.is_empty() || qwen::has_data();
-    if kind == AgentReportKind::Session {
-        let mut summaries = qwen::summarize_entries(&entries, kind)?;
-        filter_session_summaries_by_last_activity(&mut summaries, shared);
-        return Ok(AgentRows {
-            rows: summary_rows("qwen", summaries, false),
-            detected,
-            warnings: Vec::new(),
-        });
-    }
-    filter_loaded_entries_by_date(&mut entries, shared);
-    let summaries = qwen::summarize_entries(&entries, kind)?;
-    Ok(AgentRows {
-        rows: summary_rows("qwen", summaries, false),
-        detected,
-        warnings: Vec::new(),
-    })
-}
-
-fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
-    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
-    for entry in entries {
-        groups
-            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
-            .or_default()
-            .add_entry(entry);
-    }
-    groups
-        .into_values()
-        .map(|group| group.into_summary())
-        .collect()
-}
-
 fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
     kinds.iter().any(|kind| *kind != AgentReportKind::Session)
 }
@@ -1112,131 +648,25 @@ fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
 }
 
-fn summary_rows(
-    agent: &'static str,
-    summaries: Vec<UsageSummary>,
-    include_project_path: bool,
-) -> Vec<AllRow> {
-    summaries
-        .into_iter()
-        .filter_map(|summary| {
-            let period = summary
-                .date
-                .as_ref()
-                .or(summary.week.as_ref())
-                .or(summary.month.as_ref())
-                .or(summary.session_id.as_ref())?
-                .clone();
-            let total_tokens = summary.total_tokens();
-            // Cost-only rows, such as Copilot credits missing from modelMetrics, still bill.
-            if total_tokens == 0 && summary.total_cost == 0.0 {
-                return None;
-            }
-            let metadata = summary_metadata(&summary, include_project_path);
-            Some(AllRow {
-                period,
-                agent,
-                models_used: summary.models_used,
-                input_tokens: summary.input_tokens,
-                output_tokens: summary.output_tokens,
-                cache_creation_tokens: summary.cache_creation_tokens,
-                cache_read_tokens: summary.cache_read_tokens,
-                total_tokens,
-                total_cost: summary.total_cost,
-                metadata,
-                metadata_agents: Some(vec![agent]),
-                agent_breakdowns: None,
-                model_breakdowns: summary.model_breakdowns,
-            })
-        })
-        .collect()
-}
-
-fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Option<Value> {
-    let mut metadata = serde_json::Map::new();
-    if let Some(credits) = summary.credits {
-        metadata.insert("credits".to_string(), json_float(credits));
-    }
-    if summary.session_id.is_some() {
-        if let Some(last_activity) = summary.last_activity.as_ref() {
-            metadata.insert("lastActivity".to_string(), json!(last_activity));
-        }
-        if include_project_path && let Some(project_path) = summary.project_path.as_ref() {
-            metadata.insert("projectPath".to_string(), json!(project_path));
-        }
-    }
-    if metadata.is_empty() {
-        None
-    } else {
-        Some(Value::Object(metadata))
-    }
-}
-
+#[cfg(test)]
 pub(super) fn codex_group_row<S>(
     period: &str,
     group: &CodexGroup,
     pricing: &PricingMap,
     speed: S,
     mode: CostMode,
-) -> AllRow
+) -> UnifiedRow
 where
     S: Into<codex::CodexSpeedPolicy> + Copy,
 {
-    let speed = speed.into();
-    let mut model_breakdowns: Vec<ModelBreakdown> = group
-        .models
-        .iter()
-        .map(|(model, usage)| {
-            let input = codex::non_cached_input_tokens(
-                usage.input_tokens,
-                usage.cached_input_tokens,
-                usage.cache_creation_tokens,
-            );
-            ModelBreakdown {
-                model_name: model.clone(),
-                input_tokens: input,
-                output_tokens: usage.output_tokens,
-                cache_creation_tokens: usage.cache_creation_tokens,
-                cache_read_tokens: usage.cached_input_tokens,
-                cache_creation_1h_tokens: None,
-                extra_total_tokens: 0,
-                cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
-                missing_pricing: mode != CostMode::Display
-                    && codex::codex_model_missing_pricing(model, usage, pricing),
-                stored_cost: None,
-            }
-        })
-        .collect();
-    model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    AllRow {
-        period: period.to_string(),
-        agent: "codex",
-        models_used: group.models.keys().cloned().collect(),
-        input_tokens: codex::non_cached_input_tokens(
-            group.input_tokens,
-            group.cached_input_tokens,
-            group.cache_creation_tokens,
-        ),
-        output_tokens: group.output_tokens,
-        cache_creation_tokens: group.cache_creation_tokens,
-        cache_read_tokens: group.cached_input_tokens,
-        total_tokens: group.total_tokens,
-        total_cost: codex::calculate_group_cost(group, pricing, speed),
-        metadata: Some(json!({
-            "lastActivity": group.last_activity,
-            "reasoningOutputTokens": group.reasoning_output_tokens,
-        })),
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns,
-    }
+    codex::unified_row_from_group(period, group, pricing, speed, mode)
 }
 
 pub(super) fn aggregate_rows(
-    rows: Vec<AllRow>,
+    rows: Vec<UnifiedRow>,
     kind: AgentReportKind,
     start_of_week: WeekDay,
-) -> Vec<AllRow> {
+) -> Vec<UnifiedRow> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
     for mut row in rows {
         let period = match kind {
@@ -1289,7 +719,7 @@ mod tests {
         }
     }
 
-    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> AllRow {
+    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> UnifiedRow {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
@@ -1703,14 +1133,22 @@ mod tests {
         kind: AgentReportKind,
         shared: &SharedArgs,
         pricing: &PricingMap,
-    ) -> Result<Vec<AllRow>> {
-        let mut entries = pi::load_entries(shared, Some(store_path), Some(pricing))?;
+    ) -> Result<Vec<UnifiedRow>> {
+        let (mut entries, _) = ccusage_adapter_common::testing::load_entries(
+            &pi::SOURCE,
+            shared,
+            SourceOptions {
+                pi_path: Some(store_path),
+                ..SourceOptions::default()
+            },
+            Some(pricing),
+        )?;
         filter_loaded_entries_by_date(&mut entries, shared);
         let summaries = pi::summarize_entries(&entries, kind)?;
         Ok(summary_rows("pi", summaries, true))
     }
 
-    fn usage_fingerprint(rows: &[AllRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
+    fn usage_fingerprint(rows: &[UnifiedRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
         rows.iter()
             .map(|row| {
                 (
@@ -1775,6 +1213,42 @@ mod tests {
             usage_fingerprint(&pi_rows),
             vec![("inside-session".to_string(), 10, 1, 0, 0, 11)]
         );
+    }
+
+    #[test]
+    fn named_pi_store_returns_sanitized_diagnostics_with_healthy_usage() {
+        let fixture = fs_fixture!({
+            "store/project-a/agent_session-a.jsonl": [
+                r#"{"type":"session","id":"session-a","timestamp":"2026-01-01T00:00:00.000Z"}"#,
+                r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
+                r#"{"type":"message","timestamp":"2026-01-02T10:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+            ]
+            .join("\n"),
+        });
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            debug: true,
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        let rows = load_named_pi_store_rows(
+            "omp",
+            fixture.path("store").to_str().unwrap(),
+            AgentReportKind::Daily,
+            &shared,
+            &PricingMap::default(),
+        )
+        .unwrap();
+
+        assert!(rows.detected);
+        assert_eq!(rows.rows.len(), 1);
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
+            warning.contains("invalid data")
+                && warning.starts_with("omp:")
+                && warning.contains("agent_session-a.jsonl:2")
+                && !warning.contains("SECRET_CANARY")
+        }));
     }
 
     #[test]
@@ -1905,7 +1379,6 @@ mod tests {
         };
 
         let rows = load_pi_format_agent_rows(
-            "pi",
             Some(fixture.path("default-root").to_str().unwrap()),
             AgentReportKind::Session,
             &shared,
@@ -1948,6 +1421,61 @@ mod tests {
             rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
             json!("project-a")
         );
+    }
+
+    #[test]
+    fn named_pi_store_sessions_split_by_project_like_the_default_store() {
+        let session = |input: u64| {
+            [
+                r#"{"type":"session","id":"same-session","timestamp":"2026-01-01T00:00:00.000Z"}"#.to_string(),
+                format!(
+                    r#"{{"type":"message","timestamp":"2026-01-02T10:00:00.000Z","message":{{"role":"assistant","model":"gpt-5","usage":{{"input":{input},"output":1}}}}}}"#
+                ),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "omp/sessions/project-a/agent_same-session.jsonl": session(10),
+            "omp/sessions/project-b/agent_same-session.jsonl": session(20),
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let store_path = fixture.path("omp/sessions");
+
+        let named = load_named_pi_store_rows(
+            "omp",
+            store_path.to_str().unwrap(),
+            AgentReportKind::Session,
+            &shared,
+            &PricingMap::default(),
+        )
+        .unwrap();
+        let default = load_pi_format_agent_rows(
+            store_path.to_str(),
+            AgentReportKind::Session,
+            &shared,
+            &PricingMap::default(),
+        )
+        .unwrap();
+
+        let sessions = |rows: &AgentRows| {
+            rows.rows
+                .iter()
+                .map(|row| {
+                    (
+                        row.metadata.as_ref().unwrap()["projectPath"].clone(),
+                        row.input_tokens,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            sessions(&named),
+            [(json!("project-a"), 10), (json!("project-b"), 20)]
+        );
+        assert_eq!(sessions(&named), sessions(&default));
     }
 
     #[test]
@@ -2568,7 +2096,6 @@ mod tests {
             ..SharedArgs::default()
         };
         let mut rows = load_pi_format_agent_rows(
-            "pi",
             Some(fixture.path("pi/sessions").to_str().unwrap()),
             AgentReportKind::Daily,
             &shared,

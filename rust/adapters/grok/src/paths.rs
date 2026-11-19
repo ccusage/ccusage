@@ -3,7 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Result, collect_files_with_extension};
+use crate::Result;
+use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_core::Diagnostics;
 
 /// Official Grok CLI home override (single root).
 pub(crate) const GROK_HOME_ENV: &str = "GROK_HOME";
@@ -29,13 +31,13 @@ fn resolve_root() -> Option<PathBuf> {
 }
 
 /// Discover every `sessions/**/updates.jsonl` under the resolved root.
-pub(super) fn discover_session_files() -> Result<Vec<GrokSessionFiles>> {
+pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<GrokSessionFiles>> {
     let mut files = Vec::new();
     if let Some(root) = resolve_root() {
         let sessions = root.join("sessions");
         if sessions.is_dir() {
             let mut updates = Vec::new();
-            collect_files_with_extension(&sessions, "jsonl", &mut updates);
+            collect_files_with_extension(&sessions, "jsonl", &mut updates, diagnostics);
             updates.retain(|path| {
                 path.file_name().and_then(|name| name.to_str()) == Some("updates.jsonl")
             });
@@ -74,7 +76,7 @@ mod tests {
             GROK_HOME_ENV,
             Some(OsString::from(fixture.root().as_os_str())),
         )]);
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 1);
         assert!(files[0].updates.ends_with("updates.jsonl"));
         assert!(files[0].summary.is_some());
@@ -99,7 +101,7 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )]);
 
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         let names: Vec<_> = files
             .iter()
             .map(|file| {
@@ -125,7 +127,7 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )]);
 
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 2);
         assert!(files.iter().any(|file| file.summary.is_some()));
         assert!(files.iter().any(|file| file.summary.is_none()));
@@ -143,7 +145,7 @@ mod tests {
             Some(OsString::from(fixture.root().as_os_str())),
         )]);
 
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 1);
         assert!(files[0].updates.ends_with("updates.jsonl"));
     }
@@ -163,7 +165,7 @@ mod tests {
             ("USERPROFILE", Some(home)),
         ]);
 
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
 
         assert_eq!(files.len(), 1);
         assert!(files[0].updates.to_string_lossy().contains("session-a"));
@@ -175,7 +177,7 @@ mod tests {
         let missing = fixture.path("does-not-exist");
         let _guard =
             EnvVarsGuard::set_many([(GROK_HOME_ENV, Some(OsString::from(missing.as_os_str())))]);
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert!(files.is_empty());
     }
 
@@ -187,7 +189,7 @@ mod tests {
         let file_path = fixture.path("not-a-dir");
         let _guard =
             EnvVarsGuard::set_many([(GROK_HOME_ENV, Some(OsString::from(file_path.as_os_str())))]);
-        let files = discover_session_files().unwrap();
+        let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert!(files.is_empty());
     }
 }

@@ -1,4 +1,5 @@
 use std::{
+    fs,
     io::{self, BufRead, BufReader, Write},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc,
@@ -15,6 +16,52 @@ const OTHER_THREAD_UUID: &str = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
 const REVERT_UUID: &str = "01a0ddae-e9e2-9852-bf04-a21d097152b2";
 const LATE_REVERT_UUID: &str = "01a0eebf-fa03-a963-c015-b32e208263c3";
 const LOADING_TEXT: &str = "Codex | Loading usage...";
+
+#[test]
+fn native_resource_keeps_valid_usage_when_another_rollout_is_corrupt() {
+    let fixture = native_usage_fixture();
+    let _ = fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt-rollout-canary");
+    let mut process = McpProcess::start(&fixture, &["--no-cost"]);
+    assert_eq!(
+        process.read_resource_line(1, THREAD_UUID),
+        "Codex | Session: 600 tokens | Today: 300 tokens"
+    );
+    process.finish();
+}
+
+#[test]
+fn native_resource_emits_warnings_when_they_change() {
+    let fixture = native_usage_fixture();
+    let corrupt = fixture.write_file("codex/sessions/bad.jsonl.zst", "corrupt rollout");
+    let stderr = fixture.path("stderr.log");
+    let mut process = McpProcess::start_with_stderr(
+        &fixture,
+        &["--no-cost"],
+        fs::File::create(&stderr).unwrap().into(),
+    );
+
+    process.read_resource_line(1, THREAD_UUID);
+    process.read_resource_line(2, OTHER_THREAD_UUID);
+    let first_warnings = fs::read_to_string(&stderr).unwrap();
+    assert_eq!(
+        first_warnings.matches("WARN  codex: skipped ").count(),
+        1,
+        "{first_warnings}"
+    );
+
+    fs::remove_file(&corrupt).unwrap();
+    process.read_resource_line(3, REVERT_UUID);
+    fs::write(corrupt, "corrupt rollout").unwrap();
+    process.read_resource_line(4, LATE_REVERT_UUID);
+    process.finish();
+
+    let stderr = fs::read_to_string(stderr).unwrap();
+    assert_eq!(
+        stderr.matches("WARN  codex: skipped ").count(),
+        2,
+        "{stderr}"
+    );
+}
 
 #[test]
 fn advertises_a_native_codex_statusline_resource_over_stdio() {
@@ -308,6 +355,10 @@ struct McpProcess {
 
 impl McpProcess {
     fn start(fixture: &Fixture, args: &[&str]) -> Self {
+        Self::start_with_stderr(fixture, args, Stdio::null())
+    }
+
+    fn start_with_stderr(fixture: &Fixture, args: &[&str], stderr: Stdio) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_ccusage"))
             .args([
                 "codex",
@@ -325,7 +376,7 @@ impl McpProcess {
             .env_remove("LOG_LEVEL")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr)
             .spawn()
             .unwrap();
         let stdin = child.stdin.take().unwrap();

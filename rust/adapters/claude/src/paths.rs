@@ -10,14 +10,14 @@ use memchr::memmem;
 use serde::Deserialize;
 
 use crate::{
-    MILLIS_PER_DAY, Result,
+    Diagnostics, MILLIS_PER_DAY, Result,
     cli::SharedArgs,
     cli_error, date_range_bounds_ms,
-    fast::{FxHashMap, FxHashSet},
+    fast::{FxHashMap, FxHashSet, LinePrefilter},
     home, parse_tz,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
-use ccusage_adapter_common::collect_usage_files;
+use ccusage_adapter_common::collect_files_with_extension;
 
 pub fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
@@ -39,16 +39,25 @@ pub fn claude_paths() -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathBuf> {
+pub fn usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for path in paths {
         let projects_dir = path.join("projects");
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
-            collect_usage_files(&projects_dir.join(project_filter), &mut files);
+            collect_files_with_extension(
+                &projects_dir.join(project_filter),
+                "jsonl",
+                &mut files,
+                diagnostics,
+            );
         } else {
-            collect_usage_files(&projects_dir, &mut files);
+            collect_files_with_extension(&projects_dir, "jsonl", &mut files, diagnostics);
         }
     }
     files.sort_by_cached_key(|path| path.to_string_lossy().into_owned());
@@ -192,13 +201,14 @@ fn recorded_session_id(path: &Path) -> Option<String> {
     }
 
     let mut reader = BufReader::new(fs::File::open(path).ok()?);
+    let session_id_marker = LinePrefilter::all(&[br#""sessionId""#]);
     let mut line = Vec::new();
     loop {
         line.clear();
         if reader.read_until(b'\n', &mut line).ok()? == 0 {
             return None;
         }
-        if memmem::find(&line, b"\"sessionId\"").is_none() {
+        if !session_id_marker.matches(&line) {
             continue;
         }
         if let Ok(SessionIdProbe {
@@ -367,6 +377,31 @@ mod tests {
         vec![fresh, margin, old]
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_project_directory_is_reported_and_the_rest_still_found() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use crate::{Diagnostics, SkipKind};
+
+        let fixture = fs_fixture!({
+            "projects/blocked/s.jsonl": "{}",
+            "projects/healthy/s.jsonl": "{}",
+        });
+        let blocked = fixture.path("projects/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let diagnostics = Diagnostics::new("claude");
+        let files = super::usage_files(&[fixture.root().to_path_buf()], None, &diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files, [fixture.path("projects/healthy/s.jsonl")]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
     #[test]
     fn prunes_files_last_written_before_the_since_margin() {
         let fixture = fs_fixture!({
@@ -528,6 +563,18 @@ mod tests {
 
         assert_eq!(split.kept, [parent, workflow_agent]);
         assert!(split.pruned.is_empty());
+    }
+
+    #[test]
+    fn reads_a_recorded_session_id_under_an_escaped_key() {
+        let fixture = fs_fixture!({
+            "projects/p/agent-1.jsonl": r#"{"sessionI\u0064":"parent"}"#,
+        });
+
+        assert_eq!(
+            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            Some("parent")
+        );
     }
 
     #[test]

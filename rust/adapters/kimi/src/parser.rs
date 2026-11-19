@@ -4,11 +4,13 @@ use std::{
     sync::Arc,
 };
 
+use ccusage_adapter_common::units::UnitError;
+use ccusage_core::Diagnostics;
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
     format_date_tz, missing_pricing_model_for_candidates,
 };
@@ -118,15 +120,42 @@ pub(super) struct KimiUsageEntry {
     extra_total_tokens: u64,
 }
 
-pub(super) fn read_wire_file(path: &Path) -> Result<Vec<KimiUsageEntry>> {
+pub(super) fn read_wire_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<KimiUsageEntry>, UnitError> {
     let model = read_model_from_config(path);
     let fallback_timestamp = file_modified_timestamp(path);
-    let content = fs::read(path)?;
+    let content = fs::read(path).map_err(UnitError::from)?;
     // Usable Kimi wire lines carry either `token_usage` (old format) or `usage.record` (new).
     let prefilter = LinePrefilter::any(&[br#""token_usage""#, br#""usage.record""#]);
-    Ok(jsonl::records::<KimiWireLine>(&content, Some(&prefilter))
-        .filter_map(|line| wire_line_to_entry(&line, path, &model, fallback_timestamp))
-        .collect::<Vec<_>>())
+    Ok(jsonl::records_with_usage_diagnostics::<KimiWireLine>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_usage_envelope,
+    )
+    .filter_map(|line| wire_line_to_entry(&line, path, &model, fallback_timestamp))
+    .collect::<Vec<_>>())
+}
+
+fn is_usage_envelope(value: &serde_json::Value) -> bool {
+    let has_new_usage = value.get("type").and_then(serde_json::Value::as_str)
+        == Some("usage.record")
+        && value.get("usageScope").and_then(serde_json::Value::as_str) == Some("turn")
+        && value.get("usage").is_some();
+    let has_old_usage = value
+        .get("message")
+        .and_then(|message| message.get("type"))
+        .and_then(serde_json::Value::as_str)
+        == Some("StatusUpdate")
+        && value
+            .get("message")
+            .and_then(|message| message.get("payload"))
+            .and_then(|payload| payload.get("token_usage"))
+            .is_some();
+    has_new_usage || has_old_usage
 }
 
 fn read_model_from_config(file_path: &Path) -> String {

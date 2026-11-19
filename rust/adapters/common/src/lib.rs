@@ -4,86 +4,118 @@ use std::{
     thread,
 };
 
-use ccusage_core::{
-    LoadedEntry, UsageSummary, cli::SharedArgs, date_within_range, format_date_tz,
-    parse_ts_timestamp, parse_tz,
-};
+use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs};
 
+pub mod claims;
 pub mod jsonl;
+#[cfg(any(test, feature = "testing"))]
+pub mod parity;
+pub(crate) mod pipeline;
 pub mod report;
+pub mod rows;
+pub mod source;
+#[cfg(test)]
+mod test_source;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
+pub mod units;
 
 pub use report::print_table_for_agent;
+pub use units::{SqliteStage, UnitError, read_units, read_units_flat};
 
-pub fn collect_usage_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    collect_files_with_extension(dir, "jsonl", files);
-}
-
-pub fn collect_files_with_extension(dir: &Path, extension: &str, files: &mut Vec<PathBuf>) {
+/// Collects the files under `dir` whose extension is `extension`, like
+/// [`collect_files_matching`].
+pub fn collect_files_with_extension(
+    dir: &Path,
+    extension: &str,
+    files: &mut Vec<PathBuf>,
+    diagnostics: &Diagnostics,
+) {
     collect_files_matching(
         dir,
         &|path| path.extension().is_some_and(|ext| ext == extension),
         files,
+        diagnostics,
     );
 }
 
+/// Collects the files under `dir` that `matches` accepts, recursing into
+/// subdirectories without following symlinks. What cannot be read is
+/// recorded like [`dir_entries`] does.
 pub fn collect_files_matching(
     dir: &Path,
-    matches: &impl Fn(&Path) -> bool,
+    matches: &dyn Fn(&Path) -> bool,
     files: &mut Vec<PathBuf>,
+    diagnostics: &Diagnostics,
 ) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-
-    for entry in entries.filter_map(std::result::Result::ok) {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
+    for (path, file_type) in dir_entries(dir, diagnostics) {
         if file_type.is_file() && matches(&path) {
             files.push(path);
         } else if file_type.is_dir() {
-            collect_files_matching(&path, matches, files);
+            collect_files_matching(&path, matches, files, diagnostics);
         }
     }
 }
 
+/// The entries directly inside `dir`, each with its own (not a symlink
+/// target's) file type, in the order the directory lists them.
+///
+/// A missing `dir` holds no entries. A directory, entry or file type that
+/// cannot be read is recorded in `diagnostics`, so files it hides show up as
+/// a warning rather than as lower usage.
+pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::FileType)> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                diagnostics.record(Skip::unit(
+                    dir,
+                    SkipKind::Unreadable,
+                    "cannot read directory",
+                ));
+            }
+            return Vec::new();
+        }
+    };
+    entries
+        .filter_map(|entry| {
+            let Ok(entry) = entry else {
+                diagnostics.record(Skip::unit(
+                    dir,
+                    SkipKind::ReadInterrupted,
+                    "cannot read directory entry",
+                ));
+                return None;
+            };
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(file_type) => Some((path, file_type)),
+                Err(_) => {
+                    diagnostics.record(Skip::unit(
+                        &path,
+                        SkipKind::Unreadable,
+                        "cannot read file type",
+                    ));
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
 pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &SharedArgs) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
-    }
-    entries.retain(|entry| {
-        date_within_range(
-            &entry.date,
-            shared.since.as_deref(),
-            shared.until.as_deref(),
-        )
-    });
+    pipeline::retain_entries_in(entries, &ReportWindow::from_shared(shared));
 }
 
 /// Keeps the sessions whose last activity falls on a day inside the
 /// `--since`/`--until` window, with the day taken in the report timezone the
 /// same way `LoadedEntry::date` is.
-pub fn filter_session_summaries_by_last_activity(
-    rows: &mut Vec<UsageSummary>,
+#[cfg(test)]
+fn filter_session_summaries_by_last_activity(
+    rows: &mut Vec<ccusage_core::UsageSummary>,
     shared: &SharedArgs,
 ) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
-    }
-    let timezone = parse_tz(shared.timezone.as_deref());
-    rows.retain(|row| {
-        row.last_activity
-            .as_deref()
-            .and_then(parse_ts_timestamp)
-            .is_some_and(|timestamp| {
-                date_within_range(
-                    &format_date_tz(timestamp, timezone.as_ref()),
-                    shared.since.as_deref(),
-                    shared.until.as_deref(),
-                )
-            })
-    });
+    pipeline::retain_sessions_last_active_in(rows, &ReportWindow::from_shared(shared));
 }
 
 pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<Vec<usize>> {
@@ -295,14 +327,33 @@ mod tests {
         let kept = fixture.write_file("a/b/kept.jsonl", "");
         let _ = fixture.write_file("a/skipped.txt", "");
         let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
 
         collect_files_matching(
             fixture.root(),
             &|path| path.extension().is_some_and(|ext| ext == "jsonl"),
             &mut files,
+            &diagnostics,
         );
 
         assert_eq!(files, vec![kept]);
+    }
+
+    #[test]
+    fn discovery_reports_failed_roots_without_losing_healthy_roots() {
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = Fixture::new();
+        let failed = fixture.write_file("not-a-directory", "");
+        let healthy = fixture.write_file("healthy/nested/session.jsonl", "");
+        let diagnostics = Diagnostics::new("test");
+        let mut files = Vec::new();
+        for root in [fixture.path("missing"), failed, fixture.path("healthy")] {
+            super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
+        }
+
+        assert_eq!(files, [healthy]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]
