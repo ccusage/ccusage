@@ -158,9 +158,9 @@ jobs:
               just test-node
               just typecheck
           - name: Babashka performance harness test
-            run: apps/ccusage/scripts/compare-pr-performance_test.clj
+            run: nix shell --inputs-from . nixpkgs#just --command just ccusage::test-performance-harness
           - name: Babashka diff-refs test
-            run: apps/ccusage/scripts/diff-refs_test.clj
+            run: nix shell --inputs-from . nixpkgs#just --command just ccusage::test-diff-refs
       - name: Root test dependency layers for the sticky disk
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
