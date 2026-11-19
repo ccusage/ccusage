@@ -673,7 +673,9 @@ impl<'a, T> TablePart<'a, T> {
         }
         let rows = self.pricing_rows?;
         let id = pricing_identity(model);
-        self.key(id.as_ref())
+        (id.as_ref() != model)
+            .then(|| self.key(id.as_ref()))
+            .flatten()
             .filter(|key| !rows.literal_pricing_keys.contains(*key))
             .or_else(|| {
                 let key = rows
@@ -2393,8 +2395,18 @@ impl PricingMap {
     fn long_context_pricing(&self, model: &str) -> Option<Pricing> {
         let base = model_without_date_suffix(model);
         let resolved = pricing_alias(base).unwrap_or(base);
-        self.lookup(self.prices(), resolved, Fuzzy::Denied)
-            .or_else(|| self.lookup(self.prices(), base, Fuzzy::Denied))
+        std::iter::once(resolved)
+            .chain((base != resolved).then_some(base))
+            .find_map(|key| {
+                self.rows
+                    .entries
+                    .get(key)
+                    .or_else(|| {
+                        let exact_only = self.rows.exact_only.id_spelled_by(key)?;
+                        self.rows.entries.get(exact_only)
+                    })
+                    .copied()
+            })
     }
 
     fn supplement_pricing(&mut self, model: &str, pricing: Pricing) {
