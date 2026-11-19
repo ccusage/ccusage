@@ -23,10 +23,12 @@ def diagnostics [file: string]: nothing -> list<record<file: string, line: int, 
         error make --unspanned {msg: $"nu --ide-check failed on ($file): ($result.stderr)"}
     }
     let source = open --raw $file | into binary
+    let size = $source | bytes length
+    # NOTE(2026-11-19): `--ide-check` spans are engine-wide offsets that start at 0 in the checked file, so a span past its end belongs to an imported module. Each module is checked on its own.
     $result.stdout
     | lines
     | each { from json }
-    | where type == diagnostic
+    | where type == diagnostic and span.start < $size
     | uniq
     | each {|diagnostic|
         let preceding = $source | bytes at ..<($diagnostic.span.start) | decode utf-8 | split row "\n"
