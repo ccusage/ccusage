@@ -59,6 +59,6 @@ Read the nearest `AGENTS.md` before editing:
 - Fix the root cause, not the symptom, and keep the diff on the task: no unrelated clean-up or refactoring.
 - A bug fix starts with a regression test that fails on `main` for the reported reason (`tdd`).
 - Report output and existing snapshots stay unchanged; when one must move, the PR body names the rows and why.
-- Run `just fmt`, `just typecheck`, and `just test` before opening the PR.
+- Run `just fmt`, `just typecheck`, and `just test` in the dev shell (`nix develop --command just …` where direnv is not set up); name any check that could not run and why.
 - Commits are small, atomic Conventional Commits (`commit`).
-- The PR body states the root cause, names the regression test, and lists the checks run.
+- The PR body lists the checks run; for a bug fix it also states the root cause and names the regression test.
