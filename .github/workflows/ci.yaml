@@ -268,7 +268,7 @@ jobs:
             tar -xf "$archive"
           done
       - id: publish
-        run: pnpm dlx pkg-pr-new@0.0.93 publish --pnpm --bin './apps/ccusage' './packages/ccusage-linux-arm64' './packages/ccusage-linux-x64' './packages/ccusage-darwin-arm64' './packages/ccusage-darwin-x64' './packages/ccusage-win32-x64'
+        run: pnpm dlx pkg-pr-new@0.0.94 publish --pnpm --bin './apps/ccusage' './packages/ccusage-linux-arm64' './packages/ccusage-linux-x64' './packages/ccusage-darwin-arm64' './packages/ccusage-darwin-x64' './packages/ccusage-win32-x64'
       - id: preview-url
         env:
           URLS: ${{ steps.publish.outputs.urls }}
