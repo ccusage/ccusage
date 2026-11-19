@@ -65,8 +65,21 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_core::{PricingMap, cli::SharedArgs};
-    use ccusage_test_support::fs_fixture;
+    use ccusage_core::{LoadedEntry, PricingMap, cli::SharedArgs};
+    use ccusage_test_support::{Fixture, fs_fixture};
+
+    fn load_fixture(fixture: &Fixture, shared: &SharedArgs) -> Vec<LoadedEntry> {
+        ccusage_adapter_common::testing::entries(
+            &crate::SOURCE,
+            shared,
+            ccusage_adapter_common::source::SourceOptions {
+                open_claw_path: fixture.root().to_str(),
+                ..Default::default()
+            },
+            Some(&PricingMap::default()),
+        )
+        .expect("load the OpenClaw fixture")
+    }
 
     #[test]
     fn loads_assistant_usage_and_uses_model_change_events() {
@@ -81,16 +94,7 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-30");
@@ -110,16 +114,7 @@ mod tests {
         let fixture = fs_fixture!({
             "agents/main/sessions/session.jsonl": format!("{line}\n{line}\n"),
         });
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &SharedArgs::default());
 
         assert_eq!(entries.len(), 1);
     }
@@ -193,16 +188,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-30");
@@ -242,16 +228,7 @@ mod tests {
             .unwrap();
         statement.next().unwrap();
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &SharedArgs::default());
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].message_id.as_deref(), Some("evt-sqlite"));
@@ -295,16 +272,7 @@ mod tests {
             ),
         });
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &SharedArgs::default());
 
         assert_eq!(
             entries
@@ -326,16 +294,7 @@ mod tests {
         });
         write_transcript_events(&fixture, &[&assistant_event(Some("evt-sqlite"), 0.51)]);
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &SharedArgs::default());
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].message_id.as_deref(), Some("evt-sqlite"));
@@ -352,16 +311,7 @@ mod tests {
             ],
         );
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions {
-                open_claw_path: fixture.root().to_str(),
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
+        let entries = load_fixture(&fixture, &SharedArgs::default());
 
         let ids = entries
             .iter()
@@ -378,16 +328,7 @@ mod tests {
             let fixture = fs_fixture!({});
             write_transcript_events(&fixture, &events.map(String::as_str));
 
-            let entries = ccusage_adapter_common::testing::entries(
-                &crate::SOURCE,
-                &SharedArgs::default(),
-                ccusage_adapter_common::source::SourceOptions {
-                    open_claw_path: fixture.root().to_str(),
-                    ..Default::default()
-                },
-                None,
-            )
-            .unwrap();
+            let entries = load_fixture(&fixture, &SharedArgs::default());
 
             let ids = entries
                 .iter()
