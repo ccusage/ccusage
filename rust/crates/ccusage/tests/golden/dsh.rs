@@ -3,7 +3,7 @@ use std::path::Path;
 
 use ccusage_test_support::instant;
 
-use crate::golden::Case;
+use crate::golden::{Case, windowed_table};
 
 const V4_PRO: &str = "deepseek-v4-pro";
 const FLASH: &str = "deepseek-flash";
@@ -422,12 +422,16 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 
 /// What the adapter says under `--debug` about the logs it cannot read.
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
-    vec![
+    let mut cases = vec![
         Case::new(
             "session",
             "json_debug",
             &["dsh", "session", "--offline", "--json", "--debug"],
         ),
         Case::new("daily", "table_warn", &["dsh", "daily", "--offline"]).env("LOG_LEVEL", "3"),
-    ]
+    ];
+    cases.extend(
+        ["daily", "weekly", "monthly", "session"].map(|kind| windowed_table(kind, "dsh", &[])),
+    );
+    cases
 }

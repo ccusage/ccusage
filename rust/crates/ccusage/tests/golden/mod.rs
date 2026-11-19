@@ -183,6 +183,21 @@ pub fn shared_variants(command: &[&str], kind: &'static str) -> Vec<Case> {
     ]
 }
 
+fn windowed_table(kind: &'static str, agent: &'static str, options: &[&str]) -> Case {
+    let mut args = [
+        agent,
+        kind,
+        "--offline",
+        "--since",
+        WINDOW_SINCE,
+        "--until",
+        WINDOW_UNTIL,
+    ]
+    .to_vec();
+    args.extend_from_slice(options);
+    Case::new(kind, "table_window", &args).env("LOG_LEVEL", "3")
+}
+
 /// Every case the matrix runs for `agent`: the shared variants of each
 /// supported kind, the rejection of each unsupported one, and the agent's own
 /// extras.

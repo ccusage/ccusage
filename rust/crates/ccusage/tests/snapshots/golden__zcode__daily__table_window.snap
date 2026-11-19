@@ -1,0 +1,37 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: LOG_LEVEL=3 COLUMNS=200 ccusage zcode daily --offline --since 20251231 --until 20260101 --mode calculate
+---
+exit: 0
+--- stdout ---
+
+╭────────────────────────────────────────────╮
+│                                            │
+│          ZCode Token Usage Report          │
+│                                            │
+╰────────────────────────────────────────────╯
+
+┌────────────┬───────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date       │ Models            │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-31 │ - GLM-5.3         │     3,000 │       850 │           400 │         800 │         5,050 │       $0.01 │
+│            │ - GLM-5.3-Flash   │           │           │               │             │               │             │
+│            │ - sonnet-4        │           │           │               │             │               │             │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-01 │ - GLM-5.3         │     3,700 │     1,030 │           250 │         800 │         5,780 │       $0.01 │
+│            │ - GLM-5.3-Flash   │           │           │               │             │               │             │
+│            │ - glm-5.3         │           │           │               │             │               │             │
+│            │ - gpt-5           │           │           │               │             │               │             │
+│            │ - haiku-4-5       │           │           │               │             │               │             │
+│            │ - zcode-mystery-1 │           │           │               │             │               │             │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                   │     6,700 │     1,880 │           650 │       1,600 │        10,830 │       $0.01 │
+└────────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  zcode: skipped 4 records in 1 input (invalid timestamp)
+WARN  zcode: skipped 3 inputs (unexpected shape)
+WARN  zcode: skipped 1 input and 7 records in 2 inputs (invalid data)
+WARN  Missing embedded pricing for GLM-5.3; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for claude-sonnet-4-20250514; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

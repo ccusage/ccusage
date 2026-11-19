@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use ccusage_test_support::instant;
 
-use crate::golden::Case;
+use crate::golden::{Case, windowed_table};
 
 const SONNET: &str = "'claude-sonnet-4-20250514'";
 const OPUS: &str = "'claude-opus-4-20250514'";
@@ -593,5 +593,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
 }
 
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
-    vec![Case::new("daily", "table_warn", &["zcode", "daily", "--offline"]).env("LOG_LEVEL", "3")]
+    let mut cases = vec![
+        Case::new("daily", "table_warn", &["zcode", "daily", "--offline"]).env("LOG_LEVEL", "3"),
+    ];
+    cases.extend(
+        ["daily", "monthly", "session"]
+            .map(|kind| windowed_table(kind, "zcode", &["--mode", "calculate"])),
+    );
+    cases
 }
