@@ -712,6 +712,32 @@ fn reports_issue_2046_identical_fork_instant_requests_in_every_report_mode() {
     }
 }
 
+#[test]
+fn reports_issue_2184_spawned_siblings_with_identical_usage_separately() {
+    let spawned = include_str!("fixtures/codex/issue_2046.jsonl");
+    let sibling = spawned
+        .replace("00000000000a", "00000000000b")
+        .replace("resp_child_1", "resp_child_3")
+        .replace("resp_child_2", "resp_child_4");
+    let fixture = fs_fixture!({
+        "codex/sessions/spawned.jsonl": spawned,
+        "codex/sessions/spawned-second.jsonl": sibling,
+    });
+
+    let report: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "codex", "daily", "--json", "--since", "20261101", "--until", "20261101",
+        ],
+    ))
+    .unwrap();
+    let totals = &report["totals"];
+    assert_eq!(totals["inputTokens"], 32_000);
+    assert_eq!(totals["cacheReadTokens"], 8_000);
+    assert_eq!(totals["outputTokens"], 400);
+    assert_eq!(totals["totalTokens"], 40_400);
+}
+
 fn issue_1970_codex_fixture() -> Fixture {
     fs_fixture!({
         "codex/sessions/2026/01/05/child.jsonl":
