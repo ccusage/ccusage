@@ -4,7 +4,6 @@
             [clojure.string :as str]
             [compare-pr-performance.benchmark :as benchmark]
             [compare-pr-performance.data :as data]
-            [compare-pr-performance.main :as main]
             [compare-pr-performance.report :as report]
             [compare-pr-performance.system :as system])
   (:import [java.nio.channels FileChannel]
@@ -228,5 +227,5 @@
                             (format "%d interleaved rounds after %d warmup rounds; cells show median (min–max); ratios are this ref / previous ref per round. "
                                     (:runs options) (:warmup options))
                             "\n\n" synthetic (when real (str "\n" real-warning real)))]
-            (main/write-output! (:output options) report))
+            (system/write-output! (:output options) report))
           (finally (fs/delete-tree empty-home)))))))

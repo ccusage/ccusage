@@ -6,9 +6,6 @@
             [compare-pr-performance.report :as report]
             [compare-pr-performance.system :as system]))
 
-(defn write-output! [output markdown]
-  (if output (spit (system/expand output) markdown) (print markdown)))
-
 (defn compare-command [variants command env options]
   (let [{:keys [rounds]} (benchmark/measure-command variants command env (assoc options :title "PR vs base"))]
     {:command command
@@ -39,6 +36,6 @@
                                :grok-fixture-stats (some-> grok-fixture-dir system/summarize-directory))
                 report (report/render-report context results {:base (system/optional-file-size (:bin (first variants)))
                                                        :head (system/optional-file-size (:bin (second variants)))})]
-            (write-output! (:output options) report)
+            (system/write-output! (:output options) report)
             (github-warning! (report/overall-verdict results (:threshold options)) (some? (System/getenv "GITHUB_ACTIONS"))))
           (finally (fs/delete-tree empty-home)))))))

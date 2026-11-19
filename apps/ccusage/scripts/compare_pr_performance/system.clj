@@ -24,6 +24,9 @@
 
 (defn path [& parts] (str (apply fs/path parts)))
 (defn expand [value] (str (fs/absolutize (fs/expand-home value))))
+(defn write-output! [output markdown]
+  (if output (spit (expand output) markdown) (print markdown)))
+
 (defn temp-dir [prefix] (fs/create-temp-dir {:prefix prefix}))
 (defn optional-file-size [file]
   (when (and file (fs/regular-file? file)) (fs/size file)))
