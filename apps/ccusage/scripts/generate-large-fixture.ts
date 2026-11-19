@@ -13,6 +13,8 @@ const FIXTURE_DAYS = 120;
 const CLAUDE_PROJECT_COUNT = 48;
 const SUBAGENT_FILE_EVERY = 4;
 const LEGACY_PROGRESS_FILE_EVERY = 6;
+const LEGACY_PROGRESS_USAGE_CHANCE = 0.08;
+const METADATA_FIRST_ASSISTANT_CHANCE = 0.01;
 const CODEX_PLAIN_RECENT_DAYS = 14;
 const CODEX_ARCHIVED_FILE_EVERY = 4;
 const CODEX_COMPACTION_CHANCE = 1 / 30;
@@ -125,6 +127,7 @@ const BMP_WORDS = [
 	'TODO:',
 	'error[E0308]:',
 ] as const;
+const CLAUDE_PLAIN_WORDS = BMP_WORDS.filter((word) => !/["\\]|[^\p{ASCII}]|\t/u.test(word));
 
 type FixtureResult = {
 	fileCount: number;
@@ -294,12 +297,30 @@ class Random {
 	}
 }
 
-function buildBmpTextPool(): string {
-	const random = new Random(7);
+function claudeAssistantWord(random: Random): string {
+	// NOTE(2026-11-19, Claude Code 2.1, #2221): Usage bodies average about eight JSON escapes per KiB and 3% non-ASCII bytes. The shared transcript pool would overstate the cost of skipping them.
+	const sample = random.int(1000);
+	if (sample < 11) {
+		return '"quoted"';
+	}
+	if (sample < 35) {
+		return '日本語';
+	}
+	if (sample < 62) {
+		return '\n';
+	}
+	if (sample < 71) {
+		return '\t';
+	}
+	return random.pick(CLAUDE_PLAIN_WORDS);
+}
+
+function buildTextPool(seed: number, pickWord: (random: Random) => string): string {
+	const random = new Random(seed);
 	const parts: string[] = [];
 	let length = 0;
 	while (length < 2 * MIB) {
-		const word = random.chance(0.08) ? '\n' : random.pick(BMP_WORDS);
+		const word = pickWord(random);
 		parts.push(word, ' ');
 		length += word.length + 1;
 	}
@@ -312,12 +333,15 @@ function buildOpaquePool(): string {
 	return Array.from({ length: MIB }, () => alphabet[random.int(alphabet.length)]).join('');
 }
 
-const BMP_TEXT_POOL = buildBmpTextPool();
+const BMP_TEXT_POOL = buildTextPool(7, (random) =>
+	random.chance(0.08) ? '\n' : random.pick(BMP_WORDS),
+);
+const CLAUDE_ASSISTANT_TEXT_POOL = buildTextPool(13, claudeAssistantWord);
 const OPAQUE_POOL = buildOpaquePool();
 
-function text(random: Random, length: number): string {
-	const start = random.int(BMP_TEXT_POOL.length - length - 1);
-	return BMP_TEXT_POOL.slice(start, start + length);
+function text(random: Random, length: number, pool = BMP_TEXT_POOL): string {
+	const start = random.int(pool.length - length - 1);
+	return pool.slice(start, start + length);
 }
 
 function opaque(random: Random, length: number): string {
@@ -354,21 +378,31 @@ type ClaudeSession = {
 	random: Random;
 };
 
-function claudeEnvelope(session: ClaudeSession, type: string, timestamp: string): Line {
-	return {
+function claudeEnvelope(
+	session: ClaudeSession,
+	type: string,
+	timestamp: string,
+	assistant?: { message: Line; requestId: string },
+): Line {
+	const ancestry = {
 		parentUuid: session.random.uuid(),
 		isSidechain: session.agentId !== undefined,
-		...(session.agentId === undefined ? {} : { agentId: session.agentId }),
+	};
+	const agent = session.agentId === undefined ? {} : { agentId: session.agentId };
+	const context = {
 		userType: 'external',
 		entrypoint: 'cli',
 		cwd: session.cwd,
 		sessionId: session.sessionId,
 		version: session.version,
 		gitBranch: 'main',
-		type,
-		uuid: session.random.uuid(),
-		timestamp,
 	};
+	const record = { type, uuid: session.random.uuid(), timestamp };
+	if (assistant && !session.random.chance(METADATA_FIRST_ASSISTANT_CHANCE)) {
+		// NOTE(2026-11-19, Claude Code 2.1, #2221): The message precedes report metadata in most usage rows. Preserve insertion order to exercise this parser path.
+		return { ...ancestry, ...assistant, ...record, ...context, ...agent };
+	}
+	return { ...ancestry, ...agent, ...context, ...record, ...assistant };
 }
 
 function claudeUsage(random: Random, model: string): Line {
@@ -423,7 +457,7 @@ function claudeContentBlock(random: Random, kind: string): Line {
 		case 'thinking':
 			return {
 				type: 'thinking',
-				thinking: text(random, around(random, 1600)),
+				thinking: text(random, around(random, 1600), CLAUDE_ASSISTANT_TEXT_POOL),
 				signature: opaque(random, around(random, 600)),
 			};
 		case 'tool_use':
@@ -431,11 +465,17 @@ function claudeContentBlock(random: Random, kind: string): Line {
 				type: 'tool_use',
 				id: `toolu_${random.hex(24)}`,
 				name: random.pick(['Bash', 'Read', 'Edit', 'Grep', 'Task']),
-				input: { command: text(random, around(random, 900)), description: text(random, 60) },
+				input: {
+					command: text(random, around(random, 900), CLAUDE_ASSISTANT_TEXT_POOL),
+					description: text(random, 60, CLAUDE_ASSISTANT_TEXT_POOL),
+				},
 				caller: { type: 'direct' },
 			};
 		default:
-			return { type: 'text', text: text(random, around(random, 1800)) };
+			return {
+				type: 'text',
+				text: text(random, around(random, 1800), CLAUDE_ASSISTANT_TEXT_POOL),
+			};
 	}
 }
 
@@ -470,7 +510,11 @@ function claudeAssistantResponse(
 			diagnostics: null,
 			context_management: null,
 		};
-		if (session.legacyProgress && session.agentId === undefined && random.chance(0.25)) {
+		if (
+			session.legacyProgress &&
+			session.agentId === undefined &&
+			random.chance(LEGACY_PROGRESS_USAGE_CHANCE)
+		) {
 			return {
 				...claudeEnvelope(session, 'progress', timestamp),
 				data: {
@@ -484,9 +528,7 @@ function claudeAssistantResponse(
 			};
 		}
 		return {
-			...claudeEnvelope(session, 'assistant', timestamp),
-			message,
-			requestId,
+			...claudeEnvelope(session, 'assistant', timestamp, { message, requestId }),
 			requestedModel: model,
 			effort: 'high',
 			apiBlockIndex: 0,
