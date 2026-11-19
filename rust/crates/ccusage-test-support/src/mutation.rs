@@ -1,9 +1,3 @@
-//! Damaged variants of a fixture, to prove a parser returns on all of them.
-//!
-//! The release binary is built with `panic = "abort"`, so a parser that
-//! panics on one truncated line takes the whole report down. Tests unwind, so
-//! running a parser over this corpus finds those panics before they ship.
-
 use std::{
     ops::Range,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -74,7 +68,7 @@ fn mutations(fixture: &[u8]) -> impl Iterator<Item = Mutation> + '_ {
                 bytes: replace(fixture, cut..line.end, b""),
             })
         });
-    let values = json_values(fixture)
+    let values = json_value_spans(fixture)
         .into_iter()
         .flat_map(move |value| value_mutations(fixture, value));
     intact.chain(prefixes).chain(cut_lines).chain(values)
@@ -131,7 +125,6 @@ fn line_ranges(fixture: &[u8]) -> Vec<Range<usize>> {
 enum JsonKind {
     Number,
     String,
-    /// A literal, an object or an array.
     Other,
 }
 
@@ -141,11 +134,7 @@ struct JsonValue {
     kind: JsonKind,
 }
 
-/// Finds the values of the JSON documents in `fixture`: every scalar, object
-/// and array, but not object keys. It scans bytes rather than parsing, so it
-/// works across the lines of a JSONL file and leaves the bytes around a value
-/// exactly as the fixture has them.
-fn json_values(fixture: &[u8]) -> Vec<JsonValue> {
+fn json_value_spans(fixture: &[u8]) -> Vec<JsonValue> {
     let mut values = Vec::new();
     let mut open = Vec::new();
     let mut index = 0;
@@ -153,7 +142,7 @@ fn json_values(fixture: &[u8]) -> Vec<JsonValue> {
         let start = index;
         match fixture[index] {
             b'"' => {
-                index = string_end(fixture, index);
+                index = index_after_string(fixture, index);
                 if !is_key(fixture, index) {
                     values.push(JsonValue {
                         range: start..index,
@@ -208,8 +197,7 @@ fn json_values(fixture: &[u8]) -> Vec<JsonValue> {
     values
 }
 
-/// The index just past the string that opens at `start`.
-fn string_end(fixture: &[u8], start: usize) -> usize {
+fn index_after_string(fixture: &[u8], start: usize) -> usize {
     let mut index = start + 1;
     while index < fixture.len() {
         match fixture[index] {
@@ -230,7 +218,7 @@ fn is_key(fixture: &[u8], after_string: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{JsonKind, assert_parser_survives_mutations, json_values, mutations};
+    use super::{JsonKind, assert_parser_survives_mutations, json_value_spans, mutations};
 
     const FIXTURE: &[u8] = b"{\"id\":\"a\\\"b\",\"n\":-1.5e3,\"ok\":true}\n{\"list\":[null, 7]}\n";
 
@@ -242,7 +230,7 @@ mod tests {
 
     #[test]
     fn finds_values_but_not_keys() {
-        let values = json_values(FIXTURE)
+        let values = json_value_spans(FIXTURE)
             .into_iter()
             .map(|value| {
                 (
@@ -275,17 +263,12 @@ mod tests {
         let mutated = mutated();
 
         for expected in [
-            // The fixture itself and a prefix that ends inside the first line.
             "{\"id\":\"a\\\"b\",\"n\":-1.5e3,\"ok\":true}\n{\"list\":[null, 7]}\n",
             "{\"id\":\"a\\\"b\",\"n\":-1.5",
-            // The first line cut short with the second one intact.
             "{\"id\":\n{\"list\":[null, 7]}\n",
-            // A value replaced by null, a number turned into a string, and a
-            // string turned into a number.
             "{\"id\":\"a\\\"b\",\"n\":null,\"ok\":true}\n{\"list\":[null, 7]}\n",
             "{\"id\":\"a\\\"b\",\"n\":\"-1.5e3\",\"ok\":true}\n{\"list\":[null, 7]}\n",
             "{\"id\":1,\"n\":-1.5e3,\"ok\":true}\n{\"list\":[null, 7]}\n",
-            // A whole container replaced by null.
             "{\"id\":\"a\\\"b\",\"n\":-1.5e3,\"ok\":true}\n{\"list\":null}\n",
         ] {
             assert!(
@@ -306,7 +289,6 @@ mod tests {
     #[should_panic(expected = "the parser panicked on")]
     fn reports_a_parser_that_panics_on_damaged_input() {
         assert_parser_survives_mutations(FIXTURE, |bytes| {
-            // Stands in for a parser that indexes past the end of a cut line.
             let first_line = bytes
                 .split(|byte| *byte == b'\n')
                 .next()

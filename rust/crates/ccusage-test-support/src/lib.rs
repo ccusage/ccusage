@@ -116,8 +116,7 @@ impl Drop for EnvGuard {
 }
 
 fn set_process_var(_lock: &MutexGuard<'static, ()>, key: &'static str, value: Option<OsString>) {
-    // SAFETY: The guard serializes test environment changes and restoration. Its
-    // callers must avoid concurrent environment access outside Rust's std::env.
+    // SAFETY: The guard serializes test mutations and restoration; callers must avoid concurrent environment access outside Rust's std::env.
     unsafe {
         match value {
             Some(value) => std::env::set_var(key, value),
