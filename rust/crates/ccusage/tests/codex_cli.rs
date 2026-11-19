@@ -714,10 +714,14 @@ fn reports_issue_2046_identical_fork_instant_requests_in_every_report_mode() {
 
 #[test]
 fn reports_issue_2184_spawned_siblings_with_identical_usage_separately() {
+    let spawned = include_str!("fixtures/codex/issue_2046.jsonl");
+    let sibling = spawned
+        .replace("00000000000a", "00000000000b")
+        .replace("resp_child_1", "resp_child_3")
+        .replace("resp_child_2", "resp_child_4");
     let fixture = fs_fixture!({
-        "codex/sessions/spawned.jsonl": include_str!("fixtures/codex/issue_2046.jsonl"),
-        "codex/sessions/spawned-second.jsonl":
-            include_str!("fixtures/codex/issue_2184_sibling.jsonl"),
+        "codex/sessions/spawned.jsonl": spawned,
+        "codex/sessions/spawned-second.jsonl": sibling,
     });
 
     let report: Value = serde_json::from_str(&run_cli(
