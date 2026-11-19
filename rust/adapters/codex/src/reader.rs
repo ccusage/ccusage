@@ -10,7 +10,7 @@ pub(super) fn is_rollout_file(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "jsonl") || is_compressed_rollout(path)
 }
 
-pub(super) fn is_compressed_rollout(path: &Path) -> bool {
+fn is_compressed_rollout(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "zst")
         && path.file_stem().is_some_and(|stem| {
             Path::new(stem)
@@ -27,7 +27,7 @@ pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     }
 }
 
-pub(super) fn other_encoding_path(path: &Path) -> PathBuf {
+fn other_encoding_path(path: &Path) -> PathBuf {
     if is_compressed_rollout(path) {
         path.with_extension("")
     } else {

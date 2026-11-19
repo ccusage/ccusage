@@ -366,7 +366,7 @@ impl CodexSessionMetadata {
     }
 }
 
-pub(super) fn read_codex_session_metadata(
+fn read_codex_session_metadata(
     path: &Path,
     diagnostics: Option<&Diagnostics>,
 ) -> Option<CodexSessionMetadata> {
