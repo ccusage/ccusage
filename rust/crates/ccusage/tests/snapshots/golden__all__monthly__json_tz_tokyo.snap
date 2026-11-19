@@ -257,19 +257,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 8000,
           "cost": 0.00083636,
           "inputTokens": 1250,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 303
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
-          "inputTokens": 1621,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 204
         },
         {
           "cacheCreationTokens": 0,
@@ -378,7 +378,7 @@ exit: 0
       ],
       "outputTokens": 13443,
       "period": "2025-12",
-      "totalCost": 9.730133729999999,
+      "totalCost": 9.73064088,
       "totalTokens": 206687
     },
     {
@@ -758,6 +758,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 33,
+          "cost": 0.00055009,
+          "inputTokens": 622,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 135
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
@@ -787,14 +795,6 @@ exit: 0
           "inputTokens": 0,
           "modelName": "grok-4.3-build",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 33,
-          "cost": 0.000275045,
-          "inputTokens": 622,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 135
         },
         {
           "cacheCreationTokens": 0,
@@ -1107,7 +1107,7 @@ exit: 0
       ],
       "outputTokens": 44645,
       "period": "2026-01",
-      "totalCost": 18.40679462,
+      "totalCost": 18.407069664999998,
       "totalTokens": 2525733
     },
     {
@@ -1144,7 +1144,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.1402821,
+    "totalCost": 28.141064295,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

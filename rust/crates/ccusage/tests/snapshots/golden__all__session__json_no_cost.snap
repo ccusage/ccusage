@@ -2318,27 +2318,6 @@ exit: 0
       "totalTokens": 3979
     },
     {
-      "agent": "goose",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 800,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 800,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 300
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514"
-      ],
-      "outputTokens": 300,
-      "period": "s-total-short",
-      "totalTokens": 1100
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1083,
@@ -2360,17 +2339,17 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 80,
-          "inputTokens": 505,
-          "modelName": "gemini-3-flash-preview",
-          "outputTokens": 120
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 603,
           "inputTokens": 1612,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "inputTokens": 505,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,
@@ -2391,6 +2370,27 @@ exit: 0
       "outputTokens": 1244,
       "period": "aaaa1111-session-json",
       "totalTokens": 5364
+    },
+    {
+      "agent": "goose",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 800,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 300,
+      "period": "s-total-short",
+      "totalTokens": 1100
     },
     {
       "agent": "antigravity",
@@ -3664,6 +3664,27 @@ exit: 0
       "totalTokens": 195
     },
     {
+      "agent": "gemini",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 400,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 90
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash"
+      ],
+      "outputTokens": 90,
+      "period": "dddd4444-camel",
+      "totalTokens": 500
+    },
+    {
       "agent": "codex",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 50,
@@ -3860,23 +3881,23 @@ exit: 0
     {
       "agent": "gemini",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 400,
+      "cacheReadTokens": 30,
+      "inputTokens": 210,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 400,
+          "cacheReadTokens": 30,
+          "inputTokens": 210,
           "modelName": "gemini-2.5-flash",
-          "outputTokens": 90
+          "outputTokens": 45
         }
       ],
       "modelsUsed": [
         "gemini-2.5-flash"
       ],
-      "outputTokens": 90,
-      "period": "dddd4444-camel",
-      "totalTokens": 500
+      "outputTokens": 45,
+      "period": "bbbb2222-renamed",
+      "totalTokens": 285
     },
     {
       "agent": "opencode",
@@ -3995,27 +4016,6 @@ exit: 0
       "outputTokens": 7,
       "period": "ses-broken",
       "totalTokens": 24
-    },
-    {
-      "agent": "gemini",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 30,
-      "inputTokens": 210,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 30,
-          "inputTokens": 210,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 45
-        }
-      ],
-      "modelsUsed": [
-        "gemini-2.5-flash"
-      ],
-      "outputTokens": 45,
-      "period": "bbbb2222-renamed",
-      "totalTokens": 285
     },
     {
       "agent": "pi",

@@ -355,19 +355,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 8000,
           "cost": 0.000812,
           "inputTokens": 1200,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 300
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
-          "inputTokens": 1621,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 204
         },
         {
           "cacheCreationTokens": 0,
@@ -439,7 +439,7 @@ exit: 0
       ],
       "outputTokens": 8394,
       "period": "2025-12-30",
-      "totalCost": 0.39897452499999997,
+      "totalCost": 0.399481675,
       "totalTokens": 162557
     },
     {
@@ -1096,7 +1096,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
-          "cost": 1.845e-6,
+          "cost": 3.69e-6,
           "inputTokens": 12,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 0
@@ -1328,7 +1328,7 @@ exit: 0
       ],
       "outputTokens": 17487,
       "period": "2026-01-01",
-      "totalCost": 2.8402110699999996,
+      "totalCost": 2.8402129149999995,
       "totalTokens": 1608272
     },
     {
@@ -1499,6 +1499,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 30,
+          "cost": 0.0005464,
+          "inputTokens": 610,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 135
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
@@ -1520,14 +1528,6 @@ exit: 0
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 30,
-          "cost": 0.0002732,
-          "inputTokens": 610,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 135
         },
         {
           "cacheCreationTokens": 0,
@@ -1669,7 +1669,7 @@ exit: 0
       ],
       "outputTokens": 10705,
       "period": "2026-01-02",
-      "totalCost": 0.9101639999999999,
+      "totalCost": 0.9104371999999998,
       "totalTokens": 670468
     },
     {
@@ -1706,7 +1706,7 @@ exit: 0
     "cacheReadTokens": 1309587,
     "inputTokens": 1345534,
     "outputTokens": 58475,
-    "totalCost": 4.7856635999999995,
+    "totalCost": 4.786445794999999,
     "totalTokens": 2734738,
     "unpricedModels": [
       "GLM-5.3",

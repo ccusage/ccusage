@@ -363,19 +363,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
           "cost": 0.0008065,
           "inputTokens": 585,
           "modelName": "gemini-3-flash-preview",
           "outputTokens": 140
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 600,
-          "cost": 0.0005071499999999999,
-          "inputTokens": 1621,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 204
         },
         {
           "cacheCreationTokens": 0,
@@ -534,7 +534,7 @@ exit: 0
       ],
       "outputTokens": 29896,
       "period": "2025-12",
-      "totalCost": 21.164608279999992,
+      "totalCost": 21.165115429999997,
       "totalTokens": 453680
     },
     {
@@ -848,6 +848,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 33,
+          "cost": 0.00055009,
+          "inputTokens": 622,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 135
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.00042,
           "inputTokens": 40,
@@ -885,14 +893,6 @@ exit: 0
           "inputTokens": 800,
           "modelName": "GLM-5.3-Flash",
           "outputTokens": 400
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 33,
-          "cost": 0.000275045,
-          "inputTokens": 622,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 135
         },
         {
           "cacheCreationTokens": 0,
@@ -1190,7 +1190,7 @@ exit: 0
       ],
       "outputTokens": 28192,
       "period": "2026-01",
-      "totalCost": 6.972320070000002,
+      "totalCost": 6.972595115000002,
       "totalTokens": 2278740
     },
     {
@@ -1227,7 +1227,7 @@ exit: 0
     "cacheReadTokens": 1309617,
     "inputTokens": 1346544,
     "outputTokens": 58595,
-    "totalCost": 28.140282099999997,
+    "totalCost": 28.141064295,
     "totalTokens": 2735938,
     "unpricedModels": [
       "GLM-5.3",

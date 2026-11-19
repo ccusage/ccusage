@@ -1999,7 +1999,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
-          "cost": 1.845e-6,
+          "cost": 3.69e-6,
           "inputTokens": 12,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 0
@@ -2022,7 +2022,7 @@ exit: 0
       ],
       "outputTokens": 814,
       "period": "aaaa1111-session-json",
-      "totalCost": 0.002508345,
+      "totalCost": 0.00251019,
       "totalTokens": 1604
     },
     {
@@ -3057,7 +3057,7 @@ exit: 0
     "cacheReadTokens": 568564,
     "inputTokens": 872619,
     "outputTokens": 35635,
-    "totalCost": 15.052415925000005,
+    "totalCost": 15.052417770000005,
     "totalTokens": 1487531,
     "unpricedModels": [
       "GLM-5.3",

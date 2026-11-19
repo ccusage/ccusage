@@ -29,19 +29,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 603,
+          "cost": 0.00100169,
+          "inputTokens": 1612,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
           "cost": 0.0007065,
           "inputTokens": 505,
           "modelName": "gemini-3-flash-preview",
           "outputTokens": 120
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 603,
-          "cost": 0.000500845,
-          "inputTokens": 1612,
-          "modelName": "gemini-2.5-flash",
-          "outputTokens": 200
         },
         {
           "cacheCreationTokens": 0,
@@ -62,7 +62,7 @@ exit: 0
       ],
       "outputTokens": 1244,
       "sessionId": "aaaa1111-session-json",
-      "totalCost": 0.006707345,
+      "totalCost": 0.00720819,
       "totalTokens": 5364
     },
     {
@@ -73,7 +73,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
-          "cost": 0.0000882,
+          "cost": 0.0001764,
           "inputTokens": 210,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 45
@@ -84,7 +84,7 @@ exit: 0
       ],
       "outputTokens": 45,
       "sessionId": "bbbb2222-renamed",
-      "totalCost": 0.0000882,
+      "totalCost": 0.0001764,
       "totalTokens": 285
     },
     {
@@ -180,7 +180,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000185,
+          "cost": 0.00037,
           "inputTokens": 400,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 90
@@ -191,7 +191,7 @@ exit: 0
       ],
       "outputTokens": 90,
       "sessionId": "dddd4444-camel",
-      "totalCost": 0.000185,
+      "totalCost": 0.00037,
       "totalTokens": 500
     },
     {
@@ -301,7 +301,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 8.15e-6,
+          "cost": 0.0000163,
           "inputTokens": 21,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 4
@@ -312,7 +312,7 @@ exit: 0
       ],
       "outputTokens": 4,
       "sessionId": "shadow-outside-chats",
-      "totalCost": 8.15e-6,
+      "totalCost": 0.0000163,
       "totalTokens": 25
     }
   ],
@@ -321,7 +321,7 @@ exit: 0
     "cacheReadTokens": 155413,
     "inputTokens": 306499,
     "outputTokens": 3169,
-    "totalCost": 0.823166195,
+    "totalCost": 0.82394839,
     "totalTokens": 465376,
     "unpricedModels": [
       "gemini-mystery-1",

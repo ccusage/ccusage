@@ -706,7 +706,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
-          "cost": 1.845e-6,
+          "cost": 3.69e-6,
           "inputTokens": 12,
           "modelName": "gemini-2.5-flash",
           "outputTokens": 0
@@ -911,7 +911,7 @@ exit: 0
       ],
       "outputTokens": 17487,
       "period": "2026-01",
-      "totalCost": 3.70499857,
+      "totalCost": 3.705000415,
       "totalTokens": 1608272
     }
   ],
@@ -920,7 +920,7 @@ exit: 0
     "cacheReadTokens": 668244,
     "inputTokens": 1171429,
     "outputTokens": 37349,
-    "totalCost": 15.369215324999999,
+    "totalCost": 15.36921717,
     "totalTokens": 1887685,
     "unpricedModels": [
       "GLM-5.3",
