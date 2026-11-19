@@ -3,10 +3,25 @@
 
 use std/assert
 
+def has-run-step [steps: list<any>]: nothing -> bool {
+    $steps | any {|step|
+        (
+            (($step | get --optional run) != null)
+            or (has-run-step ($step | get --optional parallel | default []))
+        )
+    }
+}
+
 def main []: nothing -> nothing {
     let workflows = glob ($env.FILE_PWD | path join ../workflows/*.y*ml)
     $workflows | each {|file|
-        assert equal (open $file | get --optional defaults.run.shell) bash $"($file) must default run steps to bash so pipelines fail with their first command"
+        let workflow = open $file
+        let has_run = $workflow.jobs | values | any {|job|
+            has-run-step ($job | get --optional steps | default [])
+        }
+        if $has_run {
+            assert equal ($workflow | get --optional defaults.run.shell) bash $"($file) must default run steps to bash so pipelines fail with their first command"
+        }
     } | ignore
 
     let step = open ($env.FILE_PWD | path join ../workflows/update-pricing.yaml)

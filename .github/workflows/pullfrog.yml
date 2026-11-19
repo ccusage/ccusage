@@ -13,10 +13,6 @@ on:
 permissions:
   contents: read
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
   pullfrog:
     runs-on: blacksmith-32vcpu-ubuntu-2404
