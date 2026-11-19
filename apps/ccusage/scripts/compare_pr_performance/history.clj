@@ -1,7 +1,8 @@
 (def history-spec
   {:fixture-dir {:ref "DIR" :desc "Claude fixture; pass with --codex-fixture-dir, or omit both to generate them"}
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture; pass with --fixture-dir"}
-   :size-mib {:coerce :long :default 1024 :ref "N" :desc "Size of each generated fixture"}
+   :grok-fixture-dir {:ref "DIR" :desc "Grok fixture; optional with --fixture-dir"}
+   :size-mib {:coerce :long :ref "N" :desc "Size of each generated fixture (default: the real-log size the generator profiles)"}
    :real {:coerce :boolean :desc "Also measure the logs this environment points at (default dirs, CLAUDE_CONFIG_DIR, CODEX_HOME)"}
    :runs {:coerce :long :default 5 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 1 :ref "N"}
@@ -45,6 +46,8 @@
         (fail! (str "Each ref or binary may appear once: " (str/join ", " duplicates)) {:kind :invalid-cli}))
       (when (not= (some? (:fixture-dir opts)) (some? (:codex-fixture-dir opts)))
         (fail! "Pass --fixture-dir and --codex-fixture-dir together" {:kind :invalid-cli}))
+      (when (and (:grok-fixture-dir opts) (not (:fixture-dir opts)))
+        (fail! "Pass --grok-fixture-dir with --fixture-dir and --codex-fixture-dir" {:kind :invalid-cli}))
       (assert-sample-options opts))
     (assoc opts :refs (vec args))))
 
@@ -192,17 +195,17 @@
   "Generates the fixture once per generator revision, size, and Codex layout."
   [repo cache size-mib layout]
   (let [generator (path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
-        dir (path cache "fixture" (str size-mib "-" layout "-" (subs (file-sha256 generator) 0 12)))
-        claude (path dir "claude") codex (path dir "codex") done (path dir ".complete")]
+        dir (path cache "fixture" (str (or size-mib "profiled") "-" layout "-" (subs (file-sha256 generator) 0 12)))
+        claude (path dir "claude") codex (path dir "codex") grok (path dir "grok") done (path dir ".complete")]
     (with-file-lock (str dir ".lock")
       #(when-not (fs/exists? done)
          (fs/delete-tree dir)
-         (write-progress (str "generating " size-mib " MiB fixtures in " dir))
-         (run-checked [generator "--output-dir" claude "--codex-output-dir" codex
-                       "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib) "--codex-layout" layout]
+         (write-progress (str "generating " (if size-mib (str size-mib " MiB") "real-sized") " fixtures in " dir))
+         (run-checked (into [generator "--output-dir" claude "--codex-output-dir" codex "--grok-output-dir" grok "--codex-layout" layout]
+                            (when size-mib ["--size-mib" (str size-mib) "--codex-size-mib" (str size-mib) "--grok-size-mib" (str size-mib)]))
                       {:dir repo} "generate-large-fixture")
          (spit done "")))
-    {:claude claude :codex codex}))
+    {:claude claude :codex codex :grok grok}))
 
 (defn history-section [title variants env commands options]
   (str "## " title "\n\n"
@@ -222,13 +225,14 @@
             custom-codex (some-> (:codex-fixture-dir options) expand)
             compatibility (codex-compatibility (partial reads-input-class? repo) variants custom-codex)
             fixture (if custom-codex
-                      {:claude (expand (:fixture-dir options)) :codex custom-codex}
+                      {:claude (expand (:fixture-dir options)) :codex custom-codex :grok (some-> (:grok-fixture-dir options) expand)}
                       (ensure-fixture! repo cache (:size-mib options) (:layout compatibility)))
             empty-home (temp-dir "ccusage-perf-home.")
             stats (fn [dir] (let [s (summarize-directory dir)] (format "%s, %d files" (format-data-size (:bytes s)) (:files s))))]
         (try
-          (let [synthetic (history-section (format "Synthetic fixture (Claude %s; Codex %s)" (stats (:claude fixture)) (stats (:codex fixture)))
-                                           variants (fixture-env (:claude fixture) (:codex fixture) (str empty-home)) commands options)
+          (let [synthetic (history-section (str "Synthetic fixture (Claude " (stats (:claude fixture)) "; Codex " (stats (:codex fixture))
+                                                (when (:grok fixture) (str "; Grok " (stats (:grok fixture)))) ")")
+                                           variants (fixture-env (:claude fixture) (:codex fixture) (:grok fixture) (str empty-home)) commands options)
                 real (when (:real options)
                        (history-section "Local logs" variants (local-logs-env) commands options))
                 real-warning (when (and real (not= "current" (:layout compatibility)))

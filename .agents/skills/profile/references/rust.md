@@ -56,3 +56,7 @@ environment points at. Judge by the CPU-time and peak-RSS ratios, not wall time.
 When a regression slips past the comparison, fix the fixture generator
 (`apps/ccusage/scripts/generate-large-fixture.ts`) so its lines carry the shape
 that triggered it; do not add a special-case benchmark.
+
+When real histories outgrow the fixture, refresh its per-agent size profiles
+from `apps/ccusage/scripts/profile-log-sizes.nu`. Commit only the file counts,
+totals, and quantiles it prints, never real log content.

@@ -22,12 +22,14 @@
         (try
           (let [fixture-dir (expand (:fixture-dir options))
                 codex-fixture-dir (expand (:codex-fixture-dir options))
+                grok-fixture-dir (some-> (:grok-fixture-dir options) expand)
                 variants [{:label "base" :bin (expand (:base-bin options))}
                           {:label "PR" :bin (expand (:head-bin options))}]
-                env (fixture-env fixture-dir codex-fixture-dir (str empty-home))
+                env (fixture-env fixture-dir codex-fixture-dir grok-fixture-dir (str empty-home))
                 results (mapv #(compare-command variants % env options) default-commands)
                 context (assoc options :fixture-stats (summarize-directory fixture-dir)
-                               :codex-fixture-stats (summarize-directory codex-fixture-dir))
+                               :codex-fixture-stats (summarize-directory codex-fixture-dir)
+                               :grok-fixture-stats (some-> grok-fixture-dir summarize-directory))
                 report (render-report context results {:base (optional-file-size (:bin (first variants)))
                                                        :head (optional-file-size (:bin (second variants)))})]
             (write-output! (:output options) report)

@@ -550,7 +550,7 @@ jobs:
           just generate-large-fixture \
             "$RUNNER_TEMP/ccusage-large-fixture" \
             "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            1024
+            --grok-output-dir "$RUNNER_TEMP/ccusage-large-grok-fixture"
 
       - name: Compare performance
         run: |
@@ -561,6 +561,7 @@ jobs:
             --head-sha "$HEAD_SHA" \
             --fixture-dir "$RUNNER_TEMP/ccusage-large-fixture" \
             --codex-fixture-dir "$RUNNER_TEMP/ccusage-large-codex-fixture" \
+            --grok-fixture-dir "$RUNNER_TEMP/ccusage-large-grok-fixture" \
             --warmup 2 \
             --runs 11 \
             --output "$RUNNER_TEMP/ccusage-perf-comment.md"
