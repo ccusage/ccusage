@@ -164,17 +164,78 @@ fn load_groups_from_sources_with_diagnostics(
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
+    load_selected_groups(sources, shared, kind, None, diagnostics)
+}
+
+pub(super) fn load_session_groups(
+    shared: &SharedArgs,
+    session_id: &str,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    let diagnostics = Diagnostics::new("codex");
+    let (groups, _) = load_selected_groups(
+        &paths::codex_usage_sources()?,
+        shared,
+        AgentReportKind::Session,
+        Some(super::normalize_session_id(session_id)),
+        &diagnostics,
+    )?;
+    diagnostics.emit(shared);
+    Ok(groups)
+}
+
+fn load_selected_groups(
+    sources: &[paths::CodexUsageSource],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    session_id: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
     let detected = file_groups.iter().any(|group| !group.files.is_empty());
+    let logical_session = session_id.is_some_and(|requested| {
+        file_groups.iter().any(|group| {
+            group.files.iter().any(|path| {
+                super::rollout_identity(&parser::codex_session_id(&group.dir, path))
+                    .is_some_and(|(thread, rollout)| thread == requested && thread != rollout)
+            })
+        })
+    });
     let files_by_group = file_groups
         .iter()
-        .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
+        .map(|group| {
+            let mut files = paths::filter_codex_usage_files(&group.dir, &group.files, shared);
+            if let Some(session_id) = session_id {
+                files.retain(|path| {
+                    let candidate = parser::codex_session_id(&group.dir, path);
+                    let owned = super::rollout_identity(&candidate)
+                        .is_some_and(|(thread, _)| thread == session_id);
+                    owned || (!logical_session && super::session_id_matches(&candidate, session_id))
+                });
+            }
+            files
+        })
         .collect::<Vec<_>>();
-    let replay_plan = if shared.since.is_some() || shared.until.is_some() {
+    let groups =
+        load_groups_from_file_selection(&file_groups, &files_by_group, shared, kind, diagnostics)?;
+    Ok((groups, detected))
+}
+
+pub(super) fn load_groups_from_file_selection(
+    file_groups: &[paths::CodexUsageFileGroup],
+    files_by_group: &[Vec<PathBuf>],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    diagnostics: &Diagnostics,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    let filtered = file_groups
+        .iter()
+        .zip(files_by_group)
+        .any(|(group, files)| group.files.len() != files.len());
+    let replay_plan = if filtered || shared.since.is_some() || shared.until.is_some() {
         CodexReplayPlan::for_bounded_files(
             file_groups
                 .iter()
-                .zip(&files_by_group)
+                .zip(files_by_group)
                 .map(|(group, files)| (group.dir.as_path(), files.as_slice())),
             file_groups
                 .iter()
@@ -194,7 +255,7 @@ fn load_groups_from_sources_with_diagnostics(
     let mut groups = BTreeMap::new();
     let seen = create_dedupe_shards();
     let mut file_offset = 0;
-    for (group, files) in file_groups.iter().zip(&files_by_group) {
+    for (group, files) in file_groups.iter().zip(files_by_group) {
         if files.is_empty() {
             continue;
         }
@@ -216,7 +277,7 @@ fn load_groups_from_sources_with_diagnostics(
         file_offset += files.len();
     }
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok((groups, detected))
+    Ok(groups)
 }
 
 pub(super) fn load_groups_from_directory_with_diagnostics(
@@ -483,6 +544,7 @@ fn add_deduped_event_to_groups(
     shared: &SharedArgs,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
+    // Date bounds must not change the canonical copy's timestamp.
     let Some(period) = codex_period_for(
         timestamp,
         Some(event.session_id.as_str()),
@@ -1325,7 +1387,7 @@ mod tests {
                     read,
                     replay::ObservedFileRead::MetadataProbe(path) if path == &long_running_path
                 )));
-                assert!(reads.iter().any(|read| matches!(
+                assert!(!reads.iter().any(|read| matches!(
                     read,
                     replay::ObservedFileRead::MetadataProbe(path) if path == &historical_path
                 )));

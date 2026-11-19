@@ -37,6 +37,7 @@ in
           src = testSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
+          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ pkgs.jq ];
           # Dev-profile layer holding dev-dependencies and the test feature
           # set; the release layers would leave all of that to compile here.
           inherit (testArtifacts) cargoArtifacts;

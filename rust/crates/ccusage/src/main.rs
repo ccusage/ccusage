@@ -41,6 +41,7 @@ fn main() -> Result<()> {
         Command::Blocks(args) => commands::run_blocks(args),
         Command::Statusline(args) => commands::run_statusline(args),
         Command::Codex(args) => adapter::codex::run(args),
+        Command::CodexStatusline(args) => adapter::codex::run_statusline(args),
         Command::OpenCode(args) => adapter::all::run_opencode(args),
         Command::Amp(args) => adapter::amp::run(args),
         Command::Droid(args) => adapter::droid::run(args),

@@ -15,7 +15,7 @@ exit: 0
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - ZCode              │ - gpt-5                   │         11 │         7 │       $0.00 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ 2025-12  │ All                  │                           │    115,780 │    30,266 │      $21.67 │
+│ 2025-12  │ All                  │                           │    115,860 │    30,291 │      $21.68 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - Amp                │ - gpt-5                   │      3,400 │       950 │       $0.02 │
 │          │                      │ - haiku-4-5               │            │           │             │
@@ -29,7 +29,7 @@ exit: 0
 │          │                      │ - haiku-4-5               │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│          │ - Claude             │ - haiku-4-5               │      8,470 │     2,470 │       $0.36 │
+│          │ - Claude             │ - haiku-4-5               │      8,550 │     2,495 │       $0.36 │
 │          │                      │ - opus-4                  │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
@@ -130,7 +130,7 @@ exit: 0
 │          │                      │ - opus-4                  │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ 2026-01  │ All                  │                           │  1,232,578 │    28,466 │       $6.97 │
+│ 2026-01  │ All                  │                           │  1,232,978 │    28,516 │       $6.97 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - Amp                │ - amp-mystery-1           │      1,700 │     1,315 │       $0.02 │
 │          │                      │ - gpt-5                   │            │           │             │
@@ -163,7 +163,7 @@ exit: 0
 │          │                      │ - openai/gpt-5            │            │           │             │
 │          │                      │ - sonnet-4                │            │           │             │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│          │ - Codex              │ - codex-mystery-1         │    105,050 │     2,423 │       $0.59 │
+│          │ - Codex              │ - codex-mystery-1         │    105,450 │     2,473 │       $0.59 │
 │          │                      │ - gpt-5                   │            │           │             │
 │          │                      │ - gpt-5-codex             │            │           │             │
 │          │                      │ - gpt-5-mini              │            │           │             │
@@ -263,7 +263,7 @@ exit: 0
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │          │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │       $0.00 │
 ├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ Total    │                      │                           │  1,349,391 │    59,241 │      $28.65 │
+│ Total    │                      │                           │  1,349,871 │    59,316 │      $28.65 │
 └──────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴─────────────┘
 
 --- stderr ---
@@ -294,6 +294,7 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

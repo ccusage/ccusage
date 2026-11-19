@@ -1,0 +1,12 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex statusline --offline --mcp
+---
+exit: 0
+--- stdout ---
+{"id":1,"jsonrpc":"2.0","result":{"tools":[{"_meta":{"openai/ui":{"entrypoints":[{"resourceUri":"ui://ccusage/codex-statusline","type":"statusline"}]},"ui":{"visibility":["app"]}},"annotations":{"destructiveHint":false,"openWorldHint":false,"readOnlyHint":true},"description":"Summarize local Codex token usage and estimated cost.","inputSchema":{"additionalProperties":false,"properties":{},"type":"object"},"name":"ccusage_codex_statusline","title":"ccusage Codex usage"}]}}
+{"id":2,"jsonrpc":"2.0","result":{"resources":[{"mimeType":"application/json","name":"Codex usage statusline","uri":"ui://ccusage/codex-statusline"}]}}
+{"id":3,"jsonrpc":"2.0","result":{"contents":[{"mimeType":"application/json","text":"null","uri":"ui://ccusage/codex-statusline"}]}}
+{"id":4,"jsonrpc":"2.0","result":{"content":[{"text":"Select ccusage Codex usage in Codex's /statusline picker.","type":"text"}]}}
+
+--- stderr ---

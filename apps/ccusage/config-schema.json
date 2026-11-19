@@ -5239,6 +5239,102 @@
 									},
 									"type": "object"
 								},
+								"statusline": {
+									"additionalProperties": false,
+									"properties": {
+										"jq": {
+											"type": "string"
+										},
+										"json": {
+											"type": "boolean"
+										},
+										"mode": {
+											"enum": ["auto", "calculate", "display"],
+											"type": "string"
+										},
+										"noCost": {
+											"type": "boolean"
+										},
+										"noOffline": {
+											"type": "boolean"
+										},
+										"offline": {
+											"default": true,
+											"type": "boolean"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"type": "object"
+										},
+										"since": {
+											"type": "string"
+										},
+										"singleThread": {
+											"type": "boolean"
+										},
+										"speed": {
+											"enum": ["auto", "standard", "fast", "flex"],
+											"type": "string"
+										},
+										"timezone": {
+											"type": "string"
+										},
+										"until": {
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
 								"weekly": {
 									"additionalProperties": false,
 									"properties": {
@@ -5895,6 +5991,9 @@
 						"codex session": {
 							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/session"
 						},
+						"codex statusline": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/statusline"
+						},
 						"codex weekly": {
 							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/weekly"
 						},
@@ -5906,6 +6005,9 @@
 						},
 						"codex:session": {
 							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/session"
+						},
+						"codex:statusline": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/statusline"
 						},
 						"codex:weekly": {
 							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/weekly"

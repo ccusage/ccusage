@@ -6,6 +6,6 @@ exit: 2
 --- stdout ---
 
 --- stderr ---
-The "statusline" report is only available for Claude Code usage.
+The "statusline" command is available for Claude Code and Codex usage.
 Use "ccusage zcode daily" for ZCode usage reports.
 Run 'ccusage --help' for usage.

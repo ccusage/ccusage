@@ -28,6 +28,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::BlocksArgs`
 - `types::CliConfig`
 - `types::CodexSpeed`
+- `types::CodexStatuslineArgs`
 - `types::Command`
 - `types::CostMode`
 - `types::CostSource`

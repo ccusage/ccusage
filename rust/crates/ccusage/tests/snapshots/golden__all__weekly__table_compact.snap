@@ -65,7 +65,7 @@ exit: 0
 │            │ - ZCode              │ - GLM-5.2                 │        250 │        75 │       $0.00 │
 │            │                      │ - opus-4                  │            │           │             │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ 2025-12-29 │ All                  │                           │  1,339,775 │    56,922 │      $24.81 │
+│ 2025-12-29 │ All                  │                           │  1,340,255 │    56,997 │      $24.82 │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │            │ - Amp                │ - amp-mystery-1           │      5,000 │     2,215 │       $0.03 │
 │            │                      │ - gpt-5                   │            │           │             │
@@ -82,7 +82,7 @@ exit: 0
 │            │                      │ - model_placeholder_m499  │            │           │             │
 │            │                      │ - sonnet-4                │            │           │             │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│            │ - Claude             │ - haiku-4-5               │     13,127 │     4,094 │       $0.95 │
+│            │ - Claude             │ - haiku-4-5               │     13,207 │     4,119 │       $0.96 │
 │            │                      │ - mystery-model-9000      │            │           │             │
 │            │                      │ - opus-4                  │            │           │             │
 │            │                      │ - opus-5                  │            │           │             │
@@ -104,7 +104,7 @@ exit: 0
 │            │                      │ - openai/gpt-5            │            │           │             │
 │            │                      │ - sonnet-4                │            │           │             │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│            │ - Codex              │ - codex-mystery-1         │    112,270 │     3,902 │       $0.67 │
+│            │ - Codex              │ - codex-mystery-1         │    112,670 │     3,952 │       $0.67 │
 │            │                      │ - gpt-5                   │            │           │             │
 │            │                      │ - gpt-5-codex             │            │           │             │
 │            │                      │ - gpt-5-mini              │            │           │             │
@@ -223,7 +223,7 @@ exit: 0
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │            │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │       $0.00 │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ Total      │                      │                           │  1,349,391 │    59,241 │      $28.65 │
+│ Total      │                      │                           │  1,349,871 │    59,316 │      $28.65 │
 └────────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴─────────────┘
 
 --- stderr ---
@@ -254,6 +254,7 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

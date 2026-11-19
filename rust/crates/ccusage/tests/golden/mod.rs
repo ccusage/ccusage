@@ -72,8 +72,9 @@ pub const ALL_REPORT_KINDS: [&str; 6] = [
 pub fn report_kinds(agent: &str) -> &'static [&'static str] {
     match agent {
         "claude" => &ALL_REPORT_KINDS,
+        "codex" => &["daily", "monthly", "session", "statusline"],
         "opencode" | "cline" | "dsh" => &["daily", "weekly", "monthly", "session"],
-        "codex" | "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
+        "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             &["daily", "monthly", "session"]
         }

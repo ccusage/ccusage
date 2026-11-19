@@ -52,6 +52,15 @@ exit: 0
       "timestamp": "2025-12-31T09:00:02.000Z"
     },
     {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150,
+      "costUSD": 0.007,
+      "inputTokens": 80,
+      "model": "claude-haiku-4-5-20251001",
+      "outputTokens": 25,
+      "timestamp": "2025-12-31T09:30:00.000Z"
+    },
+    {
       "cacheCreationTokens": 100,
       "cacheReadTokens": 5000,
       "costUSD": 0.02,
@@ -127,19 +136,20 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
+      "cacheReadTokens": 250,
+      "cost": 0.0071600000000000006,
+      "inputTokens": 130,
+      "modelName": "claude-haiku-4-5-20251001",
+      "outputTokens": 45,
+      "storedCost": 0.007
+    },
+    {
+      "cacheCreationTokens": 0,
       "cacheReadTokens": 300,
       "cost": 0.0048000000000000004,
       "inputTokens": 200,
       "modelName": "claude-opus-5-fast",
       "outputTokens": 50
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 100,
-      "cost": 0.00016,
-      "inputTokens": 50,
-      "modelName": "claude-haiku-4-5-20251001",
-      "outputTokens": 20
     },
     {
       "cacheCreationTokens": 0,
@@ -159,8 +169,8 @@ exit: 0
     "claude-opus-5-fast"
   ],
   "sessionId": "sess-alpha-1",
-  "totalCost": 0.28187000000000006,
-  "totalTokens": 39900
+  "totalCost": 0.28887000000000007,
+  "totalTokens": 40155
 }
 
 --- stderr ---
