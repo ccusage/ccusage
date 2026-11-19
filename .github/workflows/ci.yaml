@@ -153,8 +153,8 @@ jobs:
             run: nix flake check --print-build-logs
           - name: JS tests and typecheck
             run: |
-              nix profile install --inputs-from . .#pnpm .#oxlint nixpkgs#nodejs nixpkgs#just
-              pnpm install --frozen-lockfile
+              nix profile install --inputs-from . .#pnpm .#oxlint nixpkgs#nodejs nixpkgs#just nixpkgs#bun
+              just install
               just test-node
               just typecheck
           - name: Babashka performance harness test

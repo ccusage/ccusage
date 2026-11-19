@@ -1222,12 +1222,6 @@ async function writePlannedFile(
 	return { bytes, diskBytes: data.byteLength, lines };
 }
 
-const OUTPUT_DIR_FLAGS = {
-	claude: '--output-dir',
-	codex: '--codex-output-dir',
-	grok: '--grok-output-dir',
-} as const satisfies Record<Format, string>;
-
 async function generateFixture(
 	outputDir: string,
 	sizeMib: number,
