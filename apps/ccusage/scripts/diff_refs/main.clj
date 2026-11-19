@@ -127,18 +127,22 @@
 
 (def test-clock-var "CCUSAGE_TEST_NOW")
 
-(def test-clock-feature
-  "ccusage-core/test-clock")
+(def test-clock-features ["ccusage/test-clock" "ccusage-core/test-clock"])
 
-(defn declares-test-clock? [core-cargo-toml]
-  (boolean (and core-cargo-toml (re-find #"(?m)^test-clock\s*=" core-cargo-toml))))
+(defn declares-test-clock? [cargo-toml]
+  (boolean (and cargo-toml (re-find #"(?m)^test-clock\s*=" cargo-toml))))
 
 (defn clock-features
   [repo commit]
-  (let [manifest (system/run-process ["git" "show" (str commit ":rust/crates/ccusage-core/Cargo.toml")] {:dir repo})]
-    (if (and (zero? (:exit manifest)) (declares-test-clock? (:out manifest))) [test-clock-feature] [])))
+  (or (some (fn [feature]
+              (let [package (first (str/split feature #"/"))
+                    manifest (system/run-process ["git" "show" (str commit ":rust/crates/" package "/Cargo.toml")] {:dir repo})]
+                (when (and (zero? (:exit manifest)) (declares-test-clock? (:out manifest)))
+                  [feature])))
+            test-clock-features)
+      []))
 
-(defn pins-clock? [variant] (boolean (some #{test-clock-feature} (:features variant))))
+(defn pins-clock? [variant] (boolean (some (set test-clock-features) (:features variant))))
 
 (defn golden-env
   [manifest pinned-clock?]
@@ -266,7 +270,7 @@
        "commands listed in the head binary's help with both binaries under the same arguments and\n"
        "environment, and compares stdout, stderr, and exit code byte for byte. Without --real, both\n"
        "binaries read the golden matrix seeds of this checkout, exported by `cargo test`, at the\n"
-       "golden clock: refs are built with the dev-only ccusage-core/test-clock feature when they\n"
+       "golden clock: refs are built with the dev-only test-clock feature when they\n"
        "declare it, and when either side cannot honor the clock (an older ref or a binary path)\n"
        "both run under the wall clock instead, with a notice. Variants\n"
        "cover JSON, tables, breakdowns, date windows, cost modes, and timezones. Agent-specific\n"
@@ -312,7 +316,7 @@
                 _ (when (and manifest (contains? (get manifest "env") test-clock-var) (seq unpinned))
                     (system/write-progress (str (str/join ", " (map :label unpinned))
                                          " cannot honor " test-clock-var " (an existing binary, or a ref built without "
-                                         test-clock-feature "), so both binaries run under the wall clock;"
+                                         "a test-clock feature), so both binaries run under the wall clock;"
                                          " clock-relative reports are compared at the current time")))
                 env (if real (real-env) (golden-env manifest (empty? unpinned)))
                 dates (if real

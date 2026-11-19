@@ -5,7 +5,6 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-test-clock = []
 resolver-trace = []
 
 [dependencies]

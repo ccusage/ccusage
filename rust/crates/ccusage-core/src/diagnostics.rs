@@ -5,7 +5,13 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use crate::{cli::SharedArgs, log_level, output::sanitize_terminal_text};
+use crate::{
+    TimestampMs,
+    cli::{ReportClock, SharedArgs},
+    log_level,
+    output::sanitize_terminal_text,
+    utc_now,
+};
 
 const SAMPLES_PER_KIND: usize = 5;
 
@@ -232,6 +238,7 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
 
 pub struct Diagnostics {
     source: &'static str,
+    report_now: TimestampMs,
     table: Option<&'static str>,
     row_id: Option<Arc<str>>,
     state: Arc<Mutex<State>>,
@@ -239,12 +246,29 @@ pub struct Diagnostics {
 
 impl Diagnostics {
     pub fn new(source: &'static str) -> Self {
+        Self::at(source, utc_now())
+    }
+
+    pub fn for_report(source: &'static str, clock: ReportClock) -> Self {
+        Self::at(source, clock.now().into())
+    }
+
+    fn at(source: &'static str, report_now: TimestampMs) -> Self {
         Self {
             source,
+            report_now,
             table: None,
             row_id: None,
             state: Arc::new(Mutex::new(State::default())),
         }
+    }
+
+    pub fn report_now(&self) -> TimestampMs {
+        self.report_now
+    }
+
+    pub fn isolated(&self) -> Self {
+        Self::at(self.source, self.report_now)
     }
 
     pub fn source(&self) -> &'static str {
@@ -254,6 +278,7 @@ impl Diagnostics {
     pub fn for_table(&self, table: &'static str) -> Self {
         Self {
             source: self.source,
+            report_now: self.report_now,
             table: Some(table),
             row_id: self.row_id.clone(),
             state: Arc::clone(&self.state),
@@ -263,6 +288,7 @@ impl Diagnostics {
     pub fn for_row(&self, id: Option<&str>) -> Self {
         Self {
             source: self.source,
+            report_now: self.report_now,
             table: self.table,
             row_id: id.map(Arc::from),
             state: Arc::clone(&self.state),

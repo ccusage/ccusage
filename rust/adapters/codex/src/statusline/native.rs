@@ -12,7 +12,6 @@ use ccusage_core::{
     Diagnostics, Result,
     cli::{AgentReportKind, CodexStatuslineArgs, SharedArgs},
     date_at, format_currency, format_number, log_level, resolve_tz, sanitize_terminal_text,
-    utc_now,
 };
 use serde_json::Value;
 
@@ -56,7 +55,7 @@ impl NativeUsageReader {
                     };
                     thread_id
                 };
-                let diagnostics = Diagnostics::new("codex");
+                let diagnostics = Diagnostics::for_report("codex", args.shared.clock);
                 let result = refresh(&args, &pricing, &thread_id, &mut cached, &diagnostics);
                 let (output, warnings) =
                     refresh_output(result, &diagnostics, &args.shared, &mut last_warnings);
@@ -145,7 +144,7 @@ fn refresh(
     shared.since = None;
     shared.until = None;
     let timezone = resolve_tz(shared.timezone.as_ref());
-    let today = date_at(utc_now(), &timezone).into();
+    let today = date_at(diagnostics.report_now(), &timezone).into();
     let file_groups =
         paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, diagnostics);
     let speed = resolve_codex_speed(args.codex_speed);
@@ -177,7 +176,7 @@ fn refresh(
         return Ok(cached.text.clone());
     }
 
-    let load_diagnostics = Diagnostics::new("codex");
+    let load_diagnostics = diagnostics.isolated();
     let session_files = select_session_files(&file_groups, thread_id, true);
     let pricing = pricing.get();
     let session = load_groups_from_file_selection(

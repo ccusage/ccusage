@@ -57,7 +57,7 @@ impl Claude {
         let report_window =
             matches!(load_shared, Cow::Owned(_)).then(|| ReportWindow::from_shared(shared));
         let project_filter = request.options.claude_project;
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::for_report("claude", shared.clock);
         if request.kind == LoadKind::Session {
             let mut deduped = request.progress.run(
                 ccusage_core::progress::UsageLoadAgent("Claude"),

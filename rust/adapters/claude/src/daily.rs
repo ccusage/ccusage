@@ -18,7 +18,6 @@ use crate::{
     fast::{FxHashMap, LinePrefilter, suffix_string},
     format_date_tz, parse_ts_timestamp,
     pricing::PricingHandle,
-    utc_now,
 };
 
 use super::{
@@ -58,8 +57,13 @@ pub(super) fn load_daily_entries(
     let context = UsageLoadContext::new(shared);
     let mut pruned = Vec::new();
     let deduped = if shared.since.is_some() {
-        let since_files =
-            usage_files_before_since(&paths, project_filter, diagnostics, shared, utc_now());
+        let since_files = usage_files_before_since(
+            &paths,
+            project_filter,
+            diagnostics,
+            shared,
+            shared.clock.now().into(),
+        );
         pruned = since_files.pruned;
         let mut kept = since_files.kept;
         load_deduped_daily_entries(

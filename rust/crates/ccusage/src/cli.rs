@@ -3,7 +3,7 @@ mod sources;
 
 use std::{env, ffi::OsString, process};
 
-use ccusage_cli::{AgentCommand, AgentCommandArgs, Command, ReportTimezone, WeekDay};
+use ccusage_cli::{AgentCommand, AgentCommandArgs, Command, ReportClock, ReportTimezone, WeekDay};
 use ccusage_cli_parser::{parse_from_with_config, parse_report_args_with_config};
 use ccusage_config::ConfigContext;
 
@@ -13,8 +13,13 @@ pub(crate) fn parse() -> Command {
         exit_with_usage(&message);
     });
     let config = ConfigContext::from_args(&arg_strings);
-    let mut command =
-        try_parse_with(args.clone(), &config).unwrap_or_else(|message| exit_with_usage(&message));
+    let mut command = parse_from_with_config(args.clone(), &config, env!("CCUSAGE_VERSION"))
+        .unwrap_or_else(|message| exit_with_usage(&message));
+    let clock = ccusage::report_clock().unwrap_or_else(|message| {
+        eprintln!("{message}");
+        process::exit(2);
+    });
+    resolve_report_clock(&mut command, clock).unwrap_or_else(|message| exit_with_usage(&message));
     if ccusage_core::log_level() != Some(0) {
         for warning in config.warnings() {
             eprintln!("WARN {warning}");
@@ -34,10 +39,18 @@ pub(crate) fn parse() -> Command {
     command
 }
 
-fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
-    let mut command = parse_from_with_config(args, config, env!("CCUSAGE_VERSION"))?;
-    last_window::resolve(&mut command)?;
-    Ok(command)
+fn resolve_report_clock(command: &mut Command, clock: ReportClock) -> Result<(), String> {
+    let now = ReportClock::Fixed(clock.now());
+    match &mut *command {
+        Command::Statusline(args) => args.clock = now,
+        Command::Agent(_, AgentCommand::Statusline(args)) if args.mcp => args.shared.clock = clock,
+        command => {
+            if let Some(shared) = command.shared_mut() {
+                shared.clock = now;
+            }
+        }
+    }
+    last_window::resolve(command)
 }
 
 fn try_parse_report_with(
@@ -45,6 +58,7 @@ fn try_parse_report_with(
     config: &ConfigContext,
     start_of_week: WeekDay,
     known_timezone: Option<&ReportTimezone>,
+    clock: ReportClock,
 ) -> Result<AgentCommandArgs, String> {
     let mut report = parse_report_args_with_config(
         args,
@@ -53,6 +67,7 @@ fn try_parse_report_with(
         start_of_week,
         known_timezone,
     )?;
+    report.shared.clock = clock;
     if let Some(period) = report.period() {
         last_window::resolve_shared(&mut report.shared, period)?;
     }

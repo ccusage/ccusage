@@ -35,7 +35,7 @@ fn focused_rows(source: &dyn EntrySource, args: &AgentCommandArgs) -> Result<Vec
     let shared = &args.shared;
     let pricing = ReportPricing::for_load(shared, None);
     let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new(descriptor.id);
+    let diagnostics = Diagnostics::for_report(descriptor.id, shared.clock);
     let cx = LoadContext {
         shared,
         kind: args.kind,
@@ -63,7 +63,7 @@ pub(crate) fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> 
     let shared = request.shared;
     let pricing = ReportPricing::for_load(shared, request.pricing);
     let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new(descriptor.id);
+    let diagnostics = Diagnostics::for_report(descriptor.id, shared.clock);
     let cx = LoadContext {
         shared,
         kind: request.kind.report_kind(),

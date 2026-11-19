@@ -120,11 +120,17 @@
     (is (true? (diff/declares-test-clock? "[features]\ntest-snapshots = [\"dep:x\"]\ntest-clock = []\n")))
     (is (false? (diff/declares-test-clock? "[features]\ntest-snapshots = [\"dep:x\"]\n")))
     (is (false? (diff/declares-test-clock? nil))))
-  (testing "this checkout declares it, so its own goldens' clock is honored"
-    (is (= [diff/test-clock-feature] (diff/clock-features (history/repo-root) "HEAD"))))
+  (testing "refs use the binary feature when present, with the core feature for older refs"
+    (doseq [[ref expected] [["old" ["ccusage-core/test-clock"]] ["new" ["ccusage/test-clock"]] ["none" []]]]
+      (with-redefs [system/run-process
+                    (fn [[_ _ source] _]
+                      (if (#{"old:rust/crates/ccusage-core/Cargo.toml" "new:rust/crates/ccusage/Cargo.toml"} source)
+                        {:exit 0 :out "[features]\ntest-clock = []\n"}
+                        {:exit 1}))]
+        (is (= expected (diff/clock-features "." ref))))))
   (testing "a test-clock build is cached apart from the plain release build"
     (is (= "abc" (history/build-key "abc" [])))
-    (is (not= (history/build-key "abc" []) (history/build-key "abc" [diff/test-clock-feature])))))
+    (is (not= (history/build-key "abc" []) (history/build-key "abc" ["ccusage/test-clock"])))))
 
 (defn- run-diff-main
   [variants]
@@ -143,14 +149,14 @@
 (deftest pinned-clock-comparisons
   (testing "refs are built with the test clock where they declare it"
     (let [features-for (:features-for (run-diff-main [{:bin "b" :features []} {:bin "h" :features []}]))]
-      (is (= [diff/test-clock-feature] (features-for "HEAD")))))
+      (is (some #{(first (features-for "HEAD"))} diff/test-clock-features)))))
   (testing "both sides pinned keep the golden clock"
-    (let [{:keys [envs]} (run-diff-main [{:bin "b" :features [diff/test-clock-feature]} {:bin "h" :features [diff/test-clock-feature]}])]
+    (let [{:keys [envs]} (run-diff-main [{:bin "b" :features ["ccusage-core/test-clock"]} {:bin "h" :features ["ccusage/test-clock"]}])]
       (is (seq envs))
       (is (every? #(= "2026-01-02T12:00:00Z" (get-in % [:vars "CCUSAGE_TEST_NOW"])) envs))))
   (testing "one side that cannot pin it moves both to the wall clock, with a notice naming it"
     (let [{:keys [envs progress]} (run-diff-main [{:label "v18.0.0" :bin "b" :features []}
-                                                  {:label "HEAD" :bin "h" :features [diff/test-clock-feature]}])]
+                                                  {:label "HEAD" :bin "h" :features ["ccusage/test-clock"]}])]
       (is (seq envs))
       (is (not-any? #(contains? (:vars %) "CCUSAGE_TEST_NOW") envs))
       (is (some #(and (.contains ^String % "v18.0.0") (.contains ^String % "wall clock")) progress)))))

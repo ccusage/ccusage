@@ -113,6 +113,7 @@ dependencies = [
 name = "ccusage"
 version = "0.0.0"
 dependencies = [
+ "ccusage",
  "ccusage-adapter-all",
  "ccusage-adapter-claude",
  "ccusage-cli",
@@ -123,6 +124,7 @@ dependencies = [
  "ccusage-report",
  "ccusage-test-support",
  "insta",
+ "jiff",
  "mimalloc",
  "ring",
  "rustls",

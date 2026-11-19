@@ -10,6 +10,7 @@ name = "ccusage"
 path = "src/main.rs"
 
 [features]
+test-clock = ["dep:jiff"]
 fetch-litellm-pricing = ["ccusage-pricing-snapshots/fetch-litellm-pricing"]
 
 [dependencies]
@@ -21,6 +22,7 @@ ccusage-config.workspace = true
 ccusage-core.workspace = true
 ccusage-pricing-snapshots.workspace = true
 ccusage-report.workspace = true
+jiff = { workspace = true, optional = true }
 ring.workspace = true
 rustls.workspace = true
 rustls-webpki.workspace = true
@@ -30,7 +32,7 @@ ureq.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["test-clock"] }
+ccusage = { path = ".", features = ["test-clock"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
 serde_json.workspace = true

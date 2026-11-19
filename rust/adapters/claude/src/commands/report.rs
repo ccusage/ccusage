@@ -7,7 +7,7 @@ use ccusage_core::{
     fast::FxHashMap,
     print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key_target,
     summary::{Bucket, KeyTarget, summarize_bucket},
-    totals_json, utc_now, wants_json,
+    totals_json, wants_json,
 };
 use ccusage_report::{
     group_project_output, session_cost_ordering, session_summary_json, summary_json,
@@ -226,7 +226,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 pub fn run_blocks(args: BlocksArgs) -> Result<()> {
     let session_duration = args.session_length;
     let shared = args.shared.clone();
-    let now = utc_now();
+    let now = shared.clock.now().into();
     let entries = load_entries(&shared, None)?;
     let mut blocks = identify_session_blocks(entries, session_duration, now);
     let window = ReportWindow::from_shared(&shared);

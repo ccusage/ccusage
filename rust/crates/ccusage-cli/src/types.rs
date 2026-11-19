@@ -47,6 +47,22 @@ impl std::str::FromStr for ReportTimezone {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub enum ReportClock {
+    #[default]
+    System,
+    Fixed(jiff::Timestamp),
+}
+
+impl ReportClock {
+    pub fn now(self) -> jiff::Timestamp {
+        match self {
+            Self::System => jiff::Timestamp::now(),
+            Self::Fixed(now) => now,
+        }
+    }
+}
+
 pub enum Command {
     All(AgentCommandArgs),
     Daily(DailyArgs),
@@ -117,6 +133,7 @@ impl Command {
 
 #[derive(Clone, Debug, Default)]
 pub struct SharedArgs {
+    pub clock: ReportClock,
     pub since: Option<DateBound>,
     pub until: Option<DateBound>,
     /// Number of most recent report periods to keep, resolved into `since` by
@@ -187,6 +204,7 @@ pub struct BlocksArgs {
 
 #[derive(Clone)]
 pub struct StatuslineArgs {
+    pub clock: ReportClock,
     pub color: ColorChoice,
     pub mode: CostMode,
     pub offline: bool,
@@ -308,6 +326,7 @@ pub enum CodexSpeed {
 impl Default for StatuslineArgs {
     fn default() -> Self {
         Self {
+            clock: ReportClock::default(),
             color: ColorChoice::Auto,
             mode: CostMode::Auto,
             offline: crate::agents::CLAUDE_STATUSLINE.offline_by_default(),

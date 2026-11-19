@@ -1,5 +1,5 @@
 use ccusage_cli::{Command, PeriodUnit, SharedArgs, WeekDay};
-use ccusage_core::{date_at, resolve_tz, utc_now};
+use ccusage_core::{date_at, resolve_tz};
 use ccusage_report::last_periods_since;
 
 pub(crate) fn resolve(command: &mut Command) -> Result<(), String> {
@@ -19,7 +19,10 @@ pub(crate) fn resolve_shared(
     let Some(last) = shared.last else {
         return Ok(());
     };
-    let today = date_at(utc_now(), &resolve_tz(shared.timezone.as_ref()));
+    let today = date_at(
+        shared.clock.now().into(),
+        &resolve_tz(shared.timezone.as_ref()),
+    );
     let Some(since) = last_periods_since(unit, last, today, start_of_week) else {
         return Err(format!("Could not resolve --last {last} from today's date"));
     };
@@ -36,6 +39,7 @@ mod tests {
     };
 
     use super::*;
+    use ccusage_core::utc_now;
 
     fn periods(count: u32) -> std::num::NonZeroU32 {
         std::num::NonZeroU32::new(count).unwrap()

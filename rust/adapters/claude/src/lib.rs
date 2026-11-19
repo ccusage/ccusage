@@ -67,7 +67,7 @@ pub(crate) fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
-    let diagnostics = Diagnostics::new("claude");
+    let diagnostics = Diagnostics::for_report("claude", shared.clock);
     let loaded = load_deduped_entries_with_progress(
         shared,
         project_filter,
@@ -115,7 +115,7 @@ pub(crate) fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<Vec<LoadedEntry>> {
-    let diagnostics = Diagnostics::new("claude");
+    let diagnostics = Diagnostics::for_report("claude", shared.clock);
     let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
     diagnostics.emit(shared.debug);
     Ok(entries)
@@ -137,7 +137,7 @@ pub(crate) fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    let diagnostics = Diagnostics::new("claude");
+    let diagnostics = Diagnostics::for_report("claude", shared.clock);
     let daily =
         progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
             daily::load_daily_entries(shared, project_filter, &diagnostics)
@@ -274,8 +274,13 @@ fn load_entries_with_mode(
     };
     let mut pruned = Vec::new();
     let loaded_files = if skip_files_before_since && shared.since.is_some() {
-        let split =
-            usage_files_before_since(&paths, project_filter, diagnostics, shared, utc_now());
+        let split = usage_files_before_since(
+            &paths,
+            project_filter,
+            diagnostics,
+            shared,
+            shared.clock.now().into(),
+        );
         debug_log(
             shared,
             format!(

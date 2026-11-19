@@ -160,7 +160,7 @@ pub fn read<B>(
 ) -> Result<Option<B>, UnitError> {
     let (input, opened_path) = open(path, policy, diagnostics)?;
     let staged = if policy.stage_diagnostics {
-        diagnostics.map(|diagnostics| Diagnostics::new(diagnostics.source()))
+        diagnostics.map(Diagnostics::isolated)
     } else {
         None
     };
@@ -466,7 +466,7 @@ pub fn record_decode_error(
 ) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
-        Category::Eof if unterminated && being_written(unit) => {
+        Category::Eof if unterminated && being_written(unit, diagnostics.report_now()) => {
             diagnostics.debug_note(
                 unit,
                 format!(

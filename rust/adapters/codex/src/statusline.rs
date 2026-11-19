@@ -2,7 +2,7 @@ use ccusage_adapter_common::source::ReportPricing;
 use ccusage_core::{
     Diagnostics, Result,
     cli::{AgentReportKind, CodexStatuslineArgs},
-    date_at, format_currency, format_number, print_json_or_jq, resolve_tz, utc_now, wants_json,
+    date_at, format_currency, format_number, print_json_or_jq, resolve_tz, wants_json,
 };
 use serde_json::Value;
 
@@ -40,7 +40,7 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &ReportPricing<'_>) -> Result<
         "range"
     } else {
         let timezone = resolve_tz(shared.timezone.as_ref());
-        let today = date_at(utc_now(), &timezone).into();
+        let today = date_at(shared.clock.now().into(), &timezone).into();
         shared.since = Some(today);
         shared.until = Some(today);
         "today"
@@ -50,7 +50,7 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &ReportPricing<'_>) -> Result<
     } else {
         AgentReportKind::Daily
     };
-    let diagnostics = Diagnostics::new("codex");
+    let diagnostics = Diagnostics::for_report("codex", shared.clock);
     let pricing = pricing.get();
     let mut groups = if let Some(requested) = requested_session {
         let files =

@@ -77,7 +77,9 @@ impl UnitError {
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
         let state = match self.fault {
             Fault::Unwritten => UNWRITTEN,
-            Fault::Unfinished if being_written(unit) => "incomplete, read as still being written",
+            Fault::Unfinished if being_written(unit, diagnostics.report_now()) => {
+                "incomplete, read as still being written"
+            }
             Fault::Unfinished | Fault::Skip(_) => match fs::metadata(unit) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     "removed after discovery, read as absent"
@@ -137,7 +139,7 @@ const UNWRITTEN: &str = "empty, read as not yet written";
 const IN_PROGRESS_WINDOW: Duration = Duration::from_secs(60);
 
 #[cold]
-pub(crate) fn being_written(unit: &Path) -> bool {
+pub(crate) fn being_written(unit: &Path, now: ccusage_core::TimestampMs) -> bool {
     fs::metadata(unit)
         .and_then(|metadata| metadata.modified())
         .is_ok_and(|modified| {
@@ -148,8 +150,7 @@ pub(crate) fn being_written(unit: &Path) -> bool {
                 Ok(duration) => nanos(duration),
                 Err(error) => -nanos(error.duration()),
             };
-            i128::from(ccusage_core::utc_now().as_millis()) * 1_000_000 - modified
-                <= nanos(IN_PROGRESS_WINDOW)
+            i128::from(now.as_millis()) * 1_000_000 - modified <= nanos(IN_PROGRESS_WINDOW)
         })
 }
 

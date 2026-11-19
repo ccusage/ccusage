@@ -16,6 +16,7 @@ pub(crate) fn resolve(
             &view,
             unified.start_of_week,
             unified.shared.timezone.as_ref(),
+            unified.shared.clock,
         )
         .map_err(|message| format!("{message} (in {agent} config)"))?;
         unified.sources.insert(
@@ -37,6 +38,7 @@ pub(crate) fn resolve_opencode_claims(
         &view,
         focused.start_of_week,
         focused.shared.timezone.as_ref(),
+        focused.shared.clock,
     )?;
     let options = view.agent_options("claude");
     focused.sources.insert(
@@ -49,12 +51,16 @@ pub(crate) fn resolve_opencode_claims(
 #[cfg(test)]
 mod tests {
     use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, PeriodUnit, WeekDay};
-    use ccusage_core::{date_at, resolve_tz, utc_now};
+    use ccusage_core::{date_at, resolve_tz};
     use ccusage_report::last_periods_since;
     use ccusage_test_support::fs_fixture;
 
     use super::*;
-    use crate::cli::try_parse_with;
+    fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
+        let mut command = ccusage_cli_parser::parse_from_with_config(args, config, "test")?;
+        super::super::resolve_report_clock(&mut command, ccusage_cli::ReportClock::System)?;
+        Ok(command)
+    }
 
     const CONFIG: &str = r#"{
         "defaults": { "mode": "display", "since": "20260101" },
@@ -535,7 +541,10 @@ mod tests {
         }"#;
         let unified = unified_with_config(&["weekly", "--last", "1"], config);
         let codex = &unified.sources["codex"];
-        let today = date_at(utc_now(), &resolve_tz(codex.shared.timezone.as_ref()));
+        let today = date_at(
+            codex.shared.clock.now().into(),
+            &resolve_tz(codex.shared.timezone.as_ref()),
+        );
 
         assert_eq!(unified.start_of_week, WeekDay::Wednesday);
         assert_eq!(
@@ -570,7 +579,10 @@ mod tests {
             config,
         );
         let codex = &unified.sources["codex"];
-        let today = date_at(utc_now(), &resolve_tz(codex.shared.timezone.as_ref()));
+        let today = date_at(
+            codex.shared.clock.now().into(),
+            &resolve_tz(codex.shared.timezone.as_ref()),
+        );
 
         assert_eq!(unified.start_of_week, WeekDay::Friday);
         assert_eq!(

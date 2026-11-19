@@ -1041,7 +1041,7 @@ fn load_entries_with_native_sessions_with_progress(
     kind: AgentReportKind,
     owner: ProgressOwner,
 ) -> Result<Vec<LinkedEntry>> {
-    let diagnostics = Diagnostics::new("opencode");
+    let diagnostics = Diagnostics::for_report("opencode", shared.clock);
     let entries =
         load_entries_with_native_sessions_with_diagnostics(shared, kind, owner, &diagnostics)?;
     diagnostics.emit(shared.debug);

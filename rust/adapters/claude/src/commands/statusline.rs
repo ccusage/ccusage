@@ -15,7 +15,7 @@ use ccusage_core::{
     cli::{CostSource, SharedArgs, StatuslineArgs, VisualBurnRate},
     cli_error, color, format_currency, format_number, format_rfc3339_millis,
     pricing::PricingMap,
-    sum_costs, utc_now,
+    sum_costs,
 };
 use serde::{Deserialize, Serialize};
 
@@ -59,7 +59,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
         mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
-    let diagnostics = Diagnostics::new("claude");
+    let diagnostics = Diagnostics::for_report("claude", shared.clock);
     let statusline_result = render_statusline(&hook, &args, &shared, &diagnostics);
     diagnostics.emit(args.debug);
     match statusline_result {
@@ -92,6 +92,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
 
 fn statusline_shared(args: &StatuslineArgs) -> SharedArgs {
     SharedArgs {
+        clock: args.clock,
         offline: args.offline,
         color: args.color,
         mode: args.mode,
@@ -123,7 +124,7 @@ fn render_statusline(
     shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> Result<String> {
-    let now = utc_now();
+    let now = shared.clock.now().into();
     let needs_history = matches!(args.cost_source, CostSource::Ccusage | CostSource::Both)
         || (args.cost_source == CostSource::Auto && hook.cost.is_none());
     let history = needs_history
@@ -258,6 +259,7 @@ fn statusline_today_shared(
     let today =
         ccusage_core::date_at(now, &ccusage_core::resolve_tz(args.timezone.as_ref())).into();
     SharedArgs {
+        clock: shared.clock,
         since: Some(today),
         until: Some(today),
         offline: shared.offline,
