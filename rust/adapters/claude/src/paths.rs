@@ -16,7 +16,7 @@ use crate::{
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
-    visit_usage_files as visit_usage_files_in,
+    read_discovered_paths, visit_usage_files as visit_usage_files_in,
 };
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
@@ -55,7 +55,19 @@ pub(crate) fn usage_files(
     files
 }
 
-pub(crate) fn visit_usage_files(
+pub(super) fn read_usage_files<T: Send>(
+    mut files: Vec<PathBuf>,
+    single_thread: bool,
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> Vec<(PathBuf, T)> {
+    read_discovered_paths(
+        single_thread,
+        |visit| std::mem::take(&mut files).into_iter().for_each(visit),
+        read,
+    )
+}
+
+fn visit_usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     visit: &mut dyn FnMut(PathBuf),
