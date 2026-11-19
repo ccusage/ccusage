@@ -34,7 +34,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         jsonl_entries.extend(loaded.into_iter().flatten().flatten());
     }
 
-    // NOTE(2026-09-16, #1727): `openclaw doctor --fix` migrates legacy JSONL into per-agent SQLite and leaves both on disk; the SQLite row carries the provider-billed cost, so it replaces every JSONL copy of its event.
+    // NOTE(2026-09-16, #1727): `openclaw doctor --fix` leaves the original JSONL files after migrating their events into SQLite. Prefer the SQLite copies because they can carry corrected provider-billed cost.
     let (identified, id_less): (Vec<_>, Vec<_>) = sqlite_entries
         .into_iter()
         .partition(|entry| entry.data.message.id.is_some());

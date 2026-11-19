@@ -8,7 +8,6 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded, timestamp_from_millis};
 use crate::{LoadedEntry, cli::CostMode};
 
-/// One per-agent SQLite store (`agents/<agentId>/agent/openclaw-agent.sqlite`).
 struct AgentDatabase {
     path: std::path::PathBuf,
 }
@@ -19,19 +18,13 @@ impl AsRef<Path> for AgentDatabase {
     }
 }
 
-/// Find every per-agent SQLite store under `root`.
-///
-/// OpenClaw resolves the agent database as
-/// `<stateDir>/agents/<agentId>/agent/openclaw-agent.sqlite`, and
-/// `~/.openclaw` is the default state directory, so each configured root is
-/// scanned for `agents/*/agent/openclaw-agent.sqlite`. Directory traversal
-/// stays lexical (no symlink following, no canonicalization): discovery must
-/// agree with the JSONL walk in `paths.rs`, which also refuses symlinks.
-/// Reads open read-only.
+// NOTE(2026-09-16, #1727): OpenClaw 2026.9.x moved live sessions into per-agent SQLite stores. Discovery includes these stores because their live events may have no JSONL copy.
 fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentDatabase> {
     let mut databases = Vec::new();
     let agents_path = root.join("agents");
-    if !lexical_type(&agents_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
+    if !file_type_without_following_symlinks(&agents_path, diagnostics)
+        .is_some_and(|kind| kind.is_dir())
+    {
         return databases;
     }
     for (agent, file_type) in dir_entries(&agents_path, diagnostics) {
@@ -39,11 +32,15 @@ fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentD
             continue;
         }
         let agent_path = agent.join("agent");
-        if !lexical_type(&agent_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
+        if !file_type_without_following_symlinks(&agent_path, diagnostics)
+            .is_some_and(|kind| kind.is_dir())
+        {
             continue;
         }
         let path = agent_path.join("openclaw-agent.sqlite");
-        if lexical_type(&path, diagnostics).is_some_and(|kind| kind.is_file()) {
+        if file_type_without_following_symlinks(&path, diagnostics)
+            .is_some_and(|kind| kind.is_file())
+        {
             databases.push(AgentDatabase { path });
         }
     }
@@ -51,9 +48,10 @@ fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentD
     databases
 }
 
-/// The type of `path` itself, not of a symlink's target; `None` when it is
-/// missing, or cannot be inspected, which is recorded in `diagnostics`.
-fn lexical_type(path: &Path, diagnostics: &Diagnostics) -> Option<std::fs::FileType> {
+fn file_type_without_following_symlinks(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Option<std::fs::FileType> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) => Some(metadata.file_type()),
         Err(error) => {
@@ -89,13 +87,6 @@ pub(super) fn collect_sqlite_entries(
     entries
 }
 
-/// Read one agent database, returning usage entries in `(session_id, seq)`
-/// order.
-///
-/// The connection opens read-only, so inspecting a hostile store cannot write
-/// to it. Rows whose `event_json` fails to parse are skipped: transcript
-/// events are an append-only log shared with redaction and branch-control
-/// records, and a single malformed row must not drop the session around it.
 fn read_agent_database(
     database: &AgentDatabase,
     tz: &JiffTimeZone,

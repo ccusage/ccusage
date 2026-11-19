@@ -16,17 +16,11 @@ use crate::{
     cli::CostMode, fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
 };
 
-/// A single parsed OpenClaw session line. Only the fields ccusage consumes are
-/// declared; serde skips everything else. Both `model_change`/`model-snapshot`
-/// records and assistant `message` records share this struct so the stateful
-/// model/provider tracking can read either shape in order.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct OpenClawLine {
     #[serde(default)]
     r#type: Option<String>,
-    // Stable transcript event id. SQLite-era rows always carry one (the insert
-    // path generates it when the caller omits it); JSONL-era records predate
-    // it, so it stays optional.
+    // NOTE(2026-09-16, #1727): OpenClaw generates an event ID when inserting a SQLite transcript row without one. Older JSONL records can lack that ID, so the parser accepts both.
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
     #[serde(rename = "customType", default)]
@@ -43,8 +37,6 @@ pub(super) struct OpenClawLine {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     provider: Option<String>,
-    // Message failures must not discard the model/provider state on the same
-    // record; readers diagnose the rejected field after decoding the envelope.
     #[serde(default, deserialize_with = "deserialize_message")]
     message: DecodedMessage,
     timestamp: Option<Value>,
@@ -103,8 +95,6 @@ fn record_message_error(
     ));
 }
 
-/// Model/provider fields carried either at the root of a `model_change` record
-/// or nested under its `data` key.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawModelSource {
     #[serde(
@@ -119,7 +109,6 @@ struct OpenClawModelSource {
     provider: Option<String>,
 }
 
-/// Assistant message payload carrying token usage and per-message metadata.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawMessage {
     #[serde(default)]
@@ -138,7 +127,6 @@ struct OpenClawMessage {
     provider: Option<String>,
 }
 
-/// Token usage block carried by OpenClaw assistant messages.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawUsage {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -163,7 +151,6 @@ struct OpenClawUsage {
     cost: Option<OpenClawCost>,
 }
 
-/// Precomputed cost block carried alongside OpenClaw usage.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawCost {
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
@@ -283,9 +270,6 @@ pub(super) fn parse_session_file(
     )
 }
 
-/// Admits the records a transcript reader needs before JSON parsing: the
-/// model-tracking records (`model_change`/`model-snapshot`) and assistant
-/// records carrying `usage`.
 pub(super) fn record_prefilter() -> LinePrefilter {
     LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#])
 }
@@ -311,8 +295,6 @@ fn is_model_change(record: &OpenClawLine) -> bool {
         && record.custom_type.as_deref() == Some("model-snapshot")
 }
 
-/// Model/provider carried by a `model_change`/`model-snapshot` record, either
-/// at the root or nested under its `data` key.
 fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
     let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
         Some(source) => (
@@ -478,7 +460,7 @@ fn timestamp_from_value(value: Option<&Value>) -> Option<TimestampMs> {
     crate::parse_ts_timestamp(value.as_str()?)
 }
 
-/// OpenClaw writes `created_at` and message timestamps as Unix milliseconds.
+// NOTE(2026-09-16, #1727): OpenClaw stores SQLite `created_at` and numeric message timestamps in Unix milliseconds. Both timestamp sources use the same conversion.
 pub(super) fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
     (raw >= 0)
         .then_some(raw)
@@ -521,10 +503,7 @@ pub(super) fn content_id(entry: &LoadedEntry) -> ContentId {
     }
 }
 
-/// Identity shared by a legacy JSONL event and its migrated SQLite copy.
-///
-/// SQLite can carry a corrected provider-billed cost, so cost must not prevent
-/// the migrated copy from replacing the legacy event.
+// NOTE(2026-09-16, #1727): An OpenClaw migration can correct the billed cost in SQLite. The cost difference must still allow the migrated event to match its JSONL copy.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct MigrationId {
     session_id: Arc<str>,
@@ -663,9 +642,6 @@ mod tests {
 
     #[test]
     fn malformed_message_does_not_drop_model_tracking_line() {
-        // A `model_change` line whose `message` field is a non-object must still
-        // deserialize and update the tracked model/provider, instead of being
-        // dropped by `records().ok()` and losing state for later usage entries.
         let fixture = fs_fixture!({
             "session.jsonl": concat!(
                 r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":"not-an-object"}"#,
