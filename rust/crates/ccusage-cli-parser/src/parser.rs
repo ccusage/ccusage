@@ -2,7 +2,6 @@ use std::{collections::BTreeMap, ffi::OsString, num::NonZeroU32};
 
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
-use ccusage_cli::is_shared_flag;
 use ccusage_cli::{
     AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
     BlocksOption, ClaudeStatuslineOption, CliConfig, CodexSpeed, CodexStatuslineArgs,
@@ -10,6 +9,7 @@ use ccusage_cli::{
     DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder, StandardAgent, StatuslineArgs,
     VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
+use ccusage_cli::{command_tokens, is_shared_flag};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlArg {
@@ -75,17 +75,11 @@ where
     if let Some(message) = report_flag_alias_error(&parser.args) {
         return Err(message);
     }
-    if let Some(flag) = parser.args.iter().find_map(|arg| {
-        if arg == "--agent" || arg.starts_with("--agent=") {
-            Some("--agent")
-        } else if arg.starts_with("-a=") {
-            Some("-a")
-        } else {
-            None
-        }
-    }) {
-        return Err(agent_filter_option_error(flag));
-    }
+    parse_invocation(&mut parser, config)
+        .map_err(|message| invocation_error(&parser.args).unwrap_or(message))
+}
+
+fn parse_invocation(parser: &mut ArgParser, config: &dyn CliConfig) -> Result<Command, String> {
     if let Some(message) = config.config_error() {
         return Err(message.to_string());
     }
@@ -94,15 +88,10 @@ where
         if !arg.starts_with('-') {
             break;
         }
-        if arg == "-a" {
-            return Err(agent_filter_option_error("-a"));
-        }
-        if parse_root_all_arg(&mut parser, &mut root_options)? {
+        if parse_root_all_arg(parser, &mut root_options)? {
             continue;
         }
-        root_options
-            .shared_flags
-            .push(read_shared_flag(&mut parser)?);
+        root_options.shared_flags.push(read_shared_flag(parser)?);
     }
 
     let mut command = match parser.next() {
@@ -110,14 +99,14 @@ where
             let shared = root_options.shared(config, false);
             Command::All(root_options.into_agent_args(shared, AgentReportKind::Daily))
         }
-        Some(command) => parse_command(&command, &mut parser, config, root_options)?,
+        Some(command) => parse_command(&command, parser, config, root_options)?,
     };
     parser.finish()?;
     if let Some(message) = last_option_error(&command) {
         return Err(message);
     }
-    validate_date_window(&mut command, &parser, config)?;
-    validate_timezone(&mut command, &parser, config)?;
+    validate_date_window(&mut command, parser, config)?;
+    validate_timezone(&mut command, parser, config)?;
     Ok(command)
 }
 
@@ -169,7 +158,6 @@ fn parse_command(
     if let Some(command) = AgentId::Claude.spec().extra_command(command) {
         return parse_extra_command(command.kind, parser, config, root_options);
     }
-    reject_short_agent_filter(parser)?;
     let shared = root_options.shared(config, false);
     match command {
         "daily" => parse_all_command(parser, shared, AgentReportKind::Daily, config, root_options),
@@ -205,12 +193,6 @@ fn parse_agent_command(
         parser.next();
         return parse_extra_command(command.kind, parser, config, root_options);
     }
-    reject_short_agent_filter(parser)?;
-    if let Some(report) = parser.peek().filter(|name| !name.starts_with('-'))
-        && !agent.spec().accepts(report)
-    {
-        return Err(unsupported_agent_report_error(agent, report));
-    }
     if root_options.is_used() {
         return Err(format!("Unknown option '{}'", root_options.first_flag()));
     }
@@ -233,9 +215,6 @@ fn parse_extra_command(
     config: &dyn CliConfig,
     mut root: RootOptions,
 ) -> Result<Command, String> {
-    if !matches!(kind, AgentCommandKind::Blocks(_)) {
-        reject_short_agent_filter(parser)?;
-    }
     if root.is_used() && !matches!(kind, AgentCommandKind::ClaudeStatusline { .. }) {
         return Err(format!("Unknown option '{}'", root.first_flag()));
     }
@@ -931,17 +910,34 @@ fn report_flag_alias_error(args: &[String]) -> Option<String> {
     ))
 }
 
-fn reject_short_agent_filter(parser: &ArgParser) -> Result<(), String> {
-    if parser.args.iter().any(|arg| arg == "-a") {
-        return Err(agent_filter_option_error("-a"));
+fn invocation_error(args: &[String]) -> Option<String> {
+    let tokens = command_tokens(args);
+    let extra = match tokens.as_slice() {
+        [agent, report, ..] => AgentId::from_name(agent)
+            .and_then(|agent| agent.spec().extra_command(report))
+            .or_else(|| AgentId::Claude.spec().extra_command(agent)),
+        [command] => AgentId::Claude.spec().extra_command(command),
+        [] => None,
+    };
+    let blocks = extra.is_some_and(|command| matches!(command.kind, AgentCommandKind::Blocks(_)));
+    if let Some(flag) = args.iter().find_map(|arg| {
+        if arg == "--agent" || arg.starts_with("--agent=") {
+            Some("--agent")
+        } else if (arg == "-a" && !blocks) || arg.starts_with("-a=") {
+            Some("-a")
+        } else {
+            None
+        }
+    }) {
+        return Some(format!(
+            "Agent filters like {flag} are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
+        ));
     }
-    Ok(())
-}
-
-fn agent_filter_option_error(flag: &str) -> String {
-    format!(
-        "Agent filters like {flag} are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
-    )
+    let [agent, report, ..] = tokens.as_slice() else {
+        return None;
+    };
+    let agent = AgentId::from_name(agent)?;
+    (!agent.spec().accepts(report)).then(|| unsupported_agent_report_error(agent, report))
 }
 
 fn unsupported_agent_report_error(agent: AgentId, report: &str) -> String {
