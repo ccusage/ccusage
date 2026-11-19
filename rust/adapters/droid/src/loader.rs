@@ -72,7 +72,7 @@ mod tests {
     fn uniform_cost_modes_do_not_calculate_in_display() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"session.settings.json": r#"{"model":"sample","providerLockTimestamp":"2026-05-01T01:02:03Z","tokenUsage":{"inputTokens":100,"outputTokens":50}}"#});
-        let _guard = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _guard = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
@@ -107,7 +107,7 @@ mod tests {
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use serde_json::json;
 
     use super::super::{
@@ -163,7 +163,7 @@ mod tests {
             }"#,
             "zero.settings.json": r#"{"model":"gpt-5","tokenUsage":{"inputTokens":0}}"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
         let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
@@ -205,7 +205,7 @@ mod tests {
             "session-b.settings.json": "{broken",
             "session-c.settings.json": "",
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
         let pricing = ccusage_core::PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
@@ -236,7 +236,7 @@ mod tests {
                 "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
             }"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             offline: true,
             timezone: Some("UTC".to_string()),
@@ -257,7 +257,7 @@ mod tests {
             }"#,
             "session-b.jsonl": r#"{"content":"Model: Claude Opus 4.5 Thinking [Anthropic]"}"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = ccusage_adapter_common::testing::entries(
@@ -292,7 +292,7 @@ mod tests {
                 "tokenUsage": {"inputTokens": 100, "outputTokens": 200}
             }"#,
         });
-        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
 
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = ccusage_adapter_common::testing::entries(

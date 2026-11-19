@@ -19,6 +19,7 @@ use super::{
     paths::db_paths,
 };
 
+// NOTE(2026-08-31, ZCode 0.16.3, #1675): ZCode records model calls in model_usage and the project directory in session. Cache counters, provider ID and session version may be absent from compatible databases.
 const REQUIRED_MODEL_COLUMNS: &[&str] = &[
     "id",
     "session_id",
@@ -174,7 +175,7 @@ fn table_columns(
     connection: &sqlite::Connection,
     table: &str,
 ) -> std::result::Result<HashSet<String>, UnitError> {
-    // NOTE(2026-11-17, #977): the bundled SQLite is built with SQLITE_OMIT_SCHEMA_PRAGMAS (.cargo/config.toml), so `PRAGMA table_info` silently returns no rows; column names come from a statement instead.
+    // NOTE(2026-11-16, #977): The bundled SQLite disables PRAGMA table_info via SQLITE_OMIT_SCHEMA_PRAGMAS. Read column names from a prepared statement instead.
     let statement = connection
         .prepare(format!("SELECT * FROM \"{table}\" LIMIT 0"))
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
@@ -216,7 +217,7 @@ mod tests {
 
     use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
     use ccusage_core::{ReportWindow, cli::AgentReportKind};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
     use crate::cli::CostMode;
@@ -314,7 +315,7 @@ mod tests {
     }
 
     fn load_with_mode(root: &Path, mode: CostMode) -> Vec<LoadedEntry> {
-        let _guard = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, root);
+        let _guard = EnvGuard::set(super::super::paths::ZCODE_HOME_ENV, root);
         let shared = SharedArgs {
             mode,
             timezone: Some("UTC".to_string()),
@@ -337,7 +338,7 @@ mod tests {
     fn loads_completed_rows_with_millisecond_precision() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
         let db = sqlite::open(&db_path).unwrap();
@@ -369,7 +370,7 @@ mod tests {
             .unwrap();
         insert_current_usage(&database, "usage-1", "completed");
         drop(db);
-        let _env = EnvVarGuard::set(
+        let _env = EnvGuard::set(
             super::super::paths::ZCODE_HOME_ENV,
             format!("{},{}", broken.root().display(), healthy.root().display()),
         );
@@ -481,7 +482,7 @@ mod tests {
     fn diagnoses_malformed_usage_identity_only_when_the_row_has_usage() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
         let db = sqlite::open(&db_path).unwrap();
@@ -530,7 +531,7 @@ mod tests {
         .unwrap();
         drop(db);
 
-        let _home = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
+        let _home = EnvGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
             timezone: Some("UTC".to_string()),
@@ -569,7 +570,7 @@ mod tests {
     fn preserves_opaque_provider_for_loader_pricing() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
         let db = sqlite::open(&db_path).unwrap();
@@ -594,7 +595,7 @@ mod tests {
     fn accepts_legacy_schema_without_optional_columns() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, true);
         let db = sqlite::open(&db_path).unwrap();
@@ -621,7 +622,7 @@ mod tests {
     fn reads_from_wal_database_without_changing_journal_mode() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
 
@@ -675,7 +676,7 @@ mod tests {
         drop(statement);
         drop(db);
 
-        let _guard = EnvVarGuard::set(
+        let _guard = EnvGuard::set(
             super::super::paths::ZCODE_HOME_ENV,
             format!("{},{}", first.root().display(), second.root().display()),
         );

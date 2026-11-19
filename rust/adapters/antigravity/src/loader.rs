@@ -94,7 +94,7 @@ fn deduplicate_events(
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
     use serde_json::json;
 
     use std::path::Path;
@@ -134,8 +134,6 @@ mod tests {
         )
     }
 
-    /// Loads a fixture holding databases the loader skips, and returns what
-    /// was recorded about them.
     fn skipped_databases() -> Diagnostics {
         let (entries, diagnostics) =
             load_with_diagnostics(&shared(true), &PricingMap::load_embedded()).unwrap();
@@ -143,7 +141,6 @@ mod tests {
         diagnostics
     }
 
-    /// Asserts that `path` is the one database skipped, as `kind`.
     fn assert_skipped(diagnostics: &Diagnostics, kind: SkipKind, label: &str, path: &Path) {
         assert_eq!(diagnostics.skipped(kind), 1, "{kind:?}");
         let lines = diagnostics.warnings(&SharedArgs {
@@ -167,7 +164,7 @@ mod tests {
         single_thread: bool,
         pricing: &PricingMap,
     ) -> Vec<LoadedEntry> {
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -357,7 +354,7 @@ mod tests {
             fixture.path("one").display(),
             fixture.path("two").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
         )]);
@@ -433,7 +430,7 @@ mod tests {
             fixture.path("first").display(),
             fixture.path("second").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
         )]);
@@ -705,7 +702,7 @@ mod tests {
             &[],
         );
 
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -852,7 +849,7 @@ mod tests {
             &[],
             &[],
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -894,7 +891,7 @@ mod tests {
             )],
             &[],
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1215,7 +1212,7 @@ mod tests {
 
     fn routing_model_fixture(model: &str) -> Fixture {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/session.db", "");
+        fixture.write_file("conversations/session.db", "");
         create_database(
             &fixture.path("conversations/session.db"),
             &[(
@@ -1243,7 +1240,7 @@ mod tests {
     fn prices_the_logged_model_before_its_normalized_form() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/session.db", "");
+        fixture.write_file("conversations/session.db", "");
         create_database(
             &fixture.path("conversations/session.db"),
             &[(
@@ -1278,7 +1275,7 @@ mod tests {
     fn skips_zero_byte_databases_and_reports_valid_entries() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/empty.db", "");
+        fixture.write_file("conversations/empty.db", "");
         create_database(
             &fixture.path("conversations/session.db"),
             &[(
@@ -1330,12 +1327,12 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let summaries_path = fixture.path(".gemini/antigravity-cli/conversation_summaries.db");
-        let _ = fixture.create_dir_all(".gemini/antigravity-cli");
+        fixture.create_dir_all(".gemini/antigravity-cli");
         let connection = sqlite::open(&summaries_path).unwrap();
         connection
             .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (super::super::paths::ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
@@ -1356,14 +1353,14 @@ mod tests {
     fn skips_malformed_database_alongside_empty_databases() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/empty.db", "");
+        fixture.write_file("conversations/empty.db", "");
         create_database(
             &fixture.path("conversations/malformed.db"),
             &[(1, vec![0x0a, 0x01, 0x80])],
             &[],
             &[],
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1394,7 +1391,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let not_a_database = fixture.write_file("conversations/not-a-db.db", "not sqlite");
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1416,7 +1413,7 @@ mod tests {
         connection
             .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1442,13 +1439,13 @@ mod tests {
     fn skips_a_conversation_database_with_steps_but_no_generation_table() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("conversations");
+        fixture.create_dir_all("conversations");
         let db_path = fixture.path("conversations/renamed.db");
         let connection = sqlite::open(&db_path).unwrap();
         connection
             .execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB)")
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1466,7 +1463,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/bad-steps.db");
-        let _ = fixture.create_dir_all("conversations");
+        fixture.create_dir_all("conversations");
         let connection = sqlite::open(&db_path).unwrap();
         connection
             .execute("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB NOT NULL)")
@@ -1494,7 +1491,7 @@ mod tests {
         statement.bind((1, 1_i64)).unwrap();
         statement.bind((2, data.as_slice())).unwrap();
         statement.next().unwrap();
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1517,7 +1514,7 @@ mod tests {
             &[],
             &[],
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
@@ -1537,8 +1534,8 @@ mod tests {
         use ccusage_core::{ReportWindow, cli::AgentReportKind};
 
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/broken.db", "SECRET_CANARY");
-        let _guard = EnvVarsGuard::set_many([(
+        fixture.write_file("conversations/broken.db", "SECRET_CANARY");
+        let _guard = EnvGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);

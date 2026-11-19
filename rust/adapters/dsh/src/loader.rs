@@ -15,7 +15,6 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_session_file(file, cx.diagnostics)
     });
-    // The same session can be reachable from more than one DSH_HOME root.
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     for entry in loaded.into_iter().flatten().flatten() {
@@ -36,7 +35,7 @@ mod tests {
 
     use super::super::paths::DSH_HOME_ENV;
     use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     const SESSION: &str = concat!(
         r#"{"type":"session","version":4,"id":"sid-1","createdAt":1785015039278,"cwd":"/home/u/proj"}"#,
@@ -49,8 +48,6 @@ mod tests {
 
     const SESSION_FILE: &str = "sessions/--home-u-proj--/sid-1/session.v4.jsonl.zstd";
 
-    /// `SESSION` compressed as dsh writes it, one frame per write batch, and
-    /// ending in `tail`.
     fn compressed_session(tail: &[u8]) -> Vec<u8> {
         let (header, events) = SESSION.split_once('\n').unwrap();
         let mut compressed = zstd::stream::encode_all(format!("{header}\n").as_bytes(), 3).unwrap();
@@ -59,7 +56,6 @@ mod tests {
         compressed
     }
 
-    /// Half of a frame holding one more request.
     fn torn_frame() -> Vec<u8> {
         let frame = zstd::stream::encode_all(
             br#"{"type":"assistant/message","seq":9,"time":1785015046000,"data":{"usage":{"inputTokens":9999}}}"#
@@ -71,7 +67,7 @@ mod tests {
     }
 
     fn load(fixture: &ccusage_test_support::Fixture) -> (Vec<LoadedEntry>, Diagnostics) {
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
@@ -189,7 +185,7 @@ mod tests {
         });
         let second = fs_fixture!({ "sessions/p/sid-1/session.v4.jsonl": SESSION });
         let value = format!("{},{}", first.root().display(), second.root().display());
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, &value);
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, &value);
 
         let (entries, _) = ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,

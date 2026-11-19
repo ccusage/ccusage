@@ -93,7 +93,7 @@ mod tests {
     use std::path::Path;
 
     use crate::cli::{CostMode, SharedArgs};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
@@ -118,7 +118,7 @@ mod tests {
             "session-a",
             r#"{"id":"msg-1","role":"assistant","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"reasoning":5,"cache":{"read":10,"write":20}},"cost":0.02,"agent":"build"}"#,
         );
-        let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
@@ -160,7 +160,7 @@ mod tests {
             "session-a",
             r#"{"role":"assistant","providerID":"openai","modelID":"gpt-5","tokens":{"input":1,"output":1,"cache":{"read":0,"write":0}}}"#,
         );
-        let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
         let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,
@@ -192,7 +192,7 @@ mod tests {
                 ),
             );
         }
-        let _cleanup = EnvVarGuard::set(
+        let _cleanup = EnvGuard::set(
             super::super::paths::KILO_DATA_DIR_ENV,
             format!("{},{}", first.root().display(), second.root().display()),
         );
@@ -224,7 +224,7 @@ mod tests {
             "session-a",
             r#"{"id":"msg-1","role":"assistant","providerID":"openai","modelID":"gpt-5","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"cache":{"read":0,"write":0}}}"#,
         );
-        let _cleanup = EnvVarGuard::set(
+        let _cleanup = EnvGuard::set(
             super::super::paths::KILO_DATA_DIR_ENV,
             format!("{},{}", broken.root().display(), healthy.root().display()),
         );
@@ -305,7 +305,7 @@ mod tests {
             "session-a",
             r#"{"role":,"id":"SECRET_CANARY"}"#,
         );
-        let _cleanup = EnvVarGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
         let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
             debug: true,

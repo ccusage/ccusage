@@ -163,9 +163,6 @@ struct ProtoField<'a> {
 
 type ProtoResult<T> = std::result::Result<T, &'static str>;
 
-/// Parses one Antigravity conversation database in ascending generation order.
-/// A database is read whole before any of its rows is kept, so every SQLite
-/// failure is classified at the setup stage.
 type DatabaseResult<T> = std::result::Result<T, UnitError>;
 
 fn sqlite_failure(error: sqlite::Error) -> UnitError {
@@ -198,6 +195,7 @@ pub(super) fn parse_sqlite_file(
     if database_snapshot_is_empty(&connection)? {
         return Ok(ParsedDatabase::EmptySnapshot);
     }
+    // NOTE(2026-08-31, #1677): Antigravity stores GeneratorMetadata in gen_metadata and can also store CortexStepMetadata in steps. The optional trajectory_metadata_blob supplies a fallback timestamp for undated usage.
     if !table_exists(&connection, "gen_metadata")? {
         if table_exists(&connection, "steps")?
             || table_exists(&connection, "trajectory_metadata_blob")?
@@ -656,8 +654,7 @@ fn parse_generator_metadata(blob: &[u8]) -> ProtoResult<GeneratorMetadata> {
     })
 }
 
-// `retry_infos` lists every attempt, including the one already reported as the
-// primary `usage`, so exactly one entry may be its copy.
+// NOTE(2026-11-09, #2027): Antigravity's retry_infos repeats the primary usage attempt. Dropping a single mirror preserves the usage of distinct retries.
 fn drop_primary_mirror(primary: Option<&ModelUsage>, retries: &mut Vec<ModelUsage>) {
     if let Some(primary) = primary
         && let Some(position) = retries.iter().position(|retry| retry.is_mirror_of(primary))
@@ -947,8 +944,6 @@ enum ModelResolution {
     Resolved,
 }
 
-// Placeholders that normalization did not map to a real model rank below a
-// model name from another field or a duplicate copy, but above the default.
 fn model_resolution(model: &str) -> ModelResolution {
     if model == DEFAULT_MODEL {
         ModelResolution::Default

@@ -2,7 +2,7 @@
 mod tests {
     use crate::*;
     use crate::{PricingMap, cli::SharedArgs, paths::DSH_HOME_ENV};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn snapshots_focused_reports_from_fixture_sessions() {
@@ -13,7 +13,7 @@ mod tests {
             "sessions/--home-user-project--/dsh-fork/session.v4.jsonl":
                 include_str!("../tests/fixtures/fork/session.v4.jsonl"),
         });
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             offline: true,
@@ -61,7 +61,7 @@ mod tests {
                 r#"{"type":"assistant/message","seq":3,"time":1794830400000,"data":{"usage":{"inputTokens":1,"outputTokens":1}}}"#, "\n",
             ),
         });
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             offline: true,

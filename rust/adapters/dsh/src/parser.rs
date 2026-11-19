@@ -25,7 +25,6 @@ use super::paths::is_compressed;
 
 const UNKNOWN_MODEL: &str = "unknown";
 
-/// First line of a session log.
 #[derive(Debug, Deserialize)]
 struct HeaderLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -40,7 +39,6 @@ struct HeaderLine {
     is_seeded: bool,
 }
 
-/// Every line after the header. Only the fields ccusage consumes are declared.
 #[derive(Debug, Deserialize)]
 struct EventLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -53,8 +51,6 @@ struct EventLine {
     data: Option<EventData>,
 }
 
-/// The union of the `data` fields read from the event types below. `provider`
-/// and `model` sit directly on `request/context` and `compaction/summary`.
 #[derive(Debug, Default, Deserialize)]
 struct EventData {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
@@ -72,8 +68,7 @@ struct EventData {
 }
 
 impl EventData {
-    /// The usage dsh's own token meter reads for an assistant settlement: the
-    /// settled `usage`, else the last usage chunk of the stream.
+    // NOTE(2026-11-16, #2112): DeepSeek Harness's meter falls back to the last streamed usage chunk when an assistant event lacks settled usage. That chunk can include usage from a failed or aborted stream.
     fn settled_usage(self) -> Option<TokenUsage> {
         self.usage.or_else(|| {
             self.stream
@@ -117,7 +112,7 @@ struct Route {
     model: Option<String>,
 }
 
-/// dsh's `TokenUsage`: the counts are disjoint, so `inputTokens` excludes cache reads and writes.
+// NOTE(2026-11-16, #2112): DeepSeek Harness emits disjoint usage counters. Its inputTokens already excludes cache reads and writes.
 #[derive(Debug, Default, Deserialize)]
 struct TokenUsage {
     #[serde(
@@ -184,9 +179,7 @@ fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>,
         return Ok(content);
     };
     let error = match error.kind() {
-        // dsh appends one zstd frame per write batch, so a session that is
-        // still being written can end inside a frame. The decoded part of that
-        // frame can end mid-line, and the line belongs to the frame cut short.
+        // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
         io::ErrorKind::UnexpectedEof => {
             let complete = content
                 .iter()
@@ -199,7 +192,6 @@ fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>,
                 "zstd stream ends inside a frame; earlier records were kept"
             })
         }
-        // The decoder reports a malformed frame as `Other`.
         io::ErrorKind::Other => UnitError::new(
             SkipKind::InvalidData,
             if content.is_empty() {
@@ -221,7 +213,6 @@ fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>,
     Ok(content)
 }
 
-/// The event types ccusage reads. Every other line is skipped before parsing.
 const EVENT_MARKERS: [&[u8]; 6] = [
     b"request/header",
     b"request/context",
@@ -239,8 +230,6 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
     else {
         return Vec::new();
     };
-    // Every request in the log is read against the header, so one that does
-    // not decode leaves the whole log unread.
     let Some(header) = jsonl::decode_line::<HeaderLine>(
         content,
         header_line,
@@ -267,13 +256,10 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
         .map(TimestampMs::from_millis);
     let cwd = header.cwd.map(Arc::<str>::from);
 
-    // dsh rejects a seeded log without its inherited marker, so one missing it
-    // was torn while copying the parent and holds only parent usage.
+    // NOTE(2026-11-16, #2112): DeepSeek Harness seeds a fork by copying its parent up to the inherited marker. A seeded log without that marker contains only parent usage.
     let mut awaiting_seed_end = header.is_seeded;
     let mut route = Route::default();
     let mut entries = Vec::new();
-    // Undated requests, recorded only once they are known not to be copies of
-    // the parent's.
     let mut undated = Vec::new();
     let prefilter = LinePrefilter::any(&EVENT_MARKERS);
     for (number, event) in jsonl::numbered_records_with_usage_diagnostics::<EventLine>(
@@ -300,8 +286,7 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
                 update_route(&mut route, data.provider, data.model);
                 continue;
             }
-            // A fork copies its parent's log up to this marker, so usage before
-            // the last inherited marker belongs to the parent session.
+            // NOTE(2026-11-16, #2112): A DeepSeek Harness fork can carry more than one inherited marker from its ancestry. Only usage after the last marker belongs to the current session.
             Some("session/end-seed") => {
                 if data.inherited {
                     entries.clear();
@@ -310,12 +295,9 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
                 }
                 continue;
             }
-            // A failed or aborted stream settles as `assistant/attempt`; dsh still
-            // counts the usage its provider reported before the failure.
             Some("assistant/message" | "assistant/attempt") => data
                 .settled_usage()
                 .map(|usage| (usage, route.provider.clone(), route.model.clone())),
-            // Summarisation calls name their own route instead of the request route.
             Some("compaction/summary") => {
                 data.usage.map(|usage| (usage, data.provider, data.model))
             }
@@ -381,8 +363,6 @@ fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<
     entries
 }
 
-/// Whether a line that did not decode is a model call: one of the event
-/// types usage is read from, with its usage or stream present.
 fn is_usage_event(value: &serde_json::Value) -> bool {
     matches!(
         value.get("type").and_then(serde_json::Value::as_str),
@@ -482,11 +462,6 @@ pub(super) fn dsh_entry_to_loaded(
     }
 }
 
-/// dsh's first-party providers are DeepSeek's API-key and account routes; any
-/// other provider id comes from pi-ai and is tried as a models.dev provider.
-///
-/// First-party routes try the bare model id first because shared pricing keys
-/// DeepSeek's time-of-day schedule on the direct model id.
 fn model_candidates(provider: Option<&str>, model: &str) -> Vec<String> {
     if let Some("deepseek-official" | "deepseek-account") = provider {
         return vec![model.to_string(), format!("deepseek/{model}")];
@@ -586,7 +561,6 @@ mod tests {
             r#"{"type":"session","version":4,"id":"fork","isSeeded":true}"#,
             r#"{"type":"request/context","seq":1,"time":2,"data":{"provider":"deepseek-official","model":"deepseek-v4-pro"}}"#,
             r#"{"type":"assistant/message","seq":2,"time":3,"data":{"usage":{"inputTokens":10,"outputTokens":1}}}"#,
-            // The parent's undated request is the parent's to report.
             r#"{"type":"assistant/message","seq":3,"data":{"usage":{"inputTokens":10,"outputTokens":1}}}"#,
         ]));
 
@@ -674,7 +648,6 @@ mod tests {
     fn reports_requests_that_do_not_decode_and_keeps_the_rest() {
         let (entries, diagnostics) = parse_diagnosed(&lines(&[
             r#"{"type":"session","id":"sid","createdAt":1}"#,
-            // Not one of the events read, so never parsed.
             "not json",
             r#"{"type":"assistant/message","seq":1,"seq":1,"time":2,"data":{"usage":{"inputTokens":5}}}"#,
             r#"{"type":"assistant/message","seq":2,"time":3,"data":{"usage":{"inputTok"#,
@@ -684,8 +657,6 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].seq, Some(4));
-        // The repeated `seq` of a request and the line cut short are skips;
-        // the route change carries no usage and is a --debug note.
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 2);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
     }
@@ -792,7 +763,6 @@ mod tests {
             };
             dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Auto(&pricing)).cost
         };
-        // Tuesday 2026-11-17 02:00Z is a peak window and 12:00Z is off-peak.
         let peak = cost_at(1_794_880_800_000);
         let off_peak = cost_at(1_794_916_800_000);
         assert!(

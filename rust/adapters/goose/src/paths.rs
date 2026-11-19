@@ -62,7 +62,7 @@ mod tests {
         let database = fixture.write_file(".local/share/goose/sessions/sessions.db", "");
         let alias_root = fixture.create_dir_all("Library/Application Support/goose/sessions");
         std::os::unix::fs::symlink(&database, alias_root.join("sessions.db")).unwrap();
-        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+        let _guard = ccusage_test_support::EnvGuard::set_many([
             (GOOSE_PATH_ROOT_ENV, None),
             ("HOME", Some(fixture.root().into())),
         ]);
@@ -72,14 +72,14 @@ mod tests {
             vec![database.canonicalize().unwrap()]
         );
     }
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn discovers_goose_path_root_database() {
         let fixture = fs_fixture!({
             "data/sessions/sessions.db": "",
         });
-        let _cleanup = EnvVarGuard::set(GOOSE_PATH_ROOT_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(GOOSE_PATH_ROOT_ENV, fixture.root());
 
         let paths = goose_db_paths(false).unwrap();
 
@@ -92,7 +92,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "first,second/data/sessions/sessions.db": "",
         });
-        let _guard = ccusage_test_support::EnvVarGuard::set(
+        let _guard = ccusage_test_support::EnvGuard::set(
             GOOSE_PATH_ROOT_ENV,
             format!(" {} ", fixture.path("first,second").display()),
         );

@@ -84,7 +84,7 @@ mod tests {
                 output: 50,
             },
         );
-        let _guard = EnvVarGuard::set("GOOSE_PATH_ROOT", fixture.root());
+        let _guard = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
@@ -121,7 +121,7 @@ mod tests {
     use super::*;
     use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
     use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
-    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn create_goose_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -306,7 +306,7 @@ INSERT INTO sessions (
                 output: 50,
             },
         );
-        let _environment = EnvVarsGuard::set_many([
+        let _environment = EnvGuard::set_many([
             ("HOME", Some(fixture.root().to_path_buf().into_os_string())),
             ("GOOSE_PATH_ROOT", Some(std::ffi::OsString::new())),
         ]);
@@ -348,7 +348,7 @@ INSERT INTO sessions (
                 output: 50,
             },
         );
-        let _cleanup = EnvVarGuard::set("GOOSE_PATH_ROOT", fixture.root());
+        let _cleanup = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
         let shared = SharedArgs {
             offline: true,
             timezone: Some("UTC".to_string()),

@@ -58,6 +58,7 @@ pub(super) fn read_session_row(
     let cache_read_tokens = read_count(statement, 7);
     let cache_creation_tokens = read_count(statement, 8);
     let reasoning_tokens = read_count(statement, 9);
+    // NOTE(2026-05-19, #1026): Hermes stores session costs in state.db, with separate actual and estimated columns. A missing actual cost leaves the estimate usable, while a recorded zero is meaningful.
     let estimated_cost = read_non_negative_f64(statement, 10);
     let actual_cost = read_non_negative_f64(statement, 11);
     let cost_usd = actual_cost.or(estimated_cost);

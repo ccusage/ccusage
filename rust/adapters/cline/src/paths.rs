@@ -141,6 +141,7 @@ fn classify_file(root: &Path, path: &Path) -> Option<(SourceKind, String)> {
         ["tasks", session_id, "ui_messages.json"] if !session_id.is_empty() => {
             Some((SourceKind::Extension, (*session_id).to_string()))
         }
+        // NOTE(2026-11-10, Cline CLI 2.8, #1977): Older Cline CLI releases stored task transcripts under data/tasks. Those files use the extension's ui_messages.json format.
         ["data", "tasks", session_id, "ui_messages.json"] if !session_id.is_empty() => {
             Some((SourceKind::CliTask, (*session_id).to_string()))
         }
@@ -167,7 +168,7 @@ impl AsRef<Path> for SourceFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[cfg(unix)]
     #[test]
@@ -178,7 +179,7 @@ mod tests {
             "tasks/blocked/ui_messages.json": "[]",
             "tasks/healthy/ui_messages.json": "[]",
         });
-        let _guard = EnvVarGuard::set(CLINE_DATA_DIR_ENV, fixture.root());
+        let _guard = EnvGuard::set(CLINE_DATA_DIR_ENV, fixture.root());
         let blocked = fixture.path("tasks/blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let denied = fs::read_dir(&blocked).is_err();
@@ -219,7 +220,7 @@ mod tests {
             cli_data.root().display(),
             legacy_cli_tasks.root().display()
         );
-        let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, configured);
+        let _cleanup = EnvGuard::set(CLINE_DATA_DIR_ENV, configured);
 
         let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
@@ -255,7 +256,7 @@ mod tests {
             "tasks/task-a/ui_messages.json": "[]",
         });
         let configured = format!("{},{}", fixture.root().display(), fixture.root().display());
-        let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, configured);
+        let _cleanup = EnvGuard::set(CLINE_DATA_DIR_ENV, configured);
 
         let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
@@ -268,7 +269,7 @@ mod tests {
         let fixture = fs_fixture!({
             ".cline/tasks/task-a/ui_messages.json": "[]",
         });
-        let _guard = ccusage_test_support::EnvVarsGuard::set_many([
+        let _guard = ccusage_test_support::EnvGuard::set_many([
             (CLINE_DATA_DIR_ENV, Some(" , ".into())),
             ("HOME", Some(fixture.root().into())),
             ("USERPROFILE", None),
@@ -284,7 +285,7 @@ mod tests {
 
     #[test]
     fn default_roots_cover_supported_editors_and_cline_cli() {
-        let _env = ccusage_test_support::EnvVarsGuard::set_many([
+        let _env = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some("/tmp/cline-home".into())),
             ("APPDATA", Some("/tmp/cline-appdata".into())),
             ("XDG_CONFIG_HOME", Some("/tmp/cline-config".into())),
@@ -324,7 +325,7 @@ mod tests {
 
     #[test]
     fn uses_windows_roaming_storage_when_appdata_is_unset() {
-        let _env = ccusage_test_support::EnvVarsGuard::set_many([
+        let _env = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some("/tmp/cline-home".into())),
             ("USERPROFILE", Some("/tmp/cline-profile".into())),
             ("APPDATA", None),

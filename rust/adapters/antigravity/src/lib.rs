@@ -23,7 +23,6 @@ impl EntrySource for Antigravity {
     }
 }
 
-/// Runs an Antigravity usage report for the requested report kind.
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     SOURCE.run_focused(args)
 }

@@ -270,6 +270,7 @@ fn extension_usage(
     Some((usage, number_field_from(metrics, "cost")))
 }
 
+// NOTE(2026-11-10, #1977): Cline CLI includes cache reads and writes in inputTokens. The extension's tokensIn already excludes both, so only CLI input needs subtraction.
 fn cli_usage(metrics: &serde_json::Map<String, Value>) -> Option<(TokenUsageRaw, Option<f64>)> {
     let cache_reads = integer_field_from(metrics, "cacheReadTokens")?;
     let cache_writes = integer_field_from(metrics, "cacheWriteTokens")?;

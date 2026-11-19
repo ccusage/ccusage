@@ -51,8 +51,7 @@ fn is_chat_file(projects: &Path, file: &Path) -> bool {
     }
     let file = match rest {
         [Component::Normal(file)] => file,
-        // Qwen Code archives finished sessions into the flat `chats/archive/`
-        // directory without changing their contents.
+        // NOTE(2026-11-15, #2090): Qwen Code moves finished sessions into the flat chats/archive/ directory without rewriting them. Discover that directory to include archived usage.
         [Component::Normal(archive), Component::Normal(file)]
             if archive.to_str() == Some("archive") =>
         {
@@ -86,7 +85,7 @@ mod tests {
     use ccusage_adapter_common::source::{
         EntrySource, LoadRequest, ProgressOwner, SourceOptions, UsageSource,
     };
-    use ccusage_test_support::{EnvVarGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
 
     use super::{discover_chat_files, project_from_file};
     use crate::{
@@ -100,12 +99,12 @@ mod tests {
         let direct = fixture.write_file("qwen/projects/project-a/chats/live.jsonl", "");
         let archived =
             fixture.write_file("qwen/projects/project-a/chats/archive/archived.jsonl", "");
-        let _ = fixture.write_file(
+        fixture.write_file(
             "qwen/projects/project-a/chats/archive/nested/ignored.jsonl",
             "",
         );
-        let _ = fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
+        fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
 
         assert_eq!(
             discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
@@ -117,15 +116,15 @@ mod tests {
     #[test]
     fn archived_chats_keep_session_ids_and_remain_detected_outside_the_window() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "qwen/projects/project-a/chats/archive/arch-0002.jsonl",
             r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"arch-0002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "qwen/projects/project-a/chats/archive/file-stem.jsonl",
             r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
         );
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),

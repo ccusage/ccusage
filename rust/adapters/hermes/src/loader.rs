@@ -77,7 +77,7 @@ mod tests {
         PricingMap, ReportWindow, SkipKind,
         cli::{AgentReportKind, SharedArgs},
     };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     fn create_state_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -200,7 +200,7 @@ mod tests {
             fixture.root().join("broken").display(),
             fixture.root().join("schema").display()
         );
-        let _cleanup = EnvVarGuard::set("HERMES_HOME", homes);
+        let _cleanup = EnvGuard::set("HERMES_HOME", homes);
         let shared = SharedArgs::default();
         let pricing = PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
@@ -285,7 +285,7 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('session-a', 'cli', 'gpt-5', 1750000000, 100, 50)",
             )
             .unwrap();
-        let _cleanup = EnvVarGuard::set("HERMES_HOME", fixture.root());
+        let _cleanup = EnvGuard::set("HERMES_HOME", fixture.root());
         let shared = SharedArgs {
             offline: true,
             timezone: Some("UTC".to_string()),

@@ -23,11 +23,7 @@ fn roots() -> Vec<PathBuf> {
     })
 }
 
-/// Returns the newest session log generation in every session directory.
-///
-/// dsh keeps each format generation as its own immutable file and leaves the
-/// older ones behind after migrating a session, so reading every generation
-/// would count the same requests more than once.
+// NOTE(2026-11-16, #2112): DeepSeek Harness retains older immutable log generations after migrating a session. Only the newest generation should contribute usage.
 pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in roots() {
@@ -56,8 +52,6 @@ pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<Pa
     Ok(files)
 }
 
-/// `session.jsonl` is generation 0 and `session.vN.jsonl` is generation N,
-/// each optionally zstd-compressed with a `.zstd` suffix.
 fn session_generation(path: &Path) -> Option<u32> {
     let name = path.file_name()?.to_str()?;
     let name = name.strip_suffix(COMPRESSED_SUFFIX).unwrap_or(name);
@@ -81,7 +75,7 @@ pub(super) fn is_compressed(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn parses_session_generations_from_file_names() {
@@ -107,7 +101,7 @@ mod tests {
             "sessions/_no-cwd/s3/session.v4.jsonl": "",
             "sessions/_no-cwd/s3/notes.jsonl": "",
         });
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, fixture.root());
 
         assert_eq!(
             discover_session_files(&Diagnostics::new("dsh")).unwrap(),
@@ -128,7 +122,7 @@ mod tests {
             first.root().display(),
             second.root().display()
         );
-        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, &value);
+        let _cleanup = EnvGuard::set(DSH_HOME_ENV, &value);
 
         assert_eq!(
             discover_session_files(&Diagnostics::new("dsh")).unwrap(),

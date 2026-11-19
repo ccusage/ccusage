@@ -49,7 +49,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
     use serde_json::json;
 
     use super::*;
@@ -70,7 +70,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &shared,
@@ -95,7 +95,6 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/myProject/chats/live.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"live-0001","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
             "projects/myProject/chats/archive/archived.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"arch-0002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
-            // Only the flat `chats/archive/` location is picked up.
             "projects/myProject/chats/other/ignored.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","sessionId":"other-0003","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":500}}"#,
             "projects/myProject/chats/archive/nested/deep.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T05:00:00.000Z","sessionId":"deep-0004","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":500}}"#,
         });
@@ -105,7 +104,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &shared,
@@ -155,7 +154,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &shared,
@@ -187,7 +186,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let entries = ccusage_adapter_common::testing::entries(
             &crate::SOURCE,
             &shared,
@@ -236,7 +235,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
             since: Some("20260131".to_string()),
@@ -275,7 +274,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let _guard = EnvGuard::set("QWEN_DATA_DIR", fixture.root());
         let shared = SharedArgs {
             mode: CostMode::Display,
             debug: true,

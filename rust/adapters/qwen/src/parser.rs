@@ -19,8 +19,6 @@ use crate::{
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
 
-/// A single parsed Qwen chat record. Only the fields ccusage consumes are
-/// declared; serde skips everything else.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QwenLine {
@@ -35,7 +33,6 @@ struct QwenLine {
     model: Option<String>,
 }
 
-/// Gemini-style usage metadata block carried by Qwen assistant records.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QwenUsageMetadata {
@@ -58,8 +55,6 @@ pub(super) fn read_chat_file(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let content = fs::read(file)?;
-    // Every usable Qwen line carries token counts under the `usageMetadata`
-    // key, so lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
     let mut entries = Vec::new();
     for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<QwenLine>(

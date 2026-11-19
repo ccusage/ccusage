@@ -29,7 +29,7 @@ mod tests {
             "first/state.db": "",
             "second/state.db": "",
         });
-        let _guard = ccusage_test_support::EnvVarGuard::set(
+        let _guard = ccusage_test_support::EnvGuard::set(
             HERMES_HOME_ENV,
             format!(
                 " {}, {}, {} ",

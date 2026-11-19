@@ -7,6 +7,7 @@ use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
 pub(super) const CODEBUFF_DATA_DIR_ENV: &str = "CODEBUFF_DATA_DIR";
+// NOTE(2026-05-19, #1029): Codebuff stores chat-messages.json under Manicode-branded channel roots. Discovery must include those names to find production, development and staging history.
 const CHANNELS: &[&str] = &["manicode", "manicode-dev", "manicode-staging"];
 
 pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {

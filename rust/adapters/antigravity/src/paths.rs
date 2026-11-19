@@ -71,7 +71,7 @@ pub(super) fn conversation_db_paths(
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     use super::*;
 
@@ -85,7 +85,7 @@ mod tests {
             ".gemini/antigravity-acp/conversations/acp.db": "",
             ".config/antigravity/conversations/config.db": "",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
@@ -108,7 +108,7 @@ mod tests {
             fixture.path("parent").display(),
             fixture.path("direct").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
         )]);
@@ -134,7 +134,7 @@ mod tests {
             fixture.root().display(),
             fixture.path("conversations/..").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        let _guard = EnvGuard::set_many([(
             ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
         )]);
@@ -152,7 +152,7 @@ mod tests {
             ".gemini/antigravity-cli/conversations/session.db": "",
             ".gemini/antigravity/conversation_summaries.db": "",
         });
-        let _guard = EnvVarsGuard::set_many([
+        let _guard = EnvGuard::set_many([
             (ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),

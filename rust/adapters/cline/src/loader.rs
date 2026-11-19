@@ -25,7 +25,7 @@ mod tests {
     use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
-    use ccusage_test_support::{EnvVarGuard, Fixture};
+    use ccusage_test_support::{EnvGuard, Fixture};
 
     #[test]
     fn diagnoses_untimed_extension_and_cli_usage() {
@@ -39,7 +39,7 @@ mod tests {
                 {"role":"assistant","metrics":{}}
             ]}"#
         });
-        let _guard = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
+        let _guard = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,
             &SharedArgs::default(),
@@ -99,7 +99,7 @@ mod tests {
                 )
                 .is_file()
         );
-        let _env = EnvVarGuard::set(
+        let _env = EnvGuard::set(
             super::super::paths::CLINE_DATA_DIR_ENV,
             format!(
                 "{},{}",
@@ -181,13 +181,13 @@ mod tests {
     fn keeps_healthy_cline_files_when_another_file_is_invalid_json() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "tasks/healthy/ui_messages.json",
             include_str!("../tests/fixtures/extension/ui_messages.json"),
         );
-        let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":}");
-        let _ = fixture.write_file("tasks/unwritten/ui_messages.json", "");
-        let _env = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
+        fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":}");
+        fixture.write_file("tasks/unwritten/ui_messages.json", "");
+        let _env = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
             timezone: Some("UTC".to_string()),

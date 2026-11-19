@@ -75,7 +75,7 @@ mod tests {
     fn uniform_cost_modes_do_not_calculate_in_display() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"projects/p/chats/c/chat-messages.json": r#"[{"role":"assistant","timestamp":"2026-05-01T01:02:03Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":50}}}]"#});
-        let _guard = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _guard = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
@@ -115,7 +115,7 @@ mod tests {
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvGuard, fs_fixture};
 
     #[test]
     fn tied_timestamps_are_ordered_by_dedup_key_after_last_wins() {
@@ -138,7 +138,7 @@ mod tests {
             "metadata": {"model": "test-model", "usage": {"inputTokens": 99}}
         }));
         let _path = fixture.write_file(path, serde_json::to_string(&messages).unwrap());
-        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let pricing = ccusage_core::PricingMap::default();
         for single_thread in [true, false] {
             let entries = ccusage_adapter_common::testing::entries(
@@ -185,7 +185,7 @@ mod tests {
                 {"role":"assistant","metadata":{"usage":{}}}
             ]"#
         });
-        let _guard = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _guard = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,
             &SharedArgs::default(),
@@ -227,7 +227,7 @@ mod tests {
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50,"cacheCreationInputTokens":20,"cacheReadInputTokens":10}},"credits":1.25}
             ]"#,
         });
-        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
 
         let pricing = ccusage_core::PricingMap::load_embedded();
         let shared = SharedArgs {
@@ -269,7 +269,7 @@ mod tests {
             "projects/project-b/chats/2026-01-03T03-04-05.000Z/chat-messages.json": "[broken",
             "projects/project-c/chats/2026-01-04T03-04-05.000Z/chat-messages.json": "",
         });
-        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();
         let pricing = ccusage_core::PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
@@ -297,7 +297,7 @@ mod tests {
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
             ]"#,
         });
-        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             offline: true,
             timezone: Some("UTC".to_string()),
@@ -322,7 +322,7 @@ mod tests {
                 ]}}}}}
             ]"#,
         });
-        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let _cleanup = EnvGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
 
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entries = ccusage_adapter_common::testing::entries(

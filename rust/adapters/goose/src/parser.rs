@@ -12,15 +12,13 @@ use crate::{LoadedEntry, TokenUsageRaw, UsageEntry, UsageMessage, format_date_tz
 use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
-/// Goose stores the per-session model selection as a JSON blob in the
-/// `model_config_json` column. Only the human-readable model name is consumed.
+// NOTE(2026-05-19, #1035): Goose embeds the model name in model_config_json on the SQLite session row. Parsing that object recovers the session's model attribution.
 #[derive(Debug, Deserialize)]
 struct GooseModelConfig {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model_name: Option<String>,
 }
 
-/// Why a Goose session row that carries usage was left out.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RowRejection {
     MissingId,

@@ -80,8 +80,7 @@ pub(super) fn row_to_entry(
         .directory
         .filter(|directory| !directory.trim().is_empty())
         .unwrap_or_else(|| "ZCode".to_string());
-    // Z.ai exposes new content as a cache-creation bucket for display, but
-    // bills that content at the model's standard input rate.
+    // NOTE(2026-08-31, #1675): Z.ai bills new content at the standard input rate even when the ledger labels it cache creation. Both buckets therefore use the input rate for pricing.
     let is_zai = is_zai_provider(row.provider_id.as_deref())
         || (row.provider_id.is_none() && is_zai_model(&raw_model.to_ascii_lowercase()));
     let cost_usage = if is_zai {

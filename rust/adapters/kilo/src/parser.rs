@@ -14,8 +14,6 @@ use crate::{
 };
 use ccusage_adapter_common::jsonl;
 
-/// A single parsed Kilo message row payload. Only the fields ccusage consumes
-/// are declared; serde skips everything else.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct KiloMessage {
     #[serde(default)]
@@ -44,7 +42,6 @@ pub(super) struct KiloMessage {
     provider_id: Option<String>,
 }
 
-/// Token usage block carried by Kilo assistant messages.
 #[derive(Debug, Default, Deserialize)]
 struct KiloTokens {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -59,7 +56,6 @@ struct KiloTokens {
     total: u64,
 }
 
-/// Cache read/write counts nested under Kilo token usage.
 #[derive(Debug, Default, Deserialize)]
 struct KiloCache {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -68,7 +64,7 @@ struct KiloCache {
     write: u64,
 }
 
-/// Creation timestamp block carried by Kilo messages.
+// NOTE(2026-05-19, #1032): The data column of Kilo's SQLite message table holds a JSON payload with time.created in epoch milliseconds. Use that field as the message clock.
 #[derive(Debug, Default, Deserialize)]
 struct KiloTime {
     #[serde(default, deserialize_with = "jsonl::lenient_i64")]
