@@ -2385,6 +2385,7 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 
 #[cfg(test)]
 mod tests {
+    mod scenarios;
 
     use super::{
         Lookup, MatchKind, Pricing, PricingMap, Row, build_time_models_dev_json,
@@ -7484,6 +7485,81 @@ mod tests {
     }
 
     #[test]
+    fn resolver_row_23_bare_id_reaches_the_direct_vendor_row() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let found = pricing
+            .explain(None, &[("deepseek-v3.2", MatchKind::StrictExact)])
+            .unwrap();
+        assert_eq!(found.step, super::ResolutionStep::AuthoritativeIdentity);
+        assert_eq!(found.row_key, "deepseek/deepseek-v3.2");
+    }
+
+    #[test]
+    fn conflicting_direct_vendor_rates_do_not_answer_by_vendor_id() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        assert_eq!(pricing.load_json(r#"{
+            "openai/twin-1": {"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":1},
+            "anthropic/twin-1": {"litellm_provider":"anthropic","input_cost_per_token":2,"output_cost_per_token":2}
+        }"#), 2);
+        assert!(
+            pricing
+                .resolve_at(None, &[("twin-1", MatchKind::Exact)], None)
+                .is_none()
+        );
+        assert_eq!(pricing.find("openai/twin-1").unwrap().input, 1.0);
+        assert_eq!(pricing.find("anthropic/twin-1").unwrap().input, 2.0);
+    }
+
+    #[test]
+    fn overrides_with_the_same_identity_merge_fields() {
+        let first = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(10e-6),
+            ..Default::default()
+        };
+        let second = ccusage_cli::PricingOverride {
+            output_cost_per_token: Some(20e-6),
+            ..Default::default()
+        };
+        let pricing = PricingMap::default().with_user_overrides([
+            (&"k-1.5".to_owned(), &first),
+            (&"k-1-5".to_owned(), &second),
+        ]);
+        for model in ["k-1.5", "k-1-5"] {
+            let p = pricing.find(model).unwrap();
+            assert_eq!((p.input, p.output), (10e-6, 20e-6), "{model}");
+        }
+    }
+
+    #[test]
+    fn authoritative_rows_keep_the_embedded_tier_after_a_live_models_dev_load() {
+        crate::test_support::install_pricing_snapshots();
+        let mut primary = PricingMap::default();
+        assert_eq!(primary.load_json(r#"{
+            "gpt-5.5":{"litellm_provider":"openai","input_cost_per_token":6e-6,"output_cost_per_token":31e-6}
+        }"#), 1);
+        let mut live = PricingMap::default();
+        assert_eq!(live.load_models_dev_json_for_tests(r#"{
+            "live-only":{"cost":{"input":7,"output":9}},
+            "gpt-5.5":{"cost":{"input":16,"output":31,"tiers":[{"input":20,"tier":{"type":"context","size":240000}}]}}
+        }"#), Some(2));
+        let pricing = layered(&primary, Some(embedded_models_dev_pricing()));
+        assert_eq!(
+            pricing
+                .find_with_live("live-only", || Some(&live))
+                .unwrap()
+                .input,
+            7e-6
+        );
+        let found = pricing.find("gpt-5.5").unwrap();
+        assert_eq!(found.input, 6e-6);
+        let tier = found.long_context.unwrap();
+        assert_eq!(tier.threshold, 272_000);
+        assert_eq!(tier.rates.input, Some(10e-6));
+    }
+
+    #[test]
     fn resolver_table() {
         use super::ResolutionStep::{
             AuthoritativeFuzzy, AuthoritativeIdentity, AuthoritativeSuffix, ModelsDevIdentity,
@@ -7537,7 +7613,7 @@ mod tests {
                 (2.0, 3.0),
             ),
             (
-                "R3_23_vendor_path",
+                "R3_authoritative_path_suffix",
                 "reseller/zai/desk-model-2-5",
                 &[("reseller/zai/desk-model-2-5", fuzzy)][..],
                 AuthoritativeSuffix,
