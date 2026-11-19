@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn default_store_uses_its_root_for_project_names() {
         let fixture = ccusage_test_support::fs_fixture!({});
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/outer/pi-data/project-a/agent_session-a.jsonl",
             usage_line("2026-01-02T00:00:00.000Z", 10, 1, 0, 0),
         );
@@ -283,7 +283,7 @@ mod tests {
     fn tied_timestamps_are_ordered_by_usage_identity() {
         let fixture = ccusage_test_support::fs_fixture!({});
         let timestamp = "2026-01-02T00:00:00.000Z";
-        let _ = fixture.write_file(
+        fixture.write_file(
             "data/project/agent_session.jsonl",
             [
                 usage_line(timestamp, 20, 1, 0, 0),
@@ -482,7 +482,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -541,7 +541,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -599,7 +599,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/missing-child.jsonl",
             [
                 session_line(
@@ -611,7 +611,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/outside-parent-child.jsonl",
             [
                 session_line(
@@ -623,7 +623,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-parent.jsonl",
             [
                 "not json".to_string(),
@@ -631,7 +631,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-parent-child.jsonl",
             [
                 session_line(
@@ -643,7 +643,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-parent-grandchild.jsonl",
             [
                 session_line(
@@ -655,7 +655,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/malformed-child.jsonl",
             [
                 "not json".to_string(),
@@ -663,11 +663,11 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/regular-a.jsonl",
             usage_line("2026-01-02T11:00:00.000Z", 100, 10, 20, 3),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/regular-b.jsonl",
             usage_line("2026-01-02T11:00:00.000Z", 100, 10, 20, 3),
         );
@@ -730,7 +730,7 @@ mod tests {
         let self_path = fixture.path("sessions/project-a/self.jsonl");
         let cycle_a = fixture.path("sessions/project-a/cycle-a.jsonl");
         let cycle_b = fixture.path("sessions/project-a/cycle-b.jsonl");
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/self.jsonl",
             [
                 session_line("self", "2026-01-03T00:00:00.000Z", Some(&self_path)),
@@ -738,7 +738,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/cycle-a.jsonl",
             [
                 session_line("cycle-a", "2026-01-03T00:00:00.000Z", Some(&cycle_b)),
@@ -746,7 +746,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/cycle-b.jsonl",
             [
                 session_line("cycle-b", "2026-01-03T00:00:00.000Z", Some(&cycle_a)),
@@ -789,7 +789,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/grandchild.jsonl",
             [
                 session_line("grandchild", "2026-01-04T00:00:00.000Z", Some(&child)),
@@ -869,7 +869,7 @@ mod tests {
             ("total-fallback", "gpt-5", 10, 20, 30, 40, 110),
         ];
         for (name, model, input, output, cache_read, cache_write, total_tokens) in variants {
-            let _ = fixture.write_file(
+            fixture.write_file(
                 format!("sessions/project-a/child-{name}.jsonl"),
                 [
                     session_line(name, "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -920,7 +920,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -960,7 +960,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -989,7 +989,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1029,7 +1029,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1066,7 +1066,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1118,7 +1118,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "second/project-a/child.jsonl",
             [
                 session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
@@ -1149,7 +1149,7 @@ mod tests {
     #[test]
     fn skips_subagent_artifact_transcripts_but_keeps_fresh_context_child_sessions() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/root.jsonl",
             [
                 session_line("root", "2026-01-01T00:00:00.000Z", None),
@@ -1157,15 +1157,15 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/subagent-artifacts/other_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "sessions/project-a/root/run-abc/run-0/session.jsonl",
             usage_line("2026-01-03T01:00:00.000Z", 50, 5, 6, 1),
         );
@@ -1204,7 +1204,7 @@ mod tests {
     fn skips_subagent_artifact_transcripts_for_named_stores() {
         let fixture = Fixture::new();
         let store = fixture.create_dir_all("store");
-        let _ = fixture.write_file(
+        fixture.write_file(
             "store/project-a/root.jsonl",
             [
                 session_line("root", "2026-01-01T00:00:00.000Z", None),
@@ -1212,7 +1212,7 @@ mod tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "store/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
             usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
         );

@@ -45,8 +45,8 @@ mod tests {
     fn default_store_keeps_a_project_named_sessions() {
         let fixture = fs_fixture!({});
         let store = fixture.create_dir_all(".pi/agent/sessions");
-        let _ = fixture.create_dir_all(".pi/agent/sessions/sessions");
-        let _ = fixture.create_dir_all(".pi/agent/sessions/another-project");
+        fixture.create_dir_all(".pi/agent/sessions/sessions");
+        fixture.create_dir_all(".pi/agent/sessions/another-project");
         let _guard = ccusage_test_support::EnvGuard::set_many([
             ("HOME", Some(fixture.root().into())),
             (PI_AGENT_DIR_ENV, None),

@@ -140,7 +140,7 @@ mod diagnostic_tests {
     fn supplied_pricing_is_used_for_codex_tier_aggregation() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);
+        fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().into())),
             ("LOG_LEVEL", Some("0".into())),
@@ -187,7 +187,7 @@ mod diagnostic_tests {
     fn display_reports_tokens_without_calculating_cost_from_supplied_rates() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("sessions/tiny.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}"#);
+        fixture.write_file("sessions/tiny.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}"#);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
@@ -213,7 +213,7 @@ mod diagnostic_tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
-        let _ = fixture.write_file("sessions/session.jsonl", usage);
+        fixture.write_file("sessions/session.jsonl", usage);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
@@ -242,8 +242,8 @@ mod diagnostic_tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = json!({"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
-        let _ = fixture.write_file("sessions/session-a.jsonl", &usage);
-        let _ = fixture.write_file("sessions/session-b.jsonl", &usage);
+        fixture.write_file("sessions/session-a.jsonl", &usage);
+        fixture.write_file("sessions/session-b.jsonl", &usage);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
@@ -273,9 +273,9 @@ mod diagnostic_tests {
         let usage = |timestamp: &str| {
             json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
         };
-        let _ = fixture.write_file("sessions/original.jsonl", usage("2026-01-02T00:00:00.000Z"));
-        let _ = fixture.write_file("sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
-        let _ = fixture.write_file("sessions/later.jsonl", usage("2026-01-03T00:00:00.000Z"));
+        fixture.write_file("sessions/original.jsonl", usage("2026-01-02T00:00:00.000Z"));
+        fixture.write_file("sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
+        fixture.write_file("sessions/later.jsonl", usage("2026-01-03T00:00:00.000Z"));
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
@@ -347,7 +347,7 @@ mod diagnostic_tests {
             .map(|record| record.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        let _ = fixture.write_file("sessions/compaction.jsonl", &contents);
+        fixture.write_file("sessions/compaction.jsonl", &contents);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
@@ -414,7 +414,7 @@ mod diagnostic_tests {
                 json!({"timestamp":invalid_timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":110,"output_tokens":22,"total_tokens":132}}}}),
                 json!({"timestamp":"2026-01-02T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":115,"output_tokens":23,"total_tokens":138}}}}),
             ].map(|record| record.to_string()).join("\n");
-            let _ = fixture.write_file("sessions/cumulative.jsonl", &records);
+            fixture.write_file("sessions/cumulative.jsonl", &records);
             for since in [None, Some("20260101".to_owned())] {
                 let shared = SharedArgs {
                     offline: true,
@@ -461,7 +461,7 @@ mod diagnostic_tests {
         ]);
         let pricing = PricingMap::load_embedded();
         for file in ["sessions/header.jsonl", "archived_sessions/header.jsonl"] {
-            let _ = fixture.write_file(
+            fixture.write_file(
                 file,
                 r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
             );
@@ -500,7 +500,7 @@ mod diagnostic_tests {
             json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}),
             json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
         ].map(|record| record.to_string()).join("\n");
-        let _ = fixture.write_file("sessions/timestamps.jsonl", &records);
+        fixture.write_file("sessions/timestamps.jsonl", &records);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
@@ -553,9 +553,9 @@ mod diagnostic_tests {
     fn specialized_diagnostics_keep_healthy_codex_usage() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _ = fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
-        let _ = fixture.write_file("sessions/bad.jsonl", r#"{"timestamp":{"unexpected":"SECRET_CANARY"},"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#);
-        let _ = fixture.write_file("sessions/corrupt.jsonl.zst", "SECRET_CANARY");
+        fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
+        fixture.write_file("sessions/bad.jsonl", r#"{"timestamp":{"unexpected":"SECRET_CANARY"},"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#);
+        fixture.write_file("sessions/corrupt.jsonl.zst", "SECRET_CANARY");
         let good = std::fs::read_to_string(fixture.path("sessions/good.jsonl"))
             .unwrap()
             .replace("00:00:00Z", "00:01:00Z")
@@ -679,7 +679,7 @@ mod diagnostic_tests {
             .to_string(),
         ]
         .join("\n");
-        let _ = fixture.write_file("sessions/headless.jsonl", &records);
+        fixture.write_file("sessions/headless.jsonl", &records);
         let _env = EnvGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),

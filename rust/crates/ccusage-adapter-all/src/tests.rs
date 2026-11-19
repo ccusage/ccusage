@@ -1248,12 +1248,14 @@ fn unified_reports_keep_claude_agent_rows_whose_transcript_has_no_usage() {
 fn unified_reports_keep_claude_agent_rows_whose_transcript_holds_only_subagent_usage() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
-    let _ =
-        fixture.write_file(
-            "claude/projects/project-a/claude-native-a/subagents/agent-1.jsonl",
-            claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-sub", 30)
-                .replacen('{', r#"{"isSidechain":true,"#, 1),
-        );
+    fixture.write_file(
+        "claude/projects/project-a/claude-native-a/subagents/agent-1.jsonl",
+        claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-sub", 30).replacen(
+            '{',
+            r#"{"isSidechain":true,"#,
+            1,
+        ),
+    );
     write_opencode_rows(
         &fixture.create_dir_all("opencode").join("opencode.db"),
         &[(

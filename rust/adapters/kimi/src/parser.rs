@@ -480,12 +480,12 @@ mod tests {
             read_wire_file(&files[0], &diagnostics).unwrap()[0].model,
             "kimi-k2"
         );
-        let _ = fixture.write_file("first/config.json", r#"{"model":"configured"}"#);
+        fixture.write_file("first/config.json", r#"{"model":"configured"}"#);
         assert_eq!(
             read_wire_file(&files[1], &diagnostics).unwrap()[0].model,
             "configured"
         );
-        let _ = fixture.write_file("first/config.json", r#"{"model":"changed"}"#);
+        fixture.write_file("first/config.json", r#"{"model":"changed"}"#);
         assert_eq!(
             read_wire_file(&files[2], &diagnostics).unwrap()[0].model,
             "configured"

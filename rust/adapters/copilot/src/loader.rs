@@ -2475,7 +2475,7 @@ mod tests {
             };
             let fixture = fs_fixture!({});
             for (session, event_id) in [(parent, "parent-event"), (child, "child-event")] {
-                let _ = fixture.write_file(
+                fixture.write_file(
                     format!("home/.copilot/session-state/{session}/events.jsonl"),
                     record(event_id),
                 );
@@ -2569,7 +2569,7 @@ mod tests {
                 "home/.copilot/session-state/session-parent/events.jsonl": parent.join("\n"),
             });
             if child_file {
-                let _ = fixture.write_file(
+                fixture.write_file(
                     "home/.copilot/session-state/session-child/events.jsonl",
                     record("child-record"),
                 );
@@ -2615,7 +2615,7 @@ mod tests {
                 "home/.copilot/otel/b.jsonl": span.clone(),
             });
             if let Some(api_call_id) = record {
-                let _ = fixture.write_file(
+                fixture.write_file(
                     "home/.copilot/session-state/session-1/events.jsonl",
                     usage_record(
                         "record-1",

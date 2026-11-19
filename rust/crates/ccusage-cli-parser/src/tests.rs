@@ -2157,7 +2157,7 @@ fn preserves_configured_order_and_cli_precedence() {
         ),
     ] {
         let fixture = fs_fixture!({});
-        let _ = fixture.write_file("ccusage.json", config_json);
+        fixture.write_file("ccusage.json", config_json);
         let config_path = fixture.path("ccusage.json").to_string_lossy().into_owned();
         let mut args = vec![
             "session",

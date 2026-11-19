@@ -1281,7 +1281,7 @@ mod tests {
             .unwrap()
             .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
             .unwrap();
-        let _ = fixture.write_file(
+        fixture.write_file(
             "storage/message/user.json",
             r#"{"role":"user","content":"SECRET_CANARY"}"#,
         );
@@ -2988,10 +2988,10 @@ mod tests {
                     r#"{{"id":"{id}","sessionID":"ses_{session}","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{{"created":{created}}},"tokens":{{"input":{input},"output":10}}}}"#,
                     input = 100 + message,
                 );
-                let _ = fixture.write_file(path, data);
+                fixture.write_file(path, data);
             }
         }
-        let _ = fixture.write_file(
+        fixture.write_file(
             "storage/message/ses_dup/msg-0-0.json",
             r#"{"id":"msg-0-0","sessionID":"ses_dup","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312999999},"tokens":{"input":7777,"output":10}}"#,
         );

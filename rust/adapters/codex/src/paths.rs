@@ -262,8 +262,8 @@ mod tests {
     #[test]
     fn includes_archived_sessions_next_to_sessions() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/sessions");
-        let _ = fixture.create_dir_all("codex/archived_sessions");
+        fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/archived_sessions");
 
         let paths = codex_usage_paths_from_homes(vec![fixture.path("codex")]);
 
@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn uses_sessions_without_missing_archived_sessions_path() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/sessions");
 
         let paths = codex_usage_paths_from_homes(vec![fixture.path("codex")]);
 
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn uses_archived_sessions_without_direct_path_fallback() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/archived_sessions");
+        fixture.create_dir_all("codex/archived_sessions");
 
         let paths = codex_usage_paths_from_homes(vec![fixture.path("codex")]);
 
@@ -310,7 +310,7 @@ mod tests {
     fn deduplicates_usage_paths_across_repeated_homes() {
         let fixture = Fixture::new();
         let home = fixture.create_dir_all("codex");
-        let _ = fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/sessions");
 
         let paths = codex_usage_paths_from_homes(vec![home.clone(), home]);
 
@@ -320,11 +320,11 @@ mod tests {
     #[test]
     fn keeps_active_session_file_when_archived_file_has_same_relative_path() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("codex/sessions");
-        let _ = fixture.create_dir_all("codex/archived_sessions");
-        let _ = fixture.write_file("codex/sessions/session.jsonl", "");
-        let _ = fixture.write_file("codex/archived_sessions/session.jsonl", "");
-        let _ = fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
+        fixture.create_dir_all("codex/sessions");
+        fixture.create_dir_all("codex/archived_sessions");
+        fixture.write_file("codex/sessions/session.jsonl", "");
+        fixture.write_file("codex/archived_sessions/session.jsonl", "");
+        fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
         let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
@@ -352,7 +352,7 @@ mod tests {
         let fixture = Fixture::new();
         let kept = fixture.write_file("codex/sessions/2026/01/01/kept.jsonl", "");
         let blocked = fixture.create_dir_all("codex/sessions/2026/01/02");
-        let _ = fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
+        fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let diagnostics = Diagnostics::new("codex");
 
@@ -373,13 +373,13 @@ mod tests {
     #[test]
     fn deduplicates_rollouts_across_encodings_and_session_directories() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("codex/sessions/both.jsonl", "");
-        let _ = fixture.write_file("codex/sessions/both.jsonl.zst", "");
-        let _ = fixture.write_file("codex/sessions/compressed.jsonl.zst", "");
-        let _ = fixture.write_file("codex/sessions/other.zst", "");
-        let _ = fixture.write_file("codex/archived_sessions/compressed.jsonl", "");
-        let _ = fixture.write_file("codex/archived_sessions/both.jsonl.zst", "");
-        let _ = fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
+        fixture.write_file("codex/sessions/both.jsonl", "");
+        fixture.write_file("codex/sessions/both.jsonl.zst", "");
+        fixture.write_file("codex/sessions/compressed.jsonl.zst", "");
+        fixture.write_file("codex/sessions/other.zst", "");
+        fixture.write_file("codex/archived_sessions/compressed.jsonl", "");
+        fixture.write_file("codex/archived_sessions/both.jsonl.zst", "");
+        fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
         let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
@@ -405,10 +405,10 @@ mod tests {
     #[test]
     fn keeps_same_relative_session_file_across_different_homes() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("work/sessions");
-        let _ = fixture.create_dir_all("personal/sessions");
-        let _ = fixture.write_file("work/sessions/session.jsonl", "");
-        let _ = fixture.write_file("personal/sessions/session.jsonl", "");
+        fixture.create_dir_all("work/sessions");
+        fixture.create_dir_all("personal/sessions");
+        fixture.write_file("work/sessions/session.jsonl", "");
+        fixture.write_file("personal/sessions/session.jsonl", "");
 
         let sources =
             codex_usage_sources_from_homes(vec![fixture.path("work"), fixture.path("personal")]);

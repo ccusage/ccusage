@@ -159,7 +159,7 @@ mod diagnostic_tests {
     #[test]
     fn claims_accept_the_last_supported_report_day() {
         let fixture = Fixture::new();
-        let _ = fixture.create_dir_all("projects");
+        fixture.create_dir_all("projects");
         let _env = EnvGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_owned()),
@@ -189,7 +189,7 @@ mod diagnostic_tests {
             ]
             .join("\n"),
         );
-        let _ = fixture.write_file(
+        fixture.write_file(
             "projects/p/session-resumed.jsonl",
             r#"{"timestamp":"2026-01-02T00:00:00Z","sessionId":"session-resumed","requestId":"req-main","message":{"id":"msg-main","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
         );
@@ -243,8 +243,8 @@ mod diagnostic_tests {
     #[test]
     fn specialized_diagnostics_keep_healthy_claude_usage() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("projects/p/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
-        let _ = fixture.write_file("projects/p/bad.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"SECRET_CANARY"}}}"#);
+        fixture.write_file("projects/p/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
+        fixture.write_file("projects/p/bad.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"SECRET_CANARY"}}}"#);
         let _env = EnvGuard::set_many([
             (
                 "CLAUDE_CONFIG_DIR",

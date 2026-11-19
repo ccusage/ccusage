@@ -73,7 +73,7 @@ fn total_tokens(events: &[crate::CodexTokenUsageEvent]) -> u64 {
 #[test]
 fn loads_compressed_rollouts_with_the_plain_session_id() {
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "2026/10/14/rollout.jsonl.zst",
         &[
@@ -108,21 +108,21 @@ fn loads_compressed_rollouts_with_the_plain_session_id() {
 fn discovers_compressed_rollouts_in_sessions_and_archived_sessions() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/sessions/2026/10/14/active.jsonl.zst",
         &usage_log("2026-10-14T00:00:00Z", 100),
     );
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/archived_sessions/archived.jsonl.zst",
         &usage_log("2026-10-14T00:01:00Z", 200),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/archived_sessions/plain.jsonl",
         usage_log("2026-10-14T00:02:00Z", 300),
     );
-    let _ = fixture.write_file("codex/sessions/notes.zst", "not a rollout");
+    fixture.write_file("codex/sessions/notes.zst", "not a rollout");
 
     for single_thread in [true, false] {
         let sessions = session_tokens_from_codex_home(&fixture, single_thread);
@@ -138,8 +138,8 @@ fn discovers_compressed_rollouts_in_sessions_and_archived_sessions() {
 #[test]
 fn counts_a_rollout_with_plain_and_compressed_copies_once() {
     let fixture = Fixture::new();
-    let _ = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:10Z", 100));
-    let _ = write_compressed(
+    fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:10Z", 100));
+    write_compressed(
         &fixture,
         "session.jsonl.zst",
         &usage_log("2026-10-14T00:00:01Z", 400),
@@ -160,12 +160,12 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
 fn keeps_active_rollout_when_archive_uses_a_different_encoding() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/sessions/session.jsonl.zst",
         &usage_log("2026-10-14T00:00:10Z", 100),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/archived_sessions/session.jsonl",
         usage_log("2026-10-14T00:00:01Z", 400),
     );
@@ -232,7 +232,7 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     let plain = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:00Z", 100));
     let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "session.jsonl.zst",
         &usage_log("2026-10-14T00:00:00Z", 100),
@@ -289,7 +289,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
 fn removes_inherited_usage_when_parent_and_child_are_compressed() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "a-parent.jsonl.zst",
         &[
@@ -298,7 +298,7 @@ fn removes_inherited_usage_when_parent_and_child_are_compressed() {
         ]
         .join("\n"),
     );
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "b-child.jsonl.zst",
         &[
@@ -340,7 +340,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
         &parent,
         crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
     );
-    let _ = fixture.write_file(
+    fixture.write_file(
         "codex/sessions/2026/10/14/child.jsonl",
         [
             json!({"timestamp": "2026-10-14T00:01:00Z", "type": "session_meta",
@@ -374,7 +374,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
 #[test]
 fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
     let fixture = Fixture::new();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "child.jsonl.zst",
         &[
@@ -408,7 +408,7 @@ fn counts_compaction_records_in_a_compressed_archive_once() {
         "compaction_response_id": "compaction-1",
     }})
     .to_string();
-    let _ = write_compressed(
+    write_compressed(
         &fixture,
         "codex/archived_sessions/session.jsonl.zst",
         &[
@@ -435,8 +435,8 @@ fn compressed_rollouts_match_plain_json_reports_for_every_report_mode() {
         usage_log("2026-10-14T00:00:00Z", 50),
     ]
     .join("\n");
-    let _ = fixture.write_file("plain/session.jsonl", &log);
-    let _ = write_compressed(&fixture, "compressed/session.jsonl.zst", &log);
+    fixture.write_file("plain/session.jsonl", &log);
+    write_compressed(&fixture, "compressed/session.jsonl.zst", &log);
     let pricing = PricingMap::load_embedded();
     let shared = SharedArgs {
         timezone: Some("UTC".into()),

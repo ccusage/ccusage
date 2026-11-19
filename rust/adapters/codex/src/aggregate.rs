@@ -2356,7 +2356,7 @@ mod tests {
         for (name, files, event_count) in scenarios {
             let fixture = ccusage_test_support::Fixture::new();
             for (index, contents) in files.iter().enumerate() {
-                let _ = fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
+                fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
             }
             let sessions = fixture.path("sessions");
 
@@ -2388,7 +2388,7 @@ mod tests {
         for (order, files) in orders.iter().enumerate() {
             let fixture = ccusage_test_support::Fixture::new();
             for (index, contents) in files.iter().enumerate() {
-                let _ = fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
+                fixture.write_file(format!("sessions/{index}-rollout.jsonl"), contents);
             }
             let sessions = fixture.path("sessions");
 
@@ -2426,7 +2426,7 @@ mod tests {
         for files in orders {
             let fixture = ccusage_test_support::Fixture::new();
             for (name, contents) in files {
-                let _ = fixture.write_file(format!("sessions/{name}.jsonl"), contents);
+                fixture.write_file(format!("sessions/{name}.jsonl"), contents);
             }
             let sessions = fixture.path("sessions");
             let parent_session = files
@@ -2543,7 +2543,7 @@ mod tests {
             ] {
                 let fixture = ccusage_test_support::Fixture::new();
                 for (index, contents) in files.iter().enumerate() {
-                    let _ = fixture.write_file(format!("sessions/{index}.jsonl"), contents);
+                    fixture.write_file(format!("sessions/{index}.jsonl"), contents);
                 }
                 let sessions = fixture.path("sessions");
                 for single_thread in [true, false] {
@@ -2583,7 +2583,7 @@ mod tests {
         ] {
             let fixture = ccusage_test_support::Fixture::new();
             for (index, contents) in files.iter().enumerate() {
-                let _ = fixture.write_file(format!("sessions/{index}.jsonl"), contents);
+                fixture.write_file(format!("sessions/{index}.jsonl"), contents);
             }
             for single_thread in [true, false] {
                 let shared = SharedArgs {

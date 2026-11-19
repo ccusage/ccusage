@@ -1690,7 +1690,7 @@ fn counts_spawned_responses_once_across_duplicate_snapshot_controls() {
     for (name, files, expected) in scenarios {
         let fixture = fs_fixture!({});
         for (path, contents) in files {
-            let _ = fixture.write_file(path, contents);
+            fixture.write_file(path, contents);
         }
         let mut events = crate::test_support::rollout_events(fixture.root())
             .into_iter()

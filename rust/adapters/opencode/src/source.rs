@@ -91,9 +91,9 @@ mod diagnostic_tests {
     #[test]
     fn specialized_diagnostics_keep_healthy_opencode_usage() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("opencode.db", "SECRET_CANARY");
-        let _ = fixture.write_file("storage/message/good.json", r#"{"id":"good","sessionID":"s","modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#);
-        let _ = fixture.write_file("storage/message/bad.json", "{SECRET_CANARY");
+        fixture.write_file("opencode.db", "SECRET_CANARY");
+        fixture.write_file("storage/message/good.json", r#"{"id":"good","sessionID":"s","modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#);
+        fixture.write_file("storage/message/bad.json", "{SECRET_CANARY");
         let _env = EnvGuard::set_many([
             (
                 "OPENCODE_DATA_DIR",

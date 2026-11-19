@@ -74,7 +74,7 @@ pub(crate) fn load_rollouts(
 ) -> BTreeMap<String, CodexGroup> {
     let fixture = Fixture::new();
     for (path, lines) in rollouts {
-        let _ = fixture.write_file(path, lines.join("\n"));
+        fixture.write_file(path, lines.join("\n"));
     }
     let shared = SharedArgs {
         timezone: Some("UTC".to_string()),

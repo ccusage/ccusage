@@ -362,7 +362,7 @@ mod tests {
             "cli/db/db.sqlite": "not a ZCode database",
         });
         let healthy = fs_fixture!({});
-        let _ = healthy.create_dir_all("cli/db");
+        healthy.create_dir_all("cli/db");
         let database = healthy.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&database, false);
         let db = sqlite::open(&database).unwrap();
@@ -648,7 +648,7 @@ mod tests {
     fn skips_unrelated_schema_and_deduplicates_multiple_homes() {
         ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({});
-        let _ = first.create_dir_all("cli/db");
+        first.create_dir_all("cli/db");
         let first_db = first.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&first_db, false);
         let db = sqlite::open(&first_db).unwrap();
@@ -658,7 +658,7 @@ mod tests {
         drop(db);
 
         let second = fs_fixture!({});
-        let _ = second.create_dir_all("cli/db");
+        second.create_dir_all("cli/db");
         let second_db = second.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         std::fs::copy(&first_db, &second_db).unwrap();
         let db = sqlite::open(&second_db).unwrap();
@@ -698,7 +698,7 @@ mod tests {
         drop(_guard);
 
         let invalid = fs_fixture!({});
-        let _ = invalid.create_dir_all("cli/db");
+        invalid.create_dir_all("cli/db");
         let invalid_db = invalid.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         let db = sqlite::open(&invalid_db).unwrap();
         db.execute("CREATE TABLE unrelated (id TEXT)").unwrap();

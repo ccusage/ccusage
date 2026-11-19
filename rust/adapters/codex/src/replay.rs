@@ -472,7 +472,7 @@ mod tests {
                     usage("2026-09-19T12:00:01Z"),
                 ].join("\n"),
             });
-            let _ = fixture.write_file(child_file, [
+            fixture.write_file(child_file, [
                     serde_json::json!({"timestamp":"2026-09-19T12:01:00Z","type":"session_meta","payload":{"id":child_id,"forked_from_id":parent_id,"history_base":history_base}}).to_string(),
                     usage("2026-09-19T12:02:00Z"),
                 ].join("\n"));
