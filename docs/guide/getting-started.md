@@ -68,7 +68,7 @@ When you run ccusage for the first time, you'll see a title box naming the detec
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
 │            │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
-│ Total      │                      │                           │  1,347,024 │    58,670 │        17,765 │   1,309,867 │     2,736,743 │      $28.15 │
+│ Total      │                      │                           │  1,347,424 │    58,720 │        17,765 │   1,309,967 │     2,737,293 │      $28.15 │
 └────────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
@@ -89,7 +89,7 @@ The cache columns and Total Tokens are dropped in the compact layout that narrow
 
 - **Cache Create**: Tokens used to create cache entries
 - **Cache Read**: Tokens read from cache (typically cheaper)
-- **Total Tokens**: Input, output, and cache tokens together
+- **Total Tokens**: Input, output, cache tokens, and any extra tokens reported separately by the source, such as reasoning tokens
 
 ## Next Steps
 

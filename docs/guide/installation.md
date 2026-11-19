@@ -83,8 +83,11 @@ just test
 # Run static checks
 just check
 
-# Build distribution
+# Build the documentation site and lint the npm package manifest
 just build
+
+# Build the native CLI in release mode
+cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
 ```
 
 You can also run the package directly from source:
@@ -124,7 +127,7 @@ ccusage daily
 
 ### Direct Execution (npx/bunx)
 
-Use an explicit version tag to request the current published version, for example `npx ccusage@latest`.
+An unversioned package name can reuse a locally installed or cached copy. When the runner needs to fetch ccusage from the registry, it uses the default `latest` dist-tag. To request that dist-tag explicitly, run `npx ccusage@latest` or `bunx ccusage@latest`. For reproducible runs, specify an exact version.
 
 ### Global Installation
 

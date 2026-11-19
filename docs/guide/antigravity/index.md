@@ -59,7 +59,7 @@ databases still contribute usage.
   when the catalog does not list a separate variant. Use `--offline` to avoid a
   pricing refresh.
 
-Reports include recorded retry usage and count duplicates once.
+Continuation rows without a model inherit the most recently observed model in the same database. Reports include recorded retry usage and match duplicates by response ID, provider-assigned message ID, or message ID.
 
 ## Configuration
 

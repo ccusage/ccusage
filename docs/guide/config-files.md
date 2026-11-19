@@ -91,7 +91,11 @@ ccusage searches for configuration files in these locations, in order:
 
 The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at an existing `projects/` directory is read as its parent.
 
-ccusage uses the first existing file in that order; files are never merged, so a local project config replaces your user config rather than extending it. In a discovered file, an invalid optional field produces a warning naming the file and JSON path; valid settings in that file remain effective. ccusage never replaces that file with a lower-priority config. Invalid date bounds and invalid `pi.stores` remain errors. An unreadable file or invalid JSON is an error because its settings cannot be recovered. With `--config`, every invalid field is an error. Validation covers the complete file, including settings for other commands. Unknown keys warn; `LOG_LEVEL=0` suppresses warnings. Configuration files are optional; when none exists, ccusage uses built-in defaults.
+ccusage tries the paths in order. It warns and continues if a discovered file contains malformed JSON or the top-level value is anything other than an object. ccusage loads a single configuration file. A valid local project config takes precedence over your user config.
+
+For a discovered JSON object, recoverable field errors produce a warning naming the file and JSON path. The valid settings in that file still apply. An unreadable file stops discovery. Invalid date bounds, invalid `pi.stores`, and an invalid effective `timezone` are errors for reports that use them. Statusline can recover from errors in discovered configuration and still render. With `--config`, malformed JSON and invalid settings are errors.
+
+Unknown keys warn. Set `LOG_LEVEL=0` to suppress warnings. When discovery finds no usable file, ccusage uses the built-in defaults.
 
 ## Basic Configuration
 
@@ -463,7 +467,7 @@ Use the model label shown in the report, including any adapter prefix. The overr
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
-A model alias can inherit unspecified fields from its target. Overrides inherit published long-context rates from LiteLLM or built-in base entries. A models.dev base supplies its flat rates and context limit.
+A model alias can inherit unspecified fields from its target. Overrides inherit published long-context rates from LiteLLM or built-in base entries. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
 
 ### Supported Fields
 

@@ -71,14 +71,16 @@ Session IDs carry a prefix for the format they came from: `task:<task-id>` for e
 
 ## Token and Cost Data
 
-Reports include complete usage records with a timestamp, a model ID other than `unknown`,
-and non-negative integer input, output, cache-read, and cache-write counters.
-Explicit zero counters are valid. Requests with all four counters at zero,
-partial records, deleted-request rollups, and subagent aggregates are excluded.
+Reports include complete usage records with a timestamp, a non-blank model ID
+other than `unknown` (case-insensitive), and non-negative integer input, output,
+cache-read, and cache-write counters. Individual zero counters are valid.
+Reports exclude requests with all four counters at zero, partial records,
+deleted-request rollups, and subagent aggregates. Missing or omitted records
+can make the reported totals lower than actual historical usage.
 
-CLI input includes cache tokens. ccusage reports those cache tokens
-separately when the counters are consistent. Extension data already reports
-them separately. See the [Cline adapter README](https://github.com/ccusage/ccusage/blob/main/rust/adapters/cline/README.md)
+CLI input includes cache tokens. ccusage subtracts their sum from input and
+reports them separately. It skips the record if that sum exceeds the input
+count or overflows. The extension already reports cache tokens separately. See the [Cline adapter README](https://github.com/ccusage/ccusage/blob/main/rust/adapters/cline/README.md)
 for record formats and timestamp requirements.
 
 All cost modes follow the same eligibility rules; a recorded cost cannot rescue a record missing required counters, model, or timestamp. `auto` uses Cline's recorded cost when present and calculates only when that cost is missing and the model has known pricing. `display` uses recorded costs, while `calculate` estimates cost from token counts using known pricing for the request's timestamp. A recorded `$0.00` is distinct from a missing cost. A valid model ID without known pricing remains visible; when calculation is needed, cost is unavailable and ccusage shows a missing-pricing warning.
