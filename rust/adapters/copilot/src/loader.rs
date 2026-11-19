@@ -93,25 +93,11 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             .is_none_or(|after| entry.timestamp > after)
     };
     let usage_records = deduplicate_usage_records(usage_records);
-    let report_matches = recorded_otel_calls(&otel_entries, &usage_records, |entry| {
-        survives_shutdown(entry, true)
-    });
+    let matches = recorded_otel_calls(&otel_entries, &usage_records);
     let credit_gaps = if credit_snapshots
         .iter()
         .any(|snapshot| !snapshot.is_shutdown)
     {
-        let ledger_matches;
-        let matches = if otel_after
-            .values()
-            .any(|cutoff| cutoff.visible != cutoff.full)
-        {
-            ledger_matches = recorded_otel_calls(&otel_entries, &usage_records, |entry| {
-                survives_shutdown(entry, false)
-            });
-            &ledger_matches
-        } else {
-            &report_matches
-        };
         let uncovered = otel_entries
             .iter()
             .enumerate()
@@ -144,8 +130,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         .into_iter()
         .enumerate()
         .filter_map(|(index, entry)| {
-            (survives_shutdown(&entry, true) && !report_matches.contains_key(&index))
-                .then_some(entry)
+            (survives_shutdown(&entry, true) && !matches.contains_key(&index)).then_some(entry)
         });
 
     let mut entries = session_state
@@ -164,17 +149,12 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
 fn recorded_otel_calls(
     otel_entries: &[CopilotUsageEntry],
     records: &[CopilotUsageRecordEntry],
-    eligible: impl Fn(&CopilotUsageEntry) -> bool,
 ) -> HashMap<usize, bool> {
     if records.is_empty() || otel_entries.is_empty() {
         return HashMap::new();
     }
     let mut rows_by_call_id = HashMap::<(CallIdKind, &str), Vec<usize>>::new();
-    for (index, entry) in otel_entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| eligible(entry))
-    {
+    for (index, entry) in otel_entries.iter().enumerate() {
         for call_id in entry.call_ids.iter() {
             rows_by_call_id.entry(call_id).or_default().push(index);
         }
