@@ -7207,7 +7207,7 @@ mod tests {
                 "R9_48_override_inherits_same_model",
                 "zai/override-base",
                 &[("zai/override-base", fuzzy)][..],
-                AuthoritativeIdentity,
+                ReportedOverride,
                 (50.0, 10.0),
             ),
             (
