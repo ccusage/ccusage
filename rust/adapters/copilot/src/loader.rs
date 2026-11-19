@@ -75,35 +75,84 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         since_millis,
         until_millis,
     );
-    let otel_sessions = otel_entries
-        .iter()
-        .map(|entry| entry.session_id.clone())
-        .collect::<HashSet<_>>();
-    let credit_gaps = credit_gap_entries(
-        credit_snapshots,
-        &session_state.attributed_nano_aiu,
-        &otel_sessions,
-        since_millis,
-        until_millis,
-    );
     let otel_after = session_state
         .otel_after
         .iter()
-        .map(|((session_id, model), timestamp)| ((session_id.as_str(), model.as_str()), *timestamp))
+        .map(|((session_id, model), cutoff)| ((session_id.as_str(), model.as_str()), cutoff))
         .collect::<HashMap<_, _>>();
-    otel_entries.retain(|entry| {
+    let survives_shutdown = |entry: &CopilotUsageEntry, in_report| {
         otel_after
             .get(&(entry.session_id.as_str(), entry.model.as_str()))
-            .is_none_or(|after| entry.timestamp > *after)
-    });
+            .and_then(|cutoff| {
+                if in_report {
+                    cutoff.visible
+                } else {
+                    cutoff.full
+                }
+            })
+            .is_none_or(|after| entry.timestamp > after)
+    };
     let usage_records = deduplicate_usage_records(usage_records);
-    remove_recorded_otel_calls(&mut otel_entries, &usage_records);
+    let report_matches = recorded_otel_calls(&otel_entries, &usage_records, |entry| {
+        survives_shutdown(entry, true)
+    });
+    let credit_gaps = if credit_snapshots
+        .iter()
+        .any(|snapshot| !snapshot.is_shutdown)
+    {
+        let ledger_matches;
+        let matches = if otel_after
+            .values()
+            .any(|cutoff| cutoff.visible != cutoff.full)
+        {
+            ledger_matches = recorded_otel_calls(&otel_entries, &usage_records, |entry| {
+                survives_shutdown(entry, false)
+            });
+            &ledger_matches
+        } else {
+            &report_matches
+        };
+        let uncovered = otel_entries
+            .iter()
+            .enumerate()
+            .filter(|(index, entry)| {
+                survives_shutdown(entry, false) && matches.get(index) != Some(&true)
+            })
+            .fold(
+                HashMap::<&str, TimestampMs>::new(),
+                |mut earliest, (_, entry)| {
+                    earliest
+                        .entry(entry.session_id.as_str())
+                        .and_modify(|timestamp| *timestamp = (*timestamp).min(entry.timestamp))
+                        .or_insert(entry.timestamp);
+                    earliest
+                },
+            );
+        let receipts = receipt_ledgers(&credit_snapshots, &usage_records);
+        credit_gap_entries(
+            credit_snapshots,
+            &session_state.attributed_nano_aiu,
+            &uncovered,
+            &receipts,
+            since_millis,
+            until_millis,
+        )
+    } else {
+        Vec::new()
+    };
+    let visible_otel = otel_entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            (survives_shutdown(&entry, true) && !report_matches.contains_key(&index))
+                .then_some(entry)
+        });
 
     let mut entries = session_state
         .entries
         .into_iter()
-        .chain(usage_records)
-        .chain(otel_entries)
+        .chain(usage_records.into_iter().map(|record| record.entry))
+        .chain(visible_otel)
         .chain(credit_gaps)
         .map(|entry| usage_entry_to_loaded(entry, tz, shared.mode, pricing))
         .collect::<Vec<_>>();
@@ -112,20 +161,31 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
 }
 
 // NOTE(2026-11-16, #2108): A Copilot service request ID names one request, while a VS Code response ID is shared across the turn. Match service request IDs first to preserve the unambiguous pairs.
-fn remove_recorded_otel_calls(
-    otel_entries: &mut Vec<CopilotUsageEntry>,
-    records: &[CopilotUsageEntry],
-) {
+fn recorded_otel_calls(
+    otel_entries: &[CopilotUsageEntry],
+    records: &[CopilotUsageRecordEntry],
+    eligible: impl Fn(&CopilotUsageEntry) -> bool,
+) -> HashMap<usize, bool> {
+    if records.is_empty() || otel_entries.is_empty() {
+        return HashMap::new();
+    }
     let mut rows_by_call_id = HashMap::<(CallIdKind, &str), Vec<usize>>::new();
-    for (index, entry) in otel_entries.iter().enumerate() {
+    for (index, entry) in otel_entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| eligible(entry))
+    {
         for call_id in entry.call_ids.iter() {
             rows_by_call_id.entry(call_id).or_default().push(index);
         }
     }
-    let mut records = records.iter().collect::<Vec<_>>();
+    let mut records = records
+        .iter()
+        .map(|record| &record.entry)
+        .collect::<Vec<_>>();
     records.sort_by_key(|record| (record.timestamp, record.dedup_key.as_str()));
     let mut matched = vec![false; records.len()];
-    let mut replaced = HashSet::new();
+    let mut replaced = HashMap::new();
     for kind in [CallIdKind::ServiceRequest, CallIdKind::Response] {
         for (position, record) in records.iter().enumerate() {
             if matched[position] {
@@ -139,26 +199,24 @@ fn remove_recorded_otel_calls(
                 .flatten()
                 .copied()
                 .filter(|index| {
-                    otel_entries[*index].model == record.model && !replaced.contains(index)
+                    otel_entries[*index].model == record.model && !replaced.contains_key(index)
                 })
                 .min_by_key(|index| {
                     let row = otel_entries[*index].timestamp.as_millis();
                     (row.abs_diff(record.timestamp.as_millis()), row, *index)
                 });
             if let Some(index) = nearest {
-                replaced.insert(index);
+                replaced.insert(index, otel_entries[index].session_id == record.session_id);
                 matched[position] = true;
             }
         }
     }
-    let mut index = 0;
-    otel_entries.retain(|_| {
-        index += 1;
-        !replaced.contains(&(index - 1))
-    });
+    replaced
 }
 
-fn deduplicate_usage_records(records: Vec<CopilotUsageRecordEntry>) -> Vec<CopilotUsageEntry> {
+fn deduplicate_usage_records(
+    records: Vec<CopilotUsageRecordEntry>,
+) -> Vec<CopilotUsageRecordEntry> {
     let rank = |record: &CopilotUsageRecordEntry| {
         (
             record.source_session_id.as_deref() != Some(record.entry.session_id.as_str()),
@@ -180,13 +238,18 @@ fn deduplicate_usage_records(records: Vec<CopilotUsageRecordEntry>) -> Vec<Copil
             }
         }
     }
-    kept.into_iter().map(|record| record.entry).collect()
+    kept
 }
 
 struct SessionStateReconciliation {
     entries: Vec<CopilotUsageEntry>,
-    otel_after: HashMap<(String, String), TimestampMs>,
+    otel_after: HashMap<(String, String), OtelCutoff>,
     attributed_nano_aiu: HashMap<(String, i64), u64>,
+}
+
+struct OtelCutoff {
+    visible: Option<TimestampMs>,
+    full: Option<TimestampMs>,
 }
 
 fn otel_call_timestamps(
@@ -271,9 +334,17 @@ fn reconcile_session_state_entries(
             Some(start) => start.checked_sub(1),
             None => latest_visible,
         };
-        if let Some(position) = otel_after_position {
-            otel_after.insert(key.clone(), entries[sorted[position]].timestamp);
-        }
+        let full = match otel_start {
+            Some(start) => start.checked_sub(1),
+            None => sorted.len().checked_sub(1),
+        };
+        otel_after.insert(
+            key,
+            OtelCutoff {
+                visible: otel_after_position.map(|position| entries[sorted[position]].timestamp),
+                full: full.map(|position| entries[sorted[position]].timestamp),
+            },
+        );
         let mut previous: Option<&CopilotUsageEntry> = None;
         for (position, index) in sorted.iter().enumerate() {
             let current = &entries[*index];
@@ -304,13 +375,92 @@ fn reconcile_session_state_entries(
     }
 }
 
+struct ReceiptCredit {
+    timestamp: TimestampMs,
+    sequence: u64,
+    nano_aiu: Option<u64>,
+}
+
+fn receipt_ledgers<'a>(
+    snapshots: &[CopilotCreditSnapshot],
+    records: &'a [CopilotUsageRecordEntry],
+) -> HashMap<&'a str, Vec<ReceiptCredit>> {
+    let sessions = snapshots
+        .iter()
+        .filter(|snapshot| snapshot.receipt_watermark.is_some())
+        .map(|snapshot| snapshot.session_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut ledgers = HashMap::<_, Vec<ReceiptCredit>>::new();
+    for record in records {
+        let session = record.entry.session_id.as_str();
+        if !sessions.contains(session) || record.source_session_id.as_deref() != Some(session) {
+            continue;
+        }
+        if let Some(sequence) = record.sequence {
+            ledgers.entry(session).or_default().push(ReceiptCredit {
+                timestamp: record.entry.timestamp,
+                sequence,
+                nano_aiu: record.entry.nano_aiu,
+            });
+        }
+    }
+    for calls in ledgers.values_mut() {
+        calls.sort_unstable_by_key(|call| call.sequence);
+        let mut total = Some(0_u64);
+        for (index, call) in calls.iter_mut().enumerate() {
+            total = total
+                .zip(call.nano_aiu)
+                .filter(|_| call.sequence == index as u64 + 1)
+                .and_then(|(previous, amount)| previous.checked_add(amount));
+            call.nano_aiu = total;
+        }
+    }
+    ledgers
+}
+
+fn covered_receipt_credits(
+    snapshots: &[CopilotCreditSnapshot],
+    calls: &[ReceiptCredit],
+) -> Option<Vec<u64>> {
+    if calls.is_empty() || !calls.is_sorted_by_key(|call| call.timestamp) {
+        return None;
+    }
+    let mut previous_watermark = 0;
+    let mut previous_total = 0;
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            let Some(watermark) = snapshot.receipt_watermark else {
+                return (previous_watermark == 0 && snapshot.timestamp < calls[0].timestamp)
+                    .then_some(0);
+            };
+            let total = snapshot.total_nano_aiu?;
+            let index = usize::try_from(watermark).ok()?.checked_sub(1)?;
+            let call = calls.get(index)?;
+            if watermark < previous_watermark
+                || total < previous_total
+                || call.timestamp > snapshot.timestamp
+                || calls
+                    .get(index + 1)
+                    .is_some_and(|next| next.timestamp <= snapshot.timestamp)
+            {
+                return None;
+            }
+            previous_watermark = watermark;
+            previous_total = total;
+            call.nano_aiu.filter(|amount| *amount <= total)
+        })
+        .collect()
+}
+
 const UNATTRIBUTED_MODEL: &str = "unknown";
 
 // NOTE(2026-10-10, #1824): Copilot session `totalNanoAiu` covers the whole session while `modelMetrics` can omit the earlier process. Older versions without checkpoints restart both totals on resume, so the difference is only useful for sessions with checkpoints.
 fn credit_gap_entries(
     snapshots: Vec<CopilotCreditSnapshot>,
     attributed_nano_aiu: &HashMap<(String, i64), u64>,
-    skipped_sessions: &HashSet<String>,
+    uncovered_otel: &HashMap<&str, TimestampMs>,
+    receipt_ledgers: &HashMap<&str, Vec<ReceiptCredit>>,
     since_millis: Option<i64>,
     until_millis: Option<i64>,
 ) -> Vec<CopilotUsageEntry> {
@@ -326,8 +476,7 @@ fn credit_gap_entries(
     }
     let mut gaps = Vec::new();
     for (session_id, mut snapshots) in sessions {
-        if skipped_sessions.contains(&session_id)
-            || snapshots.iter().all(|snapshot| snapshot.is_shutdown)
+        if snapshots.iter().all(|snapshot| snapshot.is_shutdown)
             || snapshots
                 .iter()
                 .any(|snapshot| snapshot.is_shutdown && snapshot.total_nano_aiu.is_none())
@@ -335,7 +484,22 @@ fn credit_gap_entries(
             continue;
         }
         snapshots.sort_by_key(|snapshot| (snapshot.timestamp, snapshot.is_shutdown));
+        let receipt_credits = if snapshots
+            .iter()
+            .any(|snapshot| snapshot.receipt_watermark.is_some())
+        {
+            let Some(amounts) = receipt_ledgers
+                .get(session_id.as_str())
+                .and_then(|calls| covered_receipt_credits(&snapshots, calls))
+            else {
+                continue;
+            };
+            amounts
+        } else {
+            Vec::new()
+        };
         let last_shutdown = snapshots.iter().rposition(|snapshot| snapshot.is_shutdown);
+        let first_uncovered = uncovered_otel.get(session_id.as_str());
         let mut session_total = 0_u64;
         let mut attributed = 0_u64;
         let mut points = Vec::new();
@@ -344,13 +508,19 @@ fn credit_gap_entries(
                 continue;
             }
             session_total = session_total.max(snapshot.total_nano_aiu.unwrap_or_default());
-            if snapshot.is_shutdown {
+            if snapshot.is_shutdown && snapshot.receipt_watermark.is_none() {
                 attributed += attributed_nano_aiu
                     .get(&(session_id.clone(), snapshot.timestamp.as_millis()))
                     .copied()
                     .unwrap_or_default();
             }
-            points.push((snapshot, session_total.saturating_sub(attributed)));
+            let receipted = receipt_credits.get(position).copied().unwrap_or_default();
+            points.push((
+                snapshot,
+                session_total
+                    .saturating_sub(attributed)
+                    .saturating_sub(receipted),
+            ));
         }
         let mut lasting = u64::MAX;
         for (_, unexplained) in points.iter_mut().rev() {
@@ -363,6 +533,7 @@ fn credit_gap_entries(
             reported = reported.max(lasting);
             let millis = snapshot.timestamp.as_millis();
             if gap == 0
+                || first_uncovered.is_some_and(|timestamp| *timestamp <= snapshot.timestamp)
                 || since_millis.is_some_and(|start| millis < start)
                 || until_millis.is_some_and(|end| millis >= end)
             {
@@ -2074,10 +2245,11 @@ mod tests {
             let second = receipt("response-b", "2026-01-03T09:00:00Z", 2, second_credit);
             let fixture = fs_fixture!({
                 "home/.copilot/session-state/session-1/events.jsonl": [
+                    shutdown("legacy", "2026-01-01T09:00:00Z", 4, Some(4)),
                     first.clone(),
-                    checkpoint_with_watermark("first", "2026-01-02T10:00:00Z", 10, 1),
+                    checkpoint_with_watermark("first", "2026-01-02T10:00:00Z", 14, 1),
                     second,
-                    checkpoint_with_watermark("second", "2026-01-03T10:00:00Z", 35, watermark),
+                    checkpoint_with_watermark("second", "2026-01-03T10:00:00Z", 39, watermark),
                 ].join("\n"),
                 "home/.copilot/session-state/copy/events.jsonl": first,
                 "home/.copilot/otel/otel.jsonl": otel_call_with(
@@ -2116,6 +2288,10 @@ mod tests {
                 0,
                 ("2026-01-02".to_string(), "test-model".to_string(), 100, 10),
             );
+            expected.insert(
+                0,
+                ("2026-01-01".to_string(), "test-model".to_string(), 150, 4),
+            );
             assert_eq!(
                 credit_rows(&all),
                 expected,
@@ -2125,7 +2301,7 @@ mod tests {
     }
 
     #[test]
-    fn leaves_credit_gaps_to_otel_when_a_session_has_otel_rows() {
+    fn leaves_the_gap_unknown_when_otel_has_no_recorded_credits() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl":
                 checkpoint("checkpoint-1", "2026-01-02T10:00:00.000Z", 20),
@@ -2146,11 +2322,16 @@ mod tests {
             .to_string(),
         });
 
-        let entries = load_copilot_home(&fixture, &utc_args());
+        let entries = load_priced_copilot_home(&fixture, &utc_args(), &test_model_pricing());
 
         assert_eq!(
             credit_rows(&entries),
-            [("2026-01-02".to_string(), "test-model".to_string(), 23, 0)]
+            [(
+                "2026-01-02".to_string(),
+                "test-model".to_string(),
+                23,
+                3_500
+            )]
         );
     }
 
