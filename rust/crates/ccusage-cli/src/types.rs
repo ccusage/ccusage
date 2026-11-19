@@ -13,8 +13,12 @@ pub enum Command {
     Session(SessionArgs),
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
-    CodexStatusline(CodexStatuslineArgs),
-    Agent(StandardAgent, AgentCommandArgs),
+    Agent(StandardAgent, AgentCommand),
+}
+
+pub enum AgentCommand {
+    Report(AgentCommandArgs),
+    Statusline(CodexStatuslineArgs),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,41 +29,46 @@ pub enum PeriodUnit {
 }
 
 impl Command {
+    pub fn agent_report(agent: StandardAgent, args: AgentCommandArgs) -> Self {
+        Self::Agent(agent, AgentCommand::Report(args))
+    }
+
     pub fn shared(&self) -> Option<&SharedArgs> {
         match self {
-            Self::All(args) | Self::Agent(_, args) => Some(&args.shared),
+            Self::All(args) | Self::Agent(_, AgentCommand::Report(args)) => Some(&args.shared),
             Self::Daily(args) => Some(&args.shared),
             Self::Monthly(shared) => Some(shared),
             Self::Weekly(args) => Some(&args.shared),
             Self::Session(args) => Some(&args.shared),
             Self::Blocks(args) => Some(&args.shared),
-            Self::CodexStatusline(args) => Some(&args.shared),
+            Self::Agent(_, AgentCommand::Statusline(args)) => Some(&args.shared),
             Self::Statusline(_) => None,
         }
     }
 
     pub fn shared_mut(&mut self) -> Option<&mut SharedArgs> {
         match self {
-            Self::All(args) | Self::Agent(_, args) => Some(&mut args.shared),
+            Self::All(args) | Self::Agent(_, AgentCommand::Report(args)) => Some(&mut args.shared),
             Self::Daily(args) => Some(&mut args.shared),
             Self::Monthly(shared) => Some(shared),
             Self::Weekly(args) => Some(&mut args.shared),
             Self::Session(args) => Some(&mut args.shared),
             Self::Blocks(args) => Some(&mut args.shared),
-            Self::CodexStatusline(args) => Some(&mut args.shared),
+            Self::Agent(_, AgentCommand::Statusline(args)) => Some(&mut args.shared),
             Self::Statusline(_) => None,
         }
     }
 
     pub fn period(&self) -> Option<(PeriodUnit, WeekDay)> {
         match self {
-            Self::All(args) | Self::Agent(_, args) => args.period(),
+            Self::All(args) | Self::Agent(_, AgentCommand::Report(args)) => args.period(),
             Self::Daily(_) => Some((PeriodUnit::Day, WeekDay::Monday)),
             Self::Monthly(_) => Some((PeriodUnit::Month, WeekDay::Monday)),
             Self::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
-            Self::Session(_) | Self::Blocks(_) | Self::Statusline(_) | Self::CodexStatusline(_) => {
-                None
-            }
+            Self::Session(_)
+            | Self::Blocks(_)
+            | Self::Statusline(_)
+            | Self::Agent(_, AgentCommand::Statusline(_)) => None,
         }
     }
 }
@@ -406,7 +415,21 @@ pub trait CliConfig {
         None
     }
 
-    fn warn_discovered_statusline_option(&self, _message: &str) -> bool {
+    fn recover_statusline_timezone(
+        &self,
+        _timezone: &mut Option<String>,
+        _valid: fn(&str) -> bool,
+    ) -> bool {
+        false
+    }
+
+    fn recover_statusline_window(
+        &self,
+        _shared: &mut SharedArgs,
+        _since_flag: bool,
+        _until_flag: bool,
+        _message: &str,
+    ) -> bool {
         false
     }
 

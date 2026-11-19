@@ -74,7 +74,7 @@ fn check_agent_pages(command_spec: &Value) {
                 .reports
                 .iter()
                 .map(|kind| kind.name())
-                .chain(spec.extra_commands.iter().copied())
+                .chain(spec.extra_commands.iter().map(|command| command.name))
                 .collect::<BTreeSet<_>>();
             (spec.name, commands)
         })

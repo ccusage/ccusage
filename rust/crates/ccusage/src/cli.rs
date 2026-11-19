@@ -1,10 +1,11 @@
 mod last_window;
 mod sources;
+#[cfg(test)]
 mod timezone;
 
 use std::{env, ffi::OsString, process};
 
-use ccusage_cli::{AgentCommandArgs, CliConfig, Command, WeekDay};
+use ccusage_cli::{AgentCommand, AgentCommandArgs, Command, WeekDay};
 use ccusage_cli_parser::{parse_from_with_config, parse_report_args_with_config};
 use ccusage_config::ConfigContext;
 
@@ -26,7 +27,8 @@ pub(crate) fn parse() -> Command {
     {
         exit_with_usage(&message);
     }
-    if let Command::Agent(ccusage_cli::StandardAgent::OpenCode, focused) = &mut command
+    if let Command::Agent(ccusage_cli::StandardAgent::OpenCode, AgentCommand::Report(focused)) =
+        &mut command
         && let Err(message) = sources::resolve_opencode_claims(focused, &args, &config)
     {
         exit_with_usage(&message);
@@ -37,21 +39,7 @@ pub(crate) fn parse() -> Command {
 /// Parses one command line against one view of the config, with the checks
 /// and resolutions that need the parsed command.
 fn try_parse_with(args: Vec<OsString>, config: &ConfigContext) -> Result<Command, String> {
-    let timezone_flag = args.iter().filter_map(|arg| arg.to_str()).any(|arg| {
-        let name = arg.split_once('=').map_or(arg, |(name, _)| name);
-        matches!(name, "-z" | "--timezone")
-    });
     let mut command = parse_from_with_config(args, config, env!("CCUSAGE_VERSION"))?;
-    if let Err(message) = timezone::validate(timezone::of_command(&command)) {
-        if timezone_flag || !config.warn_discovered_statusline_option(&message) {
-            return Err(message);
-        }
-        match &mut command {
-            Command::Statusline(args) => args.timezone = None,
-            Command::CodexStatusline(args) => args.shared.timezone = None,
-            _ => return Err(message),
-        }
-    }
     last_window::resolve(&mut command)?;
     Ok(command)
 }
@@ -63,7 +51,6 @@ fn try_parse_report_with(
 ) -> Result<AgentCommandArgs, String> {
     let mut report =
         parse_report_args_with_config(args, config, env!("CCUSAGE_VERSION"), start_of_week)?;
-    timezone::validate(report.shared.timezone.as_deref())?;
     if let Some(period) = report.period() {
         last_window::resolve_shared(&mut report.shared, period)?;
     }

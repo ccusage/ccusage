@@ -158,6 +158,17 @@ impl ConfigContext {
         }
     }
 
+    fn warn_discovered_statusline_field(&self, path: &str, field: &str, message: &str) -> bool {
+        let Some((file, false)) = &self.config_origin else {
+            return false;
+        };
+        self.warnings.borrow_mut().push(format!(
+            "Invalid ccusage config field: {}: {path}.{field}: {message}",
+            file.display()
+        ));
+        true
+    }
+
     fn option_paths(&self) -> Vec<String> {
         let report = &self.command.report;
         let mut paths = vec!["defaults".to_string()];
@@ -592,17 +603,80 @@ impl ccusage_cli::CliConfig for ConfigContext {
             })
     }
 
-    fn warn_discovered_statusline_option(&self, message: &str) -> bool {
-        let Some((path, false)) = &self.config_origin else {
-            return false;
-        };
-        if self.command.report != "statusline" {
-            return false;
+    fn recover_statusline_timezone(
+        &self,
+        timezone: &mut Option<String>,
+        valid: fn(&str) -> bool,
+    ) -> bool {
+        for path in self.option_paths().into_iter().rev() {
+            let Some(value) = self
+                .layers
+                .get(&path)
+                .and_then(|layer| layer.shared.timezone.as_deref())
+            else {
+                continue;
+            };
+            if valid(value) {
+                *timezone = Some(value.to_string());
+                return true;
+            }
+            let message = format!("unknown IANA timezone '{value}'");
+            if !self.warn_discovered_statusline_field(&path, "timezone", &message) {
+                return false;
+            }
+            *timezone = None;
         }
-        self.warnings
-            .borrow_mut()
-            .push(format!("{}: {message}", path.display()));
-        true
+        timezone.is_none()
+    }
+
+    fn recover_statusline_window(
+        &self,
+        shared: &mut SharedArgs,
+        since_flag: bool,
+        until_flag: bool,
+        message: &str,
+    ) -> bool {
+        let paths = self.option_paths();
+        for (index, path) in paths.iter().enumerate().rev() {
+            let Some(layer) = self.layers.get(path) else {
+                continue;
+            };
+            let (field, bound, opposite, extract): (
+                _,
+                _,
+                _,
+                fn(&crate::layers::Layer) -> Option<&str>,
+            ) = if !since_flag && layer.shared.since.is_some() {
+                ("since", &mut shared.since, &shared.until, |layer| {
+                    layer.shared.since.as_ref().map(|bound| bound.0.as_str())
+                })
+            } else if !until_flag && layer.shared.until.is_some() {
+                ("until", &mut shared.until, &shared.since, |layer| {
+                    layer.shared.until.as_ref().map(|bound| bound.0.as_str())
+                })
+            } else {
+                continue;
+            };
+            if !self.warn_discovered_statusline_field(path, field, message) {
+                return false;
+            }
+            *bound = paths[..index]
+                .iter()
+                .rev()
+                .filter_map(|path| self.layers.get(path).and_then(extract))
+                .find(|candidate| {
+                    opposite.as_deref().is_none_or(|opposite| {
+                        if field == "since" {
+                            *candidate <= opposite
+                        } else {
+                            *candidate >= opposite
+                        }
+                    })
+                })
+                .map(str::to_string);
+            return true;
+        }
+        false
     }
 
     fn apply_shared(&self, shared: &mut SharedArgs) {

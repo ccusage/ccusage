@@ -175,7 +175,9 @@ mod tests {
         let args = std::iter::once(OsString::from("ccusage"))
             .chain(strings.iter().map(OsString::from))
             .collect::<Vec<_>>();
-        let Command::Agent(_, mut focused) = try_parse_with(args.clone(), &config).unwrap() else {
+        let Command::Agent(_, ccusage_cli::AgentCommand::Report(mut focused)) =
+            try_parse_with(args.clone(), &config).unwrap()
+        else {
             panic!("expected focused command")
         };
         resolve_opencode_claims(&mut focused, &args, &config).unwrap();

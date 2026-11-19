@@ -1,14 +1,6 @@
 use ccusage_core::{Result, TimestampMs, cli_error, format_date_tz, resolve_tz};
 use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
 
-/// `--timezone` and a config `timezone` are checked with this before use, so an
-/// unknown name is rejected up front instead of silently falling back to the
-/// local zone, which can group usage under the wrong date. `local` is the
-/// documented way to ask for the system timezone and keeps that fallback.
-pub fn is_valid_timezone(value: &str) -> bool {
-    matches!(value, "local" | "UTC") || JiffTimeZone::get(value).is_ok()
-}
-
 pub fn format_date(timestamp: TimestampMs, timezone: Option<&str>) -> String {
     format_date_tz(timestamp, &resolve_tz(timezone))
 }
@@ -49,7 +41,7 @@ pub fn am_pm(hour: u32) -> &'static str {
 mod tests {
     use ccusage_core::{format_rfc3339_millis, parse_ts_timestamp};
 
-    use super::{format_date, is_valid_timezone};
+    use super::format_date;
 
     #[test]
     fn formats_dates_with_timezone() {
@@ -58,12 +50,5 @@ mod tests {
         assert_eq!(format_date(timestamp, Some("UTC")), "2024-08-04");
         assert_eq!(format_date(timestamp, Some("Asia/Tokyo")), "2024-08-05");
         assert_eq!(format_rfc3339_millis(timestamp), "2024-08-04T23:30:00.000Z");
-    }
-
-    #[test]
-    fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
-        assert!(is_valid_timezone("UTC"));
-        assert!(is_valid_timezone("local"));
-        assert!(!is_valid_timezone("Not/AZone"));
     }
 }

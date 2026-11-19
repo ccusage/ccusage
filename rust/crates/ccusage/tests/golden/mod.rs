@@ -69,7 +69,7 @@ pub fn report_kinds(agent: &str) -> Vec<&'static str> {
     spec.reports
         .iter()
         .map(|kind| kind.name())
-        .chain(spec.extra_commands.iter().copied())
+        .chain(spec.extra_commands.iter().map(|command| command.name))
         .collect()
 }
 

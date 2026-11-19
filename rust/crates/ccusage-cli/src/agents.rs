@@ -7,12 +7,43 @@ pub struct AgentSpec {
     pub label: &'static str,
     pub report_label: &'static str,
     pub reports: &'static [AgentReportKind],
-    pub extra_commands: &'static [&'static str],
+    pub extra_commands: &'static [AgentCommandSpec],
 }
 
+#[derive(Debug)]
+pub struct AgentCommandSpec {
+    pub name: &'static str,
+    pub offline_by_default: bool,
+    pub options: &'static [&'static str],
+}
+
+const CLAUDE_BLOCKS: AgentCommandSpec = AgentCommandSpec {
+    name: "blocks",
+    offline_by_default: false,
+    options: &[],
+};
+
+const CLAUDE_STATUSLINE: AgentCommandSpec = AgentCommandSpec {
+    name: "statusline",
+    offline_by_default: false,
+    options: &[],
+};
+
+const CODEX_STATUSLINE: AgentCommandSpec = AgentCommandSpec {
+    name: "statusline",
+    offline_by_default: true,
+    options: &["-i", "--id", "--speed", "--mcp"],
+};
+
 impl AgentSpec {
+    pub fn extra_command(&self, name: &str) -> Option<&AgentCommandSpec> {
+        self.extra_commands
+            .iter()
+            .find(|command| command.name == name)
+    }
+
     pub fn accepts(&self, command: &str) -> bool {
-        self.extra_commands.contains(&command)
+        self.extra_command(command).is_some()
             || AgentReportKind::from_name(command).is_some_and(|kind| self.reports.contains(&kind))
     }
 }
@@ -90,8 +121,8 @@ macro_rules! agents {
 }
 
 agents! {
-    Claude => "claude", "Claude Code" / "Claude", ALL_REPORTS, &["blocks", "statusline"];
-    Codex => "codex", "Codex", STANDARD_REPORTS, &["statusline"];
+    Claude => "claude", "Claude Code" / "Claude", ALL_REPORTS, &[CLAUDE_BLOCKS, CLAUDE_STATUSLINE];
+    Codex => "codex", "Codex", STANDARD_REPORTS, &[CODEX_STATUSLINE];
     OpenCode => "opencode", "OpenCode", ALL_REPORTS, &[];
     Amp => "amp", "Amp", STANDARD_REPORTS, &[];
     Droid => "droid", "Droid", STANDARD_REPORTS, &[];

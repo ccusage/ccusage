@@ -34,7 +34,14 @@ use crate::{
     print_json_or_jq, wants_json,
 };
 
-pub fn runner(agent: ccusage_cli::StandardAgent) -> fn(AgentCommandArgs) -> Result<()> {
+pub fn runner(agent: ccusage_cli::StandardAgent, command: ccusage_cli::AgentCommand) -> Result<()> {
+    match command {
+        ccusage_cli::AgentCommand::Report(args) => report_runner(agent)(args),
+        ccusage_cli::AgentCommand::Statusline(args) => adapter::codex::run_statusline(args),
+    }
+}
+
+fn report_runner(agent: ccusage_cli::StandardAgent) -> fn(AgentCommandArgs) -> Result<()> {
     match agent {
         ccusage_cli::StandardAgent::Codex => adapter::codex::run,
         ccusage_cli::StandardAgent::Amp => adapter::amp::run,

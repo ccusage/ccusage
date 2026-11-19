@@ -39,26 +39,22 @@ fn codex_statusline_keeps_valid_usage_when_a_replacement_rollout_is_corrupt() {
 
 #[test]
 fn codex_statusline_reports_today_without_reading_stdin() {
-    let today = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
     let fixture = fs_fixture!({
-        "codex/sessions/today.jsonl": usage(&format!("{today}T12:00:00.000Z"), 1_000, 50),
-        "codex/sessions/old.jsonl": usage("2026-01-01T12:00:00.000Z", 9_000, 500),
+        "codex/sessions/today.jsonl": usage("2026-11-19T12:00:00Z", 1_000, 50),
+        "codex/sessions/old.jsonl": usage("2026-01-01T12:00:00Z", 9_000, 500),
     });
 
-    let output = run_cli(&fixture, &["codex", "statusline"]);
-
-    let after = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
-    let expected = std::collections::BTreeMap::from([(
-        today.as_str(),
-        "Codex | Today: 1,050 tokens | Est. $0.00\n",
-    )]);
-    let allowed = [today.as_str(), after.as_str()].map(|date| {
-        expected
-            .get(date)
-            .copied()
-            .unwrap_or("Codex | Today: 0 tokens | Est. $0.00\n")
-    });
-    assert!(allowed.contains(&output.as_str()), "{output}");
+    let output = codex_command(support::hermetic_command(fixture.root()), &fixture)
+        .args(["codex", "statusline"])
+        .env("CCUSAGE_TEST_NOW", "2026-11-19T12:30:00Z")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"Codex | Today: 1,050 tokens | Est. $0.00\n");
 }
 
 #[test]
@@ -357,29 +353,33 @@ fn codex_statusline_date_range_matches_daily_totals() {
 }
 
 #[test]
-fn codex_statusline_recovers_discovered_config_and_accepts_root_flags() {
+fn codex_statusline_recovers_discovered_config_and_keeps_valid_settings() {
     let fixture = fs_fixture!({
         "cwd/.ccusage/ccusage.json": r#"{
+            "defaults":{"since":"20261119","timezone":"Pacific/Kiritimati"},
             "codex":{"commands":{"statusline":{
                 "json":true, "timezone":"Invalid/Zone",
-                "since":"20990101", "until":"20000101"
+                "since":"20990101", "until":"20261119"
             }}}
         }"#,
-        "codex/sessions/today.jsonl": usage("2026-11-19T12:00:00Z", 100, 50),
+        "codex/sessions/previous-utc-day.jsonl": usage("2026-11-18T12:00:00Z", 100, 50),
+        "codex/sessions/outside-range.jsonl": usage("2026-11-17T12:00:00Z", 9000, 500),
     });
     let output = support::hermetic_command(fixture.root())
-        .args(["--sections", "daily", "--offline", "codex", "statusline"])
+        .args(["--offline", "codex", "statusline"])
         .env("CODEX_HOME", fixture.path("codex"))
         .env("CCUSAGE_TEST_NOW", "2026-11-19T12:30:00Z")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(stderr.contains("ccusage.json"));
+    assert!(stderr.contains("Invalid ccusage config field:"));
+    assert!(stderr.contains("ccusage.json: codex.commands.statusline.timezone:"));
+    assert!(stderr.contains("ccusage.json: codex.commands.statusline.since:"));
     assert!(stderr.contains("Invalid/Zone"));
     assert!(stderr.contains("later than"));
     let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(summary["scope"], "today");
+    assert_eq!(summary["scope"], "range");
     assert_eq!(summary["totalTokens"], 150);
 }
 

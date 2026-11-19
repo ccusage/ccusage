@@ -9,7 +9,7 @@ statusline reports print.
 
 - `last_window.rs` — `last_periods_since`.
 - `output.rs` — `summary_json`, `session_summary_json`, and `group_project_output`.
-- `date_utils.rs` — `format_date`, `zoned_parts`, `hour_12`, `am_pm`, and `is_valid_timezone`.
+- `date_utils.rs` — `format_date`, `zoned_parts`, `hour_12`, and `am_pm`.
 
 These sit above `ccusage-core` so editing them recompiles the Claude adapter, unified adapter
 and binary without rebuilding every source adapter. Helpers shared across
@@ -21,7 +21,6 @@ adapters belong in core or `ccusage-adapter-common`.
 - `format_date`
 - `group_project_output`
 - `hour_12`
-- `is_valid_timezone`
 - `last_periods_since`
 - `zoned_parts`
 - `session_cost_ordering`

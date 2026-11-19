@@ -6,6 +6,7 @@ build = "build.rs"
 publish.workspace = true
 
 [dependencies]
+jiff.workspace = true
 ccusage-cli.workspace = true
 
 [build-dependencies]

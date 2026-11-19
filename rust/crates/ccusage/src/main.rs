@@ -30,8 +30,7 @@ fn main() -> Result<()> {
         Command::Session(args) => adapter::claude::run_session(args),
         Command::Blocks(args) => adapter::claude::run_blocks(args),
         Command::Statusline(args) => adapter::claude::run_statusline(args),
-        Command::CodexStatusline(args) => ccusage_adapter_codex::run_statusline(args),
-        Command::Agent(agent, args) => adapter::all::runner(agent)(args),
+        Command::Agent(agent, args) => adapter::all::runner(agent, args),
     }
 }
 
