@@ -92,10 +92,10 @@ pub fn visit_files_matching(
         visit,
         diagnostics,
         seen: FxHashSet::default(),
-        links: VecDeque::new(),
+        links_after_ordinary_tree: VecDeque::new(),
     };
     walk.visit_directory(dir, path_identity(dir))?;
-    while let Some(path) = walk.links.pop_front() {
+    while let Some(path) = walk.links_after_ordinary_tree.pop_front() {
         walk.visit_symlink(path)?;
     }
     ControlFlow::Continue(())
@@ -106,7 +106,7 @@ struct FileWalk<'a> {
     visit: &'a mut dyn FnMut(PathBuf) -> ControlFlow<()>,
     diagnostics: &'a Diagnostics,
     seen: FxHashSet<PathBuf>,
-    links: VecDeque<PathBuf>,
+    links_after_ordinary_tree: VecDeque<PathBuf>,
 }
 
 impl FileWalk<'_> {
@@ -116,7 +116,7 @@ impl FileWalk<'_> {
         }
         for (path, file_type) in dir_entries(dir, self.diagnostics) {
             if file_type.is_symlink() {
-                self.links.push_back(path);
+                self.links_after_ordinary_tree.push_back(path);
             } else if self.is_candidate(&path, file_type)
                 && let Some(name) = path.file_name()
             {
