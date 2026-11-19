@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 assert_fs.workspace = true
-ccusage-core = { workspace = true, features = ["resolver-trace"] }
+ccusage-core = { workspace = true, features = ["resolver-trace", "test-environment"] }
 ccusage-pricing-snapshots.workspace = true
 jiff.workspace = true
 

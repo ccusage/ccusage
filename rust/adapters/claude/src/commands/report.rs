@@ -281,7 +281,7 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use ccusage_core::cli::CostMode;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -346,8 +346,8 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": log,
         });
-        let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-        load_session_rows(&shared).unwrap()
+        Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root())
+            .run(|| load_session_rows(&shared).unwrap())
     }
 
     #[test]

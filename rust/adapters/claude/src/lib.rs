@@ -878,7 +878,7 @@ mod tests {
         cli::{CostMode, SharedArgs},
         format_rfc3339_millis,
     };
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
     struct LoadedFile {
@@ -924,42 +924,44 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T10:01:00Z","sessionId":"pricing","requestId":"unknown","message":{"id":"unknown","model":"unlisted-fixture-model","usage":{"input_tokens":1000,"output_tokens":1000}}}"#,
             ].join("\n"),
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            offline: true,
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        let loaded = super::load_windowed_entries(
-            &shared,
-            None,
-            &Diagnostics::new("claude"),
-            CostMode::Calculate,
-        )
-        .unwrap();
-        assert_eq!(loaded.entries.len(), 2);
-        let known = loaded
-            .entries
-            .iter()
-            .find(|entry| entry.model.as_deref() == Some("claude-sonnet-4-20250514"))
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                offline: true,
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let loaded = super::load_windowed_entries(
+                &shared,
+                None,
+                &Diagnostics::new("claude"),
+                CostMode::Calculate,
+            )
             .unwrap();
-        assert!((known.cost - 0.018).abs() < 1e-12, "{}", known.cost);
-        assert_eq!(known.missing_pricing_model, None);
-        let unknown = loaded
-            .entries
-            .iter()
-            .find(|entry| entry.model.as_deref() == Some("unlisted-fixture-model"))
-            .unwrap();
-        assert_eq!(unknown.cost, 0.0);
-        assert_eq!(
-            unknown.missing_pricing_model.as_deref(),
-            Some("unlisted-fixture-model")
-        );
+            assert_eq!(loaded.entries.len(), 2);
+            let known = loaded
+                .entries
+                .iter()
+                .find(|entry| entry.model.as_deref() == Some("claude-sonnet-4-20250514"))
+                .unwrap();
+            assert!((known.cost - 0.018).abs() < 1e-12, "{}", known.cost);
+            assert_eq!(known.missing_pricing_model, None);
+            let unknown = loaded
+                .entries
+                .iter()
+                .find(|entry| entry.model.as_deref() == Some("unlisted-fixture-model"))
+                .unwrap();
+            assert_eq!(unknown.cost, 0.0);
+            assert_eq!(
+                unknown.missing_pricing_model.as_deref(),
+                Some("unlisted-fixture-model")
+            );
+        })
     }
 
     #[test]
@@ -970,21 +972,23 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T10:00:01Z","sessionId":"session-a","requestId":"replay","isSidechain":true,"message":{"id":"msg-parent","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
             ].join("\n"),
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        let entries = super::load_entries(&shared, None).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.input_tokens, 10);
-        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
-        assert_eq!(daily[0].input_tokens, 10);
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let entries = super::load_entries(&shared, None).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].usage.input_tokens, 10);
+            let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+            assert_eq!(daily[0].input_tokens, 10);
+        })
     }
 
     #[test]
@@ -992,21 +996,23 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-progress","message":{"id":"msg-progress","model":"claude-sonnet-4-20250514","usage":{"input_tokens":7,"output_tokens":2}}}}}"#,
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        let entries = super::load_entries(&shared, None).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.input_tokens, 7);
-        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
-        assert_eq!(daily[0].input_tokens, 7);
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let entries = super::load_entries(&shared, None).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].usage.input_tokens, 7);
+            let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+            assert_eq!(daily[0].input_tokens, 7);
+        })
     }
 
     #[test]
@@ -1017,21 +1023,23 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","costUSD":1,"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1,"speed":"fast"}}}"#,
             ].join("\n"),
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        let entries = super::load_entries(&shared, None).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].cost, 1.0);
-        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
-        assert_eq!(daily[0].total_cost, 1.0);
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let entries = super::load_entries(&shared, None).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].cost, 1.0);
+            let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+            assert_eq!(daily[0].total_cost, 1.0);
+        })
     }
 
     #[test]
@@ -1039,21 +1047,23 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","cwd":null,"toolUseResult":{"iterations":[{"model":null,"id":null,"cwd":null,"speed":null}]},"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","content":[{"id":null,"model":null}],"usage":{"input_tokens":10,"output_tokens":1,"metadata":{"cache_read_input_tokens":null}}}}"#,
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        let entries = super::load_entries(&shared, None).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.input_tokens, 10);
-        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
-        assert_eq!(daily[0].input_tokens, 10);
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let entries = super::load_entries(&shared, None).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].usage.input_tokens, 10);
+            let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+            assert_eq!(daily[0].input_tokens, 10);
+        })
     }
 
     #[test]
@@ -1501,23 +1511,25 @@ mod tests {
             let fixture = fs_fixture!({
                 "projects/project-a/session-a.jsonl": lines.join("\n"),
             });
-            let _env = EnvGuard::set_many([(
+            Environment::with_vars([(
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_os_string()),
-            )]);
-            let shared = SharedArgs {
-                mode: CostMode::Display,
-                single_thread: true,
-                ..SharedArgs::default()
-            };
+            )])
+            .run(|| {
+                let shared = SharedArgs {
+                    mode: CostMode::Display,
+                    single_thread: true,
+                    ..SharedArgs::default()
+                };
 
-            let deduped = load_deduped_entries(&shared, None).unwrap();
+                let deduped = load_deduped_entries(&shared, None).unwrap();
 
-            assert_eq!(deduped.entries.len(), 1);
-            let mut breakdown = ModelBreakdown::default();
-            breakdown.add_usage(&deduped.entries[0].usage);
-            assert_eq!(breakdown.cache_creation_tokens, 100);
-            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+                assert_eq!(deduped.entries.len(), 1);
+                let mut breakdown = ModelBreakdown::default();
+                breakdown.add_usage(&deduped.entries[0].usage);
+                assert_eq!(breakdown.cache_creation_tokens, 100);
+                assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+            })
         }
     }
 
@@ -1735,39 +1747,41 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread: true,
-            json: true,
-            ..SharedArgs::default()
-        };
-        let deduped = load_deduped_entries(&shared, None).unwrap();
-        let sorted_days = |deduped: &crate::DedupedEntries| {
-            let mut days: Vec<_> = deduped
-                .main_thread_sessions()
-                .into_iter()
-                .map(|session| session.to_string())
-                .collect();
-            days.sort();
-            days
-        };
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread: true,
+                json: true,
+                ..SharedArgs::default()
+            };
+            let deduped = load_deduped_entries(&shared, None).unwrap();
+            let sorted_days = |deduped: &crate::DedupedEntries| {
+                let mut days: Vec<_> = deduped
+                    .main_thread_sessions()
+                    .into_iter()
+                    .map(|session| session.to_string())
+                    .collect();
+                days.sort();
+                days
+            };
 
-        assert_eq!(deduped.entries.len(), 2);
-        assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
-        let filtered = crate::DedupedEntries {
-            entries: deduped
-                .entries
-                .into_iter()
-                .filter(|entry| entry.date != "2026-01-02")
-                .collect(),
-            ..Default::default()
-        };
-        assert_eq!(sorted_days(&filtered), ["session-b"]);
+            assert_eq!(deduped.entries.len(), 2);
+            assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
+            let filtered = crate::DedupedEntries {
+                entries: deduped
+                    .entries
+                    .into_iter()
+                    .filter(|entry| entry.date != "2026-01-02")
+                    .collect(),
+                ..Default::default()
+            };
+            assert_eq!(sorted_days(&filtered), ["session-b"]);
+        })
     }
 
     #[test]

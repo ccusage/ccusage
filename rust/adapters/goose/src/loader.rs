@@ -84,35 +84,36 @@ mod tests {
                 output: 50,
             },
         );
-        let _guard = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
-        let mut pricing = ccusage_core::PricingMap::default();
-        pricing.load_json(
-            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
-        );
-        for (mode, expected) in [
-            (crate::cli::CostMode::Auto, 0.2),
-            (crate::cli::CostMode::Calculate, 0.2),
-            (crate::cli::CostMode::Display, 0.0),
-        ] {
-            let shared = SharedArgs {
-                mode,
-                ..SharedArgs::default()
-            };
-            let entries = ccusage_adapter_common::testing::entries(
-                &crate::SOURCE,
-                &shared,
-                Default::default(),
-                Some(&pricing),
-            )
-            .unwrap();
-            assert_eq!(entries.len(), 1);
-            assert!(
-                (entries[0].cost - expected).abs() < 1e-12,
-                "{mode:?}: {} vs {expected}",
-                entries[0].cost
+        Environment::with_var("GOOSE_PATH_ROOT", fixture.root()).run(|| {
+            let mut pricing = ccusage_core::PricingMap::default();
+            pricing.load_json(
+                r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
             );
-            assert_eq!(entries[0].missing_pricing_model, None);
-        }
+            for (mode, expected) in [
+                (crate::cli::CostMode::Auto, 0.2),
+                (crate::cli::CostMode::Calculate, 0.2),
+                (crate::cli::CostMode::Display, 0.0),
+            ] {
+                let shared = SharedArgs {
+                    mode,
+                    ..SharedArgs::default()
+                };
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &shared,
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                assert_eq!(entries.len(), 1);
+                assert!(
+                    (entries[0].cost - expected).abs() < 1e-12,
+                    "{mode:?}: {} vs {expected}",
+                    entries[0].cost
+                );
+                assert_eq!(entries[0].missing_pricing_model, None);
+            }
+        })
     }
 
     use crate::cli::SharedArgs;
@@ -121,7 +122,7 @@ mod tests {
     use super::*;
     use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
     use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     fn create_goose_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -306,28 +307,30 @@ INSERT INTO sessions (
                 output: 50,
             },
         );
-        let _environment = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(fixture.root().to_path_buf().into_os_string())),
             ("GOOSE_PATH_ROOT", Some(std::ffi::OsString::new())),
-        ]);
-        let shared = SharedArgs::default();
-        let pricing = ccusage_core::PricingMap::load_embedded();
-        let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::new("goose");
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: SourceOptions::default(),
-            diagnostics: &diagnostics,
-        };
+        ])
+        .run(|| {
+            let shared = SharedArgs::default();
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("goose");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
 
-        let entries = load_entries_with_context(&cx).unwrap();
+            let entries = load_entries_with_context(&cx).unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].session_id.as_ref(), "session-a");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        })
     }
 
     #[test]
@@ -348,13 +351,18 @@ INSERT INTO sessions (
                 output: 50,
             },
         );
-        let _cleanup = EnvGuard::set("GOOSE_PATH_ROOT", fixture.root());
-        let shared = SharedArgs {
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
+        Environment::with_var("GOOSE_PATH_ROOT", fixture.root()).run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
 
-        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Goose, &shared);
+            assert_focused_matches_unified(
+                &crate::SOURCE,
+                ccusage_core::cli::AgentId::Goose,
+                &shared,
+            );
+        })
     }
 }

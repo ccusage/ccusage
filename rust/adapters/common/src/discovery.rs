@@ -109,6 +109,7 @@ fn read_discovered_in_parallel(
         }
     };
     let queue = &WorkQueue::new(capacity, workers);
+    let environment = &ccusage_core::cli::environment::Environment::current();
     thread::scope(|scope| {
         let _producer = QueueLifetime {
             queue,
@@ -118,11 +119,13 @@ fn read_discovered_in_parallel(
         index_discovered(discover, &mut |file| {
             if started < workers {
                 scope.spawn(|| {
-                    let _worker = QueueLifetime {
-                        queue,
-                        producer: false,
-                    };
-                    consume(&mut std::iter::from_fn(|| queue.pop()));
+                    environment.run(|| {
+                        let _worker = QueueLifetime {
+                            queue,
+                            producer: false,
+                        };
+                        consume(&mut std::iter::from_fn(|| queue.pop()));
+                    })
                 });
                 started += 1;
             }

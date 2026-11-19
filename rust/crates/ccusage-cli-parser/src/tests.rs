@@ -111,12 +111,12 @@ fn statusline_threshold_overrides_are_validated_together() {
 #[test]
 fn statusline_merges_config_thresholds_before_validation() {
     use ccusage_config::ConfigContext;
-    use ccusage_test_support::EnvGuard;
+    use ccusage_test_support::Environment;
     let fixture = fs_fixture!({
         "home/.claude/ccusage.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
         "explicit.json": r#"{"commands":{"statusline":{"contextLowThreshold":85}}}"#,
     });
-    let _env = EnvGuard::set_many([
+    Environment::with_vars([
         ("HOME", Some(fixture.path("home").into_os_string())),
         (
             "CLAUDE_CONFIG_DIR",
@@ -126,28 +126,30 @@ fn statusline_merges_config_thresholds_before_validation() {
             "XDG_CONFIG_HOME",
             Some(fixture.path("home/.config").into_os_string()),
         ),
-    ]);
-    for explicit in [false, true] {
-        let path = fixture.path("explicit.json").display().to_string();
-        let mut args = vec!["ccusage", "statusline", "--context-medium-threshold", "95"];
-        if explicit {
-            args.extend(["--config", &path]);
+    ])
+    .run(|| {
+        for explicit in [false, true] {
+            let path = fixture.path("explicit.json").display().to_string();
+            let mut args = vec!["ccusage", "statusline", "--context-medium-threshold", "95"];
+            if explicit {
+                args.extend(["--config", &path]);
+            }
+            let config = ConfigContext::from_args(
+                &args[1..]
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>(),
+            );
+            let Command::Statusline(statusline) = parse_with_config(&args, &config) else {
+                panic!("expected statusline");
+            };
+            assert_eq!(
+                statusline.context_thresholds,
+                ContextThresholds::new(85, 95).unwrap()
+            );
+            assert!(config.warnings().is_empty(), "{:?}", config.warnings());
         }
-        let config = ConfigContext::from_args(
-            &args[1..]
-                .iter()
-                .map(|arg| arg.to_string())
-                .collect::<Vec<_>>(),
-        );
-        let Command::Statusline(statusline) = parse_with_config(&args, &config) else {
-            panic!("expected statusline");
-        };
-        assert_eq!(
-            statusline.context_thresholds,
-            ContextThresholds::new(85, 95).unwrap()
-        );
-        assert!(config.warnings().is_empty(), "{:?}", config.warnings());
-    }
+    })
 }
 
 #[derive(Default)]
@@ -2090,16 +2092,17 @@ fn assert_invalid_discovered_stores_allow(args: &[&str]) {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/omp"}]}}"#,
     });
-    let _guard = ccusage_test_support::EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
-    let config = ccusage_config::ConfigContext::from_args(&args);
-    let parsed = parse_from_with_config(
-        std::iter::once(std::ffi::OsString::from("ccusage"))
-            .chain(args.iter().map(std::ffi::OsString::from)),
-        &config,
-        env!("CARGO_PKG_VERSION"),
-    );
-    assert!(parsed.is_ok(), "{:?}", parsed.err());
+    ccusage_test_support::Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+        let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&args);
+        let parsed = parse_from_with_config(
+            std::iter::once(std::ffi::OsString::from("ccusage"))
+                .chain(args.iter().map(std::ffi::OsString::from)),
+            &config,
+            env!("CARGO_PKG_VERSION"),
+        );
+        assert!(parsed.is_ok(), "{:?}", parsed.err());
+    })
 }
 
 #[test]

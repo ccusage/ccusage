@@ -662,7 +662,7 @@ mod tests {
     use ccusage_cli_parser::parse_from_with_config;
     use ccusage_config::ConfigContext;
     use ccusage_core::cli::{Command, PricingOverride};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -722,58 +722,60 @@ mod tests {
             }"#,
             "projects/project/session.jsonl": r#"{"timestamp":"2020-01-01T00:00:00.000Z","sessionId":"session","message":{"id":"message","model":"third-party-model","usage":{"input_tokens":100000,"output_tokens":100000}}}"#,
         });
-        let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-        let config_path = fixture.path("ccusage.json");
-        let config_path = config_path.to_string_lossy().into_owned();
-        let config_args = vec![
-            "statusline".to_string(),
-            "--config".to_string(),
-            config_path.clone(),
-        ];
-        let config = ConfigContext::from_args(&config_args);
-        let command = parse_from_with_config(
-            [
-                "ccusage",
-                "statusline",
-                "--config",
-                config_path.as_str(),
-                "--cost-source",
-                "ccusage",
-            ]
-            .into_iter()
-            .map(OsString::from),
-            &config,
-            env!("CARGO_PKG_VERSION"),
-        )
-        .unwrap();
-        let Command::Statusline(args) = command else {
-            panic!("expected statusline command");
-        };
+        Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+            let config_path = fixture.path("ccusage.json");
+            let config_path = config_path.to_string_lossy().into_owned();
+            let config_args = vec![
+                "statusline".to_string(),
+                "--config".to_string(),
+                config_path.clone(),
+            ];
+            let config = ConfigContext::from_args(&config_args);
+            let command = parse_from_with_config(
+                [
+                    "ccusage",
+                    "statusline",
+                    "--config",
+                    config_path.as_str(),
+                    "--cost-source",
+                    "ccusage",
+                ]
+                .into_iter()
+                .map(OsString::from),
+                &config,
+                env!("CARGO_PKG_VERSION"),
+            )
+            .unwrap();
+            let Command::Statusline(args) = command else {
+                panic!("expected statusline command");
+            };
 
-        let shared = statusline_shared(&args);
-        let pricing = &shared.pricing_overrides["third-party-model"];
-        assert_eq!(pricing.input_cost_per_token, Some(0.000001));
-        assert_eq!(pricing.output_cost_per_token, Some(0.000003));
+            let shared = statusline_shared(&args);
+            let pricing = &shared.pricing_overrides["third-party-model"];
+            assert_eq!(pricing.input_cost_per_token, Some(0.000001));
+            assert_eq!(pricing.output_cost_per_token, Some(0.000003));
 
-        let hook = StatuslineHook {
-            session_id: "session".to_string(),
-            transcript_path: fixture
-                .path("transcript.jsonl")
-                .to_string_lossy()
-                .into_owned(),
-            model: HookModel {
-                id: Some("third-party-model".to_string()),
-                display_name: "Third-party model".to_string(),
-            },
-            cost: None,
-            context_window: Some(HookContext {
-                total_input_tokens: 100_000,
-                context_window_size: 200_000,
-            }),
-            effort: None,
-        };
-        let output = render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
-        assert!(output.contains("💰 $0.40 session"), "{output}");
+            let hook = StatuslineHook {
+                session_id: "session".to_string(),
+                transcript_path: fixture
+                    .path("transcript.jsonl")
+                    .to_string_lossy()
+                    .into_owned(),
+                model: HookModel {
+                    id: Some("third-party-model".to_string()),
+                    display_name: "Third-party model".to_string(),
+                },
+                cost: None,
+                context_window: Some(HookContext {
+                    total_input_tokens: 100_000,
+                    context_window_size: 200_000,
+                }),
+                effort: None,
+            };
+            let output =
+                render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
+            assert!(output.contains("💰 $0.40 session"), "{output}");
+        })
     }
 
     #[test]

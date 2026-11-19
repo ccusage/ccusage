@@ -1,5 +1,6 @@
 mod agents;
 mod date;
+pub mod environment;
 pub mod home;
 mod limits;
 mod options;

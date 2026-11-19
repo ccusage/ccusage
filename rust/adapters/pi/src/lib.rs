@@ -68,7 +68,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -87,51 +87,52 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
-        let shared = crate::cli::SharedArgs {
-            mode: crate::cli::CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            ..crate::cli::SharedArgs::default()
-        };
+        Environment::with_var("PI_AGENT_DIR", fixture.path("sessions")).run(|| {
+            let shared = crate::cli::SharedArgs {
+                mode: crate::cli::CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                ..crate::cli::SharedArgs::default()
+            };
 
-        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Pi, &shared);
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            ccusage_adapter_common::source::SourceOptions {
-                pi_path: None,
-                ..Default::default()
-            },
-            None,
-        )
-        .unwrap();
-        let focused = ccusage_adapter_common::source::EntrySource::summarize(
-            &crate::SOURCE,
-            &entries,
-            ccusage_adapter_common::source::SummaryKind::for_report(
-                AgentReportKind::Session,
-                ccusage_core::cli::WeekDay::Sunday,
-            ),
-        )
-        .unwrap();
+            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Pi, &shared);
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                ccusage_adapter_common::source::SourceOptions {
+                    pi_path: None,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            let focused = ccusage_adapter_common::source::EntrySource::summarize(
+                &crate::SOURCE,
+                &entries,
+                ccusage_adapter_common::source::SummaryKind::for_report(
+                    AgentReportKind::Session,
+                    ccusage_core::cli::WeekDay::Sunday,
+                ),
+            )
+            .unwrap();
 
-        assert_eq!(focused.len(), 2);
-        assert_eq!(focused[0].input_tokens, 10);
-        assert_eq!(focused[1].input_tokens, 20);
-        let json = SOURCE.report_json(&focused, AgentReportKind::Session);
-        assert_eq!(json["sessions"][0]["sessionId"], "same-session");
-        assert_eq!(json["sessions"][0]["projectPath"], "project-a");
-        assert_eq!(json["sessions"][1]["sessionId"], "same-session");
-        assert_eq!(json["sessions"][1]["projectPath"], "project-b");
-        assert_eq!(json["totals"]["inputTokens"], 30);
-        assert_eq!(
-            focused
-                .iter()
-                .filter_map(|row| row.project_path.as_deref())
-                .collect::<std::collections::BTreeSet<_>>(),
-            ["project-a", "project-b"].into()
-        );
+            assert_eq!(focused.len(), 2);
+            assert_eq!(focused[0].input_tokens, 10);
+            assert_eq!(focused[1].input_tokens, 20);
+            let json = SOURCE.report_json(&focused, AgentReportKind::Session);
+            assert_eq!(json["sessions"][0]["sessionId"], "same-session");
+            assert_eq!(json["sessions"][0]["projectPath"], "project-a");
+            assert_eq!(json["sessions"][1]["sessionId"], "same-session");
+            assert_eq!(json["sessions"][1]["projectPath"], "project-b");
+            assert_eq!(json["totals"]["inputTokens"], 30);
+            assert_eq!(
+                focused
+                    .iter()
+                    .filter_map(|row| row.project_path.as_deref())
+                    .collect::<std::collections::BTreeSet<_>>(),
+                ["project-a", "project-b"].into()
+            );
+        })
     }
 
     #[test]
@@ -145,30 +146,33 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
-        let shared = crate::cli::SharedArgs {
-            mode: crate::cli::CostMode::Display,
-            debug: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            offline: true,
-            ..crate::cli::SharedArgs::default()
-        };
+        Environment::with_var("PI_AGENT_DIR", fixture.path("sessions")).run(|| {
+            let shared = crate::cli::SharedArgs {
+                mode: crate::cli::CostMode::Display,
+                debug: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                offline: true,
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let rows = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &shared,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
+            let rows = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
 
-        assert_eq!(rows.rows.len(), 1);
-        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
-            warning.contains("invalid data")
-                && warning.contains("agent_session-a.jsonl:2")
-                && !warning.contains("SECRET_CANARY")
-        }));
+            assert_eq!(rows.rows.len(), 1);
+            assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
+                warning.contains("invalid data")
+                    && warning.contains("agent_session-a.jsonl:2")
+                    && !warning.contains("SECRET_CANARY")
+            }));
+        })
     }
 }

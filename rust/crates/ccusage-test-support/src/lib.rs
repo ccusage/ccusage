@@ -1,8 +1,6 @@
 use std::{
-    ffi::{OsStr, OsString},
     fs,
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -84,46 +82,7 @@ pub fn install_pricing_snapshots() {
     });
 }
 
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-pub struct EnvGuard {
-    previous: Vec<(&'static str, Option<OsString>)>,
-    lock: MutexGuard<'static, ()>,
-}
-
-impl EnvGuard {
-    pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
-        Self::set_many([(key, Some(value.as_ref().to_os_string()))])
-    }
-
-    pub fn set_many(vars: impl IntoIterator<Item = (&'static str, Option<OsString>)>) -> Self {
-        let lock = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let mut previous = Vec::new();
-        for (key, value) in vars {
-            previous.push((key, std::env::var_os(key)));
-            set_process_var(&lock, key, value);
-        }
-        Self { previous, lock }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        for (key, value) in self.previous.drain(..).rev() {
-            set_process_var(&self.lock, key, value);
-        }
-    }
-}
-
-fn set_process_var(_lock: &MutexGuard<'static, ()>, key: &'static str, value: Option<OsString>) {
-    // SAFETY: The guard serializes test mutations and restoration; callers must avoid concurrent environment access outside Rust's std::env.
-    unsafe {
-        match value {
-            Some(value) => std::env::set_var(key, value),
-            None => std::env::remove_var(key),
-        }
-    }
-}
+pub use ccusage_core::cli::environment::Environment;
 
 pub struct Fixture {
     dir: TempDir,

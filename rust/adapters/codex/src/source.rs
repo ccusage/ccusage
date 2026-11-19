@@ -133,7 +133,7 @@ mod diagnostic_tests {
     use crate::aggregate::load_groups_with_diagnostics;
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::cli::{AgentReportKind, SharedArgs};
-    use ccusage_test_support::{EnvGuard, Fixture};
+    use ccusage_test_support::{Environment, Fixture};
     use serde_json::json;
 
     #[test]
@@ -141,33 +141,35 @@ mod diagnostic_tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         fixture.write_file("sessions/long.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":250000,"output_tokens":10,"total_tokens":250010}}}}"#);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().into())),
             ("LOG_LEVEL", Some("0".into())),
-        ]);
-        let shared = SharedArgs {
-            mode: CostMode::Calculate,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        for kind in [
-            ccusage_adapter_common::source::LoadKind::Day,
-            ccusage_adapter_common::source::LoadKind::Session,
-        ] {
-            let loaded = SOURCE
-                .load_rows(&LoadRequest {
-                    kind,
-                    shared: &shared,
-                    options: SourceOptions::default(),
-                    pricing: None,
-                    progress: ProgressOwner::Caller,
-                })
-                .unwrap();
-            assert_eq!(loaded.rows.len(), 1);
-            assert_eq!(loaded.rows[0].total_tokens, 250010);
-            assert!((loaded.rows[0].total_cost - 1.2503).abs() < 1e-12);
-        }
+        ])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Calculate,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            for kind in [
+                ccusage_adapter_common::source::LoadKind::Day,
+                ccusage_adapter_common::source::LoadKind::Session,
+            ] {
+                let loaded = SOURCE
+                    .load_rows(&LoadRequest {
+                        kind,
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: None,
+                        progress: ProgressOwner::Caller,
+                    })
+                    .unwrap();
+                assert_eq!(loaded.rows.len(), 1);
+                assert_eq!(loaded.rows[0].total_tokens, 250010);
+                assert!((loaded.rows[0].total_cost - 1.2503).abs() < 1e-12);
+            }
+        })
     }
 
     fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<SourceRow> {
@@ -188,24 +190,26 @@ mod diagnostic_tests {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         fixture.write_file("sessions/tiny.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}"#);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
-        ]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
+        ])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
 
-        let rows = unified_codex_rows(&shared, AgentReportKind::Daily);
+            let rows = unified_codex_rows(&shared, AgentReportKind::Daily);
 
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].total_tokens, 110);
-        assert_eq!(rows[0].total_cost, 0.0);
-        assert_eq!(rows[0].model_breakdowns[0].cost, 0.0);
-        assert!(!rows[0].model_breakdowns[0].missing_pricing);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].total_tokens, 110);
+            assert_eq!(rows[0].total_cost, 0.0);
+            assert_eq!(rows[0].model_breakdowns[0].cost, 0.0);
+            assert!(!rows[0].model_breakdowns[0].missing_pricing);
+        })
     }
 
     #[test]
@@ -214,27 +218,31 @@ mod diagnostic_tests {
         let fixture = Fixture::new();
         let usage = json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
         fixture.write_file("sessions/session.jsonl", usage);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
-        ]);
-        let shared = SharedArgs {
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let loaded = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &shared,
-                options: SourceOptions::default(),
-                pricing: None,
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
-        assert_eq!(loaded.rows.len(), 1);
-        assert_eq!(loaded.rows[0].total_tokens, 110);
-        assert!(loaded.rows[0].total_cost > 0.0);
+        ])
+        .run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let loaded = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
+            assert_eq!(loaded.rows.len(), 1);
+            assert_eq!(loaded.rows[0].total_tokens, 110);
+            assert!(loaded.rows[0].total_cost > 0.0);
+        })
     }
 
     #[test]
@@ -244,26 +252,28 @@ mod diagnostic_tests {
         let usage = json!({"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
         fixture.write_file("sessions/session-a.jsonl", &usage);
         fixture.write_file("sessions/session-b.jsonl", &usage);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
-        ]);
-        let shared = SharedArgs {
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260101".parse().unwrap()),
-            ..Default::default()
-        };
+        ])
+        .run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20260101".parse().unwrap()),
+                ..Default::default()
+            };
 
-        let rows = unified_codex_rows(&shared, AgentReportKind::Session);
+            let rows = unified_codex_rows(&shared, AgentReportKind::Session);
 
-        assert_eq!(
-            rows.iter()
-                .map(|row| row.period.as_str())
-                .collect::<Vec<_>>(),
-            ["session-a", "session-b"]
-        );
-        assert!(rows.iter().all(|row| row.total_tokens == 110));
+            assert_eq!(
+                rows.iter()
+                    .map(|row| row.period.as_str())
+                    .collect::<Vec<_>>(),
+                ["session-a", "session-b"]
+            );
+            assert!(rows.iter().all(|row| row.total_tokens == 110));
+        })
     }
 
     #[test]
@@ -276,52 +286,54 @@ mod diagnostic_tests {
         fixture.write_file("sessions/original.jsonl", usage("2026-01-02T00:00:00.000Z"));
         fixture.write_file("sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
         fixture.write_file("sessions/later.jsonl", usage("2026-01-03T00:00:00.000Z"));
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
-        ]);
-        let pricing = PricingMap::load_embedded();
-        let speed = crate::CodexSpeedPolicy::Forced(crate::CodexServiceTier::Standard);
-        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
-            let shared = SharedArgs {
-                offline: true,
-                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since: Some("20260102".parse().unwrap()),
-                until: Some("20260102".parse().unwrap()),
-                ..Default::default()
-            };
+        ])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
+            let speed = crate::CodexSpeedPolicy::Forced(crate::CodexServiceTier::Standard);
+            for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+                let shared = SharedArgs {
+                    offline: true,
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                    since: Some("20260102".parse().unwrap()),
+                    until: Some("20260102".parse().unwrap()),
+                    ..Default::default()
+                };
 
-            let focused = load_groups_with_diagnostics(
-                &shared,
-                kind,
-                Some(&pricing),
-                &Diagnostics::for_report("codex", shared.clock),
-            )
-            .unwrap()
-            .0
-            .iter()
-            .map(|(period, group)| {
-                unified_row_from_group(
-                    ccusage_adapter_common::source::LoadKind::for_report(kind),
-                    period,
-                    group,
+                let focused = load_groups_with_diagnostics(
+                    &shared,
+                    kind,
                     Some(&pricing),
-                    speed,
-                    shared.mode,
+                    &Diagnostics::for_report("codex", shared.clock),
                 )
-            })
-            .map(|row| (row.usage.period, row.usage.total_tokens))
-            .collect::<Vec<_>>();
-            let unified = unified_codex_rows(&shared, kind)
-                .into_iter()
+                .unwrap()
+                .0
+                .iter()
+                .map(|(period, group)| {
+                    unified_row_from_group(
+                        ccusage_adapter_common::source::LoadKind::for_report(kind),
+                        period,
+                        group,
+                        Some(&pricing),
+                        speed,
+                        shared.mode,
+                    )
+                })
                 .map(|row| (row.usage.period, row.usage.total_tokens))
                 .collect::<Vec<_>>();
+                let unified = unified_codex_rows(&shared, kind)
+                    .into_iter()
+                    .map(|row| (row.usage.period, row.usage.total_tokens))
+                    .collect::<Vec<_>>();
 
-            assert_eq!(unified, focused, "{kind:?}");
-            if kind != AgentReportKind::Session {
-                assert_eq!(unified, [(focused[0].0.clone(), 110)], "{kind:?}");
+                assert_eq!(unified, focused, "{kind:?}");
+                if kind != AgentReportKind::Session {
+                    assert_eq!(unified, [(focused[0].0.clone(), 110)], "{kind:?}");
+                }
             }
-        }
+        })
     }
 
     #[test]
@@ -348,61 +360,64 @@ mod diagnostic_tests {
             .collect::<Vec<_>>()
             .join("\n");
         fixture.write_file("sessions/compaction.jsonl", &contents);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
-        ]);
-        let pricing = PricingMap::load_embedded();
-        for since in [None, Some("20260101".parse().unwrap())] {
-            let shared = SharedArgs {
-                offline: true,
-                debug: true,
-                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since,
-                ..Default::default()
-            };
-            let result = SOURCE
-                .load_rows(&LoadRequest {
-                    kind: ccusage_adapter_common::source::LoadKind::for_report(
-                        AgentReportKind::Daily,
-                    ),
-                    shared: &shared,
-                    options: SourceOptions::default(),
-                    pricing: Some(&pricing),
-                    progress: ProgressOwner::Caller,
-                })
-                .unwrap();
-            assert_eq!(result.rows.len(), 1);
-            assert_eq!(result.rows[0].input_tokens, 10);
-            assert_eq!(result.rows[0].output_tokens, 2);
-            assert_eq!(result.rows[0].total_tokens, 12);
-            assert!(
-                result
-                    .diagnostics
-                    .warnings(&shared)
-                    .iter()
-                    .any(|line| line == "WARN  codex: skipped 2 records in 1 input (invalid data)"),
-                "{:?}",
-                result.diagnostics.warnings(&shared)
-            );
-            assert!(
-                !result
-                    .diagnostics
-                    .warnings(&shared)
-                    .join("\n")
-                    .contains("SECRET_CANARY")
-            );
-        }
+        ])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
+            for since in [None, Some("20260101".parse().unwrap())] {
+                let shared = SharedArgs {
+                    offline: true,
+                    debug: true,
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                    since,
+                    ..Default::default()
+                };
+                let result = SOURCE
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(
+                            AgentReportKind::Daily,
+                        ),
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: Some(&pricing),
+                        progress: ProgressOwner::Caller,
+                    })
+                    .unwrap();
+                assert_eq!(result.rows.len(), 1);
+                assert_eq!(result.rows[0].input_tokens, 10);
+                assert_eq!(result.rows[0].output_tokens, 2);
+                assert_eq!(result.rows[0].total_tokens, 12);
+                assert!(
+                    result
+                        .diagnostics
+                        .warnings(&shared)
+                        .iter()
+                        .any(|line| line
+                            == "WARN  codex: skipped 2 records in 1 input (invalid data)"),
+                    "{:?}",
+                    result.diagnostics.warnings(&shared)
+                );
+                assert!(
+                    !result
+                        .diagnostics
+                        .warnings(&shared)
+                        .join("\n")
+                        .contains("SECRET_CANARY")
+                );
+            }
+        })
     }
 
     #[test]
     fn rejected_timestamps_advance_cumulative_usage_without_recounting_tokens() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
-        ]);
+        ]).run(|| {
         let pricing = PricingMap::load_embedded();
         for (invalid_timestamp, category) in [
             (json!("SECRET_CANARY"), "invalid timestamp"),
@@ -449,26 +464,71 @@ mod diagnostic_tests {
                 );
             }
         }
+        })
     }
 
     #[test]
     fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
-        ]);
-        let pricing = PricingMap::load_embedded();
-        for file in ["sessions/header.jsonl", "archived_sessions/header.jsonl"] {
-            fixture.write_file(
-                file,
-                r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
-            );
+        ])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
+            for file in ["sessions/header.jsonl", "archived_sessions/header.jsonl"] {
+                fixture.write_file(
+                    file,
+                    r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
+                );
+                for since in [None, Some("20260101".parse().unwrap())] {
+                    let shared = SharedArgs {
+                        offline: true,
+                        json: true,
+                        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                        since,
+                        ..Default::default()
+                    };
+                    let result = SOURCE
+                        .load_rows(&LoadRequest {
+                            kind: ccusage_adapter_common::source::LoadKind::for_report(
+                                AgentReportKind::Daily,
+                            ),
+                            shared: &shared,
+                            options: SourceOptions::default(),
+                            pricing: Some(&pricing),
+                            progress: ProgressOwner::Caller,
+                        })
+                        .unwrap();
+                    assert!(result.detected);
+                    assert!(result.rows.is_empty());
+                    assert!(result.diagnostics.warnings(&shared).is_empty());
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let records = [
+            json!({"timestamp":"SECRET_CANARY","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}}),
+            json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}),
+            json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
+        ].map(|record| record.to_string()).join("\n");
+        fixture.write_file("sessions/timestamps.jsonl", &records);
+        Environment::with_vars([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
             for since in [None, Some("20260101".parse().unwrap())] {
                 let shared = SharedArgs {
                     offline: true,
-                    json: true,
+                    debug: true,
                     timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                     since,
                     ..Default::default()
@@ -484,69 +544,25 @@ mod diagnostic_tests {
                         progress: ProgressOwner::Caller,
                     })
                     .unwrap();
-                assert!(result.detected);
-                assert!(result.rows.is_empty());
-                assert!(result.diagnostics.warnings(&shared).is_empty());
-            }
-        }
-    }
-
-    #[test]
-    fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
-        ccusage_test_support::install_pricing_snapshots();
-        let fixture = Fixture::new();
-        let records = [
-            json!({"timestamp":"SECRET_CANARY","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}}),
-            json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}),
-            json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
-        ].map(|record| record.to_string()).join("\n");
-        fixture.write_file("sessions/timestamps.jsonl", &records);
-        let _env = EnvGuard::set_many([
-            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
-            ("LOG_LEVEL", Some("3".into())),
-        ]);
-        let pricing = PricingMap::load_embedded();
-        for since in [None, Some("20260101".parse().unwrap())] {
-            let shared = SharedArgs {
-                offline: true,
-                debug: true,
-                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                since,
-                ..Default::default()
-            };
-            let result = SOURCE
-                .load_rows(&LoadRequest {
-                    kind: ccusage_adapter_common::source::LoadKind::for_report(
-                        AgentReportKind::Daily,
-                    ),
-                    shared: &shared,
-                    options: SourceOptions::default(),
-                    pricing: Some(&pricing),
-                    progress: ProgressOwner::Caller,
-                })
-                .unwrap();
-            assert_eq!(result.rows.len(), 1);
-            assert_eq!(result.rows[0].input_tokens, 10);
-            assert_eq!(result.rows[0].output_tokens, 1);
-            assert_eq!(result.rows[0].total_tokens, 11);
-            assert!(
-                result
-                    .diagnostics
-                    .warnings(&shared)
-                    .iter()
-                    .any(|line| line
+                assert_eq!(result.rows.len(), 1);
+                assert_eq!(result.rows[0].input_tokens, 10);
+                assert_eq!(result.rows[0].output_tokens, 1);
+                assert_eq!(result.rows[0].total_tokens, 11);
+                assert!(
+                    result.diagnostics.warnings(&shared).iter().any(|line| line
                         == "WARN  codex: skipped 2 records in 1 input (invalid timestamp)"),
-                "{:?}",
-                result.diagnostics.warnings(&shared)
-            );
-            assert!(
-                !result
-                    .diagnostics
-                    .warnings(&shared)
-                    .join("\n")
-                    .contains("SECRET_CANARY")
-            );
-        }
+                    "{:?}",
+                    result.diagnostics.warnings(&shared)
+                );
+                assert!(
+                    !result
+                        .diagnostics
+                        .warnings(&shared)
+                        .join("\n")
+                        .contains("SECRET_CANARY")
+                );
+            }
+        })
     }
 
     #[test]
@@ -565,69 +581,70 @@ mod diagnostic_tests {
             zstd::stream::encode_all([good.as_slice(), b"\n"].concat().as_slice(), 0).unwrap();
         interrupted.extend_from_slice(b"SECRET_CANARY");
         std::fs::write(fixture.path("sessions/interrupted.jsonl.zst"), interrupted).unwrap();
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
-        ]);
-        let pricing = PricingMap::load_embedded();
-        for since in [None, Some("2026-01-01".parse().unwrap())] {
-            let shared = SharedArgs {
-                offline: true,
-                debug: true,
-                since,
-                ..Default::default()
-            };
-            let rows = SOURCE
-                .load_rows(&LoadRequest {
-                    kind: ccusage_adapter_common::source::LoadKind::for_report(
-                        AgentReportKind::Daily,
-                    ),
-                    shared: &shared,
-                    options: SourceOptions::default(),
-                    pricing: Some(&pricing),
-                    progress: ProgressOwner::Caller,
-                })
+        ])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
+            for since in [None, Some("2026-01-01".parse().unwrap())] {
+                let shared = SharedArgs {
+                    offline: true,
+                    debug: true,
+                    since,
+                    ..Default::default()
+                };
+                let rows = SOURCE
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(
+                            AgentReportKind::Daily,
+                        ),
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: Some(&pricing),
+                        progress: ProgressOwner::Caller,
+                    })
+                    .unwrap();
+                assert_eq!(rows.rows.len(), 1);
+                let diagnostics = Diagnostics::for_report("codex", shared.clock);
+                let (groups, _) = load_groups_with_diagnostics(
+                    &shared,
+                    AgentReportKind::Daily,
+                    Some(&crate::PricingMap::load_embedded()),
+                    &diagnostics,
+                )
                 .unwrap();
-            assert_eq!(rows.rows.len(), 1);
-            let diagnostics = Diagnostics::for_report("codex", shared.clock);
-            let (groups, _) = load_groups_with_diagnostics(
-                &shared,
-                AgentReportKind::Daily,
-                Some(&crate::PricingMap::load_embedded()),
-                &diagnostics,
-            )
-            .unwrap();
-            assert_eq!(
-                groups.values().map(|group| group.input_tokens).sum::<u64>(),
-                30
-            );
-            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
-            assert_eq!(
-                diagnostics.skipped(ccusage_core::SkipKind::ReadInterrupted),
-                2
-            );
-            assert!(
-                rows.diagnostics
-                    .warnings(&shared)
-                    .iter()
-                    .any(|line| line.contains("invalid data")),
-                "{:?}",
-                rows.diagnostics.warnings(&shared)
-            );
-            assert!(
-                rows.diagnostics
-                    .warnings(&shared)
-                    .iter()
-                    .any(|line| line.contains("read interrupted") || line.contains("unreadable"))
-            );
-            assert!(
-                !rows
-                    .diagnostics
-                    .warnings(&shared)
-                    .join("\n")
-                    .contains("SECRET_CANARY")
-            );
-        }
+                assert_eq!(
+                    groups.values().map(|group| group.input_tokens).sum::<u64>(),
+                    30
+                );
+                assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+                assert_eq!(
+                    diagnostics.skipped(ccusage_core::SkipKind::ReadInterrupted),
+                    2
+                );
+                assert!(
+                    rows.diagnostics
+                        .warnings(&shared)
+                        .iter()
+                        .any(|line| line.contains("invalid data")),
+                    "{:?}",
+                    rows.diagnostics.warnings(&shared)
+                );
+                assert!(
+                    rows.diagnostics.warnings(&shared).iter().any(|line| line
+                        .contains("read interrupted")
+                        || line.contains("unreadable"))
+                );
+                assert!(
+                    !rows
+                        .diagnostics
+                        .warnings(&shared)
+                        .join("\n")
+                        .contains("SECRET_CANARY")
+                );
+            }
+        })
     }
 
     #[test]
@@ -680,48 +697,51 @@ mod diagnostic_tests {
         ]
         .join("\n");
         fixture.write_file("sessions/headless.jsonl", &records);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("3".into())),
-        ]);
-        let pricing = PricingMap::load_embedded();
-        let shared = SharedArgs {
-            offline: true,
-            debug: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
+        ])
+        .run(|| {
+            let pricing = PricingMap::load_embedded();
+            let shared = SharedArgs {
+                offline: true,
+                debug: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
 
-        let rows = SOURCE
-            .load_rows(&LoadRequest {
-                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
-                shared: &shared,
-                options: SourceOptions::default(),
-                pricing: Some(&pricing),
-                progress: ProgressOwner::Caller,
-            })
-            .unwrap();
+            let rows = SOURCE
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: Some(&pricing),
+                    progress: ProgressOwner::Caller,
+                })
+                .unwrap();
 
-        assert_eq!(
-            rows.rows.len(),
-            1,
-            "{:?}",
-            rows.diagnostics.warnings(&shared)
-        );
-        assert_eq!(rows.rows[0].input_tokens, 40);
-        assert_eq!(rows.rows[0].output_tokens, 5);
-        assert_eq!(rows.rows[0].total_tokens, 45);
-        assert!(
-            rows.diagnostics
-                .warnings(&shared)
-                .iter()
-                .any(|line| { line == "WARN  codex: skipped 2 records in 1 input (invalid data)" }),
-            "{:?}",
-            rows.diagnostics.warnings(&shared)
-        );
-        let warnings = rows.diagnostics.warnings(&shared).join("\n");
-        assert!(warnings.contains("headless.jsonl:1:"), "{warnings}");
-        assert!(warnings.contains("headless.jsonl:2:"), "{warnings}");
-        assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
+            assert_eq!(
+                rows.rows.len(),
+                1,
+                "{:?}",
+                rows.diagnostics.warnings(&shared)
+            );
+            assert_eq!(rows.rows[0].input_tokens, 40);
+            assert_eq!(rows.rows[0].output_tokens, 5);
+            assert_eq!(rows.rows[0].total_tokens, 45);
+            assert!(
+                rows.diagnostics.warnings(&shared).iter().any(|line| {
+                    line == "WARN  codex: skipped 2 records in 1 input (invalid data)"
+                }),
+                "{:?}",
+                rows.diagnostics.warnings(&shared)
+            );
+            let warnings = rows.diagnostics.warnings(&shared).join("\n");
+            assert!(warnings.contains("headless.jsonl:1:"), "{warnings}");
+            assert!(warnings.contains("headless.jsonl:2:"), "{warnings}");
+            assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
+        })
     }
 }

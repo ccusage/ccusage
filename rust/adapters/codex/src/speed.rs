@@ -56,7 +56,7 @@ fn codex_config_service_tier(content: &str) -> Option<CodexServiceTier> {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use crate::CodexServiceTier;
 
@@ -97,16 +97,16 @@ mod tests {
     #[test]
     fn configured_ultrafast_leaves_unclassified_usage_at_standard() {
         let fixture = fs_fixture!({ "config.toml": r#"service_tier = "ultrafast""# });
-        let _codex_home = EnvGuard::set("CODEX_HOME", fixture.path(""));
-
-        assert_eq!(
-            codex_config_service_tier(r#"service_tier = "ultrafast""#),
-            Some(CodexServiceTier::Ultrafast)
-        );
-        assert_eq!(
-            super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
-            super::CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
-        );
+        Environment::with_var("CODEX_HOME", fixture.path("")).run(|| {
+            assert_eq!(
+                codex_config_service_tier(r#"service_tier = "ultrafast""#),
+                Some(CodexServiceTier::Ultrafast)
+            );
+            assert_eq!(
+                super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
+                super::CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            );
+        })
     }
 
     #[test]
@@ -207,46 +207,47 @@ mod tests {
                 service_tier = "flex"
             "#,
         });
-        let _codex_home = EnvGuard::set("CODEX_HOME", fixture.path(""));
-        let mut pricing = crate::PricingMap::default();
-        pricing.load_json(
-            r#"{
+        Environment::with_var("CODEX_HOME", fixture.path("")).run(|| {
+            let mut pricing = crate::PricingMap::default();
+            pricing.load_json(
+                r#"{
                 "gpt-test": {
                     "input_cost_per_token": 0.000001,
                     "output_cost_per_token": 0.000002,
                     "provider_specific_entry": { "fast": 2, "flex": 0.5 }
                 }
             }"#,
-        );
-        let usage = crate::CodexModelUsage {
-            total_tokens: 30,
-            ..crate::CodexModelUsage::from_buckets(
-                crate::CodexUsageBucket {
-                    input_tokens: 30,
-                    ..Default::default()
-                },
-                {
-                    let mut tiers = crate::TierBuckets::default();
-                    tiers[crate::CodexServiceTier::Flex] = crate::CodexUsageBucket {
-                        input_tokens: 10,
+            );
+            let usage = crate::CodexModelUsage {
+                total_tokens: 30,
+                ..crate::CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 30,
                         ..Default::default()
-                    };
-                    tiers[crate::CodexServiceTier::Fast] = crate::CodexUsageBucket {
-                        input_tokens: 10,
-                        ..Default::default()
-                    };
-                    tiers
-                },
-            )
-        };
+                    },
+                    {
+                        let mut tiers = crate::TierBuckets::default();
+                        tiers[crate::CodexServiceTier::Flex] = crate::CodexUsageBucket {
+                            input_tokens: 10,
+                            ..Default::default()
+                        };
+                        tiers[crate::CodexServiceTier::Fast] = crate::CodexUsageBucket {
+                            input_tokens: 10,
+                            ..Default::default()
+                        };
+                        tiers
+                    },
+                )
+            };
 
-        let cost = crate::report::calculate_codex_model_cost(
-            "gpt-test",
-            &usage,
-            Some(&pricing),
-            super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
-        );
+            let cost = crate::report::calculate_codex_model_cost(
+                "gpt-test",
+                &usage,
+                Some(&pricing),
+                super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
+            );
 
-        assert!((cost - 35e-6).abs() < 1e-12);
+            assert!((cost - 35e-6).abs() < 1e-12);
+        })
     }
 }

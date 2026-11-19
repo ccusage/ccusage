@@ -1,8 +1,9 @@
 use std::{
     collections::HashSet,
-    env,
     path::{Component, Path, PathBuf},
 };
+
+use ccusage_core::cli::environment::Environment;
 
 use ccusage_adapter_common::roots::{self, RootsEnv};
 
@@ -83,7 +84,8 @@ fn default_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(home) = crate::cli::home::home_dir() {
         roots.push(home.join(".cline"));
-        let config_home = env::var_os("XDG_CONFIG_HOME")
+        let config_home = Environment::current()
+            .var_os("XDG_CONFIG_HOME")
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".config"));
@@ -103,11 +105,13 @@ fn default_roots() -> Vec<PathBuf> {
         }
     }
 
-    let app_data = env::var_os("APPDATA")
+    let app_data = Environment::current()
+        .var_os("APPDATA")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
-            env::var_os("USERPROFILE")
+            Environment::current()
+                .var_os("USERPROFILE")
                 .filter(|value| !value.is_empty())
                 .or_else(|| crate::cli::home::home_dir().map(PathBuf::into_os_string))
                 .map(PathBuf::from)
@@ -168,7 +172,7 @@ impl AsRef<Path> for SourceFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[cfg(unix)]
     #[test]
@@ -179,21 +183,22 @@ mod tests {
             "tasks/blocked/ui_messages.json": "[]",
             "tasks/healthy/ui_messages.json": "[]",
         });
-        let _guard = EnvGuard::set(CLINE_DATA_DIR_ENV, fixture.root());
-        let blocked = fixture.path("tasks/blocked");
-        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let denied = fs::read_dir(&blocked).is_err();
-        let diagnostics = Diagnostics::new("cline");
-        let files = discover_files(&diagnostics);
-        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
-        let files = files.unwrap();
-        if !denied {
-            return;
-        }
+        Environment::with_var(CLINE_DATA_DIR_ENV, fixture.root()).run(|| {
+            let blocked = fixture.path("tasks/blocked");
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+            let denied = fs::read_dir(&blocked).is_err();
+            let diagnostics = Diagnostics::new("cline");
+            let files = discover_files(&diagnostics);
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+            let files = files.unwrap();
+            if !denied {
+                return;
+            }
 
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].session_id, "healthy");
-        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 1);
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].session_id, "healthy");
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 1);
+        })
     }
 
     #[test]
@@ -220,34 +225,34 @@ mod tests {
             cli_data.root().display(),
             legacy_cli_tasks.root().display()
         );
-        let _cleanup = EnvGuard::set(CLINE_DATA_DIR_ENV, configured);
+        Environment::with_var(CLINE_DATA_DIR_ENV, configured).run(|| {
+            let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
-        let files = discover_files(&Diagnostics::new("cline")).unwrap();
-
-        let mut expected = vec![
-            SourceFile {
-                path: cli_root.path("data/sessions/cli-a/cli-a.messages.json"),
-                kind: SourceKind::Cli,
-                session_id: "cli-a".to_string(),
-            },
-            SourceFile {
-                path: cli_data.path("sessions/cli-c/cli-c.messages.json"),
-                kind: SourceKind::Cli,
-                session_id: "cli-c".to_string(),
-            },
-            SourceFile {
-                path: legacy_cli_tasks.path("data/tasks/cli-task-a/ui_messages.json"),
-                kind: SourceKind::CliTask,
-                session_id: "cli-task-a".to_string(),
-            },
-            SourceFile {
-                path: extension.path("tasks/task-a/ui_messages.json"),
-                kind: SourceKind::Extension,
-                session_id: "task-a".to_string(),
-            },
-        ];
-        expected.sort_by(|left, right| left.path.cmp(&right.path));
-        assert_eq!(files, expected);
+            let mut expected = vec![
+                SourceFile {
+                    path: cli_root.path("data/sessions/cli-a/cli-a.messages.json"),
+                    kind: SourceKind::Cli,
+                    session_id: "cli-a".to_string(),
+                },
+                SourceFile {
+                    path: cli_data.path("sessions/cli-c/cli-c.messages.json"),
+                    kind: SourceKind::Cli,
+                    session_id: "cli-c".to_string(),
+                },
+                SourceFile {
+                    path: legacy_cli_tasks.path("data/tasks/cli-task-a/ui_messages.json"),
+                    kind: SourceKind::CliTask,
+                    session_id: "cli-task-a".to_string(),
+                },
+                SourceFile {
+                    path: extension.path("tasks/task-a/ui_messages.json"),
+                    kind: SourceKind::Extension,
+                    session_id: "task-a".to_string(),
+                },
+            ];
+            expected.sort_by(|left, right| left.path.cmp(&right.path));
+            assert_eq!(files, expected);
+        })
     }
 
     #[test]
@@ -256,12 +261,12 @@ mod tests {
             "tasks/task-a/ui_messages.json": "[]",
         });
         let configured = format!("{},{}", fixture.root().display(), fixture.root().display());
-        let _cleanup = EnvGuard::set(CLINE_DATA_DIR_ENV, configured);
+        Environment::with_var(CLINE_DATA_DIR_ENV, configured).run(|| {
+            let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
-        let files = discover_files(&Diagnostics::new("cline")).unwrap();
-
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].session_id, "task-a");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].session_id, "task-a");
+        })
     }
 
     #[test]
@@ -269,76 +274,79 @@ mod tests {
         let fixture = fs_fixture!({
             ".cline/tasks/task-a/ui_messages.json": "[]",
         });
-        let _guard = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             (CLINE_DATA_DIR_ENV, Some(" , ".into())),
             ("HOME", Some(fixture.root().into())),
             ("USERPROFILE", None),
             ("APPDATA", None),
             ("XDG_CONFIG_HOME", None),
-        ]);
+        ])
+        .run(|| {
+            let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
-        let files = discover_files(&Diagnostics::new("cline")).unwrap();
-
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].session_id, "task-a");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].session_id, "task-a");
+        })
     }
 
     #[test]
     fn default_roots_cover_supported_editors_and_cline_cli() {
-        let _env = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             ("HOME", Some("/tmp/cline-home".into())),
             ("APPDATA", Some("/tmp/cline-appdata".into())),
             ("XDG_CONFIG_HOME", Some("/tmp/cline-config".into())),
             ("USERPROFILE", None),
-        ]);
+        ])
+        .run(|| {
+            let roots = default_roots();
 
-        let roots = default_roots();
-
-        for editor in EDITORS {
-            assert!(
-                roots.contains(
-                    &PathBuf::from("/tmp/cline-home/Library/Application Support")
-                        .join(editor)
-                        .join("User/globalStorage")
-                        .join(CLINE_EXTENSION_ID)
-                )
-            );
-            assert!(
-                roots.contains(
-                    &PathBuf::from("/tmp/cline-config")
-                        .join(editor)
-                        .join("User/globalStorage")
-                        .join(CLINE_EXTENSION_ID)
-                )
-            );
-            assert!(
-                roots.contains(
-                    &PathBuf::from("/tmp/cline-appdata")
-                        .join(editor)
-                        .join("User/globalStorage")
-                        .join(CLINE_EXTENSION_ID)
-                )
-            );
-        }
-        assert!(roots.contains(&PathBuf::from("/tmp/cline-home/.cline")));
+            for editor in EDITORS {
+                assert!(
+                    roots.contains(
+                        &PathBuf::from("/tmp/cline-home/Library/Application Support")
+                            .join(editor)
+                            .join("User/globalStorage")
+                            .join(CLINE_EXTENSION_ID)
+                    )
+                );
+                assert!(
+                    roots.contains(
+                        &PathBuf::from("/tmp/cline-config")
+                            .join(editor)
+                            .join("User/globalStorage")
+                            .join(CLINE_EXTENSION_ID)
+                    )
+                );
+                assert!(
+                    roots.contains(
+                        &PathBuf::from("/tmp/cline-appdata")
+                            .join(editor)
+                            .join("User/globalStorage")
+                            .join(CLINE_EXTENSION_ID)
+                    )
+                );
+            }
+            assert!(roots.contains(&PathBuf::from("/tmp/cline-home/.cline")));
+        })
     }
 
     #[test]
     fn uses_windows_roaming_storage_when_appdata_is_unset() {
-        let _env = ccusage_test_support::EnvGuard::set_many([
+        ccusage_test_support::Environment::with_vars([
             ("HOME", Some("/tmp/cline-home".into())),
             ("USERPROFILE", Some("/tmp/cline-profile".into())),
             ("APPDATA", None),
             ("XDG_CONFIG_HOME", None),
-        ]);
+        ])
+        .run(|| {
+            let roots = default_roots();
 
-        let roots = default_roots();
-
-        assert!(
-            roots.contains(
-                &PathBuf::from("/tmp/cline-profile/AppData/Roaming/Code/User/globalStorage")
-                    .join(CLINE_EXTENSION_ID)
-            )
-        );
+            assert!(
+                roots.contains(
+                    &PathBuf::from("/tmp/cline-profile/AppData/Roaming/Code/User/globalStorage")
+                        .join(CLINE_EXTENSION_ID)
+                )
+            );
+        })
     }
 }

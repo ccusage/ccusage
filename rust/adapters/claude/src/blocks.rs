@@ -663,7 +663,7 @@ pub(crate) fn format_remaining_time(minutes: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn fractional_session_hours_keep_exact_millisecond_boundaries() {
@@ -673,27 +673,28 @@ mod tests {
                 r#"{"timestamp":"2026-01-02T15:00:00Z","message":{"usage":{"input_tokens":20,"output_tokens":1}}}"#,
             ].join("\n"),
         });
-        let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-        let entries = crate::load_entries(
-            &SharedArgs {
-                mode: ccusage_core::cli::CostMode::Display,
-                ..SharedArgs::default()
-            },
-            None,
-        )
-        .unwrap();
-        let now = crate::parse_ts_timestamp("2026-01-03T00:00:00Z").unwrap();
-        let blocks = identify_session_blocks(entries, "4.35".parse().unwrap(), now);
-        assert_eq!(blocks.len(), 3);
-        assert_eq!(
-            block_json(&blocks[0], None, now)["endTime"],
-            "2026-01-02T14:21:00.000Z"
-        );
-        assert!(blocks[1].is_gap);
-        assert_eq!(
-            block_json(&blocks[1], None, now)["startTime"],
-            "2026-01-02T14:21:00.000Z"
-        );
+        Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+            let entries = crate::load_entries(
+                &SharedArgs {
+                    mode: ccusage_core::cli::CostMode::Display,
+                    ..SharedArgs::default()
+                },
+                None,
+            )
+            .unwrap();
+            let now = crate::parse_ts_timestamp("2026-01-03T00:00:00Z").unwrap();
+            let blocks = identify_session_blocks(entries, "4.35".parse().unwrap(), now);
+            assert_eq!(blocks.len(), 3);
+            assert_eq!(
+                block_json(&blocks[0], None, now)["endTime"],
+                "2026-01-02T14:21:00.000Z"
+            );
+            assert!(blocks[1].is_gap);
+            assert_eq!(
+                block_json(&blocks[1], None, now)["startTime"],
+                "2026-01-02T14:21:00.000Z"
+            );
+        })
     }
 
     #[test]
@@ -747,32 +748,33 @@ mod tests {
                 "projects/p/s.jsonl": format!(r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}
             {{"timestamp":"{next}","message":{{"usage":{{"input_tokens":20,"output_tokens":1}}}}}}"#),
             });
-            let _env = EnvGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
-            let entries = crate::load_entries(
-                &SharedArgs {
-                    mode: ccusage_core::cli::CostMode::Display,
-                    ..SharedArgs::default()
-                },
-                None,
-            )
-            .unwrap();
-            let blocks = identify_session_blocks(
-                entries,
-                SessionLength::DEFAULT,
-                crate::parse_ts_timestamp("2026-01-02T16:00:00Z").unwrap(),
-            );
-            assert_eq!(blocks.len(), expected_blocks, "{next}");
-            assert_eq!(
-                blocks.iter().filter(|block| block.is_gap).count(),
-                expected_blocks / 3
-            );
-            assert_eq!(
-                blocks
-                    .iter()
-                    .map(|block| block.token_counts.input_tokens)
-                    .sum::<u64>(),
-                30
-            );
+            Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+                let entries = crate::load_entries(
+                    &SharedArgs {
+                        mode: ccusage_core::cli::CostMode::Display,
+                        ..SharedArgs::default()
+                    },
+                    None,
+                )
+                .unwrap();
+                let blocks = identify_session_blocks(
+                    entries,
+                    SessionLength::DEFAULT,
+                    crate::parse_ts_timestamp("2026-01-02T16:00:00Z").unwrap(),
+                );
+                assert_eq!(blocks.len(), expected_blocks, "{next}");
+                assert_eq!(
+                    blocks.iter().filter(|block| block.is_gap).count(),
+                    expected_blocks / 3
+                );
+                assert_eq!(
+                    blocks
+                        .iter()
+                        .map(|block| block.token_counts.input_tokens)
+                        .sum::<u64>(),
+                    30
+                );
+            })
         }
     }
 }

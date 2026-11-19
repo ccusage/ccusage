@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+test-environment = []
+
 [dependencies]
 jiff.workspace = true
 

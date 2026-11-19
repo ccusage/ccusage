@@ -25,7 +25,7 @@ mod tests {
     use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
-    use ccusage_test_support::{EnvGuard, Fixture};
+    use ccusage_test_support::{Environment, Fixture};
 
     #[test]
     fn diagnoses_untimed_extension_and_cli_usage() {
@@ -39,20 +39,21 @@ mod tests {
                 {"role":"assistant","metrics":{}}
             ]}"#
         });
-        let _guard = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
-        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&PricingMap::default()),
-        )
-        .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
-        assert_eq!(
-            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
-            2
-        );
+        Environment::with_var(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root()).run(|| {
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                ccusage_adapter_common::source::SourceOptions::default(),
+                Some(&PricingMap::default()),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+                2
+            );
+        })
     }
 
     #[test]
@@ -99,79 +100,81 @@ mod tests {
                 )
                 .is_file()
         );
-        let _env = EnvGuard::set(
+        Environment::with_var(
             super::super::paths::CLINE_DATA_DIR_ENV,
             format!(
                 "{},{}",
                 fixture.root().display(),
                 fixture.root().join("data").display()
             ),
-        );
-        let shared = SharedArgs {
-            json: true,
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            mode: CostMode::Auto,
-            ..SharedArgs::default()
-        };
-
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
         )
-        .unwrap();
+        .run(|| {
+            let shared = SharedArgs {
+                json: true,
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                mode: CostMode::Auto,
+                ..SharedArgs::default()
+            };
 
-        assert_eq!(
-            entries.len(),
-            4,
-            "only fully attributable requests with complete usage are records"
-        );
-        assert_eq!(
-            entries
-                .iter()
-                .map(|entry| entry.date.as_str())
-                .collect::<Vec<_>>(),
-            ["2026-10-01", "2026-11-01", "2026-11-01", "2026-11-01"]
-        );
-        assert_eq!(
-            entries
-                .iter()
-                .map(|entry| entry.session_id.as_ref())
-                .collect::<Vec<_>>(),
-            [
-                "task:session-a",
-                "cli:session-a",
-                "cli:session-a",
-                "task:session-a"
-            ]
-        );
-        assert_eq!(
-            entries[0].model.as_deref(),
-            Some("claude-sonnet-4-20250514")
-        );
-        assert_eq!(
-            entries[1].model.as_deref(),
-            Some("claude-sonnet-4-20250514")
-        );
-        assert_eq!(entries[1].usage.cache_read_input_tokens, 25);
-        assert_eq!(entries[1].usage.cache_creation_input_tokens, 10);
-        assert_eq!(entries[1].message_id.as_deref(), Some("assistant-1"));
-        assert_eq!(entries[1].usage.input_tokens, 65);
-        assert_eq!(entries[1].recorded_cost, Some(0.0));
-        assert_eq!(entries[1].stored_cost, Some(0.0));
-        assert_eq!(entries[2].message_id.as_deref(), Some("assistant-2"));
-        assert_eq!(entries[2].usage.input_tokens, 90);
-        assert_eq!(entries[2].usage.output_tokens, 16);
-        assert_eq!(entries[2].recorded_cost, Some(0.0002));
-        assert_eq!(entries[3].usage.input_tokens, 8);
-        assert_eq!(entries[3].usage.output_tokens, 4);
-        assert_eq!(entries[3].model.as_deref(), Some("vendor/legacy-model"));
-        assert_eq!(
-            entries[3].missing_pricing_model.as_deref(),
-            Some("vendor/legacy-model")
-        );
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
+
+            assert_eq!(
+                entries.len(),
+                4,
+                "only fully attributable requests with complete usage are records"
+            );
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| entry.date.as_str())
+                    .collect::<Vec<_>>(),
+                ["2026-10-01", "2026-11-01", "2026-11-01", "2026-11-01"]
+            );
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| entry.session_id.as_ref())
+                    .collect::<Vec<_>>(),
+                [
+                    "task:session-a",
+                    "cli:session-a",
+                    "cli:session-a",
+                    "task:session-a"
+                ]
+            );
+            assert_eq!(
+                entries[0].model.as_deref(),
+                Some("claude-sonnet-4-20250514")
+            );
+            assert_eq!(
+                entries[1].model.as_deref(),
+                Some("claude-sonnet-4-20250514")
+            );
+            assert_eq!(entries[1].usage.cache_read_input_tokens, 25);
+            assert_eq!(entries[1].usage.cache_creation_input_tokens, 10);
+            assert_eq!(entries[1].message_id.as_deref(), Some("assistant-1"));
+            assert_eq!(entries[1].usage.input_tokens, 65);
+            assert_eq!(entries[1].recorded_cost, Some(0.0));
+            assert_eq!(entries[1].stored_cost, Some(0.0));
+            assert_eq!(entries[2].message_id.as_deref(), Some("assistant-2"));
+            assert_eq!(entries[2].usage.input_tokens, 90);
+            assert_eq!(entries[2].usage.output_tokens, 16);
+            assert_eq!(entries[2].recorded_cost, Some(0.0002));
+            assert_eq!(entries[3].usage.input_tokens, 8);
+            assert_eq!(entries[3].usage.output_tokens, 4);
+            assert_eq!(entries[3].model.as_deref(), Some("vendor/legacy-model"));
+            assert_eq!(
+                entries[3].missing_pricing_model.as_deref(),
+                Some("vendor/legacy-model")
+            );
+        })
     }
 
     #[test]
@@ -184,31 +187,32 @@ mod tests {
         );
         fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":}");
         fixture.write_file("tasks/unwritten/ui_messages.json", "");
-        let _env = EnvGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
+        Environment::with_var(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
 
-        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &shared,
-            ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &shared,
+                ccusage_adapter_common::source::SourceOptions::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert!(!entries.is_empty());
-        assert!(
-            entries
-                .iter()
-                .all(|entry| entry.session_id.as_ref() == "task:healthy")
-        );
-        assert_eq!(
-            diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
-            1,
-            "the damaged task is reported, the unwritten one is not"
-        );
+            assert!(!entries.is_empty());
+            assert!(
+                entries
+                    .iter()
+                    .all(|entry| entry.session_id.as_ref() == "task:healthy")
+            );
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
+                1,
+                "the damaged task is reported, the unwritten one is not"
+            );
+        })
     }
 }

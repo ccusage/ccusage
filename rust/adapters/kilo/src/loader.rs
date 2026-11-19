@@ -96,7 +96,7 @@ mod tests {
     use std::path::Path;
 
     use crate::cli::{CostMode, SharedArgs};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
@@ -121,33 +121,34 @@ mod tests {
             "session-a",
             r#"{"id":"msg-1","role":"assistant","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"reasoning":5,"cache":{"read":10,"write":20}},"cost":0.02,"agent":"build"}"#,
         );
-        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
-        )
-        .unwrap();
+        Environment::with_var(super::super::paths::KILO_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-02");
-        assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(
-            entries[0].model.as_deref(),
-            Some("claude-sonnet-4-20250514")
-        );
-        assert_eq!(entries[0].usage.input_tokens, 100);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
-        assert_eq!(entries[0].extra_total_tokens, 5);
-        assert_eq!(entries[0].cost, 0.02);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].session_id.as_ref(), "session-a");
+            assert_eq!(
+                entries[0].model.as_deref(),
+                Some("claude-sonnet-4-20250514")
+            );
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+            assert_eq!(entries[0].extra_total_tokens, 5);
+            assert_eq!(entries[0].cost, 0.02);
+        })
     }
 
     #[test]
@@ -160,21 +161,22 @@ mod tests {
             "session-a",
             r#"{"role":"assistant","providerID":"openai","modelID":"gpt-5","tokens":{"input":1,"output":1,"cache":{"read":0,"write":0}}}"#,
         );
-        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
-        let shared = SharedArgs::default();
-        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &shared,
-            ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
-        )
-        .unwrap();
+        Environment::with_var(super::super::paths::KILO_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs::default();
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &shared,
+                ccusage_adapter_common::source::SourceOptions::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert!(entries.is_empty());
-        assert_eq!(
-            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
-            1
-        );
+            assert!(entries.is_empty());
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+                1
+            );
+        })
     }
 
     #[test]
@@ -192,21 +194,23 @@ mod tests {
                 ),
             );
         }
-        let _cleanup = EnvGuard::set(
+        Environment::with_var(
             super::super::paths::KILO_DATA_DIR_ENV,
             format!("{},{}", first.root().display(), second.root().display()),
-        );
-        let shared = SharedArgs::default();
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
         )
-        .unwrap();
+        .run(|| {
+            let shared = SharedArgs::default();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.input_tokens, 10);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].usage.input_tokens, 10);
+        })
     }
 
     #[test]
@@ -224,26 +228,27 @@ mod tests {
             "session-a",
             r#"{"id":"msg-1","role":"assistant","providerID":"openai","modelID":"gpt-5","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"cache":{"read":0,"write":0}}}"#,
         );
-        let _cleanup = EnvGuard::set(
+        Environment::with_var(
             super::super::paths::KILO_DATA_DIR_ENV,
             format!("{},{}", broken.root().display(), healthy.root().display()),
-        );
-
-        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
-            &crate::SOURCE,
-            &SharedArgs::default(),
-            ccusage_adapter_common::source::SourceOptions::default(),
-            Some(&ccusage_core::PricingMap::load_embedded()),
         )
-        .unwrap();
+        .run(|| {
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                ccusage_adapter_common::source::SourceOptions::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(
-            diagnostics.skipped(ccusage_core::SkipKind::Invariant),
-            1,
-            "the database without a message table is reported"
-        );
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].session_id.as_ref(), "session-a");
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::Invariant),
+                1,
+                "the database without a message table is reported"
+            );
+        })
     }
 
     #[test]
@@ -305,29 +310,30 @@ mod tests {
             "session-a",
             r#"{"role":,"id":"SECRET_CANARY"}"#,
         );
-        let _cleanup = EnvGuard::set(super::super::paths::KILO_DATA_DIR_ENV, fixture.root());
-        let pricing = ccusage_core::PricingMap::load_embedded();
-        let shared = SharedArgs {
-            debug: true,
-            ..SharedArgs::default()
-        };
-        let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::new("kilo");
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: SourceOptions::default(),
-            diagnostics: &diagnostics,
-        };
+        Environment::with_var(super::super::paths::KILO_DATA_DIR_ENV, fixture.root()).run(|| {
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let shared = SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            };
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("kilo");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
 
-        let entries = crate::SOURCE.load_entries(&cx).unwrap();
-        let warnings = diagnostics.warnings(&shared).join("\n");
+            let entries = crate::SOURCE.load_entries(&cx).unwrap();
+            let warnings = diagnostics.warnings(&shared).join("\n");
 
-        assert!(entries.is_empty());
-        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
-        assert!(warnings.contains("invalid data"));
-        assert!(!warnings.contains("SECRET_CANARY"));
+            assert!(entries.is_empty());
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            assert!(warnings.contains("invalid data"));
+            assert!(!warnings.contains("SECRET_CANARY"));
+        })
     }
 }

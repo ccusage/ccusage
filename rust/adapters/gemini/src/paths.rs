@@ -36,7 +36,7 @@ mod tests {
     use std::ffi::OsString;
 
     use super::*;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn discovers_json_and_jsonl_logs() {
@@ -45,14 +45,18 @@ mod tests {
             "chats/b.jsonl": "{}\n",
             "chats/ignore.txt": "no",
         });
-        let _env_guard =
-            ccusage_test_support::EnvGuard::set(crate::paths::GEMINI_DATA_DIR_ENV, fixture.root());
-        let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
+        ccusage_test_support::Environment::with_var(
+            crate::paths::GEMINI_DATA_DIR_ENV,
+            fixture.root(),
+        )
+        .run(|| {
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
-        assert_eq!(
-            files,
-            vec![fixture.path("chats/a.json"), fixture.path("chats/b.jsonl")]
-        );
+            assert_eq!(
+                files,
+                vec![fixture.path("chats/a.json"), fixture.path("chats/b.jsonl")]
+            );
+        })
     }
 
     #[test]
@@ -61,7 +65,7 @@ mod tests {
             "gemini/chats/a.json": "{}",
             "antigravity/conversations/a.db": "not a Gemini log",
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (
                 GEMINI_DATA_DIR_ENV,
                 Some(OsString::from(fixture.path("gemini"))),
@@ -70,10 +74,11 @@ mod tests {
                 "ANTIGRAVITY_DATA_DIR",
                 Some(OsString::from(fixture.path("antigravity"))),
             ),
-        ]);
+        ])
+        .run(|| {
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
-        let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
-
-        assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
+            assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
+        })
     }
 }

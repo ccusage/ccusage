@@ -44,7 +44,7 @@ pub(super) fn has_data() -> bool {
 mod tests {
     use super::*;
     use crate::{PricingMap, cli::SharedArgs};
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
     use std::ffi::OsString;
 
     fn turn(
@@ -79,8 +79,8 @@ mod tests {
         .to_string()
     }
 
-    fn with_grok_home(fixture_root: &std::path::Path) -> EnvGuard {
-        EnvGuard::set_many([(
+    fn with_grok_home(fixture_root: &std::path::Path) -> Environment {
+        Environment::with_vars([(
             super::super::paths::GROK_HOME_ENV,
             Some(OsString::from(fixture_root.as_os_str())),
         )])
@@ -98,22 +98,23 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = with_grok_home(fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2025-06-15");
-        assert_eq!(entries[0].usage.input_tokens, 60);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 40);
-        assert_eq!(entries[0].usage.output_tokens, 20);
-        assert_eq!(entries[0].extra_total_tokens, 0);
-        assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
-        assert_eq!(entries[0].project_path.as_ref(), "/tmp/proj");
+        with_grok_home(fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].date, "2025-06-15");
+            assert_eq!(entries[0].usage.input_tokens, 60);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 40);
+            assert_eq!(entries[0].usage.output_tokens, 20);
+            assert_eq!(entries[0].extra_total_tokens, 0);
+            assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
+            assert_eq!(entries[0].project_path.as_ref(), "/tmp/proj");
+        })
     }
 
     #[test]
@@ -129,18 +130,19 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = with_grok_home(fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        with_grok_home(fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 2);
-        let input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
-        assert_eq!(input, 150);
+            assert_eq!(entries.len(), 2);
+            let input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
+            assert_eq!(input, 150);
+        })
     }
 
     #[test]
@@ -155,17 +157,18 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = with_grok_home(fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        with_grok_home(fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.input_tokens, 80);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].usage.input_tokens, 80);
+        })
     }
 
     #[test]
@@ -183,18 +186,19 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = with_grok_home(fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        with_grok_home(fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 2);
-        let input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
-        assert_eq!(input, 120);
+            assert_eq!(entries.len(), 2);
+            let input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
+            assert_eq!(input, 120);
+        })
     }
 
     #[test]
@@ -210,18 +214,19 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let _guard = with_grok_home(fixture.root());
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&PricingMap::load_embedded()),
-        )
-        .unwrap();
+        with_grok_home(fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].message_id.as_deref(), Some("evt-early"));
-        assert_eq!(entries[1].message_id.as_deref(), Some("evt-late"));
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].message_id.as_deref(), Some("evt-early"));
+            assert_eq!(entries[1].message_id.as_deref(), Some("evt-late"));
+        })
     }
 
     #[test]
@@ -229,8 +234,9 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/proj/sess/updates.jsonl": "{}\n",
         });
-        let _guard = with_grok_home(fixture.root());
-        assert!(has_data());
+        with_grok_home(fixture.root()).run(|| {
+            assert!(has_data());
+        })
     }
 
     #[test]
@@ -238,7 +244,8 @@ mod tests {
         let fixture = fs_fixture!({
             "logs/unified.jsonl": "{}\n",
         });
-        let _guard = with_grok_home(fixture.root());
-        assert!(!has_data());
+        with_grok_home(fixture.root()).run(|| {
+            assert!(!has_data());
+        })
     }
 }

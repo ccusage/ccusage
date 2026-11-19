@@ -158,28 +158,30 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::ReportWindow;
     use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
-    use ccusage_test_support::{EnvGuard, Fixture};
+    use ccusage_test_support::{Environment, Fixture};
     use std::sync::Arc;
 
     #[test]
     fn claims_accept_the_last_supported_report_day() {
         let fixture = Fixture::new();
         fixture.create_dir_all("projects");
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_owned()),
-        )]);
-        let shared = SharedArgs {
-            since: Some("99991231".parse().unwrap()),
-            until: Some("99991231".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        assert!(
-            SOURCE
-                .counted(&shared, None, &Diagnostics::new("claude"))
-                .is_ok()
-        );
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                since: Some("99991231".parse().unwrap()),
+                until: Some("99991231".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            assert!(
+                SOURCE
+                    .counted(&shared, None, &Diagnostics::new("claude"))
+                    .is_ok()
+            );
+        })
     }
 
     #[test]
@@ -206,44 +208,46 @@ mod diagnostic_tests {
             &stale,
             ccusage_test_support::instant("2025-06-01T00:00:00Z"),
         );
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_owned()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Calculate,
-            since: Some("20260101".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..Default::default()
-        };
-        let diagnostics = Diagnostics::new("claude");
-        let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
-        let probe = crate::read_usage_file_with_diagnostics(
-            &main,
-            ReportWindow::from_shared(&shared).timezone(),
-            ccusage_core::cost::PriceTable::Display,
-            &diagnostics,
-        )
-        .remove(0);
-        let at = |timestamp: &str| {
-            let mut entry = probe.clone();
-            entry.entry.timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
-            entry
-        };
-        let probes = [
-            ("session-main", "2026-01-02T12:00:00Z", true),
-            ("session-resumed", "2026-01-02T12:00:00Z", true),
-            ("session-side", "2026-01-02T12:00:00Z", false),
-            ("session-main", "2026-01-03T12:00:00Z", true),
-            ("session-main", "2025-12-01T12:00:00Z", false),
-            ("session-stale", "2026-01-03T12:00:00Z", false),
-        ];
-        for (session, timestamp, is_counted) in probes {
-            let kept =
-                counted.retain_uncounted(vec![(at(timestamp).entry, Some(Arc::from(session)))]);
-            assert_eq!(kept.is_empty(), is_counted, "{session} {timestamp}");
-        }
-        assert!(diagnostics.warnings(&shared).is_empty());
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Calculate,
+                since: Some("20260101".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let diagnostics = Diagnostics::new("claude");
+            let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
+            let probe = crate::read_usage_file_with_diagnostics(
+                &main,
+                ReportWindow::from_shared(&shared).timezone(),
+                ccusage_core::cost::PriceTable::Display,
+                &diagnostics,
+            )
+            .remove(0);
+            let at = |timestamp: &str| {
+                let mut entry = probe.clone();
+                entry.entry.timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
+                entry
+            };
+            let probes = [
+                ("session-main", "2026-01-02T12:00:00Z", true),
+                ("session-resumed", "2026-01-02T12:00:00Z", true),
+                ("session-side", "2026-01-02T12:00:00Z", false),
+                ("session-main", "2026-01-03T12:00:00Z", true),
+                ("session-main", "2025-12-01T12:00:00Z", false),
+                ("session-stale", "2026-01-03T12:00:00Z", false),
+            ];
+            for (session, timestamp, is_counted) in probes {
+                let kept =
+                    counted.retain_uncounted(vec![(at(timestamp).entry, Some(Arc::from(session)))]);
+                assert_eq!(kept.is_empty(), is_counted, "{session} {timestamp}");
+            }
+            assert!(diagnostics.warnings(&shared).is_empty());
+        })
     }
 
     #[test]
@@ -251,51 +255,53 @@ mod diagnostic_tests {
         let fixture = Fixture::new();
         fixture.write_file("projects/p/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
         fixture.write_file("projects/p/bad.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"SECRET_CANARY"}}}"#);
-        let _env = EnvGuard::set_many([
+        Environment::with_vars([
             (
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_owned()),
             ),
             ("LOG_LEVEL", Some("3".into())),
-        ]);
-        let shared = SharedArgs {
-            offline: true,
-            mode: CostMode::Display,
-            debug: true,
-            ..Default::default()
-        };
-        let diagnostics = Diagnostics::new("claude");
-        let focused = crate::load_deduped_entries_with_progress(
-            &shared,
-            None,
-            ProgressOwner::Caller,
-            &diagnostics,
-        )
-        .unwrap();
-        assert_eq!(focused.entries.len(), 1);
-        assert!(
-            diagnostics
-                .warnings(&shared)
-                .iter()
-                .any(|line| line.contains("invalid data"))
-        );
-        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
-            let rows = SOURCE
-                .load_rows(&LoadRequest {
-                    kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
-                    shared: &shared,
-                    options: SourceOptions::default(),
-                    pricing: None,
-                    progress: ProgressOwner::Caller,
-                })
-                .unwrap();
-            assert_eq!(rows.rows.len(), 1);
-            let warnings = rows.diagnostics.warnings(&shared);
+        ])
+        .run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                mode: CostMode::Display,
+                debug: true,
+                ..Default::default()
+            };
+            let diagnostics = Diagnostics::new("claude");
+            let focused = crate::load_deduped_entries_with_progress(
+                &shared,
+                None,
+                ProgressOwner::Caller,
+                &diagnostics,
+            )
+            .unwrap();
+            assert_eq!(focused.entries.len(), 1);
             assert!(
-                warnings.iter().any(|line| line.contains("invalid data")),
-                "{warnings:?}"
+                diagnostics
+                    .warnings(&shared)
+                    .iter()
+                    .any(|line| line.contains("invalid data"))
             );
-            assert!(!warnings.join("\n").contains("SECRET_CANARY"));
-        }
+            for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+                let rows = SOURCE
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: None,
+                        progress: ProgressOwner::Caller,
+                    })
+                    .unwrap();
+                assert_eq!(rows.rows.len(), 1);
+                let warnings = rows.diagnostics.warnings(&shared);
+                assert!(
+                    warnings.iter().any(|line| line.contains("invalid data")),
+                    "{warnings:?}"
+                );
+                assert!(!warnings.join("\n").contains("SECRET_CANARY"));
+            }
+        })
     }
 }

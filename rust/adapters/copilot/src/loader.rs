@@ -541,7 +541,7 @@ mod tests {
     use std::ffi::OsString;
 
     use ccusage_core::SkipKind;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
     use serde_json::json;
 
     use super::super::parser::parse_otel_file;
@@ -709,7 +709,7 @@ mod tests {
             })
             .to_string(),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -719,27 +719,29 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::default()),
-        )
-        .unwrap();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::default()),
+            )
+            .unwrap();
 
-        let mut inputs = entries
-            .iter()
-            .map(|entry| entry.usage.input_tokens)
-            .collect::<Vec<_>>();
-        inputs.sort_unstable();
-        assert_eq!(inputs, [11, 21]);
+            let mut inputs = entries
+                .iter()
+                .map(|entry| entry.usage.input_tokens)
+                .collect::<Vec<_>>();
+            inputs.sort_unstable();
+            assert_eq!(inputs, [11, 21]);
+        })
     }
 
     #[test]
@@ -1142,7 +1144,7 @@ mod tests {
                 })
             ),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1152,7 +1154,7 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
+        ]).run(|| {
         let mut pricing = crate::PricingMap::default();
         pricing.load_json(
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
@@ -1179,6 +1181,7 @@ mod tests {
         assert_eq!(entries[0].extra_total_tokens, 0);
         assert_eq!(entries[0].message_count, Some(3));
         assert_eq!(entries[0].cost, 270.0);
+        })
     }
 
     #[test]
@@ -1227,7 +1230,7 @@ mod tests {
             })
             .to_string(),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1237,29 +1240,31 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            until: Some("20260102".parse().unwrap()),
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                until: Some("20260102".parse().unwrap()),
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::default()),
-        )
-        .unwrap();
-        let mut entries = entries;
-        ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::default()),
+            )
+            .unwrap();
+            let mut entries = entries;
+            ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
 
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].usage.input_tokens, 70);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[1].usage.input_tokens, 11);
-        assert_eq!(entries[1].usage.output_tokens, 12);
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].usage.input_tokens, 70);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[1].usage.input_tokens, 11);
+            assert_eq!(entries[1].usage.output_tokens, 12);
+        })
     }
 
     #[test]
@@ -1314,7 +1319,7 @@ mod tests {
             })
             .to_string(),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1324,33 +1329,35 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            single_thread: true,
-            since: Some("20260103".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                single_thread: true,
+                since: Some("20260103".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::default()),
-        )
-        .unwrap();
-        let mut entries = entries;
-        ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::default()),
+            )
+            .unwrap();
+            let mut entries = entries;
+            ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
 
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].usage.input_tokens, 80);
-        assert_eq!(entries[0].usage.output_tokens, 30);
-        assert_eq!(entries[0].usage.cache_creation_input_tokens, 10);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
-        assert_eq!(entries[0].message_count, Some(2));
-        assert_eq!(entries[1].usage.input_tokens, 13);
-        assert_eq!(entries[1].usage.output_tokens, 14);
-        assert_eq!(entries[1].message_count, Some(1));
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].usage.input_tokens, 80);
+            assert_eq!(entries[0].usage.output_tokens, 30);
+            assert_eq!(entries[0].usage.cache_creation_input_tokens, 10);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+            assert_eq!(entries[0].message_count, Some(2));
+            assert_eq!(entries[1].usage.input_tokens, 13);
+            assert_eq!(entries[1].usage.output_tokens, 14);
+            assert_eq!(entries[1].message_count, Some(1));
+        })
     }
 
     #[test]
@@ -1396,7 +1403,7 @@ mod tests {
                 })
             )
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1406,29 +1413,31 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            mode: CostMode::Auto,
-            single_thread: true,
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                mode: CostMode::Auto,
+                single_thread: true,
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::load_embedded()),
-        )
-        .unwrap();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::load_embedded()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.6"));
-        assert_eq!(entries[0].usage.input_tokens, 70);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
-        assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
-        assert_eq!(entries[0].extra_total_tokens, 0);
-        assert!((entries[0].cost - 0.00173).abs() < 1e-12);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.6"));
+            assert_eq!(entries[0].usage.input_tokens, 70);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].usage.cache_creation_input_tokens, 20);
+            assert_eq!(entries[0].usage.cache_read_input_tokens, 10);
+            assert_eq!(entries[0].extra_total_tokens, 0);
+            assert!((entries[0].cost - 0.00173).abs() < 1e-12);
+        })
     }
 
     #[test]
@@ -1531,7 +1540,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1541,40 +1550,42 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            single_thread: true,
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                single_thread: true,
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::default()),
-        )
-        .unwrap();
-        let rows = entries
-            .iter()
-            .map(|entry| {
-                (
-                    entry.session_id.to_string(),
-                    entry.model.clone().unwrap_or_default(),
-                    entry.usage.input_tokens,
-                )
-            })
-            .collect::<Vec<_>>();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::default()),
+            )
+            .unwrap();
+            let rows = entries
+                .iter()
+                .map(|entry| {
+                    (
+                        entry.session_id.to_string(),
+                        entry.model.clone().unwrap_or_default(),
+                        entry.usage.input_tokens,
+                    )
+                })
+                .collect::<Vec<_>>();
 
-        assert_eq!(
-            rows,
-            vec![
-                ("session-1".to_string(), "other-model".to_string(), 3),
-                ("session-2".to_string(), "test-model".to_string(), 5),
-                ("session-1".to_string(), "test-model".to_string(), 10),
-                ("session-1".to_string(), "test-model".to_string(), 20),
-                ("session-1".to_string(), "test-model".to_string(), 7),
-            ]
-        );
+            assert_eq!(
+                rows,
+                vec![
+                    ("session-1".to_string(), "other-model".to_string(), 3),
+                    ("session-2".to_string(), "test-model".to_string(), 5),
+                    ("session-1".to_string(), "test-model".to_string(), 10),
+                    ("session-1".to_string(), "test-model".to_string(), 20),
+                    ("session-1".to_string(), "test-model".to_string(), 7),
+                ]
+            );
+        })
     }
 
     #[test]
@@ -1610,7 +1621,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1620,32 +1631,34 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::default()),
-        )
-        .unwrap();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::default()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].date, "2026-01-02");
-        assert_eq!(entries[0].usage.input_tokens, 70);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].message_count, Some(1));
-        assert_eq!(entries[1].date, "2026-01-03");
-        assert_eq!(entries[1].usage.input_tokens, 80);
-        assert_eq!(entries[1].usage.output_tokens, 30);
-        assert_eq!(entries[1].message_count, Some(2));
-        let total_input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
-        assert_eq!(total_input, 150);
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].usage.input_tokens, 70);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].message_count, Some(1));
+            assert_eq!(entries[1].date, "2026-01-03");
+            assert_eq!(entries[1].usage.input_tokens, 80);
+            assert_eq!(entries[1].usage.output_tokens, 30);
+            assert_eq!(entries[1].message_count, Some(2));
+            let total_input: u64 = entries.iter().map(|entry| entry.usage.input_tokens).sum();
+            assert_eq!(total_input, 150);
+        })
     }
 
     #[test]
@@ -1665,7 +1678,7 @@ mod tests {
                 })
             ),
         });
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1675,26 +1688,28 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            single_thread: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..crate::cli::SharedArgs::default()
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..crate::cli::SharedArgs::default()
+            };
 
-        let entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            &shared,
-            Default::default(),
-            Some(&crate::PricingMap::default()),
-        )
-        .unwrap();
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&crate::PricingMap::default()),
+            )
+            .unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-02");
-        assert_eq!(entries[0].usage.input_tokens, 100);
-        assert_eq!(entries[0].usage.output_tokens, 50);
-        assert_eq!(entries[0].message_count, Some(1));
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].message_count, Some(1));
+        })
     }
 
     const NANO_AIU_PER_CREDIT: u64 = 1_000_000_000;
@@ -1738,7 +1753,7 @@ mod tests {
         shared: &crate::cli::SharedArgs,
         pricing: &crate::PricingMap,
     ) -> Vec<LoadedEntry> {
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
             ("HOMEDRIVE", None),
@@ -1748,16 +1763,18 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let mut entries = ccusage_adapter_common::testing::entries(
-            &crate::SOURCE,
-            shared,
-            Default::default(),
-            Some(pricing),
-        )
-        .unwrap();
-        ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, shared);
-        entries
+        ])
+        .run(|| {
+            let mut entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                shared,
+                Default::default(),
+                Some(pricing),
+            )
+            .unwrap();
+            ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, shared);
+            entries
+        })
     }
 
     fn utc_args() -> crate::cli::SharedArgs {
@@ -2956,7 +2973,7 @@ mod tests {
         if fs::read(&locked).is_ok() {
             return;
         }
-        let _guard = EnvGuard::set_many([
+        Environment::with_vars([
             (
                 super::super::paths::COPILOT_HOME_ENV,
                 Some(OsString::from(fixture.root())),
@@ -2965,36 +2982,38 @@ mod tests {
                 super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
                 None,
             ),
-        ]);
-        let shared = crate::cli::SharedArgs {
-            debug: true,
-            single_thread: true,
-            ..crate::cli::SharedArgs::default()
-        };
-        let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::new("copilot");
-        let pricing = crate::PricingMap::default();
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: Default::default(),
-            diagnostics: &diagnostics,
-        };
+        ])
+        .run(|| {
+            let shared = crate::cli::SharedArgs {
+                debug: true,
+                single_thread: true,
+                ..crate::cli::SharedArgs::default()
+            };
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("copilot");
+            let pricing = crate::PricingMap::default();
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: Default::default(),
+                diagnostics: &diagnostics,
+            };
 
-        let entries = load_entries_for_context(&cx).unwrap();
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0o600)).unwrap();
+            let entries = load_entries_for_context(&cx).unwrap();
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o600)).unwrap();
 
-        assert!(entries.is_empty());
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
-        assert!(
-            diagnostics
-                .warnings(&shared)
-                .iter()
-                .any(|line| line.contains("I/O error (PermissionDenied)")),
-            "{:?}",
-            diagnostics.warnings(&shared)
-        );
+            assert!(entries.is_empty());
+            assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+            assert!(
+                diagnostics
+                    .warnings(&shared)
+                    .iter()
+                    .any(|line| line.contains("I/O error (PermissionDenied)")),
+                "{:?}",
+                diagnostics.warnings(&shared)
+            );
+        })
     }
 }

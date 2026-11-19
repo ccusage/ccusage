@@ -989,7 +989,7 @@ mod tests {
         cli::{CostMode, SharedArgs},
     };
     use ccusage_core::cost::PriceTable;
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
     fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
@@ -1135,23 +1135,25 @@ mod tests {
             ]
             .join("\n"),
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread: true,
-            debug: true,
-            ..SharedArgs::default()
-        };
-        let diagnostics = ccusage_core::Diagnostics::new("claude");
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread: true,
+                debug: true,
+                ..SharedArgs::default()
+            };
+            let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily = load_daily(&shared, &diagnostics);
+            let daily = load_daily(&shared, &diagnostics);
 
-        assert_eq!(daily.summaries[0].input_tokens, 10);
-        assert!(diagnostics.warnings(&shared).is_empty());
+            assert_eq!(daily.summaries[0].input_tokens, 10);
+            assert!(diagnostics.warnings(&shared).is_empty());
+        })
     }
 
     #[test]
@@ -1161,24 +1163,26 @@ mod tests {
             "projects/project-a/session-empty.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-empty","type":"user","message":{"role":"user","content":"hi"}}"#,
             "projects/project-a/session-sub/subagents/agent-1.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-sub","isSidechain":true,"requestId":"req-sub","message":{"id":"msg-sub","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":1}}}"#,
         });
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread: true,
-            ..SharedArgs::default()
-        };
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread: true,
+                ..SharedArgs::default()
+            };
 
-        let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
+            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
-        assert_eq!(
-            daily.sessions.into_iter().collect::<Vec<_>>(),
-            [Arc::from("session-a")]
-        );
-        assert_eq!(daily.summaries[0].input_tokens, 130);
+            assert_eq!(
+                daily.sessions.into_iter().collect::<Vec<_>>(),
+                [Arc::from("session-a")]
+            );
+            assert_eq!(daily.summaries[0].input_tokens, 130);
+        })
     }
 
     #[test]
@@ -1196,24 +1200,26 @@ mod tests {
             .unwrap()
             .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(978_307_200))
             .unwrap();
-        let _env = EnvGuard::set_many([(
+        Environment::with_vars([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_os_string()),
-        )]);
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            since: Some("20260101".parse().unwrap()),
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            single_thread: true,
-            ..SharedArgs::default()
-        };
-        let diagnostics = ccusage_core::Diagnostics::new("claude");
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                since: Some("20260101".parse().unwrap()),
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                single_thread: true,
+                ..SharedArgs::default()
+            };
+            let diagnostics = ccusage_core::Diagnostics::new("claude");
 
-        let daily = load_daily(&shared, &diagnostics);
+            let daily = load_daily(&shared, &diagnostics);
 
-        assert!(daily.summaries.is_empty());
-        assert!(daily.detected);
-        assert!(diagnostics.warnings(&shared).is_empty());
+            assert!(daily.summaries.is_empty());
+            assert!(daily.detected);
+            assert!(diagnostics.warnings(&shared).is_empty());
+        })
     }
 
     #[test]
@@ -1465,22 +1471,24 @@ mod tests {
             let fixture = fs_fixture!({
                 "projects/project-a/session-a.jsonl": lines.join("\n"),
             });
-            let _env = EnvGuard::set_many([(
+            Environment::with_vars([(
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.root().as_os_str().to_os_string()),
-            )]);
-            let shared = SharedArgs {
-                mode: CostMode::Display,
-                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-                single_thread: true,
-                ..SharedArgs::default()
-            };
+            )])
+            .run(|| {
+                let shared = SharedArgs {
+                    mode: CostMode::Display,
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                    single_thread: true,
+                    ..SharedArgs::default()
+                };
 
-            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
+                let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
-            let breakdown = &daily.summaries[0].model_breakdowns[0];
-            assert_eq!(breakdown.cache_creation_tokens, 100);
-            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+                let breakdown = &daily.summaries[0].model_breakdowns[0];
+                assert_eq!(breakdown.cache_creation_tokens, 100);
+                assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+            })
         }
     }
 

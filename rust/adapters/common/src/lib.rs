@@ -220,15 +220,18 @@ where
         }
     };
     let map = &map;
+    let environment = &ccusage_core::cli::environment::Environment::current();
     let mut results = thread::scope(|scope| {
         chunks
             .into_iter()
             .map(|chunk| {
                 scope.spawn(move || {
-                    chunk
-                        .into_iter()
-                        .map(|index| (index, map(&items[index])))
-                        .collect::<Vec<_>>()
+                    environment.run(|| {
+                        chunk
+                            .into_iter()
+                            .map(|index| (index, map(&items[index])))
+                            .collect::<Vec<_>>()
+                    })
                 })
             })
             .collect::<Vec<_>>()

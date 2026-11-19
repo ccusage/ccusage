@@ -77,7 +77,7 @@ mod tests {
         PricingMap, ReportWindow, SkipKind,
         cli::{AgentReportKind, SharedArgs},
     };
-    use ccusage_test_support::{EnvGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     fn create_state_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -197,26 +197,27 @@ mod tests {
             fixture.root().join("broken").display(),
             fixture.root().join("schema").display()
         );
-        let _cleanup = EnvGuard::set("HERMES_HOME", homes);
-        let shared = SharedArgs::default();
-        let pricing = PricingMap::load_embedded();
-        let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::new("hermes");
-        let cx = LoadContext {
-            shared: &shared,
-            kind: AgentReportKind::Daily,
-            window: &window,
-            pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
-            options: SourceOptions::default(),
-            diagnostics: &diagnostics,
-        };
+        Environment::with_var("HERMES_HOME", homes).run(|| {
+            let shared = SharedArgs::default();
+            let pricing = PricingMap::load_embedded();
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("hermes");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
 
-        let entries = crate::SOURCE.load_entries(&cx).unwrap();
+            let entries = crate::SOURCE.load_entries(&cx).unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].session_id.as_ref(), "session-a");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+            assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+        })
     }
 
     #[test]
@@ -282,13 +283,18 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('session-a', 'cli', 'gpt-5', 1750000000, 100, 50)",
             )
             .unwrap();
-        let _cleanup = EnvGuard::set("HERMES_HOME", fixture.root());
-        let shared = SharedArgs {
-            offline: true,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            ..SharedArgs::default()
-        };
+        Environment::with_var("HERMES_HOME", fixture.root()).run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
 
-        assert_focused_matches_unified(&crate::SOURCE, ccusage_core::cli::AgentId::Hermes, &shared);
+            assert_focused_matches_unified(
+                &crate::SOURCE,
+                ccusage_core::cli::AgentId::Hermes,
+                &shared,
+            );
+        })
     }
 }

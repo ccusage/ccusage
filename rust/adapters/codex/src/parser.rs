@@ -1981,12 +1981,13 @@ mod diagnostic_tests {
         assert!(events.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
-        let _log_level = ccusage_test_support::EnvGuard::set("LOG_LEVEL", "1");
-        assert!(
-            diagnostics
-                .warnings(&crate::cli::SharedArgs::default())
-                .is_empty()
-        );
+        ccusage_test_support::Environment::with_var("LOG_LEVEL", "1").run(|| {
+            assert!(
+                diagnostics
+                    .warnings(&crate::cli::SharedArgs::default())
+                    .is_empty()
+            );
+        })
     }
 
     fn session_events(lines: &[&str]) -> (Vec<CodexTokenUsageEvent>, Diagnostics) {
