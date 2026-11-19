@@ -302,6 +302,10 @@ fn decode_escape(escape: &[u8]) -> (Option<u8>, usize) {
     (Some(decoded), 2)
 }
 
+pub fn newline_offsets(bytes: &[u8]) -> impl DoubleEndedIterator<Item = usize> + '_ {
+    memchr_iter(b'\n', bytes)
+}
+
 pub struct LineReader<R> {
     reader: R,
     buffer: Vec<u8>,

@@ -8,7 +8,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use memchr::{memchr_iter, memrchr_iter};
 use serde::{
     Deserialize, Deserializer,
     de::{self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor},
@@ -16,7 +15,7 @@ use serde::{
 
 use ccusage_core::{
     Diagnostics, Skip, SkipKind,
-    fast::{LinePrefilter, LineReader},
+    fast::{LinePrefilter, LineReader, newline_offsets},
 };
 
 use crate::{UnitError, units::being_written};
@@ -211,7 +210,8 @@ pub fn read_last<B>(
         offset = offset.saturating_sub(chunk.len() as u64);
         let chunk = &mut chunk[..(chunk_end - offset) as usize];
         read_range(&mut file, offset, chunk)?;
-        let starts = memrchr_iter(b'\n', chunk)
+        let starts = newline_offsets(chunk)
+            .rev()
             .map(|newline| newline + 1)
             .chain((offset == 0).then_some(0));
         for start in starts {
@@ -276,7 +276,7 @@ impl<'a> ReverseLine<'a> {
         while remaining > 0 {
             let size = remaining.min(buffer.len() as u64) as usize;
             self.file.read_exact(&mut buffer[..size])?;
-            number += memchr_iter(b'\n', &buffer[..size]).count() as u64;
+            number += newline_offsets(&buffer[..size]).count() as u64;
             remaining -= size as u64;
         }
         *self.number = Some(number);

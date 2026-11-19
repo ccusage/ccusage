@@ -259,7 +259,6 @@ version = "0.0.0"
 dependencies = [
  "ccusage-core",
  "ccusage-test-support",
- "memchr",
  "serde",
  "serde_json",
  "sqlite",

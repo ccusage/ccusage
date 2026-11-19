@@ -10,7 +10,6 @@ sqlite = ["dep:sqlite"]
 
 [dependencies]
 ccusage-core.workspace = true
-memchr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlite = { workspace = true, optional = true }
