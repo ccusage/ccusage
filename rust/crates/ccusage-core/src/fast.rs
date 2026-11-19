@@ -302,39 +302,6 @@ fn decode_escape(escape: &[u8]) -> (Option<u8>, usize) {
     (Some(decoded), 2)
 }
 
-pub struct ByteLines<'a> {
-    bytes: &'a [u8],
-}
-
-impl<'a> ByteLines<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes }
-    }
-}
-
-impl<'a> Iterator for ByteLines<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.bytes.is_empty() {
-            return None;
-        }
-        if let Some(newline) = memchr(b'\n', self.bytes) {
-            let (line, rest) = self.bytes.split_at(newline);
-            self.bytes = &rest[1..];
-            Some(line)
-        } else {
-            let line = self.bytes;
-            self.bytes = &[];
-            Some(line)
-        }
-    }
-}
-
-pub fn byte_lines(bytes: &[u8]) -> ByteLines<'_> {
-    ByteLines::new(bytes)
-}
-
 pub struct LineReader<R> {
     reader: R,
     buffer: Vec<u8>,
@@ -421,7 +388,7 @@ pub fn suffix_string(value: &str, suffix: &str) -> String {
 mod tests {
     use std::io::{self, Cursor, Read};
 
-    use super::{LinePrefilter, LineReader, byte_lines, suffix_string};
+    use super::{LinePrefilter, LineReader, suffix_string};
 
     #[test]
     fn line_prefilter_all_requires_every_marker() {
@@ -759,16 +726,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn byte_lines_returns_newline_delimited_slices() {
-        let lines = byte_lines(b"one\ntwo\nthree").collect::<Vec<_>>();
-
-        assert_eq!(
-            lines,
-            [b"one".as_slice(), b"two".as_slice(), b"three".as_slice()]
-        );
-    }
-
     fn read_lines(content: &[u8], capacity: usize) -> Vec<Vec<u8>> {
         let mut reader = LineReader::with_capacity(capacity, Cursor::new(content));
         let mut lines = Vec::new();
@@ -779,15 +736,19 @@ mod tests {
     }
 
     #[test]
-    fn line_reader_matches_byte_lines_across_buffer_boundaries() {
+    fn line_reader_splits_lines_across_buffer_boundaries() {
         let content = b"one\n\ntwo lines longer than the buffer\nthree";
         for capacity in [1, 2, 3, 7, 64] {
             let lines = read_lines(content, capacity);
-            let stripped = lines
-                .iter()
-                .map(|line| line.strip_suffix(b"\n").unwrap_or(line))
-                .collect::<Vec<_>>();
-            assert_eq!(stripped, byte_lines(content).collect::<Vec<_>>());
+            assert_eq!(
+                lines,
+                [
+                    b"one\n".as_slice(),
+                    b"\n",
+                    b"two lines longer than the buffer\n",
+                    b"three"
+                ],
+            );
             assert_eq!(lines.concat(), content);
         }
         assert!(read_lines(b"", 4).is_empty());

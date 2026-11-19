@@ -14,7 +14,7 @@ use serde::{
 
 use ccusage_core::{
     Diagnostics, Skip, SkipKind,
-    fast::{LinePrefilter, LineReader, byte_lines},
+    fast::{LinePrefilter, LineReader},
 };
 
 use crate::{UnitError, units::being_written};
@@ -255,70 +255,6 @@ pub fn read_file(
     Ok(())
 }
 
-/// A prefilter marker must occur on every line the caller would accept. Rejected lines never reach the decoder.
-pub fn records<'data, T>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-) -> impl Iterator<Item = T> + 'data
-where
-    T: DeserializeOwned + 'data,
-{
-    selected_lines(content, prefilter).filter_map(|(_, line)| serde_json::from_slice(line).ok())
-}
-
-fn selected_lines<'data>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-) -> impl Iterator<Item = (u32, &'data [u8])> + 'data {
-    byte_lines(content)
-        .enumerate()
-        .filter_map(move |(index, line)| {
-            if line
-                .iter()
-                .all(|byte| matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
-            {
-                return None;
-            }
-            if let Some(prefilter) = prefilter
-                && !prefilter.matches(line)
-            {
-                return None;
-            }
-            let number = ccusage_core::Skip::line_number(index);
-            Some((number, line))
-        })
-}
-
-/// Reports rejected records by source line number while yielding the records that decode.
-pub fn numbered_records_with_usage_diagnostics<'data, T>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-    unit: &'data Path,
-    diagnostics: &'data Diagnostics,
-    is_usage: fn(&serde_json::Value) -> bool,
-) -> impl Iterator<Item = (u32, T)> + 'data
-where
-    T: DeserializeOwned + 'data,
-{
-    diagnosed_records(content, prefilter, unit, diagnostics, Some(is_usage))
-}
-
-fn diagnosed_records<'data, T>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-    unit: &'data Path,
-    diagnostics: &'data Diagnostics,
-    is_usage: Option<fn(&serde_json::Value) -> bool>,
-) -> impl Iterator<Item = (u32, T)> + 'data
-where
-    T: DeserializeOwned + 'data,
-{
-    selected_lines(content, prefilter).filter_map(move |(number, line)| {
-        decode_line::<T>(content, line, unit, number, diagnostics, is_usage)
-            .map(|record| (number, record))
-    })
-}
-
 pub fn decode_record<T: DeserializeOwned>(
     content: &[u8],
     unit: &Path,
@@ -337,45 +273,6 @@ pub fn decode_record<T: DeserializeOwned>(
                 number,
                 false,
                 &diagnostics.for_row(row_id),
-                is_usage,
-            );
-            None
-        }
-    }
-}
-
-pub fn decode_line<T: DeserializeOwned>(
-    content: &[u8],
-    line: &[u8],
-    unit: &Path,
-    number: u32,
-    diagnostics: &Diagnostics,
-    is_usage: Option<fn(&serde_json::Value) -> bool>,
-) -> Option<T> {
-    let unterminated =
-        !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
-    decode_streamed_line(line, unterminated, unit, number, diagnostics, is_usage)
-}
-
-/// Decodes a streamed line. Pass whether it is the unterminated end of the file.
-pub fn decode_streamed_line<T: DeserializeOwned>(
-    line: &[u8],
-    unterminated: bool,
-    unit: &Path,
-    number: u32,
-    diagnostics: &Diagnostics,
-    is_usage: Option<fn(&serde_json::Value) -> bool>,
-) -> Option<T> {
-    match serde_json::from_slice(line) {
-        Ok(record) => Some(record),
-        Err(error) => {
-            record_decode_error(
-                line,
-                error,
-                unit,
-                number,
-                unterminated,
-                diagnostics,
                 is_usage,
             );
             None
@@ -719,9 +616,9 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{ops::ControlFlow, path::Path};
 
-    use serde::Deserialize;
+    use serde::{Deserialize, de::DeserializeOwned};
 
     use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
     use ccusage_test_support::{EnvGuard, Fixture};
@@ -729,11 +626,30 @@ mod tests {
     use crate::units::tests::age_past_write_window;
 
     use super::{
-        FieldName, FirstField, LenientSeq, LenientString, diagnosed_records, lenient_array,
-        lenient_f64, lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string,
-        numbered_records_with_usage_diagnostics, records,
+        FieldName, FirstField, LenientSeq, LenientString, Tail, lenient_array, lenient_f64,
+        lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string, scan,
     };
     use ccusage_core::fast::LinePrefilter;
+
+    fn decode_fixture<T: DeserializeOwned>(
+        bytes: &[u8],
+        prefilter: Option<&LinePrefilter>,
+        path: &Path,
+        diagnostics: &Diagnostics,
+        is_usage: Option<fn(&serde_json::Value) -> bool>,
+    ) -> impl Iterator<Item = (u32, T)> {
+        let mut output = Vec::new();
+        let result = scan(bytes, 7, Tail::Discard, |line| {
+            if line.selected(prefilter)
+                && let Some(record) = line.record(path, diagnostics, is_usage)
+            {
+                output.push((line.number(), record));
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        assert!(result.failure.is_none());
+        output.into_iter()
+    }
 
     #[derive(Debug, PartialEq, Deserialize)]
     struct Record {
@@ -748,7 +664,17 @@ mod tests {
         let content =
             b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n{\"model\":\"b\",\"tokens\":2}\n";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let parsed = records::<Record>(content, Some(&prefilter)).collect::<Vec<_>>();
+        let diagnostics = Diagnostics::new("test");
+        let parsed = decode_fixture::<Record>(
+            content,
+            Some(&prefilter),
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+            None,
+        )
+        .map(|(_, record)| record)
+        .collect::<Vec<_>>();
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
 
         assert_eq!(
             parsed,
@@ -773,7 +699,7 @@ mod tests {
         let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
         let diagnostics = Diagnostics::new("test");
         let records =
-            diagnosed_records::<Record>(CUT_LAST_LINE.as_bytes(), None, &live, &diagnostics, None)
+            decode_fixture::<Record>(CUT_LAST_LINE.as_bytes(), None, &live, &diagnostics, None)
                 .map(|(_, record)| record.tokens)
                 .collect::<Vec<_>>();
 
@@ -799,7 +725,7 @@ mod tests {
         age_past_write_window(&stale);
         let diagnostics = Diagnostics::new("test");
         let records =
-            diagnosed_records::<Record>(CUT_LAST_LINE.as_bytes(), None, &stale, &diagnostics, None)
+            decode_fixture::<Record>(CUT_LAST_LINE.as_bytes(), None, &stale, &diagnostics, None)
                 .map(|(_, record)| record.tokens)
                 .collect::<Vec<_>>();
 
@@ -829,7 +755,7 @@ mod tests {
             b"{\"tokens\":1}\n{\"tokens\":2,\"mod\n",
         ] {
             let diagnostics = Diagnostics::new("test");
-            let _ = diagnosed_records::<Record>(
+            let _ = decode_fixture::<Record>(
                 content,
                 None,
                 Path::new("/logs/torn.jsonl"),
@@ -845,7 +771,16 @@ mod tests {
     #[test]
     fn records_skips_unparsable_lines() {
         let content = b"{\"tokens\":1}\nnot json\n{\"tokens\":2}\n";
-        let parsed = records::<Record>(content, None).collect::<Vec<_>>();
+        let diagnostics = Diagnostics::new("test");
+        let parsed = decode_fixture::<Record>(
+            content,
+            None,
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+            None,
+        )
+        .map(|(_, record)| record)
+        .collect::<Vec<_>>();
 
         assert_eq!(
             parsed
@@ -868,7 +803,7 @@ mod tests {
         let prefilter = LinePrefilter::all(&[b"model"]);
         let diagnostics = Diagnostics::new("test");
 
-        let records = diagnosed_records::<StrictRecord>(
+        let records = decode_fixture::<StrictRecord>(
             content,
             Some(&prefilter),
             Path::new("/logs/session.jsonl"),
@@ -902,12 +837,12 @@ mod tests {
             tokens: u64,
         }
         let diagnostics = Diagnostics::new("test");
-        let records = numbered_records_with_usage_diagnostics::<Record>(
+        let records = decode_fixture::<Record>(
             b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
             None,
             Path::new("/logs/session.jsonl"),
             &diagnostics,
-            |value| value.get("type").and_then(serde_json::Value::as_str) == Some("usage"),
+            Some(|value| value.get("type").and_then(serde_json::Value::as_str) == Some("usage")),
         ).map(|(_, record)| record.tokens).collect::<Vec<_>>();
 
         assert_eq!(records, [3]);
@@ -931,12 +866,12 @@ mod tests {
         )
         .as_bytes();
         let diagnostics = Diagnostics::new("test");
-        let records = numbered_records_with_usage_diagnostics::<UsageRecord>(
+        let records = decode_fixture::<UsageRecord>(
             content,
             None,
             Path::new("/logs/session.jsonl"),
             &diagnostics,
-            |value| value.get("kind").and_then(serde_json::Value::as_str) == Some("usage"),
+            Some(|value| value.get("kind").and_then(serde_json::Value::as_str) == Some("usage")),
         )
         .map(|(_, record)| record.tokens)
         .collect::<Vec<_>>();
