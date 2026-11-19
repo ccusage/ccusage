@@ -3,7 +3,7 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{collections::HashMap, fmt, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, fmt, path::Path, sync::Arc};
 
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -290,22 +290,45 @@ pub(super) fn parse_jsonl_file(
     let mut current_model = None::<String>;
     let mut events = Vec::new();
     let mut direct_event_indexes = HashMap::<String, usize>::new();
-    let content = fs::read(path).map_err(UnitError::from)?;
-    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<GeminiRecord>(
-        &content,
-        None,
+    jsonl::read_records::<GeminiRecord>(
         path,
+        None,
         diagnostics,
         is_usage_envelope,
-    ) {
-        if let Some(value) = record.session_id() {
-            session_id = value;
-        }
-        if let Some(model) = record.model.clone() {
-            current_model = Some(model);
-        }
-        if record.r#type.as_deref() == Some("gemini") {
-            let Some(event) = parse_direct_event_record(
+        |number, record, diagnostics| {
+            if let Some(value) = record.session_id() {
+                session_id = value;
+            }
+            if let Some(model) = record.model.clone() {
+                current_model = Some(model);
+            }
+            if record.r#type.as_deref() == Some("gemini") {
+                let Some(event) = parse_direct_event_record(
+                    &record,
+                    current_model.as_deref(),
+                    &session_id,
+                    &GeminiRecordTime {
+                        fallback: None,
+                        path,
+                        line: Some(number),
+                        diagnostics,
+                    },
+                ) else {
+                    return;
+                };
+                if let Some(id) = record.id.clone() {
+                    if let Some(index) = direct_event_indexes.get(&id).copied() {
+                        events[index] = event;
+                    } else {
+                        direct_event_indexes.insert(id, events.len());
+                        events.push(event);
+                    }
+                } else {
+                    events.push(event);
+                }
+                return;
+            }
+            events.extend(parse_stats_events(
                 &record,
                 current_model.as_deref(),
                 &session_id,
@@ -315,33 +338,9 @@ pub(super) fn parse_jsonl_file(
                     line: Some(number),
                     diagnostics,
                 },
-            ) else {
-                continue;
-            };
-            if let Some(id) = record.id.clone() {
-                if let Some(index) = direct_event_indexes.get(&id).copied() {
-                    events[index] = event;
-                } else {
-                    direct_event_indexes.insert(id, events.len());
-                    events.push(event);
-                }
-            } else {
-                events.push(event);
-            }
-            continue;
-        }
-        events.extend(parse_stats_events(
-            &record,
-            current_model.as_deref(),
-            &session_id,
-            &GeminiRecordTime {
-                fallback: None,
-                path,
-                line: Some(number),
-                diagnostics,
-            },
-        ));
-    }
+            ));
+        },
+    )?;
     Ok(events)
 }
 
