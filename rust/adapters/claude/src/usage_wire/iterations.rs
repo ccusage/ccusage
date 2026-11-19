@@ -49,7 +49,7 @@ struct LenientVisitor<T>(PhantomData<T>);
 impl<'de, T: LenientValue> Visitor<'de> for LenientVisitor<T> {
     type Value = T;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("any JSON value")
     }
 

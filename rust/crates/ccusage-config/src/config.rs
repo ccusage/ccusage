@@ -239,12 +239,12 @@ fn parse_named_pi_stores(value: &Value) -> std::result::Result<Vec<NamedPiStore>
                 "pi.stores name '{name}' collides with a built-in agent"
             )),
         })?;
-        if !names.insert(name.to_string()) {
+        if !names.insert(name.clone()) {
             return Err(config_error(format!("duplicate pi.stores name '{name}'")));
         }
         parsed.push(NamedPiStore {
-            name: name.to_string(),
-            path: path.to_string(),
+            name: name.clone(),
+            path: path.clone(),
         });
     }
     Ok(parsed)

@@ -291,9 +291,9 @@ mod tests {
     fn a_poisoned_state_still_serves_cached_usage_and_shuts_down() {
         let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let reader = NativeUsageReader {
-            state: state.clone(),
+            state: Arc::clone(&state),
         };
-        let poisoned = state.clone();
+        let poisoned = Arc::clone(&state);
         let result = thread::spawn(move || {
             let mut state = poisoned.0.lock().unwrap();
             state

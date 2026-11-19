@@ -305,7 +305,8 @@ fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String 
 }
 
 fn run_command(command: std::process::Command, args: &[&str], stdin: Option<&str>) -> String {
-    String::from_utf8(run_command_output(command, args, stdin).stdout).unwrap()
+    String::from_utf8(run_command_output(command, args, stdin).stdout)
+        .expect("ccusage stdout is UTF-8")
 }
 
 fn run_ccusage_output(
@@ -330,12 +331,12 @@ fn run_command_output(
         .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("failed to run ccusage");
-    let mut child_stdin = child.stdin.take().unwrap();
+    let mut child_stdin = child.stdin.take().expect("piped ccusage stdin");
     child_stdin
         .write_all(stdin.unwrap_or_default().as_bytes())
-        .unwrap();
+        .expect("write ccusage input");
     drop(child_stdin);
-    let output = child.wait_with_output().unwrap();
+    let output = child.wait_with_output().expect("wait for ccusage output");
     assert!(
         output.status.success(),
         "ccusage {args:?} failed: {}",
@@ -801,7 +802,10 @@ fn write_block_chain(
             .collect::<Vec<_>>()
             .join("\n");
         let file = fixture.write_file(format!("projects/chain/part-{index:03}.jsonl"), lines);
-        set_modified(&file, *chunk.last().unwrap());
+        set_modified(
+            &file,
+            *chunk.last().expect("the log batch has a last instant"),
+        );
         files.push(file);
     }
     files
@@ -1047,8 +1051,14 @@ fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
                 ],
                 None,
             );
-            let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-            (command, json["totals"]["totalTokens"].as_u64().unwrap())
+            let json: serde_json::Value =
+                serde_json::from_str(&output).expect("ccusage emitted JSON");
+            (
+                command,
+                json["totals"]["totalTokens"]
+                    .as_u64()
+                    .expect("report has total tokens"),
+            )
         })
         .collect()
 }

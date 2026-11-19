@@ -54,7 +54,14 @@ fn assert_only_accepted_requests_are_reported(report: &serde_json::Value, kind: 
     ] {
         assert_eq!(totals[key].as_u64(), Some(expected), "{key} totals");
     }
-    assert!((totals["totalCost"].as_f64().unwrap() - 0.0012).abs() < 1e-12);
+    assert!(
+        (totals["totalCost"]
+            .as_f64()
+            .expect("report has a total cost")
+            - 0.0012)
+            .abs()
+            < 1e-12
+    );
     assert!(totals.get("unpricedModels").is_none());
 
     let (rows_key, period_key, expected_periods): (&str, &str, &[&str]) = match kind {

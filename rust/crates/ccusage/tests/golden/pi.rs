@@ -71,7 +71,7 @@ pub(crate) fn seed_tied_fork(
     parent_first: bool,
 ) -> Vec<(&'static str, Vec<OsString>)> {
     let sessions = root.join("pi/sessions/project");
-    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::create_dir_all(&sessions).expect("create Pi fixture session directory");
     let timestamp = "2025-12-27T05:00:00.000Z";
     let usage = tokens(1000, 0, 0, 0);
     let parent = [
@@ -94,7 +94,7 @@ pub(crate) fn seed_tied_fork(
         files.reverse();
     }
     for (name, contents) in files {
-        std::fs::write(sessions.join(name), contents).unwrap();
+        std::fs::write(sessions.join(name), contents).expect("write Pi fixture session");
     }
     vec![(
         "PI_AGENT_DIR",

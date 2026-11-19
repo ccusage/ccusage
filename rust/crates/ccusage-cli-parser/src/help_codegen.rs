@@ -22,7 +22,7 @@ fn render_option_sets(
 ) -> BTreeMap<String, String> {
     let mut rendered_options = option_sets
         .iter()
-        .map(|(name, options)| (name.to_string(), render_options(options)))
+        .map(|(name, options)| (name.clone(), render_options(options)))
         .collect::<BTreeMap<_, _>>();
     let combined_options = object_field(command_spec, "combinedOptions");
     let mut combined_options = combined_options.iter().collect::<Vec<_>>();
@@ -39,7 +39,7 @@ fn render_option_sets(
             })
             .collect::<Vec<_>>();
         let rendered = render_combined_options(&rendered_options, &parts);
-        rendered_options.insert(name.to_string(), rendered);
+        rendered_options.insert(name.clone(), rendered);
     }
     rendered_options
 }

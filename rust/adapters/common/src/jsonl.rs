@@ -639,7 +639,7 @@ impl<'de, N: FieldName> Deserialize<'de> for IsField<N> {
         impl<N: FieldName> Visitor<'_> for KeyVisitor<N> {
             type Value = IsField<N>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an object key")
             }
 
@@ -659,7 +659,7 @@ impl<'de, N: FieldName, T: Deserialize<'de> + Present> Deserialize<'de> for Firs
         impl<'de, N: FieldName, T: Deserialize<'de> + Present> Visitor<'de> for FieldVisitor<N, T> {
             type Value = FirstField<N, T>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 
@@ -715,7 +715,7 @@ impl<'de> Deserialize<'de> for LenientString {
         impl<'de> Visitor<'de> for StringVisitor {
             type Value = LenientString;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 
@@ -763,7 +763,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
         impl<'de, T: Deserialize<'de>> Visitor<'de> for SeqVisitor<T> {
             type Value = LenientSeq<T>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 

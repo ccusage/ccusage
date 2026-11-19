@@ -1790,7 +1790,7 @@ mod tests {
             .iter()
             .map(|entry| {
                 (
-                    entry.date.to_string(),
+                    entry.date.clone(),
                     entry.model.clone().unwrap_or_default(),
                     crate::total_usage_tokens(entry.usage),
                     (entry.cost * 100.0).round() as u64,

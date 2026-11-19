@@ -69,7 +69,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
     let mut daily = summarize_by_key_target(
         &entries,
         |entry| entry.date.clone(),
-        |key| (key.to_string(), None),
+        |key| (key.clone(), None),
         KeyTarget::Date,
     )?;
     sort_summaries(&mut daily, &shared.order.unwrap_or_default(), |row| {

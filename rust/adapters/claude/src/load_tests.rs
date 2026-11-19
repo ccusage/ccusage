@@ -32,7 +32,7 @@ fn daily_from_entries(entries: &[LoadedEntry]) -> Vec<UsageSummary> {
     summarize_by_key_target(
         entries,
         |entry| entry.date.clone(),
-        |key| (key.to_string(), None),
+        |key| (key.clone(), None),
         KeyTarget::Date,
     )
     .unwrap()
