@@ -3,11 +3,11 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use ccusage_adapter_common::{
     jsonl,
-    units::{UnitError, decode_json},
+    units::{UnitError, read_json},
 };
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -196,17 +196,16 @@ pub(crate) fn read_thread(
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let content = fs::read(path)?;
-    parse_thread(&content, &ThreadUnit { path, diagnostics }, tz, pricing)
+    let thread = read_json(path)?;
+    parse_thread(thread, &ThreadUnit { path, diagnostics }, tz, pricing)
 }
 
 fn parse_thread(
-    content: &[u8],
+    thread: AmpThread,
     unit: &ThreadUnit<'_>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let thread = decode_json::<AmpThread>(content)?;
     let messages = &thread.messages;
     // NOTE(2026-05-25, #1145): Newer Amp threads store usage on assistant messages without a `usageLedger`. Older ledgers and their corresponding message usage describe the same calls.
     let ledger_events = thread
@@ -474,7 +473,7 @@ mod tests {
             diagnostics,
         };
         parse_thread(
-            content,
+            ccusage_adapter_common::units::decode_json(content)?,
             &unit,
             &jiff::tz::TimeZone::system(),
             ccusage_core::cost::PriceTable::for_map(
