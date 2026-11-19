@@ -264,6 +264,37 @@ fn daily_since_totals_match_after_pruning_stale_files() {
 }
 
 #[test]
+fn daily_uses_the_process_timezone_for_default_and_local_buckets() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        r#"{"timestamp":"2026-09-11T23:30:00Z","sessionId":"session-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}}}"#,
+    );
+
+    for (timezone, expected_date) in [
+        (&[][..], "2026-09-12"),
+        (&["--timezone", "local"][..], "2026-09-12"),
+        (&["--timezone", "UTC"][..], "2026-09-11"),
+    ] {
+        let output = claude_command(&fixture)
+            .env("TZ", "Asia/Tokyo")
+            .args(["claude", "daily", "--offline", "--json"])
+            .args(timezone)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let days = json["daily"].as_array().unwrap();
+        assert_eq!(days.len(), 1);
+        assert_eq!(days[0]["date"], expected_date, "{timezone:?}");
+    }
+}
+
+#[test]
 fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
     let fixture = Fixture::new();
     fixture.write_file(

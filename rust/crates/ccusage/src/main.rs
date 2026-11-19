@@ -4,7 +4,7 @@ mod http;
 
 use std::process::ExitCode;
 
-use ccusage_cli::{Command, ReportTimezone};
+use ccusage_cli::Command;
 use ccusage_core::{Result, pricing, summary::Bucket};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
@@ -21,7 +21,6 @@ fn install_embedded_snapshots() {
 }
 
 fn main() -> Result<ExitCode> {
-    ReportTimezone::install_system_zone(jiff::tz::TimeZone::system);
     install_embedded_snapshots();
     pricing::set_json_fetcher(http::fetch_json);
     let command = match cli::parse() {
