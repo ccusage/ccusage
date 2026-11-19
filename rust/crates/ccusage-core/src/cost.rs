@@ -46,21 +46,6 @@ impl<'a> PriceTable<'a> {
 }
 
 pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> EntryPrice<'a> {
-    price_entry_inner(entry, pricing, false)
-}
-
-pub fn price_entry_with_zero_fallback<'a>(
-    entry: EntryPricing<'a>,
-    pricing: PriceTable<'_>,
-) -> EntryPrice<'a> {
-    price_entry_inner(entry, pricing, true)
-}
-
-fn price_entry_inner<'a>(
-    entry: EntryPricing<'a>,
-    pricing: PriceTable<'_>,
-    use_zero_fallback: bool,
-) -> EntryPrice<'a> {
     let Some(map) = pricing.as_map() else {
         return EntryPrice {
             cost: entry.stored_cost.unwrap_or(0.0),
@@ -87,37 +72,11 @@ fn price_entry_inner<'a>(
     };
     let resolved = map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp);
     match resolved {
-        Some((model, rates)) => {
-            let cost = cost_at_speed(usage, rates);
-            let first = EntryPrice {
-                cost,
-                matched: Some(model),
-                missing_pricing: false,
-            };
-            if !use_zero_fallback
-                || cost != 0.0
-                || rates.overridden
-                || (rates.input == 0.0 && rates.output == 0.0)
-            {
-                return first;
-            }
-            entry
-                .candidates
-                .iter()
-                .skip_while(|(candidate, _)| *candidate != model)
-                .skip(1)
-                .find_map(|candidate| {
-                    let (candidate, rates) =
-                        map.resolve_at(None, std::slice::from_ref(candidate), entry.timestamp)?;
-                    let cost = cost_at_speed(usage, rates);
-                    (cost > 0.0).then_some(EntryPrice {
-                        cost,
-                        matched: Some(candidate),
-                        missing_pricing: false,
-                    })
-                })
-                .unwrap_or(first)
-        }
+        Some((model, rates)) => EntryPrice {
+            cost: cost_at_speed(usage, rates),
+            matched: Some(model),
+            missing_pricing: false,
+        },
         None => EntryPrice {
             cost: 0.0,
             matched: None,

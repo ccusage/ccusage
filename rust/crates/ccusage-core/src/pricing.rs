@@ -110,7 +110,7 @@ pub struct Pricing {
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
     family: ProviderFamily,
-    pub(crate) overridden: bool,
+    overridden: bool,
     explicit_fields: u16,
 }
 
