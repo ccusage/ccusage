@@ -20,23 +20,23 @@ const BLOCKS_COMPACT_WIDTH_THRESHOLD: usize = 120;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SessionBlock {
-    pub(crate) id: String,
+    id: String,
     pub(crate) start_time: TimestampMs,
     pub(crate) end_time: TimestampMs,
-    pub(crate) actual_end_time: Option<TimestampMs>,
+    actual_end_time: Option<TimestampMs>,
     pub(crate) is_active: bool,
     pub(crate) is_gap: bool,
-    pub(crate) entries: Vec<LoadedEntry>,
+    entries: Vec<LoadedEntry>,
     pub(crate) token_counts: TokenCounts,
     pub(crate) cost_usd: f64,
-    pub(crate) models: Vec<String>,
-    pub(crate) usage_limit_reset_time: Option<TimestampMs>,
+    models: Vec<String>,
+    usage_limit_reset_time: Option<TimestampMs>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BurnRate {
-    pub(crate) tokens_per_minute: f64,
+    tokens_per_minute: f64,
     pub(crate) tokens_per_minute_for_indicator: f64,
     pub(crate) cost_per_hour: f64,
 }
@@ -44,9 +44,9 @@ pub(crate) struct BurnRate {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Projection {
-    pub(crate) total_tokens: u64,
-    pub(crate) total_cost: f64,
-    pub(crate) remaining_minutes: u64,
+    total_tokens: u64,
+    total_cost: f64,
+    remaining_minutes: u64,
 }
 
 pub(crate) fn identify_session_blocks(
