@@ -518,7 +518,7 @@ exit: 0
 │          │              │ claude-sonn… │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │ - Qwen       │ - qwen-2.5-… │      3,910 │     1,369 │          0 │       1,660 │       7,039 │     $0.01 │
-│          │              │ - qwen-3-23… │            │           │            │             │             │           │
+│          │              │ - qwen-3-30b │            │           │            │             │             │           │
 │          │              │ - qwen-myst… │            │           │            │             │             │           │
 │          │              │ - qwen3-cod… │            │           │            │             │             │           │
 │          │              │ - sonnet-4   │            │           │            │             │             │           │
@@ -532,7 +532,7 @@ exit: 0
 │          │              │ qwen-2.5-72b │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─           │        310 │        65 │          0 │           0 │         375 │     $0.00 │
-│          │              │ qwen-3-235b  │            │           │            │             │             │           │
+│          │              │ qwen-3-30b   │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─           │          0 │       654 │          0 │           0 │         654 │     $0.00 │
 │          │              │ qwen-myster… │            │           │            │             │             │           │
@@ -1137,7 +1137,6 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
-WARN  Missing embedded pricing for qwen-3-235b; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

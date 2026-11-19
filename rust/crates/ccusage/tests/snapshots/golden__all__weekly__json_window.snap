@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 671394,
     "inputTokens": 1172743,
     "outputTokens": 37607,
-    "totalCost": 15.129998145000002,
+    "totalCost": 15.130067845000001,
     "totalTokens": 1892407,
     "unpricedModels": [
       "GLM-5.3",
@@ -35,7 +35,6 @@ exit: 0
       "kimi-mystery-1",
       "mystery-model-9000",
       "opencode-mystery-1",
-      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
@@ -449,6 +448,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 3,
           "cost": 3.69e-6,
           "inputTokens": 12,
@@ -611,15 +618,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 310,
-          "missingPricing": true,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
@@ -695,7 +693,7 @@ exit: 0
         "opencode-mystery-1",
         "opus",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen/qwen3-coder",
         "qwen3-coder-plus",
@@ -704,7 +702,7 @@ exit: 0
       ],
       "outputTokens": 37607,
       "period": "2025-12-29",
-      "totalCost": 15.129998145000002,
+      "totalCost": 15.130067845000001,
       "totalTokens": 1892407
     }
   ]

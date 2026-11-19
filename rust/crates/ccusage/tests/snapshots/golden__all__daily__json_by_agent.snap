@@ -2500,10 +2500,9 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
-              "cost": 0.0,
+              "cost": 0.00006969999999999999,
               "inputTokens": 310,
-              "missingPricing": true,
-              "modelName": "qwen-3-235b",
+              "modelName": "qwen-3-30b",
               "outputTokens": 65
             },
             {
@@ -2518,13 +2517,13 @@ exit: 0
           ],
           "modelsUsed": [
             "qwen3-coder-plus",
-            "qwen-3-235b",
+            "qwen-3-30b",
             "claude-sonnet-4-20250514",
             "qwen-2.5-72b-instruct",
             "qwen-mystery-1"
           ],
           "outputTokens": 1369,
-          "totalCost": 0.011479999999999999,
+          "totalCost": 0.0115497,
           "totalTokens": 7039
         },
         {
@@ -2848,6 +2847,14 @@ exit: 0
           "outputTokens": 60
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
+        },
+        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "cost": 0.0,
@@ -2895,15 +2902,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 310,
-          "missingPricing": true,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
@@ -2943,14 +2941,14 @@ exit: 0
         "kimi-for-coding",
         "kimi-k2-thinking",
         "qwen-2.5-72b-instruct",
-        "qwen-3-235b",
+        "qwen-3-30b",
         "qwen-mystery-1",
         "qwen3-coder-plus",
         "unknown"
       ],
       "outputTokens": 19857,
       "period": "2025-12-31",
-      "totalCost": 11.423346355000001,
+      "totalCost": 11.423416055,
       "totalTokens": 279218
     },
     {
@@ -5734,7 +5732,7 @@ exit: 0
     "cacheReadTokens": 1316867,
     "inputTokens": 1349871,
     "outputTokens": 59316,
-    "totalCost": 28.653713220000004,
+    "totalCost": 28.65378292,
     "totalTokens": 2747536,
     "unpricedModels": [
       "GLM-5.3",
@@ -5764,7 +5762,6 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
-      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

@@ -404,32 +404,31 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 33,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 11
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 310,
-          "missingPricing": true,
-          "modelName": "qwen-3-235b",
-          "outputTokens": 65
         }
       ],
       "modelsUsed": [
         "claude-sonnet-4-20250514",
         "qwen-mystery-1",
         "qwen3-coder-plus",
-        "qwen-3-235b"
+        "qwen-3-30b"
       ],
       "outputTokens": 2626,
       "period": "sess-b",
-      "totalCost": 0.331824,
+      "totalCost": 0.3318937,
       "totalTokens": 410249
     },
     {
@@ -5607,7 +5606,7 @@ exit: 0
     "cacheReadTokens": 1323437,
     "inputTokens": 1358777,
     "outputTokens": 68906,
-    "totalCost": 10.54512322,
+    "totalCost": 10.54519292,
     "totalTokens": 2772982,
     "unpricedModels": [
       "GLM-5.3",
@@ -5637,7 +5636,6 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
-      "qwen-3-235b",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
