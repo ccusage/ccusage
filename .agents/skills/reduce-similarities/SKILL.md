@@ -27,7 +27,7 @@ real findings.
 
 ## Triage
 
-A score is a starting point, not a verdict. Usually worth refactoring:
+Prioritize these candidates:
 
 - 100% matches: extract a shared function or generic.
 - 95-100% across different types: generic function with trait bounds.

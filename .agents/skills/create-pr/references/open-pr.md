@@ -22,16 +22,4 @@ that actually ran, so documentation-only PRs usually omit it.
 
 ## Passing the body
 
-Pass multi-line bodies through stdin with `gh pr create --body-file -`. Shell
-quoting keeps `\n` escapes literal inside a `--body` argument, so they show up
-verbatim in the PR. The active shell may be fish, zsh, bash, or a
-non-interactive runner; fish has no heredoc, so pipe `printf` instead:
-
-```fish
-printf "%s\n" \
-	"Adds a repo-local create-pr skill and documents the PR review loop." \
-	"" \
-	"Testing:" \
-	"- just fmt" \
-	| gh pr create --title "docs(skills): add create-pr workflow" --body-file -
-```
+Pass multiline bodies with `gh pr create --body-file`.

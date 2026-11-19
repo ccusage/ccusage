@@ -1,5 +1,4 @@
 # Claude Skills
 
-`.claude/skills` is generated from `.agents/skills` by the Nix development environment.
-
-See `nix/agent-skills.nix` for the local-only agent-skills-nix wiring. Skill sync is handled by the Nix dev-shell hook, not by git hooks.
+Edit skills in `.agents/skills`. The Nix dev-shell hook generates `.claude/skills`
+through `nix/agent-skills.nix`.

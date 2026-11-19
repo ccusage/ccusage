@@ -4,16 +4,6 @@ The ZCode adapter reads completed model-usage records from the ZCode desktop
 application's local SQLite ledger and turns them into the entries used by
 focused and unified reports.
 
-## Owns
-
-- `loader.rs` — read-only SQLite access, schema checks, completed-row filtering, and deduplication
-- `parser.rs` — token normalization, model selection, and cost-mode behavior
-- `paths.rs` — `ZCODE_HOME` root resolution and database discovery
-- `report.rs` — daily, monthly, and session summary shapes
-
-Source-specific behavior stays here; shared report and pricing behavior belongs
-in `ccusage-core` or `ccusage-adapter-common`.
-
 ## Data source
 
 ```text
@@ -66,19 +56,6 @@ their displayed bucket but are priced at the model's standard input rate because
 they represent new content.
 Unknown custom model ids remain at zero and use the normal missing-pricing
 warning. No provider billing is inferred from a local provider UUID.
-
-## Public surface
-
-- `SOURCE`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde_json`
-- `sqlite`
 
 ## Testing
 

@@ -41,13 +41,9 @@ ANTIGRAVITY_DATA_DIR="$HOME/.gemini/antigravity-cli,/backup/antigravity" \
   ccusage antigravity daily
 ```
 
-Only `.db` files are read. ccusage opens them read-only and reads the
-`gen_metadata` rows in ascending `idx` order. When present, the real `steps`
-schema contributes step and retry usage, and `trajectory_metadata_blob` supplies
-the timestamp fallback. Empty databases are skipped silently (use `--debug` to
-list them), and unreadable databases are skipped with a warning that names the
-file. A database contributes usage only after its full read succeeds, and other
-readable databases remain in the report.
+ccusage opens `.db` files read-only. Empty databases are listed with
+`--debug`. Unreadable databases produce a filename warning while other readable
+databases still contribute usage.
 
 ## What Gets Calculated
 
@@ -63,10 +59,7 @@ readable databases remain in the report.
   when the catalog does not list a separate variant. Use `--offline` to avoid a
   pricing refresh.
 
-Continuation rows inherit the most recently observed model in their database.
-Usage in generation metadata and step metadata is combined, including retry
-records. Successful, retry, and source copies are deduplicated by their response,
-provider-assigned message, or message identity.
+Reports include recorded retry usage and count duplicates once.
 
 ## Configuration
 

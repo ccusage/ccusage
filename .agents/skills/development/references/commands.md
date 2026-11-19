@@ -2,12 +2,7 @@
 
 ## Commands
 
-`just` is the single entry point (`just --list`). Each workspace package owns a
-justfile imported as a module, so package recipes are `just <module>::<recipe>`
-and `just <module>::--list` lists one module. Whole-repo jobs the Nix flake owns
-(`fmt`, `check`, `schema`) stay at the root.
-
-`just fmt` mutates files, so run it before the read-only checks.
+Use `just` as the project entry point. Run `just fmt` before read-only checks.
 
 ## Adding A Dependency Or Tool
 
@@ -20,8 +15,7 @@ revertable.
 
 ## Validation
 
-Git hooks and CI cover the standard path: `.pre-commit-config.yaml` is generated
-from `nix/git-hooks.nix` and shows exactly which hook runs at which stage.
+Edit `nix/git-hooks.nix` to change Git hooks.
 
 Run `just typecheck` and `just test` yourself when the change touches behavior,
 types, or package code, or when the hooks and CI do not cover the edited files.

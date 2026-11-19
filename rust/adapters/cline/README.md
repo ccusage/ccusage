@@ -62,10 +62,6 @@ uses pricing. A reported zero is preserved. Valid custom model IDs remain
 labeled with their actual ID; reports flag them when pricing is unavailable
 rather than assigning a guessed model.
 
-## Adapter surface
+## Build layer
 
-- `load_entries(&SharedArgs, &PricingMap)` loads normalized usage records.
-- `run(AgentCommandArgs)` runs the Cline report command.
-
-The crate is built in the adapters Crane artifact layer with the other source
-adapters.
+Built in the `adapters` Crane artifact layer.

@@ -4,13 +4,6 @@ The Antigravity adapter turns local Antigravity SQLite conversation databases
 into the usage entries the reports render. It is a separate source boundary
 from the Gemini CLI adapter so unified reports preserve source attribution.
 
-## Owns
-
-- `loader.rs` — database discovery, bounded ordered reads, and identity-based deduplication.
-- `parser.rs` — SQLite row handling, GeneratorMetadata/CortexStepMetadata protobuf decoding, token buckets, retries, and model naming.
-- `paths.rs` — environment variables, default roots, and `.db` discovery.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
-
 ## Data source
 
 The adapter reads `.db` files below these default roots:
@@ -36,22 +29,6 @@ full read succeeds. Other readable databases remain available to the report.
 Usage rows use generation, step, linked-record, or trajectory timestamps. Rows
 without any of these are skipped with an invalid-timestamp diagnostic; the
 database's modification time does not date individual records.
-
-## Public surface
-
-- `SOURCE`
-- `loader::load_entries_with_warnings`: returns entries and skipped-database
-  warnings without printing them; callers print the warnings after their
-  progress output stops
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde_json`
-- `sqlite`
 
 ## Build layer
 

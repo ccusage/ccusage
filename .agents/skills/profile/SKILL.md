@@ -5,34 +5,15 @@ description: Profiles ccusage performance. Use when a CLI command is slow, when 
 
 # ccusage Profile
 
-Nearly all runtime cost lives in the Rust binary. `references/rust.md` covers
-release builds, the branch-vs-main worktree setup, deterministic measurement,
-JSON parity, and reproducing the CI performance comment.
+Read [Rust profiling](references/rust.md) for release builds, ref comparisons,
+output parity, and the CI measurements.
 
-Two habits carry across every profiling session here:
+Measure end-to-end on real logs or equivalent fixtures. Verify `daily`,
+`weekly`, `monthly`, `session`, and `blocks` JSON after changing aggregation
+order. Record measured hotspots left alone in the commit message.
 
-- Measure end-to-end on real logs before trusting a profile. The wins in this
-  repository came from timing the real CLI over real Claude data; a
-  microbenchmark answers an isolated question without predicting a CLI win.
-- Re-verify `daily`, `weekly`, `monthly`, `session`, and `blocks` JSON after
-  touching aggregation order, and record in the commit message any hotspot that
-  was measured and deliberately left alone.
+## Node paths
 
-## Node Paths
-
-`apps/ccusage/src/cli.js` resolves and spawns the platform binary, so the
-JavaScript side is a startup-latency question rather than a throughput one — a
-profile of it covers launcher startup, not the work the binary does:
-
-```sh
-LOG_LEVEL=0 node --cpu-prof --cpu-prof-dir /tmp/ccusage-profiles apps/ccusage/src/cli.js daily --offline --json
-```
-
-The tools under `nix/tools/` are built with `bunCli`/`bunNodeModules` and run
-under Bun; scripts in `apps/ccusage/scripts/` carry `nix shell` shebangs that
-pick nushell, babashka, or node (`generate-large-fixture.ts`). Time those
-scripts directly and profile with their own runtime's tooling; only the fixture
-generator takes `node --cpu-prof`.
-
-Point `--cpu-prof-dir` outside the worktree — nothing here ignores a `profiles/`
-directory.
+Profile launcher startup with `node --cpu-prof`, using a `--cpu-prof-dir`
+outside the worktree. Run other tools with their pinned interpreter and use
+its profiler.

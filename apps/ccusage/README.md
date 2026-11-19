@@ -143,7 +143,7 @@ bunx ccusage daily --by-agent --json
 
 # Filters and options
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16
-bunx ccusage daily --last 1  # Today
+bunx ccusage daily --last 1
 bunx ccusage weekly --last 1  # This week
 bunx ccusage monthly --last 1  # This month
 bunx ccusage daily --json  # JSON output

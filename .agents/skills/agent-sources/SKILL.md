@@ -5,30 +5,12 @@ description: Guides ccusage agent source formats. Use when checking where an age
 
 # ccusage Agent Sources
 
-Every agent is an adapter crate in `rust/adapters/<agent>` that turns one
-source's raw logs into the shared report shapes. `ccusage <report>` aggregates
-all of them; `ccusage <agent> <report>` scopes to one.
+Read `rust/adapters/<agent>/README.md` and, where present, `src/README.md`
+for source paths, record shapes, and accounting rules. Follow the adapter
+and pricing candidate boundaries in `rust/adapters/README.md` and the
+change workflow in `rust/adapters/AGENTS.md`.
 
-Keep command names and flag semantics aligned across agents unless the source
-data forces a difference. Declare supported reports in the agent table in
-`rust/crates/ccusage-cli/src/agents.rs`.
-
-Keep each source's stored-cost, reasoning-token and residual-token policies
-unchanged unless the task explicitly changes them. Use the shared pricing APIs
-in `rust/crates/ccusage-core/src/cost.rs` only when their results are identical. Pricing comes from
-LiteLLM with an embedded snapshot behind `--offline` (`pricing.rs`, and the
-`rust` skill for how both snapshots are built into the binary).
-
-Follow the pricing candidate contract in `rust/adapters/README.md`.
-
-## Before Changing A Source
-
-Read that agent's own docs first — they carry the paths, record shapes, token
-mapping, model fallbacks, and cost quirks that are not shared:
-
-- `rust/adapters/<agent>/README.md` - what the crate owns and where its data lives.
-- `rust/adapters/<agent>/src/README.md` - record shapes and token/cost rules,
-  present for the sources that need them.
-
-Architecture and the shared-vs-source boundary live in
-`rust/adapters/README.md`; the per-change workflow in `rust/adapters/AGENTS.md`.
+Keep command and option semantics aligned across agents. Declare supported
+reports in `rust/crates/ccusage-cli/src/agents.rs`. Preserve source-specific
+stored-cost, reasoning-token, and residual-token policies. Reuse
+`ccusage-core/src/cost.rs` when it preserves those policies.

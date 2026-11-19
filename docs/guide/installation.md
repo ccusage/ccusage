@@ -1,14 +1,6 @@
 # Installation
 
-ccusage can be installed and used in several ways depending on your preferences and use case.
-
-## Why Direct Execution Works Well
-
-You do not need to install ccusage globally before trying it. Direct package runners work well for ad hoc usage:
-
-- ✅ No global package to manage
-- ✅ Easy access to the latest published version
-- ✅ Cached package downloads after the first run
+You can run ccusage directly or install it globally.
 
 ## Quick Start (Recommended)
 
