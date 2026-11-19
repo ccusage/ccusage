@@ -524,6 +524,19 @@ service_tier = "fast"
                 Some(&usage(500, 100, 50, 0)),
                 Some(&usage(500, 100, 50, 0)),
             ),
+            // The first sibling only has a token count for this request.
+            // This rollout sorts later and carries the recording.
+            record(
+                "2026-01-01T12:05:59.900Z",
+                "resp-subagent-sibling-later",
+                &usage(250, 50, 25, 5),
+                "",
+            ),
+            count(
+                "2026-01-01T12:06:00.000Z",
+                Some(&usage(250, 50, 25, 5)),
+                Some(&usage(750, 150, 75, 5)),
+            ),
         ],
         utc(0, 12, 7),
     );
