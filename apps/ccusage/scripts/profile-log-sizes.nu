@@ -98,10 +98,11 @@ def codex-rollouts [roots: list<string>]: nothing -> list<string> {
 # entries add up the way they do in a real report.
 def main []: nothing -> nothing {
     let home = $env.HOME
-    let config_home = $env | get --optional XDG_CONFIG_HOME | default '' | str trim | if ($in | is-empty) {
+    let xdg_config_home = $env | get --optional XDG_CONFIG_HOME | default ''
+    let config_home = if ($xdg_config_home | str trim | is-empty) {
         $home | path join '.config'
     } else {
-        $in
+        $xdg_config_home
     }
     # Like ccusage, accept a root that names its projects/ directory.
     let claude_roots = env-roots 'CLAUDE_CONFIG_DIR' [
