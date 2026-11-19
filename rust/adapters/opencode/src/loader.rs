@@ -3190,6 +3190,67 @@ mod tests {
         assert_eq!(entries[0].message_id.as_deref(), Some("msg-pretty"));
     }
 
+    const NESTED_TIME_BEFORE_OWN: &str = r#"{"metadata":{"time":{"created":1766923200000}},"id":"msg-nested","sessionID":"session-a","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767268800000},"tokens":{"input":100,"output":50}}"#;
+
+    const NESTED_TIME_BEFORE_OWN_V2: &str = r#"{"metadata":{"time":{"created":1766923200000}},"model":{"id":"claude-sonnet-4-20250514","providerID":"anthropic"},"time":{"created":1767268800000},"tokens":{"input":100,"output":50}}"#;
+
+    fn bounded_and_unbounded_tokens(directory: &Path) -> (u64, u64) {
+        let unbounded = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+        let bounded = SharedArgs {
+            since: Some("20260101".parse().unwrap()),
+            until: Some("20260101".parse().unwrap()),
+            ..unbounded.clone()
+        };
+        (
+            total_tokens(&load_entries_from_directory(directory, &bounded)),
+            total_tokens(&load_entries_from_directory(directory, &unbounded)),
+        )
+    }
+
+    #[test]
+    fn a_nested_time_before_a_files_own_does_not_move_it_out_of_the_window() {
+        let fixture = fs_fixture!({
+            "storage/message/session-a/msg-nested.json": NESTED_TIME_BEFORE_OWN,
+        });
+
+        assert_eq!(bounded_and_unbounded_tokens(fixture.root()), (150, 150));
+    }
+
+    #[test]
+    fn a_nested_time_before_a_rows_own_does_not_move_it_out_of_the_window() {
+        let fixture = fs_fixture!({});
+        create_db_message(
+            &fixture.path("opencode.db"),
+            "msg-nested",
+            "session-a",
+            NESTED_TIME_BEFORE_OWN,
+        );
+
+        assert_eq!(bounded_and_unbounded_tokens(fixture.root()), (150, 150));
+    }
+
+    #[test]
+    fn a_nested_time_before_a_v2_rows_own_does_not_move_it_out_of_the_window() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_db_session_message(
+            &db_path,
+            "msg-nested",
+            "session-a",
+            "assistant",
+            1_767_268_800_000,
+            NESTED_TIME_BEFORE_OWN_V2,
+            true,
+        );
+
+        assert_eq!(bounded_and_unbounded_tokens(fixture.root()), (150, 150));
+    }
+
     const NOON_UTC_2026_01_01: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
 
     const EARLY_UTC_2026_01_02: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767333600000},"tokens":{"input":1,"output":1}}"#;
