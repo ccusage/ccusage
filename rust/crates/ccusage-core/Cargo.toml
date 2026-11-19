@@ -5,13 +5,10 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-# Tests only: `utc_now` returns the RFC 3339 instant in `CCUSAGE_TEST_NOW`
-# when it is set, so tests of the binary can pin "now" for clock-relative
-# reports. Crates enable it from [dev-dependencies], which Cargo leaves out of
-# `cargo build`, so the Crane layers and the shipped binary never compile it,
-# and diff-refs.bb enables it for the binaries it builds to replay the golden
-# environment.
+# NOTE(2026-11-19): Binary tests and diff-refs replays pin `utc_now` with `CCUSAGE_TEST_NOW`.
 test-clock = []
+# NOTE(2026-11-19): Resolver verification uses the selected row and step; replay binaries only need the clock.
+resolver-trace = []
 
 [dependencies]
 ccusage-cli.workspace = true

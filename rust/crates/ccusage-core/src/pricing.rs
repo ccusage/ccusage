@@ -524,7 +524,7 @@ impl Lookup {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(feature = "test-clock")]
+#[cfg(feature = "resolver-trace")]
 pub enum ResolutionStep {
     ReportedOverride,
     AuthoritativeIdentity,
@@ -535,7 +535,7 @@ pub enum ResolutionStep {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(feature = "test-clock")]
+#[cfg(feature = "resolver-trace")]
 pub struct Explanation<'a> {
     pub candidate: &'a str,
     pub step: ResolutionStep,
@@ -1647,7 +1647,7 @@ impl PricingMap {
         Some(found.row.pricing.rates())
     }
 
-    #[cfg(feature = "test-clock")]
+    #[cfg(feature = "resolver-trace")]
     pub fn explain<'a>(
         &'a self,
         reported_model: Option<&'a str>,

@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use rustc_hash::{FxHashMap, FxHasher};
 
-#[cfg(feature = "test-clock")]
+#[cfg(feature = "resolver-trace")]
 use super::ResolutionStep;
 use super::{Lookup, MatchKind, Row, RowMatch, Source, normalized_pricing_key, pricing_alias};
 
@@ -27,7 +27,7 @@ impl CachedHit {
     const STEP_SHIFT: usize = 2;
     const ROW_SHIFT: usize = 5;
     const STEP_MASK: usize = 7;
-    #[cfg(feature = "test-clock")]
+    #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
         ResolutionStep::ReportedOverride,
         ResolutionStep::AuthoritativeIdentity,
@@ -59,7 +59,7 @@ impl CachedHit {
         (self.0 >> Self::STEP_SHIFT) & Self::STEP_MASK
     }
 
-    #[cfg(feature = "test-clock")]
+    #[cfg(feature = "resolver-trace")]
     pub(super) fn step(self) -> Option<ResolutionStep> {
         Self::STEPS.get(self.step_index()).copied()
     }
