@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD,
+    Color, ColumnKind, ModelBreakdown, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD,
     UsageSummary, cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
     format_project_name, parse_project_aliases, parse_ts_timestamp, print_box_title, resolve_tz,
     short_model_name, terminal_width,
@@ -159,17 +159,17 @@ pub fn print_usage_table_with_options(
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
     let timezone = resolve_tz(shared.timezone.as_ref());
     print_box_title(title, shared);
-    let (mut headers, mut aligns) =
+    let (mut headers, mut columns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
     if shared.no_cost {
         headers.pop();
-        aligns.pop();
+        columns.pop();
     }
     if include_last_activity {
         headers.push("Last Activity");
-        aligns.push(Align::Left);
+        columns.push(ColumnKind::Text);
     }
-    let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
+    let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
     let aliases = parse_project_aliases(project_aliases);
@@ -280,21 +280,30 @@ fn usage_table_columns(
     first_column: &str,
     compact: bool,
     show_cache_creation: bool,
-) -> (Vec<&str>, Vec<Align>) {
+) -> (Vec<&str>, Vec<ColumnKind>) {
     let mut headers = vec![first_column, "Models", "Input", "Output"];
-    let mut aligns = vec![Align::Left, Align::Left, Align::Right, Align::Right];
+    let mut columns = vec![
+        ColumnKind::Primary,
+        ColumnKind::Models,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+    ];
     if !compact && show_cache_creation {
         headers.push("Cache Create");
-        aligns.push(Align::Right);
+        columns.push(ColumnKind::Numeric);
     }
     if compact {
         headers.push("Cost (USD)");
-        aligns.push(Align::Right);
+        columns.push(ColumnKind::Numeric);
     } else {
         headers.extend(["Cache Read", "Total Tokens", "Cost (USD)"]);
-        aligns.extend([Align::Right, Align::Right, Align::Right]);
+        columns.extend([
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+        ]);
     }
-    (headers, aligns)
+    (headers, columns)
 }
 
 fn empty_usage_table_message() -> &'static str {
@@ -522,7 +531,7 @@ mod tests {
 
     #[test]
     fn focused_table_can_omit_cache_creation_without_dropping_cache_reads() {
-        let (headers, aligns) = usage_table_columns("Date", false, false);
+        let (headers, columns) = usage_table_columns("Date", false, false);
 
         assert_eq!(
             headers,
@@ -536,16 +545,16 @@ mod tests {
                 "Cost (USD)",
             ]
         );
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
     }
 
     #[test]
     fn focused_table_includes_cache_creation_by_default() {
         let options = UsageTableOptions::default();
-        let (headers, aligns) = usage_table_columns("Date", false, options.show_cache_creation);
+        let (headers, columns) = usage_table_columns("Date", false, options.show_cache_creation);
 
         assert!(headers.contains(&"Cache Create"));
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
     }
 
     #[test]

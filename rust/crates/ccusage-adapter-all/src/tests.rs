@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use super::*;
 use crate::{
-    Align, ModelBreakdown, PricingMap,
+    ColumnKind, ModelBreakdown, PricingMap,
     cli::{AgentReportKind, CostMode, SharedArgs, SourceArgs, WeekDay},
     loader::{aggregate_rows, load_agent_rows_parallel, load_rows, load_sections},
     model_aliases::set_model_aliases_for_tests,
@@ -3062,28 +3062,28 @@ fn all_report_title_lists_detected_agents() {
 
 #[test]
 fn compact_table_columns_omit_cache_and_total_token_metrics() {
-    let (headers, aligns) = all_table_columns(AgentReportKind::Daily, true, false);
+    let (headers, columns) = all_table_columns(AgentReportKind::Daily, true, false);
 
     assert_eq!(
         headers,
         vec!["Date", "Agent", "Models", "Input", "Output", "Cost (USD)"]
     );
     assert_eq!(
-        aligns,
+        columns,
         vec![
-            Align::Left,
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
+            ColumnKind::Primary,
+            ColumnKind::Detail,
+            ColumnKind::Models,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
         ]
     );
 }
 
 #[test]
 fn full_table_columns_include_cache_and_total_token_metrics() {
-    let (headers, aligns) = all_table_columns(AgentReportKind::Daily, false, false);
+    let (headers, columns) = all_table_columns(AgentReportKind::Daily, false, false);
 
     assert_eq!(
         headers,
@@ -3099,7 +3099,7 @@ fn full_table_columns_include_cache_and_total_token_metrics() {
             "Cost (USD)",
         ]
     );
-    assert_eq!(headers.len(), aligns.len());
+    assert_eq!(headers.len(), columns.len());
 }
 
 #[test]

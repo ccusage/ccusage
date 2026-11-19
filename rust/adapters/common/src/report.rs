@@ -2,8 +2,8 @@ use std::io::IsTerminal;
 
 use ccusage_core::cli::{AgentReportKind, SharedArgs};
 use ccusage_core::{
-    Align, Color, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary, color,
-    first_column, format_breakdown_model_label, format_currency, format_models_multiline,
+    Color, ColumnKind, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
+    color, first_column, format_breakdown_model_label, format_currency, format_models_multiline,
     format_number, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
 };
 
@@ -42,19 +42,19 @@ fn print_table_for_agent(
             "Credits",
             "Cost (USD)",
         ];
-        let mut aligns = vec![
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
+        let mut columns = vec![
+            ColumnKind::Primary,
+            ColumnKind::Models,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
         ];
         if shared.no_cost {
             headers.pop();
-            aligns.pop();
+            columns.pop();
         }
-        SimpleTable::new(headers, aligns, terminal_style(shared))
+        SimpleTable::new(headers, columns, terminal_style(shared))
     } else {
         let mut headers = vec![
             first_column,
@@ -67,22 +67,22 @@ fn print_table_for_agent(
             "Credits",
             "Cost (USD)",
         ];
-        let mut aligns = vec![
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
+        let mut columns = vec![
+            ColumnKind::Primary,
+            ColumnKind::Models,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
         ];
         if shared.no_cost {
             headers.pop();
-            aligns.pop();
+            columns.pop();
         }
-        SimpleTable::new(headers, aligns, terminal_style(shared))
+        SimpleTable::new(headers, columns, terminal_style(shared))
     }
     .with_terminal_width(terminal_width)
     .with_date_compaction(true);

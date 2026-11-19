@@ -2,8 +2,8 @@ use ccusage_core::cli::SessionLength;
 use std::{io::IsTerminal, num::NonZeroU64};
 
 use ccusage_core::{
-    Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow, Result,
-    SimpleTable, TimestampMs, TokenCounts,
+    Align, Color, ColumnKind, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow,
+    Result, SimpleTable, TimestampMs, TokenCounts,
     cli::{SharedArgs, SortOrder},
     color,
     fast::FxHashSet,
@@ -366,16 +366,21 @@ pub(crate) fn print_blocks_table(
     let actual_limit = token_limit;
     print_box_title("Claude Code Token Usage Report - Session Blocks", shared);
     let mut headers = vec!["Block Start", "Duration/Status", "Models", "Tokens"];
-    let mut aligns = vec![Align::Left, Align::Left, Align::Left, Align::Right];
+    let mut columns = vec![
+        ColumnKind::Primary,
+        ColumnKind::Detail,
+        ColumnKind::Models,
+        ColumnKind::Numeric,
+    ];
     if actual_limit.is_some() {
         headers.push("%");
-        aligns.push(Align::Right);
+        columns.push(ColumnKind::Numeric);
     }
     if !shared.no_cost {
         headers.push("Cost");
-        aligns.push(Align::Right);
+        columns.push(ColumnKind::Numeric);
     }
-    let mut table = SimpleTable::new(headers, aligns, terminal_style(shared))
+    let mut table = SimpleTable::new(headers, columns, terminal_style(shared))
         .with_terminal_width(terminal_width);
     for block in blocks {
         if block.is_gap {
@@ -451,7 +456,7 @@ pub(crate) fn print_blocks_table(
                 if !shared.no_cost {
                     remaining_row.push(String::new());
                 }
-                table.push(remaining_row);
+                table.push_aligned(remaining_row, Align::Right);
             }
 
             if let Some(projection) = project_block_usage(block, now) {
@@ -477,7 +482,7 @@ pub(crate) fn print_blocks_table(
                 if !shared.no_cost {
                     projected_row.push(format_currency(projection.total_cost));
                 }
-                table.push(projected_row);
+                table.push_aligned(projected_row, Align::Right);
             }
         }
     }

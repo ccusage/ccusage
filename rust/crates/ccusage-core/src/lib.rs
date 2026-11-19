@@ -45,7 +45,7 @@ pub use utils::{
 };
 pub use window::ReportWindow;
 
-pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_width};
+pub use ccusage_terminal::{Align, Color, ColumnKind, SimpleTable, TerminalStyle, terminal_width};
 
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;

@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::{
-    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,
-    Color, PricingMap, Result, SimpleTable, attach_unpriced_models,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket, Color,
+    ColumnKind, PricingMap, Result, SimpleTable, attach_unpriced_models,
     cli::{AgentReportKind, CostMode, SharedArgs},
     color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
     json_float, missing_pricing_model_for_token_total, print_box_title,
@@ -358,7 +358,7 @@ pub fn codex_missing_pricing_models(
 fn codex_table_columns(
     first_column: &'static str,
     no_cost: bool,
-) -> (Vec<&'static str>, Vec<Align>) {
+) -> (Vec<&'static str>, Vec<ColumnKind>) {
     let mut headers = vec![
         first_column,
         "Models",
@@ -370,32 +370,30 @@ fn codex_table_columns(
         "Total Tokens",
         "Cost (USD)",
     ];
-    let mut aligns = vec![
-        Align::Left,
-        Align::Left,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
-        Align::Right,
+    let mut columns = vec![
+        ColumnKind::Primary,
+        ColumnKind::Models,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
+        ColumnKind::Numeric,
     ];
     if no_cost {
         headers.pop();
-        aligns.pop();
+        columns.pop();
     }
-    (headers, aligns)
+    (headers, columns)
 }
 
 fn codex_table_row(
     label: &str,
-    kind: AgentReportKind,
     group: &CodexGroup,
     pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     no_cost: bool,
-    terminal_width: usize,
 ) -> (Vec<String>, u64, f64) {
     let input_tokens = non_cached_input_tokens(
         group.input_tokens,
@@ -405,7 +403,7 @@ fn codex_table_row(
     let cost = calculate_group_cost(group, pricing, speed);
     let models = format_models_multiline(&group.models.keys().cloned().collect::<Vec<_>>());
     let mut row = vec![
-        codex_table_label(label, kind, terminal_width),
+        sanitize_terminal_text(label),
         models,
         format_number(input_tokens),
         format_number(group.output_tokens),
@@ -419,23 +417,6 @@ fn codex_table_row(
         row.pop();
     }
     (row, input_tokens, cost)
-}
-
-fn codex_table_label(label: &str, kind: AgentReportKind, terminal_width: usize) -> String {
-    let label = sanitize_terminal_text(label);
-    if matches!(kind, AgentReportKind::Daily) && terminal_width <= 120 {
-        let bytes = label.as_bytes();
-        if bytes.len() == 10
-            && bytes[4] == b'-'
-            && bytes[7] == b'-'
-            && bytes[..4].iter().all(u8::is_ascii_digit)
-            && bytes[5..7].iter().all(u8::is_ascii_digit)
-            && bytes[8..10].iter().all(u8::is_ascii_digit)
-        {
-            return format!("{}\n{}", &label[..4], &label[5..]);
-        }
-    }
-    label
 }
 
 #[derive(Default)]
@@ -617,21 +598,17 @@ pub(super) fn print_table_from_groups(
         shared,
     );
     let terminal_width = crate::terminal_width();
-    let (headers, aligns) = codex_table_columns(first_column, shared.no_cost);
-    let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
+    let (headers, columns) = codex_table_columns(first_column, shared.no_cost);
+    let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
+    if kind == AgentReportKind::Daily {
+        table = table.with_date_compaction_at(120);
+    }
     let mut totals = CodexTableTotals::default();
     for (label, group) in groups {
-        let (row, input_tokens, cost) = codex_table_row(
-            label,
-            kind,
-            group,
-            pricing,
-            speed,
-            shared.no_cost,
-            terminal_width,
-        );
+        let (row, input_tokens, cost) =
+            codex_table_row(label, group, pricing, speed, shared.no_cost);
         totals.add(group, input_tokens, cost);
         table.push(row);
         push_codex_breakdown_rows(&mut table, group, pricing, speed, shared);
@@ -866,28 +843,26 @@ mod tests {
             color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", false);
+        let (headers, columns) = codex_table_columns("Date", false);
         let (row, input_tokens, cost) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            160,
         );
         let mut totals = CodexTableTotals::default();
         totals.add(&group, input_tokens, cost);
         let total_row = codex_table_total_row(&totals, &shared, false);
 
         assert_eq!(headers[5], "Cache Create");
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
         assert_eq!(row[5], "30");
         assert_eq!(total_row[5], "30");
     }
 
     #[test]
-    fn standard_cost_table_at_120_columns_renders_distinguishable_daily_dates() {
+    fn daily_rows_leave_date_compaction_to_the_table() {
         let group = CodexGroup {
             input_tokens: 100,
             cached_input_tokens: 60,
@@ -897,37 +872,33 @@ mod tests {
             total_tokens: 105,
             ..CodexGroup::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", false);
+        let (headers, columns) = codex_table_columns("Date", false);
         let (row, _, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            120,
         );
-        let (no_cost_headers, no_cost_aligns) = codex_table_columns("Date", true);
+        let (no_cost_headers, no_cost_columns) = codex_table_columns("Date", true);
         let (no_cost_row, _, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
-            120,
         );
 
         assert_eq!(headers[5], "Cache Create");
-        assert_eq!(headers.len(), aligns.len());
-        assert_eq!(row[0], "2026\n08-20");
+        assert_eq!(headers.len(), columns.len());
+        assert_eq!(row[0], "2026-08-20");
         assert_eq!(no_cost_headers.last(), Some(&"Total Tokens"));
-        assert_eq!(no_cost_headers.len(), no_cost_aligns.len());
-        assert_eq!(no_cost_row[0], "2026\n08-20");
+        assert_eq!(no_cost_headers.len(), no_cost_columns.len());
+        assert_eq!(no_cost_row[0], "2026-08-20");
     }
 
     #[test]
-    fn no_cost_table_at_120_columns_renders_distinguishable_daily_dates() {
+    fn no_cost_daily_columns_match_detail_and_total_rows() {
         let group = CodexGroup {
             input_tokens: 100,
             cached_input_tokens: 60,
@@ -941,24 +912,20 @@ mod tests {
             color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", true);
+        let (headers, columns) = codex_table_columns("Date", true);
         let (first_row, first_input, first_cost) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
-            120,
         );
         let (second_row, second_input, second_cost) = codex_table_row(
             "2026-08-21",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
-            120,
         );
         let mut totals = CodexTableTotals::default();
         totals.add(&group, first_input, first_cost);
@@ -967,12 +934,12 @@ mod tests {
 
         assert_eq!(headers[5], "Cache Create");
         assert_eq!(headers.last(), Some(&"Total Tokens"));
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
         assert_eq!(first_row.len(), headers.len());
         assert_eq!(second_row.len(), headers.len());
         assert_eq!(total_row.len(), headers.len());
-        assert_eq!(first_row[0], "2026\n08-20");
-        assert_eq!(second_row[0], "2026\n08-21");
+        assert_eq!(first_row[0], "2026-08-20");
+        assert_eq!(second_row[0], "2026-08-21");
         assert_ne!(first_row[0], second_row[0]);
         assert_eq!(first_row[5], "30");
         assert_eq!(total_row[5], "60");
@@ -1062,12 +1029,10 @@ mod tests {
             .sum();
         let (row, group_input, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            160,
         );
         assert_eq!(input, group_input);
         assert_eq!(row[2], format_number(group_input));
@@ -1082,15 +1047,13 @@ mod tests {
             color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
-        let (headers, aligns) = codex_table_columns("Date", false);
+        let (headers, columns) = codex_table_columns("Date", false);
         let (row, _, _) = codex_table_row(
             "2026-08-20",
-            AgentReportKind::Daily,
             &group,
             Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
-            160,
         );
 
         assert!(!shared.breakdown);
@@ -1104,6 +1067,6 @@ mod tests {
             .is_empty()
         );
         assert_eq!(row.len(), headers.len());
-        assert_eq!(headers.len(), aligns.len());
+        assert_eq!(headers.len(), columns.len());
     }
 }

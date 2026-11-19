@@ -7,7 +7,8 @@ use serde::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, Totals, TotalsRow, attach_unpriced_models,
+    Color, ColumnKind, ModelBreakdown, Result, SimpleTable, Totals, TotalsRow,
+    attach_unpriced_models,
     cli::{AgentReportKind, SharedArgs, SortOrder},
     color, first_column, format_breakdown_model_label, format_currency, format_models_multiline,
     format_number, json_float,
@@ -191,8 +192,8 @@ pub(super) fn print_table(
         terminal_width,
         crate::USAGE_COMPACT_WIDTH_THRESHOLD,
     );
-    let (headers, aligns) = all_table_columns(kind, compact, shared.no_cost);
-    let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
+    let (headers, columns) = all_table_columns(kind, compact, shared.no_cost);
+    let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
 
@@ -416,8 +417,8 @@ pub(super) fn all_table_columns(
     kind: AgentReportKind,
     compact: bool,
     no_cost: bool,
-) -> (Vec<&'static str>, Vec<Align>) {
-    let (mut headers, mut aligns) = if compact {
+) -> (Vec<&'static str>, Vec<ColumnKind>) {
+    let (mut headers, mut columns) = if compact {
         (
             vec![
                 first_column(kind),
@@ -428,12 +429,12 @@ pub(super) fn all_table_columns(
                 "Cost (USD)",
             ],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Detail,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
         )
     } else {
@@ -450,23 +451,23 @@ pub(super) fn all_table_columns(
                 "Cost (USD)",
             ],
             vec![
-                Align::Left,
-                Align::Left,
-                Align::Left,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
-                Align::Right,
+                ColumnKind::Primary,
+                ColumnKind::Detail,
+                ColumnKind::Models,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
+                ColumnKind::Numeric,
             ],
         )
     };
     if no_cost {
         headers.pop();
-        aligns.pop();
+        columns.pop();
     }
-    (headers, aligns)
+    (headers, columns)
 }
 
 pub(super) fn sort_rows(rows: &mut [ReportRow], order: &SortOrder) {
