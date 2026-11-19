@@ -981,7 +981,7 @@ impl DailyAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, sync::Arc};
+    use std::{fmt::Write, path::Path, sync::Arc};
 
     use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
     use crate::{
@@ -1015,6 +1015,127 @@ mod tests {
             pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
             &Diagnostics::new("claude"),
         )
+    }
+
+    #[test]
+    fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
+        let original = ccusage_core::fast::LinePrefilter::all(&[br#""usage":{"#]);
+        for escaped_letters in 0_u8..32 {
+            let mut key = String::new();
+            for (index, &letter) in b"usage".iter().enumerate() {
+                if escaped_letters & (1 << index) == 0 {
+                    key.push(char::from(letter));
+                } else {
+                    write!(key, "\\u{letter:04x}").unwrap();
+                }
+            }
+            for delimiter in [":{", ": {", " :{", ":\t{", ":null", ":"] {
+                let fragment = format!(r#""{key}"{delimiter}"#);
+                let lines = [
+                    format!(r#"{{"message":{{{fragment}"#) + "}}}",
+                    format!(r#"{{"decoy":{{{fragment}"#) + "}}}",
+                    format!(
+                        r#"{{"content":{}}}"#,
+                        serde_json::to_string(&fragment).unwrap()
+                    ),
+                    format!(r#"{{"content":"\u006e",{fragment}"#),
+                    format!(r#"{{"content":"\\u006e",{fragment}"#),
+                    format!(r#"{{"content":"\\\u006e",{fragment}"#),
+                ];
+                for line in lines {
+                    let bytes = line.as_bytes();
+                    for end in 0..=bytes.len() {
+                        let prefix = &bytes[..end];
+                        assert_eq!(
+                            !matches!(super::admit(prefix), Err(super::Refusal::NotUsage)),
+                            original.matches(prefix),
+                            "prefilter decision for {:?}",
+                            &line[..end],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn usage_prefilter_preserves_typed_record_admission() {
+        #[derive(Debug, PartialEq)]
+        enum Admission {
+            Accepted(u64),
+            NoMarker,
+            Malformed,
+        }
+        use Admission::{Accepted, Malformed, NoMarker};
+
+        let cases = [
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","version":"2.0.0","message":{"id":"msg_1","usage":{"input_tokens":10,"output_tokens":1}}"#,
+                Accepted(10),
+            ),
+            (
+                r#""message":{"\u0075s\u0061g\u0065":{"input_tokens":20,"output_tokens":1},"id":"msg_2"},"version":"2.0.0","timestamp":"2026-01-02T10:00:00Z""#,
+                Accepted(20),
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","message":{"content":"{\"usage\":{}}"}"#,
+                NoMarker,
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","message":{"decoy":{"usage":{"input_tokens":99,"output_tokens":1}}}"#,
+                Malformed,
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1},"\u0075sage":{"input_tokens":99,"output_tokens":1}}"#,
+                Malformed,
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","message":{"\u0075sage": {"input_tokens":30,"output_tokens":1}}"#,
+                NoMarker,
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","message":{"usage": {"input_tokens":30,"output_tokens":1}}"#,
+                NoMarker,
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","decoy":{"\u0075sage":{}},"message":{"usage": {"input_tokens":30,"output_tokens":1}}"#,
+                Accepted(30),
+            ),
+            (
+                r#""timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":40,"output_tokens":1}},"tail":"unfinished"#,
+                Malformed,
+            ),
+        ];
+        for (fields, expected) in cases {
+            let line = format!("{{{fields}}}");
+            let actual = match super::admit(line.as_bytes()) {
+                Ok(admitted) => Accepted(admitted.record.message.usage.usage.input_tokens),
+                Err(super::Refusal::NotUsage) => NoMarker,
+                Err(super::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
+                Err(_) => panic!("unexpected refusal for {line}"),
+            };
+            assert_eq!(actual, expected, "{line}");
+        }
+    }
+
+    #[test]
+    fn usage_prefilter_reads_a_marker_across_the_buffer_boundary() {
+        let prefix = r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"content":""#;
+        let separator = r#"","#;
+        let padding_len = super::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
+        let line = format!(
+            "{prefix}{}{separator}{}",
+            "x".repeat(padding_len),
+            r#""usage":{"input_tokens":40,"output_tokens":1}}}"#,
+        );
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": line,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let loaded = read_daily_usage_file(&path, &JiffTimeZone::UTC, CostMode::Display, None);
+        assert!(super::has_usage(&path));
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].usage.input_tokens, 40);
     }
 
     #[test]
