@@ -208,7 +208,7 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
 #[cfg(test)]
 fn parse_session_files(
     files: &GrokSessionFiles,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
@@ -219,7 +219,7 @@ fn parse_session_files(
 
 pub(super) fn parse_session_files_with_diagnostics(
     files: &GrokSessionFiles,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
@@ -699,7 +699,7 @@ mod tests {
         let _root = fixture.root().to_path_buf();
         parse_session_files(
             &files,
-            Some(&jiff::tz::TimeZone::UTC),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             &PricingMap::load_embedded(),
         )
@@ -815,7 +815,13 @@ mod tests {
             summary: None,
         };
         let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(&files, None, CostMode::Calculate, &pricing).unwrap();
+        let entries = parse_session_files(
+            &files,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Calculate,
+            &pricing,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("grok-never-priced-build"));
@@ -838,7 +844,13 @@ mod tests {
             summary: Some(fixture.path("sessions/proj/sess-1/summary.json")),
         };
         let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(&files, None, CostMode::Calculate, &pricing).unwrap();
+        let entries = parse_session_files(
+            &files,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Calculate,
+            &pricing,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         let entry = &entries[0];
@@ -968,7 +980,7 @@ mod tests {
 
         let entries = parse_session_files_with_diagnostics(
             &files,
-            Some(&jiff::tz::TimeZone::UTC),
+            &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             &PricingMap::load_embedded(),
             &diagnostics,
@@ -1017,7 +1029,7 @@ mod tests {
         };
         let entries = parse_session_files(
             &files,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             &PricingMap::load_embedded(),
         )
@@ -1062,7 +1074,7 @@ mod tests {
         };
         let entries = parse_session_files(
             &files,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             &PricingMap::load_embedded(),
         )
@@ -1150,7 +1162,13 @@ mod tests {
             summary: None,
         };
         let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(&files, None, CostMode::Display, &pricing).unwrap();
+        let entries = parse_session_files(
+            &files,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            &pricing,
+        )
+        .unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].cost, 0.0);
         assert_eq!(entries[0].missing_pricing_model, None);
@@ -1184,8 +1202,10 @@ mod tests {
             summary: None,
         };
         let pricing = PricingMap::load_embedded();
-        let stored_cost =
-            |mode| parse_session_files(&files, None, mode, &pricing).unwrap()[0].stored_cost;
+        let stored_cost = |mode| {
+            parse_session_files(&files, &jiff::tz::TimeZone::system(), mode, &pricing).unwrap()[0]
+                .stored_cost
+        };
 
         assert!(stored_cost(CostMode::Auto).is_some_and(|cost| (cost - 0.0185192).abs() < 1e-12));
         assert_eq!(stored_cost(CostMode::Calculate), None);

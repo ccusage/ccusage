@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
-    sync::{Mutex, OnceLock, RwLock},
+    sync::{Arc, Mutex, OnceLock, RwLock},
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -454,6 +455,10 @@ enum Fuzzy {
     Denied,
 }
 
+/// One slot per looked-up model, so concurrent first lookups of a model share
+/// a single fuzzy search instead of each running it.
+type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<Pricing>>>>>;
+
 #[derive(Debug)]
 pub struct PricingMap {
     entries: FxHashMap<String, Pricing>,
@@ -472,7 +477,7 @@ pub struct PricingMap {
     builtin_context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
-    find_cache: OnceLock<RwLock<FxHashMap<String, Option<Pricing>>>>,
+    find_cache: OnceLock<FindCache>,
     /// Every entry key under its normalized spelling, mapped to the one key
     /// carrying that spelling, or `None` when several keys share it.
     ///
@@ -794,9 +799,9 @@ impl ModelsDevCatalogRules {
 fn normalized_models_dev_model_id(model_id: &str) -> Cow<'_, str> {
     if model_id
         .bytes()
-        .any(|byte| byte == b'.' || byte == b'@' || byte.is_ascii_uppercase())
+        .any(|byte| is_pricing_key_separator(byte) || byte.is_ascii_uppercase())
     {
-        Cow::Owned(model_id.to_lowercase().replace(['.', '@'], "-"))
+        Cow::Owned(dash_pricing_key_separators(model_id.to_lowercase().chars()))
     } else {
         Cow::Borrowed(model_id)
     }
@@ -1011,7 +1016,7 @@ impl SpeedMultiplierOverrides {
                         pricing_alias(base).and_then(|alias| self.exact.get(alias).copied())
                     })
                     .or_else(|| {
-                        let normalized = part.replace(['.', '@'], "-");
+                        let normalized = normalized_pricing_key(part);
                         self.normalized_prefix
                             .iter()
                             .find_map(|(base, multiplier)| {
@@ -1022,8 +1027,50 @@ impl SpeedMultiplierOverrides {
     }
 }
 
+static EMBEDDED_PREWARM: Mutex<Option<JoinHandle<PricingMap>>> = Mutex::new(None);
+
+/// Starts building the embedded pricing table on a background thread.
+///
+/// The next [`PricingMap::load_embedded`] call takes that table instead of
+/// building its own, so a report can discover its log files while the
+/// snapshots inflate and parse. Nothing starts when the
+/// [`PricingMap::load_with_overrides`] base for `offline` is already loaded
+/// or a prewarmed table is still waiting to be taken. The embedded snapshots
+/// must already be installed.
+pub fn prewarm_embedded(offline: bool) {
+    if base_pricing(offline).get().is_some() {
+        return;
+    }
+    let Ok(mut prewarm) = EMBEDDED_PREWARM.lock() else {
+        return;
+    };
+    if prewarm.is_none() {
+        *prewarm = thread::Builder::new()
+            .spawn(PricingMap::build_embedded)
+            .ok();
+    }
+}
+
+/// Every agent of a combined report prices its own rows, so the tables are
+/// parsed, and in online mode fetched, once per process rather than per agent.
+fn base_pricing(offline: bool) -> &'static OnceLock<PricingMap> {
+    static ONLINE: OnceLock<PricingMap> = OnceLock::new();
+    static OFFLINE: OnceLock<PricingMap> = OnceLock::new();
+    if offline { &OFFLINE } else { &ONLINE }
+}
+
 impl PricingMap {
     pub fn load_embedded() -> Self {
+        let prewarm = EMBEDDED_PREWARM
+            .lock()
+            .ok()
+            .and_then(|mut prewarm| prewarm.take());
+        prewarm
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_else(Self::build_embedded)
+    }
+
+    fn build_embedded() -> Self {
         let mut map = Self::default();
         let fast_multiplier_overrides =
             SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
@@ -1054,6 +1101,12 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
+        base_pricing(offline)
+            .get_or_init(|| Self::load_base(offline, log))
+            .with_user_overrides(overrides)
+    }
+
+    fn load_base(offline: bool, log: bool) -> Self {
         let mut map = Self::load_embedded();
         if !offline {
             let fetch_result = crate::progress::track_status(
@@ -1084,7 +1137,6 @@ impl PricingMap {
         // overrides get the final word.
         map.fill_long_context_rates_from_models_dev();
         map.enable_models_dev_fallback = !offline;
-        map.apply_overrides(overrides);
         map
     }
 
@@ -1460,38 +1512,40 @@ impl PricingMap {
         // name is looked up repeatedly (e.g. across thousands of entries with
         // only a few dozen unique models), the cache avoids re-running the
         // expensive fuzzy fallback on every call.
-        {
-            let cache = self
-                .find_cache
-                .get_or_init(|| RwLock::new(FxHashMap::default()));
-            let guard = cache.read().unwrap_or_else(|error| error.into_inner());
-            if let Some(&cached) = guard.get(model) {
-                return cached;
-            }
-        }
-        // Full lookup (dropped the lock above so concurrent callers are not
-        // serialized on the expensive fuzzy path).
-        let result = self.find_with_fallbacks(
-            model,
-            || {
-                self.enable_models_dev_fallback
-                    .then(models_dev_pricing)
-                    .flatten()
-            },
-            || {
-                self.enable_embedded_models_dev_fallback
-                    .then(embedded_models_dev_pricing)
-            },
-        );
-        // Store the result (including None for misses) so repeated lookups
-        // for the same model that fails to match any pricing entry are also
-        // short-circuited.
         let cache = self
             .find_cache
             .get_or_init(|| RwLock::new(FxHashMap::default()));
-        let mut guard = cache.write().unwrap_or_else(|error| error.into_inner());
-        guard.insert(model.to_string(), result);
-        result
+        if let Some(&cached) = cache
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(model)
+            .and_then(|slot| slot.get())
+        {
+            return cached;
+        }
+        let slot = Arc::clone(
+            cache
+                .write()
+                .unwrap_or_else(|error| error.into_inner())
+                .entry(model.to_string())
+                .or_default(),
+        );
+        // The lock is released before the search, so lookups of other models
+        // are not serialized behind it. Misses are cached as `None` as well.
+        *slot.get_or_init(|| {
+            self.find_with_fallbacks(
+                model,
+                || {
+                    self.enable_models_dev_fallback
+                        .then(models_dev_pricing)
+                        .flatten()
+                },
+                || {
+                    self.enable_embedded_models_dev_fallback
+                        .then(embedded_models_dev_pricing)
+                },
+            )
+        })
     }
 
     fn find_with_fallbacks<'a>(
@@ -2913,10 +2967,20 @@ fn suffix_starts_with_numeric_model_version(key: &str, suffix: &str) -> bool {
     !(digit_len == MODEL_DATE_SUFFIX_DIGITS && after_digits.is_none_or(is_pricing_key_boundary))
 }
 
+fn is_pricing_key_separator(byte: u8) -> bool {
+    matches!(byte, b'.' | b'@')
+}
+
+fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> String {
+    chars
+        .map(|char| if matches!(char, '.' | '@') { '-' } else { char })
+        .collect()
+}
+
 /// Normalizes known model separator variants without allocating for canonical keys.
 fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
-    if value.contains(['.', '@']) {
-        Cow::Owned(value.replace(['.', '@'], "-"))
+    if value.bytes().any(is_pricing_key_separator) {
+        Cow::Owned(dash_pricing_key_separators(value.chars()))
     } else {
         Cow::Borrowed(value)
     }
@@ -3022,11 +3086,17 @@ fn pricing_alias(model: &str) -> Option<&'static str> {
 }
 
 fn matches_model_suffix(part: &str, base: &str) -> bool {
-    let Some(index) = part.rfind(base) else {
+    // Model ids are a few dozen bytes, so scanning windows beats building a
+    // substring searcher for each of the thousands of startup lookups.
+    let (part, base) = (part.as_bytes(), base.as_bytes());
+    if base.is_empty() {
+        return true;
+    }
+    let Some(index) = part.windows(base.len()).rposition(|window| window == base) else {
         return false;
     };
-    let suffix = &part[index..];
-    suffix == base || suffix.as_bytes().get(base.len()) == Some(&b'-')
+    part.get(index + base.len())
+        .is_none_or(|&next| next == b'-')
 }
 
 fn should_log_pricing_refresh_details() -> bool {
@@ -3117,10 +3187,11 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FAST_MULTIPLIER_OVERRIDES_JSON, FLEX_MULTIPLIER_OVERRIDES_JSON, Fuzzy, Pricing,
-        PricingEndpoint, PricingMap, SpeedMultiplierOverrides, ULTRAFAST_MULTIPLIER_OVERRIDES_JSON,
-        build_time_models_dev_json, build_time_pricing_json, embedded_models_dev_pricing,
-        long_context_split_threshold, model_without_date_suffix,
+        EMBEDDED_PREWARM, FAST_MULTIPLIER_OVERRIDES_JSON, FLEX_MULTIPLIER_OVERRIDES_JSON, Fuzzy,
+        Pricing, PricingEndpoint, PricingMap, SpeedMultiplierOverrides,
+        ULTRAFAST_MULTIPLIER_OVERRIDES_JSON, build_time_models_dev_json, build_time_pricing_json,
+        embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
+        prewarm_embedded,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3398,6 +3469,18 @@ mod tests {
         assert!((flash.input * 1e6 - 0.44).abs() < 1e-12);
         assert!((flash.output * 1e6 - 1.32).abs() < 1e-12);
         assert!((flash.cache_read * 1e6 - 0.014).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prewarm_skips_a_build_once_the_base_pricing_is_loaded() {
+        PricingMap::load_with_overrides(
+            true,
+            false,
+            std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
+        );
+        prewarm_embedded(true);
+
+        assert!(EMBEDDED_PREWARM.lock().unwrap().is_none());
     }
 
     #[test]
@@ -5927,6 +6010,22 @@ mod tests {
             long_context_split_threshold("gpt-reserve"),
             long_context_split_threshold("gpt-5.6-luna")
         );
+    }
+
+    #[test]
+    fn model_suffix_matches_only_at_the_last_occurrence() {
+        assert!(super::matches_model_suffix("claude-opus-4-6", "opus-4-6"));
+        assert!(super::matches_model_suffix(
+            "us-claude-opus-4-6-v1",
+            "opus-4-6"
+        ));
+        assert!(!super::matches_model_suffix(
+            "opus-4-6-x-opus-4-60",
+            "opus-4-6"
+        ));
+        assert!(!super::matches_model_suffix("opus-4", "opus-4-6"));
+        assert!(super::matches_model_suffix("modèle-opus", "opus"));
+        assert!(super::matches_model_suffix("anything", ""));
     }
 
     #[test]

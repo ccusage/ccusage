@@ -558,7 +558,7 @@ fn file_modified_timestamp(path: &Path) -> TimestampMs {
 
 pub(super) fn event_to_loaded(
     event: GeminiUsageEvent,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> LoadedEntry {

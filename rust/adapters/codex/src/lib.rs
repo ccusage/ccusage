@@ -50,12 +50,15 @@ use serde_json::Value;
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
+    // The embedded table builds while the rollouts load; asking for pricing
+    // before load_groups would wait for it instead.
+    pricing::prewarm_embedded(shared.offline);
+    let mut groups = load_groups(&shared, args.kind)?;
     let pricing = PricingMap::load_with_overrides(
         shared.offline,
         log_level() != Some(0),
         shared.pricing_overrides.iter(),
     );
-    let mut groups = load_groups(&shared, args.kind)?;
     let speed = resolve_codex_speed(args.codex_speed);
     if let Some(requested_id) = args.session_id {
         let session_id = resolve_session_id(&groups, &requested_id)?.to_string();

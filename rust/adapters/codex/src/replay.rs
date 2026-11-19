@@ -16,7 +16,7 @@ use super::{
     parser::{
         CodexForkReplay, codex_value_timestamp, visit_codex_session_file_with_compaction_history,
     },
-    reader::open_rollout_reader,
+    reader::{PROBE_BUFFER_SIZE, open_rollout_lines},
 };
 
 #[cfg(test)]
@@ -103,6 +103,31 @@ impl CodexReplayPlan {
     ) -> Self {
         let files = collect_replay_files(groups);
         let metadata = read_session_metadata(&files, single_thread);
+        Self::from_metadata(files, metadata, single_thread, diagnostics)
+    }
+
+    /// Plans from metadata already read from the first line of every file in
+    /// `groups`, in the same order.
+    pub(super) fn with_metadata<'a>(
+        groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
+        metadata: Vec<CodexSessionMetadata>,
+        single_thread: bool,
+        diagnostics: &Diagnostics,
+    ) -> Self {
+        Self::from_metadata(
+            collect_replay_files(groups),
+            metadata,
+            single_thread,
+            diagnostics,
+        )
+    }
+
+    fn from_metadata(
+        files: Vec<(PathBuf, &Path)>,
+        metadata: Vec<CodexSessionMetadata>,
+        single_thread: bool,
+        diagnostics: &Diagnostics,
+    ) -> Self {
         let files_by_session_id = index_session_paths(&files, &metadata);
         let parent_by_child = build_parent_replays(&files, metadata, &files_by_session_id);
         let parent_paths = parent_by_child
@@ -423,26 +448,37 @@ fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics
 }
 
 #[derive(Clone, Default)]
-struct CodexSessionMetadata {
+pub(super) struct CodexSessionMetadata {
     session_id: Option<String>,
     parent_id: Option<String>,
     timestamp: Option<TimestampMs>,
     spawned: bool,
 }
 
+impl CodexSessionMetadata {
+    /// Whether the rollout replays history from the session it forked from.
+    pub(super) fn is_fork(&self) -> bool {
+        self.parent_id.is_some()
+    }
+}
+
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     observe_metadata_probe(path);
-    let Ok((mut reader, _)) = open_rollout_reader(path) else {
+    let Ok((mut lines, _)) = open_rollout_lines(path, PROBE_BUFFER_SIZE) else {
         return CodexSessionMetadata::default();
     };
-    let mut line = String::new();
-    let Ok(bytes_read) = reader.read_line(&mut line) else {
+    let Ok(Some(line)) = lines.next_line() else {
         return CodexSessionMetadata::default();
     };
-    if bytes_read == 0 {
+    session_metadata_from_line(path, line)
+}
+
+/// Session metadata from a rollout's first line.
+pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
+    let Ok(line) = std::str::from_utf8(line) else {
         return CodexSessionMetadata::default();
-    }
-    let Ok(value) = serde_json::from_str::<Value>(&line) else {
+    };
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
         return CodexSessionMetadata::default();
     };
     let payload = (value.get("type").and_then(Value::as_str) == Some("session_meta"))

@@ -5,9 +5,8 @@
 //! module centralizes the faster gold-standard approach used by the Claude
 //! loader so every adapter shares the same optimizations:
 //!
-//! 1. Read the whole file once and split it into byte slices with
-//!    [`byte_lines`](ccusage_core::fast::byte_lines), avoiding a `String` allocation
-//!    per line.
+//! 1. Iterate over byte lines from a buffer or a streaming reader, avoiding a
+//!    `String` allocation per line.
 //! 2. Skip lines that cannot possibly match using a precompiled `memmem`
 //!    substring prefilter, before any JSON parsing happens.
 //! 3. Deserialize the surviving lines directly into a typed struct with
@@ -197,11 +196,25 @@ pub fn decode_line<T: DeserializeOwned>(
     diagnostics: &Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
 ) -> Option<T> {
+    let unterminated =
+        !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
+    decode_streamed_line(line, unterminated, unit, number, diagnostics, is_usage)
+}
+
+/// Decodes `line` like [`decode_line`] for a reader that streams the file
+/// instead of holding it whole, and so passes whether `line` is the
+/// unterminated end of the file itself.
+pub fn decode_streamed_line<T: DeserializeOwned>(
+    line: &[u8],
+    unterminated: bool,
+    unit: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> Option<T> {
     match serde_json::from_slice(line) {
         Ok(record) => Some(record),
         Err(error) => {
-            let unterminated =
-                !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
             record_decode_error(
                 line,
                 error,
@@ -222,9 +235,8 @@ pub fn decode_line<T: DeserializeOwned>(
 /// not end in a newline yet. An agent appends its log while ccusage reads it,
 /// so a record such a line cuts short is noted under `--debug` instead of
 /// skipped while `unit` is still being written: the next run reads it whole.
-/// Once `unit` has been left unchanged past
-/// [`IN_PROGRESS_WINDOW`](crate::units::IN_PROGRESS_WINDOW), the line stays
-/// truncated and is skipped as invalid data.
+/// Once `unit` has been unchanged past the in-progress window, the line
+/// stays truncated and is skipped as invalid data.
 ///
 /// A data error is invalid data when `is_usage` confirms that the record, read
 /// as plain JSON, carries usage, and undecoded usage otherwise. `is_usage`

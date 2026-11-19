@@ -26,7 +26,7 @@ fn load_entries(
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pipeline_pricing()?;
-    let tz = Some(cx.window.timezone());
+    let tz = cx.window.timezone();
     let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
     // Read files in parallel, reassembled in the original (sorted) file order so
@@ -50,11 +50,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     Ok(entries)
 }
 
-fn to_loaded_entry(
-    entry: DroidEntry,
-    tz: Option<&JiffTimeZone>,
-    pricing: &PricingMap,
-) -> LoadedEntry {
+fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -> LoadedEntry {
     let cost = calculate_droid_cost(&entry, pricing);
     let missing_pricing_model = missing_droid_pricing(&entry, pricing);
     let data = UsageEntry {

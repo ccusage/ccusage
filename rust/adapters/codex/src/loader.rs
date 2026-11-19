@@ -212,7 +212,7 @@ fn read_codex_events_from_files(
     }
 }
 
-fn has_date_bounds(shared: &SharedArgs) -> bool {
+pub(super) fn has_date_bounds(shared: &SharedArgs) -> bool {
     shared.since.is_some() || shared.until.is_some()
 }
 
@@ -300,8 +300,7 @@ fn dedupe_codex_events(
     events_by_file: impl IntoIterator<Item = Vec<CodexTokenUsageEvent>>,
 ) -> Vec<CodexTokenUsageEvent> {
     let mut responses = FxHashMap::<CompactString, usize>::default();
-    let mut copies =
-        FxHashMap::<CodexEventUsage, CodexUsageCopies<CompactString, usize>>::default();
+    let mut copies = FxHashMap::<CodexEventUsage, CodexUsageCopies<_, usize>>::default();
     let mut deduped = Vec::<CodexTokenUsageEvent>::new();
     for events in events_by_file {
         let mut occurrences = CodexFileOccurrences::default();
@@ -325,7 +324,7 @@ fn dedupe_codex_events(
                 );
                 let occurrence = occurrences.next(&usage);
                 copies.entry(usage).or_default().retain(
-                    event.record_response_id.as_deref().map(CompactString::new),
+                    event.record_response_id.clone(),
                     occurrence,
                     deduped.len(),
                 )
@@ -696,7 +695,7 @@ mod tests {
     fn credits_a_replaced_stand_in_to_the_recording_session() {
         let stand_in = codex_event("session-b");
         let mut recorded = codex_event("session-a");
-        recorded.record_response_id = Some("resp-a".to_string());
+        recorded.record_response_id = Some("resp-a".into());
 
         for files in [
             [vec![stand_in.clone()], vec![recorded.clone()]],
@@ -3397,6 +3396,42 @@ mod tests {
         let _ = read_codex_events_from_files(&sessions, &files, true, &plan, &diagnostics);
         let _ = CodexReplayPlan::new([(sessions.as_path(), files.as_slice())], true, &diagnostics);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn the_fused_fork_pass_records_a_parent_skip_once() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+                r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#.to_string(),
+                replay_token_count("2025-01-01T08:02:00.000Z", 120),
+            ].join("\n") + "\n",
+            "sessions/2025/01/02/child.jsonl": [
+                replay_metadata("2025-01-02T08:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2025-01-02T08:00:00.000Z", 120),
+                replay_token_count("2025-01-02T08:01:00.000Z", 150),
+            ].join("\n") + "\n",
+        });
+        let totals = [true, false].map(|single_thread| {
+            let shared = SharedArgs {
+                timezone: Some("UTC".to_string()),
+                single_thread,
+                ..Default::default()
+            };
+            let diagnostics = Diagnostics::new("codex");
+            let (groups, _) = crate::aggregate::load_groups_from_directory_with_diagnostics(
+                &fixture.path("sessions"),
+                &shared,
+                ccusage_core::cli::AgentReportKind::Daily,
+                &diagnostics,
+            )
+            .unwrap();
+
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            groups.values().map(|group| group.input_tokens).sum::<u64>()
+        });
+        assert_eq!(totals[0], totals[1]);
     }
 
     #[test]

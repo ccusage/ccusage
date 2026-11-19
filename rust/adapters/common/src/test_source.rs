@@ -15,7 +15,7 @@ use ccusage_core::{
     LoadedEntry, Result, SessionAccumulator, Skip, SkipKind, TokenUsageRaw, UsageEntry,
     UsageMessage, UsageSummary,
     cli::{AgentReportKind, SharedArgs},
-    format_date_tz, parse_ts_timestamp, parse_tz, summarize_by_key, totals_json,
+    format_date_tz, parse_ts_timestamp, resolve_tz, summarize_by_key, totals_json,
 };
 
 use crate::source::{EntryDescriptor, EntrySource, LoadContext, PricingSupply};
@@ -135,7 +135,7 @@ fn entry(session: &str, timestamp: &str, input_tokens: u64) -> LoadedEntry {
             is_sidechain: None,
         },
         timestamp: parsed,
-        date: format_date_tz(parsed, parse_tz(Some("UTC")).as_ref()),
+        date: format_date_tz(parsed, &resolve_tz(Some("UTC"))),
         project: Arc::from("fake"),
         session_id: Arc::from(session),
         project_path: Arc::from("project"),

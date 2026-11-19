@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::Path,
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
 };
 
 use memchr::memmem::Finder;
@@ -17,36 +17,16 @@ use crate::{
 };
 
 use super::{
-    reader::{open_rollout_reader, uncompressed_rollout_path},
+    reader::{READ_BUFFER_SIZE, open_rollout_lines, uncompressed_rollout_path},
+    replay::{CodexSessionMetadata, session_metadata_from_line},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
         CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
     },
 };
 
-static EVENT_MSG_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"event_msg""#));
-static TURN_CONTEXT_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"turn_context""#));
-static TOKEN_COUNT_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"token_count""#));
-static THREAD_SETTINGS_APPLIED_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"thread_settings_applied""#));
-static TOKEN_USAGE_RECORD_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"token_usage_record""#));
-static COMPACTED_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"compacted""#));
-static THREAD_SETTINGS_APPLIED_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"thread_settings_applied"));
-static COMPACT_TYPE_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"#));
 static TYPE_KEY_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type""#));
-static USAGE_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""usage":"#));
-static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""input_tokens":"#));
-static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
+static KEY_END_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#"":"#));
 static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
     LinePrefilter::any(&[
         br#""type""#,
@@ -92,10 +72,10 @@ struct CodexExecTimestamps {
 
 #[derive(Default)]
 struct CodexCompactionUsageState {
-    compacted_response_ids: HashSet<String>,
-    pending_usage: HashMap<String, CodexPendingUsage>,
-    emitted_response_ids: HashSet<String>,
-    latest_usage_response_id: Option<String>,
+    compacted_response_ids: HashSet<Arc<str>>,
+    pending_usage: HashMap<Arc<str>, CodexPendingUsage>,
+    emitted_response_ids: HashSet<Arc<str>>,
+    latest_usage_response_id: Option<Arc<str>>,
     /// Whether no snapshot advanced the totals since the latest record.
     latest_record_awaits_snapshot: bool,
     recorded_usage_timestamps: Option<HashMap<String, Option<TimestampMs>>>,
@@ -167,23 +147,18 @@ const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 /// history it did not spend; one that pauses between them was recording its own
 /// turns from the start.
 fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
-    let Ok((mut reader, _)) = open_rollout_reader(path) else {
+    let Ok((mut lines, _)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
         return None;
     };
-    let mut line = Vec::new();
     let mut first: Option<TimestampMs> = None;
     let mut session_start = None;
 
     loop {
-        line.clear();
-        let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
+        let Ok(Some(line)) = lines.next_line() else {
             return None;
         };
-        if bytes_read == 0 {
-            return None;
-        }
-        if SESSION_META_MARKER.matches(&line)
-            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line)
+        if SESSION_META_MARKER.matches(line)
+            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line)
             && value.entry_type.as_deref() == Some("session_meta")
         {
             if session_start.is_none() {
@@ -192,10 +167,10 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
             }
             continue;
         }
-        let Some(CodexLineKind::Session) = codex_line_usage_kind(&line) else {
+        let Some(CodexLineKind::Session) = codex_line_usage_kind(line) else {
             continue;
         };
-        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
+        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) else {
             continue;
         };
         let info = value.payload.as_ref().and_then(|payload| {
@@ -322,23 +297,6 @@ pub(super) fn visit_codex_session_file(
     )
 }
 
-pub(super) fn visit_codex_session_file_with_diagnostics(
-    sessions_dir: &Path,
-    path: &Path,
-    fork_replay: Option<CodexForkReplay<'_>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    diagnostics: &Diagnostics,
-) -> Result<()> {
-    visit_codex_session_file_with_compaction_history(
-        sessions_dir,
-        path,
-        fork_replay,
-        None,
-        visit,
-        diagnostics,
-    )
-}
-
 /// Visits usage while optionally retaining matched compaction identities,
 /// including requests already covered by cumulative usage in a parent log.
 pub(super) fn visit_codex_session_file_with_compaction_history(
@@ -346,10 +304,70 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
-    mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
     diagnostics: &Diagnostics,
 ) -> Result<()> {
-    let (mut reader, opened_path) = match open_rollout_reader(path) {
+    visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        fork_replay,
+        compaction_history,
+        visit,
+        diagnostics,
+        None,
+    )
+}
+
+pub(super) fn visit_codex_session_file_with_diagnostics(
+    sessions_dir: &Path,
+    path: &Path,
+    fork_replay: Option<CodexForkReplay<'_>>,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
+) -> Result<()> {
+    visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        diagnostics,
+        None,
+    )
+}
+
+/// Visits a rollout that its first line shows is not a fork, and returns that
+/// line's session metadata. A fork is left unvisited: which of its usage it
+/// replayed is known only once every rollout's metadata has been read.
+pub(super) fn visit_codex_session_file_unless_fork(
+    sessions_dir: &Path,
+    path: &Path,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
+) -> Result<CodexSessionMetadata> {
+    let mut metadata = CodexSessionMetadata::default();
+    visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        None,
+        None,
+        visit,
+        diagnostics,
+        Some(&mut metadata),
+    )?;
+    Ok(metadata)
+}
+
+fn visit_codex_session_file_inner(
+    sessions_dir: &Path,
+    path: &Path,
+    fork_replay: Option<CodexForkReplay<'_>>,
+    compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
+    mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
+    mut stop_at_fork: Option<&mut CodexSessionMetadata>,
+) -> Result<()> {
+    let (mut lines, opened_path) = match open_rollout_lines(path, READ_BUFFER_SIZE) {
         Ok(opened) => opened,
         Err(failed_path) => {
             UnitError::new(SkipKind::Unreadable, "rollout open failed")
@@ -357,7 +375,6 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
             return Ok(());
         }
     };
-    let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
@@ -378,85 +395,103 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
 
     let mut line_number = 0_u32;
     loop {
-        line.clear();
-        let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
-            diagnostics.record(Skip::unit(
-                path,
-                SkipKind::ReadInterrupted,
-                "rollout read failed",
-            ));
-            break;
+        let line = match lines.next_line() {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
+            Err(_) => {
+                diagnostics.record(Skip::unit(
+                    path,
+                    SkipKind::ReadInterrupted,
+                    "rollout read failed",
+                ));
+                break;
+            }
         };
-        if bytes_read == 0 {
-            break;
-        }
         line_number = line_number.saturating_add(1);
-        let Some(line_kind) = codex_line_usage_kind(&line) else {
+        if let Some(metadata) = stop_at_fork.take() {
+            *metadata = session_metadata_from_line(path, line);
+            if metadata.is_fork() {
+                return Ok(());
+            }
+        }
+        let Some(line_kind) = codex_line_usage_kind(line) else {
             continue;
         };
-        match line_kind {
-            CodexLineKind::Session => {
-                let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
-                    Ok(value) => value,
-                    Err(error) => {
+        // Type names inside headless data can pass the substring scan; only
+        // the decoded envelope selects session accounting. Every other line
+        // takes the one headless path below, however the session decode went.
+        if matches!(line_kind, CodexLineKind::Session) {
+            match serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) {
+                Ok(value)
+                    if is_session_usage_type(
+                        value.entry_type.as_deref(),
+                        value
+                            .payload
+                            .as_ref()
+                            .and_then(|payload| payload.payload_type.as_deref()),
+                    ) =>
+                {
+                    if value.entry_type.as_deref() == Some("token_usage_record") {
+                        replay.observe_usage_record();
+                    }
+                    visit_codex_session_entry(
+                        &session_id,
+                        value,
+                        &mut state,
+                        &mut |event| replay.visit(event, &mut visit),
+                        &RecordLocation {
+                            path,
+                            line: line_number,
+                            diagnostics,
+                        },
+                    )?;
+                    continue;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    if !has_headless_envelope(line) {
                         record_decode_failure(
                             path,
                             line_number,
-                            &line,
+                            line,
                             error,
                             diagnostics,
                             Some(&mut state.previous_totals),
                         );
                         continue;
                     }
-                };
-                if value.entry_type.as_deref() == Some("token_usage_record") {
-                    replay.observe_usage_record();
                 }
-                visit_codex_session_entry(
-                    &session_id,
-                    value,
-                    &mut state,
-                    &mut |event| replay.visit(event, &mut visit),
-                    &RecordLocation {
-                        path,
-                        line: line_number,
-                        diagnostics,
-                    },
-                )?;
-            }
-            CodexLineKind::Headless => {
-                if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
-                    add_codex_exec_event(
-                        &session_id,
-                        &value,
-                        &fallback_timestamp,
-                        &mut state.current_model,
-                        &mut state.current_model_is_fallback,
-                        &mut |event| replay.visit(event, &mut visit),
-                        &RecordLocation {
-                            path,
-                            line: line_number,
-                            diagnostics,
-                        },
-                    )?;
-                } else {
-                    add_codex_exec_event_from_value(
-                        &session_id,
-                        &line,
-                        &fallback_timestamp,
-                        &mut state.current_model,
-                        &mut state.current_model_is_fallback,
-                        &mut |event| replay.visit(event, &mut visit),
-                        &RecordLocation {
-                            path,
-                            line: line_number,
-                            diagnostics,
-                        },
-                    )?;
-                };
             }
         }
+        if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(line) {
+            add_codex_exec_event(
+                &session_id,
+                &value,
+                &fallback_timestamp,
+                &mut state.current_model,
+                &mut state.current_model_is_fallback,
+                &mut |event| replay.visit(event, &mut visit),
+                &RecordLocation {
+                    path,
+                    line: line_number,
+                    diagnostics,
+                },
+            )?;
+        } else {
+            add_codex_exec_event_from_value(
+                &session_id,
+                line,
+                &fallback_timestamp,
+                &mut state.current_model,
+                &mut state.current_model_is_fallback,
+                &mut |event| replay.visit(event, &mut visit),
+                &RecordLocation {
+                    path,
+                    line: line_number,
+                    diagnostics,
+                },
+            )?;
+        };
     }
 
     if let Some(history) = compaction_history
@@ -468,12 +503,32 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
             state
                 .compaction_usage
                 .compacted_response_ids
-                .contains(response_id)
+                .contains(response_id.as_str())
         });
         history.extend(timestamps);
     }
 
     Ok(())
+}
+
+fn has_headless_envelope(line: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(line).is_ok_and(|value| {
+        !is_session_usage_type(
+            value.get("type").and_then(Value::as_str),
+            value.pointer("/payload/type").and_then(Value::as_str),
+        )
+    })
+}
+
+fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
+    matches!(
+        entry_type,
+        Some("turn_context" | "token_usage_record" | "compacted")
+    ) || (entry_type == Some("event_msg")
+        && matches!(
+            payload_type,
+            Some("token_count" | "thread_settings_applied")
+        ))
 }
 
 fn visit_codex_session_entry(
@@ -501,14 +556,19 @@ fn visit_codex_session_entry(
         else {
             return Ok(());
         };
-        let response_id = response_id.to_string();
+        let response_id: Arc<str> = Arc::from(response_id);
         compaction_usage
             .compacted_response_ids
             .insert(response_id.clone());
         if let Some(pending) = compaction_usage.pending_usage.remove(&response_id)
-            && compaction_usage.emitted_response_ids.insert(response_id)
+            && compaction_usage
+                .emitted_response_ids
+                .insert(Arc::clone(&response_id))
         {
-            visit(pending.event)?;
+            visit(CodexTokenUsageEvent {
+                response_id: Some(response_id.to_string()),
+                ..pending.event
+            })?;
         }
         return Ok(());
     }
@@ -524,8 +584,7 @@ fn visit_codex_session_entry(
         else {
             return Ok(());
         };
-        let response_id = response_id.to_string();
-        if compaction_usage.emitted_response_ids.contains(&response_id) {
+        if compaction_usage.emitted_response_ids.contains(response_id) {
             return Ok(());
         }
         let raw_usage = match payload.usage {
@@ -552,7 +611,7 @@ fn visit_codex_session_entry(
 
         if let Some(timestamps) = compaction_usage.recorded_usage_timestamps.as_mut() {
             timestamps
-                .entry(response_id.clone())
+                .entry(response_id.to_owned())
                 .or_insert_with(|| parse_ts_timestamp(&timestamp));
         }
 
@@ -570,7 +629,7 @@ fn visit_codex_session_entry(
         );
         let event = CodexTokenUsageEvent {
             session_id: session_id.to_string(),
-            response_id: Some(response_id.clone()),
+            response_id: None,
             record_response_id: None,
             timestamp,
             model,
@@ -584,15 +643,22 @@ fn visit_codex_session_entry(
             service_tier: *current_service_tier,
         };
 
-        compaction_usage.latest_usage_response_id = Some(response_id.clone());
+        let response_id: Arc<str> = Arc::from(response_id);
+        compaction_usage.latest_usage_response_id = Some(Arc::clone(&response_id));
         compaction_usage.latest_record_awaits_snapshot = true;
 
         if compaction_usage
             .compacted_response_ids
             .contains(&response_id)
         {
-            if compaction_usage.emitted_response_ids.insert(response_id) {
-                visit(event)?;
+            if compaction_usage
+                .emitted_response_ids
+                .insert(Arc::clone(&response_id))
+            {
+                visit(CodexTokenUsageEvent {
+                    response_id: Some(response_id.to_string()),
+                    ..event
+                })?;
             }
         } else {
             compaction_usage
@@ -685,8 +751,8 @@ fn visit_codex_session_entry(
         compaction_usage.pending_usage.remove(response_id);
         compaction_usage
             .emitted_response_ids
-            .insert(response_id.clone());
-        record_response_id = record_awaits_snapshot.then(|| response_id.clone());
+            .insert(Arc::clone(response_id));
+        record_response_id = record_awaits_snapshot.then(|| Arc::clone(response_id));
     }
 
     let parsed_model =
@@ -858,59 +924,31 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
 }
 
 fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
-    let has_event_msg = EVENT_MSG_TYPE_FINDER.find(line).is_some();
-    let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
-    let has_thread_settings_applied =
-        has_event_msg && THREAD_SETTINGS_APPLIED_TYPE_FINDER.find(line).is_some();
-    if TURN_CONTEXT_TYPE_FINDER.find(line).is_some()
-        || has_token_count
-        || has_thread_settings_applied
-        || TOKEN_USAGE_RECORD_TYPE_FINDER.find(line).is_some()
-        || COMPACTED_TYPE_FINDER.find(line).is_some()
+    let (
+        has_turn_context,
+        has_event_msg,
+        has_token_count,
+        has_thread_settings_applied,
+        has_token_usage_record,
+        has_compacted,
+    ) = codex_line_type_flags(line);
+    if has_turn_context
+        || has_token_usage_record
+        || has_compacted
+        || (has_event_msg && (has_token_count || has_thread_settings_applied))
     {
         return Some(CodexLineKind::Session);
     }
-    let has_compact_type = COMPACT_TYPE_FIELD_FINDER.find(line).is_some();
-    let has_nested_token_count = !has_event_msg
-        && has_compact_type
-        && line.len() < 64 * 1024
-        && memchr::memmem::find(line, b"token_count").is_some();
-    let has_nested_thread_settings_applied = !has_event_msg
-        && has_compact_type
-        && line.len() < 64 * 1024
-        && THREAD_SETTINGS_APPLIED_FINDER.find(line).is_some();
-    let has_compaction_type = memchr::memmem::find(line, b"token_usage_record").is_some()
-        || memchr::memmem::find(line, b"compacted").is_some();
-    if has_event_msg
-        || memchr::memmem::find(line, b"turn_context").is_some()
-        || has_nested_token_count
-        || has_nested_thread_settings_applied
-        || has_compaction_type
-        || !has_compact_type
-    {
-        let (
-            has_turn_context,
-            has_event_msg,
-            has_token_count,
-            has_thread_settings_applied,
-            has_token_usage_record,
-            has_compacted,
-        ) = codex_line_type_flags(line);
-        if has_turn_context
-            || has_token_usage_record
-            || has_compacted
-            || (has_event_msg && (has_token_count || has_thread_settings_applied))
-        {
-            return Some(CodexLineKind::Session);
-        }
-    }
-    if USAGE_FIELD_FINDER.find(line).is_some()
-        || INPUT_TOKENS_FIELD_FINDER.find(line).is_some()
-        || PROMPT_TOKENS_FIELD_FINDER.find(line).is_some()
-    {
-        return Some(CodexLineKind::Headless);
-    }
-    None
+    has_headless_usage_field(line).then_some(CodexLineKind::Headless)
+}
+
+fn has_headless_usage_field(line: &[u8]) -> bool {
+    KEY_END_FINDER.find_iter(line).any(|end| {
+        let key = &line[..end];
+        key.ends_with(br#""usage"#)
+            || key.ends_with(br#""input_tokens"#)
+            || key.ends_with(br#""prompt_tokens"#)
+    })
 }
 
 fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool, bool) {
@@ -1672,6 +1710,139 @@ mod tests {
     }
 
     #[test]
+    fn loads_large_spaced_token_counts_with_compact_payload_types() {
+        let line = serde_json::json!({
+            "timestamp": "2026-09-01T00:00:01Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": { "last_token_usage": { "input_tokens": 100, "output_tokens": 20 } },
+                "padding": "x".repeat(70 * 1024),
+            },
+        })
+        .to_string()
+        .replace(r#""type":"event_msg""#, r#""type" : "event_msg""#);
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                r#"{"type":"turn_context","payload":{"model":"gpt-5-mini"}}"#,
+                line.as_str(),
+            ].join("\n"),
+        });
+
+        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].total_tokens, 120);
+    }
+
+    #[test]
+    fn loads_headless_usage_with_nested_session_type_names() {
+        for (entry_type, padding) in [
+            (Some("result"), 70 * 1024),
+            (None, 70 * 1024),
+            (Some("result"), 0),
+        ] {
+            let mut record = json!({
+                "timestamp": "2026-09-01T00:00:01Z",
+                "model": "gpt-5-mini",
+                "usage": { "input_tokens": 100, "output_tokens": 20 },
+                "data": {
+                    "type": "event_msg",
+                    "nested": { "type": "token_count" },
+                    "padding": "x".repeat(padding),
+                },
+            });
+            if let Some(entry_type) = entry_type {
+                record["type"] = json!(entry_type);
+            }
+            let line = record
+                .to_string()
+                .replace(r#""type":"event_msg""#, r#""type" : "event_msg""#)
+                .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+
+            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].input_tokens, 100);
+            assert_eq!(events[0].output_tokens, 20);
+            assert_eq!(events[0].total_tokens, 120);
+        }
+    }
+
+    #[test]
+    fn loads_headless_created_at_after_session_candidate_decode_fails() {
+        for timestamp in [json!(false), json!({"SECRET_CANARY": true})] {
+            let record = json!({
+                "type": "result",
+                "timestamp": timestamp,
+                "created_at": "2026-09-01T00:00:01Z",
+                "model": "gpt-5-mini",
+                "usage": { "input_tokens": 100, "output_tokens": 20 },
+                "data": {
+                    "type": "event_msg",
+                    "nested": { "type": "token_count" },
+                    "padding": "x".repeat(70 * 1024),
+                },
+            });
+            let line = record
+                .to_string()
+                .replace(r#""type":"event_msg""#, r#""type" : "event_msg""#)
+                .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+
+            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].timestamp, "2026-09-01T00:00:01.000Z");
+            assert_eq!(events[0].input_tokens, 100);
+            assert_eq!(events[0].output_tokens, 20);
+            assert_eq!(events[0].total_tokens, 120);
+        }
+    }
+
+    #[test]
+    fn typed_and_value_headless_decoders_agree() {
+        let cases = [
+            json!({ "timestamp": "2026-09-01T00:00:01Z", "model": "gpt-5", "usage": { "input_tokens": 10, "output_tokens": 2 } }),
+            json!({ "created_at": 1_788_220_801_u64, "data": { "model_name": " gpt-5-mini ", "usage": { "prompt_tokens": 7, "completion_tokens": 3, "cached_tokens": 4 } } }),
+            json!({ "createdAt": 1_788_220_801_000_u64, "result": { "metadata": { "model": "gpt-5" }, "usage": { "input": 5, "output": 1, "total_tokens": 0 } } }),
+            json!({ "response": { "timestamp": "2026-09-01 00:00:01", "createdAt": "2026-09-01T00:00:02Z", "usage": { "input_tokens": "12", "reasoning_tokens": 3 } } }),
+            json!({ "timestamp": "not a date", "created_at": "2026-09-01T00:00:03Z", "model": "  ", "model_name": "gpt-5" }),
+            json!({ "usage": "broken", "data": { "usage": { "input_tokens": 1 } } }),
+            json!({ "usage": [1, 2], "result": { "usage": null } }),
+            json!({ "usage": { "input_tokens": 0, "output_tokens": 0 } }),
+            json!({ "data": null, "result": 3, "response": "x", "metadata": [] }),
+        ];
+        for case in cases {
+            let line = case.to_string();
+            let typed = serde_json::from_str::<CodexLogEntry<'_>>(&line).unwrap();
+            let value = serde_json::from_str::<Value>(&line).unwrap();
+
+            assert_eq!(
+                normalize_headless_codex_usage(&typed),
+                normalize_headless_codex_usage_value(&value),
+                "{line}"
+            );
+            assert_eq!(
+                codex_model_from_result(&typed),
+                codex_model_from_result_value(&value),
+                "{line}"
+            );
+            assert_eq!(
+                codex_timestamp_from_result(&typed),
+                codex_timestamp_from_result_value(&value),
+                "{line}"
+            );
+            assert_eq!(
+                codex_model_timestamp_from_result(&typed),
+                codex_model_timestamp_from_result_value(&value),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
     fn recognizes_compaction_usage_lines_with_json_whitespace() {
         for line in [
             br#"{"type":"token_usage_record","payload":{}}"#.as_slice(),
@@ -1855,6 +2026,71 @@ mod tests {
             br#"{"type" : "compacted","payload":{"type":"summary"}}"#.as_slice(),
         ] {
             assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
+        }
+    }
+
+    #[test]
+    fn headless_usage_field_search_matches_the_previous_implementation() {
+        let markers: [&[u8]; 3] = [
+            br#""usage":"#,
+            br#""input_tokens":"#,
+            br#""prompt_tokens":"#,
+        ];
+        let fragments: &[&[u8]] = &[
+            br#""usage":"#,
+            br#""input_tokens":"#,
+            br#""prompt_tokens":"#,
+            br#""usage" :"#,
+            br#""cached_input_tokens":"#,
+            br#""my_usage":"#,
+            br#""usage_details":"#,
+            br#"\"usage\":"#,
+            br#"\\u0061"#,
+            br#"\u0061"#,
+            br#""#,
+            b":",
+            b"{",
+            b"}",
+            b"\\",
+            b"\\\\",
+            b" ",
+        ];
+        let finders = markers.map(Finder::new);
+        let mut state = 0xbb67_ae85_84ca_a73b_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        for _ in 0..50_000 {
+            let line = (0..next(32))
+                .flat_map(|_| fragments[next(fragments.len())].iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                has_headless_usage_field(&line),
+                finders.iter().any(|finder| finder.find(&line).is_some()),
+                "{}",
+                String::from_utf8_lossy(&line)
+            );
+        }
+    }
+
+    #[test]
+    fn recognizes_headless_usage_fields_only_as_whole_keys() {
+        for line in [
+            br#"{"type":"turn.completed","usage":{"input_tokens":1}}"#.as_slice(),
+            br#"{"stats":{"input_tokens":1}}"#.as_slice(),
+            br#"{"x":1,"prompt_tokens":2}"#.as_slice(),
+        ] {
+            assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Headless));
+        }
+        for line in [
+            br#"{"usage" :{"input_tokens" :1}}"#.as_slice(),
+            br#"{"text":"\"usage\":1","cached_input_tokens":1}"#.as_slice(),
+            br#"{"my_usage":1,"prompt_tokens_details":{}}"#.as_slice(),
+        ] {
+            assert_matches!(codex_line_usage_kind(line), None);
         }
     }
 

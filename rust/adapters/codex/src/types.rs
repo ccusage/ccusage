@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData};
+use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData, sync::Arc};
 
 use serde::Deserialize;
 
@@ -152,7 +152,7 @@ pub struct CodexTokenUsageEvent {
     /// Unlike `response_id`, it does not make the event a compaction: the event
     /// stays normal usage that replay filtering can skip, and only the
     /// cross-file dedupe uses it to tell requests with equal usage apart.
-    pub record_response_id: Option<String>,
+    pub record_response_id: Option<Arc<str>>,
     pub timestamp: String,
     pub model: Option<String>,
     pub input_tokens: u64,

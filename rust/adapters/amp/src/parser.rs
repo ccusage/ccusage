@@ -116,7 +116,7 @@ fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
 #[cfg(test)]
 fn read_thread_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> crate::Result<Vec<LoadedEntry>> {
@@ -126,7 +126,7 @@ fn read_thread_file(
 
 pub(crate) fn read_thread(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -146,7 +146,7 @@ pub(crate) fn read_thread(
 fn parse_thread(
     content: &[u8],
     unit: &ThreadUnit<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
@@ -196,7 +196,7 @@ fn parse_ledger_events(
     cache_tokens: &HashMap<i64, (u64, u64)>,
     thread_id: &str,
     unit: &ThreadUnit<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Vec<LoadedEntry> {
@@ -304,7 +304,7 @@ fn parse_message_usage(
     messages: &[AmpMessage],
     thread_id: &str,
     unit: &ThreadUnit<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Vec<LoadedEntry> {
@@ -469,7 +469,13 @@ mod tests {
             path: Path::new("/threads/T.json"),
             diagnostics,
         };
-        parse_thread(content, &unit, None, CostMode::Auto, None)
+        parse_thread(
+            content,
+            &unit,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            None,
+        )
     }
 
     #[test]
@@ -553,7 +559,15 @@ mod tests {
             &[fixture.path("threads/T-new.json")],
             true,
             &diagnostics,
-            |file| read_thread(file, None, CostMode::Auto, None, &diagnostics),
+            |file| {
+                read_thread(
+                    file,
+                    &jiff::tz::TimeZone::UTC,
+                    CostMode::Auto,
+                    None,
+                    &diagnostics,
+                )
+            },
         );
 
         assert!(loaded[0].is_none());
@@ -568,7 +582,7 @@ mod tests {
 
         let entries = read_thread_file(
             &fixture.path("threads/thread.json"),
-            crate::parse_tz(Some("UTC")).as_ref(),
+            &crate::resolve_tz(Some("UTC")),
             CostMode::Display,
             None,
         )
@@ -598,7 +612,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.output_tokens, 345);
@@ -634,7 +649,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
@@ -675,7 +691,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.model.as_deref(), Some("gpt-5"));
@@ -701,7 +718,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert!(entries.is_empty());
     }
@@ -722,7 +740,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.output_tokens, 345);
@@ -750,7 +769,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
@@ -778,7 +798,8 @@ mod tests {
         });
         let file = fixture.path("thread.json");
 
-        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries =
+            read_thread_file(&file, &jiff::tz::TimeZone::system(), CostMode::Auto, None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);

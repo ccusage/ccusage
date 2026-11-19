@@ -93,7 +93,7 @@ fn load_entries_from_database(
                     &row_id,
                     &row_session_id,
                     db_path,
-                    Some(cx.window.timezone()),
+                    cx.window.timezone(),
                     cx.shared.mode,
                     pricing,
                 ) {

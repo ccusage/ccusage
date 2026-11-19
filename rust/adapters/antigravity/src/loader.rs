@@ -29,7 +29,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     events.sort_by_key(|event| event.timestamp);
     Ok(events
         .into_iter()
-        .map(|event| event_to_loaded(event, Some(cx.window.timezone()), cx.shared.mode, pricing))
+        .map(|event| event_to_loaded(event, cx.window.timezone(), cx.shared.mode, pricing))
         .collect())
 }
 

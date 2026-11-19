@@ -1,10 +1,19 @@
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader},
+    io::{self, BufReader, Read},
     path::{Path, PathBuf},
 };
 
-const READ_BUFFER_SIZE: usize = 128 * 1024;
+use ccusage_core::fast::LineReader;
+
+/// Matches zstd's preferred input size, so a whole rollout streams in
+/// block-sized reads.
+pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
+/// Fits a whole `session_meta` line without growing the window: its
+/// `base_instructions` make it roughly 19-50 KB in practice.
+pub(super) const PROBE_BUFFER_SIZE: usize = 64 * 1024;
+
+type RolloutLines = LineReader<Box<dyn Read>>;
 
 pub(super) fn is_rollout_file(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "jsonl") || is_compressed_rollout(path)
@@ -28,24 +37,30 @@ pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     }
 }
 
-/// Opens the rollout at `path`, or at its other encoding when `path` is gone,
-/// and returns the reader with the path it opened. On failure, returns the
-/// path to diagnose: the encoding that exists but did not open, or `path`
-/// when neither encoding exists.
-pub(super) fn open_rollout_reader(path: &Path) -> Result<(Box<dyn BufRead>, PathBuf), PathBuf> {
-    match open_encoded_rollout(path) {
-        Ok(reader) => Ok((reader, path.to_path_buf())),
+/// Opens the rollout's lines through windows of `buffer_size` bytes, at
+/// `path` or at its other encoding when `path` is gone, and returns them with
+/// the path it opened. On failure, returns the path to diagnose: the encoding
+/// that exists but did not open, or `path` when neither encoding exists.
+pub(super) fn open_rollout_lines(
+    path: &Path,
+    buffer_size: usize,
+) -> Result<(RolloutLines, PathBuf), PathBuf> {
+    let (reader, opened) = match open_encoded_rollout(path, buffer_size) {
+        Ok(reader) => (reader, path.to_path_buf()),
         // Codex may compress or restore the rollout between discovery and this open.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let other = other_encoding_path(path);
-            match open_encoded_rollout(&other) {
-                Ok(reader) => Ok((reader, other)),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Err(path.to_path_buf()),
-                Err(_) => Err(other),
+            match open_encoded_rollout(&other, buffer_size) {
+                Ok(reader) => (reader, other),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    return Err(path.to_path_buf());
+                }
+                Err(_) => return Err(other),
             }
         }
-        Err(_) => Err(path.to_path_buf()),
-    }
+        Err(_) => return Err(path.to_path_buf()),
+    };
+    Ok((LineReader::with_capacity(buffer_size, reader), opened))
 }
 
 fn other_encoding_path(path: &Path) -> PathBuf {
@@ -58,16 +73,14 @@ fn other_encoding_path(path: &Path) -> PathBuf {
     }
 }
 
-fn open_encoded_rollout(path: &Path) -> io::Result<Box<dyn BufRead>> {
+fn open_encoded_rollout(path: &Path, buffer_size: usize) -> io::Result<Box<dyn Read>> {
     let file = File::open(path)?;
     if is_compressed_rollout(path) {
-        let decoder = zstd::stream::read::Decoder::new(file)?;
-        Ok(Box::new(BufReader::with_capacity(
-            READ_BUFFER_SIZE,
-            decoder,
-        )))
+        Ok(Box::new(zstd::stream::read::Decoder::with_buffer(
+            BufReader::with_capacity(buffer_size, file),
+        )?))
     } else {
-        Ok(Box::new(BufReader::with_capacity(READ_BUFFER_SIZE, file)))
+        Ok(Box::new(file))
     }
 }
 

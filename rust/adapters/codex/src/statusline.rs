@@ -1,10 +1,9 @@
 use ccusage_core::{
     PricingMap, Result,
     cli::{AgentReportKind, CodexStatuslineArgs},
-    format_currency, format_date_tz, format_number, parse_tz, print_json_or_jq, utc_now,
+    format_currency, format_date_tz, format_number, print_json_or_jq, resolve_tz, utc_now,
     wants_json,
 };
-use jiff::tz::TimeZone;
 use serde_json::Value;
 
 use super::{load_groups, report, resolve_codex_speed, resolve_session_id};
@@ -45,8 +44,8 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &PricingMap) -> Result<Value> 
     } else if shared.since.is_some() || shared.until.is_some() {
         "range"
     } else {
-        let timezone = parse_tz(shared.timezone.as_deref()).unwrap_or_else(TimeZone::system);
-        let today = format_date_tz(utc_now(), Some(&timezone)).replace('-', "");
+        let timezone = resolve_tz(shared.timezone.as_deref());
+        let today = format_date_tz(utc_now(), &timezone).replace('-', "");
         shared.since = Some(today.clone());
         shared.until = Some(today);
         "today"

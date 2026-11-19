@@ -1,6 +1,4 @@
-use ccusage_adapter_common::{
-    chunk_file_indexes_by_size, read_files_parallel, source::ProgressOwner,
-};
+use ccusage_adapter_common::{read_discovered_files, source::ProgressOwner};
 use ccusage_core::*;
 
 mod daily;
@@ -14,7 +12,7 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, OnceLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -25,12 +23,12 @@ use smallvec::SmallVec;
 
 use crate::{
     LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageSummary, calculate_cost, calculate_cost_for_usage_at,
+    UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
-    fast::{FxHashMap, LinePrefilter, byte_lines, suffix_string},
-    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
-    progress, stored_cost_for_mode,
+    fast::{FxHashMap, LinePrefilter, suffix_string},
+    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, progress,
+    resolve_tz, stored_cost_for_mode,
 };
 
 #[doc(hidden)]
@@ -38,6 +36,7 @@ pub use paths::timestamp_from_line;
 pub use paths::usage_files;
 pub(crate) use paths::{
     claude_paths, extract_project, extract_session_parts, split_files_before_since,
+    usage_file_order, visit_usage_files,
 };
 
 struct DedupeIndex {
@@ -248,14 +247,21 @@ fn load_entries_inner(
                 .join(", ")
         ),
     );
-    let files = usage_files(&paths, project_filter, diagnostics);
-    debug_log(shared, format!("Found {} JSONL usage files", files.len()));
-    let files = if skip_files_before_since {
-        split_files_before_since(files, shared, utc_now()).kept
-    } else {
-        files
+    let context = UsageLoadContext::new(shared);
+    let mode = shared.mode;
+    let read = |file: &Path| {
+        read_usage_file_with_diagnostics(
+            file,
+            context.timezone(),
+            mode,
+            context.pricing(),
+            diagnostics,
+        )
     };
-    if skip_files_before_since && shared.since.is_some() {
+    let mut loaded_files = if skip_files_before_since && shared.since.is_some() {
+        let files = usage_files(&paths, project_filter, diagnostics);
+        debug_log(shared, format!("Found {} JSONL usage files", files.len()));
+        let files = split_files_before_since(files, shared, utc_now()).kept;
         debug_log(
             shared,
             format!(
@@ -263,25 +269,32 @@ fn load_entries_inner(
                 files.len()
             ),
         );
-    }
-    if files.is_empty() {
+        read_discovered_files(
+            shared.single_thread,
+            |visit| files.into_iter().for_each(visit),
+            read,
+        )
+    } else {
+        let loaded_files = read_discovered_files(
+            shared.single_thread,
+            |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
+            read,
+        );
+        debug_log(
+            shared,
+            format!("Found {} JSONL usage files", loaded_files.len()),
+        );
+        loaded_files
+    };
+    if loaded_files.is_empty() {
         return Ok(DedupedEntries::default());
     }
-
-    let pricing = if shared.mode == CostMode::Display {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
-    };
-    let tz = parse_tz(shared.timezone.as_deref());
-    let mode = shared.mode;
-    let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file_with_diagnostics(file, tz.as_ref(), mode, pricing.as_ref(), diagnostics)
-    });
+    // Dedup keeps the first copy it meets, so files are folded in listing order.
+    loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
+    let loaded_files = loaded_files
+        .into_iter()
+        .map(|(_, file)| file)
+        .collect::<Vec<_>>();
     let loaded_entry_count = loaded_files
         .iter()
         .map(|file| file.entries.len())
@@ -294,9 +307,9 @@ fn load_entries_inner(
         ),
     );
 
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
-    let mut deduped: Vec<LoadedEntry> =
-        Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
+        FxHashMap::with_capacity_and_hasher(loaded_entry_count, Default::default());
+    let mut deduped: Vec<LoadedEntry> = Vec::with_capacity(loaded_entry_count);
     let mut copies = Vec::new();
     for loaded_file in loaded_files {
         for entry in loaded_file.entries {
@@ -322,6 +335,43 @@ fn load_entries_inner(
         entries: deduped,
         copies,
     })
+}
+
+/// The timezone and pricing a load prices entries with, resolved by the
+/// first file that needs them, so a load that finds no files skips both.
+pub(crate) struct UsageLoadContext<'a> {
+    shared: &'a SharedArgs,
+    timezone: OnceLock<JiffTimeZone>,
+    pricing: OnceLock<Option<PricingMap>>,
+}
+
+impl<'a> UsageLoadContext<'a> {
+    fn new(shared: &'a SharedArgs) -> Self {
+        Self {
+            shared,
+            timezone: OnceLock::new(),
+            pricing: OnceLock::new(),
+        }
+    }
+
+    fn timezone(&self) -> &JiffTimeZone {
+        self.timezone
+            .get_or_init(|| resolve_tz(self.shared.timezone.as_deref()))
+    }
+
+    fn pricing(&self) -> Option<&PricingMap> {
+        self.pricing
+            .get_or_init(|| {
+                (self.shared.mode != CostMode::Display).then(|| {
+                    PricingMap::load_with_overrides(
+                        self.shared.offline,
+                        log_level() != Some(0),
+                        self.shared.pricing_overrides.iter(),
+                    )
+                })
+            })
+            .as_ref()
+    }
 }
 
 fn usage_token_total(data: &UsageEntry) -> u64 {
@@ -649,7 +699,7 @@ fn push_deduped_session_alias(
 #[cfg(test)]
 fn read_usage_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedFile {
@@ -658,7 +708,7 @@ fn read_usage_file(
 
 fn read_usage_file_with_diagnostics(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -671,32 +721,38 @@ fn read_usage_file_with_diagnostics(
         timestamp: None,
         entries: Vec::new(),
     };
-    let content = diagnostics::read_content(path, diagnostics);
-
     let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
-    for (index, line) in byte_lines(&content).enumerate() {
+    diagnostics::for_each_line(path, diagnostics, |current| {
+        let (index, line) = (current.index, current.bytes);
         if !usage_marker.matches(line) {
-            continue;
+            return;
         }
         let data = match deserialize_usage_line::<UsageEntry>(line) {
             Ok(data) => data,
-            Err(Rejection::NullContract) => continue,
+            Err(Rejection::NullContract) => return,
             Err(Rejection::Malformed) => {
-                diagnostics::rejected(path, &content, index, line, diagnostics, false);
-                continue;
+                diagnostics::rejected(path, current, diagnostics, false);
+                return;
             }
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
             diagnostics::invalid_timestamp(path, index, diagnostics);
-            continue;
+            return;
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
         if !is_valid_usage_entry(&data) {
-            diagnostics::rejected(path, &content, index, line, diagnostics, false);
-            continue;
+            diagnostics::rejected(path, current, diagnostics, false);
+            return;
         }
         let date = format_date_tz(timestamp, tz);
-        let cost = calculate_cost(&data, mode, pricing);
+        let cost = calculate_cost_for_usage_at(
+            data.message.model.as_deref(),
+            data.message.usage,
+            data.cost_usd,
+            Some(timestamp),
+            mode,
+            pricing,
+        );
         let missing_pricing_model = missing_pricing_model_for_usage(
             data.message.model.as_deref(),
             data.message.usage,
@@ -775,7 +831,7 @@ fn read_usage_file_with_diagnostics(
         }
         loaded_file.entries.push(entry);
         loaded_file.entries.extend(advisor_entries);
-    }
+    });
     loaded_file
 }
 
@@ -1112,7 +1168,7 @@ mod tests {
 
         let loaded = super::read_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
             &diagnostics,
@@ -1386,7 +1442,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&PricingMap::default()),
         );
@@ -1417,7 +1473,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
         );
@@ -1436,7 +1492,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1459,7 +1515,12 @@ null,"usage":{"input_tokens":1}}}"#
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1489,7 +1550,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1562,7 +1623,7 @@ null,"usage":{"input_tokens":1}}}"#
 
             let loaded = read_usage_file(
                 &fixture.path("projects/project-a/session-a.jsonl"),
-                None,
+                &jiff::tz::TimeZone::system(),
                 CostMode::Display,
                 None,
             );
@@ -1589,7 +1650,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1615,7 +1676,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1641,7 +1702,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1666,7 +1727,12 @@ null,"usage":{"input_tokens":1}}}"#
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1689,7 +1755,12 @@ null,"usage":{"input_tokens":1}}}"#
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1711,11 +1782,16 @@ null,"usage":{"input_tokens":1}}}"#
 
         let discarded = ["a", "b", "c"].map(|session| {
             let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
-            let entry = read_usage_file(&path, None, CostMode::Display, None)
-                .entries
-                .into_iter()
-                .next()
-                .unwrap();
+            let entry = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            )
+            .entries
+            .into_iter()
+            .next()
+            .unwrap();
             push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
                 .map(|(index, discarded)| (index, discarded.session_id.to_string()))
         });

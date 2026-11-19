@@ -265,6 +265,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "smallvec",
  "toml",
  "zstd",
 ]

@@ -85,7 +85,7 @@ fn load_entries_for_context(
             |file| match scope {
                 PiLoadScope::Default => parser::read_session_file_data_with_diagnostics(
                     file,
-                    Some(cx.window.timezone()),
+                    cx.window.timezone(),
                     shared.mode,
                     cx.pricing,
                     cx.diagnostics,
@@ -94,7 +94,7 @@ fn load_entries_for_context(
                     parser::read_session_file_data_for_store_with_diagnostics(
                         file,
                         path,
-                        Some(cx.window.timezone()),
+                        cx.window.timezone(),
                         shared.mode,
                         cx.pricing,
                         store_name,

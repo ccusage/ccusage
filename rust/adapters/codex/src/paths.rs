@@ -15,7 +15,7 @@ use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
 use crate::{
-    Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet, home, parse_tz,
+    Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet, home, resolve_tz,
 };
 
 use super::reader::{is_rollout_file, uncompressed_rollout_path};
@@ -145,15 +145,11 @@ struct CodexFileEligibility {
 
 impl CodexFileEligibility {
     fn from_shared(shared: &SharedArgs) -> Option<Self> {
-        let timezone =
-            parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+        let timezone = resolve_tz(shared.timezone.as_deref());
         let since_date = shared.since.as_deref().and_then(parse_compact_date);
         let until_date = shared.until.as_deref().and_then(parse_compact_date);
-        let (since_millis, until_millis) = date_range_bounds_ms(
-            shared.since.as_deref(),
-            shared.until.as_deref(),
-            timezone.as_ref(),
-        );
+        let (since_millis, until_millis) =
+            date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), &timezone);
         if since_date.is_none() && until_date.is_none() {
             return None;
         }

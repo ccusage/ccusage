@@ -212,7 +212,7 @@ pub fn message_value_to_entry(
     value: &OpenCodeMessage,
     id: Option<String>,
     session_id: Option<String>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
@@ -239,7 +239,7 @@ fn message_value_to_entry_inner(
     value: &OpenCodeMessage,
     id: Option<String>,
     session_id: Option<String>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     options: MessageEntryOptions,
@@ -341,7 +341,7 @@ pub(crate) struct SessionMessageRow<'a> {
 
 pub(crate) fn session_message_value_to_entry_checked(
     row: SessionMessageRow<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Option<crate::LinkedEntry>, serde_json::Error> {
@@ -371,7 +371,7 @@ pub(crate) fn session_message_value_to_entry_checked(
 #[cfg(test)]
 pub(crate) fn session_message_value_to_entry(
     row: SessionMessageRow<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<(LoadedEntry, Option<Arc<str>>)> {
@@ -395,7 +395,7 @@ pub(crate) struct OpenCodeSessionAggregate {
 
 pub(crate) fn session_value_to_entry(
     aggregate: OpenCodeSessionAggregate,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
@@ -566,7 +566,7 @@ mod tests {
                 session_id: "v2-session".to_string(),
                 created: 1_767_312_000_000,
             },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         )
@@ -700,7 +700,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
         )
@@ -725,7 +725,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
         )
@@ -752,7 +752,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
         )
@@ -780,7 +780,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
         )
@@ -822,7 +822,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
         )
@@ -840,7 +840,7 @@ mod tests {
 
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
-        let tz = crate::parse_tz(Some("UTC"));
+        let tz = crate::resolve_tz(Some("UTC"));
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -868,7 +868,7 @@ mod tests {
             })),
             None,
             None,
-            tz.as_ref(),
+            &tz,
             CostMode::Auto,
             Some(&pricing),
         )
@@ -884,7 +884,7 @@ mod tests {
             })),
             None,
             Some("explicit-session".to_string()),
-            tz.as_ref(),
+            &tz,
             CostMode::Display,
             None,
         )
@@ -924,7 +924,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&pricing),
         )
@@ -953,7 +953,7 @@ mod tests {
                 cache_write_tokens: 0,
                 cost: None,
             },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&pricing),
         )

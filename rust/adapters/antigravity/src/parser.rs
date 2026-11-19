@@ -1012,7 +1012,7 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
 
 pub(super) fn event_to_loaded(
     event: AntigravityUsageEvent,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> LoadedEntry {

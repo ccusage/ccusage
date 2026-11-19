@@ -9,8 +9,8 @@ use crate::{
     cli::{SharedArgs, SortOrder},
     color,
     fast::FxHashSet,
-    format_currency, format_date, format_models_multiline, format_number, format_rfc3339_millis,
-    format_utc_second, hour_12, json_float, local_parts, print_box_title,
+    format_currency, format_date_tz, format_models_multiline, format_number, format_rfc3339_millis,
+    format_utc_second, hour_12, json_float, local_parts, print_box_title, resolve_tz,
     should_use_compact_layout, terminal_width, utc_now,
 };
 
@@ -167,8 +167,9 @@ pub fn filter_blocks_by_date(blocks: &mut Vec<SessionBlock>, shared: &SharedArgs
     if shared.since.is_none() && shared.until.is_none() {
         return;
     }
+    let timezone = resolve_tz(shared.timezone.as_deref());
     blocks.retain(|block| {
-        let date = format_date(block.start_time, shared.timezone.as_deref()).replace('-', "");
+        let date = format_date_tz(block.start_time, &timezone).replace('-', "");
         shared.since.as_ref().is_none_or(|since| &date >= since)
             && shared.until.as_ref().is_none_or(|until| &date <= until)
     });

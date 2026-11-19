@@ -22,7 +22,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         if seen.insert(dsh_entry_key(&entry)) {
             entries.push(dsh_entry_to_loaded(
                 entry,
-                Some(cx.window.timezone()),
+                cx.window.timezone(),
                 cx.shared.mode,
                 pricing,
             ));

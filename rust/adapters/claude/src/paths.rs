@@ -5,7 +5,6 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use serde::Deserialize;
 
@@ -14,10 +13,10 @@ use crate::{
     cli::SharedArgs,
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
-    home, parse_tz,
+    home, resolve_tz,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
-use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_adapter_common::visit_usage_files as visit_usage_files_in;
 
 pub fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
@@ -45,23 +44,38 @@ pub fn usage_files(
     diagnostics: &Diagnostics,
 ) -> Vec<PathBuf> {
     let mut files = Vec::new();
+    visit_usage_files(
+        paths,
+        project_filter,
+        &mut |path| files.push(path),
+        diagnostics,
+    );
+    files.sort_by_cached_key(|path| usage_file_order(path));
+    files
+}
+
+/// Hands each usage file to `visit` as the walk finds it, unsorted.
+pub(crate) fn visit_usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    visit: &mut dyn FnMut(PathBuf),
+    diagnostics: &Diagnostics,
+) {
     for path in paths {
         let projects_dir = path.join("projects");
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
-            collect_files_with_extension(
-                &projects_dir.join(project_filter),
-                "jsonl",
-                &mut files,
-                diagnostics,
-            );
+            visit_usage_files_in(&projects_dir.join(project_filter), visit, diagnostics);
         } else {
-            collect_files_with_extension(&projects_dir, "jsonl", &mut files, diagnostics);
+            visit_usage_files_in(&projects_dir, visit, diagnostics);
         }
     }
-    files.sort_by_cached_key(|path| path.to_string_lossy().into_owned());
-    files
+}
+
+/// The order [`usage_files`] lists files in, which deduplication depends on.
+pub(crate) fn usage_file_order(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 /// Margin subtracted from the `--since` lower bound before comparing it with
@@ -109,10 +123,8 @@ pub(super) fn split_files_before_since(
         kept: files,
         pruned: Vec::new(),
     };
-    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
-    let (Some(since_ms), _) =
-        date_range_bounds_ms(shared.since.as_deref(), None, timezone.as_ref())
-    else {
+    let timezone = resolve_tz(shared.timezone.as_deref());
+    let (Some(since_ms), _) = date_range_bounds_ms(shared.since.as_deref(), None, &timezone) else {
         return keep_all(files);
     };
     // Entry timestamps can outrun any mtime the filesystem reports when the
@@ -393,6 +405,37 @@ mod tests {
         let denied = fs::read_dir(&blocked).is_err();
         let diagnostics = Diagnostics::new("claude");
         let files = super::usage_files(&[fixture.root().to_path_buf()], None, &diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files, [fixture.path("projects/healthy/s.jsonl")]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_streaming_walk_reports_an_unreadable_project_directory() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use crate::{Diagnostics, SkipKind};
+
+        let fixture = fs_fixture!({
+            "projects/blocked/s.jsonl": "{}",
+            "projects/healthy/s.jsonl": "{}",
+        });
+        let blocked = fixture.path("projects/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let diagnostics = Diagnostics::new("claude");
+        let mut files = Vec::new();
+        super::visit_usage_files(
+            &[fixture.root().to_path_buf()],
+            None,
+            &mut |path| files.push(path),
+            &diagnostics,
+        );
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
         if !denied {
             return;

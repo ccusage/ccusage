@@ -3,27 +3,29 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
-    thread,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
-    UsageSummary, calculate_cost_for_usage_at,
+    IteratedTokenUsage, ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts,
+    TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
-    fast::{FxHashMap, LinePrefilter, byte_lines, suffix_string},
-    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
-    stored_cost_for_mode, utc_now,
+    fast::{FxHashMap, LinePrefilter, suffix_string},
+    format_date_tz, missing_pricing_model_for_usage, parse_ts_timestamp, stored_cost_for_mode,
+    utc_now,
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, Rejection, SessionDays, advisor_usages_from_line,
-    carries_more_usage_detail, chunk_file_indexes_by_size, deserialize_usage_line,
+    DailySummaries, DedupeIndexVec, Rejection, SessionDays, UsageLoadContext,
+    advisor_usages_from_line, carries_more_usage_detail, deserialize_usage_line,
     is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
-    paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
-    push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
+    paths::{
+        claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
+        visit_usage_files,
+    },
+    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_files,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
 };
 
@@ -35,37 +37,44 @@ pub(super) fn load_daily_summaries_inner(
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
-    let SinceFiles { kept, pruned } = split_files_before_since(
-        usage_files(&paths, project_filter, diagnostics),
-        shared,
-        utc_now(),
-    );
-    if kept.is_empty() && pruned.is_empty() {
-        return Ok(DailySummaries {
-            summaries: Vec::new(),
-            detected: false,
-            session_days: SessionDays::default(),
-        });
-    }
-
-    let pricing = if shared.mode == CostMode::Display {
-        None
+    let context = UsageLoadContext::new(shared);
+    let mut pruned = Vec::new();
+    let deduped = if shared.since.is_some() {
+        let since_files = split_files_before_since(
+            usage_files(&paths, project_filter, diagnostics),
+            shared,
+            utc_now(),
+        );
+        pruned = since_files.pruned;
+        let kept = since_files.kept;
+        load_deduped_daily_entries(
+            |visit| kept.into_iter().for_each(visit),
+            &context,
+            project_filter,
+            diagnostics,
+        )
     } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
+        load_deduped_daily_entries(
+            |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
+            &context,
+            project_filter,
+            diagnostics,
+        )
     };
-    let tz = parse_tz(shared.timezone.as_deref());
-    let deduped = load_deduped_daily_entries(
-        &kept,
-        shared,
-        project_filter,
-        tz.as_ref(),
-        pricing.as_ref(),
-        diagnostics,
-    );
+    let deduped = match deduped {
+        Some(deduped) => deduped,
+        None if pruned.is_empty() => {
+            return Ok(DailySummaries {
+                summaries: Vec::new(),
+                detected: false,
+                session_days: SessionDays::default(),
+            });
+        }
+        None => DedupedDailyEntries {
+            entries: Vec::new(),
+            copies: Vec::new(),
+        },
+    };
     let session_days = session_days(&deduped);
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
@@ -76,9 +85,9 @@ pub(super) fn load_daily_summaries_inner(
         || pruned.iter().any(|file| {
             read_daily_usage_file_with_diagnostics(
                 file,
-                tz.as_ref(),
+                context.timezone(),
                 shared.mode,
-                pricing.as_ref(),
+                context.pricing(),
                 &Diagnostics::new("claude"),
             )
             .entries
@@ -121,36 +130,39 @@ pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
     )
 }
 
+/// Loads and deduplicates the files `discover` yields, or `None` when it
+/// yields none.
 fn load_deduped_daily_entries(
-    files: &[PathBuf],
-    shared: &SharedArgs,
+    discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
+    context: &UsageLoadContext<'_>,
     project_filter: Option<&str>,
-    tz: Option<&JiffTimeZone>,
-    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
-) -> DedupedDailyEntries {
-    if files.is_empty() {
-        return DedupedDailyEntries {
-            entries: Vec::new(),
-            copies: Vec::new(),
-        };
+) -> Option<DedupedDailyEntries> {
+    let mode = context.shared.mode;
+    let mut loaded_files = read_discovered_files(context.shared.single_thread, discover, |file| {
+        read_daily_usage_file_with_diagnostics(
+            file,
+            context.timezone(),
+            mode,
+            context.pricing(),
+            diagnostics,
+        )
+    });
+    if loaded_files.is_empty() {
+        return None;
     }
-    let mode = shared.mode;
-    let loaded_files = if shared.single_thread {
-        files
-            .iter()
-            .map(|file| {
-                read_daily_usage_file_with_diagnostics(file, tz, mode, pricing, diagnostics)
-            })
-            .collect::<Vec<_>>()
-    } else {
-        read_daily_usage_files_parallel(files, tz, mode, pricing, diagnostics)
-    };
+    // Dedup keeps the first copy it meets, so files are folded in listing order.
+    loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
 
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
-    let mut deduped = Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let entry_count = loaded_files
+        .iter()
+        .map(|(_, file)| file.entries.len())
+        .sum();
+    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
+        FxHashMap::with_capacity_and_hasher(entry_count, Default::default());
+    let mut deduped = Vec::with_capacity(entry_count);
     let mut copies = Vec::new();
-    for loaded_file in loaded_files {
+    for (_, loaded_file) in loaded_files {
         for entry in loaded_file.entries {
             if let Some(filter) = project_filter
                 && entry.project.as_ref() != filter
@@ -166,10 +178,10 @@ fn load_deduped_daily_entries(
             }
         }
     }
-    DedupedDailyEntries {
+    Some(DedupedDailyEntries {
         entries: deduped,
         copies,
-    }
+    })
 }
 
 fn summarize_daily_entries(
@@ -197,10 +209,14 @@ fn summarize_daily_entries(
 
     let mut groups = BTreeMap::<String, DailyAccumulator>::new();
     for entry in deduped {
-        groups
-            .entry(entry.date.clone())
-            .or_default()
-            .add_entry(entry);
+        if let Some(group) = groups.get_mut(entry.date.as_str()) {
+            group.add_entry(entry);
+        } else {
+            groups
+                .entry(entry.date.clone())
+                .or_default()
+                .add_entry(entry);
+        }
     }
     groups
         .into_iter()
@@ -252,12 +268,28 @@ struct DailyUsageEntry {
 /// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
 /// use; the derive would first buffer every line, message content included, into an
 /// intermediate tree.
-fn deserialize_daily_usage_line(line: &[u8]) -> std::result::Result<DailyUsageEntry, Rejection> {
+fn deserialize_daily_usage_line(
+    line: &[u8],
+) -> std::result::Result<(DailyUsageEntry, AdvisorLookup), Rejection> {
     match deserialize_usage_line::<DailyUsageEntry>(line) {
+        Ok(entry) => {
+            let lookup = if entry.message.usage.has_advisor_iteration {
+                AdvisorLookup::AskLine
+            } else {
+                AdvisorLookup::RuledOut
+            };
+            Ok((entry, lookup))
+        }
         Err(Rejection::Malformed) => deserialize_usage_line::<DailyAgentProgressEntry>(line)
-            .map(DailyAgentProgressEntry::into_entry),
-        result => result,
+            .map(|entry| (entry.into_entry(), AdvisorLookup::AskLine)),
+        Err(rejection) => Err(rejection),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AdvisorLookup {
+    RuledOut,
+    AskLine,
 }
 
 #[derive(Debug, Deserialize)]
@@ -299,73 +331,15 @@ struct DailyAgentProgressMessage {
 
 #[derive(Debug, Deserialize)]
 struct DailyUsageMessage {
-    usage: TokenUsageRaw,
+    usage: IteratedTokenUsage,
     model: Option<String>,
     id: Option<String>,
-}
-
-fn read_daily_usage_files_parallel(
-    files: &[PathBuf],
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    diagnostics: &Diagnostics,
-) -> Vec<DailyLoadedFile> {
-    let worker_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(files.len());
-    if worker_count <= 1 {
-        return files
-            .iter()
-            .map(|file| {
-                read_daily_usage_file_with_diagnostics(file, tz, mode, pricing, diagnostics)
-            })
-            .collect();
-    }
-
-    let chunks = chunk_file_indexes_by_size(files, worker_count);
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(worker_count);
-        for chunk in chunks {
-            let tz = tz.cloned();
-            handles.push(scope.spawn(move || {
-                chunk
-                    .into_iter()
-                    .map(|index| {
-                        (
-                            index,
-                            read_daily_usage_file_with_diagnostics(
-                                &files[index],
-                                tz.as_ref(),
-                                mode,
-                                pricing,
-                                diagnostics,
-                            ),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            }));
-        }
-        let mut loaded_files = Vec::with_capacity(files.len());
-        loaded_files.resize_with(files.len(), || None);
-        for (index, file) in handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("daily usage worker panicked"))
-        {
-            loaded_files[index] = Some(file);
-        }
-        loaded_files
-            .into_iter()
-            .map(|file| file.expect("daily usage worker returned every file"))
-            .collect()
-    })
 }
 
 #[cfg(test)]
 fn read_daily_usage_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> DailyLoadedFile {
@@ -374,7 +348,7 @@ fn read_daily_usage_file(
 
 fn read_daily_usage_file_with_diagnostics(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -382,28 +356,28 @@ fn read_daily_usage_file_with_diagnostics(
     let project: Arc<str> = Arc::from(extract_project(path));
     let (path_session_id, _) = super::paths::extract_session_parts(path);
     let path_session_id: Arc<str> = Arc::from(path_session_id);
+    let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut loaded_file = DailyLoadedFile {
         timestamp: None,
         entries: Vec::new(),
     };
-    let content = super::diagnostics::read_content(path, diagnostics);
-
     let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
-    for (index, line) in byte_lines(&content).enumerate() {
+    super::diagnostics::for_each_line(path, diagnostics, |current| {
+        let (index, line) = (current.index, current.bytes);
         if !usage_marker.matches(line) {
-            continue;
+            return;
         }
-        let data = match deserialize_daily_usage_line(line) {
-            Ok(data) => data,
-            Err(Rejection::NullContract) => continue,
+        let (data, advisor_lookup) = match deserialize_daily_usage_line(line) {
+            Ok(parsed) => parsed,
+            Err(Rejection::NullContract) => return,
             Err(Rejection::Malformed) => {
-                super::diagnostics::rejected(path, &content, index, line, diagnostics, true);
-                continue;
+                super::diagnostics::rejected(path, current, diagnostics, true);
+                return;
             }
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
             super::diagnostics::invalid_timestamp(path, index, diagnostics);
-            continue;
+            return;
         };
         loaded_file.timestamp = Some(
             loaded_file
@@ -411,10 +385,10 @@ fn read_daily_usage_file_with_diagnostics(
                 .map_or(timestamp, |current| current.min(timestamp)),
         );
         if !is_valid_daily_usage_entry(&data) {
-            super::diagnostics::rejected(path, &content, index, line, diagnostics, true);
-            continue;
+            super::diagnostics::rejected(path, current, diagnostics, true);
+            return;
         }
-        let usage = data.message.usage;
+        let IteratedTokenUsage { usage, .. } = data.message.usage;
         let cost = calculate_cost_for_usage_at(
             data.message.model.as_deref(),
             usage,
@@ -430,28 +404,29 @@ fn read_daily_usage_file_with_diagnostics(
             mode,
             pricing,
         );
-        let model = data.message.model.as_ref().and_then(|model| {
+        let model = data.message.model.and_then(|model| {
             if model == "<synthetic>" {
                 None
             } else if matches!(usage.speed, Some(Speed::Fast)) {
-                Some(suffix_string(model, "-fast"))
+                Some(suffix_string(&model, "-fast"))
             } else {
-                Some(model.clone())
+                Some(model)
             }
         });
-        let date = format_date_tz(timestamp, tz);
-        let session_id: Arc<str> = data
-            .session_id
-            .as_deref()
-            .map(Arc::from)
-            .unwrap_or_else(|| Arc::clone(&path_session_id));
-        let message_id = data.message.id.clone();
-        let request_id = data.request_id.clone();
+        let session_id = if let Some(session_id) = data.session_id.as_deref() {
+            if recorded_session_id.as_ref() != session_id {
+                recorded_session_id = Arc::from(session_id);
+            }
+            Arc::clone(&recorded_session_id)
+        } else {
+            Arc::clone(&path_session_id)
+        };
+        let parent_index = loaded_file.entries.len();
         loaded_file.entries.push(DailyLoadedEntry {
             timestamp,
-            date: date.clone(),
+            date: format_date_tz(timestamp, tz),
             project: Arc::clone(&project),
-            session_id: Arc::clone(&session_id),
+            session_id,
             usage,
             cost,
             model,
@@ -461,7 +436,11 @@ fn read_daily_usage_file_with_diagnostics(
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
         });
+        if matches!(advisor_lookup, AdvisorLookup::RuledOut) {
+            return;
+        }
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
+            let parent = &loaded_file.entries[parent_index];
             let missing_pricing_model = missing_pricing_model_for_usage(
                 Some(&advisor.model),
                 advisor.usage,
@@ -471,9 +450,9 @@ fn read_daily_usage_file_with_diagnostics(
             );
             loaded_file.entries.push(DailyLoadedEntry {
                 timestamp,
-                date: date.clone(),
+                date: parent.date.clone(),
                 project: Arc::clone(&project),
-                session_id: Arc::clone(&session_id),
+                session_id: Arc::clone(&parent.session_id),
                 usage: advisor.usage,
                 cost: calculate_cost_for_usage_at(
                     Some(&advisor.model),
@@ -486,14 +465,15 @@ fn read_daily_usage_file_with_diagnostics(
                 model: Some(advisor.model),
                 missing_pricing_model,
                 stored_cost: None,
-                message_id: message_id
+                message_id: parent
+                    .message_id
                     .as_ref()
                     .map(|message_id| format!("{message_id}:advisor:{index}")),
-                request_id: request_id.clone(),
+                request_id: parent.request_id.clone(),
                 is_sidechain: data.is_sidechain,
             });
         }
-    }
+    });
     loaded_file
 }
 
@@ -719,15 +699,16 @@ impl DailyAccumulator {
         self.counts.add_usage(entry.usage);
         self.cost += entry.cost;
         if let Some(model) = &entry.model {
-            let model = crate::model_aliases::resolve_model_name(model).into_owned();
-            let index = if let Some(index) = self.breakdown_indexes.get(model.as_str()) {
+            let model = crate::model_aliases::resolve_model_name(model);
+            let index = if let Some(index) = self.breakdown_indexes.get(model.as_ref()) {
                 *index
             } else {
+                let model = model.into_owned();
                 let index = self.breakdowns.len();
                 self.breakdown_indexes.insert(model.clone(), index);
                 self.models.push(model.clone());
                 self.breakdowns.push(ModelBreakdown {
-                    model_name: model.clone(),
+                    model_name: model,
                     ..ModelBreakdown::default()
                 });
                 index
@@ -1018,7 +999,7 @@ mod tests {
 
     #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
-        let data = super::deserialize_daily_usage_line(
+        let (data, _) = super::deserialize_daily_usage_line(
             br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
         .unwrap();
@@ -1029,7 +1010,7 @@ mod tests {
 
     #[test]
     fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-        let data = super::deserialize_daily_usage_line(
+        let (data, _) = super::deserialize_daily_usage_line(
             br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
         )
         .unwrap();
@@ -1051,7 +1032,12 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1284,7 +1270,12 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1302,7 +1293,77 @@ mod tests {
 
         let loaded = read_daily_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
             None,
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].usage.input_tokens, 100);
+        assert_eq!(loaded.entries[1].usage.input_tokens, 10);
+    }
+
+    #[test]
+    fn daily_advisor_gate_preserves_the_previous_extraction() {
+        let iterations = [
+            r#"{"type":"advisor_message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"advisor\u005fmessage","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"advisor\\u005fmessage","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"message","cache_creation":{"ephemeral_5m_input_tokens":7}}"#,
+            r#"{"type":"advisor_message","type":"message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":"message","type":"advisor_message","model":"advisor","input_tokens":10,"output_tokens":2}"#,
+            r#"{"type":null}"#,
+            r#"{"type":["advisor_message"]}"#,
+            r#"{"kind":"advisor_message"}"#,
+            r#"null"#,
+            r#"[]"#,
+        ];
+        let mut state = 0x3c6e_f372_fe94_f82b_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        let mut skipped = 0;
+        let mut retained = 0;
+        for _ in 0..5_000 {
+            let entries = (0..next(6))
+                .map(|_| iterations[next(iterations.len())])
+                .collect::<Vec<_>>()
+                .join(",");
+            let usage =
+                format!(r#"{{"input_tokens":1,"output_tokens":2,"iterations":[{entries}]}}"#);
+            let message = format!(r#"{{"model":"parent","usage":{usage}}}"#);
+            for line in [
+                format!(r#"{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}"#),
+                format!(
+                    r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
+                ),
+            ] {
+                let (_, lookup) = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
+                let previous = super::advisor_usages_from_line(line.as_bytes());
+                if matches!(lookup, super::AdvisorLookup::AskLine) {
+                    retained += 1;
+                } else {
+                    skipped += 1;
+                    assert!(previous.is_empty(), "{line}");
+                }
+            }
+        }
+        assert!(skipped > 0);
+        assert!(retained > 0);
+    }
+
+    #[test]
+    fn reads_top_level_advisor_iterations_beside_an_agent_progress_record() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"sessionId":"session-a","message":{"usage":{"input_tokens":5,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"data":{"message":{"timestamp":"2026-05-22T02:34:40.000Z","requestId":"req-a","message":{"id":"msg-a","model":"main-model","usage":{"input_tokens":100,"output_tokens":1}}}}}"#,
+        });
+
+        let loaded = read_daily_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1325,7 +1386,12 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1347,11 +1413,16 @@ mod tests {
 
         let discarded = ["a", "b", "c"].map(|session| {
             let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
-            let entry = read_daily_usage_file(&path, None, CostMode::Display, None)
-                .entries
-                .into_iter()
-                .next()
-                .unwrap();
+            let entry = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            )
+            .entries
+            .into_iter()
+            .next()
+            .unwrap();
             push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
                 .map(|(index, discarded)| (index, discarded.session_id.to_string()))
         });

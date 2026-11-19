@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{Mutex, mpsc},
     thread,
 };
 
@@ -48,11 +49,33 @@ pub fn collect_files_matching(
     files: &mut Vec<PathBuf>,
     diagnostics: &Diagnostics,
 ) {
+    visit_files_matching(dir, matches, &mut |path| files.push(path), diagnostics);
+}
+
+/// Hands each `.jsonl` file under `dir` to `visit` as the walk finds it.
+/// It uses the same traversal and diagnostics as [`collect_files_matching`].
+pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics: &Diagnostics) {
+    visit_files_matching(
+        dir,
+        &|path| path.extension().is_some_and(|ext| ext == "jsonl"),
+        visit,
+        diagnostics,
+    );
+}
+
+/// Like [`collect_files_matching`], but hands each file to `visit` as the walk
+/// finds it, so reading can start before the walk ends.
+fn visit_files_matching(
+    dir: &Path,
+    matches: &dyn Fn(&Path) -> bool,
+    visit: &mut dyn FnMut(PathBuf),
+    diagnostics: &Diagnostics,
+) {
     for (path, file_type) in dir_entries(dir, diagnostics) {
         if file_type.is_file() && matches(&path) {
-            files.push(path);
+            visit(path);
         } else if file_type.is_dir() {
-            collect_files_matching(&path, matches, files, diagnostics);
+            visit_files_matching(&path, matches, visit, diagnostics);
         }
     }
 }
@@ -153,7 +176,7 @@ pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<
 }
 
 /// Reads `files` by applying `read` to each path and returns results in file order.
-pub fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
+pub(crate) fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
 where
     T: Send,
     F: Fn(&Path) -> T + Sync,
@@ -193,6 +216,63 @@ where
         results
             .into_iter()
             .map(|value| value.expect("file read worker returned every file"))
+            .collect()
+    })
+}
+
+/// Reads files as `discover` yields them and returns each with its result,
+/// in no particular order.
+///
+/// Workers take the next file as soon as they are free, so reading overlaps a
+/// directory walk instead of waiting for its full list, and no file sizes are
+/// needed to balance the work. A worker starts with each of the first files,
+/// so a discovery that finds few files spawns no more threads than it needs.
+pub fn read_discovered_files<T, F>(
+    single_thread: bool,
+    discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
+    read: F,
+) -> Vec<(PathBuf, T)>
+where
+    T: Send,
+    F: Fn(&Path) -> T + Sync,
+{
+    if single_thread {
+        let mut results = Vec::new();
+        discover(&mut |path| {
+            let result = read(&path);
+            results.push((path, result));
+        });
+        return results;
+    }
+    let worker_count = thread::available_parallelism().map_or(1, usize::from);
+    let (sender, receiver) = mpsc::channel::<PathBuf>();
+    let receiver = Mutex::new(receiver);
+    let (read, receiver) = (&read, &receiver);
+    thread::scope(|scope| {
+        let mut workers = Vec::new();
+        discover(&mut |path| {
+            if workers.len() < worker_count {
+                workers.push(scope.spawn(move || {
+                    let mut results = Vec::new();
+                    loop {
+                        let next = receiver
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .recv();
+                        let Ok(path) = next else {
+                            return results;
+                        };
+                        let result = read(&path);
+                        results.push((path, result));
+                    }
+                }));
+            }
+            let _ = sender.send(path);
+        });
+        drop(sender);
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("file read worker panicked"))
             .collect()
     })
 }
@@ -376,6 +456,36 @@ mod tests {
 
         assert_eq!(single, expected);
         assert_eq!(multi, expected);
+    }
+
+    #[test]
+    fn reads_every_discovered_file_once() {
+        let fixture = Fixture::new();
+        let files = (0..64)
+            .map(|index| {
+                fixture.write_file(
+                    format!("d{}/file-{index:02}.txt", index % 5),
+                    index.to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let read = |path: &std::path::Path| std::fs::read_to_string(path).unwrap();
+
+        for single_thread in [true, false] {
+            let mut results = super::read_discovered_files(
+                single_thread,
+                |visit| files.iter().cloned().for_each(visit),
+                read,
+            );
+            results.sort();
+            let mut expected = files
+                .iter()
+                .map(|path| (path.clone(), read(path)))
+                .collect::<Vec<_>>();
+            expected.sort();
+            assert_eq!(results, expected, "single_thread={single_thread}");
+        }
+        assert!(super::read_discovered_files(false, |_| {}, read).is_empty());
     }
 
     #[test]

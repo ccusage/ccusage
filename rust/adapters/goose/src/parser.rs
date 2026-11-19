@@ -45,7 +45,7 @@ impl RowRejection {
 
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     pricing: &PricingMap,
 ) -> Result<Option<LoadedEntry>, RowRejection> {
     let input_tokens = read_token_value(statement, 8)

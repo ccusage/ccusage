@@ -34,7 +34,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
     let sources = discover_files(cx.diagnostics)?;
-    let timezone = Some(cx.window.timezone());
+    let timezone = cx.window.timezone();
     let files = sources
         .iter()
         .map(|source| source.path.clone())
@@ -63,7 +63,7 @@ pub(super) fn loaded_entry(
     input: EntryInput,
     mode: crate::cli::CostMode,
     pricing: &PricingMap,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
 ) -> LoadedEntry {
     use crate::{
         UsageEntry, UsageMessage, calculate_cost_for_usage_at, format_date_tz,
