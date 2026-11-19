@@ -72,11 +72,37 @@ def profile [files: list<string>]: nothing -> record {
     }
 }
 
+# Mirrors the Codex adapter: a rollout is read once per home and path
+# relative to sessions/ or archived_sessions/, ignoring .zst, preferring the
+# active copy and then the plain one.
+def codex-rollouts [roots: list<string>]: nothing -> list<string> {
+    $roots
+    | each {|root|
+        ['sessions' 'archived_sessions'] | each {|sub|
+            let dir = $root | path join $sub
+            files-under [$dir] ['**/*.jsonl' '**/*.jsonl.zst']
+            | sort
+            | each {|file|
+                let relative = $file | path relative-to $dir | str replace --regex '\.zst$' ''
+                {key: $"($root)\u{0}($relative)" file: $file}
+            }
+        }
+    }
+    | flatten
+    | flatten
+    | uniq-by key
+    | get file
+}
+
 # Every root ccusage would read is included, so several CLAUDE_CONFIG_DIR
 # entries add up the way they do in a real report.
 def main []: nothing -> nothing {
     let home = $env.HOME
-    let config_home = $env | get --optional XDG_CONFIG_HOME | default ($home | path join '.config')
+    let config_home = $env | get --optional XDG_CONFIG_HOME | default '' | str trim | if ($in | is-empty) {
+        $home | path join '.config'
+    } else {
+        $in
+    }
     # Like ccusage, accept a root that names its projects/ directory.
     let claude_roots = env-roots 'CLAUDE_CONFIG_DIR' [
         ($config_home | path join 'claude')
@@ -91,22 +117,7 @@ def main []: nothing -> nothing {
 
     {
         claude: (profile (files-under $claude_roots ['projects/**/*.jsonl']))
-        codex: (
-            profile (
-                files-under $codex_roots [
-                    'sessions/**/*.jsonl'
-                    'sessions/**/*.jsonl.zst'
-                    'archived_sessions/**/*.jsonl'
-                    'archived_sessions/**/*.jsonl.zst'
-                ]
-                # ccusage reads a rollout once when both its plain and .zst
-                # copies exist, preferring the plain one.
-                | sort
-                | each {|file| {rollout: ($file | str replace --regex '\.zst$' '') file: $file} }
-                | uniq-by rollout
-                | get file
-            )
-        )
+        codex: (profile (codex-rollouts $codex_roots))
         grok: (profile (files-under $grok_roots ['sessions/**/updates.jsonl']))
     }
     | to json
