@@ -798,7 +798,6 @@ fn invalid_config_timezone_names_the_file_and_effective_field() {
     let result = parse_from_with_config(
         std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
         &config,
-        env!("CARGO_PKG_VERSION"),
     );
 
     let Err(error) = result else {
