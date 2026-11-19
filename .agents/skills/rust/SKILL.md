@@ -1,6 +1,6 @@
 ---
 name: rust
-description: Guides ccusage Rust implementation work. Use when editing rust/crates or rust/adapters, adapter module layout, crate visibility, embedded pricing, or Rust behavior parity.
+description: Guides ccusage Rust implementation work. Use when editing rust/crates or rust/adapters, adapter module layout, crate visibility and Hawk findings, embedded pricing, or Rust behavior parity.
 paths:
   - 'rust/**/*.rs'
   - 'rust/**/*.toml'
@@ -50,6 +50,11 @@ main, a previous release, or that pinned commit — before changing behavior.
 In this workspace `pub` is only for what another crate actually uses; everything
 else is `pub(crate)`, including items other modules in the same crate reach
 through a module chain.
+
+Run `just hawk` for visibility findings. Before narrowing a shipped entry
+point, check its registration in `rust/hawk.toml`. Update the archive pins in
+`nix/cargo-hawk.nix` with the channel in `rust-toolchain.toml`; the check
+requires the exact compiler version that built Hawk.
 
 ## Pricing Embedding
 
