@@ -4,7 +4,7 @@
 # Report the parse and type errors Nushell finds in every script under a directory, without running any of them.
 def main [root: path]: nothing -> nothing {
     cd $root
-    let findings = glob "**/*.nu" --exclude ["**/node_modules/**" "**/target/**"]
+    let findings = glob "**/*.nu" --exclude ["**/.git/**" "**/node_modules/**" "**/target/**"]
     | each {|file| diagnostics ($file | path relative-to (pwd)) }
     | flatten
     | sort-by file line column
