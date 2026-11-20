@@ -124,8 +124,9 @@ impl<'a> Text<'a> {
 
     pub(crate) fn non_null(self) -> std::result::Result<Option<Cow<'a, str>>, Rejection> {
         match self {
+            Self::Absent => Ok(None),
             Self::Null => Err(Rejection::NullContract),
-            text => Ok(text.value()),
+            Self::Value(value) => Ok(Some(value)),
         }
     }
 }
