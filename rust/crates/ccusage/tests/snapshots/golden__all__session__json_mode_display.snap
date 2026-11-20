@@ -873,7 +873,7 @@ exit: 0
       "outputTokens": 150,
       "period": "p-gpt5-estimated",
       "totalCost": 0.25,
-      "totalTokens": 3410
+      "totalTokens": 3350
     },
     {
       "agent": "opencode",
@@ -3566,7 +3566,7 @@ exit: 0
       "outputTokens": 70,
       "period": "p-mystery",
       "totalCost": 0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "agent": "hermes",
@@ -3589,7 +3589,7 @@ exit: 0
       "outputTokens": 300,
       "period": "p-openrouter",
       "totalCost": 0,
-      "totalTokens": 7140
+      "totalTokens": 7100
     },
     {
       "agent": "hermes",
@@ -5438,7 +5438,7 @@ exit: 0
     "inputTokens": 1261732,
     "outputTokens": 60568,
     "totalCost": 24.12330000000001,
-    "totalTokens": 2652795
+    "totalTokens": 2652685
   }
 }
 

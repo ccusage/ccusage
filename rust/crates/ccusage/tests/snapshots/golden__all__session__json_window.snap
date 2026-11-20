@@ -414,7 +414,7 @@ exit: 0
       "outputTokens": 150,
       "period": "p-gpt5-estimated",
       "totalCost": 0.25,
-      "totalTokens": 3410
+      "totalTokens": 3350
     },
     {
       "agent": "kilo",
@@ -2958,7 +2958,7 @@ exit: 0
       "outputTokens": 70,
       "period": "p-mystery",
       "totalCost": 0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "agent": "goose",
@@ -3069,7 +3069,7 @@ exit: 0
     "inputTokens": 871119,
     "outputTokens": 35610,
     "totalCost": 15.056532600000006,
-    "totalTokens": 1485849,
+    "totalTokens": 1485779,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

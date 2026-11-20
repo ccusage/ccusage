@@ -261,6 +261,7 @@ version = "0.0.0"
 dependencies = [
  "ccusage-core",
  "ccusage-test-support",
+ "ccusage-zstd",
  "serde",
  "serde_json",
  "simdutf8",
@@ -530,6 +531,17 @@ dependencies = [
  "ccusage-core",
  "ccusage-pricing-snapshots",
  "jiff",
+]
+
+[[package]]
+name = "ccusage-zstd"
+version = "0.0.0"
+dependencies = [
+ "ccusage-core",
+ "ccusage-test-support",
+ "memchr",
+ "zstd",
+ "zstd-sys",
 ]
 
 [[package]]

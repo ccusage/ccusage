@@ -134,20 +134,33 @@ impl CodexLineage {
     }
 
     // NOTE(2026-11-20, #2208): A fork and its ancestors each send their own requests after the fork, while unrelated sessions with the same recordless usage hold copies of one request. Matches at the same fork depth never descend from one another, so each depth counts once.
-    fn collapse_copies(&self, attributions: Vec<CodexAttribution>) -> Vec<CodexAttribution> {
-        let threads = attributions
+    fn fork_depths(&self, sessions: &[StringId], related: &[StringId]) -> Vec<usize> {
+        let threads = sessions
             .iter()
-            .filter_map(|attribution| self.threads.get(&attribution.session))
+            .chain(related)
+            .filter_map(|session| self.threads.get(session))
             .collect::<Vec<_>>();
-        let depths = attributions
+        sessions
             .iter()
-            .map(|attribution| {
-                self.ancestors(attribution.session)
+            .map(|session| {
+                self.ancestors(*session)
                     .into_iter()
                     .filter(|ancestor| threads.contains(ancestor))
                     .count()
             })
+            .collect()
+    }
+
+    fn collapse_copies(
+        &self,
+        attributions: Vec<CodexAttribution>,
+        related: &[StringId],
+    ) -> Vec<CodexAttribution> {
+        let sessions = attributions
+            .iter()
+            .map(|attribution| attribution.session)
             .collect::<Vec<_>>();
+        let depths = self.fork_depths(&sessions, related);
         let mut requests = Vec::<(usize, CodexAttribution)>::new();
         for (depth, attribution) in depths.into_iter().zip(attributions) {
             if let Some((_, request)) = requests.iter_mut().find(|(level, _)| *level == depth) {
@@ -199,38 +212,97 @@ impl CodexDedupeMap {
             recorded,
             mut other_sessions,
         } = self;
+        let mut pairing_sessions = FxHashMap::<CodexUsageKey, Vec<StringId>>::default();
+        // NOTE(2026-11-20, #2366): A recordless occurrence can only be a copy of a named request at the same fork depth. A fork's own request that shares a signature with an ancestor's recorded request is a separate request.
         for (&signature, requests) in &recorded {
-            let mut max_in_rollout = requests
-                .iter()
-                .map(|request| request.attribution.rollout_count)
-                .max()
-                .unwrap_or_default();
+            let mut recordless = Vec::new();
             let mut stand_in = signature;
             while let Some(item) = usage.get(&stand_in) {
-                max_in_rollout = max_in_rollout.max(item.rollout_count);
-                if let Some(sessions) = other_sessions.get(&stand_in) {
-                    for session in sessions {
-                        max_in_rollout = max_in_rollout.max(session.rollout_count);
-                    }
+                let sessions = other_sessions.get(&stand_in).into_iter().flatten();
+                for attribution in std::iter::once(item).chain(sessions) {
+                    recordless.push((
+                        stand_in.occurrence,
+                        attribution.session,
+                        attribution.rollout_count,
+                    ));
                 }
                 stand_in.occurrence += 1;
             }
-            let named = u32::try_from(requests.len()).unwrap_or(u32::MAX);
-            let recordless = stand_in.occurrence;
-            let unmatched = max_in_rollout.saturating_sub(named);
-            let paired = recordless.saturating_sub(unmatched);
-            for occurrence in 0..paired {
-                stand_in.occurrence = occurrence;
-                usage.remove(&stand_in);
-                other_sessions.remove(&stand_in);
+            if recordless.is_empty() {
+                continue;
             }
+            let sessions = requests
+                .iter()
+                .map(|request| request.attribution.session)
+                .chain(recordless.iter().map(|(_, session, _)| *session))
+                .collect::<Vec<_>>();
+            let depths = lineage.fork_depths(&sessions, &[]);
+            let (named_depths, recordless_depths) = depths.split_at(requests.len());
+            let depth_of = recordless
+                .iter()
+                .zip(recordless_depths)
+                .map(|((_, session, _), depth)| (*session, *depth))
+                .collect::<FxHashMap<_, _>>();
+            let mut levels = recordless_depths.to_vec();
+            levels.sort_unstable();
+            levels.dedup();
+            for depth in levels {
+                let named = named_depths.iter().filter(|level| **level == depth).count();
+                if named == 0 {
+                    continue;
+                }
+                let at_depth = recordless
+                    .iter()
+                    .zip(recordless_depths)
+                    .filter(|(_, level)| **level == depth)
+                    .map(|(occurrence, _)| *occurrence);
+                let recordless_count = at_depth
+                    .clone()
+                    .map(|(occurrence, _, _)| occurrence + 1)
+                    .max()
+                    .unwrap_or_default();
+                let max_in_rollout = requests
+                    .iter()
+                    .zip(named_depths)
+                    .filter(|(_, level)| **level == depth)
+                    .map(|(request, _)| request.attribution.rollout_count)
+                    .chain(at_depth.map(|(_, _, rollout_count)| rollout_count))
+                    .max()
+                    .unwrap_or_default();
+                let named = u32::try_from(named).unwrap_or(u32::MAX);
+                let unmatched = max_in_rollout.saturating_sub(named);
+                let paired = recordless_count.saturating_sub(unmatched);
+                let copy = |attribution: &CodexAttribution| {
+                    depth_of.get(&attribution.session) == Some(&depth)
+                };
+                for occurrence in 0..paired {
+                    stand_in.occurrence = occurrence;
+                    if usage.get(&stand_in).is_some_and(copy) {
+                        usage.remove(&stand_in);
+                    }
+                    if let Some(sessions) = other_sessions.get_mut(&stand_in) {
+                        sessions.retain(|attribution| !copy(attribution));
+                        if sessions.is_empty() {
+                            other_sessions.remove(&stand_in);
+                        }
+                    }
+                }
+            }
+            pairing_sessions.insert(signature, sessions);
         }
         let mut recordless_matches = Vec::new();
         for (key, sessions) in other_sessions {
             let matches = usage.remove(&key).into_iter().chain(sessions).collect();
+            // NOTE(2026-11-20, #2366): Settlement measures fork depth against every session that matched the signature during pairing. Paired copies are already removed, so their threads would otherwise drop out and change a fork's depth.
+            let related = pairing_sessions
+                .get(&CodexUsageKey {
+                    occurrence: 0,
+                    ..key
+                })
+                .map_or(&[][..], Vec::as_slice);
             recordless_matches.extend(
                 lineage
-                    .collapse_copies(matches)
+                    .collapse_copies(matches, related)
                     .into_iter()
                     .map(|attribution| (key, attribution)),
             );

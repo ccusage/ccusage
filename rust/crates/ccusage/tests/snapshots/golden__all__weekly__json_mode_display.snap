@@ -11,7 +11,7 @@ exit: 0
     "inputTokens": 1261107,
     "outputTokens": 60466,
     "totalCost": 23.343299999999996,
-    "totalTokens": 2651048
+    "totalTokens": 2650938
   },
   "weekly": [
     {
@@ -928,7 +928,7 @@ exit: 0
       "outputTokens": 58299,
       "period": "2025-12-29",
       "totalCost": 19.533299999999997,
-      "totalTokens": 2636000
+      "totalTokens": 2635890
     },
     {
       "agent": "all",

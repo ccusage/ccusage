@@ -11,7 +11,7 @@ exit: 0
     "inputTokens": 1070549,
     "outputTokens": 37494,
     "totalCost": 15.286691300000003,
-    "totalTokens": 1787493,
+    "totalTokens": 1787423,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -696,7 +696,7 @@ exit: 0
       "outputTokens": 37494,
       "period": "2025-12-29",
       "totalCost": 15.286691300000003,
-      "totalTokens": 1787493
+      "totalTokens": 1787423
     }
   ]
 }

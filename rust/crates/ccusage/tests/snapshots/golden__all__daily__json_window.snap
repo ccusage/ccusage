@@ -388,7 +388,7 @@ exit: 0
       "outputTokens": 19957,
       "period": "2025-12-31",
       "totalCost": 11.670783985,
-      "totalTokens": 278778
+      "totalTokens": 278718
     },
     {
       "agent": "all",
@@ -913,7 +913,7 @@ exit: 0
       "outputTokens": 17537,
       "period": "2026-01-01",
       "totalCost": 3.615907315,
-      "totalTokens": 1508715
+      "totalTokens": 1508705
     }
   ],
   "totals": {
@@ -922,7 +922,7 @@ exit: 0
     "inputTokens": 1070549,
     "outputTokens": 37494,
     "totalCost": 15.2866913,
-    "totalTokens": 1787493,
+    "totalTokens": 1787423,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

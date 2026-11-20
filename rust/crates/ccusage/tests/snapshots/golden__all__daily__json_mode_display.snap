@@ -795,7 +795,7 @@ exit: 0
       "outputTokens": 19837,
       "period": "2025-12-31",
       "totalCost": 11.179999999999998,
-      "totalTokens": 277858
+      "totalTokens": 277798
     },
     {
       "agent": "all",
@@ -1293,7 +1293,7 @@ exit: 0
       "outputTokens": 17537,
       "period": "2026-01-01",
       "totalCost": 1.72,
-      "totalTokens": 1508715
+      "totalTokens": 1508705
     },
     {
       "agent": "all",
@@ -1628,7 +1628,7 @@ exit: 0
       "outputTokens": 10755,
       "period": "2026-01-02",
       "totalCost": 1.2309999999999999,
-      "totalTokens": 669018
+      "totalTokens": 668978
     },
     {
       "agent": "all",
@@ -1665,7 +1665,7 @@ exit: 0
     "inputTokens": 1261107,
     "outputTokens": 60466,
     "totalCost": 23.3433,
-    "totalTokens": 2651048
+    "totalTokens": 2650938
   }
 }
 

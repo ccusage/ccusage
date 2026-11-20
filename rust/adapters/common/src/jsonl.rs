@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     fs::File,
-    io::{self, BufReader, Read, Seek, SeekFrom},
+    io::{self, Read, Seek, SeekFrom},
     ops::ControlFlow,
     path::{Path, PathBuf},
 };
@@ -13,6 +13,8 @@ use ccusage_core::{
     Diagnostics, Skip, SkipKind,
     fast::{LinePrefilter, LineReader, newline_offsets},
 };
+
+use ccusage_zstd::ZstdLines;
 
 use crate::{
     UnitError,
@@ -35,14 +37,26 @@ thread_local! {
 
 enum Input {
     Plain(File),
-    Zstd(zstd::stream::read::Decoder<'static, BufReader<File>>),
+    Zstd(ZstdLines),
 }
 
-impl Read for Input {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+enum Lines {
+    Plain(LineReader<File>),
+    Zstd(ZstdLines),
+}
+
+impl Lines {
+    fn next_line(&mut self) -> io::Result<Option<&[u8]>> {
         match self {
-            Self::Plain(file) => file.read(buffer),
-            Self::Zstd(decoder) => decoder.read(buffer),
+            Self::Plain(reader) => reader.next_line(),
+            Self::Zstd(reader) => reader.next_line(),
+        }
+    }
+
+    fn rest(&self) -> &[u8] {
+        match self {
+            Self::Plain(reader) => reader.rest(),
+            Self::Zstd(reader) => reader.rest(),
         }
     }
 }
@@ -106,8 +120,7 @@ fn open_input(path: &Path, capacity: usize, compressed: bool) -> io::Result<(Inp
     let file = File::open(path)?;
     let stamp = FileStamp::of(&file.metadata()?);
     let input = if compressed {
-        zstd::stream::read::Decoder::with_buffer(BufReader::with_capacity(capacity, file))
-            .map(Input::Zstd)?
+        Input::Zstd(ZstdLines::new(file, capacity)?)
     } else {
         Input::Plain(file)
     };
@@ -279,17 +292,24 @@ fn read_with(
 }
 
 #[inline(never)]
-fn line_reader(capacity: usize, input: Input) -> LineReader<Input> {
+fn line_reader(capacity: usize, input: Input) -> Lines {
+    let file = match input {
+        Input::Plain(file) => file,
+        Input::Zstd(reader) => return Lines::Zstd(reader),
+    };
     let mut buffer = LINE_BUFFER.take();
     if buffer.capacity() > capacity {
         buffer = Vec::new();
     }
     buffer.resize(capacity, 0);
-    LineReader::with_buffer(buffer, input)
+    Lines::Plain(LineReader::with_buffer(buffer, file))
 }
 
 #[inline(never)]
-fn recycle_line_buffer(capacity: usize, reader: LineReader<Input>) {
+fn recycle_line_buffer(capacity: usize, reader: Lines) {
+    let Lines::Plain(reader) = reader else {
+        return;
+    };
     let buffer = reader.into_buffer();
     if buffer.capacity() <= capacity {
         LINE_BUFFER.set(buffer);
