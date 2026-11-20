@@ -180,6 +180,8 @@ pub enum MatchKind {
     StrictExact,
     Exact,
     Fuzzy,
+    /// Another model id, matched like `Fuzzy` only after every other candidate has failed every step.
+    Fallback,
 }
 
 pub struct AgentModel<'a> {
@@ -1603,18 +1605,27 @@ impl PricingMap {
                 row,
             });
         }
-        for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
-            if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
-                continue;
+        let has_fallback = candidates
+            .iter()
+            .any(|&(_, kind)| kind == MatchKind::Fallback);
+        for fallback in [false, true] {
+            if fallback && !has_fallback {
+                break;
             }
-            for (index, &(model, kind)) in candidates.iter().enumerate() {
-                if pass.allows(kind)
-                    && let Some(row) = matching(model, pass)
-                {
-                    return Some(RequestHit {
-                        candidate: Some(index),
-                        row,
-                    });
+            for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
+                if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
+                    continue;
+                }
+                for (index, &(model, kind)) in candidates.iter().enumerate() {
+                    if (kind == MatchKind::Fallback) == fallback
+                        && pass.allows(kind)
+                        && let Some(row) = matching(model, pass)
+                    {
+                        return Some(RequestHit {
+                            candidate: Some(index),
+                            row,
+                        });
+                    }
                 }
             }
         }

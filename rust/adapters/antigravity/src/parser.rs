@@ -1103,6 +1103,12 @@ fn price_antigravity(
     } else {
         MatchKind::Fuzzy
     };
+    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it. The resolver cannot treat `-thinking` as price-neutral because catalogues list separate thinking models, so the base id only prices records whose full id no catalogue row names.
+    let thinking_base = model
+        .strip_suffix("-thinking")
+        .into_iter()
+        .flat_map(|base| model_candidates(base, provider))
+        .map(|name| (name, MatchKind::Fallback));
     let candidates: Vec<_> = model_candidates(model, provider)
         .into_iter()
         .flat_map(|name| {
@@ -1110,6 +1116,7 @@ fn price_antigravity(
             let extra = (exact && alias != name).then_some((alias, MatchKind::Exact));
             std::iter::once((name, kind)).chain(extra)
         })
+        .chain(thinking_base)
         .collect();
     let candidates: Vec<_> = logged_model
         .map(|name| (name, MatchKind::Exact))
@@ -1165,8 +1172,6 @@ fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
 fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
     let mut models = vec![model];
     models.extend(gemini_flash_pricing_alias(model));
-    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it. The resolver cannot treat `-thinking` as price-neutral because catalogues list separate thinking models.
-    models.extend(model.strip_suffix("-thinking"));
 
     let use_google_prefixes = matches!(
         provider,
@@ -1849,6 +1854,37 @@ mod tests {
             "gemini-3.7-flash-medium",
             None,
             Some(API_PROVIDER_GOOGLE_GEMINI),
+            TokenUsageRaw {
+                input_tokens: 1,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                speed: None,
+                cache_creation: None,
+            },
+            TimestampMs::UNIX_EPOCH,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .0;
+
+        assert_eq!(cost, 2.0);
+    }
+
+    #[test]
+    fn a_row_for_the_thinking_id_precedes_the_stripped_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gemini-2.5-flash": {"input_cost_per_token": 1, "output_cost_per_token": 1},
+                "vertex_ai/gemini-2.5-flash-thinking": {"input_cost_per_token": 2, "output_cost_per_token": 2}
+            }"#,
+        );
+
+        let cost = price_antigravity(
+            "gemini-2.5-flash-thinking",
+            None,
+            None,
             TokenUsageRaw {
                 input_tokens: 1,
                 output_tokens: 0,

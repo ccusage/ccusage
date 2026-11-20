@@ -127,3 +127,5 @@
 106-droid|gpt-5-3-spark|F:gpt-5-3-spark,F:openai/gpt-5-3-spark,F:openrouter/openai/gpt-5-3-spark|1.75/14+128000|S4|gpt-5.3-codex-spark|
 109-opencode|gpt-6-luna-decisions|F:gpt-6-luna-decisions|o:0|S5|openrouter/openai/gpt-6-luna-decisions|
 112-kilo|claude-opus-4-8-fast|F:claude-opus-4-8-fast|10/50|S6|anthropic/claude-opus-4.8-fast|
+113-fallback|claude-opus-5-5-fast|F:claude-opus-5-5-fast,B:claude-opus-5-5|8/40|S4|claude-opus-5-5-fast|
+114-fallback|claude-opus-5-5-unlisted|F:claude-opus-5-5-unlisted,B:claude-opus-5-5|4/20|S2|claude-opus-5-5|
