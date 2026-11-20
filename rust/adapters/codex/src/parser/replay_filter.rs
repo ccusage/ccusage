@@ -41,6 +41,7 @@ impl<'a> CodexReplayFilter<'a> {
         visit: &mut impl FnMut(CodexTokenUsageEvent),
     ) -> Option<CodexReplayResolution<'a>> {
         let fork = self.fork?;
+        let thread_id = thread_id.filter(|id| !id.trim().is_empty());
         let is_own = thread_id.is_some() && thread_id == fork.child_id;
         if is_own {
             self.own_start.get_or_insert(self.pending.len());

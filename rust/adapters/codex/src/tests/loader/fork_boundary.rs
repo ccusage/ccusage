@@ -295,3 +295,14 @@ fn counts_and_warns_when_a_fork_names_no_child_id() {
         &[MISSING_PARENT_WARNING],
     );
 }
+
+#[test]
+fn treats_a_blank_thread_id_as_absent() {
+    let child = [
+        replay_metadata("2026-11-01T09:00:00.000Z", CHILD, Some(PARENT)),
+        settings_applied("2026-11-01T09:00:00.000Z", Some("")),
+        replay_token_count("2026-11-01T09:00:01.000Z", 100),
+    ];
+
+    assert_child_usage(&load_fork(None, &child), &[100], &[MISSING_PARENT_WARNING]);
+}
