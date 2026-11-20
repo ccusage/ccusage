@@ -308,7 +308,9 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                         .unwrap_or(existing.session_id());
                     (existing.message_id() == Some(message_id)
                         && indexed_session_id == entry.session_id()
-                        && (candidate_is_sidechain || existing.is_sidechain()))
+                        && (candidate_is_sidechain
+                            || existing.is_sidechain()
+                            || absorbs_unclaimed_replay(&entry, existing)))
                     .then_some(index)
                 })
             })
@@ -408,6 +410,11 @@ fn requestless_hashes(entry: &impl DedupEntry) -> [Option<u64>; 2] {
         return [None, None];
     }
     [entry_exact_hash(entry), requestless_response_hash(entry)]
+}
+
+// NOTE(2026-11-20, #2255): A requestless record at a replay's timestamp can win the replay's slot before any parent absorbs the replay. The slot then still waits for its parent, so a request-bearing record may absorb it although the survivor is no longer a sidechain record.
+fn absorbs_unclaimed_replay(candidate: &impl DedupEntry, existing: &impl DedupEntry) -> bool {
+    candidate.request_id().is_some() && existing.request_id().is_none()
 }
 
 fn merge_slots<E: DedupEntry>(

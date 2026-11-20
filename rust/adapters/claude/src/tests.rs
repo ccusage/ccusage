@@ -1043,6 +1043,25 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "explicit parent after a requestless record took its replay's slot",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent")
+                    .replace(r#""type":"assistant","#, r#""type":"assistant","requestId":"req_parent","#)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                linkless_assistant(FIRST_BLOCK, "msg_parent")
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":500"#),
+                linkless_assistant("2026-05-22T02:34:41.000Z", "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+            ],
+            1,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(
