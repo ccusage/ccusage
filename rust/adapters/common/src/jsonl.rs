@@ -429,6 +429,10 @@ impl<'a> Line<'a> {
         self.json.bytes()
     }
 
+    pub fn json(self) -> &'a JsonText<'a> {
+        self.json
+    }
+
     pub fn unterminated(self) -> bool {
         !self.raw.ends_with(b"\n")
     }
