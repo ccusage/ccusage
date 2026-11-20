@@ -3275,6 +3275,163 @@ mod tests {
         assert_eq!(entries[0].date, "2026-01-02");
     }
 
+    const NOON_UTC_2026_01_01_V2: &str = r#"{"model":{"id":"claude-sonnet-4-20250514","providerID":"anthropic"},"time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
+
+    const NOON_UTC_2026_01_01_MS: i64 = 1_767_268_800_000;
+
+    #[derive(Clone, Copy, Debug)]
+    enum MessageTable {
+        Message,
+        SessionMessage,
+    }
+
+    fn create_message_with_time(path: &Path, table: MessageTable, time_created: i64) {
+        match table {
+            MessageTable::Message => create_db_message_with_time(
+                path,
+                "msg-drifted",
+                "session-a",
+                time_created,
+                NOON_UTC_2026_01_01,
+            ),
+            MessageTable::SessionMessage => {
+                create_db_session_message_table(path, true);
+                insert_db_session_message(
+                    path,
+                    "msg-drifted",
+                    "session-a",
+                    "assistant",
+                    time_created,
+                    NOON_UTC_2026_01_01_V2,
+                    true,
+                );
+            }
+        }
+    }
+
+    fn load_local_day(directory: &Path, timezone: &str, day: &str) -> Vec<LoadedEntry> {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some(timezone.parse().unwrap()),
+            since: Some(day.parse().unwrap()),
+            until: Some(day.parse().unwrap()),
+            ..SharedArgs::default()
+        };
+        load_entries_from_directory(directory, &shared)
+    }
+
+    #[test]
+    fn a_time_created_column_far_from_the_payload_does_not_drop_the_row() {
+        const DAY: i64 = 24 * 60 * 60 * 1000;
+        for (table, timezone, day, date, drift) in [
+            (
+                MessageTable::Message,
+                "UTC",
+                "20260101",
+                "2026-01-01",
+                -4 * DAY,
+            ),
+            (
+                MessageTable::Message,
+                "Pacific/Kiritimati",
+                "20260102",
+                "2026-01-02",
+                4 * DAY,
+            ),
+            (
+                MessageTable::SessionMessage,
+                "UTC",
+                "20260101",
+                "2026-01-01",
+                4 * DAY,
+            ),
+            (
+                MessageTable::SessionMessage,
+                "Etc/GMT+12",
+                "20260101",
+                "2026-01-01",
+                -4 * DAY,
+            ),
+        ] {
+            let fixture = fs_fixture!({});
+            create_message_with_time(
+                &fixture.path("opencode.db"),
+                table,
+                NOON_UTC_2026_01_01_MS + drift,
+            );
+
+            let entries = load_local_day(fixture.root(), timezone, day);
+
+            let case = format!("{table:?} in {timezone} with time_created {drift} ms away");
+            assert_eq!(entries.len(), 1, "{case}");
+            assert_eq!(entries[0].date, date, "{case}");
+        }
+    }
+
+    fn create_opencode_time_index(path: &Path, table: MessageTable) {
+        let db = sqlite::open(path).unwrap();
+        db.execute(match table {
+            MessageTable::Message => {
+                "CREATE INDEX message_session_time_created_id_idx ON message (session_id, time_created, id)"
+            }
+            MessageTable::SessionMessage => {
+                "CREATE INDEX session_message_time_created_idx ON session_message (time_created)"
+            }
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn opencode_indexed_tables_keep_rows_on_the_local_day_bounds() {
+        const TOKYO_2026_01_02_START: i64 = 1_767_279_600_000;
+        const TOKYO_2026_01_02_END: i64 = TOKYO_2026_01_02_START + 24 * 60 * 60 * 1000;
+        for table in [MessageTable::Message, MessageTable::SessionMessage] {
+            let fixture = fs_fixture!({});
+            let db_path = fixture.path("opencode.db");
+            if matches!(table, MessageTable::SessionMessage) {
+                create_db_session_message_table(&db_path, true);
+            }
+            for (id, created) in [
+                ("msg-before", TOKYO_2026_01_02_START - 1),
+                ("msg-first", TOKYO_2026_01_02_START),
+                ("msg-last", TOKYO_2026_01_02_END - 1),
+                ("msg-after", TOKYO_2026_01_02_END),
+            ] {
+                match table {
+                    MessageTable::Message => create_db_message_with_time(
+                        &db_path,
+                        id,
+                        "session-a",
+                        created,
+                        &format!(
+                            r#"{{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{{"created":{created}}},"tokens":{{"input":1,"output":1}}}}"#
+                        ),
+                    ),
+                    MessageTable::SessionMessage => insert_db_session_message(
+                        &db_path,
+                        id,
+                        "session-a",
+                        "assistant",
+                        created,
+                        &format!(
+                            r#"{{"model":{{"id":"claude-sonnet-4-20250514","providerID":"anthropic"}},"time":{{"created":{created}}},"tokens":{{"input":1,"output":1}}}}"#
+                        ),
+                        true,
+                    ),
+                }
+            }
+            create_opencode_time_index(&db_path, table);
+
+            let entries = load_local_day(fixture.root(), "Asia/Tokyo", "20260102");
+
+            let ids = entries
+                .iter()
+                .map(|entry| entry.message_id.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, ["msg-first", "msg-last"], "{table:?}");
+        }
+    }
+
     #[test]
     fn second_scale_time_created_disables_the_range_pushdown() {
         let fixture = fs_fixture!({});
