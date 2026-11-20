@@ -1,10 +1,11 @@
 const large_agents = [claude codex grok]
 const reports = [daily weekly monthly session blocks]
 export const fixtures = [large golden many-files proxy]
+export const median_mtime = '{median-mtime}'
 
 export const default_commands = [
     'claude daily'
-    'claude daily --since 20260801'
+    'claude daily --since {median-mtime}'
     'many-files:claude daily'
     'proxy:claude daily'
     'claude session'
@@ -33,6 +34,19 @@ export const default_commands = [
     'cline daily'
     'dsh daily'
 ]
+
+# `--since` the day of the median transcript mtime prunes about half of any generated fixture.
+export def resolve-args [args: string, claude_dir: path]: nothing -> string {
+    if not ($args | str contains $median_mtime) {
+        return $args
+    }
+    let mtimes = glob ($claude_dir | path join '**/*.jsonl') | each { ls --long $in | first | get modified } | sort
+    if ($mtimes | is-empty) {
+        error make {msg: $"No Claude transcripts under ($claude_dir)"}
+    }
+    let day = $mtimes | get (($mtimes | length) // 2) | date to-timezone UTC | format date '%Y%m%d'
+    $args | str replace --all $median_mtime $day
+}
 
 export def slug [value: string]: nothing -> string {
     $value | str replace --all --regex '[^A-Za-z0-9._-]+' '-' | str trim --char '-'

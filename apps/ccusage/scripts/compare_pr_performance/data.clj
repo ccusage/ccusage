@@ -13,8 +13,10 @@
    {:fixture :small :option :small-fixture-dir :label "tiny"
     :desc "a few MiB of Claude logs, so fixed startup cost such as building the pricing map dominates"}])
 
+(def median-mtime "{median-mtime}")
+
 (def shape-commands
-  [{:fixture :large :command "claude daily --since 20260801"}
+  [{:fixture :large :command (str "claude daily --since " median-mtime)}
    {:fixture :large :command "codex session"}
    {:fixture :many-files :command "claude daily"}
    {:fixture :proxy :command "claude daily"}

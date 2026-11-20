@@ -86,6 +86,29 @@ def main []: nothing -> nothing {
     ]
     assert equal ((core plan main '').runs | length) ($core.default_commands | length)
 
+    let since_dir = mktemp -d
+    try {
+        [202606010000 202606040000 202606080000 202606130000 202606210000] | enumerate | each {|row|
+            let file = $since_dir | path join projects $"p($row.index)" s.jsonl
+            mkdir ($file | path dirname)
+            '{}' | save $file
+            with-env {TZ: UTC} { ^touch -t ($row.item | into string) $file }
+        } | ignore
+        let since = core resolve-args $"claude daily --since ($core.median_mtime)" $since_dir
+        assert equal $since 'claude daily --since 20260608'
+        let cut = $since | split row ' ' | last
+        let pruned = glob ($since_dir | path join '**/*.jsonl')
+        | where {|file| (ls --long $file | first | get modified | date to-timezone UTC | format date '%Y%m%d') < $cut }
+        | length
+        assert ($pruned > 0 and $pruned < 5) 'the median-mtime cut-off prunes some but not all files'
+        assert equal (core resolve-args 'claude daily' $since_dir) 'claude daily'
+        assert error { core resolve-args $"claude daily --since ($core.median_mtime)" ($since_dir | path join none) }
+    } catch {|error|
+        rm --recursive --force $since_dir
+        error make $error
+    }
+    rm --recursive --force $since_dir
+
     let shared = {function: shared, ir: 10}
     let base = [
         (fake-run main 'claude daily' 100 [

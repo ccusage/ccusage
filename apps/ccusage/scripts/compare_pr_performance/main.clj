@@ -30,17 +30,18 @@
                 variants [{:label "base" :bin (system/expand (:base-bin options))}
                           {:label "PR" :bin (system/expand (:head-bin options))}]
                 env (system/fixture-env fixture-dir codex-fixture-dir grok-fixture-dir (str empty-home))
-                shapes (into {:large {:fixture :large :label "main" :env env}}
+                shapes (into {:large {:fixture :large :label "main" :env env :claude-dir fixture-dir}}
                              (keep (fn [{:keys [fixture option] :as shape}]
                                      (when-let [dir (some-> (get options option) system/expand)]
-                                       [fixture (assoc shape :env (system/fixture-env dir nil nil (str empty-home))
+                                       [fixture (assoc shape :env (system/fixture-env dir nil nil (str empty-home)) :claude-dir dir
                                                        :stats (system/summarize-directory dir))])))
                              data/shape-fixtures)
                 results (mapv #(compare-command variants % env options) data/default-commands)
                 shape-results (vec (for [{:keys [fixture command]} data/shape-commands
                                          :let [shape (get shapes fixture)]
                                          :when shape]
-                                     (assoc (compare-command variants command (:env shape) (assoc options :fixture-label (:label shape)))
+                                     (assoc (compare-command variants (system/resolve-command command (:claude-dir shape)) (:env shape)
+                                                             (assoc options :fixture-label (:label shape)))
                                             :fixture-label (:label shape))))
                 context (assoc options :fixture-stats (system/summarize-directory fixture-dir)
                                :codex-fixture-stats (system/summarize-directory codex-fixture-dir)

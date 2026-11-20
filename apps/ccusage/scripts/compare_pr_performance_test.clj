@@ -202,6 +202,31 @@
         (is (.contains markdown "| tiny | `daily` | 610ms | 1.00s |"))
         (is (.contains markdown "**Verdict: ⚠️ possible regression** in `daily` on tiny (slower)"))))))
 
+(deftest since-cut-off-follows-the-fixture
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-since."})
+        day (fn [d] (java.nio.file.attribute.FileTime/fromMillis (+ (* d 86400000) 1780300000000)))]
+    (try
+      (doseq [[i d] (map-indexed vector [0 3 7 12 20])]
+        (let [file (babashka.fs/path dir "projects" (str "p" i) "s.jsonl")]
+          (babashka.fs/create-dirs (babashka.fs/parent file))
+          (spit (str file) "{}\n")
+          (babashka.fs/set-last-modified-time file (day d))))
+      (let [command (system/resolve-command (str "claude daily --since " data/median-mtime) dir)
+            since (last (clojure.string/split command #" "))
+            pruned (count (filter #(neg? (compare (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd")
+                                                           (java.time.LocalDate/ofInstant (.toInstant (babashka.fs/last-modified-time %)) java.time.ZoneOffset/UTC))
+                                                  since))
+                                  (babashka.fs/glob dir "**.jsonl")))]
+        (testing "the cut-off is the fixture's median transcript day, so it prunes some but not all files"
+          (is (= "claude daily --since 20260608" command))
+          (is (< 0 pruned 5))))
+      (testing "an empty fixture cannot silently prune nothing"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"No Claude transcripts"
+                              (system/resolve-command (str "claude daily --since " data/median-mtime) (str (babashka.fs/path dir "none"))))))
+      (testing "commands without the placeholder pass through"
+        (is (= "claude daily" (system/resolve-command "claude daily" dir))))
+      (finally (babashka.fs/delete-tree dir)))))
+
 (deftest overall-verdicts
   (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]
     (is (:regression? (report/overall-verdict [(result :unchanged :regression)] 0.1)))

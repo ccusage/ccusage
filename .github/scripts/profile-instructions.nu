@@ -183,7 +183,7 @@ def "main run" [
         'many-files' | 'proxy' => (claude-env $fixture_dir $home)
         _ => { error make {msg: $"Unknown fixture '($fixture)'"} }
     }
-    let report_args = (core parse-command $command).args
+    let report_args = core resolve-args (core parse-command $command).args ($fixture_dir | path join claude)
     let vars = $context.vars | merge $report_vars | merge {PATH: ($env.PATH | str join (char esep))}
     let profile = $out | path join callgrind.out
     let argv = [
