@@ -8,6 +8,10 @@ Let the pre-push hooks run; fix a failure in a new small commit and push again.
 
 ## Title
 
+State the concrete outcome or benefit, rather than listing implementation
+changes. For performance improvements, include measured before/after values or
+the measured improvement; never invent numbers or infer gains from code alone.
+
 Squash-merge turns the title into the commit subject on `main`, so write it as a
 commit subject. `.github/workflows/check-pr-title.yaml` checks the Conventional
 Commit shape and then re-runs `scripts/validate-commit-scope.nu` against the PR
