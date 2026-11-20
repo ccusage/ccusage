@@ -68,10 +68,10 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 5270,
+      "cacheReadTokens": 5570,
       "costUSD": 0,
       "date": "2025-12-31",
-      "inputTokens": 4600,
+      "inputTokens": 5000,
       "models": {
         "gpt-5": {
           "cacheCreationTokens": 0,
@@ -102,17 +102,17 @@ exit: 0
         },
         "gpt-5.5": {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 800,
-          "inputTokens": 1500,
+          "cacheReadTokens": 1100,
+          "inputTokens": 1900,
           "isFallback": false,
-          "outputTokens": 230,
-          "reasoningOutputTokens": 20,
-          "totalTokens": 2530
+          "outputTokens": 300,
+          "reasoningOutputTokens": 30,
+          "totalTokens": 3300
         }
       },
-      "outputTokens": 987,
-      "reasoningOutputTokens": 20,
-      "totalTokens": 10857
+      "outputTokens": 1057,
+      "reasoningOutputTokens": 30,
+      "totalTokens": 11627
     },
     {
       "cacheCreationTokens": 300,
@@ -204,12 +204,12 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 460650,
+    "cacheReadTokens": 460950,
     "costUSD": 0,
-    "inputTokens": 113170,
-    "outputTokens": 4052,
-    "reasoningOutputTokens": 139,
-    "totalTokens": 578172
+    "inputTokens": 113570,
+    "outputTokens": 4122,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 578942
   }
 }
 
