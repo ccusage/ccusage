@@ -182,7 +182,6 @@ pub enum MatchKind {
     StrictExact,
     Exact,
     Fuzzy,
-    /// Another model id, matched like `Fuzzy` only after every other candidate has failed every step.
     Fallback,
 }
 
