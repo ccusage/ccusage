@@ -182,12 +182,13 @@ pub fn summarize_entries(
                 .collect(),
         },
         SummaryKind::Daily | SummaryKind::Monthly | SummaryKind::Weekly(_) => {
-            let daily = summarize_by_key_target(
+            let mut daily = summarize_by_key_target(
                 entries,
-                |entry| entry.date.clone(),
-                |date| (date.clone(), None),
+                |entry| entry.date,
+                |date| (date.to_string(), None),
                 KeyTarget::Date,
             )?;
+            daily.sort_by(|a, b| a.date.cmp(&b.date));
             Ok(match kind {
                 SummaryKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
                 SummaryKind::Weekly(start) => summarize_bucket(&daily, Bucket::Weekly(start)),

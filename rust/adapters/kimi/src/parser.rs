@@ -11,8 +11,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter,
-    format_date_tz,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, date_at,
+    fast::LinePrefilter,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -349,7 +349,7 @@ pub(super) fn kimi_entry_to_loaded(
     };
     let (cost, missing_pricing_model) = price_kimi_usage(&entry, pricing, usage);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("kimi"),
         session_id: Arc::from(entry.session_id),

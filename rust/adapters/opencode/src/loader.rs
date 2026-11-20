@@ -1720,7 +1720,7 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].date.to_string(), "2026-01-02");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(
             entries[0].model.as_deref(),
@@ -1751,7 +1751,7 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].date.to_string(), "2026-01-02");
         assert_eq!(entries[0].session_id.as_ref(), "db-session-a");
         assert_eq!(entries[0].message_id.as_deref(), Some("db-msg-1"));
         assert_eq!(entries[0].usage.input_tokens, 120);
@@ -1848,7 +1848,7 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].date.to_string(), "2026-01-02");
         assert_eq!(
             entries[0].message_id.as_deref(),
             Some("msg-v2-no-time-column")
@@ -3218,7 +3218,7 @@ mod tests {
             1,
             "a UTC+14 local date of 2026-01-02 must survive since=until=20260102"
         );
-        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].date.to_string(), "2026-01-02");
     }
 
     #[test]
@@ -3244,7 +3244,7 @@ mod tests {
             1,
             "a UTC-12 local date of 2026-01-01 must survive until=20260101"
         );
-        assert_eq!(entries[0].date, "2026-01-01");
+        assert_eq!(entries[0].date.to_string(), "2026-01-01");
     }
 
     #[test]
@@ -3272,7 +3272,7 @@ mod tests {
             1,
             "the payload decides the window, so a drifting column must not exclude the row"
         );
-        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].date.to_string(), "2026-01-02");
     }
 
     #[test]

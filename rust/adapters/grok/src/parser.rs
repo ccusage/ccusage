@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
     total_usage_tokens,
 };
 
@@ -289,7 +289,7 @@ pub(super) fn parse_session_files_with_diagnostics(
                         version: None,
                         recorded_cost: cost_usd,
                         timestamp: timestamp_ms,
-                        date: format_date_tz(timestamp_ms, tz),
+                        date: date_at(timestamp_ms, tz),
                         project: Arc::from("grok"),
                         session_id: Arc::from(session_id.clone()),
                         project_path: Arc::from(meta.project_path.as_str()),
@@ -981,7 +981,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp.as_millis(), 1_785_328_986_355);
-        assert_eq!(entries[0].date, "2026-07-29");
+        assert_eq!(entries[0].date.to_string(), "2026-07-29");
     }
 
     #[test]
@@ -998,7 +998,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp.as_millis(), 1_750_000_000_000);
-        assert_eq!(entries[0].date, "2025-06-15");
+        assert_eq!(entries[0].date.to_string(), "2025-06-15");
     }
 
     #[test]

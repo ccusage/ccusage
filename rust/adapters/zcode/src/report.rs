@@ -19,7 +19,7 @@ mod tests {
             version: Some("0.16.3".to_string()),
             recorded_cost: None,
             timestamp,
-            date: date.to_string(),
+            date: ccusage_core::cli::IsoDate::parse(date).unwrap(),
             project: Arc::from("zcode"),
             session_id: Arc::from(session_id),
             project_path: Arc::from("/project"),
@@ -240,7 +240,7 @@ mod tests {
                 cost,
                 project_path,
             )| {
-                let date = timestamp.get(..10).unwrap().to_string();
+                let date = ccusage_core::cli::IsoDate::parse(timestamp.get(..10).unwrap()).unwrap();
                 let timestamp = parse_ts_timestamp(timestamp).unwrap();
                 LoadedEntry {
                     usage: TokenUsageRaw {

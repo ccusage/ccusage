@@ -27,7 +27,7 @@ mod tests {
             version: None,
             recorded_cost: None,
             timestamp,
-            date: date.to_string(),
+            date: ccusage_core::cli::IsoDate::parse(date).unwrap(),
             project: Arc::from("grok"),
             session_id: Arc::from(session_id),
             project_path: Arc::from(project_path),

@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
-    apply_total_token_fallback, fast::LinePrefilter, format_date_tz,
+    apply_total_token_fallback, date_at, fast::LinePrefilter,
 };
 use ccusage_adapter_common::{
     UnitError,
@@ -479,7 +479,7 @@ pub(super) fn dsh_entry_to_loaded(
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned());
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("dsh"),
         session_id: Arc::from(entry.session_id),

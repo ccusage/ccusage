@@ -7,7 +7,7 @@ use std::{
 };
 
 use ccusage_core::{
-    LoadedEntry, Result, Skip, SkipKind, TokenUsageRaw, cli::SharedArgs, format_date_tz,
+    LoadedEntry, Result, Skip, SkipKind, TokenUsageRaw, cli::SharedArgs, date_at,
     parse_ts_timestamp, resolve_tz,
 };
 
@@ -68,7 +68,7 @@ pub(crate) fn entry(session: &str, timestamp: &str, input_tokens: u64) -> Loaded
         version: None,
         recorded_cost: None,
         timestamp: parsed,
-        date: format_date_tz(
+        date: date_at(
             parsed,
             &resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC)),
         ),

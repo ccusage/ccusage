@@ -169,7 +169,7 @@ pub(crate) fn load_daily_summaries(
             daily::load_daily_entries(shared, project_filter, &diagnostics)
         })?;
     diagnostics.emit(shared.debug);
-    Ok(daily.summaries(group_by_project))
+    Ok(daily.summaries(group_by_project, None))
 }
 
 pub(crate) type MainThreadSessions = HashSet<Arc<str>>;
@@ -193,14 +193,14 @@ pub(crate) struct DailySummaries {
 pub(crate) fn load_daily_summaries_with_detection_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    group_by_project: bool,
+    report_window: Option<&crate::ReportWindow>,
     owner: ProgressOwner,
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let load = || daily::load_daily_entries(shared, project_filter, diagnostics);
     let daily = owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)?;
     Ok(DailySummaries {
-        summaries: daily.summaries(group_by_project),
+        summaries: daily.summaries(false, report_window),
         detected: daily.detected,
         sessions: daily.sessions(),
     })
@@ -217,7 +217,7 @@ fn load_windowed_entries(
         &mut loaded.entries,
         &mut loaded.copies,
         &crate::ReportWindow::from_shared(shared),
-        |entry| &entry.date,
+        |entry| entry.date,
     );
     Ok(loaded)
 }
@@ -226,19 +226,19 @@ fn retain_copied_entries<T>(
     entries: &mut Vec<T>,
     copies: &mut Vec<(usize, Arc<str>)>,
     window: &crate::ReportWindow,
-    date: impl Fn(&T) -> &str,
+    date: impl Fn(&T) -> crate::cli::IsoDate,
 ) {
     if window.is_unbounded() {
         return;
     }
     if copies.is_empty() {
-        entries.retain(|entry| window.contains_date(date(entry)));
+        entries.retain(|entry| window.contains_entry_date(date(entry)));
         return;
     }
     let mut kept_indexes = Vec::with_capacity(entries.len());
     let mut next_index = 0;
     entries.retain(|entry| {
-        let keep = window.contains_date(date(entry));
+        let keep = window.contains_entry_date(date(entry));
         kept_indexes.push(keep.then_some(next_index));
         if keep {
             next_index += 1;
@@ -1756,7 +1756,9 @@ mod tests {
                 entries: deduped
                     .entries
                     .into_iter()
-                    .filter(|entry| entry.date != "2026-01-02")
+                    .filter(|entry| {
+                        entry.date != crate::cli::IsoDate::from_ymd(2026, 1, 2).unwrap()
+                    })
                     .collect(),
                 ..Default::default()
             };
@@ -1975,7 +1977,7 @@ mod tests {
                 version: Some("1.0.0".to_string()),
                 recorded_cost: None,
                 timestamp: TimestampMs::from_millis(1_775_000_000_000),
-                date: "2026-03-29".to_string(),
+                date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
                 project: Arc::from("project-a"),
                 session_id: Arc::from("session-a"),
                 project_path: Arc::from("project-a"),

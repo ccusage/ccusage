@@ -11,7 +11,7 @@ use ccusage_adapter_common::{
     dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
 };
 
-use crate::{LoadedEntry, Result, format_date_tz};
+use crate::{LoadedEntry, Result, date_at};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pricing.table(cx.shared.mode);
@@ -38,7 +38,7 @@ fn to_loaded_entry(
 ) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_codebuff(&entry, pricing);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("codebuff"),
         session_id: Arc::from(entry.session_id.as_str()),
@@ -231,7 +231,7 @@ mod tests {
 
             let channel = fixture.root().file_name().unwrap().to_str().unwrap();
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].date.to_string(), "2026-01-02");
             assert_eq!(
                 entries[0].session_id.as_ref(),
                 format!("{channel}/project-a/2026-01-02T03-04-05.000Z")
@@ -352,7 +352,7 @@ mod tests {
             version: None,
             recorded_cost: None,
             timestamp: parse_ts_timestamp("2026-01-02T03:04:06.000Z").unwrap(),
-            date: "2026-01-02".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2026-01-02").unwrap(),
             project: Arc::from("codebuff"),
             session_id: Arc::from("session-a"),
             project_path: Arc::from("Codebuff"),

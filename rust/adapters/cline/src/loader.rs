@@ -133,7 +133,7 @@ mod tests {
             assert_eq!(
                 entries
                     .iter()
-                    .map(|entry| entry.date.as_str())
+                    .map(|entry| entry.date.to_string())
                     .collect::<Vec<_>>(),
                 ["2026-10-01", "2026-11-01", "2026-11-01", "2026-11-01"]
             );

@@ -568,8 +568,8 @@ mod tests {
 
         let rows = summarize_by_key_target(
             &[stored.clone(), calculated, other, stored],
-            |entry| entry.date.clone(),
-            |key| (key.clone(), None),
+            |entry| entry.date,
+            |key| (key.to_string(), None),
             KeyTarget::Date,
         )
         .unwrap();
@@ -680,7 +680,7 @@ mod tests {
             version: fixture.version.map(str::to_string),
             recorded_cost: None,
             timestamp,
-            date: fixture.date.to_string(),
+            date: crate::cli::IsoDate::parse(fixture.date).unwrap(),
             project: Arc::from(fixture.project_path),
             session_id: Arc::from(fixture.session_id),
             project_path: Arc::from(fixture.project_path),

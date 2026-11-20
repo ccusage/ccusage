@@ -10,7 +10,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use crate::{
     LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
     cli::{CostMode, PricingOverride},
-    format_date_tz, total_usage_tokens,
+    date_at, total_usage_tokens,
 };
 
 pub(super) struct ZcodeUsageRow {
@@ -127,7 +127,7 @@ pub(super) fn row_to_entry(
             message_id: Some(id),
             version: row.version,
             recorded_cost: None,
-            date: format_date_tz(timestamp, tz),
+            date: date_at(timestamp, tz),
             timestamp,
             project: Arc::from("zcode"),
             session_id: Arc::from(session_id),

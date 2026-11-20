@@ -107,7 +107,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2025-06-15");
+            assert_eq!(entries[0].date.to_string(), "2025-06-15");
             assert_eq!(entries[0].usage.input_tokens, 60);
             assert_eq!(entries[0].usage.cache_read_input_tokens, 40);
             assert_eq!(entries[0].usage.output_tokens, 20);

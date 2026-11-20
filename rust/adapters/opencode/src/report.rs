@@ -161,7 +161,7 @@ mod tests {
             version: None,
             recorded_cost: None,
             timestamp,
-            date: "2026-01-02".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2026-01-02").unwrap(),
             project: Arc::from("opencode"),
             session_id: Arc::from(session_id),
             project_path: Arc::from("/workspace/api"),

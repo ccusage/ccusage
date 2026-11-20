@@ -21,7 +21,7 @@ mod tests {
             version: None,
             recorded_cost: Some(0.34),
             timestamp: crate::parse_ts_timestamp("2025-06-15T15:06:40.250Z").unwrap(),
-            date: "2025-06-15".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2025-06-15").unwrap(),
             project: Arc::from("hermes"),
             session_id: Arc::from("session-1"),
             project_path: Arc::from("Hermes"),
