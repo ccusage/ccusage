@@ -275,12 +275,14 @@ fn pi_tied_fork_keeps_the_first_path_in_both_read_modes() {
 }
 
 #[test]
-fn pi_explicit_stores_keep_a_project_named_sessions() {
+fn pi_explicit_stores_keep_a_project_named_sessions_and_agent_dirs_read_their_store() {
     let fixture = Fixture::new();
     let root = fixture.root();
     let seeded = golden::pi::seed_store_with_sessions_project(root);
     let store = root.join(golden::pi::STORE_WITH_SESSIONS_PROJECT);
     let store = store.to_string_lossy();
+    let agent = root.join(golden::pi::AGENT_DIR);
+    let agent = agent.to_string_lossy();
     let config = |name: &str, pi: serde_json::Value| {
         let path = fixture.write_file(name, serde_json::json!({ "pi": pi }).to_string());
         path.to_string_lossy().into_owned()
@@ -288,6 +290,10 @@ fn pi_explicit_stores_keep_a_project_named_sessions() {
     let named = config(
         "named.json",
         serde_json::json!({"stores": [{"name": "omp", "path": store}]}),
+    );
+    let defaults = config(
+        "defaults.json",
+        serde_json::json!({"defaults": {"piAgentDir": agent}}),
     );
     let sessions = |env: &[(&'static str, Vec<std::ffi::OsString>)], args: &[&str]| {
         let mut case = Case::new("session", "", args);
@@ -317,6 +323,7 @@ fn pi_explicit_stores_keep_a_project_named_sessions() {
         ("in-alpha".to_string(), 2000),
         ("in-sessions".to_string(), 1000),
     ];
+    let agent_store = vec![("in-agent".to_string(), 4000)];
 
     assert_eq!(
         sessions(&seeded, &["pi", "session", "--pi-path", &store]),
@@ -332,6 +339,14 @@ fn pi_explicit_stores_keep_a_project_named_sessions() {
     assert_eq!(
         sessions(&seeded, &["session", "--config", &named]),
         whole_store
+    );
+    assert_eq!(
+        sessions(&seeded, &["pi", "session", "--pi-agent-dir", &agent]),
+        agent_store
+    );
+    assert_eq!(
+        sessions(&seeded, &["pi", "session", "--config", &defaults]),
+        agent_store
     );
 }
 

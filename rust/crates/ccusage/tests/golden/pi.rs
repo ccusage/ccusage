@@ -103,6 +103,7 @@ pub(crate) fn seed_tied_fork(
 }
 
 pub(crate) const STORE_WITH_SESSIONS_PROJECT: &str = "pi-store";
+pub(crate) const AGENT_DIR: &str = "pi-agent";
 
 pub(crate) fn seed_store_with_sessions_project(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     let session = |relative: &str, id: &str, input: u64| {
@@ -124,6 +125,11 @@ pub(crate) fn seed_store_with_sessions_project(root: &Path) -> Vec<(&'static str
         &format!("{STORE_WITH_SESSIONS_PROJECT}/alpha/in-alpha.jsonl"),
         "in-alpha",
         2000,
+    );
+    session(
+        &format!("{AGENT_DIR}/sessions/beta/in-agent.jsonl"),
+        "in-agent",
+        4000,
     );
     std::fs::create_dir_all(root.join("pi-empty")).expect("create empty Pi store");
     vec![("PI_AGENT_DIR", vec![root.join("pi-empty").into_os_string()])]

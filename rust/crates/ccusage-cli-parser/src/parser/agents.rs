@@ -295,6 +295,9 @@ fn parse_pi_command(
         }
         match parser.next_flag()?.as_str() {
             "--pi-path" => options.pi_path = Some(parser.value_for("--pi-path")?),
+            "--pi-agent-dir" => {
+                options.pi_agent_dir = Some(parser.value_for("--pi-agent-dir")?);
+            }
             flag => return Err(format!("Unknown pi option '{flag}'")),
         }
     }

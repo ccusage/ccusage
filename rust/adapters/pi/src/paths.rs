@@ -6,9 +6,17 @@ use crate::Result;
 
 const PI_AGENT_DIR_ENV: &str = "PI_AGENT_DIR";
 
-pub fn paths(sessions_path: Option<&str>) -> Result<Vec<PathBuf>> {
-    if let Some(stores) = sessions_path.and_then(roots::from_list) {
-        return Ok(stores);
+pub fn paths(sessions_path: Option<&str>, agent_dir: Option<&str>) -> Result<Vec<PathBuf>> {
+    let stores = sessions_path.and_then(roots::from_list);
+    let agents = agent_dir.and_then(roots::from_list);
+    if stores.is_some() || agents.is_some() {
+        let agent_stores = agents
+            .into_iter()
+            .flatten()
+            .map(|agent| agent.join("sessions"));
+        return Ok(roots::directories(
+            stores.into_iter().flatten().chain(agent_stores),
+        ));
     }
     let candidates: Vec<PathBuf> = RootsEnv::List(PI_AGENT_DIR_ENV)
         .configured()
@@ -43,7 +51,7 @@ mod tests {
             (PI_AGENT_DIR_ENV, None),
         ])
         .run(|| {
-            assert_eq!(paths(None).unwrap(), vec![store]);
+            assert_eq!(paths(None, None).unwrap(), vec![store]);
         })
     }
 
@@ -66,10 +74,35 @@ mod tests {
         fixture.create_dir_all("pi-store/another-project");
         let raw = store.display().to_string();
 
-        assert_eq!(paths(Some(&raw)).unwrap(), vec![store.clone()]);
+        assert_eq!(paths(Some(&raw), None).unwrap(), vec![store.clone()]);
         assert_eq!(named_store_paths(&raw).unwrap(), vec![store.clone()]);
         Environment::with_var(PI_AGENT_DIR_ENV, &raw).run(|| {
-            assert_eq!(paths(None).unwrap(), vec![store]);
+            assert_eq!(paths(None, None).unwrap(), vec![store]);
+        })
+    }
+
+    #[test]
+    fn agent_directory_option_reads_each_sessions_store() {
+        let fixture = fs_fixture!({});
+        let agent = fixture.create_dir_all(".pi/agent");
+        let sessions = fixture.create_dir_all(".pi/agent/sessions");
+        let other = fixture.create_dir_all("other-store");
+        let without_sessions = fixture.create_dir_all("empty-agent");
+        let agents = format!("{},{}", agent.display(), without_sessions.display());
+        Environment::with_vars([
+            ("HOME", Some(fixture.root().into())),
+            (PI_AGENT_DIR_ENV, Some(other.clone().into())),
+        ])
+        .run(|| {
+            assert_eq!(paths(None, Some(&agents)).unwrap(), vec![sessions.clone()]);
+            assert_eq!(
+                paths(None, Some("~/.pi/agent")).unwrap(),
+                vec![sessions.clone()]
+            );
+            assert_eq!(
+                paths(Some(&other.display().to_string()), Some(&agents)).unwrap(),
+                vec![other.clone(), sessions]
+            );
         })
     }
 
@@ -102,9 +135,15 @@ mod tests {
             (PI_AGENT_DIR_ENV, Some(" ~/.pi/agent/sessions ".into())),
         ])
         .run(|| {
-            assert_eq!(paths(None).unwrap(), vec![store.clone()]);
-            assert_eq!(paths(Some(" , , ")).unwrap(), vec![store.clone()]);
-            assert_eq!(paths(Some("~/.pi/agent/sessions")).unwrap(), vec![store]);
+            assert_eq!(paths(None, None).unwrap(), vec![store.clone()]);
+            assert_eq!(
+                paths(Some(" , , "), Some(" , ")).unwrap(),
+                vec![store.clone()]
+            );
+            assert_eq!(
+                paths(Some("~/.pi/agent/sessions"), None).unwrap(),
+                vec![store]
+            );
         })
     }
 }

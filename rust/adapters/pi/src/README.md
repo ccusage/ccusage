@@ -14,6 +14,7 @@ ccusage pi monthly
 ccusage pi session
 ccusage pi daily --json
 ccusage pi daily --pi-path /path/to/sessions
+ccusage pi daily --pi-agent-dir ~/.pi/agent
 ```
 
 Cost rules: `--mode display` uses the `usage.cost.total` value from the session.
@@ -25,7 +26,9 @@ cost and calculates from tokens only when that cost is missing or invalid.
 The default store is named `pi` and follows the same parsing and pricing rules
 as configured stores. `PI_AGENT_DIR`, `--pi-path`, `pi.defaults.piPath`, and
 `pi.stores[].path` name store roots directly, even when a root contains a
-project directory called `sessions`. Project names use the
+project directory called `sessions`. `--pi-agent-dir` and
+`pi.defaults.piAgentDir` name Pi agent directories, whose store root is their
+`sessions` child. Project names use the
 first directory beneath the store root; files directly in the root have project
 `unknown`.
 

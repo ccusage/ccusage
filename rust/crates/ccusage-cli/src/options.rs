@@ -46,6 +46,7 @@ fn option(arg: &str) -> Option<OptionSpec> {
         "--context-medium-threshold" => (true, false),
         "--speed" => (true, false),
         "--pi-path" => (true, false),
+        "--pi-agent-dir" => (true, false),
         "--open-claw-path" => (true, false),
         "--sections" => (true, false),
         "-a" | "--active" => (false, false),

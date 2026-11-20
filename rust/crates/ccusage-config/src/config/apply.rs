@@ -114,8 +114,12 @@ impl ccusage_cli::CliConfig for ConfigContext {
                     }
                 }
                 "pi" => {
-                    if let Some(path) = options.pi.clone().pi_path {
+                    let pi = options.pi.clone();
+                    if let Some(path) = pi.pi_path {
                         resolved.pi_path = Some(path);
+                    }
+                    if let Some(path) = pi.pi_agent_dir {
+                        resolved.pi_agent_dir = Some(path);
                     }
                 }
                 "openclaw" => {

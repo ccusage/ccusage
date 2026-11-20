@@ -1603,6 +1603,44 @@ fn rejects_named_pi_store_overlapping_the_source_custom_path() {
 }
 
 #[test]
+fn rejects_named_pi_store_overlapping_the_source_agent_dir() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+    });
+    isolated_source_environment(&fixture).run(|| {
+        let shared = SharedArgs {
+            offline: true,
+            pi_stores: vec![NamedPiStore {
+                name: "fork".to_string(),
+                path: fixture
+                    .path("agent/sessions")
+                    .to_string_lossy()
+                    .into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "pi".to_string(),
+            SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    pi_agent_dir: Some(fixture.path("agent").to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+                shared: shared.clone(),
+            },
+        )]);
+
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday)
+        else {
+            panic!("expected named pi store to collide with the configured pi agent directory");
+        };
+
+        assert!(error.to_string().contains("default pi store"));
+    })
+}
+
+#[test]
 fn named_pi_stores_keep_unified_shared_and_pricing_options() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
