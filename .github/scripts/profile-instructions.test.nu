@@ -52,7 +52,30 @@ def fake-run [
     }
 }
 
+def ambiguous-prefix [repo: string]: nothing -> string {
+    mut prefixes = []
+    mut prefix = ''
+    mut tries = 0
+    while $prefix == '' {
+        let sha = $"candidate ($tries)" | ^git -C $repo hash-object -w --stdin | str trim
+        let candidate = $sha | str substring 0..<4
+        if $candidate in $prefixes {
+            $prefix = $candidate
+        } else {
+            $prefixes = $prefixes | append $candidate
+        }
+        $tries += 1
+        if $tries > 4096 {
+            error make {msg: 'Could not build two objects sharing four hex digits'}
+        }
+    }
+    $prefix
+}
+
+# NOTE(2026-11-20): A developer's git config must not reach these fixtures, or a global `tag.gpgSign` breaks `git tag`. Clearing it also covers the `git` calls inside `resolve-ref`, and identities still come from `commit_env`.
 def main []: nothing -> nothing {
+    $env.GIT_CONFIG_GLOBAL = '/dev/null'
+    $env.GIT_CONFIG_NOSYSTEM = '1'
     let parsed = core parse-annotate $annotate_self
     assert equal $parsed.total 1000
     assert equal ($parsed.functions | select function ir) [
@@ -227,6 +250,13 @@ def main []: nothing -> nothing {
             try { core resolve-ref 0123456789abcdef } catch {|err| $err.msg }
         }
         assert str contains $missing "Cannot resolve ref '0123456789abcdef' to a commit"
+
+        let prefix = ambiguous-prefix $repo
+        let ambiguous = do {
+            cd $repo
+            try { core resolve-ref $prefix } catch {|err| $err.msg }
+        }
+        assert str contains $ambiguous $"Ref '($prefix)' matches several objects in this checkout"
     } catch {|err|
         rm -rf $repo
         error make $err
@@ -248,6 +278,8 @@ def main []: nothing -> nothing {
             ^git -C $writer commit --quiet --allow-empty --message second
             ^git -C $writer push --quiet origin main
         }
+        ^git -C $writer tag remote-only
+        ^git -C $writer push --quiet origin remote-only
         let pushed = ^git -C $writer rev-parse HEAD | str trim
         let short = $pushed | str substring 0..<8
         let before = do {
@@ -255,10 +287,25 @@ def main []: nothing -> nothing {
             try { core resolve-ref $short } catch {|err| $err.msg }
         }
         assert str contains $before $"Cannot resolve ref '($short)'"
+        let tag_before = do {
+            cd $reader
+            try { core resolve-ref remote-only } catch {|err| $err.msg }
+        }
+        assert str contains $tag_before "Cannot resolve ref 'remote-only'"
         assert equal (do {
             cd $reader
             core resolve-ref $short --fetch
         }) $pushed
+        assert equal (do {
+            cd $reader
+            core resolve-ref remote-only --fetch
+        }) $pushed
+        let failed = do {
+            cd $reader
+            try { core resolve-ref deadbeefdeadbeef --fetch } catch {|err| $err.msg }
+        }
+        assert str contains $failed "Cannot resolve ref 'deadbeefdeadbeef' to a commit"
+        assert str contains $failed 'git fetch reported:'
     } catch {|err|
         rm -rf $remotes
         error make $err

@@ -48,26 +48,37 @@ def rev-parse-ref [ref: string]: nothing -> any {
     }
 }
 
+def fetch-refs [ref: string]: nothing -> string {
+    let named = ^git fetch --no-tags --quiet --force origin $ref | complete
+    let all = (
+        ^git fetch --no-tags --quiet --force --prune origin
+        '+refs/heads/*:refs/remotes/origin/*'
+        '+refs/tags/*:refs/tags/*'
+        '+refs/pull/*/head:refs/remotes/pull/*'
+        | complete
+    )
+    [$named $all]
+    | where exit_code != 0
+    | get stderr
+    | each { str trim }
+    | where $it != ''
+    | str join '; '
+}
+
 # Resolve a dispatch ref to a full commit SHA. The checkout is searched first; `--fetch` then
 # refreshes refs from `origin` so a branch, tag, or abbreviated SHA it has never seen resolves.
 export def resolve-ref [ref: string, --fetch]: nothing -> string {
     let local = rev-parse-ref $ref
     if $local != null { return $local }
+    mut fetch_error = ''
     if $fetch {
-        ^git fetch --no-tags --quiet --force origin $ref | complete | ignore
-        (
-            ^git fetch --no-tags --quiet --force --prune origin
-            '+refs/heads/*:refs/remotes/origin/*'
-            '+refs/tags/*:refs/tags/*'
-            '+refs/pull/*/head:refs/remotes/pull/*'
-            | complete
-            | ignore
-        )
+        $fetch_error = fetch-refs $ref
         let fetched = rev-parse-ref $ref
         if $fetched != null { return $fetched }
     }
     let matches = ^git rev-parse $"--disambiguate=($ref)" | complete
     let ambiguous = $matches.exit_code == 0 and ($matches.stdout | lines | length) > 1
+    let detail = if $fetch_error == '' { '' } else { $". git fetch reported: ($fetch_error)" }
     match $ambiguous {
         true => {
             error make {
@@ -76,7 +87,7 @@ export def resolve-ref [ref: string, --fetch]: nothing -> string {
         }
         false => {
             error make {
-                msg: $"Cannot resolve ref '($ref)' to a commit; pass a branch, tag, or abbreviated SHA that origin has"
+                msg: $"Cannot resolve ref '($ref)' to a commit; pass a branch, tag, or abbreviated SHA that origin has($detail)"
             }
         }
     }
