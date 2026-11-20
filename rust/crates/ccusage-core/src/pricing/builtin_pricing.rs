@@ -19,6 +19,22 @@ const fn default_write_rates(
     }
 }
 
+// NOTE(2026-11-20): Alibaba bills a whole qwen-plus request above 256K input tokens at $1.2 input and $12 thinking output per 1M at https://www.alibabacloud.com/help/en/model-studio/model-pricing, with the same 125% cache-write and 20% cache-hit ratios at https://www.alibabacloud.com/help/en/model-studio/context-cache.
+const QWEN_PLUS_THINKING: Pricing = Pricing {
+    long_context: Some(LongContext {
+        threshold: 256_000,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(1.2e-6),
+            output: Some(12e-6),
+            cache_create: Some(1.5e-6),
+            cache_read: Some(0.24e-6),
+            cache_create_1h: None,
+        },
+    }),
+    ..rates(0.4e-6, 4e-6, 0.5e-6, 0.08e-6)
+};
+
 pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
         provider: "anthropic",
@@ -276,7 +292,7 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
         provider: "dashscope",
         model: "qwen-plus-thinking",
-        pricing: rates(0.4e-6, 4e-6, 0.5e-6, 0.08e-6),
+        pricing: QWEN_PLUS_THINKING,
         context_limit: None,
     },
     Supplement {
