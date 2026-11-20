@@ -21,7 +21,12 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
             "pi".to_string(),
             SourceArgs {
                 options: ccusage_core::cli::AgentOptions {
-                    pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                    pi_path: Some(
+                        fixture
+                            .path("custom/pi/sessions")
+                            .to_string_lossy()
+                            .into_owned(),
+                    ),
                     ..Default::default()
                 },
                 shared: SharedArgs {
