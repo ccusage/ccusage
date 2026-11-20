@@ -52,7 +52,7 @@ pub(crate) fn usage_files(
         &mut |path| files.push(path),
         diagnostics,
     );
-    files.sort_by_cached_key(|path| usage_file_order(path));
+    files.sort_by(|left, right| usage_file_order(left, right));
     files
 }
 
@@ -83,8 +83,10 @@ pub(crate) fn visit_usage_files(
     }
 }
 
-pub(crate) fn usage_file_order(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering {
+    left.as_os_str()
+        .as_encoded_bytes()
+        .cmp(right.as_os_str().as_encoded_bytes())
 }
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;

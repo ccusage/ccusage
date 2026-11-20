@@ -1123,3 +1123,92 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
         },
     }
 }
+
+#[cfg(unix)]
+const INVALID_UTF8_PROJECTS: [(&[u8], u64); 2] = [(b"p\xfe", 100), (b"p\xff", 1)];
+
+#[cfg(unix)]
+fn shared_copy_line(input_tokens: u64) -> String {
+    let output_tokens = 101 - input_tokens;
+    format!(
+        r#"{{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session","requestId":"req-shared","message":{{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":{input_tokens},"output_tokens":{output_tokens}}}}}}}"#
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn dedupe_keeps_the_same_copy_from_project_dirs_that_differ_only_in_invalid_utf8() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let fixture = ccusage_test_support::Fixture::new();
+    let mut files = INVALID_UTF8_PROJECTS
+        .iter()
+        .enumerate()
+        .map(|(index, &(name, input_tokens))| {
+            let readable = fixture.write_file(
+                format!("{index}/session.jsonl"),
+                shared_copy_line(input_tokens),
+            );
+            let loaded = read_usage_file(&readable, &JiffTimeZone::UTC, CostMode::Display, None);
+            let path = Path::new("/projects")
+                .join(std::ffi::OsStr::from_bytes(name))
+                .join("session.jsonl");
+            (path, loaded.entries)
+        })
+        .collect::<Vec<_>>();
+    let survivor = |files: Vec<(std::path::PathBuf, Vec<ClaudeEntry>)>| {
+        let (entries, _) = super::dedupe::dedupe_files(files);
+        assert_eq!(entries.len(), 1);
+        entries[0].usage.input_tokens
+    };
+
+    let forward = survivor(files.clone());
+    files.reverse();
+
+    assert_eq!(forward, survivor(files));
+}
+
+#[cfg(unix)]
+#[test]
+fn single_and_multi_thread_keep_the_same_copy_from_invalid_utf8_project_dirs() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let fixture = ccusage_test_support::Fixture::new();
+    for (name, input_tokens) in INVALID_UTF8_PROJECTS {
+        let dir = fixture
+            .root()
+            .join("projects")
+            .join(std::ffi::OsStr::from_bytes(name));
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        std::fs::write(dir.join("session.jsonl"), shared_copy_line(input_tokens)).unwrap();
+    }
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let load = |single_thread| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let entries = super::load_entries(&shared, None).unwrap();
+            let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+            (
+                entries
+                    .iter()
+                    .map(|entry| (entry.usage.input_tokens, entry.project.clone()))
+                    .collect::<Vec<_>>(),
+                daily.iter().map(|day| day.input_tokens).collect::<Vec<_>>(),
+            )
+        };
+        let single = load(true);
+        for _ in 0..20 {
+            assert_eq!(load(false), single);
+        }
+    });
+}
