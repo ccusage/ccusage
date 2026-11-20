@@ -125,9 +125,10 @@ fn parse_invocation(
         Some(command) => parse_command(&command, parser, config, root_options)?,
     };
     parser.finish()?;
-    if let Some(message) = last_option_error(&command) {
+    if let Some(message) = last_option_error(&command, parser) {
         return Err(message);
     }
+    replace_configured_window_with_last(&mut command);
     validate_date_window(&mut command, parser, config)?;
     resolve_timezone(&mut command, parser, config, known_timezone)?;
     Ok(command)
@@ -1015,7 +1016,7 @@ fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
     })
 }
 
-fn last_option_error(command: &Command) -> Option<String> {
+fn last_option_error(command: &Command, parser: &ArgParser) -> Option<String> {
     let shared = command.shared()?;
     shared.last?;
     if command.period().is_none() {
@@ -1024,13 +1025,22 @@ fn last_option_error(command: &Command) -> Option<String> {
                 .to_string(),
         );
     }
-    if shared.since.is_some() || shared.until.is_some() {
+    if parser.saw_flag(&["-s", "--since", "-u", "--until"]) {
         return Some("The --last option cannot be combined with --since or --until.".to_string());
     }
     if matches!(command, Command::All(args) if args.sections.is_some()) {
         return Some("The --last option cannot be used with --sections.".to_string());
     }
     None
+}
+
+fn replace_configured_window_with_last(command: &mut Command) {
+    if let Some(shared) = command.shared_mut()
+        && shared.last.is_some()
+    {
+        shared.since = None;
+        shared.until = None;
+    }
 }
 
 fn validate_date_window(
