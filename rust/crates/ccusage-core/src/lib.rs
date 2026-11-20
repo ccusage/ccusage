@@ -1,11 +1,12 @@
 use std::{fmt, io};
 
+use crate::cli::{SharedArgs, environment::Environment};
+
 pub mod agent_report;
 pub mod cost;
 pub mod date_utils;
 pub mod diagnostics;
 pub mod fast;
-pub mod logger;
 pub mod model_aliases;
 pub mod output;
 pub mod parallel;
@@ -28,7 +29,6 @@ pub use agent_report::{agent_summary_json, first_column, summary_period};
 pub use cost::{missing_pricing_model_for_token_total, stored_cost_for_mode, sum_costs};
 pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
-pub use logger::{debug_log, log_level};
 pub use output::{
     UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
     format_number, json_float, print_json_or_jq, print_missing_pricing_warnings_for_models,
@@ -95,6 +95,19 @@ pub fn color(shared: &cli::SharedArgs, value: impl AsRef<str>, color: Color) -> 
 
 pub fn print_box_title(title: &str, shared: &cli::SharedArgs) -> std::io::Result<()> {
     ccusage_terminal::print_box_title(title, terminal_style(shared))
+}
+
+pub fn debug_log(shared: &SharedArgs, message: impl AsRef<str>) {
+    if shared.debug {
+        ccusage_terminal::errln!("{}", message.as_ref());
+    }
+}
+
+pub fn log_level() -> Option<u8> {
+    Environment::current()
+        .var("LOG_LEVEL")
+        .ok()
+        .and_then(|value| value.parse::<u8>().ok())
 }
 
 pub trait Context<T> {

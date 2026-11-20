@@ -7,7 +7,4 @@ mod help;
 mod parser;
 
 #[cfg(test)]
-mod help_codegen;
-
-#[cfg(test)]
 mod tests;
