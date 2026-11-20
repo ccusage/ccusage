@@ -182,7 +182,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.00415,
+          "cost": 0.0043,
           "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 300
@@ -387,7 +387,7 @@ exit: 0
       ],
       "outputTokens": 19887,
       "period": "2025-12",
-      "totalCost": 11.670488985,
+      "totalCost": 11.670638985000002,
       "totalTokens": 279668
     },
     {
@@ -450,7 +450,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
+          "cost": 0.331451,
           "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
@@ -912,7 +912,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01",
-      "totalCost": 3.706032315,
+      "totalCost": 3.7160423149999997,
       "totalTokens": 1608822
     }
   ],
@@ -921,7 +921,7 @@ exit: 0
     "cacheReadTokens": 668494,
     "inputTokens": 1171909,
     "outputTokens": 37424,
-    "totalCost": 15.3765213,
+    "totalCost": 15.386681300000001,
     "totalTokens": 1888490,
     "unpricedModels": [
       "GLM-5.3",
