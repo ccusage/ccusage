@@ -236,10 +236,12 @@ impl Skim<'_> {
 
 static UNICODE_ESCAPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br"\u00"));
 
-// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a value. Bytes that hold neither the letters nor such an escape cannot spell that value anywhere, so the scanner may stop reading there.
-fn lacks(rest: &[u8], letters: &Finder<'_>) -> bool {
-    letters.find(rest).is_none()
-        && (memchr(b'\\', rest).is_none() || UNICODE_ESCAPE.find(rest).is_none())
+// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a value. Bytes that hold neither the letters nor such an escape cannot spell that value anywhere, so the scanner may stop reading there, and it searches again only once it passes the last place that could.
+fn spelled_at(rest: &[u8], letters: &Finder<'_>) -> Option<usize> {
+    letters.find(rest).or_else(|| {
+        memchr(b'\\', rest)?;
+        UNICODE_ESCAPE.find(rest)
+    })
 }
 
 pub(super) enum Scan<T> {
@@ -339,9 +341,13 @@ impl<'a> Cursor<'a> {
 
     fn content_tool_uses(&mut self, tool_uses: &mut SmallVec<[&'a [u8]; 2]>) -> Option<()> {
         self.eat(b'[')?;
+        let mut spelled_until = 0;
         loop {
-            if lacks(self.line.get(self.at..)?, &TOOL_USE) {
-                return Some(());
+            if self.at >= spelled_until {
+                match spelled_at(self.line.get(self.at..)?, &TOOL_USE) {
+                    Some(offset) => spelled_until = self.at + offset,
+                    None => return Some(()),
+                }
             }
             match self.peek()? {
                 b']' => return Some(()),
