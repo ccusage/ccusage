@@ -114,26 +114,6 @@ const AMAZON_NOVA: CacheDefaults = CacheDefaults {
     read_x: 0.25,
 };
 
-pub(super) static CACHE_DEFAULTS: &[&CacheDefaults] = &[
-    &WRITES_AT_INPUT_RATE,
-    &WRITES_SURCHARGED,
-    &ANTHROPIC_5_5,
-    &ANTHROPIC_FABLE_MYTHOS_5,
-    &OPENAI_GPT_5_6,
-    &OPENAI_GPT_6_REDUCED_READ,
-    &GEMINI,
-    &GEMINI_4,
-    &DEEPSEEK,
-    &XAI,
-    &XAI_GROK_4_5,
-    &MOONSHOT_KIMI_K3,
-    &ZAI_GLM,
-    &QWEN,
-    &MINIMAX,
-    &MISTRAL,
-    &AMAZON_NOVA,
-];
-
 pub(super) static CACHE_DEFAULTS_BY_SEGMENT_PREFIX: &[(&str, &CacheDefaults)] = &[
     ("claude-fable-5-1", &ANTHROPIC_FABLE_MYTHOS_5),
     ("claude-fable-5-2", &ANTHROPIC_FABLE_MYTHOS_5),

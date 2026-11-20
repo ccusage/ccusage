@@ -258,14 +258,6 @@ pub(super) struct Entries {
 }
 
 impl Entries {
-    pub(super) fn from_rows(rows: Vec<Row>) -> Self {
-        let mut literal = FxHashMap::with_capacity_and_hasher(rows.len(), Default::default());
-        for (id, row) in rows.iter().enumerate() {
-            literal.insert(Arc::clone(&row.key), id);
-        }
-        Self { rows, literal }
-    }
-
     pub(super) fn contains_key(&self, key: &str) -> bool {
         self.literal.contains_key(key)
     }
@@ -298,7 +290,7 @@ impl Entries {
         }
     }
 
-    fn append(&mut self, key: String, mut row: Row) -> &mut Row {
+    pub(super) fn append(&mut self, key: String, mut row: Row) -> &mut Row {
         let id = self.rows.len();
         row.key = Arc::from(key);
         self.literal.insert(Arc::clone(&row.key), id);

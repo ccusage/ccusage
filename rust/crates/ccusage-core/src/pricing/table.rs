@@ -6,8 +6,8 @@ use std::{
 use crate::fast::FxHashMap;
 
 use super::{
-    CacheDefaults, Entries, LongContext, LongContextMode, LongContextRates, PricingMap,
-    PricingRows, Row, RowPricing, Scope, Source, data,
+    CacheDefaults, LongContext, LongContextMode, LongContextRates, PricingMap, PricingRows, Row,
+    RowPricing, Scope, Source, data,
     row::{Published, PublishedRates},
     speed::PublishedSpeed,
 };
@@ -33,27 +33,24 @@ pub fn encode_pricing_table(litellm_json: &str, models_dev_json: &str) -> Vec<u8
 }
 
 pub(super) struct PricingTable {
-    pub(super) rows: Arc<PricingRows>,
+    pub(super) rows: PricingMap,
     pub(super) models_dev: PricingMap,
 }
 
 pub(super) fn decode_pricing_table(bytes: &[u8]) -> PricingTable {
     let mut reader = Reader::new(bytes);
-    let rows = reader.rows();
-    let models_dev = reader.rows();
+    let table = PricingTable {
+        rows: reader.rows(),
+        models_dev: reader.rows(),
+    };
     assert!(
-        [reader.keys, reader.flags, reader.limits, reader.rates]
-            .iter()
-            .all(|stream| stream.0.is_empty()),
+        reader.keys.0.is_empty()
+            && reader.flags.0.is_empty()
+            && reader.limits.0.is_empty()
+            && reader.rates.0.is_empty(),
         "embedded pricing table has trailing bytes"
     );
-    PricingTable {
-        rows: Arc::new(rows),
-        models_dev: PricingMap {
-            rows: Arc::new(models_dev),
-            ..PricingMap::default()
-        },
-    }
+    table
 }
 
 const SOURCE_LITELLM: u8 = 0;
@@ -238,10 +235,10 @@ impl Writer {
                 *cache_fallback
             }
         };
-        let cache_defaults = data::CACHE_DEFAULTS
+        let cache_defaults = data::CACHE_DEFAULTS_BY_SEGMENT_PREFIX
             .iter()
-            .position(|known| *known == cache_defaults)
-            .expect("row cache defaults come from data::CACHE_DEFAULTS");
+            .position(|(_, known)| *known == cache_defaults)
+            .expect("data::CACHE_DEFAULTS_BY_SEGMENT_PREFIX lists every row's cache defaults");
         varint(&mut self.flags, cache_defaults as u64);
     }
 }
@@ -295,7 +292,7 @@ impl<'a> Stream<'a> {
 }
 
 struct Reader<'a> {
-    values: Vec<f64>,
+    values: &'a [u8],
     keys: Stream<'a>,
     flags: Stream<'a>,
     limits: Stream<'a>,
@@ -306,12 +303,7 @@ impl<'a> Reader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         let mut table = Stream(bytes);
         let len = table.usize();
-        let values = (0..len)
-            .map(|_| {
-                let bits = table.take(8).try_into().expect("a pooled rate is 8 bytes");
-                f64::from_bits(u64::from_le_bytes(bits))
-            })
-            .collect();
+        let values = table.take(len * 8);
         Self {
             values,
             keys: table.stream(),
@@ -321,27 +313,23 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn rows(&mut self) -> PricingRows {
-        let len = self.keys.usize();
-        let mut key = String::new();
-        let rows = (0..len)
-            .map(|_| {
-                key.truncate(self.keys.usize());
-                let suffix = self.keys.usize();
-                key.push_str(
-                    std::str::from_utf8(self.keys.take(suffix))
-                        .expect("embedded pricing keys are UTF-8"),
-                );
-                self.row(Arc::from(key.as_str()))
-            })
-            .collect();
-        PricingRows {
-            entries: Entries::from_rows(rows),
-            ..PricingRows::default()
+    fn rows(&mut self) -> PricingMap {
+        let mut map = PricingMap::default();
+        let entries = &mut map.rows_mut().entries;
+        for _ in 0..self.keys.usize() {
+            let shared = self.keys.usize();
+            let suffix = self.keys.usize();
+            let suffix = std::str::from_utf8(self.keys.take(suffix))
+                .expect("embedded pricing keys are UTF-8");
+            let previous = entries.rows.last().map_or("", |row| &row.key[..shared]);
+            let key = [previous, suffix].concat();
+            let row = self.row();
+            entries.append(key, row);
         }
+        map
     }
 
-    fn row(&mut self, key: Arc<str>) -> Row {
+    fn row(&mut self) -> Row {
         let flags = self.flags.u8();
         let source = match flags & SOURCE_MASK {
             SOURCE_LITELLM => Some(Source::LiteLlm),
@@ -363,7 +351,7 @@ impl<'a> Reader<'a> {
             .map(|index| &data::SCHEDULES[index].1);
         let context_limit = self.limits.u64().checked_sub(1);
         Row {
-            key,
+            key: Arc::default(),
             pricing: self.pricing(),
             source,
             schedule,
@@ -434,15 +422,23 @@ impl<'a> Reader<'a> {
     }
 
     fn cache_defaults(&mut self) -> &'static CacheDefaults {
-        data::CACHE_DEFAULTS[self.flags.usize()]
+        data::CACHE_DEFAULTS_BY_SEGMENT_PREFIX[self.flags.usize()].1
     }
 
     fn rate(&mut self) -> f64 {
-        self.values[self.rates.usize()]
+        let id = self.rates.usize();
+        self.value(id)
     }
 
     fn optional_rate(&mut self) -> Option<f64> {
         let id = self.rates.usize().checked_sub(1)?;
-        Some(self.values[id])
+        Some(self.value(id))
+    }
+
+    fn value(&self, id: usize) -> f64 {
+        let bits = self.values[id * 8..][..8]
+            .try_into()
+            .expect("a pooled rate is 8 bytes");
+        f64::from_bits(u64::from_le_bytes(bits))
     }
 }

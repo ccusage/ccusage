@@ -100,7 +100,7 @@ impl PricingMap {
     fn build_embedded() -> Self {
         let table = embedded_pricing_table();
         Self {
-            rows: Arc::clone(&table.rows),
+            rows: Arc::clone(&table.rows.rows),
             models_dev: Some(Arc::clone(&table.models_dev.rows)),
             ..Self::default()
         }
