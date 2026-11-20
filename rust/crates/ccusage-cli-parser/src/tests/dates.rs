@@ -297,6 +297,46 @@ fn rejects_last_periods_alongside_an_explicit_date_window() {
 }
 
 #[test]
+fn rejects_last_periods_alongside_every_spelling_of_the_date_flags() {
+    let cases: [&[&str]; 4] = [
+        &["ccusage", "daily", "--last", "1", "-s", "20260101"],
+        &["ccusage", "daily", "--last", "1", "-u", "20260101"],
+        &["ccusage", "daily", "--last", "1", "--until=20260101"],
+        &["ccusage", "--since", "20260101", "daily", "--last", "1"],
+    ];
+    for args in cases {
+        assert_eq!(
+            parse_error(args),
+            "The --last option cannot be combined with --since or --until.",
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn last_periods_replace_a_configured_date_window() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "defaults": { "since": "20260101", "until": "20260531" } }"#,
+    });
+    let path = fixture.path("ccusage.json");
+    let args = ["daily", "--last", "1", "--config", path.to_str().unwrap()];
+    let config = ccusage_config::ConfigContext::from_args(&args.map(str::to_string));
+
+    let cli = parse_from_with_config(
+        std::iter::once(OsString::from("ccusage")).chain(args.map(OsString::from)),
+        &config,
+    )
+    .unwrap();
+
+    let Command::All(args) = cli else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
+    assert_eq!(args.shared.since, None);
+    assert_eq!(args.shared.until, None);
+}
+
+#[test]
 fn rejects_last_periods_with_multi_section_reports() {
     assert_eq!(
         parse_error(&["ccusage", "daily", "--last", "1", "--sections", "monthly"]),
