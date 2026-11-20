@@ -1,14 +1,19 @@
 ---
-source: crates/ccusage-adapter-all/src/tests.rs
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
 expression: "report_json_with_agents(&result.rows, kind, false)"
 ---
 {
-  "session": [
+  "monthly": [
     {
-      "agent": "dsh",
-      "cacheCreationTokens": 2000,
-      "cacheReadTokens": 5000,
-      "inputTokens": 3200,
+      "agent": "all",
+      "cacheCreationTokens": 2600,
+      "cacheReadTokens": 22000,
+      "inputTokens": 23850,
+      "metadata": {
+        "agents": [
+          "dsh"
+        ]
+      },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 2000,
@@ -17,22 +22,7 @@ expression: "report_json_with_agents(&result.rows, kind, false)"
           "inputTokens": 3200,
           "modelName": "claude-sonnet-4-5",
           "outputTokens": 550
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-5"
-      ],
-      "outputTokens": 550,
-      "period": "dsh-fork",
-      "totalCost": 0.02685,
-      "totalTokens": 10750
-    },
-    {
-      "agent": "dsh",
-      "cacheCreationTokens": 600,
-      "cacheReadTokens": 17000,
-      "inputTokens": 20650,
-      "modelBreakdowns": [
+        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -51,13 +41,14 @@ expression: "report_json_with_agents(&result.rows, kind, false)"
         }
       ],
       "modelsUsed": [
-        "deepseek-v4-pro",
-        "deepseek-flash"
+        "claude-sonnet-4-5",
+        "deepseek-flash",
+        "deepseek-v4-pro"
       ],
-      "outputTokens": 1220,
-      "period": "dsh-parent",
-      "totalCost": 0.0109126,
-      "totalTokens": 39470
+      "outputTokens": 1770,
+      "period": "2026-10",
+      "totalCost": 0.0377626,
+      "totalTokens": 50220
     }
   ],
   "totals": {

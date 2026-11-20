@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-adapter-all/src/tests.rs
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
 expression: "report_json_with_agents(&result.rows, kind, false)"
 ---
 {

@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-adapter-all/src/tests.rs
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
 expression: "serde_json::to_string_pretty(&table_snapshot(&monthly.rows,\nAgentReportKind::Monthly, &monthly.detected_agents,)).unwrap()"
 ---
 {

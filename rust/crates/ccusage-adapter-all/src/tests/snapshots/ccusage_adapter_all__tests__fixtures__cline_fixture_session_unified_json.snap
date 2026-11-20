@@ -1,18 +1,16 @@
 ---
-source: crates/ccusage-adapter-all/src/tests.rs
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
 expression: "report_json(&result.rows, kind)"
 ---
 {
-  "monthly": [
+  "session": [
     {
-      "agent": "all",
+      "agent": "cline",
       "cacheCreationTokens": 10,
       "cacheReadTokens": 5,
       "inputTokens": 100,
       "metadata": {
-        "agents": [
-          "cline"
-        ]
+        "lastActivity": "2026-10-01T12:00:00.000Z"
       },
       "modelBreakdowns": [
         {
@@ -29,19 +27,17 @@ expression: "report_json(&result.rows, kind)"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 20,
-      "period": "2026-10",
+      "period": "task:session-a",
       "totalCost": 0.001,
       "totalTokens": 135
     },
     {
-      "agent": "all",
+      "agent": "cline",
       "cacheCreationTokens": 20,
       "cacheReadTokens": 45,
       "inputTokens": 155,
       "metadata": {
-        "agents": [
-          "cline"
-        ]
+        "lastActivity": "2026-11-01T00:01:00.000Z"
       },
       "modelBreakdowns": [
         {
@@ -58,7 +54,7 @@ expression: "report_json(&result.rows, kind)"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 31,
-      "period": "2026-11",
+      "period": "cli:session-a",
       "totalCost": 0.0002,
       "totalTokens": 251
     }
