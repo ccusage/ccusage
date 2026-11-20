@@ -131,51 +131,49 @@ fn read_files_since<T: Send>(
             pruned: Vec::new(),
         };
     };
-    let mut kept = Vec::new();
-    let mut stale = Vec::new();
-    let checked = read_discovered_paths(single_thread, discover, |file| {
-        file_modified_millis(file)
-            .is_none_or(|modified| modified >= threshold)
-            .then(|| read(file))
-    });
-    for (file, loaded) in checked {
-        match loaded {
-            Some(loaded) => kept.push((file, loaded)),
-            None => stale.push(file),
-        }
-    }
-    if kept.is_empty() || stale.is_empty() {
+    // NOTE(2026-11-20, #2355): Stat'ing and probing from the parallel readers contends in the kernel. The walker checks each mtime before queuing, and probes run serially after parsing.
+    let mut discovered = Vec::new();
+    let mut discover = discover;
+    let mut kept = read_discovered_paths(
+        single_thread,
+        |visit| {
+            discover(&mut |file| {
+                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold);
+                if live {
+                    visit(file.clone());
+                }
+                discovered.push((file, live));
+            });
+        },
+        &read,
+    );
+    if kept.is_empty() || kept.len() == discovered.len() {
         return SinceFiles {
             kept,
-            pruned: stale,
+            pruned: discovered
+                .into_iter()
+                .filter_map(|(file, live)| (!live).then_some(file))
+                .collect(),
         };
     }
 
-    let recorded_ids = |files: &mut dyn Iterator<Item = &PathBuf>| {
-        read_discovered_paths(
-            single_thread,
-            |visit| files.cloned().for_each(visit),
-            |file| first_recorded_session_id(file),
-        )
-    };
     let mut sessions = SessionGroups::default();
-    let live_groups = recorded_ids(&mut kept.iter().map(|(file, _)| file))
+    let groups = discovered
         .into_iter()
-        .map(|(file, recorded)| sessions.file(&file, recorded.as_deref()))
-        .collect::<Vec<_>>();
-    let stale_groups = recorded_ids(&mut stale.iter())
-        .into_iter()
-        .map(|(file, recorded)| {
-            let group = sessions.file(&file, recorded.as_deref());
-            (file, group)
+        .map(|(file, live)| {
+            let group = sessions.file(&file, first_recorded_session_id(&file).as_deref());
+            (file, live, group)
         })
         .collect::<Vec<_>>();
-    let live_groups = live_groups
-        .into_iter()
-        .map(|group| sessions.root(group))
+    let live_groups = groups
+        .iter()
+        .filter(|(_, live, _)| *live)
+        .map(|&(_, _, group)| sessions.root(group))
         .collect::<FxHashSet<_>>();
-    let (mut revived, pruned) = stale_groups
+    let (mut revived, pruned) = groups
         .into_iter()
+        .filter(|(_, live, _)| !live)
+        .map(|(file, _, group)| (file, group))
         .partition::<Vec<_>, _>(|(_, group)| live_groups.contains(&sessions.root(*group)));
     kept.extend(read_discovered_paths(
         single_thread,
