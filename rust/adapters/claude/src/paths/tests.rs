@@ -203,7 +203,7 @@ fn keeps_files_whose_metadata_cannot_be_read() {
 #[test]
 fn keeps_or_prunes_a_session_together_with_its_subagents() {
     let fixture = fs_fixture!({
-        "projects/p/live.jsonl": "{}",
+        "projects/p/live.jsonl": record_at("2026-09-01T12:00:00Z"),
         "projects/p/live/subagents/agent-a.jsonl": "{}",
         "projects/p/stale.jsonl": record_at("2026-09-01T12:00:00Z"),
         "projects/p/stale/subagents/agent-b.jsonl": record_at("2026-09-02T12:00:00Z"),
@@ -239,7 +239,7 @@ fn keeps_legacy_flat_agent_transcripts_and_config_root_copies_with_their_session
         "a/projects/p/live.jsonl": "{}",
         "a/projects/p/agent-1234.jsonl": r#"{"sessionId":"live","timestamp":"2026-09-01T12:00:00Z"}"#,
         "a/projects/p/agent-5678.jsonl": r#"{"sessionId":"stale","timestamp":"2026-09-01T12:00:00Z"}"#,
-        "b/projects/p/live.jsonl": "{}",
+        "b/projects/p/live.jsonl": record_at("2026-09-01T12:00:00Z"),
     });
     let root = fixture.root();
     let live = root.join("a/projects/p/live.jsonl");
@@ -269,7 +269,7 @@ fn keeps_legacy_flat_agent_transcripts_and_config_root_copies_with_their_session
 #[test]
 fn keeps_sessions_linked_by_a_recorded_session_id_in_another_directory() {
     let fixture = fs_fixture!({
-        "projects/p/session-y.jsonl": r#"{"sessionId":"session-y"}"#,
+        "projects/p/session-y.jsonl": r#"{"sessionId":"session-y","timestamp":"2026-09-01T12:00:00Z"}"#,
         "projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl": "{\"type\":\"summary\"}\n{\"sessionId\" : \"session-y\"}",
     });
     let root = fixture.root();
@@ -322,8 +322,8 @@ fn reads_the_recorded_session_id_past_long_leading_lines() {
 fn keeps_a_stale_transcript_whose_recorded_session_links_it_after_its_live_sibling() {
     let fixture = fs_fixture!({
         "a/projects/p/live.jsonl": "{}",
-        "b/projects/p/live.jsonl": r#"{"sessionId":"resumed"}"#,
-        "b/projects/p/resumed.jsonl": "{}",
+        "b/projects/p/live.jsonl": r#"{"sessionId":"resumed","timestamp":"2026-09-01T12:00:00Z"}"#,
+        "b/projects/p/resumed.jsonl": record_at("2026-09-01T12:00:00Z"),
     });
     let root = fixture.root();
     let live = root.join("a/projects/p/live.jsonl");
