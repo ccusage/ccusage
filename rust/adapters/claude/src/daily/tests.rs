@@ -65,7 +65,10 @@ fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
                 for end in 0..=bytes.len() {
                     let prefix = &bytes[..end];
                     assert_eq!(
-                        !matches!(super::admit(prefix), Err(super::Refusal::NotUsage)),
+                        !matches!(
+                            super::read::admit(prefix),
+                            Err(super::read::Refusal::NotUsage)
+                        ),
                         original.matches(prefix),
                         "prefilter decision for {:?}",
                         &line[..end],
@@ -126,10 +129,10 @@ fn usage_prefilter_preserves_typed_record_admission() {
     ];
     for (fields, expected) in cases {
         let line = format!("{{{fields}}}");
-        let actual = match super::admit(line.as_bytes()) {
+        let actual = match super::read::admit(line.as_bytes()) {
             Ok(admitted) => Accepted(admitted.record.message.usage.usage.input_tokens),
-            Err(super::Refusal::NotUsage) => NoMarker,
-            Err(super::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
+            Err(super::read::Refusal::NotUsage) => NoMarker,
+            Err(super::read::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
             Err(_) => panic!("unexpected refusal for {line}"),
         };
         assert_eq!(actual, expected, "{line}");
@@ -140,7 +143,7 @@ fn usage_prefilter_preserves_typed_record_admission() {
 fn usage_prefilter_reads_a_marker_across_the_buffer_boundary() {
     let prefix = r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"content":""#;
     let separator = r#"","#;
-    let padding_len = super::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
+    let padding_len = super::read::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
     let line = format!(
         "{prefix}{}{separator}{}",
         "x".repeat(padding_len),
