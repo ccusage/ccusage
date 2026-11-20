@@ -64,12 +64,14 @@ def main []: nothing -> nothing {
         | get file
     ) '/build/rust/crates/core/src/lib.rs'
 
-    assert equal (core parse-command 'claude daily') {command: 'claude daily' fixture: large}
-    assert equal (core parse-command 'daily --breakdown') {command: 'daily --breakdown' fixture: large}
-    assert equal (core parse-command 'amp daily') {command: 'amp daily' fixture: golden}
-    assert equal (core parse-command 'golden: claude  session') {command: 'claude session' fixture: golden}
+    assert equal (core parse-command 'claude daily') {command: 'claude daily' args: 'claude daily' fixture: large}
+    assert equal (core parse-command 'daily --breakdown') {command: 'daily --breakdown' args: 'daily --breakdown' fixture: large}
+    assert equal (core parse-command 'amp daily') {command: 'amp daily' args: 'amp daily' fixture: golden}
+    assert equal (core parse-command 'golden:amp daily') {command: 'amp daily' args: 'amp daily' fixture: golden}
+    assert equal (core parse-command 'golden: claude  session') {command: 'golden:claude session' args: 'claude session' fixture: golden}
+    assert equal (core parse-command 'proxy:claude daily') {command: 'proxy:claude daily' args: 'claude daily' fixture: proxy}
 
-    let plan = core plan 'main, feature/x main' "claude daily\namp daily, claude daily"
+    let plan = core plan 'main, feature/x main' "claude daily\namp daily, claude daily, many-files:claude daily"
     assert equal $plan.refs [
         {ref: main, slug: main}
         {ref: feature/x, slug: feature-x}
@@ -77,8 +79,10 @@ def main []: nothing -> nothing {
     assert equal ($plan.runs.id) [
         main--claude-daily
         main--amp-daily
+        main--many-files-claude-daily
         feature-x--claude-daily
         feature-x--amp-daily
+        feature-x--many-files-claude-daily
     ]
     assert equal ((core plan main '').runs | length) ($core.default_commands | length)
 

@@ -1,8 +1,12 @@
 const large_agents = [claude codex grok]
 const reports = [daily weekly monthly session blocks]
+export const fixtures = [large golden many-files proxy]
 
 export const default_commands = [
     'claude daily'
+    'claude daily --since 20260801'
+    'many-files:claude daily'
+    'proxy:claude daily'
     'claude session'
     'claude blocks'
     'claude monthly'
@@ -10,6 +14,7 @@ export const default_commands = [
     'codex session'
     'grok daily'
     'daily'
+    'golden:daily'
     'opencode daily'
     'amp daily'
     'droid daily'
@@ -37,23 +42,23 @@ export def split-list [value: string]: nothing -> list<string> {
     $value | split row --regex '[\s,]+' | where $it != '' | uniq
 }
 
-# An entry is `[large:|golden:]<command>`; without a prefix the generated large fixture covers
+# An entry is `[<fixture>:]<command>`; without a prefix the generated large fixture covers
 # Claude, Codex, Grok, and the unified reports, and every other agent reads the golden seeds.
-export def parse-command [entry: string]: nothing -> record<command: string, fixture: string> {
+# `command` names the run and keeps the prefix only when it differs from that default, so one
+# report can be profiled on several fixtures; `args` is what ccusage receives.
+export def parse-command [entry: string]: nothing -> record<command: string, args: string, fixture: string> {
     match (
         $entry
         | str trim
-        | parse --regex '^(?:(?<fixture>large|golden):)?\s*(?<command>.+)$'
+        | parse --regex ('^(?:(?<fixture>' + ($fixtures | str join '|') + '):)?\s*(?<command>.+)$')
     ) {
         [$row] => {
-            let command = $row.command | split row --regex '\s+' | str join ' '
-            let first = $command | split row ' ' | first
-            let fixture = match $row.fixture {
-                null if ($first in $large_agents or $first in $reports) => 'large'
-                null => 'golden'
-                $explicit => $explicit
-            }
-            {command: $command, fixture: $fixture}
+            let args = $row.command | split row --regex '\s+' | str join ' '
+            let first = $args | split row ' ' | first
+            let implicit = if $first in $large_agents or $first in $reports { 'large' } else { 'golden' }
+            let fixture = $row.fixture | default $implicit
+            let command = if $fixture == $implicit { $args } else { $"($fixture):($args)" }
+            {command: $command, args: $args, fixture: $fixture}
         }
         _ => { error make {msg: $"Empty profile command entry: '($entry)'"} }
     }
