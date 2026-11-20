@@ -104,7 +104,7 @@ fn may_spell_parent(line: &[u8]) -> bool {
         || (memchr::memchr(b'\\', line).is_some() && UNICODE_ESCAPE.find(line).is_some())
 }
 
-// NOTE(2026-11-20, #2255): A transcript file can hold lines of more than one session, and a block must not join a response of another session. Chain nodes are keyed by the line's effective session as well as its `uuid`.
+// NOTE(2026-11-20, #2255): A transcript file can hold lines of more than one session, and a block must not join a response of another session. Chain nodes and tool use owners are keyed by the line's effective session as well as its `uuid` or tool use id, since a copied transcript reuses both.
 fn scoped(session: u64, uuid: u64) -> u64 {
     session.rotate_left(17) ^ uuid
 }
@@ -157,10 +157,9 @@ impl ResponseChains {
                 let Some(owner) = self.response_of(parent) else {
                     return;
                 };
-                if !answers
-                    .iter()
-                    .all(|answer| self.tool_use_owners.get(answer) == Some(&owner))
-                {
+                if !answers.iter().all(|answer| {
+                    self.tool_use_owners.get(&scoped(session, *answer)) == Some(&owner)
+                }) {
                     return;
                 }
                 Some(owner)
@@ -202,7 +201,8 @@ impl ResponseChains {
             }
         };
         for &tool_use in &links.tool_uses {
-            self.tool_use_owners.insert(tool_use, index);
+            self.tool_use_owners
+                .insert(scoped(session, tool_use), index);
         }
         if let Some(uuid) = links.uuid {
             self.nodes.insert(scoped(session, uuid), Node::Block(index));

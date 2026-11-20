@@ -980,6 +980,17 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             3,
         ),
         (
+            "blocks around a tool result after another session reused the tool id",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_assistant("b1", None, FIRST_BLOCK, "gateway-copy", 100, Some("toolu_1"))
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(
