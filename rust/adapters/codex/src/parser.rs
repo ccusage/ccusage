@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{json::JsonText, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     collections::{HashMap, HashSet},
@@ -215,7 +215,8 @@ fn visit_codex_session_file_inner(
             let Some(line_kind) = codex_line_usage_kind(line) else {
                 return ControlFlow::Continue(());
             };
-            let value = match jsonl::parse::<CodexLogEntry<'_>>(line) {
+            let text = JsonText::new(line);
+            let value = match text.parse::<CodexLogEntry<'_>>() {
                 Ok(value) => value,
                 Err(error) => {
                     if line_kind == CodexLineKind::Escaped

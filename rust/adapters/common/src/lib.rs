@@ -13,6 +13,7 @@ pub use walk::{
 
 pub mod claims;
 pub mod dedupe;
+pub mod json;
 pub mod jsonl;
 pub(crate) mod pipeline;
 pub mod report;
