@@ -503,7 +503,7 @@ fn reads_a_file_from_its_first_byte_as_whole_lines() {
         let padding = len - in_window.len() - old_line("").len();
         let content = in_window.clone() + &old_line(&"x".repeat(padding));
         assert_eq!(content.len(), len);
-        let file = fixture.path(&format!("projects/p/{len}.jsonl"));
+        let file = fixture.path(format!("projects/p/{len}.jsonl"));
         std::fs::write(&file, content).unwrap();
 
         let split = stale_since_split(vec![file.clone()]);
