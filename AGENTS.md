@@ -35,7 +35,7 @@ Read the nearest `AGENTS.md` before editing:
 
 ## Policy
 
-- Use `ccusage` with agent subcommands, such as `ccusage codex daily`, in code, docs, tests, and examples. Keep the retired `ccusage-amp`, `ccusage-codex`, `ccusage-opencode`, and `ccusage-pi` wrapper packages out of the workspace.
+- Use `ccusage` with agent subcommands, such as `ccusage codex daily`, in code, docs, tests, and examples.
 - Runtime libraries for bundled packages go in `devDependencies` unless the user asks otherwise.
 - Language choice: Rust for production binaries and CPU- or memory-intensive tooling; Nushell for
   small automation that mostly orchestrates external commands, files, HTTP, and JSON; Babashka once
