@@ -211,46 +211,30 @@ impl Pricing {
             OverrideFields::CACHE_READ
         );
         let overridden = |bit: u16| explicit.is_some_and(|entry| entry.explicit_fields & bit != 0);
+        // `scheduled!` already resolved each base field to its override or schedule rate,
+        // so the fields above the split inherit `self.$field` unless a long rate is explicit.
         macro_rules! long_scheduled {
-            ($field:ident, $base_bit:expr, $bit:expr, $wrap:expr, $rate:expr) => {
+            ($field:ident, $bit:expr, $wrap:expr) => {
                 long_context.rates.$field = if overridden($bit) {
                     explicit
                         .and_then(|entry| entry.long_context)
                         .and_then(|context| context.rates.$field)
-                } else if overridden($base_bit) {
-                    $wrap(self.$field)
                 } else {
-                    Some($rate)
+                    $wrap(self.$field)
                 };
             };
         }
-        long_scheduled!(
-            input,
-            OverrideFields::INPUT,
-            OverrideFields::LONG_INPUT,
-            Some,
-            rates.input
-        );
-        long_scheduled!(
-            output,
-            OverrideFields::OUTPUT,
-            OverrideFields::LONG_OUTPUT,
-            Some,
-            rates.output
-        );
+        long_scheduled!(input, OverrideFields::LONG_INPUT, Some);
+        long_scheduled!(output, OverrideFields::LONG_OUTPUT, Some);
         long_scheduled!(
             cache_create,
-            OverrideFields::CACHE_CREATE,
             OverrideFields::LONG_CACHE_CREATE,
-            std::convert::identity,
-            rates.cache_create
+            std::convert::identity
         );
         long_scheduled!(
             cache_read,
-            OverrideFields::CACHE_READ,
             OverrideFields::LONG_CACHE_READ,
-            std::convert::identity,
-            rates.cache_read
+            std::convert::identity
         );
         scheduled!(
             cache_create_1h,
