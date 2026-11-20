@@ -364,7 +364,7 @@ mod tests {
     fn an_unreadable_project_directory_is_reported_and_the_rest_still_found() {
         use std::{fs, os::unix::fs::PermissionsExt};
 
-        use crate::{Diagnostics, SkipKind};
+        use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = fs_fixture!({
             "projects/blocked/s.jsonl": "{}",
@@ -373,7 +373,7 @@ mod tests {
         let blocked = fixture.path("projects/blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let denied = read_fixture_dir(&blocked).is_err();
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let files = super::usage_files(&[fixture.root().to_path_buf()], None, &diagnostics);
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
         if !denied {
@@ -389,7 +389,7 @@ mod tests {
     fn the_streaming_walk_reports_an_unreadable_project_directory() {
         use std::{fs, os::unix::fs::PermissionsExt};
 
-        use crate::{Diagnostics, SkipKind};
+        use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = fs_fixture!({
             "projects/blocked/s.jsonl": "{}",
@@ -398,7 +398,7 @@ mod tests {
         let blocked = fixture.path("projects/blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let denied = read_fixture_dir(&blocked).is_err();
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let mut files = Vec::new();
         super::visit_usage_files(
             &[fixture.root().to_path_buf()],
@@ -425,7 +425,7 @@ mod tests {
         let files = super::usage_files(
             &[fixture.root().to_path_buf()],
             None,
-            &crate::Diagnostics::new("claude"),
+            &crate::Diagnostics::without_clock("claude"),
         );
 
         assert_eq!(

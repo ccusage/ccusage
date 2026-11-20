@@ -15,18 +15,18 @@ pub(crate) fn parse() -> Result<Option<Command>, ExitCode> {
         match parse_cli(args.clone(), &config, env!("CCUSAGE_VERSION")).map_err(usage_error)? {
             ControlFlow::Continue(command) => command,
             ControlFlow::Break(output) => {
-                println!("{output}");
+                ccusage_core::outln!("{output}").map_err(|_| ExitCode::FAILURE)?;
                 return Ok(None);
             }
         };
     let clock = ccusage::report_clock().map_err(|message| {
-        eprintln!("{message}");
+        ccusage_core::errln!("{message}");
         ExitCode::from(2)
     })?;
     resolve_report_clock(&mut command, clock).map_err(usage_error)?;
     if ccusage_core::log_level() != Some(0) {
         for warning in config.warnings() {
-            eprintln!("WARN {warning}");
+            ccusage_core::errln!("WARN {warning}");
         }
     }
     if let Command::All(unified) = &mut command {
@@ -42,14 +42,14 @@ pub(crate) fn parse() -> Result<Option<Command>, ExitCode> {
 
 fn resolve_report_clock(command: &mut Command, clock: ReportClock) -> Result<(), String> {
     let now = ReportClock::Fixed(clock.now());
-    match &mut *command {
-        Command::Statusline(args) => args.clock = now,
-        Command::Agent(_, AgentCommand::Statusline(args)) if args.mcp => args.shared.clock = clock,
-        command => {
-            if let Some(shared) = command.shared_mut() {
-                shared.clock = now;
-            }
-        }
+    if let Command::Statusline(args) = command {
+        args.clock = now;
+    } else if let Command::Agent(_, AgentCommand::Statusline(args)) = command
+        && args.mcp
+    {
+        args.shared.clock = clock;
+    } else if let Some(shared) = command.shared_mut() {
+        shared.clock = now;
     }
     last_window::resolve(command)
 }
@@ -70,8 +70,8 @@ fn try_parse_report_with(
 }
 
 fn usage_error(message: String) -> ExitCode {
-    eprintln!("{message}");
-    eprintln!("Run 'ccusage --help' for usage.");
+    ccusage_core::errln!("{message}");
+    ccusage_core::errln!("Run 'ccusage --help' for usage.");
     ExitCode::from(2)
 }
 

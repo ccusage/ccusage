@@ -101,7 +101,7 @@ pub fn parse_ts_timestamp(value: &str) -> Option<TimestampMs> {
     {
         return None;
     }
-    let year = parse_digits(&bytes[0..4])? as i32;
+    let year = i32::try_from(parse_digits(&bytes[0..4])?).ok()?;
     let month = parse_digits(&bytes[5..7])?;
     let day = parse_digits(&bytes[8..10])?;
     let hour = parse_digits(&bytes[11..13])?;
@@ -173,10 +173,6 @@ pub fn date_at(timestamp: TimestampMs, timezone: &JiffTimeZone) -> IsoDate {
     }
 }
 
-pub fn format_date_tz(timestamp: TimestampMs, timezone: &JiffTimeZone) -> String {
-    date_at(timestamp, timezone).to_string()
-}
-
 pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
     let parts = timestamp.utc_parts();
     format!(
@@ -218,7 +214,7 @@ mod tests {
             ("2026-10-25T23:30:00Z", "2026-10-25"),
         ] {
             let timestamp = super::parse_ts_timestamp(timestamp).unwrap();
-            assert_eq!(super::format_date_tz(timestamp, &timezone), expected);
+            assert_eq!(super::date_at(timestamp, &timezone).to_string(), expected);
         }
     }
 

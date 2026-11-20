@@ -14,8 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
+    fast::LinePrefilter, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -338,7 +338,7 @@ fn read_session_file_data_with_context(
         entries.push(PiLoadedEntry {
             source_timestamp: timestamp_text,
             entry: LoadedEntry {
-                date: format_date_tz(timestamp, tz),
+                date: date_at(timestamp, tz),
                 timestamp,
                 project: Arc::from(project.as_str()),
                 session_id: Arc::from(session_id.as_str()),
@@ -542,7 +542,7 @@ fn source_cost_for_mode(
     match mode {
         CostMode::Auto if has_override => None,
         CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0),
-        _ => display_cost,
+        CostMode::Calculate | CostMode::Display => display_cost,
     }
 }
 
@@ -595,10 +595,10 @@ mod tests {
             mode,
             pricing,
             "pi",
-            &Diagnostics::new("pi"),
+            &Diagnostics::without_clock("pi"),
         )
         .map(|data| data.entries)
-        .map_err(|error| crate::cli_error(error.to_string()))
+        .map_err(|error| ccusage_core::cli_error(error.to_string()))
     }
 
     fn read_session_file_for_store(
@@ -616,10 +616,10 @@ mod tests {
             mode,
             pricing,
             store_name,
-            &Diagnostics::new("pi"),
+            &Diagnostics::without_clock("pi"),
         )
         .map(|data| data.entries)
-        .map_err(|error| crate::cli_error(error.to_string()))
+        .map_err(|error| ccusage_core::cli_error(error.to_string()))
     }
 
     fn pricing_for_cost_tests() -> ccusage_core::PricingMap {
@@ -769,7 +769,7 @@ mod tests {
             ),
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-        let diagnostics = Diagnostics::new("pi");
+        let diagnostics = Diagnostics::without_clock("pi");
 
         let data = read_session_file_data_for_store_with_diagnostics(
             &file,
@@ -1213,7 +1213,7 @@ mod pricing_identity_tests {
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             "pi",
-            &Diagnostics::new("pi"),
+            &Diagnostics::without_clock("pi"),
         )
         .unwrap()
         .entries;

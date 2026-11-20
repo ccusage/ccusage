@@ -242,10 +242,7 @@ fn chunk_indexes_by_size<I>(
         let size = fs::metadata(path(item)).map_or(0, |metadata| metadata.len());
         weighted_indexes.push((index, size));
     }
-    weighted_indexes.sort_unstable_by(|a, b| match b.1.cmp(&a.1) {
-        std::cmp::Ordering::Equal => a.0.cmp(&b.0),
-        order => order,
-    });
+    weighted_indexes.sort_unstable_by(|a, b| (b.1, a.0).cmp(&(a.1, b.0)));
 
     let mut chunks = vec![Vec::new(); chunk_count];
     let mut chunk_sizes = vec![0_u64; chunk_count];
@@ -344,7 +341,7 @@ mod tests {
         fixture.write_file("z.jsonl", "");
         let first = fixture.write_file("a/first.jsonl", "");
         fixture.write_file("a/second.jsonl", "");
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         let mut visited = Vec::new();
         assert!(super::any_file_matching(
             fixture.root(),
@@ -373,7 +370,7 @@ mod tests {
         for name in ["z.jsonl", "b/z.jsonl", "b/a.jsonl", "a.jsonl"] {
             fixture.write_file(name, "");
         }
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         let mut files = Vec::new();
         super::collect_files_with_extension(fixture.root(), "jsonl", &mut files, &diagnostics);
         assert_eq!(
@@ -392,7 +389,7 @@ mod tests {
         std::os::unix::fs::symlink(target, &alias).unwrap();
 
         let mut files = Vec::new();
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
 
         assert_eq!(files, [alias]);
@@ -408,7 +405,7 @@ mod tests {
         std::os::unix::fs::symlink(fixture.path("project"), &alias).unwrap();
 
         let mut files = Vec::new();
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
 
         assert_eq!(files, [alias.join("nested/session.jsonl")]);
@@ -424,7 +421,7 @@ mod tests {
         std::os::unix::fs::symlink(&target, &first).unwrap();
         std::os::unix::fs::symlink(&target, root.join("b.jsonl")).unwrap();
 
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         let reads = super::read_discovered_paths(
             true,
             |visit| super::visit_usage_files(&root, visit, &diagnostics),
@@ -446,7 +443,7 @@ mod tests {
         std::os::unix::fs::symlink(fixture.write_file("external.jsonl", ""), &linked).unwrap();
 
         let mut files = Vec::new();
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
 
         assert_eq!(files, [target, linked]);
@@ -464,7 +461,7 @@ mod tests {
         std::os::unix::fs::symlink(&root, fixture.path("project/back")).unwrap();
 
         let mut files = Vec::new();
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
 
         assert_eq!(files, [original, alias.join("b.jsonl")]);
@@ -479,7 +476,7 @@ mod tests {
         std::os::unix::fs::symlink(fixture.path("missing"), fixture.path("b.jsonl")).unwrap();
 
         let mut files = Vec::new();
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
         super::collect_files_with_extension(fixture.root(), "jsonl", &mut files, &diagnostics);
 
         assert_eq!(files, [original]);
@@ -528,7 +525,7 @@ mod tests {
         let kept = fixture.write_file("a/b/kept.jsonl", "");
         fixture.write_file("a/skipped.txt", "");
         let mut files = Vec::new();
-        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("test");
 
         collect_files_matching(
             fixture.root(),
@@ -547,7 +544,7 @@ mod tests {
         let fixture = Fixture::new();
         let failed = fixture.write_file("not-a-directory", "");
         let healthy = fixture.write_file("healthy/nested/session.jsonl", "");
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::without_clock("test");
         let mut files = Vec::new();
         for root in [fixture.path("missing"), failed, fixture.path("healthy")] {
             super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);

@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
-    fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
+    fast::LinePrefilter, stored_cost_for_mode,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -412,7 +412,7 @@ pub(super) fn entry_to_loaded(
         .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("openclaw"),
         session_id: Arc::from(entry.session_id),
@@ -531,7 +531,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":2}}}"#,
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
         let events = parse_session_file(
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
@@ -549,7 +549,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00Z","message":{"role":"assistant","timestamp":"invalid","usage":{"input":10,"output":2}}}"#,
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
@@ -574,7 +574,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
@@ -609,7 +609,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
@@ -648,7 +648,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
-            &Diagnostics::new("openclaw"),
+            &Diagnostics::without_clock("openclaw"),
         )
         .unwrap();
 
@@ -669,7 +669,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::UTC,
@@ -766,7 +766,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("openclaw"),
+            &Diagnostics::without_clock("openclaw"),
         )
         .unwrap();
 
@@ -799,7 +799,7 @@ mod pricing_identity_tests {
             &JiffTimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("openclaw"),
+            &Diagnostics::without_clock("openclaw"),
         )
         .unwrap();
         assert_eq!(

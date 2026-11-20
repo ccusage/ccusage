@@ -11,7 +11,7 @@ pub(crate) const NAMED_PI_STORE_NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct PiStoreConfig {
+pub(crate) struct PiStoreConfig {
     /// Agent name to use for this pi-format store in all-agent reports.
     #[cfg_attr(
         any(feature = "schema", test),
@@ -23,7 +23,7 @@ pub struct PiStoreConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConfigDateBound(pub(crate) ccusage_cli::DateBound);
+pub(crate) struct ConfigDateBound(pub(crate) ccusage_cli::DateBound);
 
 impl<'de> Deserialize<'de> for ConfigDateBound {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -42,7 +42,7 @@ impl<'de> Deserialize<'de> for ConfigDateBound {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct SharedOptions {
+pub(crate) struct SharedOptions {
     /// Filter from date (YYYY-MM-DD or YYYYMMDD).
     #[cfg_attr(any(feature = "schema", test), schemars(with = "Option<String>"))]
     pub(crate) since: Option<ConfigDateBound>,
@@ -86,7 +86,7 @@ pub struct SharedOptions {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DailySpecificOptions {
+pub(crate) struct DailySpecificOptions {
     /// Show per-session project instances.
     pub(crate) instances: Option<bool>,
     /// Filter to a project name or path.
@@ -98,7 +98,7 @@ pub struct DailySpecificOptions {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct WeeklySpecificOptions {
+pub(crate) struct WeeklySpecificOptions {
     /// First day of week for weekly grouping.
     pub(crate) start_of_week: Option<ConfigWeekDay>,
 }
@@ -106,7 +106,7 @@ pub struct WeeklySpecificOptions {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct BlocksSpecificOptions {
+pub(crate) struct BlocksSpecificOptions {
     /// Show the active session block.
     pub(crate) active: Option<bool>,
     /// Show recent session blocks.
@@ -127,7 +127,7 @@ pub struct BlocksSpecificOptions {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(untagged)]
-pub enum ConfigTokenLimit {
+pub(crate) enum ConfigTokenLimit {
     Text(
         #[cfg_attr(
             any(feature = "schema", test),
@@ -163,7 +163,7 @@ fn deserialize_session_length<'de, D: Deserializer<'de>>(
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct StatuslineSpecificOptions {
+pub(crate) struct StatuslineSpecificOptions {
     /// Use cached pricing data where supported.
     pub(crate) offline: Option<bool>,
     /// Disable cached pricing data where supported.
@@ -197,7 +197,7 @@ pub struct StatuslineSpecificOptions {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct CodexOptions {
+pub(crate) struct CodexOptions {
     /// Codex speed normalization strategy.
     pub(crate) speed: Option<ConfigCodexSpeed>,
 }
@@ -205,7 +205,7 @@ pub struct CodexOptions {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct PiOptions {
+pub(crate) struct PiOptions {
     /// Path or comma-separated paths to pi-agent sessions directories.
     pub(crate) pi_path: Option<String>,
 }
@@ -213,7 +213,7 @@ pub struct PiOptions {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct OpenClawOptions {
+pub(crate) struct OpenClawOptions {
     /// Path or comma-separated paths to OpenClaw data directories.
     pub(crate) open_claw_path: Option<String>,
 }

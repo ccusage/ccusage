@@ -9,7 +9,7 @@ const MAX_MESSAGE_BYTES: u64 = 1024 * 1024;
 
 pub(super) fn serve(args: CodexStatuslineArgs) -> Result<()> {
     let mut input = io::stdin().lock();
-    let mut output = io::stdout().lock();
+    let mut output = ccusage_core::stdout();
     let mut line = Vec::new();
     let mut reader = None;
     loop {

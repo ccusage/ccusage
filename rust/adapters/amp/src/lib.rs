@@ -1,5 +1,9 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::{cli::*, *};
+use ccusage_core::{
+    Diagnostics, LoadedEntry, Result, Skip, SkipKind, TimestampMs, TokenUsageRaw,
+    apply_total_token_fallback, cli, cli::AgentCommandArgs, date_at, model_aliases,
+    parse_ts_timestamp,
+};
 
 mod loader;
 mod parser;
@@ -32,6 +36,7 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
+    use ccusage_core::cli::{AgentReportKind, SharedArgs};
     use ccusage_test_support::{Environment, Fixture, fs_fixture};
 
     use super::*;

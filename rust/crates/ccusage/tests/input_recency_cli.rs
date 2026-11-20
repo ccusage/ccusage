@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use ccusage_test_support::{fs_fixture, instant, set_modified};
 
 mod support;

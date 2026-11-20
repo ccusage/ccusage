@@ -116,8 +116,7 @@ impl SimpleTable {
     }
 
     pub fn print(&self) -> io::Result<()> {
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
+        let mut stdout = crate::stdout();
         for line in self.render_lines() {
             writeln!(stdout, "{line}")?;
         }

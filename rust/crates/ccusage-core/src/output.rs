@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeSet,
-    io::{self, BufWriter, IsTerminal, Write},
+    io::{BufWriter, Write},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Color, ColumnKind, ModelBreakdown, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD,
-    UsageSummary, cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
+    UsageSummary, cli::SharedArgs, cli_error, color, date_at, format_breakdown_model_label,
     format_project_name, parse_project_aliases, parse_ts_timestamp, print_box_title, resolve_tz,
     short_model_name, terminal_width,
 };
@@ -94,8 +94,7 @@ pub fn write_json_or_jq(value: &impl Serialize, jq: Option<&str>) -> Result<()> 
             return Err(cli_error("jq failed"));
         }
     } else {
-        let stdout = std::io::stdout();
-        let mut stdout = BufWriter::new(stdout.lock());
+        let mut stdout = BufWriter::new(ccusage_terminal::stdout());
         serde_json::to_writer_pretty(&mut stdout, value)?;
         stdout.write_all(b"\n")?;
         stdout.flush()?;
@@ -145,11 +144,11 @@ pub fn print_usage_table_with_options(
     options: UsageTableOptions,
 ) -> Result<()> {
     if rows.is_empty() {
-        eprintln!("{}", empty_usage_table_message());
+        ccusage_terminal::errln!("{}", empty_usage_table_message());
         return Ok(());
     }
     let terminal_width = terminal_width();
-    let is_tty = io::stdout().is_terminal();
+    let is_tty = ccusage_terminal::stdout_is_terminal();
     let compact = should_use_compact_layout(
         shared,
         is_tty,
@@ -158,7 +157,7 @@ pub fn print_usage_table_with_options(
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
     let timezone = resolve_tz(shared.timezone.as_ref());
-    print_box_title(title, shared);
+    print_box_title(title, shared)?;
     let (mut headers, mut columns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
     if shared.no_cost {
@@ -270,8 +269,8 @@ pub fn print_usage_table_with_options(
         shared.offline,
     );
     if compact {
-        eprintln!("\nRunning in Compact Mode");
-        eprintln!("Expand terminal width to see cache metrics and total tokens");
+        ccusage_terminal::errln!("\nRunning in Compact Mode");
+        ccusage_terminal::errln!("Expand terminal width to see cache metrics and total tokens");
     }
     Ok(())
 }
@@ -315,7 +314,7 @@ pub fn print_missing_pricing_warnings_for_models<'a>(
     offline: bool,
 ) {
     for warning in missing_pricing_warnings_for_models(models, offline) {
-        eprintln!("{warning}");
+        ccusage_terminal::errln!("{warning}");
     }
 }
 
@@ -469,14 +468,14 @@ pub fn strip_cost_json(value: &mut Value) {
                 strip_cost_json(child);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
 fn format_last_activity_date(value: &str, timezone: &JiffTimeZone) -> String {
     parse_ts_timestamp(value).map_or_else(
         || value.get(..10).unwrap_or(value).to_string(),
-        |timestamp| format_date_tz(timestamp, timezone),
+        |timestamp| date_at(timestamp, timezone).to_string(),
     )
 }
 

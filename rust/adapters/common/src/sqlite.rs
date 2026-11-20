@@ -182,7 +182,7 @@ mod tests {
             )
             .unwrap();
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::new("test");
+            let diagnostics = Diagnostics::without_clock("test");
             let loaded = super::sqlite_units(
                 std::slice::from_ref(&path),
                 single_thread,
@@ -236,7 +236,7 @@ mod tests {
             .execute("CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (2)")
             .unwrap();
         let corrupt = fixture.write_file("corrupt.db", "SECRET_CANARY is not a database");
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = values(
             &[healthy, corrupt],
@@ -268,7 +268,7 @@ mod tests {
                 "CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (2), (3), (4)",
             )
             .unwrap();
-        let diagnostics = Diagnostics::new("test");
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = values(
             &[path],

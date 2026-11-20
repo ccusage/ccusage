@@ -142,15 +142,15 @@ pub fn parse_report_args_with_config<I>(
 where
     I: IntoIterator<Item = OsString>,
 {
-    match parse_with_timezone(argument_parser(args)?, config, known_timezone)? {
-        Command::All(args) | Command::Agent(_, AgentCommand::Report(args)) => {
-            Ok(AgentCommandArgs {
-                start_of_week,
-                ..args
-            })
-        }
-        _ => Err("Expected a report that loads agent sources".to_string()),
-    }
+    let (Command::All(args) | Command::Agent(_, AgentCommand::Report(args))) =
+        parse_with_timezone(argument_parser(args)?, config, known_timezone)?
+    else {
+        return Err("Expected a report that loads agent sources".to_string());
+    };
+    Ok(AgentCommandArgs {
+        start_of_week,
+        ..args
+    })
 }
 
 fn control_arg(args: &[String]) -> Option<ControlArg> {
@@ -228,7 +228,21 @@ fn parse_agent_command(
         StandardAgent::OpenCode => parse_opencode_command(parser, shared, config),
         StandardAgent::Pi => parse_pi_command(parser, shared, config),
         StandardAgent::OpenClaw => parse_openclaw_command(parser, shared, config),
-        _ => parse_basic_agent_command(parser, shared, agent, config),
+        StandardAgent::Amp
+        | StandardAgent::Droid
+        | StandardAgent::Codebuff
+        | StandardAgent::Hermes
+        | StandardAgent::Goose
+        | StandardAgent::Kilo
+        | StandardAgent::Copilot
+        | StandardAgent::Gemini
+        | StandardAgent::Antigravity
+        | StandardAgent::Kimi
+        | StandardAgent::Qwen
+        | StandardAgent::Grok
+        | StandardAgent::ZCode
+        | StandardAgent::Cline
+        | StandardAgent::Dsh => parse_basic_agent_command(parser, shared, agent, config),
     }
 }
 
@@ -1092,13 +1106,10 @@ fn resolve_timezone(
     } else {
         None
     };
-    match command {
-        Command::Statusline(args) => args.timezone = timezone,
-        command => {
-            if let Some(shared) = command.shared_mut() {
-                shared.timezone = timezone;
-            }
-        }
+    if let Command::Statusline(args) = command {
+        args.timezone = timezone;
+    } else if let Some(shared) = command.shared_mut() {
+        shared.timezone = timezone;
     }
     Ok(())
 }

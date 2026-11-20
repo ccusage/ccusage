@@ -141,8 +141,8 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let tz = crate::resolve_tz(shared.timezone.as_ref());
-        let diagnostics = Diagnostics::new("hermes");
+        let tz = ccusage_core::resolve_tz(shared.timezone.as_ref());
+        let diagnostics = Diagnostics::without_clock("hermes");
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics)
             .into_iter()
             .map(|entry| {
@@ -156,7 +156,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2025-06-15");
+        assert_eq!(entries[0].date.to_string(), "2025-06-15");
         assert_eq!(entries[0].session_id.as_ref(), "session-1");
         assert_eq!(
             entries[0].model.as_deref(),
@@ -201,7 +201,7 @@ mod tests {
             let shared = SharedArgs::default();
             let pricing = PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::new("hermes");
+            let diagnostics = Diagnostics::without_clock("hermes");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
@@ -231,7 +231,7 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('before', 'cli', 'gpt-5', 1750000000, 100, 50), ('', 'cli', 'gpt-5', 1750000001, 100, 50), ('bad-time', 'cli', 'gpt-5', 'SECRET_CANARY', 100, 50), (NULL, 'cli', 'gpt-5', 'SECRET_CANARY', 0, 0), ('after', 'cli', 'gpt-5', 1750000002, 100, 50)",
             )
             .unwrap();
-        let diagnostics = Diagnostics::new("hermes");
+        let diagnostics = Diagnostics::without_clock("hermes");
 
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 
@@ -262,7 +262,7 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES (' ', 'cli', 'gpt-5', 1750000000, 100, 50)",
             )
             .unwrap();
-        let diagnostics = Diagnostics::new("hermes");
+        let diagnostics = Diagnostics::without_clock("hermes");
 
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 

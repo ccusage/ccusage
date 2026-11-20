@@ -103,11 +103,12 @@ mod tests {
     use ccusage_core::{Diagnostics, SkipKind};
 
     use super::*;
+    use crate::cli::SharedArgs;
     use crate::parser::test_support::{
         UsageFixture, create_database, metadata_blob, metadata_blob_with_steps, step_metadata_blob,
         trajectory_metadata_blob,
     };
-    use crate::{PricingMap, cli::SharedArgs};
+    use ccusage_core::PricingMap;
 
     fn shared(single_thread: bool) -> SharedArgs {
         SharedArgs {
@@ -737,7 +738,7 @@ mod tests {
             .enumerate()
             .map(|(index, model)| {
                 (
-                    index as i64,
+                    i64::try_from(index).unwrap(),
                     metadata_blob(
                         Some(model),
                         Some(UsageFixture {
@@ -817,10 +818,10 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-05-09");
+        assert_eq!(entries[0].date.to_string(), "2026-05-09");
         assert_eq!(
             entries[0].timestamp,
-            crate::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()
+            ccusage_core::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()
         );
     }
 
@@ -1350,7 +1351,7 @@ mod tests {
         let database = fixture.write_file("conversations/empty.db", "");
 
         assert!(matches!(
-            parse_sqlite_file(&database, &Diagnostics::new("antigravity")).unwrap(),
+            parse_sqlite_file(&database, &Diagnostics::without_clock("antigravity")).unwrap(),
             ParsedDatabase::EmptySnapshot
         ));
 
@@ -1376,9 +1377,12 @@ mod tests {
         ])
         .run(|| {
             assert!(
-                super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
-                    .unwrap()
-                    .is_empty()
+                super::super::paths::conversation_db_paths(
+                    &Diagnostics::without_clock("antigravity"),
+                    false
+                )
+                .unwrap()
+                .is_empty()
             );
 
             let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
@@ -1587,7 +1591,7 @@ mod tests {
             let shared = shared(true);
             let pricing = PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::new("antigravity");
+            let diagnostics = Diagnostics::without_clock("antigravity");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

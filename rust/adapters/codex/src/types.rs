@@ -8,7 +8,7 @@ use std::{
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct CodexRawUsage {
+pub(crate) struct CodexRawUsage {
     pub(crate) input_tokens: u64,
     pub(crate) cached_input_tokens: u64,
     pub(crate) cache_creation_tokens: u64,
@@ -160,7 +160,7 @@ impl CodexServiceTier {
     }
 }
 
-pub const fn merge_codex_service_tiers(
+pub(crate) const fn merge_codex_service_tiers(
     current: Option<CodexServiceTier>,
     incoming: Option<CodexServiceTier>,
 ) -> Option<CodexServiceTier> {

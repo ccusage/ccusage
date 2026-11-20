@@ -5,8 +5,8 @@ use ccusage_core::{
     UsageSummary,
     cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder},
     fast::FxHashMap,
-    print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key_target,
-    summary::{Bucket, KeyTarget, summarize_bucket},
+    print_json_or_jq, print_usage_table, sort_summaries,
+    summary::{Bucket, summarize_bucket, summarize_by_day},
     totals_json, wants_json,
 };
 use ccusage_report::{
@@ -66,12 +66,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
         .into_iter()
         .map(|entry| entry.entry)
         .collect::<Vec<_>>();
-    let mut daily = summarize_by_key_target(
-        &entries,
-        |entry| entry.date.clone(),
-        |key| (key.clone(), None),
-        KeyTarget::Date,
-    )?;
+    let mut daily = summarize_by_day(&entries)?;
     sort_summaries(&mut daily, &shared.order.unwrap_or_default(), |row| {
         row.date.as_deref().unwrap_or_default()
     });
@@ -178,9 +173,9 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 
     if session_entries.is_empty() {
         if wants_json(shared) {
-            println!("null");
+            ccusage_core::outln!("null")?;
         } else {
-            eprintln!("No session found with ID: {id}");
+            ccusage_core::errln!("No session found with ID: {id}");
         }
         return Ok(());
     }
@@ -267,7 +262,7 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
     }
 
     if args.active && blocks.is_empty() {
-        println!("No active session block found.");
+        ccusage_core::outln!("No active session block found.")?;
         return Ok(());
     }
     if args.active && blocks.len() == 1 {

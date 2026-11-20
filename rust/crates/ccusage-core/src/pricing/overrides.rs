@@ -109,7 +109,10 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
-        let mut values: Vec<_> = values.into_iter().collect();
+        self.apply_override_list(values.into_iter().collect());
+    }
+
+    fn apply_override_list(&mut self, mut values: Vec<(&String, &PricingOverride)>) {
         if values.is_empty() {
             return;
         }

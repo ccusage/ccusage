@@ -1,5 +1,3 @@
-use std::io::{self, IsTerminal};
-
 use ccusage_environment::Environment;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,7 +37,7 @@ fn use_color(style: &TerminalStyle) -> bool {
     if style.no_color || environment.var_os("NO_COLOR").is_some() {
         return false;
     }
-    style.color || environment.var_os("FORCE_COLOR").is_some() || io::stdout().is_terminal()
+    style.color || environment.var_os("FORCE_COLOR").is_some() || crate::stdout_is_terminal()
 }
 
 #[cfg(test)]

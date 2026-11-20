@@ -10,7 +10,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use ccusage_adapter_common::{SqliteStage, UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, format_date_tz};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, date_at};
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -793,7 +793,7 @@ fn parse_timestamp_message(blob: &[u8]) -> ProtoResult<Option<TimestampMs>> {
         .min(999_999_999);
     let milliseconds = seconds
         .saturating_mul(1_000)
-        .saturating_add((nanos / 1_000_000) as i64);
+        .saturating_add(i64::try_from(nanos / 1_000_000).unwrap_or(i64::MAX));
     Ok(Some(TimestampMs::from_millis(milliseconds)))
 }
 
@@ -1069,7 +1069,7 @@ pub(super) fn event_to_loaded(
         pricing,
     );
     LoadedEntry {
-        date: format_date_tz(event.timestamp, timezone),
+        date: date_at(event.timestamp, timezone),
         timestamp: event.timestamp,
         project: Arc::from("antigravity"),
         session_id: Arc::from(event.session_id),
@@ -1429,7 +1429,7 @@ mod tests {
         merge_usage_event, model_candidates, model_from_id, normalize_antigravity_model,
         parse_generator_metadata, parse_step_metadata, price_antigravity,
     };
-    use crate::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
+    use ccusage_core::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
 
     #[test]
     fn merge_prefers_resolved_then_placeholder_then_default_model() {
@@ -1448,7 +1448,7 @@ mod tests {
                     provider: None,
                     timestamp: Some((TimestampMs::UNIX_EPOCH, 3)),
                     trajectory_timestamp: None,
-                    diagnostics: &ccusage_core::Diagnostics::new("antigravity"),
+                    diagnostics: &ccusage_core::Diagnostics::without_clock("antigravity"),
                     record: (std::path::Path::new("fixture.db"), 1),
                     session_id: "session",
                     fallback_identities: &[],
@@ -2062,7 +2062,7 @@ mod pricing_identity_tests {
                 input_tokens: 1000,
                 ..Default::default()
             },
-            crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
             PriceTable::Calculate(&pricing),
         );
         assert!((cost - 0.00075).abs() < 1e-12);

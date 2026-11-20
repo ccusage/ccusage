@@ -14,10 +14,11 @@ use serde::Deserialize;
 use crate::{
     IteratedTokenUsage, ModelBreakdown, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
     UsageSummary,
-    cli::SharedArgs,
+    cli::{DayLabel, IsoDate, SharedArgs},
     cost::{PriceTable, price_resolved_usage},
+    date_at,
     fast::{FxHashMap, LinePrefilter, suffix_string},
-    format_date_tz, parse_ts_timestamp,
+    parse_ts_timestamp,
     pricing::PricingHandle,
 };
 
@@ -40,8 +41,12 @@ pub(super) struct DailyEntries {
 }
 
 impl DailyEntries {
-    pub(super) fn summaries(&self, group_by_project: bool) -> Vec<UsageSummary> {
-        summarize_daily_entries(&self.deduped.entries, group_by_project)
+    pub(super) fn summaries(
+        &self,
+        group_by_project: bool,
+        window: Option<&ccusage_core::ReportWindow>,
+    ) -> Vec<UsageSummary> {
+        summarize_daily_entries(&self.deduped.entries, group_by_project, window)
     }
 
     pub(super) fn sessions(&self) -> MainThreadSessions {
@@ -163,7 +168,7 @@ pub(super) struct DedupedDailyEntries {
 impl DedupedDailyEntries {
     fn retain_entries_in(&mut self, window: &ccusage_core::ReportWindow) {
         super::retain_copied_entries(&mut self.entries, &mut self.copies, window, |entry| {
-            &entry.date
+            entry.date
         });
     }
 }
@@ -227,42 +232,45 @@ pub(super) fn dedupe_files<E: DedupEntry>(
     (deduped, copies)
 }
 
-fn summarize_daily_entries(deduped: &[ClaudeEntry], group_by_project: bool) -> Vec<UsageSummary> {
+fn summarize_daily_entries(
+    deduped: &[ClaudeEntry],
+    group_by_project: bool,
+    window: Option<&ccusage_core::ReportWindow>,
+) -> Vec<UsageSummary> {
+    let includes = |day| window.is_none_or(|window| window.contains_entry_date(day));
     if group_by_project {
-        let mut groups = BTreeMap::<(String, Arc<str>), DailyAccumulator>::new();
+        let mut groups = BTreeMap::<(DayLabel, Arc<str>), DailyAccumulator>::new();
         for entry in deduped {
             groups
-                .entry((entry.date.clone(), Arc::clone(&entry.project)))
+                .entry((entry.date.into(), Arc::clone(&entry.project)))
                 .or_default()
                 .add_entry(entry);
         }
         return groups
             .into_iter()
+            .filter(|((date, _), _)| includes(date.day()))
             .map(|((date, project), group)| {
                 let mut summary = group.into_summary();
-                summary.date = Some(date);
+                summary.date = Some(date.day().to_string());
                 summary.project = Some(project.to_string());
                 summary
             })
             .collect();
     }
 
-    let mut groups = BTreeMap::<String, DailyAccumulator>::new();
+    let mut groups = BTreeMap::<DayLabel, DailyAccumulator>::new();
     for entry in deduped {
-        if let Some(group) = groups.get_mut(entry.date.as_str()) {
-            group.add_entry(entry);
-        } else {
-            groups
-                .entry(entry.date.clone())
-                .or_default()
-                .add_entry(entry);
-        }
+        groups
+            .entry(entry.date.into())
+            .or_default()
+            .add_entry(entry);
     }
     groups
         .into_iter()
+        .filter(|(date, _)| includes(date.day()))
         .map(|(key, group)| {
             let mut summary = group.into_summary();
-            summary.date = Some(key);
+            summary.date = Some(key.day().to_string());
             summary
         })
         .collect()
@@ -291,7 +299,7 @@ pub(super) trait DedupEntry {
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {
     key: DedupKey,
-    date: String,
+    date: IsoDate,
     project: Arc<str>,
     usage: TokenUsageRaw,
     cost: f64,
@@ -360,7 +368,7 @@ impl DedupEntry for ClaudeEntry {
 
 pub(super) struct ParsedUsage {
     pub(super) key: DedupKey,
-    pub(super) date: String,
+    pub(super) date: IsoDate,
     pub(super) project: Arc<str>,
     pub(super) usage: TokenUsageRaw,
     pub(super) cost: f64,
@@ -675,7 +683,7 @@ pub(super) fn read_usage_file<E>(
                 request_id: data.request_id,
                 is_sidechain: data.is_sidechain,
             },
-            date: format_date_tz(timestamp, tz),
+            date: date_at(timestamp, tz),
             project: Arc::clone(&project),
             usage,
             cost,
@@ -709,7 +717,7 @@ pub(super) fn read_usage_file<E>(
                         request_id: parent.key.request_id.clone(),
                         is_sidechain: parent.key.is_sidechain,
                     },
-                    date: parent.date.clone(),
+                    date: parent.date,
                     project: Arc::clone(&project),
                     usage: advisor.usage,
                     cost,
@@ -995,11 +1003,11 @@ mod tests {
     use std::{fmt::Write, path::Path, sync::Arc};
 
     use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
-    use crate::{
+    use ccusage_core::cost::PriceTable;
+    use ccusage_core::{
         Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
     };
-    use ccusage_core::cost::PriceTable;
     use ccusage_test_support::{Environment, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -1007,7 +1015,7 @@ mod tests {
         crate::load_daily_summaries_with_detection_progress(
             shared,
             None,
-            false,
+            None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             diagnostics,
         )
@@ -1024,7 +1032,7 @@ mod tests {
             path,
             tz,
             pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
-            &Diagnostics::new("claude"),
+            &Diagnostics::without_clock("claude"),
         )
     }
 
@@ -1155,7 +1163,7 @@ mod tests {
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":1,"output_tokens":2,"cache_read_input_tokens":null}]}}}"#,
         });
         let path = fixture.path("projects/project-a/session-a.jsonl");
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
@@ -1177,7 +1185,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
             &JiffTimeZone::UTC,
@@ -1197,7 +1205,7 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"x"},{"type":"advisor_message","model":"good","input_tokens":3,"output_tokens":2}]}}}"#,
         });
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
             &JiffTimeZone::UTC,
@@ -1224,7 +1232,7 @@ mod tests {
                 "projects/project-a/session-a.jsonl": format!(r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}}}}}"#),
             });
             let path = fixture.path("projects/project-a/session-a.jsonl");
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::without_clock("claude");
             let loaded = super::read_daily_usage_file_with_diagnostics(
                 &path,
                 &JiffTimeZone::UTC,
@@ -1244,7 +1252,7 @@ mod tests {
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":"SECRET_CANARY","output_tokens":1}]}}}"#,
         });
         let path = fixture.path("projects/project-a/session-a.jsonl");
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
@@ -1279,7 +1287,7 @@ mod tests {
                 debug: true,
                 ..SharedArgs::default()
             };
-            let diagnostics = ccusage_core::Diagnostics::new("claude");
+            let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
 
             let daily = load_daily(&shared, &diagnostics);
 
@@ -1307,7 +1315,7 @@ mod tests {
                 ..SharedArgs::default()
             };
 
-            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
+            let daily = load_daily(&shared, &ccusage_core::Diagnostics::without_clock("claude"));
 
             assert_eq!(
                 daily.sessions.into_iter().collect::<Vec<_>>(),
@@ -1344,7 +1352,7 @@ mod tests {
                 single_thread: true,
                 ..SharedArgs::default()
             };
-            let diagnostics = ccusage_core::Diagnostics::new("claude");
+            let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
 
             let daily = load_daily(&shared, &diagnostics);
 
@@ -1611,7 +1619,8 @@ mod tests {
                     ..SharedArgs::default()
                 };
 
-                let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
+                let daily =
+                    load_daily(&shared, &ccusage_core::Diagnostics::without_clock("claude"));
 
                 let breakdown = &daily.summaries[0].model_breakdowns[0];
                 assert_eq!(breakdown.cache_creation_tokens, 100);
@@ -2016,6 +2025,42 @@ mod tests {
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
     }
 
+    #[test]
+    fn daily_summaries_keep_label_order_for_extended_years() {
+        let entries = [(10000, 1, 1), (2026, 1, 1), (-2, 1, 1), (-1, 12, 31)]
+            .into_iter()
+            .map(|(y, m, d)| {
+                let mut entry = daily_loaded_entry(DailyEntryFixture {
+                    message_id: "msg",
+                    request_id: "req",
+                    is_sidechain: false,
+                    cache_read_tokens: 0,
+                    output_tokens: 1,
+                });
+                entry.date = ccusage_core::cli::IsoDate::from_ymd(y, m, d).unwrap();
+                entry
+            })
+            .collect();
+        let daily = super::DailyEntries {
+            deduped: super::DedupedDailyEntries {
+                entries,
+                copies: Vec::new(),
+            },
+            detected: true,
+        };
+        for group_by_project in [false, true] {
+            let rows = daily.summaries(group_by_project, None);
+            let dates = rows
+                .iter()
+                .map(|row| row.date.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                dates,
+                ["-001-12-31", "-002-01-01", "10000-01-01", "2026-01-01"]
+            );
+        }
+    }
+
     struct DailyEntryFixture {
         message_id: &'static str,
         request_id: &'static str,
@@ -2033,7 +2078,7 @@ mod tests {
                 request_id: Some(fixture.request_id.to_string()),
                 is_sidechain: Some(fixture.is_sidechain),
             },
-            date: "2026-03-29".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
             project: Arc::from("project-a"),
             usage: TokenUsageRaw {
                 input_tokens: 0,

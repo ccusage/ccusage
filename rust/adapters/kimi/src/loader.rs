@@ -55,7 +55,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-02-13");
+            assert_eq!(entries[0].date.to_string(), "2026-02-13");
             assert_eq!(entries[0].session_id.as_ref(), "session-a");
             assert_eq!(entries[0].model.as_deref(), Some("kimi-k2"));
             assert_eq!(entries[0].usage.input_tokens, 100);
@@ -130,7 +130,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let diagnostics = Diagnostics::new("kimi");
+        let diagnostics = Diagnostics::without_clock("kimi");
 
         let entries = super::super::parser::read_wire_file(
             &crate::paths::WireFile::from_paths(vec![

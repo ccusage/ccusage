@@ -97,7 +97,7 @@ mod tests {
         let entries = load_fixture(&fixture, &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-30");
+        assert_eq!(entries[0].date.to_string(), "2026-01-30");
         assert_eq!(entries[0].session_id.as_ref(), "abc");
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
         assert_eq!(entries[0].version.as_deref(), Some("openai-codex"));
@@ -179,7 +179,7 @@ mod tests {
                     "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session-sqlite', ?1, ?2, 1769753935279)",
                 )
                 .unwrap();
-            statement.bind((1, seq as i64)).unwrap();
+            statement.bind((1, i64::try_from(seq).unwrap())).unwrap();
             statement.bind((2, event_json)).unwrap();
             statement.next().unwrap();
         }
@@ -191,7 +191,7 @@ mod tests {
         let entries = load_fixture(&fixture, &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-30");
+        assert_eq!(entries[0].date.to_string(), "2026-01-30");
         assert_eq!(entries[0].session_id.as_ref(), "session-sqlite");
         assert_eq!(
             entries[0].model.as_deref(),
@@ -249,7 +249,7 @@ mod tests {
                     "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session', ?1, ?2, 1769753935279)",
                 )
                 .unwrap();
-            statement.bind((1, seq as i64)).unwrap();
+            statement.bind((1, i64::try_from(seq).unwrap())).unwrap();
             statement.bind((2, *event_json)).unwrap();
             statement.next().unwrap();
         }
