@@ -374,7 +374,7 @@ fn load_specs<'a>(
 fn finish_sessions(rows: Vec<SourceRow>, shared: &SharedArgs) -> Vec<ReportRow> {
     let mut rows = rows.into_iter().map(ReportRow::Source).collect::<Vec<_>>();
     rows.sort_by(|a, b| {
-        let cost_order = match ccusage_report::session_cost_ordering(shared) {
+        let cost_order = match crate::cli::session_cost_ordering(shared) {
             crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
             crate::cli::SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
         };
