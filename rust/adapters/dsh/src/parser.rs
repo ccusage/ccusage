@@ -194,7 +194,7 @@ fn compressed_interruption(failure: ReadFailure) -> Interruption {
     let kind = failure.error.kind();
     // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
     let error = if kind == io::ErrorKind::UnexpectedEof {
-        UnitError::unfinished(if has_content {
+        failure.incomplete(if has_content {
             "zstd stream ends inside a frame; earlier records were kept"
         } else {
             "zstd stream ends inside its first frame"
@@ -530,7 +530,7 @@ mod tests {
     }
 
     fn parse_diagnosed(content: &[u8]) -> (Vec<DshUsageEntry>, Diagnostics) {
-        let diagnostics = Diagnostics::without_clock("dsh");
+        let diagnostics = Diagnostics::new("dsh");
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.path("sessions/--p--/fallback/session.v4.jsonl");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

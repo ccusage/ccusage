@@ -18,7 +18,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             },
         }],
         detected: true,
-        diagnostics: Diagnostics::without_clock(agent),
+        diagnostics: Diagnostics::new(agent),
     }
 }
 

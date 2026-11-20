@@ -642,7 +642,7 @@ mod tests {
             .unwrap()
             .set_modified(modified)
             .unwrap();
-        let diagnostics = Diagnostics::without_clock("gemini");
+        let diagnostics = Diagnostics::new("gemini");
         let events = parse_json_file(&path, &diagnostics).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].timestamp.as_millis(), 1_767_312_000_000);
@@ -657,7 +657,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "chat.jsonl": r#"{"type":"gemini","model":"gemini-3-flash-preview","tokens":{"input":10,"output":2}}"#,
         });
-        let diagnostics = ccusage_core::Diagnostics::without_clock("gemini");
+        let diagnostics = ccusage_core::Diagnostics::new("gemini");
         let events = parse_jsonl_file(&fixture.path("chat.jsonl"), &diagnostics).unwrap();
         assert!(events.is_empty());
         assert_eq!(
@@ -678,7 +678,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = ccusage_core::Diagnostics::without_clock("gemini");
+        let diagnostics = ccusage_core::Diagnostics::new("gemini");
         let events = parse_jsonl_file(&fixture.path("chat.jsonl"), &diagnostics).unwrap();
         assert!(events.is_empty());
         assert_eq!(
@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn diagnoses_malformed_whole_file_json() {
         let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":}"});
-        let diagnostics = Diagnostics::without_clock("gemini");
+        let diagnostics = Diagnostics::new("gemini");
 
         let loaded = ccusage_adapter_common::units::read_units(
             &[fixture.path("chat.json")],
@@ -718,7 +718,7 @@ mod tests {
             "broken-logs.json",
         ]
         .map(|name| fixture.path(name));
-        let diagnostics = Diagnostics::without_clock("gemini");
+        let diagnostics = Diagnostics::new("gemini");
 
         let loaded =
             ccusage_adapter_common::units::read_units(&files, true, &diagnostics, |path| {
@@ -744,7 +744,7 @@ mod tests {
             ),
         });
         let path = fixture.path("session.jsonl");
-        let diagnostics = Diagnostics::without_clock("gemini");
+        let diagnostics = Diagnostics::new("gemini");
 
         let events = parse_jsonl_file(&path, &diagnostics).unwrap();
 

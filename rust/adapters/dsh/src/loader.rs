@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn loads_zstd_sessions_split_across_frames_and_notes_a_tail_still_being_written() {
+    fn loads_zstd_sessions_split_across_frames_and_skips_a_just_written_torn_tail() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({ "sessions/--home-u-proj--/sid-1/.keep": "" });
         fs::write(
@@ -120,9 +120,10 @@ mod tests {
         assert_eq!(entries[0].usage.input_tokens, 1200);
         assert_eq!(entries[0].usage.cache_read_input_tokens, 8000);
         assert!(entries[0].cost > 0.0);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert!(
-            debug_warnings(&diagnostics).contains("incomplete, read as still being written"),
+            debug_warnings(&diagnostics)
+                .contains("zstd stream ends inside a frame; earlier records were kept"),
             "{}",
             debug_warnings(&diagnostics)
         );

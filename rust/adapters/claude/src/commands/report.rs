@@ -3,14 +3,11 @@ use std::sync::Arc;
 use ccusage_core::{
     DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, ReportWindow, Result, SessionAccumulator, TimestampMs,
     UsageSummary,
-    cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder},
+    cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder, session_cost_ordering},
     fast::FxHashMap,
     print_json_or_jq, print_usage_table, sort_summaries,
     summary::{Bucket, summarize_bucket, summarize_by_day},
     totals_json, wants_json,
-};
-use ccusage_report::{
-    group_project_output, session_cost_ordering, session_summary_json, summary_json,
 };
 use serde_json::json;
 
@@ -21,6 +18,10 @@ use crate::{
     },
     load_daily_summaries, load_entries, load_entries_since,
 };
+
+mod json;
+
+use json::{group_project_output, session_summary_json, summary_json};
 
 pub fn run_daily(args: DailyArgs) -> Result<()> {
     let shared = args.shared.clone();

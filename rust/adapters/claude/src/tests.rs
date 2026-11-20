@@ -1,11 +1,10 @@
-mod load;
-
 use std::assert_matches;
 use std::{path::Path, sync::Arc};
 
 use super::{
-    extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
-    usage_limit_reset_time_from_line_bytes,
+    extract_session_parts,
+    load::{load_deduped_entries, usage_limit_reset_time_from_line_bytes},
+    paths::is_project_path_segment,
 };
 use crate::ClaudeEntry;
 use ccusage_core::{
@@ -28,7 +27,7 @@ fn read_usage_file_with_diagnostics(
     diagnostics: &Diagnostics,
 ) -> LoadedFile {
     LoadedFile {
-        entries: super::read_usage_file_with_diagnostics(
+        entries: super::load::read_usage_file_with_diagnostics(
             path,
             tz,
             pricing.map_or(ccusage_core::cost::PriceTable::Display, |map| {
@@ -39,7 +38,7 @@ fn read_usage_file_with_diagnostics(
     }
 }
 
-use super::daily::push_deduped_entry;
+use super::dedupe::push_deduped_entry;
 
 fn read_usage_file(
     path: &Path,
@@ -47,13 +46,7 @@ fn read_usage_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedFile {
-    read_usage_file_with_diagnostics(
-        path,
-        tz,
-        mode,
-        pricing,
-        &Diagnostics::without_clock("claude"),
-    )
+    read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
 }
 
 #[test]
@@ -80,7 +73,7 @@ fn windowed_calculate_mode_prices_entries_with_shared_display_mode() {
         let loaded = super::load_windowed_entries(
             &shared,
             None,
-            &Diagnostics::without_clock("claude"),
+            &Diagnostics::new("claude"),
             CostMode::Calculate,
         )
         .unwrap();
@@ -237,7 +230,7 @@ fn null_contract_rejections_claude_code_writes_stay_quiet() {
         ]
         .join("\n"),
     });
-    let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
+    let diagnostics = ccusage_core::Diagnostics::new("claude");
 
     let loaded = read_usage_file_with_diagnostics(
         &fixture.path("projects/project-a/session-a.jsonl"),
@@ -268,7 +261,7 @@ fn limits_usage_file_discovery_to_requested_project() {
     let files = super::paths::usage_files(
         &[fixture.root().to_path_buf()],
         Some("project-a"),
-        &ccusage_core::Diagnostics::without_clock("claude"),
+        &ccusage_core::Diagnostics::new("claude"),
     );
 
     assert_eq!(files.len(), 1);
@@ -285,7 +278,7 @@ fn filters_non_segment_projects_before_reading_files() {
     let files = super::paths::usage_files(
         &[fixture.root().to_path_buf()],
         Some("project-a/session-a"),
-        &ccusage_core::Diagnostics::without_clock("claude"),
+        &ccusage_core::Diagnostics::new("claude"),
     );
 
     assert!(files.is_empty());
@@ -880,7 +873,7 @@ fn attributes_a_cross_session_copy_to_the_survivor_day() {
             ..SharedArgs::default()
         };
         let deduped = load_deduped_entries(&shared, None).unwrap();
-        let sorted_days = |deduped: &crate::DedupedEntries| {
+        let sorted_days = |deduped: &crate::load::DedupedEntries| {
             let mut days: Vec<_> = deduped
                 .main_thread_sessions()
                 .into_iter()
@@ -892,7 +885,7 @@ fn attributes_a_cross_session_copy_to_the_survivor_day() {
 
         assert_eq!(deduped.entries.len(), 2);
         assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
-        let filtered = crate::DedupedEntries {
+        let filtered = crate::load::DedupedEntries {
             entries: deduped
                 .entries
                 .into_iter()
