@@ -29,7 +29,7 @@ jobs:
   main:
     name: Validate PR title
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Skip on merge groups
         if: github.event_name == 'merge_group'
@@ -44,7 +44,7 @@ jobs:
   scope:
     name: Validate PR title scope
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - name: Skip on merge groups
@@ -71,7 +71,7 @@ jobs:
   release-pr-statuses:
     name: Release PR title statuses
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       pull-requests: read

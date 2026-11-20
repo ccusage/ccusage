@@ -31,7 +31,7 @@ defaults:
 
 jobs:
   triage:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     permissions:
       contents: read
@@ -106,7 +106,7 @@ jobs:
       needs.triage.result != 'cancelled' &&
       needs.triage.outputs.access_outcome == 'success' &&
       (needs.triage.outputs.skip != 'true' || inputs.force_implementation == true)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: write
@@ -160,7 +160,7 @@ jobs:
       needs.triage.result == 'success' &&
       needs.apply.result == 'success' &&
       needs.apply.outputs.implementation == 'create_pr'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 70
     permissions:
       contents: read
@@ -248,7 +248,7 @@ jobs:
       needs.apply.result == 'success' &&
       needs.implement.result == 'success' &&
       needs.implement.outputs.implementation == 'prepared'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       contents: write

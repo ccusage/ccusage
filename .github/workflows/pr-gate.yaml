@@ -16,7 +16,7 @@ defaults:
 
 jobs:
   check-contributor:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: read
@@ -85,7 +85,7 @@ jobs:
       needs.check-contributor.outputs.access_outcome == 'success' &&
       needs.check-contributor.outputs.skip != 'true' &&
       needs.check-contributor.outputs.bypass != 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: write
