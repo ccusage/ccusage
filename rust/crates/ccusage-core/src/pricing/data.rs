@@ -52,7 +52,16 @@ pub(super) static CACHE_DEFAULTS_BY_PROVIDER: &[(&str, &CacheDefaults)] = &[
 
 // NOTE(2026-11-19, #2236): A reasoning-effort level selects how a listed model runs, `latest` or `default` selects which snapshot of it answers, and OpenRouter's `:beta` variant routes to the same listing; all bill at that model's rates. Any other word after a listed id names a different model, so a fuzzy match must not borrow the listed id's row for it.
 pub(super) static PRICE_NEUTRAL_SUFFIX_WORDS: &[&str] = &[
-    "minimal", "low", "medium", "high", "xhigh", "latest", "default", "beta",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "extra-low",
+    "extra-high",
+    "latest",
+    "default",
+    "beta",
 ];
 
 pub(super) static ALIASES: &[(&str, &str)] = &[

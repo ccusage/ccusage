@@ -1119,6 +1119,8 @@ mod tests {
             entries[0].model.as_deref(),
             Some("gemini-3.5-flash-extra-low")
         );
+        assert!(entries[0].cost > 0.0);
+        assert!(entries[0].missing_pricing_model.is_none());
     }
 
     #[test]

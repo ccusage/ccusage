@@ -2060,13 +2060,24 @@ fn is_price_neutral_suffix(suffix: &str) -> bool {
             after
         } else if let Some(after) = deployment_revision_end(word, after) {
             after
-        } else if data::PRICE_NEUTRAL_SUFFIX_WORDS.contains(&word) {
+        } else if let Some(after) = price_neutral_word_end(&rest[1..]) {
             after
         } else {
             return false;
         };
     }
     true
+}
+
+fn price_neutral_word_end(rest: &str) -> Option<&str> {
+    data::PRICE_NEUTRAL_SUFFIX_WORDS.iter().find_map(|word| {
+        let after = rest.strip_prefix(word)?;
+        (!after
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric()))
+        .then_some(after)
+    })
 }
 
 fn date_suffix_end<'a>(word: &str, after: &'a str) -> Option<&'a str> {
@@ -7731,7 +7742,7 @@ mod tests {
     fn a_model_word_in_front_of_a_listed_id_names_another_model() {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
-        for model in ["chat-gpt-5.4", "my-gpt-5.4-high"] {
+        for model in ["chat-gpt-5.4", "my-gpt-5.4-high", "gemini-3.5-flash-extra"] {
             assert_eq!(pricing.find(model), None, "{model}");
         }
     }
@@ -7791,6 +7802,8 @@ mod tests {
             ("claude-opus-4-8-20261101-v1:0", "claude-opus-4-8"),
             ("vertex_ai/claude-opus-4-7@default", "claude-opus-4-7"),
             ("grok-4.5-latest", "grok-4.5"),
+            ("gemini-3.5-flash-extra-low", "gemini-3.5-flash"),
+            ("gemini-3.5-flash-extra-high", "gemini-3.5-flash"),
             ("host/gpt-5.4-high", "gpt-5.4"),
             ("host.gpt-5-4-high", "gpt-5.4"),
         ] {
