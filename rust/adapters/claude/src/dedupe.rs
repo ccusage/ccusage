@@ -286,9 +286,7 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                 indexes.iter().find_map(|dedupe_index| {
                     let index = deduped_indexes.resolve(dedupe_index.index);
                     let existing = &deduped[index];
-                    (existing.message_id() == Some(message_id)
-                        && existing.request_id() == request_id)
-                        .then_some(index)
+                    (existing.message_id() == Some(message_id)).then_some(index)
                 })
             })
         };
@@ -404,7 +402,7 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
     None
 }
 
-// NOTE(2026-11-20, #2255): A slot can hold records at several timestamps, of several transcript responses and of several sessions, for example blocks of one response, a same-timestamp rewrite, or a sidechain replay absorbed by a request-bearing parent that a copy in another session later replaced. Each requestless record stays findable by its own timestamp and response key, whose hashes already name its message and session, so a match is checked against the bucket rather than the survivor. A record matching two slots by those keys connects them, so the slots merge.
+// NOTE(2026-11-20, #2255): A slot can hold records at several timestamps, of several transcript responses and of several sessions, for example blocks of one response, a same-timestamp rewrite, or a sidechain replay absorbed by a request-bearing parent that a copy in another session later replaced. Each requestless record stays findable by its own timestamp and response key, whose hashes already name its message and session, so a match is checked against the bucket rather than the survivor, and an explicit request ID likewise stays findable once a requestless record wins its slot. A record matching two slots by those keys connects them, so the slots merge.
 fn requestless_hashes(entry: &impl DedupEntry) -> [Option<u64>; 2] {
     if entry.request_id().is_some() {
         return [None, None];
