@@ -306,6 +306,10 @@
 		{
 			"flags": "--pi-path <pi-path>",
 			"description": "Path or comma-separated paths to pi-agent sessions directories"
+		},
+		{
+			"flags": "--pi-agent-dir <pi-agent-dir>",
+			"description": "Path or comma-separated paths to pi agent directories; reads each directory's sessions store"
 		}
 	],
 	"opencode_options": [

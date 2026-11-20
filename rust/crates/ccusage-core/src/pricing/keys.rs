@@ -36,14 +36,14 @@ pub(super) fn names_pricing_key(
     model: &str,
     normalized_model: &str,
 ) -> bool {
-    contains_pricing_key(model, model, candidate)
-        || contains_pricing_key(normalized_model, model, normalized_candidate)
+    contains_pricing_key((model, model), (candidate, candidate))
+        || contains_pricing_key((normalized_model, model), (normalized_candidate, candidate))
 }
 
 // NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`. Only the logged id may add a price-neutral suffix: a catalogue lists a dated, `[1m]` or effort-level id because it prices that variant itself.
 fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
     if model.len() >= key.len() {
-        contains_pricing_key(model, raw_model, key)
+        contains_pricing_key((model, raw_model), (key, raw_key))
     } else {
         key.strip_suffix(model).is_some_and(|qualifier| {
             raw_key
@@ -55,14 +55,14 @@ fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &st
     }
 }
 
-fn contains_pricing_key(value: &str, raw_value: &str, key: &str) -> bool {
+fn contains_pricing_key((value, raw_value): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
     value.match_indices(key).any(|(index, _)| {
         let before = index
             .checked_sub(1)
             .and_then(|before| raw_value.as_bytes().get(before))
             .copied();
         before.is_none_or(is_qualifier_end)
-            && is_price_neutral_suffix(&value[index + key.len()..], family_words(key))
+            && is_price_neutral_suffix(&value[index + key.len()..], family_words(raw_key))
     })
 }
 
@@ -103,10 +103,24 @@ fn is_price_neutral_suffix(suffix: &str, family: &[&str]) -> bool {
 
 fn family_words(key: &str) -> &'static [&'static str] {
     let segment = last_segment(key);
+    let names = std::iter::once(segment).chain(
+        segment
+            .match_indices('.')
+            .map(|(index, _)| &segment[index + 1..]),
+    );
     data::FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS
         .iter()
-        .find(|(family, _)| segment.split('.').any(|part| part.starts_with(family)))
+        .find(|(family, _)| names.clone().any(|name| names_family(name, family)))
         .map_or(&[], |(_, words)| words)
+}
+
+// NOTE(2026-11-20): Lookup treats `.` and `@` in a key as `-`, so a `.` in a family name such as `qwen3.5-plus` must also match `qwen3-5-plus`. A `-` in a family name stays literal, so a Bedrock qualifier such as `mistral.devstral-…` never names the `mistral-` family.
+fn names_family(name: &str, family: &str) -> bool {
+    name.len() >= family.len()
+        && name.bytes().zip(family.bytes()).all(|(byte, expected)| {
+            byte == expected
+                || (expected == b'.' && (byte == b'-' || is_pricing_key_separator(byte)))
+        })
 }
 
 fn price_neutral_word_end<'a>(rest: &'a str, family: &[&str]) -> Option<&'a str> {
@@ -207,13 +221,18 @@ pub(super) fn pricing_alias(model: &str) -> Option<&'static str> {
 }
 
 pub(super) fn matches_model_suffix(part: &str, base: &str) -> bool {
-    let (part, base) = (part.as_bytes(), base.as_bytes());
     if base.is_empty() {
         return true;
     }
-    let Some(index) = part.windows(base.len()).rposition(|window| window == base) else {
+    let Some(index) = part.rfind(base) else {
         return false;
     };
-    part.get(index + base.len())
-        .is_none_or(|&next| next == b'-')
+    part[..index]
+        .chars()
+        .next_back()
+        .is_none_or(|previous| !previous.is_alphanumeric())
+        && part
+            .as_bytes()
+            .get(index + base.len())
+            .is_none_or(|&next| next == b'-')
 }

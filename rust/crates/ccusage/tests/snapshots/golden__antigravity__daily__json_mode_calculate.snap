@@ -38,7 +38,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.006625,
+          "cost": 0.0066,
           "inputTokens": 1000,
           "modelName": "gemini-3-pro",
           "outputTokens": 200
@@ -57,7 +57,7 @@ exit: 0
         "gpt-5"
       ],
       "outputTokens": 201,
-      "totalCost": 0.00664125,
+      "totalCost": 0.00661625,
       "totalTokens": 5856
     },
     {
@@ -224,7 +224,7 @@ exit: 0
     "cacheReadTokens": 127500,
     "inputTokens": 257416,
     "outputTokens": 2680,
-    "totalCost": 0.7002495,
+    "totalCost": 0.7002245,
     "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",

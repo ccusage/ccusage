@@ -239,19 +239,16 @@ impl PricingMap {
             {
                 self.rows_mut().entries.remove(&previous.stored_id);
             }
-            let input = input / 1_000_000.0;
-            let output = output / 1_000_000.0;
-
             self.rows_mut().entries.insert(
                 model_id.clone(),
                 Row {
                     pricing: speed
                         .for_model(&model_id)
                         .applied_to(Pricing {
-                            input,
-                            output,
-                            cache_create: cost.cache_write.map(|value| value / 1_000_000.0),
-                            cache_read: cost.cache_read.map(|value| value / 1_000_000.0),
+                            input: per_token(input),
+                            output: per_token(output),
+                            cache_create: cost.cache_write.map(per_token),
+                            cache_read: cost.cache_read.map(per_token),
                             long_context: long_context.map(|rates| LongContext {
                                 threshold: rates.threshold,
                                 mode: LongContextMode::WholeRequest,

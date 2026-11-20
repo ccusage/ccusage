@@ -16,7 +16,11 @@ use super::{
 };
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    load_entries_for_context(cx, &paths::paths(cx.options.pi_path)?, "pi")
+    load_entries_for_context(
+        cx,
+        &paths::paths(cx.options.pi_path, cx.options.pi_agent_dir)?,
+        "pi",
+    )
 }
 
 pub(crate) fn load_named_store_entries(

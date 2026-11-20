@@ -34,10 +34,8 @@ pub(super) fn run_sources<'a>(
             }
         })
         .collect::<Vec<_>>();
-    let pi_path = sources
-        .get("pi")
-        .and_then(|source| source.options.pi_path.as_deref());
-    for store in resolve_named_pi_store_paths(&shared.pi_stores, pi_path)? {
+    let default_pi = SourceOptions::from_source(sources.get("pi"));
+    for store in resolve_named_pi_store_paths(&shared.pi_stores, default_pi)? {
         let name = Box::leak(store.name.into_boxed_str());
         run_sources.push(RunSource {
             source: RunSourceKind::Named(pi::NamedStore::new(name, store.paths)),

@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 668494,
     "inputTokens": 1171909,
     "outputTokens": 37424,
-    "totalCost": 15.376521300000004,
+    "totalCost": 15.386681300000005,
     "totalTokens": 1888490,
     "unpricedModels": [
       "GLM-5.3",
@@ -147,7 +147,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 101600,
-          "cost": 0.325591,
+          "cost": 0.335751,
           "inputTokens": 302531,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2413
@@ -695,7 +695,7 @@ exit: 0
       ],
       "outputTokens": 37424,
       "period": "2025-12-29",
-      "totalCost": 15.376521300000004,
+      "totalCost": 15.386681300000005,
       "totalTokens": 1888490
     }
   ]
