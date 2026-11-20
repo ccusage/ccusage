@@ -201,7 +201,7 @@ mod tests {
             let shared = SharedArgs::default();
             let pricing = PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::at("hermes", ccusage_core::utc_now());
+            let diagnostics = Diagnostics::without_clock("hermes");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
@@ -231,7 +231,7 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('before', 'cli', 'gpt-5', 1750000000, 100, 50), ('', 'cli', 'gpt-5', 1750000001, 100, 50), ('bad-time', 'cli', 'gpt-5', 'SECRET_CANARY', 100, 50), (NULL, 'cli', 'gpt-5', 'SECRET_CANARY', 0, 0), ('after', 'cli', 'gpt-5', 1750000002, 100, 50)",
             )
             .unwrap();
-        let diagnostics = Diagnostics::at("hermes", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("hermes");
 
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 
@@ -262,7 +262,7 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES (' ', 'cli', 'gpt-5', 1750000000, 100, 50)",
             )
             .unwrap();
-        let diagnostics = Diagnostics::at("hermes", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("hermes");
 
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 

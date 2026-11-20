@@ -244,17 +244,14 @@ pub struct Diagnostics {
 }
 
 impl Diagnostics {
-    /// Creates diagnostics pinned to the report clock for time-sensitive classifications.
     pub fn for_report(source: &'static str, clock: ReportClock) -> Self {
         Self::at(source, clock.now().into())
     }
 
-    /// Creates diagnostics with an explicit assessment instant.
-    pub fn at(source: &'static str, assessment_instant: TimestampMs) -> Self {
+    fn at(source: &'static str, assessment_instant: TimestampMs) -> Self {
         Self::build(source, Some(assessment_instant))
     }
 
-    /// Creates diagnostics without an assessment instant for time-independent discovery.
     pub fn without_clock(source: &'static str) -> Self {
         Self::build(source, None)
     }
@@ -437,7 +434,7 @@ mod tests {
 
     #[test]
     fn stable_database_row_ids_survive_changed_scan_ordinals() {
-        let diagnostics = Diagnostics::at("opencode", crate::utc_now()).for_table("message");
+        let diagnostics = Diagnostics::without_clock("opencode").for_table("message");
         for (id, ordinal) in [("row-a", 1), ("row-a", 7), ("row-b", 1)] {
             diagnostics.for_row(Some(id)).record(Skip::record(
                 Path::new("db.sqlite"),
@@ -447,7 +444,7 @@ mod tests {
             ));
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
-        let other = Diagnostics::at("opencode", crate::utc_now()).for_table("message");
+        let other = Diagnostics::without_clock("opencode").for_table("message");
         other.for_row(Some("row-a")).record(Skip::record(
             Path::new("db.sqlite"),
             3,
@@ -490,14 +487,14 @@ mod tests {
 
     #[test]
     fn healthy_loads_render_nothing() {
-        let diagnostics = Diagnostics::at("codex", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("codex");
 
         assert!(diagnostics.render(true, true).is_empty());
     }
 
     #[test]
     fn aggregates_record_skips_into_one_line_per_kind() {
-        let diagnostics = Diagnostics::at("codex", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("codex");
         diagnostics.record(invalid_timestamp("/logs/a.jsonl", 3));
         diagnostics.record(invalid_timestamp("/logs/a.jsonl", 9));
         diagnostics.record(invalid_timestamp("/logs/b.jsonl", 1));
@@ -511,7 +508,7 @@ mod tests {
 
     #[test]
     fn table_rows_share_the_database_input_and_keep_distinct_identities() {
-        let diagnostics = Diagnostics::at("opencode", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("opencode");
         let message = diagnostics.for_table("message");
         let session_message = diagnostics.for_table("session_message");
         message.record(invalid_timestamp("/logs/opencode.db", 1));
@@ -528,7 +525,7 @@ mod tests {
             ]
         );
 
-        let repeated = Diagnostics::at("opencode", crate::utc_now());
+        let repeated = Diagnostics::without_clock("opencode");
         repeated
             .for_table("message")
             .record(invalid_timestamp("/logs/opencode.db", 1));
@@ -547,7 +544,7 @@ mod tests {
 
     #[test]
     fn whole_unit_skips_count_files_and_keep_singulars() {
-        let diagnostics = Diagnostics::at("amp", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("amp");
         diagnostics.record(Skip::unit(
             Path::new("/threads/T-1.json"),
             SkipKind::Unreadable,
@@ -566,7 +563,7 @@ mod tests {
 
     #[test]
     fn mixed_skips_count_whole_units_separately_from_records() {
-        let diagnostics = Diagnostics::at("test", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
         diagnostics.record(Skip::unit(
             Path::new("/logs/broken.json"),
             SkipKind::InvalidData,
@@ -587,7 +584,7 @@ mod tests {
 
     #[test]
     fn a_skip_recorded_twice_counts_once() {
-        let diagnostics = Diagnostics::at("test", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
         diagnostics.record(Skip::unit(
             Path::new("/logs/broken.json"),
             SkipKind::InvalidData,
@@ -616,9 +613,9 @@ mod tests {
 
     #[test]
     fn merging_two_loads_of_one_source_counts_each_skip_once() {
-        let narrow = Diagnostics::at("claude", crate::utc_now());
+        let narrow = Diagnostics::without_clock("claude");
         narrow.record(invalid_timestamp("/logs/new.jsonl", 2));
-        let wide = Diagnostics::at("claude", crate::utc_now());
+        let wide = Diagnostics::without_clock("claude");
         wide.record(invalid_timestamp("/logs/new.jsonl", 2));
         wide.record(invalid_timestamp("/logs/old.jsonl", 1));
         wide.record(invalid_timestamp("/logs/old.jsonl", 5));
@@ -639,8 +636,8 @@ mod tests {
 
     #[test]
     fn merging_keeps_the_first_samples_by_position() {
-        let left = Diagnostics::at("test", crate::utc_now());
-        let right = Diagnostics::at("test", crate::utc_now());
+        let left = Diagnostics::without_clock("test");
+        let right = Diagnostics::without_clock("test");
         for line in 1..=SAMPLES_PER_KIND as u32 {
             left.record(invalid_timestamp("/logs/b.jsonl", line));
             right.record(invalid_timestamp("/logs/a.jsonl", line));
@@ -669,7 +666,7 @@ mod tests {
 
     #[test]
     fn invalid_data_is_reported_by_default() {
-        let diagnostics = Diagnostics::at("codex", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("codex");
         diagnostics.record(Skip::unit(
             Path::new("/logs/session.json"),
             SkipKind::InvalidData,
@@ -691,7 +688,7 @@ mod tests {
 
     #[test]
     fn rendered_diagnostics_escape_terminal_controls_in_dynamic_text() {
-        let diagnostics = Diagnostics::at("test", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
         diagnostics.debug_note(Path::new("/data/a.db"), "source path \u{1b}[2J");
         diagnostics.record(Skip::unit(
             Path::new("/logs/bad\u{1b}[2J.json"),
@@ -711,7 +708,7 @@ mod tests {
 
     #[test]
     fn log_level_zero_silences_the_aggregated_lines() {
-        let diagnostics = Diagnostics::at("codex", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("codex");
         diagnostics.record(invalid_timestamp("/logs/a.jsonl", 3));
 
         assert!(diagnostics.render(false, false).is_empty());
@@ -719,7 +716,7 @@ mod tests {
 
     #[test]
     fn undecoded_usage_is_counted_but_printed_only_under_debug() {
-        let diagnostics = Diagnostics::at("claude", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("claude");
         diagnostics.record(Skip::record(
             Path::new("/projects/p/s.jsonl"),
             7,
@@ -740,7 +737,7 @@ mod tests {
 
     #[test]
     fn debug_lists_a_few_units_and_counts_the_rest() {
-        let diagnostics = Diagnostics::at("amp", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("amp");
         let total = SAMPLES_PER_KIND + 2;
         for index in 0..total {
             diagnostics.record(Skip::unit(
@@ -795,7 +792,7 @@ mod tests {
         ];
 
         for order in orders {
-            let diagnostics = Diagnostics::at("test", crate::utc_now());
+            let diagnostics = Diagnostics::without_clock("test");
             for index in order {
                 diagnostics.record(skips[index].clone());
             }
@@ -807,13 +804,13 @@ mod tests {
 
     #[test]
     fn debug_notes_come_first_and_only_under_debug() {
-        let diagnostics = Diagnostics::at("antigravity", crate::utc_now());
+        let diagnostics = Diagnostics::without_clock("antigravity");
         diagnostics.record(invalid_timestamp("/data/a.db", 1));
         diagnostics.debug_note(
             Path::new("/data/b.db"),
             "Skipping empty database '/data/b.db'",
         );
-        let again = Diagnostics::at("antigravity", crate::utc_now());
+        let again = Diagnostics::without_clock("antigravity");
         again.debug_note(
             Path::new("/data/b.db"),
             "Skipping empty database '/data/b.db'",

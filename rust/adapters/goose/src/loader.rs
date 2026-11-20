@@ -202,7 +202,7 @@ INSERT INTO sessions (
         );
 
         let pricing = ccusage_core::PricingMap::load_embedded();
-        let diagnostics = Diagnostics::at("goose", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("goose");
         let entries = load_entries_from_dbs(
             std::slice::from_ref(&db_path),
             true,
@@ -242,7 +242,7 @@ INSERT INTO sessions (
         );
         insert_session(&db_path, session("idle", "{}", "SECRET_CANARY", 0));
 
-        let diagnostics = Diagnostics::at("goose", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("goose");
         let entries = load_entries_from_dbs(
             std::slice::from_ref(&db_path),
             true,
@@ -273,7 +273,7 @@ INSERT INTO sessions (
             .execute("CREATE TABLE sessions (id TEXT)")
             .unwrap();
 
-        let diagnostics = Diagnostics::at("goose", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("goose");
         let entries = load_entries_from_dbs(
             std::slice::from_ref(&db_path),
             true,
@@ -315,7 +315,7 @@ INSERT INTO sessions (
             let shared = SharedArgs::default();
             let pricing = ccusage_core::PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::at("goose", ccusage_core::utc_now());
+            let diagnostics = Diagnostics::without_clock("goose");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

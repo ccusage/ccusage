@@ -58,7 +58,7 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
         |event| {
             events.push(event);
         },
-        &ccusage_core::Diagnostics::at("codex", ccusage_core::utc_now()),
+        &ccusage_core::Diagnostics::without_clock("codex"),
     );
 
     assert_eq!(events.len(), 2);
@@ -132,7 +132,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
                 &shared,
                 AgentReportKind::Daily,
                 Some(&crate::PricingMap::load_embedded()),
-                &ccusage_core::Diagnostics::at("codex", ccusage_core::utc_now()),
+                &ccusage_core::Diagnostics::without_clock("codex"),
             )
             .unwrap();
             assert!(detected);

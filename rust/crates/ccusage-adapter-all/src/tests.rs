@@ -60,7 +60,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             },
         }],
         detected: true,
-        diagnostics: Diagnostics::at(agent, ccusage_core::utc_now()),
+        diagnostics: Diagnostics::without_clock(agent),
     }
 }
 

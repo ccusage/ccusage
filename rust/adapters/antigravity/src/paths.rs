@@ -91,11 +91,8 @@ mod tests {
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
         ])
         .run(|| {
-            let paths = conversation_db_paths(
-                &Diagnostics::at("antigravity", ccusage_core::utc_now()),
-                false,
-            )
-            .unwrap();
+            let paths =
+                conversation_db_paths(&Diagnostics::without_clock("antigravity"), false).unwrap();
 
             assert_eq!(paths.len(), 6);
             assert!(paths.iter().all(|path| path.extension().unwrap() == "db"));
@@ -118,11 +115,8 @@ mod tests {
             Some(OsString::from(override_value)),
         )])
         .run(|| {
-            let paths = conversation_db_paths(
-                &Diagnostics::at("antigravity", ccusage_core::utc_now()),
-                false,
-            )
-            .unwrap();
+            let paths =
+                conversation_db_paths(&Diagnostics::without_clock("antigravity"), false).unwrap();
 
             assert_eq!(
                 paths,
@@ -150,11 +144,7 @@ mod tests {
         )])
         .run(|| {
             assert_eq!(
-                conversation_db_paths(
-                    &Diagnostics::at("antigravity", ccusage_core::utc_now()),
-                    false
-                )
-                .unwrap(),
+                conversation_db_paths(&Diagnostics::without_clock("antigravity"), false).unwrap(),
                 vec![fixture.path("conversations/session.db")]
             );
         })
@@ -174,11 +164,7 @@ mod tests {
         ])
         .run(|| {
             assert_eq!(
-                conversation_db_paths(
-                    &Diagnostics::at("antigravity", ccusage_core::utc_now()),
-                    false
-                )
-                .unwrap(),
+                conversation_db_paths(&Diagnostics::without_clock("antigravity"), false).unwrap(),
                 vec![fixture.path(".gemini/antigravity-cli/conversations/session.db")]
             );
         })

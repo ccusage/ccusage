@@ -406,7 +406,7 @@ mod tests {
             .unwrap()
             .execute("CREATE TABLE other (id TEXT)")
             .unwrap();
-        let diagnostics = Diagnostics::at("zcode", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("zcode");
         let shared = SharedArgs::default();
         let pricing = ccusage_core::PricingMap::load_embedded();
         let loaded = load_entries_from_databases(
@@ -433,7 +433,7 @@ mod tests {
         db.execute("CREATE TABLE session (id TEXT)").unwrap();
         drop(db);
 
-        let diagnostics = Diagnostics::at("zcode", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("zcode");
         load_entries_from_databases(
             std::slice::from_ref(&path),
             &jiff::tz::TimeZone::UTC,
@@ -470,7 +470,7 @@ mod tests {
             .unwrap()
             .execute("UPDATE model_usage SET model_id = NULL WHERE id = 'broken'")
             .unwrap();
-        let diagnostics = Diagnostics::at("zcode", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("zcode");
         let entries = load_entries_from_databases(
             std::slice::from_ref(&path),
             &jiff::tz::TimeZone::UTC,
@@ -544,7 +544,7 @@ mod tests {
             };
             let window = ReportWindow::from_shared(&shared);
             let pricing = ccusage_core::PricingMap::load_embedded();
-            let diagnostics = Diagnostics::at("zcode", ccusage_core::utc_now());
+            let diagnostics = Diagnostics::without_clock("zcode");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

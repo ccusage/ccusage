@@ -55,7 +55,7 @@ fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTr
             },
             AgentReportKind::Session,
             Some(&crate::PricingMap::load_embedded()),
-            &Diagnostics::at("codex", ccusage_core::utc_now()),
+            &Diagnostics::without_clock("codex"),
         )
         .unwrap();
         assert!(detected);
@@ -146,10 +146,7 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
     );
 
     assert_eq!(
-        collect_codex_usage_files(
-            fixture.root(),
-            &Diagnostics::at("codex", ccusage_core::utc_now())
-        ),
+        collect_codex_usage_files(fixture.root(), &Diagnostics::without_clock("codex")),
         vec![fixture.path("session.jsonl")]
     );
     let events = crate::test_support::rollout_events(fixture.root());
@@ -233,10 +230,7 @@ fn keeps_usage_decoded_before_a_truncated_frame() {
 fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     let fixture = Fixture::new();
     let plain = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:00Z", 100));
-    let files = collect_codex_usage_files(
-        fixture.root(),
-        &Diagnostics::at("codex", ccusage_core::utc_now()),
-    );
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::without_clock("codex"));
     fs::remove_file(&plain).unwrap();
     write_compressed(
         &fixture,
@@ -253,7 +247,7 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
         |event| {
             visited.push(event);
         },
-        &Diagnostics::at("codex", ccusage_core::utc_now()),
+        &Diagnostics::without_clock("codex"),
     );
     assert_eq!(visited.len(), 1);
     assert_eq!(visited[0].session_id, "session");
@@ -268,10 +262,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
     }})
     .to_string();
     let plain = fixture.write_file("run.jsonl", &headless);
-    let files = collect_codex_usage_files(
-        fixture.root(),
-        &Diagnostics::at("codex", ccusage_core::utc_now()),
-    );
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::without_clock("codex"));
     fs::remove_file(&plain).unwrap();
     let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
     crate::test_support::set_file_modified(
@@ -287,7 +278,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
         |event| {
             visited.push(event);
         },
-        &Diagnostics::at("codex", ccusage_core::utc_now()),
+        &Diagnostics::without_clock("codex"),
     );
 
     assert_eq!(visited.len(), 1);
@@ -372,7 +363,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
                 &shared,
                 AgentReportKind::Monthly,
                 None,
-                &Diagnostics::at("codex", ccusage_core::utc_now()),
+                &Diagnostics::without_clock("codex"),
             )
             .unwrap();
             assert_eq!(groups["2026-10"].total_tokens, 70);

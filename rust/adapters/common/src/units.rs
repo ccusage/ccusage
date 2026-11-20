@@ -292,29 +292,18 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::{
-        fs,
-        path::Path,
-        time::{Duration, SystemTime},
-    };
+    use std::{fs, path::Path};
 
-    use ccusage_core::{Diagnostics, Result, SkipKind, TimestampMs, cli::SharedArgs, cli_error};
+    use ccusage_core::{
+        Diagnostics, Result, SkipKind, TimestampMs,
+        cli::{ReportClock, SharedArgs},
+        cli_error,
+    };
     use ccusage_test_support::{Fixture, instant, set_modified};
 
     use super::{
-        Fault, IN_PROGRESS_WINDOW, SqliteStage, UnitError, being_written, decode_json, read_units,
-        read_units_flat,
+        Fault, SqliteStage, UnitError, being_written, decode_json, read_units, read_units_flat,
     };
-
-    pub(crate) fn age_past_write_window(path: &Path) {
-        let modified = SystemTime::now() - IN_PROGRESS_WINDOW - Duration::from_secs(1);
-        fs::File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_modified(modified)
-            .unwrap();
-    }
 
     #[test]
     fn being_written_compares_file_mtime_to_the_assessment_instant() {
@@ -325,8 +314,14 @@ pub(crate) mod tests {
         set_modified(&unit, instant("2026-01-01T23:59:00Z"));
         assert!(being_written(&unit, Some(now)));
 
+        set_modified(&unit, instant("2026-01-01T23:59:01Z"));
+        assert!(being_written(&unit, Some(now)));
+
         set_modified(&unit, instant("2026-01-01T23:58:59Z"));
         assert!(!being_written(&unit, Some(now)));
+
+        set_modified(&unit, instant("2026-01-02T00:00:30Z"));
+        assert!(being_written(&unit, Some(now)));
         assert!(!being_written(&unit, None));
     }
 
@@ -368,7 +363,7 @@ pub(crate) mod tests {
             },
         ];
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+            let diagnostics = Diagnostics::without_clock("test");
             let loaded = super::read_typed_units(&units, single_thread, &diagnostics, |unit| {
                 if unit.id == 3 {
                     Err(UnitError::new(SkipKind::InvalidData, "rejected"))
@@ -401,7 +396,7 @@ pub(crate) mod tests {
             fixture.write_file("empty.txt", ""),
             fixture.write_file("broken.txt", "3 four"),
         ];
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = read_units(&files, true, &diagnostics, numbers);
 
@@ -430,7 +425,7 @@ pub(crate) mod tests {
             .collect::<Vec<_>>();
 
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+            let diagnostics = Diagnostics::without_clock("test");
 
             let loaded = read_units_flat(&files, single_thread, &diagnostics, numbers);
 
@@ -443,7 +438,7 @@ pub(crate) mod tests {
     fn a_reader_chooses_the_kind_of_its_failure() {
         let fixture = Fixture::new();
         let files = vec![fixture.write_file("state.db", "SQLite format 3")];
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = read_units(&files, true, &diagnostics, |_| {
             Err::<(), _>(UnitError::new(SkipKind::Invariant, "no usage table"))
@@ -458,7 +453,7 @@ pub(crate) mod tests {
     fn io_errors_convert_without_a_wrapper() {
         let fixture = Fixture::new();
         let files = vec![fixture.create_dir_all("directory.txt")];
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = read_units(&files, true, &diagnostics, |file| fs::read(file));
 
@@ -472,7 +467,7 @@ pub(crate) mod tests {
         let missing = fixture.path("missing.json");
         let empty = fixture.write_file("empty.json", "");
         let files = vec![missing.clone(), empty.clone()];
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = read_units(
             &files,
@@ -508,7 +503,7 @@ pub(crate) mod tests {
             fixture.create_dir_all("directory.json"),
             fixture.write_file("broken.json", "{\"value\":}"),
         ];
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = read_units(
             &files,
@@ -530,7 +525,9 @@ pub(crate) mod tests {
             cut.clone(),
             fixture.write_file("broken.json", "{\"value\":}"),
         ];
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let now = instant("2026-01-02T00:00:00Z");
+        set_modified(&cut, now);
+        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
 
         let loaded = read_units(
             &files,
@@ -559,8 +556,9 @@ pub(crate) mod tests {
     fn a_document_left_cut_off_past_the_write_window_is_skipped_as_truncated() {
         let fixture = Fixture::new();
         let cut = fixture.write_file("cut.json", r#"{"usage":{"inp"#);
-        age_past_write_window(&cut);
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let now = instant("2026-01-02T00:00:00Z");
+        set_modified(&cut, instant("2026-01-01T23:58:00Z"));
+        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
 
         let loaded = read_units(
             std::slice::from_ref(&cut),
@@ -591,8 +589,10 @@ pub(crate) mod tests {
         let fixture = Fixture::new();
         let fresh = fixture.write_file("fresh.zst", "frame");
         let stale = fixture.write_file("stale.zst", "frame");
-        age_past_write_window(&stale);
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let now = instant("2026-01-02T00:00:00Z");
+        set_modified(&fresh, now);
+        set_modified(&stale, instant("2026-01-01T23:58:00Z"));
+        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
 
         for unit in [&fresh, &stale] {
             UnitError::unfinished("stream ends inside a frame").record(unit, &diagnostics);
@@ -621,7 +621,7 @@ pub(crate) mod tests {
     fn a_whitespace_only_document_is_noted_like_an_empty_file() {
         let fixture = Fixture::new();
         let blank = fixture.write_file("blank.json", " \n\t\r\n");
-        let diagnostics = Diagnostics::at("test", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("test");
 
         let loaded = read_units(
             std::slice::from_ref(&blank),

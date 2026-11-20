@@ -194,7 +194,7 @@ mod tests {
             let shared = SharedArgs::default();
             let pricing = ccusage_core::PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::at("droid", ccusage_core::utc_now());
+            let diagnostics = Diagnostics::without_clock("droid");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

@@ -66,7 +66,7 @@ fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
             None,
             false,
             ccusage_adapter_common::source::ProgressOwner::Caller,
-            &crate::Diagnostics::at("claude", ccusage_core::utc_now()),
+            &crate::Diagnostics::without_clock("claude"),
         )
         .unwrap();
         assert!(loaded.detected);
@@ -97,7 +97,7 @@ fn bounded_daily_detection_survives_an_empty_report_window() {
             None,
             false,
             ccusage_adapter_common::source::ProgressOwner::Caller,
-            &crate::Diagnostics::at("claude", ccusage_core::utc_now()),
+            &crate::Diagnostics::without_clock("claude"),
         )
         .unwrap();
         assert!(loaded.detected);
@@ -446,7 +446,7 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
     });
     Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
         let shared = display_shared_in_utc();
-        let diagnostics = crate::Diagnostics::at("claude", ccusage_core::utc_now());
+        let diagnostics = crate::Diagnostics::without_clock("claude");
         let entries =
             crate::load_entries_since_with_diagnostics(&shared, None, &diagnostics).unwrap();
         assert_eq!(entries.len(), 2);

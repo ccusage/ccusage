@@ -595,7 +595,7 @@ mod tests {
             mode,
             pricing,
             "pi",
-            &Diagnostics::at("pi", ccusage_core::utc_now()),
+            &Diagnostics::without_clock("pi"),
         )
         .map(|data| data.entries)
         .map_err(|error| ccusage_core::cli_error(error.to_string()))
@@ -616,7 +616,7 @@ mod tests {
             mode,
             pricing,
             store_name,
-            &Diagnostics::at("pi", ccusage_core::utc_now()),
+            &Diagnostics::without_clock("pi"),
         )
         .map(|data| data.entries)
         .map_err(|error| ccusage_core::cli_error(error.to_string()))
@@ -769,7 +769,7 @@ mod tests {
             ),
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-        let diagnostics = Diagnostics::at("pi", ccusage_core::utc_now());
+        let diagnostics = Diagnostics::without_clock("pi");
 
         let data = read_session_file_data_for_store_with_diagnostics(
             &file,
@@ -1213,7 +1213,7 @@ mod pricing_identity_tests {
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             "pi",
-            &Diagnostics::at("pi", ccusage_core::utc_now()),
+            &Diagnostics::without_clock("pi"),
         )
         .unwrap()
         .entries;
