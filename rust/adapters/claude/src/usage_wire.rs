@@ -106,7 +106,29 @@ pub(crate) fn deserialize_borrowed_usage_line<'a, T: Deserialize<'a>>(
     line.parse().map_err(|_| Rejection::Malformed)
 }
 
-pub(crate) struct Text<'a>(pub(crate) Cow<'a, str>);
+#[derive(Default)]
+pub(crate) enum Text<'a> {
+    #[default]
+    Absent,
+    Null,
+    Value(Cow<'a, str>),
+}
+
+impl<'a> Text<'a> {
+    pub(crate) fn value(self) -> Option<Cow<'a, str>> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Absent | Self::Null => None,
+        }
+    }
+
+    pub(crate) fn non_null(self) -> std::result::Result<Option<Cow<'a, str>>, Rejection> {
+        match self {
+            Self::Null => Err(Rejection::NullContract),
+            text => Ok(text.value()),
+        }
+    }
+}
 
 impl<'de: 'a, 'a> Deserialize<'de> for Text<'a> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
@@ -115,22 +137,22 @@ impl<'de: 'a, 'a> Deserialize<'de> for Text<'a> {
             type Value = Text<'de>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a string")
+                formatter.write_str("a string or null")
             }
 
             fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E> {
-                Ok(Text(Cow::Borrowed(value)))
+                Ok(Text::Value(Cow::Borrowed(value)))
             }
 
             fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E> {
-                Ok(Text(Cow::Owned(value.to_owned())))
+                Ok(Text::Value(Cow::Owned(value.to_owned())))
             }
 
-            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E> {
-                Ok(Text(Cow::Owned(value)))
+            fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
+                Ok(Text::Null)
             }
         }
-        deserializer.deserialize_string(TextVisitor)
+        deserializer.deserialize_any(TextVisitor)
     }
 }
 
