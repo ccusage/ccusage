@@ -1,7 +1,6 @@
 use ccusage_adapter_common::jsonl;
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     ops::ControlFlow,
     path::Path,
@@ -18,11 +17,20 @@ use crate::{
 use super::{
     reader::{READ_BUFFER_SIZE, rollout_policy, uncompressed_rollout_path},
     replay::{CodexSessionMetadata, session_metadata_from_line},
-    types::{
-        CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
-        CodexTimestamp, CodexUsageCandidate,
-    },
+    types::{CodexLogEntry, CodexTimestamp, CodexUsageCandidate},
 };
+
+mod exec;
+mod model;
+mod replay_filter;
+mod timestamp;
+mod usage;
+
+use exec::add_codex_exec_event;
+use model::{codex_model_from_info, codex_model_from_payload, resolve_codex_usage_model};
+use replay_filter::{CodexBurst, CodexReplayFilter, CodexReplayState};
+use timestamp::{codex_session_timestamp, codex_usage_timestamp, file_modified_timestamp};
+use usage::{codex_token_count_usage, malformed_token_count_field, normalize_codex_raw_usage};
 
 static TYPE_KEY_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type""#));
 static KEY_END_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#"":"#));
@@ -42,29 +50,6 @@ static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
 });
 static SESSION_META_MARKER: LazyLock<LinePrefilter> =
     LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
-const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
-const CODEX_AUTO_REVIEW_DEFAULT_MODEL: &str = "gpt-5";
-// NOTE(2026-09-17, #1753): The server can reroute `codex-auto-review` without a public model release. The rollout omits the resolved model, so a new timeline entry needs routing evidence.
-const CODEX_AUTO_REVIEW_FALLBACKS: &[CodexAutoReviewFallback] = &[
-    CodexAutoReviewFallback::new((2026, 7, 30), "gpt-5.6-luna"),
-    CodexAutoReviewFallback::new((2026, 3, 5), "gpt-5.4"),
-    CodexAutoReviewFallback::new((2026, 2, 5), "gpt-5.3-codex"),
-    CodexAutoReviewFallback::new((2025, 12, 11), "gpt-5.2-codex"),
-    CodexAutoReviewFallback::new((2025, 11, 13), "gpt-5.1-codex"),
-    CodexAutoReviewFallback::new((2025, 9, 15), "gpt-5-codex"),
-    CodexAutoReviewFallback::new((2025, 8, 7), CODEX_AUTO_REVIEW_DEFAULT_MODEL),
-];
-
-struct CodexAutoReviewFallback {
-    released_on: (i32, u32, u32),
-    model: &'static str,
-}
-
-impl CodexAutoReviewFallback {
-    const fn new(released_on: (i32, u32, u32), model: &'static str) -> Self {
-        Self { released_on, model }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CodexLineKind {
@@ -108,152 +93,6 @@ pub(super) struct CodexForkReplay<'a> {
     pub(super) prefix: &'a [CodexRawUsage],
     // NOTE(2026-11-09, Codex VS Code 0.164.0-alpha.11.1, #2051): Spawned subagents drop inherited `token_usage_record` lines, so the first record ends replay even if the timestamps coincide. User forks copy those lines.
     pub(super) ends_at_usage_record: bool,
-}
-
-enum CodexReplayState<'a> {
-    MatchingParent {
-        prefix: &'a [CodexRawUsage],
-        index: usize,
-    },
-    SkippingRewrittenBurst(TimestampMs),
-    Done,
-}
-
-// NOTE(2026-07-27, #1501): Codex rewrites replay timestamps near the fork instant. Observed bursts spanned 10–40 ms, crossed second boundaries, and preceded a 5.8–15.3 s pause before the child's own usage.
-const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
-
-#[derive(Default)]
-struct CodexBurst {
-    session_start: Option<TimestampMs>,
-    first: Option<TimestampMs>,
-    decision: Option<Option<TimestampMs>>,
-}
-
-impl CodexBurst {
-    fn observe(&mut self, timestamp: TimestampMs) {
-        if self.decision.is_some() {
-            return;
-        }
-        let Some(first) = self.first else {
-            self.first = Some(timestamp);
-            return;
-        };
-        let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-            .contains(&(timestamp.as_millis() - first.as_millis()));
-        // NOTE(2026-10-26, #1971): A child's first request can produce a dense pair after the fork instant. Density alone can mistake it for replay.
-        let starts_at_fork = self.session_start.is_none_or(|start| {
-            first.as_millis().abs_diff(start.as_millis())
-                <= CODEX_REWRITTEN_BURST_PAUSE_MS.unsigned_abs()
-        });
-        self.decision = Some((is_dense && starts_at_fork).then_some(first));
-    }
-}
-
-enum CodexPendingReplay {
-    Event(CodexTokenUsageEvent),
-    UsageRecord,
-}
-
-struct CodexReplayFilter<'a> {
-    state: CodexReplayState<'a>,
-    ends_at_usage_record: bool,
-    burst: CodexBurst,
-    pending: Vec<CodexPendingReplay>,
-}
-
-impl CodexReplayFilter<'_> {
-    fn observe_usage_record(&mut self) {
-        if self.ends_at_usage_record {
-            if self.burst.decision.is_none() && !self.pending.is_empty() {
-                self.pending.push(CodexPendingReplay::UsageRecord);
-            } else {
-                self.state = CodexReplayState::Done;
-            }
-        }
-    }
-
-    fn observe_token_count(
-        &mut self,
-        timestamp: Option<TimestampMs>,
-        usage: Option<CodexRawUsage>,
-        visit: &mut impl FnMut(CodexTokenUsageEvent),
-    ) {
-        if matches!(self.state, CodexReplayState::Done) && self.pending.is_empty() {
-            return;
-        }
-        if usage.is_some_and(|usage| !normalize_codex_raw_usage(usage).is_empty())
-            && let Some(timestamp) = timestamp
-        {
-            self.burst.observe(timestamp);
-            if self.burst.decision.is_some() {
-                self.flush(visit);
-            }
-        }
-    }
-
-    fn flush(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
-        for pending in std::mem::take(&mut self.pending) {
-            match pending {
-                CodexPendingReplay::Event(event) => self.visit(event, visit),
-                CodexPendingReplay::UsageRecord => self.observe_usage_record(),
-            }
-        }
-    }
-
-    fn finish(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
-        self.burst.decision.get_or_insert(None);
-        self.flush(visit);
-    }
-
-    fn visit(&mut self, event: CodexTokenUsageEvent, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
-        if self.burst.decision.is_none() && !self.pending.is_empty() {
-            self.pending.push(CodexPendingReplay::Event(event));
-            return;
-        }
-        if event.response_id.is_some() {
-            visit(event);
-            return;
-        }
-        loop {
-            match self.state {
-                CodexReplayState::MatchingParent { prefix, index } => {
-                    if prefix.get(index) == Some(&event.raw_usage()) {
-                        self.state = CodexReplayState::MatchingParent {
-                            prefix,
-                            index: index + 1,
-                        };
-                        return;
-                    }
-                    if index == 0 {
-                        let Some(burst) = self.burst.decision else {
-                            self.pending.push(CodexPendingReplay::Event(event));
-                            return;
-                        };
-                        self.state = burst.map_or(
-                            CodexReplayState::Done,
-                            CodexReplayState::SkippingRewrittenBurst,
-                        );
-                    } else {
-                        self.state = CodexReplayState::Done;
-                    }
-                }
-                CodexReplayState::SkippingRewrittenBurst(previous) => {
-                    let timestamp = event.timestamp;
-                    if (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                        .contains(&(timestamp.as_millis() - previous.as_millis()))
-                    {
-                        self.state = CodexReplayState::SkippingRewrittenBurst(timestamp);
-                        return;
-                    }
-                    self.state = CodexReplayState::Done;
-                }
-                CodexReplayState::Done => {
-                    visit(event);
-                    return;
-                }
-            }
-        }
-    }
 }
 
 pub(super) fn visit_codex_session_file_with_compaction_history(
@@ -720,69 +559,6 @@ fn visit_codex_session_entry(
     )
 }
 
-fn add_codex_exec_event(
-    session_id: &str,
-    value: &CodexLogEntry<'_>,
-    fallback_timestamp: impl FnOnce() -> TimestampMs,
-    current_model: &mut Option<String>,
-    current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent),
-    location: &RecordLocation<'_>,
-) {
-    let raw_usage = match normalize_headless_codex_usage(value) {
-        Ok(Some(raw_usage)) => raw_usage,
-        Ok(None) => return,
-        Err(()) => {
-            location.invalid_usage("headless usage did not decode");
-            return;
-        }
-    };
-    let parsed_model = codex_model_from_result(value);
-    visit_codex_exec_usage_event(
-        session_id,
-        raw_usage,
-        parsed_model,
-        codex_timestamp_from_result(value).unwrap_or_else(fallback_timestamp),
-        current_model,
-        current_model_is_fallback,
-        visit,
-    )
-}
-
-fn visit_codex_exec_usage_event(
-    session_id: &str,
-    raw_usage: CodexRawUsage,
-    parsed_model: Option<String>,
-    timestamp: TimestampMs,
-    current_model: &mut Option<String>,
-    current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent),
-) {
-    let raw_usage = normalize_codex_raw_usage(raw_usage);
-    let (model, is_fallback_model) = resolve_codex_usage_model(
-        parsed_model,
-        timestamp,
-        current_model,
-        current_model_is_fallback,
-    );
-    visit(CodexTokenUsageEvent {
-        session_id: session_id.to_string(),
-        response_id: None,
-        record_response_id: None,
-        timestamp,
-        last_activity: crate::format_rfc3339_millis(timestamp),
-        model,
-        input_tokens: raw_usage.input_tokens,
-        cached_input_tokens: raw_usage.cached_input_tokens,
-        cache_creation_tokens: raw_usage.cache_creation_tokens,
-        output_tokens: raw_usage.output_tokens,
-        reasoning_output_tokens: raw_usage.reasoning_output_tokens,
-        total_tokens: raw_usage.total_tokens,
-        is_fallback_model,
-        service_tier: None,
-    })
-}
-
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     if ESCAPED_USAGE_MARKERS.matches_escaped(line) {
         Some(CodexLineKind::Escaped)
@@ -888,60 +664,6 @@ fn skip_json_whitespace(line: &[u8], mut index: usize) -> usize {
     index
 }
 
-fn codex_session_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
-    match value? {
-        CodexTimestamp::String(text) => {
-            let text = text.trim();
-            (!text.is_empty()).then(|| text.to_string())
-        }
-        CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
-        CodexTimestamp::Invalid => None,
-    }
-}
-
-fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<(TimestampMs, String)> {
-    let instant = codex_timestamp_instant(value)?;
-    let raw = match value? {
-        CodexTimestamp::String(text) => text.trim().to_string(),
-        CodexTimestamp::Number(_) => crate::format_rfc3339_millis(instant),
-        CodexTimestamp::Invalid => return None,
-    };
-    Some((instant, raw))
-}
-
-fn resolve_codex_usage_model(
-    parsed_model: Option<String>,
-    timestamp: TimestampMs,
-    current_model: &mut Option<String>,
-    current_model_is_fallback: &mut bool,
-) -> (String, bool) {
-    if let Some(model) = parsed_model {
-        *current_model = Some(model);
-        *current_model_is_fallback = false;
-    }
-    let model = current_model.get_or_insert_with(|| {
-        *current_model_is_fallback = true;
-        "gpt-5".to_string()
-    });
-    match codex_log_model_fallback(model, timestamp) {
-        Some(fallback) => (fallback.to_string(), true),
-        None => (model.clone(), *current_model_is_fallback),
-    }
-}
-
-fn codex_log_model_fallback(model: &str, timestamp: TimestampMs) -> Option<&'static str> {
-    if model != CODEX_AUTO_REVIEW_MODEL {
-        return None;
-    }
-    let parts = timestamp.utc_parts();
-    let date = (parts.year, parts.month, parts.day);
-    let routed = CODEX_AUTO_REVIEW_FALLBACKS
-        .iter()
-        .filter(|fallback| fallback.released_on <= date)
-        .max_by_key(|fallback| fallback.released_on);
-    Some(routed.map_or(CODEX_AUTO_REVIEW_DEFAULT_MODEL, |fallback| fallback.model))
-}
-
 pub(super) fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
     let relative = path.trim_prefix(sessions_dir);
     let mut session_id = uncompressed_rollout_path(relative)
@@ -954,142 +676,6 @@ pub(super) fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
         session_id = "unknown".to_string();
     }
     session_id
-}
-
-fn codex_model_from_payload(value: &CodexPayload<'_>) -> Option<String> {
-    codex_model_from_parts(
-        value.model.as_ref(),
-        value.model_name.as_ref(),
-        value.metadata.as_ref(),
-    )
-}
-
-fn codex_model_from_info(value: &CodexInfo<'_>) -> Option<String> {
-    codex_model_from_parts(
-        value.model.as_ref(),
-        value.model_name.as_ref(),
-        value.metadata.as_ref(),
-    )
-}
-
-fn codex_model_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
-    codex_model_from_entry(value)
-        .or_else(|| value.data.as_ref().and_then(codex_model_from_result_fields))
-        .or_else(|| {
-            value
-                .result
-                .as_ref()
-                .and_then(codex_model_from_result_fields)
-        })
-        .or_else(|| {
-            value
-                .response
-                .as_ref()
-                .and_then(codex_model_from_result_fields)
-        })
-}
-
-fn codex_model_from_result_fields(value: &CodexResultFields<'_>) -> Option<String> {
-    codex_model_from_parts(
-        value.model.as_ref(),
-        value.model_name.as_ref(),
-        value.metadata.as_ref(),
-    )
-}
-
-fn codex_model_from_entry(value: &CodexLogEntry<'_>) -> Option<String> {
-    codex_model_from_parts(
-        value.model.as_ref(),
-        value.model_name.as_ref(),
-        value.metadata.as_ref(),
-    )
-}
-
-fn codex_model_from_parts(
-    model: Option<&Cow<'_, str>>,
-    model_name: Option<&Cow<'_, str>>,
-    metadata: Option<&CodexModelMetadata<'_>>,
-) -> Option<String> {
-    non_empty_cow_string(model)
-        .or_else(|| non_empty_cow_string(model_name))
-        .or_else(|| metadata.and_then(|metadata| non_empty_cow_string(metadata.model.as_ref())))
-}
-
-fn non_empty_cow_string(value: Option<&Cow<'_, str>>) -> Option<String> {
-    value.and_then(|text| {
-        let text = text.trim();
-        (!text.is_empty()).then(|| text.to_string())
-    })
-}
-
-fn usage_from_result(value: &CodexLogEntry<'_>) -> CodexUsageCandidate {
-    first_decoded_usage([
-        value.usage,
-        value
-            .data
-            .as_ref()
-            .map_or(CodexUsageCandidate::Missing, |data| data.usage),
-        value
-            .result
-            .as_ref()
-            .map_or(CodexUsageCandidate::Missing, |result| result.usage),
-        value
-            .response
-            .as_ref()
-            .map_or(CodexUsageCandidate::Missing, |response| response.usage),
-    ])
-}
-
-fn first_decoded_usage(
-    candidates: impl IntoIterator<Item = CodexUsageCandidate>,
-) -> CodexUsageCandidate {
-    let mut malformed = false;
-    for candidate in candidates {
-        match candidate {
-            decoded @ CodexUsageCandidate::Decoded(_) => return decoded,
-            CodexUsageCandidate::Malformed => malformed = true,
-            CodexUsageCandidate::Missing => {}
-        }
-    }
-    if malformed {
-        CodexUsageCandidate::Malformed
-    } else {
-        CodexUsageCandidate::Missing
-    }
-}
-
-fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<TimestampMs> {
-    codex_timestamp_instant(value.timestamp.as_ref())
-        .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
-        .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
-        .or_else(|| {
-            value
-                .data
-                .as_ref()
-                .and_then(|data| normalize_result_fields_timestamp(data))
-        })
-        .or_else(|| {
-            value
-                .result
-                .as_ref()
-                .and_then(|result| normalize_result_fields_timestamp(result))
-        })
-        .or_else(|| {
-            value
-                .response
-                .as_ref()
-                .and_then(|response| normalize_result_fields_timestamp(response))
-        })
-}
-
-fn normalize_result_fields_timestamp(value: &CodexResultFields<'_>) -> Option<TimestampMs> {
-    codex_timestamp_instant(value.timestamp.as_ref())
-        .or_else(|| codex_timestamp_instant(value.created_at.as_ref()))
-        .or_else(|| codex_timestamp_instant(value.created_at_camel.as_ref()))
-}
-
-fn normalize_codex_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
-    codex_timestamp_instant(value).map(crate::format_rfc3339_millis)
 }
 
 pub(super) fn codex_timestamp_instant(value: Option<&CodexTimestamp<'_>>) -> Option<TimestampMs> {
@@ -1105,100 +691,6 @@ pub(super) fn codex_timestamp_instant(value: Option<&CodexTimestamp<'_>>) -> Opt
             TimestampMs::from_instant_millis(i64::try_from(millis).ok()?)
         }
     }
-}
-
-fn normalize_headless_codex_usage(
-    value: &CodexLogEntry<'_>,
-) -> std::result::Result<Option<CodexRawUsage>, ()> {
-    normalize_headless_usage_candidate(usage_from_result(value))
-}
-
-fn normalize_headless_usage_candidate(
-    candidate: CodexUsageCandidate,
-) -> std::result::Result<Option<CodexRawUsage>, ()> {
-    let usage = match candidate {
-        CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
-        CodexUsageCandidate::Malformed => return Err(()),
-        CodexUsageCandidate::Missing => return Ok(None),
-    };
-    if usage.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(usage))
-}
-
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    ccusage_adapter_common::timestamps::file_mtime(path).unwrap_or(TimestampMs::UNIX_EPOCH)
-}
-
-fn malformed_token_count_field(info: &CodexInfo<'_>) -> Option<&'static str> {
-    if info.last_token_usage == CodexUsageCandidate::Malformed {
-        Some("field `payload.info.last_token_usage` did not decode")
-    } else if info.total_token_usage == CodexUsageCandidate::Malformed {
-        Some("field `payload.info.total_token_usage` did not decode")
-    } else {
-        None
-    }
-}
-
-fn subtract_codex_raw_usage(
-    current: &CodexRawUsage,
-    previous: Option<&CodexRawUsage>,
-) -> CodexRawUsage {
-    normalize_codex_raw_usage(CodexRawUsage {
-        input_tokens: current
-            .input_tokens
-            .saturating_sub(previous.map_or(0, |usage| usage.input_tokens)),
-        cached_input_tokens: current
-            .cached_input_tokens
-            .saturating_sub(previous.map_or(0, |usage| usage.cached_input_tokens)),
-        cache_creation_tokens: current
-            .cache_creation_tokens
-            .saturating_sub(previous.map_or(0, |usage| usage.cache_creation_tokens)),
-        output_tokens: current
-            .output_tokens
-            .saturating_sub(previous.map_or(0, |usage| usage.output_tokens)),
-        reasoning_output_tokens: current
-            .reasoning_output_tokens
-            .saturating_sub(previous.map_or(0, |usage| usage.reasoning_output_tokens)),
-        total_tokens: current
-            .total_tokens
-            .saturating_sub(previous.map_or(0, |usage| usage.total_tokens)),
-    })
-}
-
-fn codex_token_count_usage(
-    info: Option<&CodexInfo<'_>>,
-    previous_totals: &mut Option<CodexRawUsage>,
-) -> CodexTokenCountUsage {
-    let total_usage = info.and_then(|info| info.total_token_usage.decoded());
-    let cumulative_advanced = total_usage
-        .as_ref()
-        .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
-    let raw_usage = info
-        .and_then(|info| info.last_token_usage.decoded())
-        .filter(|_| cumulative_advanced)
-        .or_else(|| {
-            total_usage
-                .as_ref()
-                .map(|usage| subtract_codex_raw_usage(usage, previous_totals.as_ref()))
-        });
-    if let Some(total_usage) = total_usage {
-        *previous_totals = Some(total_usage);
-    }
-    CodexTokenCountUsage {
-        total_usage,
-        cumulative_advanced,
-        delta: raw_usage.map(normalize_codex_raw_usage),
-    }
-}
-
-fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
-    usage.cached_input_tokens = usage.cached_input_tokens.min(usage.input_tokens);
-    usage.cache_creation_tokens = usage
-        .cache_creation_tokens
-        .min(usage.input_tokens.saturating_sub(usage.cached_input_tokens));
-    usage
 }
 
 fn is_usage_value(value: &Value) -> bool {
