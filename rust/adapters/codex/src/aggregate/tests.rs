@@ -1464,6 +1464,40 @@ fn a_copy_of_an_ancestor_does_not_add_a_request_across_fork_pairs() {
     }
 }
 
+#[test]
+fn counts_a_reference_backed_fork_and_its_parent_requesting_at_the_same_instant_twice() {
+    ccusage_test_support::install_pricing_snapshots();
+    let request = fork_token_count_line("2026-05-12T09:00:00.000Z", 100, 100);
+    let fork_meta = json!({
+        "timestamp": "2026-05-12T08:30:00.000Z",
+        "type": "session_meta",
+        "payload": {
+            "id": "fork-abc",
+            "forked_from_id": "parent-xyz",
+            "history_base": {"thread_id": "parent-xyz", "end_ordinal_exclusive": 1},
+        },
+    })
+    .to_string();
+    let fixture = fs_fixture!({
+        "sessions/parent.jsonl": session_meta_line("2026-05-12T08:00:00.000Z", "parent-xyz", None) + "\n" + &request,
+        "sessions/fork.jsonl": fork_meta + "\n" + &request,
+    });
+    let sessions = fixture.path("sessions");
+
+    for single_thread in [true, false] {
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Daily, single_thread),
+            [("2026-05-12".to_string(), 200)],
+            "single_thread={single_thread}"
+        );
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Session, single_thread),
+            [("fork".to_string(), 100), ("parent".to_string(), 100)],
+            "single_thread={single_thread}"
+        );
+    }
+}
+
 const IDENTICAL_REQUESTS_ROLLOUT: &str = r#"{"timestamp":"2026-11-01T09:42:09.923Z","type":"session_meta","payload":{"id":"01a1967c-0000-7000-8000-00000000000a","forked_from_id":"01a1967b-0000-7000-8000-000000000001","timestamp":"2026-11-01T09:42:09.923Z","originator":"codex_vscode","cli_version":"0.164.0-alpha.11.1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"01a1967b-0000-7000-8000-000000000001","depth":1}}},"model_provider":"openai"}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"compacted","payload":{"message":"","replacement_history":[]}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}

@@ -360,7 +360,7 @@ impl<'a> CodexDedupe<'a> {
         if let Some(session) = provenance.session {
             lineage.threads.insert(session, CompactString::new(thread));
         }
-        if let Some(parent) = metadata.parent_id() {
+        if let Some(parent) = metadata.lineage_parent_id() {
             lineage
                 .parents
                 .entry(CompactString::new(thread))

@@ -356,6 +356,7 @@ pub(super) struct CodexSessionMetadata {
     pub(super) is_session_meta: bool,
     session_id: Option<String>,
     parent_id: Option<String>,
+    lineage_parent_id: Option<String>,
     pub(super) timestamp: Option<TimestampMs>,
     spawned: bool,
 }
@@ -369,8 +370,8 @@ impl CodexSessionMetadata {
         self.session_id.as_deref()
     }
 
-    pub(super) fn parent_id(&self) -> Option<&str> {
-        self.parent_id.as_deref()
+    pub(super) fn lineage_parent_id(&self) -> Option<&str> {
+        self.lineage_parent_id.as_deref()
     }
 }
 
@@ -402,15 +403,15 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
         .and_then(|spawn| spawn.parent_thread_id.as_deref())
         .filter(|id| !id.is_empty());
     let session_id = payload.and_then(|payload| payload.id.as_deref());
-    let parent_id = payload
-        .filter(|payload| payload.history_base.is_none())
-        .and_then(|payload| {
-            payload
-                .forked_from_id
-                .as_deref()
-                .filter(|id| !id.is_empty())
-                .or(spawn_parent_id)
-        })
+    let lineage_parent_id = payload.and_then(|payload| {
+        payload
+            .forked_from_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .or(spawn_parent_id)
+    });
+    let parent_id = lineage_parent_id
+        .filter(|_| payload.is_some_and(|payload| payload.history_base.is_none()))
         .filter(|_| {
             !path
                 .file_name()
@@ -424,6 +425,7 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
         timestamp: codex_timestamp_instant(value.timestamp.as_ref()),
         session_id: session_id.map(str::to_string),
         parent_id,
+        lineage_parent_id: lineage_parent_id.map(str::to_string),
         spawned: spawn_parent_id.is_some(),
     }
 }
