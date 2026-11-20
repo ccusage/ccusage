@@ -2093,3 +2093,71 @@ fn settles_mixed_recordless_tiers_independently_of_file_order() {
         }
     }
 }
+
+fn spawned_child_request_rollouts() -> [String; 2] {
+    let timestamp = "2026-11-01T09:15:00.000Z";
+    let usage = json!({"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": 101});
+    let token_count = json!({
+        "timestamp": timestamp,
+        "type": "event_msg",
+        "payload": {"type": "token_count", "info": {"last_token_usage": usage, "total_token_usage": usage}},
+    })
+    .to_string();
+    let model = json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string();
+    let parent = [
+        json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "session_meta", "payload": {"id": "parent-xyz"}}).to_string(),
+        model.clone(),
+        json!({"timestamp": timestamp, "type": "token_usage_record", "payload": {"thread_id": "parent-xyz", "response_id": "resp_parent", "usage": usage}}).to_string(),
+        token_count.clone(),
+    ];
+    let child = [
+        json!({"timestamp": "2026-11-01T09:10:00.000Z", "type": "session_meta", "payload": {
+            "id": "child-abc",
+            "forked_from_id": "parent-xyz",
+            "source": {"subagent": {"thread_spawn": {"parent_thread_id": "parent-xyz", "depth": 1}}},
+        }})
+        .to_string(),
+        model,
+        json!({"timestamp": "2026-11-01T09:10:00.000Z", "type": "event_msg", "payload": {"type": "thread_settings_applied", "thread_id": "child-abc", "thread_settings": {}}}).to_string(),
+        token_count,
+    ];
+    [parent.join("\n"), child.join("\n")]
+}
+
+#[test]
+fn keeps_a_spawned_children_own_request_beside_a_matching_recorded_parent_request() {
+    ccusage_test_support::install_pricing_snapshots();
+    let [parent, child] = spawned_child_request_rollouts();
+    for (order, files) in [
+        ("parent first", [("a-parent", &parent), ("b-child", &child)]),
+        ("child first", [("a-child", &child), ("b-parent", &parent)]),
+    ] {
+        let fixture = ccusage_test_support::Fixture::new();
+        for (name, contents) in files {
+            fixture.write_file(format!("sessions/{name}.jsonl"), contents);
+        }
+        let sessions = fixture.path("sessions");
+        for single_thread in [true, false] {
+            for bounded in [false, true] {
+                let day = bounded.then(|| "20261101".parse().unwrap());
+                let shared = SharedArgs {
+                    single_thread,
+                    since: day,
+                    until: day,
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                    ..SharedArgs::default()
+                };
+                let input = |kind| {
+                    load_groups_from_directory(&sessions, &shared, kind)
+                        .unwrap()
+                        .into_values()
+                        .map(|group| group.input_tokens)
+                        .collect::<Vec<_>>()
+                };
+                let context = format!("{order}, single_thread={single_thread}, bounded={bounded}");
+                assert_eq!(input(AgentReportKind::Daily), [200], "{context}");
+                assert_eq!(input(AgentReportKind::Session), [100, 100], "{context}");
+            }
+        }
+    }
+}
