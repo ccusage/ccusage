@@ -2094,49 +2094,57 @@ fn settles_mixed_recordless_tiers_independently_of_file_order() {
     }
 }
 
-fn spawned_child_request_rollouts() -> [String; 2] {
+fn same_instant_rollout(id: &str, parent: Option<&str>, requests: u64, recorded: bool) -> String {
     let timestamp = "2026-11-01T09:15:00.000Z";
     let usage = json!({"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": 101});
-    let token_count = json!({
-        "timestamp": timestamp,
-        "type": "event_msg",
-        "payload": {"type": "token_count", "info": {"last_token_usage": usage, "total_token_usage": usage}},
-    })
-    .to_string();
-    let model = json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string();
-    let parent = [
-        json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "session_meta", "payload": {"id": "parent-xyz"}}).to_string(),
-        model.clone(),
-        json!({"timestamp": timestamp, "type": "token_usage_record", "payload": {"thread_id": "parent-xyz", "response_id": "resp_parent", "usage": usage}}).to_string(),
-        token_count.clone(),
+    let mut meta = json!({"id": id});
+    if let Some(parent) = parent {
+        meta["forked_from_id"] = parent.into();
+        meta["source"] =
+            json!({"subagent": {"thread_spawn": {"parent_thread_id": parent, "depth": 1}}});
+    }
+    let mut lines = vec![
+        json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "session_meta", "payload": meta}).to_string(),
+        json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string(),
     ];
-    let child = [
-        json!({"timestamp": "2026-11-01T09:10:00.000Z", "type": "session_meta", "payload": {
-            "id": "child-abc",
-            "forked_from_id": "parent-xyz",
-            "source": {"subagent": {"thread_spawn": {"parent_thread_id": "parent-xyz", "depth": 1}}},
-        }})
-        .to_string(),
-        model,
-        json!({"timestamp": "2026-11-01T09:10:00.000Z", "type": "event_msg", "payload": {"type": "thread_settings_applied", "thread_id": "child-abc", "thread_settings": {}}}).to_string(),
-        token_count,
-    ];
-    [parent.join("\n"), child.join("\n")]
+    if parent.is_some() {
+        lines.push(
+            json!({"timestamp": "2026-11-01T09:10:00.000Z", "type": "event_msg", "payload": {"type": "thread_settings_applied", "thread_id": id, "thread_settings": {}}})
+                .to_string(),
+        );
+    }
+    for request in 1..=requests {
+        if recorded {
+            lines.push(
+                json!({"timestamp": timestamp, "type": "token_usage_record", "payload": {"thread_id": id, "response_id": format!("resp_{id}_{request}"), "usage": usage}})
+                    .to_string(),
+            );
+        }
+        let total = json!({"input_tokens": 100 * request, "cached_input_tokens": 0, "output_tokens": request, "total_tokens": 101 * request});
+        lines.push(
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "token_count", "info": {"last_token_usage": usage, "total_token_usage": total}},
+            })
+            .to_string(),
+        );
+    }
+    lines.join("\n")
 }
 
-#[test]
-fn keeps_a_spawned_children_own_request_beside_a_matching_recorded_parent_request() {
+fn assert_same_instant_requests(rollouts: &[(&str, String)], daily: u64, sessions: &[u64]) {
     ccusage_test_support::install_pricing_snapshots();
-    let [parent, child] = spawned_child_request_rollouts();
-    for (order, files) in [
-        ("parent first", [("a-parent", &parent), ("b-child", &child)]),
-        ("child first", [("a-child", &child), ("b-parent", &parent)]),
-    ] {
+    let orders = [
+        rollouts.iter().collect::<Vec<_>>(),
+        rollouts.iter().rev().collect::<Vec<_>>(),
+    ];
+    for (order, files) in orders.iter().enumerate() {
         let fixture = ccusage_test_support::Fixture::new();
-        for (name, contents) in files {
-            fixture.write_file(format!("sessions/{name}.jsonl"), contents);
+        for (position, (name, contents)) in files.iter().enumerate() {
+            fixture.write_file(format!("sessions/{position}-{name}.jsonl"), contents);
         }
-        let sessions = fixture.path("sessions");
+        let root = fixture.path("sessions");
         for single_thread in [true, false] {
             for bounded in [false, true] {
                 let day = bounded.then(|| "20261101".parse().unwrap());
@@ -2148,16 +2156,60 @@ fn keeps_a_spawned_children_own_request_beside_a_matching_recorded_parent_reques
                     ..SharedArgs::default()
                 };
                 let input = |kind| {
-                    load_groups_from_directory(&sessions, &shared, kind)
+                    load_groups_from_directory(&root, &shared, kind)
                         .unwrap()
-                        .into_values()
-                        .map(|group| group.input_tokens)
+                        .into_iter()
+                        .map(|(period, group)| (period, group.input_tokens))
                         .collect::<Vec<_>>()
                 };
-                let context = format!("{order}, single_thread={single_thread}, bounded={bounded}");
-                assert_eq!(input(AgentReportKind::Daily), [200], "{context}");
-                assert_eq!(input(AgentReportKind::Session), [100, 100], "{context}");
+                let context =
+                    format!("order={order}, single_thread={single_thread}, bounded={bounded}");
+                assert_eq!(
+                    input(AgentReportKind::Daily),
+                    [("2026-11-01".to_string(), daily)],
+                    "{context}"
+                );
+                let mut by_session = input(AgentReportKind::Session)
+                    .into_iter()
+                    .map(|(_, tokens)| tokens)
+                    .collect::<Vec<_>>();
+                by_session.sort_unstable();
+                assert_eq!(by_session, sessions, "{context}");
             }
         }
     }
+}
+
+#[test]
+fn keeps_a_spawned_children_own_request_beside_a_matching_recorded_parent_request() {
+    assert_same_instant_requests(
+        &[
+            ("parent", same_instant_rollout("parent-xyz", None, 1, true)),
+            (
+                "child",
+                same_instant_rollout("child-abc", Some("parent-xyz"), 1, false),
+            ),
+        ],
+        200,
+        &[100, 100],
+    );
+}
+
+#[test]
+fn settles_repeated_fork_requests_at_the_depth_used_for_pairing() {
+    assert_same_instant_requests(
+        &[
+            ("parent", same_instant_rollout("parent-xyz", None, 1, true)),
+            (
+                "child",
+                same_instant_rollout("child-abc", Some("parent-xyz"), 2, false),
+            ),
+            (
+                "unrelated",
+                same_instant_rollout("other-def", None, 2, false),
+            ),
+        ],
+        400,
+        &[100, 100, 200],
+    );
 }

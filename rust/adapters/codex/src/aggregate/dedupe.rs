@@ -134,9 +134,10 @@ impl CodexLineage {
     }
 
     // NOTE(2026-11-20, #2208): A fork and its ancestors each send their own requests after the fork, while unrelated sessions with the same recordless usage hold copies of one request. Matches at the same fork depth never descend from one another, so each depth counts once.
-    fn fork_depths(&self, sessions: &[StringId]) -> Vec<usize> {
+    fn fork_depths(&self, sessions: &[StringId], related: &[StringId]) -> Vec<usize> {
         let threads = sessions
             .iter()
+            .chain(related)
             .filter_map(|session| self.threads.get(session))
             .collect::<Vec<_>>();
         sessions
@@ -150,12 +151,16 @@ impl CodexLineage {
             .collect()
     }
 
-    fn collapse_copies(&self, attributions: Vec<CodexAttribution>) -> Vec<CodexAttribution> {
+    fn collapse_copies(
+        &self,
+        attributions: Vec<CodexAttribution>,
+        related: &[StringId],
+    ) -> Vec<CodexAttribution> {
         let sessions = attributions
             .iter()
             .map(|attribution| attribution.session)
             .collect::<Vec<_>>();
-        let depths = self.fork_depths(&sessions);
+        let depths = self.fork_depths(&sessions, related);
         let mut requests = Vec::<(usize, CodexAttribution)>::new();
         for (depth, attribution) in depths.into_iter().zip(attributions) {
             if let Some((_, request)) = requests.iter_mut().find(|(level, _)| *level == depth) {
@@ -207,6 +212,7 @@ impl CodexDedupeMap {
             recorded,
             mut other_sessions,
         } = self;
+        let mut pairing_sessions = FxHashMap::<CodexUsageKey, Vec<StringId>>::default();
         // NOTE(2026-11-20, #2366): A recordless occurrence can only be a copy of a named request at the same fork depth. A fork's own request that shares a signature with an ancestor's recorded request is a separate request.
         for (&signature, requests) in &recorded {
             let mut recordless = Vec::new();
@@ -230,7 +236,7 @@ impl CodexDedupeMap {
                 .map(|request| request.attribution.session)
                 .chain(recordless.iter().map(|(_, session, _)| *session))
                 .collect::<Vec<_>>();
-            let depths = lineage.fork_depths(&sessions);
+            let depths = lineage.fork_depths(&sessions, &[]);
             let (named_depths, recordless_depths) = depths.split_at(requests.len());
             let depth_of = recordless
                 .iter()
@@ -282,13 +288,21 @@ impl CodexDedupeMap {
                     }
                 }
             }
+            pairing_sessions.insert(signature, sessions);
         }
         let mut recordless_matches = Vec::new();
         for (key, sessions) in other_sessions {
             let matches = usage.remove(&key).into_iter().chain(sessions).collect();
+            // NOTE(2026-11-20, #2366): Settlement measures fork depth against every session that matched the signature during pairing. Paired copies are already removed, so their threads would otherwise drop out and change a fork's depth.
+            let related = pairing_sessions
+                .get(&CodexUsageKey {
+                    occurrence: 0,
+                    ..key
+                })
+                .map_or(&[][..], Vec::as_slice);
             recordless_matches.extend(
                 lineage
-                    .collapse_copies(matches)
+                    .collapse_copies(matches, related)
                     .into_iter()
                     .map(|attribution| (key, attribution)),
             );
