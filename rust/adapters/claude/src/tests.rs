@@ -1,11 +1,10 @@
-mod load;
-
 use std::assert_matches;
 use std::{path::Path, sync::Arc};
 
 use super::{
-    extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
-    usage_limit_reset_time_from_line_bytes,
+    extract_session_parts,
+    load::{load_deduped_entries, usage_limit_reset_time_from_line_bytes},
+    paths::is_project_path_segment,
 };
 use crate::ClaudeEntry;
 use ccusage_core::{
@@ -28,7 +27,7 @@ fn read_usage_file_with_diagnostics(
     diagnostics: &Diagnostics,
 ) -> LoadedFile {
     LoadedFile {
-        entries: super::read_usage_file_with_diagnostics(
+        entries: super::load::read_usage_file_with_diagnostics(
             path,
             tz,
             pricing.map_or(ccusage_core::cost::PriceTable::Display, |map| {
@@ -880,7 +879,7 @@ fn attributes_a_cross_session_copy_to_the_survivor_day() {
             ..SharedArgs::default()
         };
         let deduped = load_deduped_entries(&shared, None).unwrap();
-        let sorted_days = |deduped: &crate::DedupedEntries| {
+        let sorted_days = |deduped: &crate::load::DedupedEntries| {
             let mut days: Vec<_> = deduped
                 .main_thread_sessions()
                 .into_iter()
@@ -892,7 +891,7 @@ fn attributes_a_cross_session_copy_to_the_survivor_day() {
 
         assert_eq!(deduped.entries.len(), 2);
         assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
-        let filtered = crate::DedupedEntries {
+        let filtered = crate::load::DedupedEntries {
             entries: deduped
                 .entries
                 .into_iter()

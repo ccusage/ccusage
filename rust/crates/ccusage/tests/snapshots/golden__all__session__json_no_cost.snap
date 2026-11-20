@@ -4142,30 +4142,6 @@ exit: 0
       "totalTokens": 33
     },
     {
-      "agent": "opencode",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 7,
-      "metadata": {
-        "lastActivity": "2026-01-01T12:10:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "opus"
-      ],
-      "outputTokens": 1,
-      "period": "ses-v2-agent",
-      "totalTokens": 8
-    },
-    {
       "agent": "openclaw",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -4962,6 +4938,31 @@ exit: 0
       "totalTokens": 77
     },
     {
+      "agent": "opencode",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 7,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:10:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "opus"
+      ],
+      "outputTokens": 1,
+      "period": "ses-v2-agent",
+      "totalTokens": 8
+    },
+    {
       "agent": "dsh",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5089,6 +5090,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "opus",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

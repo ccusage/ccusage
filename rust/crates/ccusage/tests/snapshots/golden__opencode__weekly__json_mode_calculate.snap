@@ -10,10 +10,11 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 7186,
     "outputTokens": 1831,
-    "totalCost": 0.09018625,
+    "totalCost": 0.09012624999999999,
     "totalTokens": 27267,
     "unpricedModels": [
-      "opencode-mystery-1"
+      "opencode-mystery-1",
+      "opus"
     ]
   },
   "weekly": [
@@ -103,19 +104,20 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "opencode-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
         }
       ],
       "modelsUsed": [
@@ -130,7 +132,7 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "outputTokens": 1781,
-      "totalCost": 0.08913625,
+      "totalCost": 0.08907625,
       "totalTokens": 27117,
       "week": "2025-12-29"
     }

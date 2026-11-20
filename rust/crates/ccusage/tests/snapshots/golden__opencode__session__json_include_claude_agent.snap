@@ -272,8 +272,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.03803,
+          "cost": 0.0,
           "inputTokens": 5071,
+          "missingPricing": true,
           "modelName": "opus",
           "outputTokens": 507
         }
@@ -283,7 +284,7 @@ exit: 0
       ],
       "outputTokens": 507,
       "sessionId": "ses-v2-agent",
-      "totalCost": 0.03803,
+      "totalCost": 0.0,
       "totalTokens": 5578
     },
     {
@@ -488,10 +489,11 @@ exit: 0
     "cacheReadTokens": 18400,
     "inputTokens": 12875,
     "outputTokens": 2439,
-    "totalCost": 3.62595625,
+    "totalCost": 3.58792625,
     "totalTokens": 34584,
     "unpricedModels": [
-      "opencode-mystery-1"
+      "opencode-mystery-1",
+      "opus"
     ]
   }
 }

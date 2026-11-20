@@ -913,8 +913,8 @@ fn model_name_from_id(model_id: u64) -> String {
         312 => "gemini-2.5-flash".to_string(),
         313 | 329 => "gemini-2.5-flash-thinking".to_string(),
         330 => "gemini-2.5-flash-lite".to_string(),
-        281 | 282 => "claude-4-sonnet".to_string(),
-        290 | 291 => "claude-4-opus".to_string(),
+        281 | 282 => "claude-sonnet-4".to_string(),
+        290 | 291 => "claude-opus-4".to_string(),
         333 | 334 => "claude-4.5-sonnet".to_string(),
         340 | 341 => "claude-4.5-haiku".to_string(),
         342 => "model_openai_gpt_oss_120b_medium".to_string(),
@@ -1103,6 +1103,12 @@ fn price_antigravity(
     } else {
         MatchKind::Fuzzy
     };
+    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it. The resolver cannot treat `-thinking` as price-neutral because catalogues list separate thinking models, so the base id only prices records whose full id no catalogue row names.
+    let thinking_base = model
+        .strip_suffix("-thinking")
+        .into_iter()
+        .flat_map(|base| model_candidates(base, provider))
+        .map(|name| (name, MatchKind::Fallback));
     let candidates: Vec<_> = model_candidates(model, provider)
         .into_iter()
         .flat_map(|name| {
@@ -1110,6 +1116,7 @@ fn price_antigravity(
             let extra = (exact && alias != name).then_some((alias, MatchKind::Exact));
             std::iter::once((name, kind)).chain(extra)
         })
+        .chain(thinking_base)
         .collect();
     let candidates: Vec<_> = logged_model
         .map(|name| (name, MatchKind::Exact))

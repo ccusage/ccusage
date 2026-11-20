@@ -447,6 +447,37 @@ fn provider_specific_variant_pricing_precedes_base_fallback() {
 }
 
 #[test]
+fn a_row_for_the_thinking_id_precedes_the_stripped_fallback() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini-2.5-flash": {"input_cost_per_token": 1, "output_cost_per_token": 1},
+            "vertex_ai/gemini-2.5-flash-thinking": {"input_cost_per_token": 2, "output_cost_per_token": 2}
+        }"#,
+    );
+
+    let cost = price_antigravity(
+        "gemini-2.5-flash-thinking",
+        None,
+        None,
+        TokenUsageRaw {
+            input_tokens: 1,
+            output_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            speed: None,
+            cache_creation: None,
+        },
+        TimestampMs::UNIX_EPOCH,
+        ccusage_core::cost::PriceTable::Calculate(&pricing),
+    )
+    .0;
+
+    assert_eq!(cost, 2.0);
+}
+
+#[test]
 fn sibling_effort_variant_does_not_satisfy_base_pricing_fallback() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = ccusage_core::PricingMap::default();

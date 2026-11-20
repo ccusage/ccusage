@@ -111,19 +111,20 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "opencode-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
         }
       ],
       "modelsUsed": [
@@ -138,7 +139,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 652,
-      "totalCost": 0.014095,
+      "totalCost": 0.014035,
       "totalTokens": 6201
     }
   ],
@@ -147,10 +148,11 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 7186,
     "outputTokens": 1831,
-    "totalCost": 0.09018625,
+    "totalCost": 0.09012625,
     "totalTokens": 27267,
     "unpricedModels": [
-      "opencode-mystery-1"
+      "opencode-mystery-1",
+      "opus"
     ]
   }
 }

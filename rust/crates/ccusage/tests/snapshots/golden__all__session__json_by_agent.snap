@@ -4587,32 +4587,6 @@ exit: 0
       "totalTokens": 33
     },
     {
-      "agent": "opencode",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 7,
-      "metadata": {
-        "lastActivity": "2026-01-01T12:10:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "opus"
-      ],
-      "outputTokens": 1,
-      "period": "ses-v2-agent",
-      "totalCost": 0.00006000000000000001,
-      "totalTokens": 8
-    },
-    {
       "agent": "openclaw",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5474,6 +5448,33 @@ exit: 0
       "totalTokens": 77
     },
     {
+      "agent": "opencode",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 7,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:10:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "opus"
+      ],
+      "outputTokens": 1,
+      "period": "ses-v2-agent",
+      "totalCost": 0,
+      "totalTokens": 8
+    },
+    {
       "agent": "dsh",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5581,7 +5582,7 @@ exit: 0
     "cacheReadTokens": 1311567,
     "inputTokens": 1349049,
     "outputTokens": 58992,
-    "totalCost": 28.931298425000023,
+    "totalCost": 28.93123842500002,
     "totalTokens": 2740910,
     "unpricedModels": [
       "GLM-5.3",
@@ -5610,6 +5611,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "opus",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
