@@ -357,3 +357,30 @@ fn a_decode_error_is_terminal() {
         );
     }
 }
+
+#[test]
+fn a_single_segment_window_one_past_the_limit_is_accepted_like_the_streaming_decoder() {
+    let fixture = Fixture::new();
+    for (content, accepted) in [((128 << 20) + 1, true), ((128 << 20) + 2, false)] {
+        let mut frame = 0xFD2F_B528_u32.to_le_bytes().to_vec();
+        frame.push(0xE0);
+        frame.extend_from_slice(&(content as u64).to_le_bytes());
+        let path = write(&fixture, "window-limit.zst", &frame);
+        let expected = reference(&path, 8 * 1024);
+        assert_eq!(
+            kind(&expected.error),
+            Some(if accepted {
+                io::ErrorKind::UnexpectedEof
+            } else {
+                io::ErrorKind::Other
+            }),
+            "content {content}: {:?}",
+            expected.error
+        );
+        assert_eq!(
+            direct(&path, 8 * 1024, None).0,
+            expected,
+            "content {content}"
+        );
+    }
+}
