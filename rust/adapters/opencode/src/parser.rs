@@ -2,7 +2,11 @@ use ccusage_core::cost::PriceTable;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde::Deserialize;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, IgnoredAny, MapAccess, Visitor},
+};
+use std::fmt;
 
 use crate::{
     LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
@@ -70,6 +74,60 @@ struct OpenCodeCache {
 struct OpenCodeTime {
     #[serde(default, deserialize_with = "jsonl::lenient_i64")]
     created: Option<i64>,
+}
+
+struct TimeKey(bool);
+
+impl<'de> Deserialize<'de> for TimeKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KeyVisitor;
+
+        impl Visitor<'_> for KeyVisitor {
+            type Value = TimeKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an object key")
+            }
+
+            fn visit_str<E: de::Error>(self, key: &str) -> Result<Self::Value, E> {
+                Ok(TimeKey(key == "time"))
+            }
+        }
+
+        deserializer.deserialize_str(KeyVisitor)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct LenientTime(#[serde(deserialize_with = "jsonl::lenient_object")] Option<OpenCodeTime>);
+
+struct TimeField<'a>(&'a mut Option<OpenCodeTime>);
+
+impl<'de> Visitor<'de> for TimeField<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while let Some(TimeKey(is_time)) = map.next_key()? {
+            if is_time {
+                *self.0 = map.next_value::<LenientTime>()?.0;
+                return Ok(());
+            }
+            map.next_value::<IgnoredAny>()?;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn message_time_created(data: &[u8]) -> Option<i64> {
+    let mut time = None;
+    // NOTE(2026-11-19, #2242): Reading stops at the payload's top-level time, so serde_json reports the unread rest as an error. Whether the record is valid stays the typed reader's decision.
+    let _ = serde_json::Deserializer::from_slice(data).deserialize_map(TimeField(&mut time));
+    time?.created.filter(|millis| *millis > 0)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -491,10 +549,10 @@ mod tests {
 
     use super::{
         MissingTimestamp, OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind,
-        SessionMessageRow, message_value_to_entry, open_code_model_candidates,
-        session_message_value_to_entry_checked, session_value_to_entry,
+        SessionMessageRow, message_time_created, message_value_to_entry,
+        open_code_model_candidates, session_message_value_to_entry_checked, session_value_to_entry,
     };
-    use crate::{LoadedEntry, PricingMap, cli::CostMode};
+    use ccusage_core::{LoadedEntry, PricingMap, cli::CostMode};
 
     fn candidate_names(model: &str, provider: &str) -> Vec<String> {
         open_code_model_candidates(model, provider)
@@ -597,25 +655,20 @@ mod tests {
             "sessionId": entry.session_id.as_ref(),
             "project": entry.project.as_ref(),
             "projectPath": entry.project_path.as_ref(),
-            "cost": entry.cost,
-            "extraTotalTokens": entry.extra_total_tokens,
             "model": entry.model.as_deref(),
-            "data": {
-                "sessionId": Some(entry.session_id.as_ref()).filter(|id| *id != "unknown"),
-                "timestamp": entry.timestamp.as_millis(),
-                "version": entry.version.as_deref(),
-                "message": {
-                    "id": entry.message_id.as_deref(),
-                    "model": entry.model.as_deref(),
-                    "usage": {
-                        "inputTokens": entry.usage.input_tokens,
-                        "outputTokens": entry.usage.output_tokens,
-                        "cacheCreationInputTokens": entry.usage.cache_creation_input_tokens,
-                        "cacheReadInputTokens": entry.usage.cache_read_input_tokens,
-                    },
-                },
-                "costUSD": entry.recorded_cost,
+            "messageId": entry.message_id.as_deref(),
+            "version": entry.version.as_deref(),
+            "usage": {
+                "inputTokens": entry.usage.input_tokens,
+                "outputTokens": entry.usage.output_tokens,
+                "cacheCreationInputTokens": entry.usage.cache_creation_input_tokens,
+                "cacheReadInputTokens": entry.usage.cache_read_input_tokens,
             },
+            "extraTotalTokens": entry.extra_total_tokens,
+            "cost": entry.cost,
+            "recordedCost": entry.recorded_cost,
+            "storedCost": entry.stored_cost,
+            "missingPricingModel": entry.missing_pricing_model.as_deref(),
         })
     }
 
@@ -1051,7 +1104,7 @@ mod tests {
                 ("openrouter", format!("openrouter/{provider}/{model}")),
             ] {
                 for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
-                    let timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
+                    let timestamp = ccusage_core::parse_ts_timestamp(timestamp).unwrap();
                     let old_cost = candidate_names(&model, provider)
                         .into_iter()
                         .map(|candidate| {
@@ -1132,7 +1185,7 @@ mod tests {
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
         ccusage_test_support::install_pricing_snapshots();
-        let tz = crate::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
+        let tz = ccusage_core::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1183,10 +1236,28 @@ mod tests {
         )
         .unwrap()
         .unwrap();
+        let unknown_session = message_value_to_entry(
+            message(json!({
+                "id": "message-c",
+                "providerID": "openai",
+                "modelID": "gpt-test",
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 7, "cache": { "write": 3 } },
+                "cost": 0.03
+            })),
+            None,
+            None,
+            &tz,
+            CostMode::Auto,
+            ccusage_core::cost::PriceTable::Auto(&pricing),
+        )
+        .unwrap()
+        .unwrap();
 
         insta::assert_json_snapshot!(json!({
             "calculated": entry_snapshot(&calculated),
             "displayCost": entry_snapshot(&display_cost),
+            "unknownSession": entry_snapshot(&unknown_session),
             "candidates": {
                 "anthropic": candidate_names("claude-sonnet-4.5", "anthropic"),
                 "copilot": candidate_names("claude-sonnet-4.5", "github-copilot"),
@@ -1203,6 +1274,36 @@ mod tests {
             "{{\"deepseek-v4-flash\":{{\"litellm_provider\":\"deepseek\",\"input_cost_per_token\":{input},\"output_cost_per_token\":0.00000028}}}}"
         ));
         pricing
+    }
+
+    #[test]
+    fn reads_only_the_messages_own_creation_time() {
+        for (payload, expected) in [
+            (
+                r#"{"time":{"created":1767312000000}}"#,
+                Some(1_767_312_000_000),
+            ),
+            ("{\n  \"time\": {\n    \"created\": 42\n  }\n}", Some(42)),
+            (
+                r#"{"metadata":{"time":{"created":1}},"time":{"created":1767312000000}}"#,
+                Some(1_767_312_000_000),
+            ),
+            (r#"{"parts":[{"time":{"created":1}}]}"#, None),
+            (r#"{"unit":"time","created":1767312000000}"#, None),
+            (r#"{"time":{"created":"1767312000000"}}"#, None),
+            (r#"{"time":{"created":-5}}"#, None),
+            (r#"{"time":{"completed":1767312000000}}"#, None),
+            (r#"{"time":"2026-01-02"}"#, None),
+            (r#"{"\u0074ime":{"created":42}}"#, Some(42)),
+            (r#"{"id":"#, None),
+            (r#"[{"time":{"created":1767312000000}}]"#, None),
+        ] {
+            assert_eq!(
+                message_time_created(payload.as_bytes()),
+                expected,
+                "{payload}"
+            );
+        }
     }
 
     #[test]
@@ -1266,7 +1367,7 @@ mod tests {
     #[test]
     fn prices_cumulative_session_aggregates_with_static_rates() {
         let pricing = deepseek_pricing(0.00000014);
-        let created = crate::parse_ts_timestamp("2026-08-17T01:00:00Z")
+        let created = ccusage_core::parse_ts_timestamp("2026-08-17T01:00:00Z")
             .unwrap()
             .as_millis();
         let entry = session_value_to_entry(

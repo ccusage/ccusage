@@ -384,13 +384,14 @@ fn visit_codex_session_file_inner(
                     {
                         return ControlFlow::Continue(());
                     }
-                    record_decode_failure(
-                        path,
-                        current.number(),
+                    jsonl::record_decode_error(
                         line,
                         error,
+                        path,
+                        current.number(),
+                        current.unterminated(),
                         diagnostics,
-                        Some(&mut state.previous_totals),
+                        Some(is_usage_value),
                     );
                     return ControlFlow::Continue(());
                 }
@@ -1200,39 +1201,17 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage
 }
 
-// NOTE(2026-11-15): A rejected `token_count` can still carry a usable cumulative total. Advance the baseline or the next dated delta can recount its tokens.
-fn record_decode_failure(
-    path: &Path,
-    line: u32,
-    content: &[u8],
-    error: serde_json::Error,
-    diagnostics: &Diagnostics,
-    previous_totals: Option<&mut Option<CodexRawUsage>>,
-) {
-    jsonl::record_decode_error(
-        content,
-        error,
-        path,
-        line,
-        !content.ends_with(b"\n"),
-        diagnostics,
-        Some(|value: &Value| {
-            let token_count = value.get("type").and_then(Value::as_str) == Some("event_msg")
-                && value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count");
-            if let Some(previous_totals) = previous_totals
-                && token_count
-                && let Some(total) = value.pointer("/payload/info/total_token_usage")
-                && let Ok(total) = serde_json::from_value::<CodexRawUsage>(total.clone())
-            {
-                *previous_totals = Some(total);
-            }
-            value.get("type").and_then(Value::as_str) == Some("token_usage_record")
-                || (token_count
-                    && value
-                        .pointer("/payload/info")
-                        .is_some_and(|info| !info.is_null()))
-        }),
-    );
+fn is_usage_value(value: &Value) -> bool {
+    match value.get("type").and_then(Value::as_str) {
+        Some("token_usage_record") => true,
+        Some("event_msg") => {
+            value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
+                && value
+                    .pointer("/payload/info")
+                    .is_some_and(|info| !info.is_null())
+        }
+        _ => false,
+    }
 }
 
 struct RecordLocation<'a> {
@@ -2060,6 +2039,76 @@ mod diagnostic_tests {
             );
         }
         assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
+    }
+
+    #[test]
+    fn a_damaged_field_never_hides_the_cumulative_total_from_the_next_delta() {
+        use serde_json::json;
+
+        let pointers = [
+            "/timestamp",
+            "/created_at",
+            "/createdAt",
+            "/model",
+            "/model_name",
+            "/metadata",
+            "/usage",
+            "/data",
+            "/result",
+            "/response",
+            "/payload/model",
+            "/payload/model_name",
+            "/payload/metadata",
+            "/payload/usage",
+            "/payload/thread_token_usage",
+            "/payload/thread_settings",
+            "/payload/response_id",
+            "/payload/compaction_response_id",
+            "/payload/info/model",
+            "/payload/info/model_name",
+            "/payload/info/metadata",
+            "/payload/info/last_token_usage",
+        ];
+        let damaged_values = [
+            json!(null),
+            json!(true),
+            json!(-1),
+            json!(1.5),
+            json!("SECRET_CANARY"),
+            json!([]),
+            json!([{"input_tokens": 1}]),
+            json!({}),
+            json!({"input_tokens": {"SECRET_CANARY": true}}),
+        ];
+        let total = |timestamp: &str, input_tokens: u64| {
+            json!({"timestamp": timestamp, "type": "event_msg", "payload": {
+                "type": "token_count",
+                "info": {"total_token_usage": {"input_tokens": input_tokens, "output_tokens": 1}},
+            }})
+        };
+        for pointer in pointers {
+            for damaged_value in &damaged_values {
+                let mut damaged = total("2026-01-02T00:00:01Z", 110);
+                let (parent, key) = pointer.rsplit_once('/').unwrap();
+                damaged
+                    .pointer_mut(parent)
+                    .and_then(serde_json::Value::as_object_mut)
+                    .unwrap()
+                    .insert(key.to_string(), damaged_value.clone());
+                let lines = [
+                    total("2026-01-02T00:00:00Z", 10),
+                    damaged,
+                    total("2026-01-02T00:00:02Z", 115),
+                ]
+                .map(|line| line.to_string());
+                let (events, _) = session_events(&lines.each_ref().map(String::as_str));
+                assert_eq!(
+                    events.last().map(|event| event.input_tokens),
+                    Some(5),
+                    "{pointer} = {damaged_value}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -23,7 +23,7 @@ smallvec.workspace = true
 ccusage-pricing-snapshots.workspace = true
 ccusage-test-support.workspace = true
 insta.workspace = true
-stats_alloc = "0.1.10"
+stats_alloc.workspace = true
 
 [lints]
 workspace = true

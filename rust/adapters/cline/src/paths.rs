@@ -137,7 +137,10 @@ fn classify_file(root: &Path, path: &Path) -> Option<(SourceKind, String)> {
         .components()
         .filter_map(|component| match component {
             Component::Normal(value) => value.to_str(),
-            _ => None,
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => None,
         })
         .collect::<Vec<_>>();
 

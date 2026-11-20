@@ -1,16 +1,19 @@
+use std::io;
+
 use crate::{
     style::{Color, TerminalStyle, color},
     width::visible_width,
 };
 
-pub fn print_box_title(title: &str, style: impl Into<TerminalStyle>) {
+pub fn print_box_title(title: &str, style: impl Into<TerminalStyle>) -> io::Result<()> {
     let style = style.into();
     if style.log_level == Some(0) {
-        return;
+        return Ok(());
     }
     for line in box_title_lines(title, style) {
-        println!("{line}");
+        crate::outln!("{line}")?;
     }
+    Ok(())
 }
 
 fn box_title_lines(title: &str, style: TerminalStyle) -> Vec<String> {

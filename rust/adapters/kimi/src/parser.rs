@@ -653,7 +653,7 @@ mod pricing_identity_tests {
     #[test]
     fn adapter_pricing_identity() {
         let entry = KimiUsageEntry {
-            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
 
             session_id: "s".into(),
             model: "kimi-for-coding".into(),

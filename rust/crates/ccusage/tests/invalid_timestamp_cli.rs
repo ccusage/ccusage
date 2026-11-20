@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use ccusage_test_support::fs_fixture;
 use serde_json::Value;
 

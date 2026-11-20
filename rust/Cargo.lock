@@ -339,6 +339,7 @@ dependencies = [
  "ccusage-core",
  "ccusage-test-support",
  "jiff",
+ "percent-encoding",
  "serde",
  "serde_json",
 ]
@@ -470,6 +471,7 @@ name = "ccusage-config"
 version = "0.0.0"
 dependencies = [
  "ccusage-cli",
+ "ccusage-terminal",
  "ccusage-test-support",
  "insta",
  "schemars",

@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use crate::{PricingMap, cli::SharedArgs, paths::DSH_HOME_ENV};
+    use crate::{cli::SharedArgs, paths::DSH_HOME_ENV};
+    use ccusage_core::PricingMap;
+    use ccusage_core::cli::{AgentReportKind, WeekDay};
     use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]

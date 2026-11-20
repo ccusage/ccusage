@@ -179,7 +179,7 @@ mod tests {
                     "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session-sqlite', ?1, ?2, 1769753935279)",
                 )
                 .unwrap();
-            statement.bind((1, seq as i64)).unwrap();
+            statement.bind((1, i64::try_from(seq).unwrap())).unwrap();
             statement.bind((2, event_json)).unwrap();
             statement.next().unwrap();
         }
@@ -249,7 +249,7 @@ mod tests {
                     "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session', ?1, ?2, 1769753935279)",
                 )
                 .unwrap();
-            statement.bind((1, seq as i64)).unwrap();
+            statement.bind((1, i64::try_from(seq).unwrap())).unwrap();
             statement.bind((2, *event_json)).unwrap();
             statement.next().unwrap();
         }

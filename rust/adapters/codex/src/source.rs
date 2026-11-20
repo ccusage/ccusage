@@ -468,6 +468,103 @@ mod diagnostic_tests {
     }
 
     #[test]
+    fn damaged_token_counts_keep_the_usable_baseline_in_plain_and_compressed_rollouts() {
+        ccusage_test_support::install_pricing_snapshots();
+        let records = |hour: u8| {
+            [
+            format!(r#"{{"timestamp":"2026-01-02T{hour:02}:00:00Z","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}}}}}"#),
+            format!(r#"{{"timestamp":"2026-01-02T{hour:02}:00:01Z","type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{{"input_tokens":{{"SECRET_CANARY":true}}}},"total_token_usage":{{"input_tokens":110,"output_tokens":22,"total_tokens":132}}}}}}}}"#),
+            format!(r#"{{"timestamp":"2026-01-02T{hour:02}:00:02Z","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":510,"output_tokens":102,"note":"SECRET_CANARY"#),
+            r#"[{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":910,"output_tokens":182}}}}]"#.to_string(),
+            format!(r#"{{"timestamp":"2026-01-02T{hour:02}:00:03Z","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":115,"output_tokens":23,"total_tokens":138}}}}}}}}"#),
+            ]
+            .join("\n")
+        };
+        let plain = "sessions/2026/01/02/rollout-2026-01-02T00-00-00-plain.jsonl";
+        let compressed = "sessions/2026/01/02/rollout-2026-01-02T00-00-00-compressed.jsonl.zst";
+        for rollouts in [&[plain][..], &[compressed], &[plain, compressed]] {
+            let fixture = Fixture::new();
+            for (hour, rollout) in (0..).zip(rollouts.iter()) {
+                let records = records(hour);
+                if rollout.ends_with(".zst") {
+                    let path = fixture.write_file(rollout, "");
+                    std::fs::write(
+                        path,
+                        zstd::stream::encode_all(records.as_bytes(), 3).unwrap(),
+                    )
+                    .unwrap();
+                } else {
+                    fixture.write_file(rollout, &records);
+                }
+            }
+            let inputs = rollouts.len() as u64;
+            Environment::with_vars([
+                ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+                ("LOG_LEVEL", Some("3".into())),
+            ])
+            .run(|| {
+                let pricing = PricingMap::load_embedded();
+                for (since, until) in [
+                    (None, None),
+                    (
+                        Some("20260102".parse().unwrap()),
+                        Some("20260102".parse().unwrap()),
+                    ),
+                ] {
+                    let shared = SharedArgs {
+                        offline: true,
+                        debug: true,
+                        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                        since,
+                        until,
+                        ..Default::default()
+                    };
+                    let context = format!("{rollouts:?} since={since:?}");
+                    let result = SOURCE
+                        .load_rows(&LoadRequest {
+                            kind: ccusage_adapter_common::source::LoadKind::for_report(
+                                AgentReportKind::Daily,
+                            ),
+                            shared: &shared,
+                            options: SourceOptions::default(),
+                            pricing: Some(&pricing),
+                            progress: ProgressOwner::Caller,
+                        })
+                        .unwrap();
+                    assert_eq!(result.rows.len(), 1, "{context}");
+                    assert_eq!(
+                        (
+                            result.rows[0].input_tokens,
+                            result.rows[0].output_tokens,
+                            result.rows[0].total_tokens,
+                        ),
+                        (15 * inputs, 3 * inputs, 18 * inputs),
+                        "{context}"
+                    );
+                    let warnings = result.diagnostics.warnings(&shared);
+                    let plural = |count: u64, noun: &str| {
+                        format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+                    };
+                    for (records, category) in
+                        [(2 * inputs, "invalid data"), (inputs, "undecoded usage")]
+                    {
+                        let expected = format!(
+                            "WARN  codex: skipped {} in {} ({category})",
+                            plural(records, "record"),
+                            plural(inputs, "input"),
+                        );
+                        assert!(
+                            warnings.contains(&expected),
+                            "{context}: {expected}\n{warnings:?}"
+                        );
+                    }
+                    assert!(!warnings.join("\n").contains("SECRET_CANARY"), "{context}");
+                }
+            });
+        }
+    }
+
+    #[test]
     fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();

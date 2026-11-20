@@ -191,7 +191,7 @@ pub fn summarize_entries(
             Ok(match kind {
                 SummaryKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
                 SummaryKind::Weekly(start) => summarize_bucket(&daily, Bucket::Weekly(start)),
-                _ => daily,
+                SummaryKind::Daily | SummaryKind::Session => daily,
             })
         }
     };

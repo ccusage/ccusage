@@ -555,7 +555,6 @@ mod tests {
 
     use super::*;
     use crate::{
-        UsageSummary,
         adapter::codex,
         cli::{BUILT_IN_AGENT_NAMES, CodexSpeed, CostMode},
         tests::{NO_SOURCES, aggregate_periods},
@@ -564,6 +563,7 @@ mod tests {
     use ccusage_adapter_common::source::LoadRequest;
     use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
+    use ccusage_core::UsageSummary;
     use ccusage_test_support::{Environment, fs_fixture};
 
     fn load_pi_format_agent_rows(

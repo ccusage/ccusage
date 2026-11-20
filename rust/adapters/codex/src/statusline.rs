@@ -25,7 +25,7 @@ pub fn run_statusline(args: CodexStatuslineArgs) -> Result<()> {
     if wants_json(&args.shared) {
         return print_json_or_jq(summary, args.shared.jq.as_deref(), args.shared.no_cost);
     }
-    println!("{}", format_summary(&summary, args.shared.no_cost));
+    ccusage_core::outln!("{}", format_summary(&summary, args.shared.no_cost))?;
     Ok(())
 }
 

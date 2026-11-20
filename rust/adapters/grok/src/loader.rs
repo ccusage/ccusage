@@ -43,7 +43,8 @@ pub(super) fn has_data() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PricingMap, cli::SharedArgs};
+    use crate::cli::SharedArgs;
+    use ccusage_core::PricingMap;
     use ccusage_test_support::{Environment, fs_fixture};
     use std::ffi::OsString;
 
@@ -226,6 +227,57 @@ mod tests {
             assert_eq!(entries.len(), 2);
             assert_eq!(entries[0].message_id.as_deref(), Some("evt-early"));
             assert_eq!(entries[1].message_id.as_deref(), Some("evt-late"));
+        })
+    }
+
+    #[test]
+    fn keeps_project_paths_distinct_when_encoded_names_are_not_valid_utf8() {
+        ccusage_test_support::install_pricing_snapshots();
+        let first = turn("evt-lossy-a", "grok-4.5-build", 10, 1, 0, 0, 1_750_000_000);
+        let second = turn("evt-lossy-b", "grok-4.5-build", 20, 2, 0, 0, 1_750_000_100);
+        let fixture = fs_fixture!({
+            "sessions/%2Ftmp%2F%FFproject/sess-a/updates.jsonl": first,
+            "sessions/%2Ftmp%2F%FEproject/sess-b/updates.jsonl": second,
+        });
+        let shared = SharedArgs {
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+        with_grok_home(fixture.root()).run(|| {
+            let mut entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
+            entries.sort_by(|left, right| left.project_path.cmp(&right.project_path));
+
+            assert_eq!(entries.len(), 2);
+            assert_eq!(
+                entries[0].project_path.as_ref(),
+                "%2Ftmp%2F%FEproject",
+                "{:?}",
+                entries
+                    .iter()
+                    .map(|entry| entry.project_path.as_ref())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(entries[1].project_path.as_ref(), "%2Ftmp%2F%FFproject");
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| entry.usage.input_tokens)
+                    .sum::<u64>(),
+                30
+            );
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| entry.usage.output_tokens)
+                    .sum::<u64>(),
+                3
+            );
         })
     }
 

@@ -223,11 +223,9 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        PricingMap,
-        cli::{CostMode, SharedArgs},
-    };
+    use crate::cli::{CostMode, SharedArgs};
     use ccusage_adapter_common::source::SourceOptions;
+    use ccusage_core::PricingMap;
     use ccusage_test_support::Fixture;
     use serde_json::json;
     use std::path::Path;

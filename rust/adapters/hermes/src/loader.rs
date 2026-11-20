@@ -141,8 +141,8 @@ mod tests {
             timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::default()
         };
-        let tz = crate::resolve_tz(shared.timezone.as_ref());
-        let diagnostics = Diagnostics::at("hermes", ccusage_core::utc_now());
+        let tz = ccusage_core::resolve_tz(shared.timezone.as_ref());
+        let diagnostics = Diagnostics::without_clock("hermes");
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics)
             .into_iter()
             .map(|entry| {

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::process::Output;
 
 use ccusage_test_support::{Fixture, fs_fixture};
