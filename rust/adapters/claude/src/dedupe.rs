@@ -124,7 +124,7 @@ fn push_deduped_session_alias(
 pub(super) fn dedupe_files<E: DedupEntry>(
     mut files: Vec<(PathBuf, Vec<E>)>,
 ) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
-    files.sort_by_cached_key(|(path, _)| usage_file_order(path));
+    files.sort_by(|(left, _), (right, _)| usage_file_order(left, right));
     let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
         FxHashMap::with_capacity_and_hasher(entry_count, Default::default());
