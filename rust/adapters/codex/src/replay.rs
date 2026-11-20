@@ -364,6 +364,14 @@ impl CodexSessionMetadata {
     pub(super) fn is_fork(&self) -> bool {
         self.parent_id.is_some()
     }
+
+    pub(super) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub(super) fn parent_id(&self) -> Option<&str> {
+        self.parent_id.as_deref()
+    }
 }
 
 fn read_codex_session_metadata(

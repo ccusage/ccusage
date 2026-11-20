@@ -331,18 +331,21 @@ fn fold_rollout(
         }
     };
     let metadata = if let Some(replay) = replay {
-        parser::visit_codex_session_file_with_diagnostics(
+        parser::visit_codex_session_file_with_metadata(
             sessions_dir,
             path,
             replay.fork_replay(path),
             &mut visit,
             diagnostics,
-        );
-        None
+        )
     } else {
         parser::visit_codex_session_file_unless_fork(sessions_dir, path, &mut visit, diagnostics)
     };
-    result.map(|()| metadata)
+    result?;
+    if let Some(metadata) = &metadata {
+        seen.record_lineage(&provenance, metadata)?;
+    }
+    Ok(metadata.filter(|_| replay.is_none()))
 }
 
 fn has_date_bounds(shared: &SharedArgs) -> bool {

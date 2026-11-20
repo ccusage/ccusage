@@ -1024,7 +1024,7 @@ fn dedupes_copied_token_usage_after_model_alias_resolution() {
 }
 
 #[test]
-fn keeps_matching_token_usage_in_distinct_session_groups() {
+fn credits_a_recordless_copy_to_one_session() {
     ccusage_test_support::install_pricing_snapshots();
     let usage_line = json!({
         "timestamp": "2026-05-29T08:01:00.000Z",
@@ -1062,8 +1062,7 @@ fn keeps_matching_token_usage_in_distinct_session_groups() {
         )
         .unwrap();
 
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups["root"].input_tokens, 1_000);
+        assert_eq!(groups.len(), 1);
         assert_eq!(groups["goal"].input_tokens, 1_000);
     }
 }
@@ -1285,6 +1284,129 @@ fn skips_replayed_history_of_forks_read_during_the_pass() {
                 "{context}"
             );
         }
+    }
+}
+
+fn session_meta_line(timestamp: &str, id: &str, parent: Option<&str>) -> String {
+    let mut payload = json!({"id": id});
+    if let Some(parent) = parent {
+        payload["forked_from_id"] = parent.into();
+    }
+    json!({"timestamp": timestamp, "type": "session_meta", "payload": payload}).to_string()
+}
+
+fn input_tokens_by_period(
+    sessions_dir: &Path,
+    kind: AgentReportKind,
+    single_thread: bool,
+) -> Vec<(String, u64)> {
+    let shared = SharedArgs {
+        single_thread,
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+        ..SharedArgs::default()
+    };
+    load_groups_from_directory(sessions_dir, &shared, kind)
+        .unwrap()
+        .into_iter()
+        .map(|(period, group)| (period, group.input_tokens))
+        .collect()
+}
+
+const PARENT_ROLLOUT: &str = "2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz";
+const FORK_ROLLOUT: &str = "2026/05/12/rollout-2026-05-12T08-30-00-fork-abc";
+
+fn parent_and_fork_requesting_at_the_same_instant() -> [String; 2] {
+    let parent = [
+        session_meta_line("2026-05-12T08:00:00.000Z", "parent-xyz", None),
+        fork_token_count_line("2026-05-12T08:01:00.000Z", 1_000, 1_000),
+        fork_token_count_line("2026-05-12T09:00:00.000Z", 100, 1_100),
+    ];
+    let fork = [
+        session_meta_line("2026-05-12T08:30:00.000Z", "fork-abc", Some("parent-xyz")),
+        fork_token_count_line("2026-05-12T08:30:00.000Z", 1_000, 1_000),
+        fork_token_count_line("2026-05-12T09:00:00.000Z", 100, 1_100),
+    ];
+    [parent.join("\n"), fork.join("\n")]
+}
+
+#[test]
+fn counts_a_fork_and_its_parent_requesting_at_the_same_instant_twice() {
+    ccusage_test_support::install_pricing_snapshots();
+    let [parent, fork] = parent_and_fork_requesting_at_the_same_instant();
+    let fixture = fs_fixture!({
+        "sessions/2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz.jsonl": parent,
+        "sessions/2026/05/12/rollout-2026-05-12T08-30-00-fork-abc.jsonl": fork,
+    });
+    let sessions = fixture.path("sessions");
+
+    for single_thread in [true, false] {
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Daily, single_thread),
+            [("2026-05-12".to_string(), 1_200)],
+            "single_thread={single_thread}"
+        );
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Session, single_thread),
+            [
+                (PARENT_ROLLOUT.to_string(), 1_100),
+                (FORK_ROLLOUT.to_string(), 100),
+            ],
+            "single_thread={single_thread}"
+        );
+    }
+}
+
+#[test]
+fn counts_a_copy_without_fork_metadata_once_in_every_report() {
+    ccusage_test_support::install_pricing_snapshots();
+    let request = fork_token_count_line("2026-05-12T09:00:00.000Z", 100, 1_100);
+    let fixture = fs_fixture!({
+        "sessions/a-original.jsonl": session_meta_line("2026-05-12T08:00:00.000Z", "original", None) + "\n" + &request,
+        "sessions/b-copy.jsonl": session_meta_line("2026-05-12T08:00:00.000Z", "copy", None) + "\n" + &request,
+    });
+    let sessions = fixture.path("sessions");
+
+    for single_thread in [true, false] {
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Daily, single_thread),
+            [("2026-05-12".to_string(), 100)],
+            "single_thread={single_thread}"
+        );
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Session, single_thread),
+            [("a-original".to_string(), 100)],
+            "single_thread={single_thread}"
+        );
+    }
+}
+
+#[test]
+fn collapses_a_parent_copy_while_keeping_the_fork_request() {
+    ccusage_test_support::install_pricing_snapshots();
+    let [parent, fork] = parent_and_fork_requesting_at_the_same_instant();
+    let copy = fork_token_count_line("2026-05-12T09:00:00.000Z", 100, 1_100);
+    let fixture = fs_fixture!({
+        "sessions/0-copy.jsonl": copy,
+        "sessions/2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz.jsonl": parent,
+        "sessions/2026/05/12/rollout-2026-05-12T08-30-00-fork-abc.jsonl": fork,
+    });
+    let sessions = fixture.path("sessions");
+
+    for single_thread in [true, false] {
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Daily, single_thread),
+            [("2026-05-12".to_string(), 1_200)],
+            "single_thread={single_thread}"
+        );
+        assert_eq!(
+            input_tokens_by_period(&sessions, AgentReportKind::Session, single_thread),
+            [
+                ("0-copy".to_string(), 100),
+                (PARENT_ROLLOUT.to_string(), 1_000),
+                (FORK_ROLLOUT.to_string(), 100),
+            ],
+            "single_thread={single_thread}"
+        );
     }
 }
 
