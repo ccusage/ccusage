@@ -344,11 +344,12 @@ impl<'a> Reader<'a> {
     fn row(&mut self, key: Arc<str>) -> Row {
         let flags = self.flags.u8();
         let source = match flags & SOURCE_MASK {
-            SOURCE_LITELLM => Source::LiteLlm,
-            SOURCE_CURATED => Source::Curated,
-            SOURCE_MODELS_DEV => Source::ModelsDev,
-            _ => panic!("embedded pricing table has an unknown row source"),
-        };
+            SOURCE_LITELLM => Some(Source::LiteLlm),
+            SOURCE_CURATED => Some(Source::Curated),
+            SOURCE_MODELS_DEV => Some(Source::ModelsDev),
+            _ => None,
+        }
+        .expect("embedded pricing table has a known row source");
         let scope = if flags & SCOPE_DIRECT == 0 {
             Scope::Hosted
         } else {
@@ -380,11 +381,12 @@ impl<'a> Reader<'a> {
         let cache_read = self.optional_rate();
         let cache_create_1h = self.optional_rate();
         let mode = match self.flags.u8() {
-            NO_LONG_CONTEXT => None,
-            LONG_CONTEXT_MARGINAL => Some(LongContextMode::Marginal),
-            LONG_CONTEXT_WHOLE_REQUEST => Some(LongContextMode::WholeRequest),
-            _ => panic!("embedded pricing table has an unknown long-context mode"),
-        };
+            NO_LONG_CONTEXT => Some(None),
+            LONG_CONTEXT_MARGINAL => Some(Some(LongContextMode::Marginal)),
+            LONG_CONTEXT_WHOLE_REQUEST => Some(Some(LongContextMode::WholeRequest)),
+            _ => None,
+        }
+        .expect("embedded pricing table has a known long-context mode");
         let long_context = mode.map(|mode| {
             Arc::new(LongContext {
                 threshold: self.limits.u64(),
@@ -401,13 +403,13 @@ impl<'a> Reader<'a> {
         let explicit_fields =
             u16::try_from(self.flags.u64()).expect("embedded pricing explicit fields fit u16");
         let published = match self.flags.u8() {
-            PUBLISHED_KNOWN => Published::Known(PublishedRates {
+            PUBLISHED_KNOWN => Some(Published::Known(PublishedRates {
                 fast_multiplier: self.rate(),
                 ultrafast_multiplier: self.rate(),
                 flex_multiplier: self.rate(),
                 cache_defaults: self.cache_defaults(),
-            }),
-            PUBLISHED_BY_KEY => Published::ByKey {
+            })),
+            PUBLISHED_BY_KEY => Some(Published::ByKey {
                 speed: PublishedSpeed {
                     fast: self.optional_rate(),
                     ultrafast: self.optional_rate(),
@@ -415,9 +417,10 @@ impl<'a> Reader<'a> {
                 },
                 cache_fallback: self.cache_defaults(),
                 resolved: OnceLock::new(),
-            },
-            _ => panic!("embedded pricing table has an unknown published-rate kind"),
-        };
+            }),
+            _ => None,
+        }
+        .expect("embedded pricing table has a known published-rate kind");
         RowPricing {
             input,
             output,
