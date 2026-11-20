@@ -18,7 +18,7 @@ use memchr::memmem;
 
 use super::{
     claude_paths, daily, dedupe, dedupe::DedupEntry as _, extract_session_parts,
-    usage_files_before_since, visit_usage_files,
+    read_usage_files_since, visit_usage_files,
 };
 
 /// Loads every deduplicated Claude usage entry, regardless of `since`.
@@ -266,12 +266,13 @@ fn load_entries_with_mode(
     };
     let mut pruned = Vec::new();
     let loaded_files = if skip_files_before_since && shared.since.is_some() {
-        let split = usage_files_before_since(
+        let split = read_usage_files_since(
             &paths,
             project_filter,
             diagnostics,
             shared,
             shared.clock.now().into(),
+            read,
         );
         debug_log(
             shared,
@@ -281,19 +282,14 @@ fn load_entries_with_mode(
             ),
         );
         pruned = split.pruned;
-        let mut files = split.kept;
         debug_log(
             shared,
             format!(
                 "Kept {} JSONL usage files inside the --since window",
-                files.len()
+                split.kept.len()
             ),
         );
-        read_discovered_paths(
-            shared.single_thread,
-            |visit| std::mem::take(&mut files).into_iter().for_each(visit),
-            read,
-        )
+        split.kept
     } else {
         let loaded_files = read_discovered_paths(
             shared.single_thread,
