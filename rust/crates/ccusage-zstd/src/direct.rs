@@ -4,6 +4,7 @@
 )]
 
 use std::{
+    cell::RefCell,
     ffi::CStr,
     fmt,
     fs::File,
@@ -27,6 +28,11 @@ const WINDOW_SIZE_MIN: u64 = 1 << 10;
 const WINDOW_SIZE_MAX: u64 = 1 << zstd_sys::ZSTD_WINDOWLOG_LIMIT_DEFAULT;
 const WILDCOPY_OVERLENGTH: u64 = 32;
 const CONTENT_SIZE_UNKNOWN: u64 = u64::MAX;
+const RECYCLED_SIZE_MAX: usize = 16 << 20;
+
+thread_local! {
+    static BUFFERS: RefCell<(Vec<u8>, Vec<u8>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+}
 
 pub(crate) enum Fault {
     Io(io::Error),
@@ -124,6 +130,16 @@ struct Ring {
     decoded: u64,
 }
 
+impl Drop for Direct {
+    fn drop(&mut self) {
+        let input = mem::take(&mut self.input);
+        let output = mem::take(&mut self.output);
+        if input.len() <= RECYCLED_SIZE_MAX && output.len() <= RECYCLED_SIZE_MAX {
+            BUFFERS.set((input, output));
+        }
+    }
+}
+
 pub(crate) struct Direct {
     context: Context,
     file: File,
@@ -144,13 +160,19 @@ pub(crate) struct Direct {
 
 impl Direct {
     pub(crate) fn new(file: File, capacity: usize) -> io::Result<Self> {
+        let context = Context::new()?;
+        // NOTE(2026-11-20): Each worker reuses its ring and input buffer across files. A fresh zero-filled ring per file cost more than the copy this decoder removes.
+        let (mut input, output) = BUFFERS.take();
+        if input.len() < capacity {
+            input = vec![0; capacity];
+        }
         Ok(Self {
-            context: Context::new()?,
+            context,
             file,
-            input: vec![0; capacity],
+            input,
             input_start: 0,
             input_end: 0,
-            output: Vec::new(),
+            output,
             history: Vec::new(),
             start: 0,
             scanned: 0,
