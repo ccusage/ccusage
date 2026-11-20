@@ -10,13 +10,14 @@ sqlite = ["dep:sqlite"]
 
 [dependencies]
 ccusage-core.workspace = true
+ccusage-zstd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlite = { workspace = true, optional = true }
-zstd.workspace = true
 
 [dev-dependencies]
 ccusage-test-support.workspace = true
+zstd.workspace = true
 
 [lints]
 workspace = true
