@@ -173,8 +173,8 @@ def "main run" [
         'many-files' | 'proxy' => (claude-env $fixture_dir $home)
         _ => { error make {msg: $"Unknown fixture '($fixture)'"} }
     }
-    let parsed = core parse-command $command
-    let report_args = core resolve-args $parsed.args ($fixture_dir | path join claude)
+    let entry = core labeled-entry $command $fixture
+    let report_args = core resolve-args $entry.args ($fixture_dir | path join claude)
     let vars = $context.vars | merge $report_vars | merge {PATH: ($env.PATH | str join (char esep))}
     let profile = $out | path join callgrind.out
     let argv = [
@@ -200,7 +200,7 @@ def "main run" [
         let log = $out | path join valgrind.log
         if ($log | path exists) { print --stderr (open --raw $log) }
         error make {
-            msg: $"ccusage ($parsed.label) exited with ($result.exit_code): ($result.stderr)"
+            msg: $"ccusage ($entry.label) exited with ($result.exit_code): ($result.stderr)"
         }
     }
     $result.stdout | save --force ($out | path join report.json)
@@ -212,9 +212,9 @@ def "main run" [
     let summary = {
         ref: $build.ref
         sha: $build.sha
-        args: $parsed.args
-        label: $parsed.label
-        fixture: $fixture
+        args: $entry.args
+        label: $entry.label
+        fixture: $entry.fixture
         report_bytes: ($result.stdout | str length --utf-8-bytes)
         total: $self_rows.total
         self: $self_rows.functions

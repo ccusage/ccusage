@@ -34,17 +34,15 @@ Ir           file:function
 
 def fake-run [
     ref: string
-    command: string
+    label: string
     total: int
     self: list<any>
-    --label: string
     --fixture: string = 'large'
 ]: nothing -> record {
     {
         ref: $ref
         sha: ('0' | fill --character '0' --width 40)
-        command: $command
-        label: ($label | default $command)
+        label: $label
         fixture: $fixture
         total: $total
         self: $self
@@ -132,6 +130,28 @@ def main []: nothing -> nothing {
         fixture: large
         label: 'large:amp daily'
     }
+
+    assert equal (core labeled-entry 'golden:codex daily' golden) {
+        args: 'codex daily'
+        fixture: golden
+        label: 'golden:codex daily'
+    }
+    assert equal (core labeled-entry 'claude daily' 'many-files') {
+        args: 'claude daily'
+        fixture: 'many-files'
+        label: 'many-files:claude daily'
+    }
+    assert equal (core labeled-entry 'claude daily' large) {
+        args: 'claude daily'
+        fixture: large
+        label: 'claude daily'
+    }
+    assert error { core labeled-entry 'golden:codex daily' large }
+
+    let relabelled = core plan main 'codex daily, golden:codex daily, many-files:claude daily, proxy:claude daily, daily, golden:daily'
+    let rebuilt = $relabelled.runs | each {|run| core labeled-entry $run.args $run.fixture | get label }
+    assert equal $rebuilt $relabelled.runs.label
+    assert equal ($rebuilt | uniq | length) ($rebuilt | length)
 
     let plan = core plan 'main, feature/x main' "claude daily\namp daily, claude daily, many-files:claude daily"
     assert equal $plan.refs [
@@ -238,21 +258,17 @@ def main []: nothing -> nothing {
         (fake-run main 'codex daily' 100 [
             {function: shared, ir: 10}
         ])
-        (
-            fake-run main 'codex daily' 200 [{function: shared, ir: 20}]
-            --label 'golden:codex daily'
-            --fixture golden
-        )
+        (fake-run main 'golden:codex daily' 200 [
+            {function: shared, ir: 20}
+        ] --fixture golden)
     ]
     let head_fixtures = [
         (fake-run head 'codex daily' 80 [
             {function: shared, ir: 8}
         ])
-        (
-            fake-run head 'codex daily' 160 [{function: shared, ir: 16}]
-            --label 'golden:codex daily'
-            --fixture golden
-        )
+        (fake-run head 'golden:codex daily' 160 [
+            {function: shared, ir: 16}
+        ] --fixture golden)
     ]
     assert equal (
         (core deltas $base_fixtures $head_fixtures).commands

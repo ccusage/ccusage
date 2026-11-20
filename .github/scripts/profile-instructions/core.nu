@@ -129,22 +129,39 @@ export def label [args: string, fixture: string]: nothing -> string {
 # Claude, Codex, Grok, and the unified reports, and every other agent reads the golden seeds.
 # `args` is what ccusage receives and `label` names the run, so one report can be profiled on
 # several fixtures in one dispatch.
-export def parse-command [entry: string]: nothing -> record<args: string, fixture: string, label: string> {
+def split-entry [entry: string]: nothing -> record<args: string, fixture: any> {
     match (
         $entry
         | str trim
         | parse --regex ('^(?:(?<fixture>' + ($fixtures | str join '|') + '):)?\s*(?<command>.+)$')
     ) {
         [$row] => {
-            let args = $row.command | split row --regex '\s+' | str join ' '
-            let fixture = $row.fixture | default (implicit-fixture $args)
-            {
-                args: $args
-                fixture: $fixture
-                label: (label $args $fixture)
-            }
+            args: ($row.command | split row --regex '\s+' | str join ' ')
+            fixture: $row.fixture
         }
         _ => { error make {msg: $"Empty profile command entry: '($entry)'"} }
+    }
+}
+
+export def parse-command [entry: string]: nothing -> record<args: string, fixture: string, label: string> {
+    let row = split-entry $entry
+    labeled-entry $row.args ($row.fixture | default (implicit-fixture $row.args))
+}
+
+# A `run` job receives the bare `args` plus the fixture its matrix row names, so it rebuilds the
+# label from both; a label echoing only the args would collide with the same report on another
+# fixture and collapse the merged ranking and deltas onto one row.
+export def labeled-entry [command: string, fixture: string]: nothing -> record<args: string, fixture: string, label: string> {
+    let row = split-entry $command
+    if $row.fixture != null and $row.fixture != $fixture {
+        error make {
+            msg: $"Command '($command)' names fixture '($row.fixture)' but the run uses '($fixture)'"
+        }
+    }
+    {
+        args: $row.args
+        fixture: $fixture
+        label: (label $row.args $fixture)
     }
 }
 
