@@ -463,7 +463,7 @@ pub fn record_decode_error(
     number: u32,
     unterminated: bool,
     diagnostics: &Diagnostics,
-    is_usage: Option<fn(&serde_json::Value) -> bool>,
+    is_usage: Option<impl Fn(&serde_json::Value) -> bool>,
 ) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
