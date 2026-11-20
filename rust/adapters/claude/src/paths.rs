@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom},
     ops::ControlFlow,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
@@ -12,7 +13,7 @@ use crate::{
     cli::{SharedArgs, home},
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
-    resolve_tz,
+    parse_ts_timestamp, resolve_tz,
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
@@ -88,6 +89,7 @@ pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering 
 }
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
+const TAIL_PROBE_BYTES: u64 = 16 * 1024;
 
 pub(super) struct SinceFiles<T> {
     pub(super) kept: Vec<(PathBuf, T)>,
@@ -138,7 +140,9 @@ fn read_files_since<T: Send>(
         single_thread,
         |visit| {
             discover(&mut |file| {
-                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold);
+                // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
+                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold)
+                    || latest_tail_timestamp(&file).is_none_or(|latest| latest >= threshold);
                 if live {
                     visit(file.clone());
                 }
@@ -247,6 +251,40 @@ fn first_recorded_session_id(path: &Path) -> Option<String> {
     })
     .ok()
     .flatten()
+}
+
+fn latest_tail_timestamp(path: &Path) -> Option<i64> {
+    #[derive(Deserialize)]
+    struct TimestampProbe<'a> {
+        timestamp: Option<&'a str>,
+    }
+
+    let mut file = File::open(path).ok()?;
+    let start = file
+        .metadata()
+        .ok()?
+        .len()
+        .saturating_sub(TAIL_PROBE_BYTES + 1);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut tail = Vec::with_capacity(TAIL_PROBE_BYTES as usize + 1);
+    file.take(TAIL_PROBE_BYTES + 1)
+        .read_to_end(&mut tail)
+        .ok()?;
+    let whole_lines = if start == 0 {
+        &tail[..]
+    } else {
+        &tail[memchr::memchr(b'\n', &tail)? + 1..]
+    };
+    whole_lines
+        .split(|&byte| byte == b'\n')
+        .filter_map(|line| {
+            serde_json::from_slice::<TimestampProbe<'_>>(line)
+                .ok()?
+                .timestamp
+        })
+        .filter_map(parse_ts_timestamp)
+        .map(|timestamp| timestamp.as_millis())
+        .max()
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
