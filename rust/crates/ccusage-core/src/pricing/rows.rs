@@ -125,7 +125,7 @@ impl PricingRows {
                 let (key, first) = rows.next()?;
                 let mut best = (key, first);
                 for (key, found) in rows {
-                    if found.row.pricing != first.row.pricing {
+                    if found.row.rates() != first.row.rates() {
                         return None;
                     }
                     if key < best.0 {

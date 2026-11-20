@@ -398,6 +398,7 @@ fn recognizes_headless_usage_fields_only_as_whole_keys() {
         br#"{"type":"turn.completed","usage":{"input_tokens":1}}"#.as_slice(),
         br#"{"stats":{"input_tokens":1}}"#.as_slice(),
         br#"{"x":1,"prompt_tokens":2}"#.as_slice(),
+        br#"{"type":"turn.completed","us\u0061ge":{"input_tokens":1}}"#.as_slice(),
     ] {
         assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Headless));
     }
@@ -426,7 +427,7 @@ fn recognizes_usage_lines_whose_markers_are_spelled_with_escapes() {
             CodexLineKind::Escaped,
         ),
         (
-            br#"{"type":"turn.completed","us\u0061ge":{"input_tokens":1}}"#.as_slice(),
+            br#"{"type":"turn.completed","us\u0061ge":{"output_tokens":1}}"#.as_slice(),
             CodexLineKind::Escaped,
         ),
     ] {

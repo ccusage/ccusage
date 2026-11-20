@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     parser, paths,
-    replay::{CodexReplayFile, CodexReplayPlan, CodexSessionMetadata},
+    replay::{self, CodexReplayFile, CodexReplayPlan, CodexSessionMetadata},
 };
 
 mod accumulate;
@@ -169,6 +169,7 @@ fn aggregate_planned(
     replay: &CodexReplayPlan,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum(), pricing);
+    seen.record_lineage_edges(replay.lineage_edges())?;
     let mut file_offset = 0;
     for &(sessions_dir, files) in selected {
         let run = CodexAggregateRun {
@@ -256,6 +257,7 @@ fn aggregate_discovered(
         } else {
             CodexReplayPlan::new(replay_files, None, shared.single_thread, diagnostics)
         };
+        seen.record_lineage_edges(replay.lineage_edges())?;
         ccusage_adapter_common::map_parallel(
             &forks,
             shared.single_thread,
@@ -275,8 +277,23 @@ fn aggregate_discovered(
         .into_iter()
         .collect::<Result<()>>()?;
     } else {
-        for (_, result) in loaded {
-            result?;
+        let mut excluded = Vec::new();
+        let mut has_lineage = false;
+        for (file, result) in loaded {
+            match result? {
+                None => excluded.push((file.path, dirs[file.group])),
+                Some(metadata) => {
+                    has_lineage |= metadata
+                        .as_ref()
+                        .is_some_and(|metadata| metadata.lineage_parent_id().is_some());
+                }
+            }
+        }
+        if has_lineage && !excluded.is_empty() {
+            seen.record_lineage_edges(&replay::read_lineage_edges(
+                &excluded,
+                shared.single_thread,
+            ))?;
         }
     }
     seen.fold(shared, kind).map(|groups| (groups, detected))
@@ -331,18 +348,21 @@ fn fold_rollout(
         }
     };
     let metadata = if let Some(replay) = replay {
-        parser::visit_codex_session_file_with_diagnostics(
+        parser::visit_codex_session_file_with_metadata(
             sessions_dir,
             path,
             replay.fork_replay(path),
             &mut visit,
             diagnostics,
-        );
-        None
+        )
     } else {
         parser::visit_codex_session_file_unless_fork(sessions_dir, path, &mut visit, diagnostics)
     };
-    result.map(|()| metadata)
+    result?;
+    if let Some(metadata) = &metadata {
+        seen.record_lineage(&provenance, metadata)?;
+    }
+    Ok(metadata.filter(|_| replay.is_none()))
 }
 
 fn has_date_bounds(shared: &SharedArgs) -> bool {

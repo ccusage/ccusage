@@ -20,6 +20,7 @@ use super::{
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
     usage_by_parent: HashMap<PathBuf, ParentUsage>,
+    lineage_edges: Vec<(String, String)>,
 }
 
 struct ParentReplay {
@@ -96,6 +97,7 @@ impl CodexReplayPlan {
             return Self {
                 parent_by_child: HashMap::new(),
                 usage_by_parent: HashMap::new(),
+                lineage_edges: Vec::new(),
             };
         }
         let mut metadata = files
@@ -174,7 +176,12 @@ impl CodexReplayPlan {
         Self {
             usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
             parent_by_child,
+            lineage_edges: files.iter().filter_map(lineage_edge).collect(),
         }
+    }
+
+    pub(super) fn lineage_edges(&self) -> &[(String, String)] {
+        &self.lineage_edges
     }
 
     pub(super) fn fork_replay(&self, child: &Path) -> Option<CodexForkReplay<'_>> {
@@ -248,6 +255,23 @@ fn collect_replay_files<'a>(
 }
 
 pub(super) type ReplayProbe<'a> = (PathBuf, &'a Path, Option<CodexSessionMetadata>);
+
+fn lineage_edge(file: &CodexReplayFile<'_>) -> Option<(String, String)> {
+    Some((
+        file.metadata.session_id.clone()?,
+        file.metadata.lineage_parent_id.clone()?,
+    ))
+}
+
+pub(super) fn read_lineage_edges(
+    files: &[(PathBuf, &Path)],
+    single_thread: bool,
+) -> Vec<(String, String)> {
+    read_replay_files(files, single_thread, None, &mut HashSet::new())
+        .iter()
+        .filter_map(lineage_edge)
+        .collect()
+}
 
 fn read_replay_files<'a>(
     files: &[(PathBuf, &'a Path)],
@@ -356,6 +380,7 @@ pub(super) struct CodexSessionMetadata {
     pub(super) is_session_meta: bool,
     session_id: Option<String>,
     parent_id: Option<String>,
+    lineage_parent_id: Option<String>,
     pub(super) timestamp: Option<TimestampMs>,
     spawned: bool,
 }
@@ -363,6 +388,14 @@ pub(super) struct CodexSessionMetadata {
 impl CodexSessionMetadata {
     pub(super) fn is_fork(&self) -> bool {
         self.parent_id.is_some()
+    }
+
+    pub(super) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub(super) fn lineage_parent_id(&self) -> Option<&str> {
+        self.lineage_parent_id.as_deref()
     }
 }
 
@@ -394,15 +427,15 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
         .and_then(|spawn| spawn.parent_thread_id.as_deref())
         .filter(|id| !id.is_empty());
     let session_id = payload.and_then(|payload| payload.id.as_deref());
-    let parent_id = payload
-        .filter(|payload| payload.history_base.is_none())
-        .and_then(|payload| {
-            payload
-                .forked_from_id
-                .as_deref()
-                .filter(|id| !id.is_empty())
-                .or(spawn_parent_id)
-        })
+    let lineage_parent_id = payload.and_then(|payload| {
+        payload
+            .forked_from_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .or(spawn_parent_id)
+    });
+    let parent_id = lineage_parent_id
+        .filter(|_| payload.is_some_and(|payload| payload.history_base.is_none()))
         .filter(|_| {
             !path
                 .file_name()
@@ -416,6 +449,7 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
         timestamp: codex_timestamp_instant(value.timestamp.as_ref()),
         session_id: session_id.map(str::to_string),
         parent_id,
+        lineage_parent_id: lineage_parent_id.map(str::to_string),
         spawned: spawn_parent_id.is_some(),
     }
 }

@@ -21,7 +21,12 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
             "pi".to_string(),
             SourceArgs {
                 options: ccusage_core::cli::AgentOptions {
-                    pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                    pi_path: Some(
+                        fixture
+                            .path("custom/pi/sessions")
+                            .to_string_lossy()
+                            .into_owned(),
+                    ),
                     ..Default::default()
                 },
                 shared: SharedArgs {
@@ -106,12 +111,7 @@ fn bounded_codex_reports_deduplicate_per_bucket_after_unified_bucketing() {
             let unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
                 .unwrap()
                 .rows;
-            let count = if kind == AgentReportKind::Session {
-                2
-            } else {
-                1
-            };
-            assert_eq!(unified.len(), count, "{kind:?}");
+            assert_eq!(unified.len(), 1, "{kind:?}");
             for row in unified {
                 assert_eq!(
                     (
