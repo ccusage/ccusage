@@ -7,7 +7,6 @@ use std::{
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use memchr::memmem::Finder;
 
 use crate::{
     IteratedTokenUsage, Rejection, TimestampMs, TokenUsageRaw,
@@ -55,33 +54,18 @@ pub(super) struct Admitted {
     pub(super) record: ClaudeUsageRecord,
     timestamp: TimestampMs,
     advisors: crate::AdvisorUsages,
-    usage_at: Option<usize>,
 }
 
-enum UsageMarker {
-    At(usize),
-    Escaped,
-}
-
-fn usage_marker(line: &[u8]) -> Option<UsageMarker> {
-    const MARKER: &[u8] = br#""usage":{"#;
-    static VERBATIM: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(MARKER));
-    // NOTE(2026-11-19, #2222): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`. A line without `\u00` cannot spell the usage key with escapes, so the escape-aware matcher can be skipped.
-    static ASCII_UNICODE_ESCAPE: LazyLock<Finder<'static>> =
-        LazyLock::new(|| Finder::new(br"\u00"));
-    static FALLBACK: LazyLock<LinePrefilter> = LazyLock::new(|| LinePrefilter::all(&[MARKER]));
-
-    if let Some(at) = VERBATIM.find(line) {
-        return Some(UsageMarker::At(at));
-    }
-    (ASCII_UNICODE_ESCAPE.find(line).is_some() && FALLBACK.matches(line))
-        .then_some(UsageMarker::Escaped)
+fn has_usage_marker(line: &[u8]) -> bool {
+    static USAGE_MARKER: LazyLock<LinePrefilter> =
+        LazyLock::new(|| LinePrefilter::all(&[br#""usage":{"#]));
+    USAGE_MARKER.matches(line)
 }
 
 pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
-    let Some(marker) = usage_marker(line) else {
+    if !has_usage_marker(line) {
         return Err(Refusal::NotUsage);
-    };
+    }
     let (record, advisor_lookup) = parse_usage_line(line).map_err(Refusal::Rejected)?;
     let timestamp = parse_ts_timestamp(&record.timestamp).ok_or(Refusal::InvalidTimestamp)?;
     if !is_valid_usage_record(&record) {
@@ -99,10 +83,6 @@ pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
         record,
         timestamp,
         advisors,
-        usage_at: match marker {
-            UsageMarker::At(at) => Some(at),
-            UsageMarker::Escaped => None,
-        },
     })
 }
 
@@ -173,7 +153,6 @@ pub(crate) fn read_usage_file<E>(
             record: data,
             timestamp,
             advisors,
-            usage_at,
         } = match admit(line) {
             Ok(admitted) => admitted,
             Err(Refusal::NotUsage) => {
@@ -207,9 +186,7 @@ pub(crate) fn read_usage_file<E>(
         }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
         let response = match (&data.request_id, &data.message.id) {
-            (None, Some(message_id)) => {
-                response_chains.response_key(line, usage_at, message_id, &usage)
-            }
+            (None, Some(message_id)) => response_chains.response_key(line, message_id, &usage),
             _ => None,
         };
         let raw_model = data.message.model;

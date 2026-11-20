@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::{
+    CodexSessionMetadata,
     accumulate::{CodexModels, accumulate_codex_usage_into_group, codex_period_for},
     intern::{StringId, StringInterner},
 };
@@ -107,6 +108,59 @@ struct CodexRecordedUsage {
 }
 
 #[derive(Default)]
+struct CodexLineage {
+    threads: FxHashMap<StringId, CompactString>,
+    parents: FxHashMap<CompactString, CompactString>,
+}
+
+impl CodexLineage {
+    fn add_parent(&mut self, thread: &str, parent: &str) {
+        self.parents
+            .entry(CompactString::new(thread))
+            .or_insert_with(|| CompactString::new(parent));
+    }
+
+    fn ancestors(&self, session: StringId) -> Vec<&CompactString> {
+        let mut ancestors = Vec::new();
+        let mut thread = self.threads.get(&session);
+        while let Some(parent) = thread.and_then(|thread| self.parents.get(thread)) {
+            if ancestors.contains(&parent) {
+                break;
+            }
+            ancestors.push(parent);
+            thread = Some(parent);
+        }
+        ancestors
+    }
+
+    // NOTE(2026-11-20, #2208): A fork and its ancestors each send their own requests after the fork, while unrelated sessions with the same recordless usage hold copies of one request. Matches at the same fork depth never descend from one another, so each depth counts once.
+    fn collapse_copies(&self, attributions: Vec<CodexAttribution>) -> Vec<CodexAttribution> {
+        let threads = attributions
+            .iter()
+            .filter_map(|attribution| self.threads.get(&attribution.session))
+            .collect::<Vec<_>>();
+        let depths = attributions
+            .iter()
+            .map(|attribution| {
+                self.ancestors(attribution.session)
+                    .into_iter()
+                    .filter(|ancestor| threads.contains(ancestor))
+                    .count()
+            })
+            .collect::<Vec<_>>();
+        let mut requests = Vec::<(usize, CodexAttribution)>::new();
+        for (depth, attribution) in depths.into_iter().zip(attributions) {
+            if let Some((_, request)) = requests.iter_mut().find(|(level, _)| *level == depth) {
+                request.merge(attribution);
+            } else {
+                requests.push((depth, attribution));
+            }
+        }
+        requests.into_iter().map(|(_, request)| request).collect()
+    }
+}
+
+#[derive(Default)]
 struct CodexDedupeMap {
     usage: FxHashMap<CodexUsageKey, CodexAttribution>,
     responses: FxHashMap<CompactString, CodexResponseUsage>,
@@ -137,7 +191,7 @@ impl CodexDedupeMap {
 
     fn into_usage(
         self,
-        kind: AgentReportKind,
+        lineage: &CodexLineage,
     ) -> impl Iterator<Item = (CodexUsageKey, CodexAttribution)> {
         let Self {
             mut usage,
@@ -171,30 +225,30 @@ impl CodexDedupeMap {
                 other_sessions.remove(&stand_in);
             }
         }
-        if kind != AgentReportKind::Session {
-            for (key, sessions) in other_sessions.drain() {
-                if let Some(primary) = usage.get_mut(&key) {
-                    for session in sessions {
-                        primary.merge(session);
-                    }
-                }
-            }
+        let mut recordless_matches = Vec::new();
+        for (key, sessions) in other_sessions {
+            let matches = usage.remove(&key).into_iter().chain(sessions).collect();
+            recordless_matches.extend(
+                lineage
+                    .collapse_copies(matches)
+                    .into_iter()
+                    .map(|attribution| (key, attribution)),
+            );
         }
-        let legacy_sessions = other_sessions.into_iter().flat_map(|(key, sessions)| {
-            sessions
-                .into_iter()
-                .map(move |attribution| (key, attribution))
-        });
         let named = recorded.into_iter().flat_map(|(signature, requests)| {
             requests
                 .into_iter()
                 .map(move |request| (signature, request.attribution))
         });
-        usage.into_iter().chain(legacy_sessions).chain(named).chain(
-            responses
-                .into_values()
-                .map(|record| (record.key, record.attribution)),
-        )
+        usage
+            .into_iter()
+            .chain(recordless_matches)
+            .chain(named)
+            .chain(
+                responses
+                    .into_values()
+                    .map(|record| (record.key, record.attribution)),
+            )
     }
 }
 
@@ -203,6 +257,7 @@ pub(super) struct CodexDedupe<'a> {
     shards: Vec<Mutex<CodexDedupeMap>>,
     models: Mutex<CodexModels>,
     sessions: Mutex<StringInterner<CompactString>>,
+    lineage: Mutex<CodexLineage>,
 }
 
 impl<'a> CodexDedupe<'a> {
@@ -215,6 +270,7 @@ impl<'a> CodexDedupe<'a> {
                 .collect(),
             models: Mutex::new(CodexModels::default()),
             sessions: Mutex::new(StringInterner::default()),
+            lineage: Mutex::new(CodexLineage::default()),
         }
     }
 
@@ -295,6 +351,38 @@ impl<'a> CodexDedupe<'a> {
         Ok(())
     }
 
+    pub(super) fn record_lineage(
+        &self,
+        provenance: &CodexEventProvenance,
+        metadata: &CodexSessionMetadata,
+    ) -> Result<()> {
+        let Some(thread) = metadata.session_id() else {
+            return Ok(());
+        };
+        let mut lineage = self
+            .lineage
+            .lock()
+            .map_err(|_| crate::cli_error("codex lineage poisoned"))?;
+        if let Some(session) = provenance.session {
+            lineage.threads.insert(session, CompactString::new(thread));
+        }
+        if let Some(parent) = metadata.lineage_parent_id() {
+            lineage.add_parent(thread, parent);
+        }
+        Ok(())
+    }
+
+    pub(super) fn record_lineage_edges(&self, edges: &[(String, String)]) -> Result<()> {
+        let mut lineage = self
+            .lineage
+            .lock()
+            .map_err(|_| crate::cli_error("codex lineage poisoned"))?;
+        for (thread, parent) in edges {
+            lineage.add_parent(thread, parent);
+        }
+        Ok(())
+    }
+
     fn intern_model(
         &self,
         provenance: &mut CodexEventProvenance,
@@ -327,13 +415,17 @@ impl<'a> CodexDedupe<'a> {
             .sessions
             .into_inner()
             .map_err(|_| crate::cli_error("codex interner poisoned"))?;
+        let lineage = self
+            .lineage
+            .into_inner()
+            .map_err(|_| crate::cli_error("codex lineage poisoned"))?;
         let window = ccusage_core::ReportWindow::from_shared(shared);
         let mut groups = BTreeMap::new();
         for shard in self.shards {
             let records = shard
                 .into_inner()
                 .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
-            for (key, attribution) in records.into_usage(kind) {
+            for (key, attribution) in records.into_usage(&lineage) {
                 let model = models
                     .resolved
                     .values

@@ -283,11 +283,7 @@ static TOOL_USE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""t
 const UUID_MEMBER: &[u8] = br#","uuid":""#;
 
 impl<'a> Cursor<'a> {
-    fn tool_uses(
-        &mut self,
-        usage_at: Option<usize>,
-        tool_uses: &mut SmallVec<[&'a [u8]; 2]>,
-    ) -> Option<()> {
+    fn tool_uses(&mut self, tool_uses: &mut SmallVec<[&'a [u8]; 2]>) -> Option<()> {
         self.eat(b'{')?;
         loop {
             if self.peek()? == b'}' {
@@ -300,10 +296,7 @@ impl<'a> Cursor<'a> {
             self.eat(b':')?;
             if key == b"content" {
                 if self.peek()? == b'[' {
-                    let end = usage_at
-                        .filter(|&end| end > self.at)
-                        .unwrap_or(self.line.len());
-                    self.content_tool_uses(end, tool_uses)?;
+                    self.content_tool_uses(tool_uses)?;
                 }
                 return Some(());
             }
@@ -314,15 +307,11 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    // NOTE(2026-11-20, #2255): A JSON string cannot hold `"type":"tool_use"` unescaped, so once no such bytes remain before the message usage, which Claude Code writes after the content, the rest of the content holds no tool use block and is not read. A layout that puts usage first only hides tool uses, which keeps responses apart.
-    fn content_tool_uses(
-        &mut self,
-        end: usize,
-        tool_uses: &mut SmallVec<[&'a [u8]; 2]>,
-    ) -> Option<()> {
+    // NOTE(2026-11-20, #2255): A JSON string cannot hold `"type":"tool_use"` unescaped. Once no such bytes remain, the rest of the content holds no tool use block and is not read.
+    fn content_tool_uses(&mut self, tool_uses: &mut SmallVec<[&'a [u8]; 2]>) -> Option<()> {
         self.eat(b'[')?;
         loop {
-            if TOOL_USE.find(self.line.get(self.at..end)?).is_none() {
+            if TOOL_USE.find(self.line.get(self.at..)?).is_none() {
                 return Some(());
             }
             match self.peek()? {
@@ -379,7 +368,7 @@ fn top_level_uuid(line: &[u8]) -> Option<&[u8]> {
     Some(uuid)
 }
 
-pub(super) fn block_links(line: &[u8], usage_at: Option<usize>) -> Option<BlockLinks<'_>> {
+pub(super) fn block_links(line: &[u8]) -> Option<BlockLinks<'_>> {
     let mut cursor = Cursor { line, at: 0 };
     let mut links = BlockLinks::default();
     let (mut seen_uuid, mut seen_parent) = (false, false);
@@ -394,7 +383,7 @@ pub(super) fn block_links(line: &[u8], usage_at: Option<usize>) -> Option<BlockL
                 seen_parent = true;
             }
             b"message" => {
-                cursor.tool_uses(usage_at, &mut links.tool_uses)?;
+                cursor.tool_uses(&mut links.tool_uses)?;
                 return Some(Step::Stop);
             }
             _ => return Some(Step::Skip),

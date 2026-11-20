@@ -14,7 +14,7 @@ mod schedule;
 mod speed;
 
 use super::{
-    Lookup, MatchKind, Pricing, PricingMap, Row, build_time_pricing_json,
+    BillingRoute, Lookup, MatchKind, Pricing, PricingMap, Row, build_time_pricing_json,
     embedded::build_time_models_dev_json, embedded_models_dev_pricing, model_without_date_suffix,
 };
 use ccusage_test_support::fs_fixture;
@@ -78,7 +78,7 @@ impl PricingMap {
             Lookup::Pricing,
             live,
         )
-        .map(|(_, found, _)| found.row.pricing.rates())
+        .map(|(_, found, _)| found.row.rates())
     }
 
     fn context_limit_with_live<'a>(

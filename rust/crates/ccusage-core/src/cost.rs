@@ -1,6 +1,6 @@
 use crate::{
     cli::CostMode,
-    pricing::{Pricing, PricingHandle, PricingMap},
+    pricing::{BillingRoute, Pricing, PricingHandle, PricingMap},
     types::Speed,
 };
 
@@ -46,6 +46,31 @@ impl<'a> PriceTable<'a> {
 }
 
 pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> EntryPrice<'a> {
+    price_entry_with(entry, pricing, |map, entry| {
+        map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp)
+    })
+}
+
+pub fn price_entry_on_route<'a>(
+    entry: EntryPricing<'a>,
+    route: BillingRoute,
+    pricing: PriceTable<'_>,
+) -> EntryPrice<'a> {
+    price_entry_with(entry, pricing, |map, entry| {
+        map.resolve_on_route_at(
+            entry.reported_model,
+            entry.candidates,
+            route,
+            entry.timestamp,
+        )
+    })
+}
+
+fn price_entry_with<'a>(
+    entry: EntryPricing<'a>,
+    pricing: PriceTable<'_>,
+    resolve: impl FnOnce(&PricingMap, &EntryPricing<'a>) -> Option<(&'a str, Pricing)>,
+) -> EntryPrice<'a> {
     let Some(map) = pricing.as_map() else {
         return EntryPrice {
             cost: entry.stored_cost.unwrap_or(0.0),
@@ -70,8 +95,7 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> Entr
             .saturating_add(entry.residual_tokens),
         ..entry.usage
     };
-    let resolved = map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp);
-    match resolved {
+    match resolve(map, &entry) {
         Some((model, rates)) => EntryPrice {
             cost: cost_at_speed(usage, &rates),
             matched: Some(model),

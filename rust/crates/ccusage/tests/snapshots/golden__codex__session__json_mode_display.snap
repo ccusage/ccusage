@@ -371,40 +371,16 @@ exit: 0
       "sessionFile": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
       "sessionId": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
       "totalTokens": 385
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 400,
-      "costUSD": 0,
-      "directory": "",
-      "inputTokens": 600,
-      "lastActivity": "2025-12-31T16:00:10.000Z",
-      "models": {
-        "gpt-5-codex": {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 400,
-          "inputTokens": 600,
-          "isFallback": false,
-          "outputTokens": 100,
-          "reasoningOutputTokens": 0,
-          "totalTokens": 1100
-        }
-      },
-      "outputTokens": 100,
-      "reasoningOutputTokens": 0,
-      "sessionFile": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      "sessionId": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      "totalTokens": 1100
     }
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 461350,
+    "cacheReadTokens": 460950,
     "costUSD": 0,
-    "inputTokens": 114170,
-    "outputTokens": 4222,
+    "inputTokens": 113570,
+    "outputTokens": 4122,
     "reasoningOutputTokens": 149,
-    "totalTokens": 580042
+    "totalTokens": 578942
   }
 }
 

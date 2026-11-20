@@ -429,6 +429,13 @@ jobs:
             "$RUNNER_TEMP/ccusage-large-codex-fixture" \
             --grok-output-dir "$RUNNER_TEMP/ccusage-large-grok-fixture"
 
+      - name: Generate shape fixtures
+        run: |
+          generator=apps/ccusage/scripts/generate-large-fixture.ts
+          "$generator" --output-dir "$RUNNER_TEMP/ccusage-many-files-fixture" --claude-shape many-small-files
+          "$generator" --output-dir "$RUNNER_TEMP/ccusage-proxy-fixture" --claude-shape requestless-proxy --size-mib 1024
+          "$generator" --output-dir "$RUNNER_TEMP/ccusage-small-fixture" --size-mib 4
+
       - name: Compare performance
         run: |
           apps/ccusage/scripts/compare-pr-performance.bb \
@@ -439,6 +446,9 @@ jobs:
             --fixture-dir "$RUNNER_TEMP/ccusage-large-fixture" \
             --codex-fixture-dir "$RUNNER_TEMP/ccusage-large-codex-fixture" \
             --grok-fixture-dir "$RUNNER_TEMP/ccusage-large-grok-fixture" \
+            --many-files-fixture-dir "$RUNNER_TEMP/ccusage-many-files-fixture" \
+            --proxy-fixture-dir "$RUNNER_TEMP/ccusage-proxy-fixture" \
+            --small-fixture-dir "$RUNNER_TEMP/ccusage-small-fixture" \
             --warmup 2 \
             --runs 11 \
             --output "$RUNNER_TEMP/ccusage-perf-comment.md"

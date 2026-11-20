@@ -72,6 +72,7 @@ impl ResponseChains {
     }
 
     // NOTE(2026-11-20, #2255): Claude Code writes `parentUuid` first on every line of the conversation chain, and parents precede children, so a line whose parent is not yet tracked can never lead a later block back to a response. Rejecting lines at that first key keeps requestless transcripts from paying for a full parse of every line; a chain line written another way only keeps its response from merging.
+    #[inline(never)]
     pub(super) fn link(&mut self, line: &[u8], may_carry_usage: bool) {
         if !line.starts_with(br#"{"parentUuid":""#) {
             return;
@@ -115,14 +116,14 @@ impl ResponseChains {
         self.nodes.insert(key(uuid), Node::Link { parent, owner });
     }
 
+    #[inline(never)]
     pub(super) fn response_key(
         &mut self,
         line: &[u8],
-        usage_at: Option<usize>,
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
-        let skimmed = block_links(line, usage_at);
+        let skimmed = block_links(line);
         let links = skimmed
             .as_ref()
             .map(|skimmed| Links {

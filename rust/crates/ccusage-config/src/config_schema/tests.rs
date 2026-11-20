@@ -133,7 +133,7 @@ fn schema_option_sets_expose_expected_keys() {
     assert_schema_properties(
         &schema,
         &["pi", "defaults"],
-        &with_keys(&shared, &["piPath"]),
+        &with_keys(&shared, &["piPath", "piAgentDir"]),
     );
     assert!(schema_property(&schema, &["pi", "stores"]).is_some());
     assert_schema_properties(

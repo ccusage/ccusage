@@ -31,12 +31,15 @@ pub use rates::{
     DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, LongContext, LongContextMode, LongContextRates, Pricing,
 };
 mod resolve;
-pub use resolve::{AgentModel, MatchKind, PricingHandle};
+pub use resolve::{AgentModel, BillingRoute, MatchKind, PricingHandle};
 #[cfg(feature = "resolver-trace")]
 pub use resolve::{Explanation, ResolutionStep};
 mod row;
 pub use row::Source;
-use row::{Entries, Row, Scope, cache_defaults, row_scope, schedule_for, vendor_id, vendor_start};
+use row::{
+    Entries, Row, RowPricing, Scope, provider_cache_defaults, row_scope, schedule_for, vendor_id,
+    vendor_start,
+};
 mod rows;
 use rows::{Lookup, PricingRows, RowMatch};
 mod speed;

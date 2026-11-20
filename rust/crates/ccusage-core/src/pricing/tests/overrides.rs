@@ -177,7 +177,7 @@ fn override_with_zero_cache_read_preserves_zero() {
     pricing.apply_overrides(overrides.iter());
 
     let entry = pricing.find("new-model").unwrap();
-    assert!(entry.cache_read.is_some());
+    assert_eq!(entry.cache_read, Some(0.0));
 }
 
 #[test]
@@ -773,4 +773,23 @@ fn respelled_override_applies_to_the_models_dev_exact_only_row() {
             .input,
         7e-6
     );
+}
+
+#[test]
+fn a_family_thinking_rule_matches_an_override_spelled_with_either_separator() {
+    crate::test_support::install_pricing_snapshots();
+    for key in ["proxy/qwen3.5-plus", "proxy/qwen3-5-plus"] {
+        let mut pricing = PricingMap::default();
+        let overrides = build_overrides(key, |o| {
+            o.input_cost_per_token = Some(7e-6);
+            o.output_cost_per_token = Some(8e-6);
+        });
+        pricing.apply_overrides(overrides.iter());
+        for model in ["proxy/qwen3.5-plus-thinking", "proxy/qwen3-5-plus-thinking"] {
+            let found = pricing
+                .find(model)
+                .unwrap_or_else(|| panic!("{key}: {model}"));
+            assert_eq!((found.input, found.output), (7e-6, 8e-6), "{key}: {model}");
+        }
+    }
 }
