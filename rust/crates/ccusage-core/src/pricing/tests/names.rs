@@ -175,6 +175,8 @@ fn model_suffix_matches_only_at_the_last_occurrence() {
         "opus-4-6"
     ));
     assert!(!super::super::matches_model_suffix("opus-4", "opus-4-6"));
+    assert!(!super::super::matches_model_suffix("xopus-4-6", "opus-4-6"));
+    assert!(!super::super::matches_model_suffix("4opus-4-6", "opus-4-6"));
     assert!(super::super::matches_model_suffix("modèle-opus", "opus"));
     assert!(super::super::matches_model_suffix("anything", ""));
 }

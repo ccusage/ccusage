@@ -195,13 +195,18 @@ pub(super) fn pricing_alias(model: &str) -> Option<&'static str> {
 }
 
 pub(super) fn matches_model_suffix(part: &str, base: &str) -> bool {
-    let (part, base) = (part.as_bytes(), base.as_bytes());
     if base.is_empty() {
         return true;
     }
-    let Some(index) = part.windows(base.len()).rposition(|window| window == base) else {
+    let Some(index) = part.rfind(base) else {
         return false;
     };
-    part.get(index + base.len())
-        .is_none_or(|&next| next == b'-')
+    part[..index]
+        .chars()
+        .next_back()
+        .is_none_or(|previous| !previous.is_alphanumeric())
+        && part
+            .as_bytes()
+            .get(index + base.len())
+            .is_none_or(|&next| next == b'-')
 }
