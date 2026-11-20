@@ -1807,11 +1807,14 @@ impl PricingMap {
     ) -> Option<RowMatch<'a>> {
         let segment = last_segment(normalized);
         let pool = rows.filter(|(key, identity, found)| {
-            !found.row.exact_only
-                && lookup.includes(found.row)
+            lookup.includes(found.row)
                 && (!found.row.is_free()
                     || (matches!(lookup, Lookup::Context) && found.row.scope == Scope::Direct))
-                && pricing_key_matches(key, identity, name, normalized)
+                && if found.row.exact_only {
+                    names_pricing_key(key, identity, name, normalized)
+                } else {
+                    pricing_key_matches(key, identity, name, normalized)
+                }
         });
         let mut best = None;
         let mut best_not_longer = None;
@@ -2047,6 +2050,16 @@ fn pricing_key_matches(
 ) -> bool {
     names_same_model((model, model), (candidate, candidate))
         || names_same_model((normalized_model, model), (normalized_candidate, candidate))
+}
+
+fn names_pricing_key(
+    candidate: &str,
+    normalized_candidate: &str,
+    model: &str,
+    normalized_model: &str,
+) -> bool {
+    contains_pricing_key(model, model, candidate)
+        || contains_pricing_key(normalized_model, model, normalized_candidate)
 }
 
 // NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`. Only the logged id may add a price-neutral suffix: a catalogue lists a dated, `[1m]` or effort-level id because it prices that variant itself.
@@ -3360,7 +3373,7 @@ mod tests {
         assert_eq!(
             primary.load_json(
                 r#"{
-            "sample-fast": {"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2}
+            "host/sample": {"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2}
         }"#
             ),
             1
@@ -3370,7 +3383,7 @@ mod tests {
         assert_eq!(
             embedded.load_models_dev_json_for_tests(
                 r#"{
-            "sample-fast":{"cost":{"input":3,"output":4}}
+            "host/sample":{"cost":{"input":3,"output":4}}
         }"#
             ),
             Some(1)
@@ -3378,7 +3391,7 @@ mod tests {
         assert_eq!(
             live.load_models_dev_json_for_tests(
                 r#"{
-            "sample-fast":{"cost":{"input":5,"output":6},"exactOnly":true}
+            "host/sample":{"cost":{"input":5,"output":6},"exactOnly":true}
         }"#
             ),
             Some(1)
@@ -3387,7 +3400,7 @@ mod tests {
             input_cost_per_token: Some(8.0),
             ..Default::default()
         };
-        let key = "sample-fast".to_owned();
+        let key = "host/sample".to_owned();
         let map = layered(&primary, Some(&embedded)).with_user_overrides([(&key, &fields)]);
         let attempts = AtomicUsize::new(0);
         let load = || {
@@ -3397,7 +3410,7 @@ mod tests {
 
         assert_eq!(map.find_with_live(&key, load).unwrap().input, 8.0);
         assert_eq!(attempts.load(Ordering::Relaxed), 0);
-        assert!(map.find_with_live("sample-fast-20260101", load).is_none());
+        assert!(map.find_with_live("sample", load).is_none());
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
         assert!(map.overrides.resolved(0).unwrap().row.exact_only);
         assert_eq!(map.find_with_live(&key, load).unwrap().input, 8.0);
@@ -3448,7 +3461,10 @@ mod tests {
         };
         let overridden = pricing.with_user_overrides([(&model, &override_value)]);
         assert_eq!(overridden.find("sample-premium").unwrap().input, 5.0);
-        assert!(overridden.find("sample-premium-20260101").is_none());
+        assert_eq!(
+            overridden.find("sample-premium-20260101").unwrap().input,
+            5.0
+        );
     }
 
     #[test]
@@ -7894,6 +7910,23 @@ mod tests {
                 (expected.input, expected.output),
                 "{model}"
             );
+        }
+    }
+
+    #[test]
+    fn a_spelling_that_names_an_exact_only_tier_is_billed_at_that_tier() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let tier = pricing.find("gemini-3.5-flash-lite").unwrap();
+        assert_eq!((tier.input, tier.output), (0.3e-6, 2.5e-6));
+        for model in [
+            "github_copilot/gemini-3.5-flash-lite",
+            "models/gemini-3.5-flash-lite",
+            "gemini-3.5-flash-lite[1m]",
+            "gemini-3.5-flash-lite-high",
+            "gemini-3.5-flash-lite-20261101",
+        ] {
+            assert_eq!(pricing.find(model), Some(tier), "{model}");
         }
     }
 
