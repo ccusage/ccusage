@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1310267,
-    "inputTokens": 1346824,
-    "outputTokens": 58690,
+    "inputTokens": 1364600,
+    "outputTokens": 60466,
     "totalCost": 23.343299999999996,
-    "totalTokens": 2736963
+    "totalTokens": 2756515
   },
   "weekly": [
     {
@@ -201,7 +201,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 16501,
       "cacheReadTokens": 1307174,
-      "inputTokens": 1338330,
+      "inputTokens": 1356106,
       "metadata": {
         "agents": [
           "amp",
@@ -289,9 +289,9 @@ exit: 0
           "cacheCreationTokens": 300,
           "cacheReadTokens": 33435,
           "cost": 0.8500000000000001,
-          "inputTokens": 18830,
+          "inputTokens": 36606,
           "modelName": "gpt-5",
-          "outputTokens": 5293
+          "outputTokens": 7069
         },
         {
           "cacheCreationTokens": 100,
@@ -925,10 +925,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56523,
+      "outputTokens": 58299,
       "period": "2025-12-29",
       "totalCost": 19.533299999999997,
-      "totalTokens": 2721915
+      "totalTokens": 2741467
     },
     {
       "agent": "all",

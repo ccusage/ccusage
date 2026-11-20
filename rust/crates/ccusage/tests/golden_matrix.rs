@@ -280,7 +280,7 @@ fn codex_daily_and_session_count_fork_requests_and_archived_copies_alike() {
     let root = fixture.root();
     let seeded = golden::codex::seed(root);
     let window = ["--since", "20251231", "--until", "20260101"];
-    for (bounds, expected_total) in [(&[][..], 578_942), (&window[..], 19_855)] {
+    for (bounds, expected_total) in [(&[][..], 598_494), (&window[..], 19_855)] {
         for threads in [&[][..], &["--single-thread"][..]] {
             let report = |kind: &'static str| {
                 let mut case = Case::new(kind, "", &["codex", kind, "--offline", "--json"]);

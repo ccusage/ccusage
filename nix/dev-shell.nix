@@ -14,6 +14,7 @@
     {
       devShells.default = pkgs.mkShell {
         CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
+        CCUSAGE_SCHEMA_GEN_FROM_WORKSPACE = "1";
 
         RUSTFLAGS = config.packages.ccusage.passthru.linkerRustflags;
 

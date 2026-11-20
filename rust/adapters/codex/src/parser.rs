@@ -28,7 +28,7 @@ mod usage;
 
 use exec::add_codex_exec_event;
 use model::{codex_model_from_info, codex_model_from_payload, resolve_codex_usage_model};
-use replay_filter::{CodexBurst, CodexReplayFilter, CodexReplayState};
+use replay_filter::{CodexOwnershipMarker, CodexReplayFilter, CodexReplayResolution};
 use timestamp::{codex_session_timestamp, codex_usage_timestamp, file_modified_timestamp};
 use usage::{codex_token_count_usage, malformed_token_count_field, normalize_codex_raw_usage};
 
@@ -90,7 +90,9 @@ struct CodexTokenCountUsage {
 
 #[derive(Clone, Copy)]
 pub(super) struct CodexForkReplay<'a> {
-    pub(super) prefix: &'a [CodexRawUsage],
+    pub(super) parent_usage: &'a [CodexRawUsage],
+    pub(super) missing_parent: Option<&'a str>,
+    pub(super) child_id: Option<&'a str>,
     // NOTE(2026-11-09, Codex VS Code 0.164.0-alpha.11.1, #2051): Spawned subagents drop inherited `token_usage_record` lines, so the first record ends replay even if the timestamps coincide. User forks copy those lines.
     pub(super) ends_at_usage_record: bool,
 }
@@ -187,18 +189,9 @@ fn visit_codex_session_file_inner(
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
     }
     let mut fallback_timestamp = None;
-    let mut replay = CodexReplayFilter {
-        state: fork_replay.map_or(CodexReplayState::Done, |fork_replay| {
-            CodexReplayState::MatchingParent {
-                prefix: fork_replay.prefix,
-                index: 0,
-            }
-        }),
-        burst: CodexBurst::default(),
-        pending: Vec::new(),
-        ends_at_usage_record: fork_replay
-            .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
-    };
+    let mut replay = CodexReplayFilter::new(fork_replay);
+    let mut missing_parent = None;
+    let mut seen_session_meta = false;
 
     let result = jsonl::read(
         path,
@@ -223,18 +216,13 @@ fn visit_codex_session_file_inner(
                 .as_ref()
                 .is_some_and(|metadata| metadata.is_session_meta);
             if has_metadata
-                || (replay.burst.session_start.is_none()
-                    && !matches!(replay.state, CodexReplayState::Done)
-                    && SESSION_META_MARKER.matches(line))
+                || (!seen_session_meta
+                    && !replay.is_done()
+                    && SESSION_META_MARKER.matches(line)
+                    && session_metadata_from_line(path, line).is_session_meta)
             {
-                let metadata =
-                    first_metadata.unwrap_or_else(|| session_metadata_from_line(path, line));
-                if metadata.is_session_meta {
-                    if replay.burst.session_start.is_none() {
-                        replay.burst.session_start = metadata.timestamp;
-                    }
-                    return ControlFlow::Continue(());
-                }
+                seen_session_meta = true;
+                return ControlFlow::Continue(());
             }
             let Some(line_kind) = codex_line_usage_kind(line) else {
                 return ControlFlow::Continue(());
@@ -270,8 +258,18 @@ fn visit_codex_session_file_inner(
                     .as_ref()
                     .and_then(|payload| payload.payload_type.as_deref()),
             ) {
-                if value.entry_type.as_deref() == Some("token_usage_record") {
-                    replay.observe_usage_record();
+                if let Some(marker) = ownership_marker(&value)
+                    && let Some(CodexReplayResolution::MissingParent(parent_id)) = replay
+                        .observe_marker(
+                            marker,
+                            value
+                                .payload
+                                .as_ref()
+                                .and_then(|payload| payload.thread_id.as_deref()),
+                            &mut visit,
+                        )
+                {
+                    missing_parent = Some(parent_id);
                 }
                 visit_codex_session_entry(
                     &session_id,
@@ -304,7 +302,16 @@ fn visit_codex_session_file_inner(
         Ok(None) => {}
     }
 
-    replay.finish(&mut visit);
+    if let Some(CodexReplayResolution::MissingParent(parent_id)) = replay.finish(&mut visit) {
+        missing_parent = Some(parent_id);
+    }
+    if let Some(parent_id) = missing_parent {
+        diagnostics.record(Skip::unit(
+            path,
+            SkipKind::MissingForkParent,
+            format_args!("parent session {parent_id}"),
+        ));
+    }
 
     if let Some(history) = compaction_history
         && let Some(mut timestamps) = state.compaction_usage.recorded_usage_timestamps
@@ -318,6 +325,22 @@ fn visit_codex_session_file_inner(
         history.extend(timestamps);
     }
     true
+}
+
+fn ownership_marker(value: &CodexLogEntry<'_>) -> Option<CodexOwnershipMarker> {
+    match value.entry_type.as_deref() {
+        Some("token_usage_record") => Some(CodexOwnershipMarker::UsageRecord),
+        Some("event_msg")
+            if value
+                .payload
+                .as_ref()
+                .and_then(|payload| payload.payload_type.as_deref())
+                == Some("thread_settings_applied") =>
+        {
+            Some(CodexOwnershipMarker::ThreadSettings)
+        }
+        _ => None,
+    }
 }
 
 fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
@@ -499,15 +522,6 @@ fn visit_codex_session_entry(
         return;
     }
     let parsed_timestamp = codex_usage_timestamp(value.timestamp.as_ref());
-    replay.observe_token_count(
-        parsed_timestamp.as_ref().map(|(timestamp, _)| *timestamp),
-        info.and_then(|info| {
-            info.last_token_usage
-                .decoded()
-                .or(info.total_token_usage.decoded())
-        }),
-        visit,
-    );
     let CodexTokenCountUsage {
         total_usage,
         cumulative_advanced,
