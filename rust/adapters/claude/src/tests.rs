@@ -1180,6 +1180,7 @@ fn single_and_multi_thread_keep_the_same_copy_from_invalid_utf8_project_dirs() {
             .join("projects")
             .join(std::ffi::OsStr::from_bytes(name));
         if std::fs::create_dir_all(&dir).is_err() {
+            // NOTE(2026-11-20, #2359): APFS rejects invalid UTF-8 file names with EILSEQ, so this fixture cannot exist on macOS. The test runs on Linux CI instead.
             return;
         }
         std::fs::write(dir.join("session.jsonl"), shared_copy_line(input_tokens)).unwrap();

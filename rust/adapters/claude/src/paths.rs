@@ -84,9 +84,7 @@ pub(crate) fn visit_usage_files(
 }
 
 pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering {
-    left.as_os_str()
-        .as_encoded_bytes()
-        .cmp(right.as_os_str().as_encoded_bytes())
+    left.as_os_str().cmp(right.as_os_str())
 }
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
