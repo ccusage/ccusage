@@ -23,4 +23,3 @@ agent can derive from the code or command help.
 Use `references/` for conditional material and link each file directly from
 `SKILL.md` with its trigger. Use `scripts/` for deterministic repeated work.
 Keep `SKILL.md` under 160 lines and each reference under 180 lines.
-
