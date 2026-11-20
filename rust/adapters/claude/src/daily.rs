@@ -23,16 +23,12 @@ use crate::{
 };
 
 use super::{
-    DedupeIndexVec, GuardedUsage, MainThreadSessions, Nullable, Rejection, UsageLoadContext,
-    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id,
-    main_thread_sessions, non_null,
-    paths::{
-        claude_paths, extract_project, usage_file_order, usage_files_before_since,
-        visit_usage_files,
-    },
-    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_paths,
-    reports_more_of_the_request, sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash,
-    usage_dedupe_hash,
+    GuardedUsage, MainThreadSessions, Nullable, Rejection, UsageLoadContext,
+    advisor::AdvisorLookup,
+    dedupe::{DedupEntry, DedupKey, dedupe_files},
+    deserialize_usage_line, main_thread_sessions, non_null,
+    paths::{claude_paths, extract_project, usage_files_before_since, visit_usage_files},
+    read_discovered_paths,
 };
 
 pub(super) struct DailyEntries {
@@ -209,29 +205,6 @@ fn load_deduped_daily_entries(
     Some(DedupedDailyEntries { entries, copies })
 }
 
-pub(super) fn dedupe_files<E: DedupEntry>(
-    mut files: Vec<(PathBuf, Vec<E>)>,
-) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
-    files.sort_by_cached_key(|(path, _)| usage_file_order(path));
-    let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
-        FxHashMap::with_capacity_and_hasher(entry_count, Default::default());
-    let mut deduped = Vec::with_capacity(entry_count);
-    let mut copies = Vec::new();
-    for (_, entries) in files {
-        for entry in entries {
-            if let Some((index, discarded)) =
-                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
-                && discarded.session_id() != deduped[index].session_id()
-                && !discarded.is_sidechain()
-            {
-                copies.push((index, discarded.owned_session_id()));
-            }
-        }
-    }
-    (deduped, copies)
-}
-
 fn summarize_daily_entries(
     deduped: &[ClaudeEntry],
     group_by_project: bool,
@@ -274,26 +247,6 @@ fn summarize_daily_entries(
             summary
         })
         .collect()
-}
-
-#[derive(Debug)]
-pub(super) struct DedupKey {
-    pub(super) timestamp: TimestampMs,
-    session_id: Arc<str>,
-    pub(super) message_id: Option<String>,
-    pub(super) request_id: Option<String>,
-    pub(super) is_sidechain: Option<bool>,
-}
-
-pub(super) trait DedupEntry {
-    fn timestamp(&self) -> TimestampMs;
-    fn session_id(&self) -> &str;
-    fn owned_session_id(&self) -> Arc<str>;
-    fn message_id(&self) -> Option<&str>;
-    fn request_id(&self) -> Option<&str>;
-    fn is_sidechain(&self) -> bool;
-    fn usage(&self) -> &TokenUsageRaw;
-    fn records_cost(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -510,23 +463,6 @@ pub(super) fn parse_usage_line(
                 };
                 (entry, lookup)
             }),
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) enum AdvisorLookup {
-    RuledOut,
-    AskLine,
-    AskProgress,
-}
-
-impl AdvisorLookup {
-    fn usages(self, line: &[u8]) -> std::result::Result<super::AdvisorUsages, Rejection> {
-        match self {
-            Self::RuledOut => Ok(super::AdvisorUsages::default()),
-            Self::AskLine => advisor_usages_from_line(line),
-            Self::AskProgress => super::advisor_usages_from_progress_line(line),
-        }
     }
 }
 
@@ -801,161 +737,6 @@ fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> bool {
     }
     *index > start
 }
-fn usage_token_total(entry: &impl DedupEntry) -> u64 {
-    let usage = entry.usage();
-    usage.input_tokens
-        + usage.output_tokens
-        + usage.cache_creation_token_count()
-        + usage.cache_read_input_tokens
-}
-
-pub(super) fn push_deduped_entry<E: DedupEntry>(
-    entry: E,
-    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
-    deduped: &mut Vec<E>,
-) -> Option<(usize, E)> {
-    let dedupe_lookup = entry.message_id().map(|message_id| {
-        let request_id = entry.request_id();
-        let exact_hash = usage_dedupe_hash(
-            message_id,
-            request_id,
-            entry.session_id(),
-            entry.timestamp(),
-        );
-        let existing_index = deduped_indexes
-            .get(&exact_hash)
-            .and_then(|indexes| {
-                indexes.iter().find_map(|dedupe_index| {
-                    let existing = &deduped[dedupe_index.index];
-                    (existing.message_id() == Some(message_id)
-                        && existing.request_id() == request_id
-                        && (request_id.is_some()
-                            || (existing.session_id() == entry.session_id()
-                                && (is_per_response_message_id(message_id)
-                                    || existing.timestamp() == entry.timestamp()))))
-                    .then_some(dedupe_index.index)
-                })
-            })
-            .or_else(|| {
-                // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
-                let candidate_is_sidechain = entry.is_sidechain();
-                let route_hash = if candidate_is_sidechain {
-                    sidechain_replay_dedupe_hash(message_id, entry.session_id())
-                } else {
-                    sidechain_entry_replay_dedupe_hash(message_id, entry.session_id())
-                };
-                deduped_indexes.get(&route_hash).and_then(|indexes| {
-                    indexes.iter().find_map(|dedupe_index| {
-                        let existing = &deduped[dedupe_index.index];
-                        let indexed_session_id = dedupe_index
-                            .session_alias
-                            .as_deref()
-                            .unwrap_or(existing.session_id());
-                        (existing.message_id() == Some(message_id)
-                            && indexed_session_id == entry.session_id()
-                            && (candidate_is_sidechain || existing.is_sidechain()))
-                        .then_some(dedupe_index.index)
-                    })
-                })
-            });
-        (exact_hash, existing_index)
-    });
-
-    if let Some((hash, Some(index))) = dedupe_lookup {
-        if deduped[index].session_id() != entry.session_id()
-            && let Some(message_id) = entry.message_id()
-        {
-            let existing_session_id = deduped[index].session_id();
-            for session_id in [entry.session_id(), existing_session_id] {
-                for route_hash in [
-                    sidechain_replay_dedupe_hash(message_id, session_id),
-                    sidechain_entry_replay_dedupe_hash(message_id, session_id),
-                ] {
-                    push_deduped_session_alias(deduped_indexes, route_hash, index, session_id);
-                }
-            }
-        }
-        let discarded = if should_replace_deduped_entry(&entry, &deduped[index]) {
-            let previous = std::mem::replace(&mut deduped[index], entry);
-            if entry_exact_hash(&previous) != Some(hash) {
-                push_deduped_index(deduped_indexes, hash, index);
-            }
-            let survivor = &deduped[index];
-            let replay_route_changed = previous.session_id() != survivor.session_id()
-                || previous.is_sidechain() != survivor.is_sidechain()
-                || previous.message_id() != survivor.message_id();
-            if replay_route_changed && let Some(message_id) = survivor.message_id() {
-                let session_id = survivor.session_id();
-                push_deduped_index(
-                    deduped_indexes,
-                    sidechain_replay_dedupe_hash(message_id, session_id),
-                    index,
-                );
-                if survivor.is_sidechain() {
-                    push_deduped_index(
-                        deduped_indexes,
-                        sidechain_entry_replay_dedupe_hash(message_id, session_id),
-                        index,
-                    );
-                }
-            }
-            previous
-        } else {
-            entry
-        };
-        return Some((index, discarded));
-    }
-
-    let index = deduped.len();
-    deduped.push(entry);
-    if let Some((hash, None)) = dedupe_lookup {
-        push_new_deduped_index(deduped_indexes, hash, index);
-        let survivor = &deduped[index];
-        if let Some(message_id) = survivor.message_id() {
-            let session_id = survivor.session_id();
-            push_new_deduped_index(
-                deduped_indexes,
-                sidechain_replay_dedupe_hash(message_id, session_id),
-                index,
-            );
-            if survivor.is_sidechain() {
-                push_new_deduped_index(
-                    deduped_indexes,
-                    sidechain_entry_replay_dedupe_hash(message_id, session_id),
-                    index,
-                );
-            }
-        }
-    }
-    None
-}
-
-fn entry_exact_hash(entry: &impl DedupEntry) -> Option<u64> {
-    entry.message_id().map(|message_id| {
-        usage_dedupe_hash(
-            message_id,
-            entry.request_id(),
-            entry.session_id(),
-            entry.timestamp(),
-        )
-    })
-}
-
-fn should_replace_deduped_entry<E: DedupEntry>(candidate: &E, existing: &E) -> bool {
-    let candidate_is_sidechain = candidate.is_sidechain();
-    let existing_is_sidechain = existing.is_sidechain();
-    if candidate_is_sidechain != existing_is_sidechain {
-        return existing_is_sidechain;
-    }
-
-    let candidate_total = usage_token_total(candidate);
-    let existing_total = usage_token_total(existing);
-    if candidate_total != existing_total {
-        return candidate_total > existing_total;
-    }
-    reports_more_of_the_request(candidate, existing)
-}
-
 #[derive(Default)]
 struct DailyAccumulator {
     counts: TokenCounts,

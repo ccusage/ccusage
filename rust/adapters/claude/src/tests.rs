@@ -38,7 +38,7 @@ fn read_usage_file_with_diagnostics(
     }
 }
 
-use super::daily::push_deduped_entry;
+use super::dedupe::push_deduped_entry;
 
 fn read_usage_file(
     path: &Path,

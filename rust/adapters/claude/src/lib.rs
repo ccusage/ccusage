@@ -20,12 +20,7 @@ pub use commands::{run_blocks, run_bucket, run_daily, run_session, run_statuslin
 pub use load::load_entries;
 pub use source::SOURCE;
 
-use advisor::{AdvisorUsages, advisor_usages_from_line, advisor_usages_from_progress_line};
-use dedupe::{
-    DedupeIndexVec, is_per_response_message_id, push_deduped_index, push_deduped_session_alias,
-    push_new_deduped_index, reports_more_of_the_request, sidechain_entry_replay_dedupe_hash,
-    sidechain_replay_dedupe_hash, usage_dedupe_hash,
-};
+use advisor::AdvisorUsages;
 use load::{
     ClaudeEntry, MainThreadSessions, load_daily_summaries,
     load_daily_summaries_with_detection_progress, load_entries_since,

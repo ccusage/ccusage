@@ -1,6 +1,7 @@
 use std::{fmt::Write, path::Path, sync::Arc};
 
-use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
+use super::{ClaudeEntry, read_daily_usage_file_with_diagnostics};
+use crate::dedupe::push_deduped_entry;
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
@@ -827,20 +828,20 @@ fn daily_advisor_gate_preserves_the_previous_extraction() {
         ] {
             let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
             let reference = format!(r#"{{"message":{message}}}"#);
-            let previous = super::advisor_usages_from_line(reference.as_bytes()).unwrap();
+            let previous = crate::advisor::advisor_usages_from_line(reference.as_bytes()).unwrap();
             let actual = lookup.usages(line.as_bytes()).unwrap();
             match lookup {
-                super::AdvisorLookup::AskLine => {
+                crate::advisor::AdvisorLookup::AskLine => {
                     retained += 1;
                     assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
                     assert_eq!(actual.malformed, previous.malformed, "{line}");
                 }
-                super::AdvisorLookup::AskProgress => {
+                crate::advisor::AdvisorLookup::AskProgress => {
                     retained += 1;
                     assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
                     assert_eq!(actual.malformed, previous.malformed, "{line}");
                 }
-                super::AdvisorLookup::RuledOut => {
+                crate::advisor::AdvisorLookup::RuledOut => {
                     skipped += 1;
                     assert!(previous.usages.is_empty(), "{line}");
                     assert!(actual.usages.is_empty(), "{line}");
