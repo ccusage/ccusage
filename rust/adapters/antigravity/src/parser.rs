@@ -793,7 +793,7 @@ fn parse_timestamp_message(blob: &[u8]) -> ProtoResult<Option<TimestampMs>> {
         .min(999_999_999);
     let milliseconds = seconds
         .saturating_mul(1_000)
-        .saturating_add((nanos / 1_000_000) as i64);
+        .saturating_add(i64::try_from(nanos / 1_000_000).unwrap_or(i64::MAX));
     Ok(Some(TimestampMs::from_millis(milliseconds)))
 }
 
@@ -1422,7 +1422,7 @@ mod tests {
         merge_usage_event, model_candidates, model_from_id, normalize_antigravity_model,
         parse_generator_metadata, parse_step_metadata, price_antigravity,
     };
-    use crate::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
+    use ccusage_core::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
 
     #[test]
     fn merge_prefers_resolved_then_placeholder_then_default_model() {
@@ -2024,7 +2024,7 @@ mod pricing_identity_tests {
                 input_tokens: 1000,
                 ..Default::default()
             },
-            crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
             PriceTable::Calculate(&pricing),
         );
         assert!((cost - 0.00075).abs() < 1e-12);

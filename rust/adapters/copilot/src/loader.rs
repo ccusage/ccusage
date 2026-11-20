@@ -716,7 +716,7 @@ mod tests {
                 },
             }).to_string(),
         });
-        let mut pricing = crate::PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "test-model-1m-internal":{"input_cost_per_token":1,"output_cost_per_token":1},
@@ -882,7 +882,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::default()),
+                Some(&ccusage_core::PricingMap::default()),
             )
             .unwrap();
 
@@ -1057,7 +1057,7 @@ mod tests {
             ),
         });
         let file = fixture.path("copilot.jsonl");
-        let mut pricing = crate::PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
@@ -1136,7 +1136,7 @@ mod tests {
             ),
         });
         let file = fixture.path("copilot.jsonl");
-        let mut pricing = crate::PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
@@ -1306,7 +1306,7 @@ mod tests {
                 None,
             ),
         ]).run(|| {
-        let mut pricing = crate::PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
@@ -1404,7 +1404,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::default()),
+                Some(&ccusage_core::PricingMap::default()),
             )
             .unwrap();
             let mut entries = entries;
@@ -1493,7 +1493,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::default()),
+                Some(&ccusage_core::PricingMap::default()),
             )
             .unwrap();
             let mut entries = entries;
@@ -1576,7 +1576,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::load_embedded()),
+                Some(&ccusage_core::PricingMap::load_embedded()),
             )
             .unwrap();
 
@@ -1712,7 +1712,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::default()),
+                Some(&ccusage_core::PricingMap::default()),
             )
             .unwrap();
             let rows = entries
@@ -1794,7 +1794,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::default()),
+                Some(&ccusage_core::PricingMap::default()),
             )
             .unwrap();
 
@@ -1851,7 +1851,7 @@ mod tests {
                 &crate::SOURCE,
                 &shared,
                 Default::default(),
-                Some(&crate::PricingMap::default()),
+                Some(&ccusage_core::PricingMap::default()),
             )
             .unwrap();
 
@@ -1896,13 +1896,13 @@ mod tests {
         fixture: &ccusage_test_support::Fixture,
         shared: &crate::cli::SharedArgs,
     ) -> Vec<LoadedEntry> {
-        load_priced_copilot_home(fixture, shared, &crate::PricingMap::default())
+        load_priced_copilot_home(fixture, shared, &ccusage_core::PricingMap::default())
     }
 
     fn load_priced_copilot_home(
         fixture: &ccusage_test_support::Fixture,
         shared: &crate::cli::SharedArgs,
-        pricing: &crate::PricingMap,
+        pricing: &ccusage_core::PricingMap,
     ) -> Vec<LoadedEntry> {
         Environment::with_vars([
             ("HOME", Some(OsString::from(fixture.path("home")))),
@@ -3250,9 +3250,9 @@ mod tests {
         }
     }
 
-    fn test_model_pricing() -> crate::PricingMap {
+    fn test_model_pricing() -> ccusage_core::PricingMap {
         ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = crate::PricingMap::default();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
@@ -3401,7 +3401,7 @@ mod tests {
             };
             let window = ReportWindow::from_shared(&shared);
             let diagnostics = Diagnostics::new("copilot");
-            let pricing = crate::PricingMap::default();
+            let pricing = ccusage_core::PricingMap::default();
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

@@ -2,7 +2,7 @@ use crate::cli::{SharedArgs, environment::Environment};
 
 pub fn debug_log(shared: &SharedArgs, message: impl AsRef<str>) {
     if shared.debug {
-        eprintln!("{}", message.as_ref());
+        ccusage_terminal::errln!("{}", message.as_ref());
     }
 }
 

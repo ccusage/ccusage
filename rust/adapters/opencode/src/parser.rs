@@ -552,7 +552,7 @@ mod tests {
         SessionMessageRow, message_time_created, message_value_to_entry,
         open_code_model_candidates, session_message_value_to_entry_checked, session_value_to_entry,
     };
-    use crate::{LoadedEntry, PricingMap, cli::CostMode};
+    use ccusage_core::{LoadedEntry, PricingMap, cli::CostMode};
 
     fn candidate_names(model: &str, provider: &str) -> Vec<String> {
         open_code_model_candidates(model, provider)
@@ -1104,7 +1104,7 @@ mod tests {
                 ("openrouter", format!("openrouter/{provider}/{model}")),
             ] {
                 for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
-                    let timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
+                    let timestamp = ccusage_core::parse_ts_timestamp(timestamp).unwrap();
                     let old_cost = candidate_names(&model, provider)
                         .into_iter()
                         .map(|candidate| {
@@ -1185,7 +1185,7 @@ mod tests {
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
         ccusage_test_support::install_pricing_snapshots();
-        let tz = crate::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
+        let tz = ccusage_core::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC));
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
@@ -1367,7 +1367,7 @@ mod tests {
     #[test]
     fn prices_cumulative_session_aggregates_with_static_rates() {
         let pricing = deepseek_pricing(0.00000014);
-        let created = crate::parse_ts_timestamp("2026-08-17T01:00:00Z")
+        let created = ccusage_core::parse_ts_timestamp("2026-08-17T01:00:00Z")
             .unwrap()
             .as_millis();
         let entry = session_value_to_entry(

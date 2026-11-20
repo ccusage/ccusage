@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 //! Golden CLI snapshots for each usage source and unified report.
 
 use std::collections::BTreeSet;

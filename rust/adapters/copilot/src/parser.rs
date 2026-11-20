@@ -1106,7 +1106,7 @@ fn number_value(value: Option<&Value>) -> Option<u64> {
                 .and_then(|value| (value >= 0).then_some(value as u64))
         }),
         Value::String(text) => text.trim().parse::<u64>().ok(),
-        _ => None,
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
     }
 }
 

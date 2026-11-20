@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod support;
 
 use std::{

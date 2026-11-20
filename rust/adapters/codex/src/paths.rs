@@ -200,7 +200,12 @@ fn codex_file_date(sessions_dir: &Path, file: &Path) -> Option<Date> {
         let year = parse_date_part(parts[0], 4)?;
         let month = parse_date_part(parts[1], 2)?;
         let day = parse_date_part(parts[2], 2)?;
-        Date::new(year as i16, month as i8, day as i8).ok()
+        Date::new(
+            i16::try_from(year).ok()?,
+            i8::try_from(month).ok()?,
+            i8::try_from(day).ok()?,
+        )
+        .ok()
     })
 }
 

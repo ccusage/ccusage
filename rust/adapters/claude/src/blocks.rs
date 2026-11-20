@@ -1,5 +1,5 @@
 use ccusage_core::cli::SessionLength;
-use std::{io::IsTerminal, num::NonZeroU64};
+use std::num::NonZeroU64;
 
 use ccusage_core::{
     Align, Color, ColumnKind, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow,
@@ -8,7 +8,8 @@ use ccusage_core::{
     color,
     fast::FxHashSet,
     format_currency, format_models_multiline, format_number, format_rfc3339_millis, json_float,
-    model_aliases, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
+    model_aliases, outln, print_box_title, should_use_compact_layout, terminal_style,
+    terminal_width,
 };
 use ccusage_report::{am_pm, hour_12, zoned_parts};
 use jiff::tz::TimeZone;
@@ -352,11 +353,11 @@ pub(crate) fn print_blocks_table(
     zone: &TimeZone,
 ) -> Result<()> {
     if blocks.is_empty() {
-        eprintln!("No Claude usage data found.");
+        ccusage_core::errln!("No Claude usage data found.");
         return Ok(());
     }
     let terminal_width = terminal_width();
-    let is_tty = std::io::stdout().is_terminal();
+    let is_tty = ccusage_core::stdout_is_terminal();
     let compact = should_use_compact_layout(
         shared,
         is_tty,
@@ -364,7 +365,7 @@ pub(crate) fn print_blocks_table(
         BLOCKS_COMPACT_WIDTH_THRESHOLD,
     );
     let actual_limit = token_limit;
-    print_box_title("Claude Code Token Usage Report - Session Blocks", shared);
+    print_box_title("Claude Code Token Usage Report - Session Blocks", shared)?;
     let mut headers = vec!["Block Start", "Duration/Status", "Models", "Tokens"];
     let mut columns = vec![
         ColumnKind::Primary,
@@ -497,74 +498,74 @@ pub(crate) fn print_active_block_detail(
     now: TimestampMs,
     zone: &TimeZone,
 ) -> Result<()> {
-    print_box_title("Current Session Block Status", shared);
+    print_box_title("Current Session Block Status", shared)?;
     let elapsed = now.duration_since(block.start_time) / MILLIS_PER_MINUTE;
     let remaining = block.end_time.duration_since(now) / MILLIS_PER_MINUTE;
-    println!(
+    outln!(
         "Block Started:   {}",
         format_block_started(block.start_time, zone)?
-    );
-    println!(
+    )?;
+    outln!(
         "Time Elapsed:    {}h {}m",
         elapsed / 60,
         elapsed.rem_euclid(60)
-    );
-    println!(
+    )?;
+    outln!(
         "Time Remaining:  {}",
         color(
             shared,
             format!("{}h {}m", remaining / 60, remaining.rem_euclid(60)),
             Color::Green,
         )
-    );
-    println!();
-    println!("{}", color(shared, "Current Usage:", Color::Blue));
-    println!(
+    )?;
+    outln!()?;
+    outln!("{}", color(shared, "Current Usage:", Color::Blue))?;
+    outln!(
         "  Input Tokens:     {}",
         format_number(block.token_counts.input_tokens)
-    );
-    println!(
+    )?;
+    outln!(
         "  Output Tokens:    {}",
         format_number(block.token_counts.output_tokens)
-    );
+    )?;
     if !shared.no_cost {
-        println!("  Total Cost:       {}", format_currency(block.cost_usd));
+        outln!("  Total Cost:       {}", format_currency(block.cost_usd))?;
     }
 
     if let Some(rate) = calculate_burn_rate(block) {
-        println!();
-        println!("{}", color(shared, "Burn Rate:", Color::Blue));
-        println!(
+        outln!()?;
+        outln!("{}", color(shared, "Burn Rate:", Color::Blue))?;
+        outln!(
             "  Tokens/minute:    {}",
             format_number(rate.tokens_per_minute.round() as u64)
-        );
+        )?;
         if !shared.no_cost {
-            println!(
+            outln!(
                 "  Cost/hour:        {}",
                 format_currency(rate.cost_per_hour)
-            );
+            )?;
         }
     }
 
     if let Some(projection) = project_block_usage(block, now) {
-        println!();
-        println!(
+        outln!()?;
+        outln!(
             "{}",
             color(
                 shared,
                 "Projected Usage (if current rate continues):",
                 Color::Blue
             )
-        );
-        println!(
+        )?;
+        outln!(
             "  Total Tokens:     {}",
             format_number(projection.total_tokens)
-        );
+        )?;
         if !shared.no_cost {
-            println!(
+            outln!(
                 "  Total Cost:       {}",
                 format_currency(projection.total_cost)
-            );
+            )?;
         }
 
         if let Some(limit) = token_limit {
@@ -577,19 +578,19 @@ pub(crate) fn print_active_block_detail(
             let current = block.token_counts.total();
             let remaining_tokens = limit.saturating_sub(current);
             let percent = projection.total_tokens as f64 / limit as f64 * 100.0;
-            println!();
-            println!("{}", color(shared, "Token Limit Status:", Color::Blue));
-            println!("  Limit:            {} tokens", format_number(limit));
-            println!(
+            outln!()?;
+            outln!("{}", color(shared, "Token Limit Status:", Color::Blue))?;
+            outln!("  Limit:            {} tokens", format_number(limit))?;
+            outln!(
                 "  Current Usage:    {} ({:.1}%)",
                 format_number(current),
                 current as f64 / limit as f64 * 100.0
-            );
-            println!(
+            )?;
+            outln!(
                 "  Remaining:        {} tokens",
                 format_number(remaining_tokens)
-            );
-            println!("  Projected Usage:  {percent:.1}% {status}");
+            )?;
+            outln!("  Projected Usage:  {percent:.1}% {status}")?;
         }
     }
     Ok(())

@@ -89,7 +89,9 @@ fn litellm_sources() -> Option<&'static LiteLlmSources> {
             match serde_json::from_str(inflate_snapshot(&JSON, snapshots.litellm_sources)) {
                 Ok(sources) => Some(sources),
                 Err(error) => {
-                    eprintln!("WARN  Failed to parse embedded pricing source rules ({error}).");
+                    ccusage_terminal::errln!(
+                        "WARN  Failed to parse embedded pricing source rules ({error})."
+                    );
                     None
                 }
             }
@@ -1202,11 +1204,13 @@ impl PricingMap {
         }
         match fetched {
             Ok(()) if loaded_count == 0 => {
-                eprintln!("WARN  Failed to parse LiteLLM pricing; using embedded pricing.");
+                ccusage_terminal::errln!(
+                    "WARN  Failed to parse LiteLLM pricing; using embedded pricing."
+                );
             }
             Ok(()) => {}
             Err(error) => {
-                eprintln!(
+                ccusage_terminal::errln!(
                     "WARN  Failed to fetch LiteLLM pricing ({error}); using embedded pricing."
                 );
             }
@@ -2186,13 +2190,15 @@ where
         Ok(()) if loaded => Some(map),
         Ok(()) => {
             if should_log_pricing_refresh_details() {
-                eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
+                ccusage_terminal::errln!(
+                    "WARN  Failed to parse models.dev pricing; using LiteLLM pricing."
+                );
             }
             None
         }
         Err(error) => {
             if should_log_pricing_refresh_details() {
-                eprintln!(
+                ccusage_terminal::errln!(
                     "WARN  Failed to fetch models.dev pricing ({error}); using LiteLLM pricing."
                 );
             }

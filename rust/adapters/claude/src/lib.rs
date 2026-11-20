@@ -2,7 +2,12 @@ use ccusage_adapter_common::{
     read_discovered_paths,
     source::{ProgressOwner, UsageLoadContext},
 };
-use ccusage_core::*;
+use ccusage_core::{
+    Diagnostics, LoadedEntry, MILLIS_PER_DAY, ModelBreakdown, ReportWindow, Result, Speed,
+    TimestampMs, TokenCounts, TokenUsageRaw, UsageSummary, cli, cli_error, cost,
+    date_range_bounds_ms, debug_log, fast, format_date_tz, model_aliases, parse_ts_timestamp,
+    pricing, progress, resolve_tz,
+};
 
 mod blocks;
 mod commands;
@@ -37,14 +42,12 @@ use serde::{
 };
 use smallvec::SmallVec;
 
-use crate::{
-    LoadedEntry, Result, Speed, TimestampMs, TokenUsageRaw, UsageSummary,
+use ccusage_core::{
     cli::{CostMode, SharedArgs},
-    daily::DedupEntry as _,
-    debug_log,
     fast::{FxHashMap, LinePrefilter},
-    progress,
 };
+
+use crate::daily::DedupEntry as _;
 
 pub(crate) use paths::{
     claude_paths, extract_session_parts, usage_files_before_since, visit_usage_files,
@@ -743,12 +746,12 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
             if !is_guarded_usage_member(key.as_str()) {
                 return key.into_seed(seed).map(Some);
             }
-            match self.map.next_value::<serde_json::Value>()? {
-                serde_json::Value::Null => self.has_null = true,
-                value => {
-                    self.pending = Some(value);
-                    return key.into_seed(seed).map(Some);
-                }
+            let value = self.map.next_value::<serde_json::Value>()?;
+            if value.is_null() {
+                self.has_null = true;
+            } else {
+                self.pending = Some(value);
+                return key.into_seed(seed).map(Some);
             }
         }
     }
@@ -872,9 +875,9 @@ mod tests {
         extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
         usage_limit_reset_time_from_line_bytes,
     };
-    use crate::{
-        ClaudeEntry, Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs,
-        TokenUsageRaw,
+    use crate::ClaudeEntry;
+    use ccusage_core::{
+        Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
         format_rfc3339_millis,
     };

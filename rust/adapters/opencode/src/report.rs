@@ -45,7 +45,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{
+    use ccusage_core::{
         LoadedEntry, ModelBreakdown, TimestampMs, TokenUsageRaw, UsageSummary, agent_summary_json,
         cli::AgentReportKind,
     };
