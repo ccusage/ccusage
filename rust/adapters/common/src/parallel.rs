@@ -1,0 +1,108 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    thread,
+};
+
+use ccusage_core::parallel::spawn_scoped_worker;
+
+pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<Vec<usize>> {
+    let chunk_count = chunk_count.max(1);
+    chunk_indexes_by_size(files, PathBuf::as_path, chunk_count)
+}
+
+fn chunk_indexes_by_size<I>(
+    items: &[I],
+    path: fn(&I) -> &Path,
+    chunk_count: usize,
+) -> Vec<Vec<usize>> {
+    let mut weighted_indexes = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let size = fs::metadata(path(item)).map_or(0, |metadata| metadata.len());
+        weighted_indexes.push((index, size));
+    }
+    weighted_indexes.sort_unstable_by(|a, b| (b.1, a.0).cmp(&(a.1, b.0)));
+
+    let mut chunks = vec![Vec::new(); chunk_count];
+    let mut chunk_sizes = vec![0_u64; chunk_count];
+    for (index, size) in weighted_indexes {
+        let mut target = 0;
+        for candidate in 1..chunk_sizes.len() {
+            if chunk_sizes[candidate] < chunk_sizes[target] {
+                target = candidate;
+            }
+        }
+        chunks[target].push(index);
+        chunk_sizes[target] = chunk_sizes[target].saturating_add(size);
+    }
+
+    chunks
+        .into_iter()
+        .filter(|chunk| !chunk.is_empty())
+        .collect()
+}
+
+pub fn worker_count(single_thread: bool, items: usize) -> usize {
+    if single_thread || items <= 1 {
+        return 1;
+    }
+    thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(items)
+}
+
+pub enum Split<I> {
+    BySize(fn(&I) -> &Path),
+    ByCount,
+}
+
+pub fn map_parallel<I, T, F>(items: &[I], single_thread: bool, split: Split<I>, map: F) -> Vec<T>
+where
+    I: Sync,
+    T: Send,
+    F: Fn(&I) -> T + Sync,
+{
+    let workers = worker_count(single_thread, items.len());
+    if workers == 1 {
+        return items.iter().map(map).collect();
+    }
+    let chunks = match split {
+        Split::BySize(path) => chunk_indexes_by_size(items, path, workers),
+        Split::ByCount => {
+            let chunk_size = items.len().div_ceil(workers);
+            (0..items.len())
+                .collect::<Vec<_>>()
+                .chunks(chunk_size)
+                .map(<[usize]>::to_vec)
+                .collect()
+        }
+    };
+    let map = &map;
+    let mut results = thread::scope(|scope| {
+        chunks
+            .into_iter()
+            .map(|chunk| {
+                spawn_scoped_worker(scope, move || {
+                    chunk
+                        .into_iter()
+                        .map(|index| (index, map(&items[index])))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(join_worker)
+            .collect::<Vec<_>>()
+    });
+    results.sort_unstable_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
+fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
+    handle
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+#[cfg(test)]
+mod tests;

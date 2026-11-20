@@ -219,3 +219,6 @@ impl Drop for QueueLifetime<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
