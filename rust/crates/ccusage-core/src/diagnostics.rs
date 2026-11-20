@@ -5,12 +5,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use crate::{
-    TimestampMs,
-    cli::{ReportClock, SharedArgs},
-    log_level,
-    output::sanitize_terminal_text,
-};
+use crate::{cli::SharedArgs, log_level, output::sanitize_terminal_text};
 
 const SAMPLES_PER_KIND: usize = 5;
 
@@ -237,41 +232,23 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
 
 pub struct Diagnostics {
     source: &'static str,
-    assessment_instant: Option<TimestampMs>,
     table: Option<&'static str>,
     row_id: Option<Arc<str>>,
     state: Arc<Mutex<State>>,
 }
 
 impl Diagnostics {
-    pub fn for_report(source: &'static str, clock: ReportClock) -> Self {
-        Self::at(source, clock.now().into())
-    }
-
-    fn at(source: &'static str, assessment_instant: TimestampMs) -> Self {
-        Self::build(source, Some(assessment_instant))
-    }
-
-    pub fn without_clock(source: &'static str) -> Self {
-        Self::build(source, None)
-    }
-
-    fn build(source: &'static str, assessment_instant: Option<TimestampMs>) -> Self {
+    pub fn new(source: &'static str) -> Self {
         Self {
             source,
-            assessment_instant,
             table: None,
             row_id: None,
             state: Arc::new(Mutex::new(State::default())),
         }
     }
 
-    pub fn assessment_instant(&self) -> Option<TimestampMs> {
-        self.assessment_instant
-    }
-
     pub fn isolated(&self) -> Self {
-        Self::build(self.source, self.assessment_instant)
+        Self::new(self.source)
     }
 
     pub fn source(&self) -> &'static str {
@@ -281,7 +258,6 @@ impl Diagnostics {
     pub fn for_table(&self, table: &'static str) -> Self {
         Self {
             source: self.source,
-            assessment_instant: self.assessment_instant,
             table: Some(table),
             row_id: self.row_id.clone(),
             state: Arc::clone(&self.state),
@@ -291,7 +267,6 @@ impl Diagnostics {
     pub fn for_row(&self, id: Option<&str>) -> Self {
         Self {
             source: self.source,
-            assessment_instant: self.assessment_instant,
             table: self.table,
             row_id: id.map(Arc::from),
             state: Arc::clone(&self.state),

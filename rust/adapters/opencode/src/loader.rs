@@ -167,7 +167,7 @@ impl EntryCollector {
 }
 
 pub(crate) fn has_source(opencode_dir: &Path) -> bool {
-    if db_path(opencode_dir, &Diagnostics::without_clock("opencode")).is_some() {
+    if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
         return true;
     }
     any_file_matching(
@@ -176,7 +176,7 @@ pub(crate) fn has_source(opencode_dir: &Path) -> bool {
             path.extension()
                 .is_some_and(|extension| extension == "json")
         },
-        &Diagnostics::without_clock("opencode"),
+        &Diagnostics::new("opencode"),
     )
 }
 
@@ -1034,7 +1034,7 @@ fn load_entries_with_native_sessions_with_progress(
     kind: AgentReportKind,
     owner: ProgressOwner,
 ) -> Result<Vec<LinkedEntry>> {
-    let diagnostics = Diagnostics::for_report("opencode", shared.clock);
+    let diagnostics = Diagnostics::new("opencode");
     let entries =
         load_entries_with_native_sessions_with_diagnostics(shared, kind, owner, &diagnostics)?;
     diagnostics.emit(shared.debug);

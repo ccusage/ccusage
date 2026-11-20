@@ -22,7 +22,7 @@ fn scalar_timestamps_follow_the_shared_epoch_unit_boundary() {
             })
             .to_string(),
         );
-        let diagnostics = Diagnostics::without_clock("copilot");
+        let diagnostics = Diagnostics::new("copilot");
         let entries = parse_otel_file(&path, &diagnostics).unwrap();
         assert_eq!(entries.len(), 1, "{raw}");
         assert_eq!(entries[0].timestamp.as_millis(), expected, "{raw}");
@@ -42,7 +42,7 @@ fn diagnoses_otel_usage_without_a_timestamp() {
     let fixture = ccusage_test_support::fs_fixture!({
         "otel.jsonl": r#"{"body":"GenAI inference:","attributes":{"gen_ai.usage.input_tokens":10,"gen_ai.usage.output_tokens":2,"gen_ai.request.model":"gpt-5"}}"#,
     });
-    let diagnostics = Diagnostics::without_clock("copilot");
+    let diagnostics = Diagnostics::new("copilot");
     let events = parse_otel_file(&fixture.path("otel.jsonl"), &diagnostics).unwrap();
     assert!(events.is_empty());
     assert_eq!(
@@ -56,7 +56,7 @@ fn diagnoses_session_state_usage_without_a_timestamp() {
     let fixture = ccusage_test_support::fs_fixture!({
         "session/events.jsonl": r#"{"type":"session.shutdown","data":{"modelMetrics":{"gpt-5":{"usage":{"inputTokens":10,"outputTokens":2}}}}}"#,
     });
-    let diagnostics = Diagnostics::without_clock("copilot");
+    let diagnostics = Diagnostics::new("copilot");
     let events =
         parse_session_state_file(&fixture.path("session/events.jsonl"), &diagnostics).unwrap();
     assert!(events.entries.is_empty());
@@ -76,7 +76,7 @@ fn undated_watermark_checkpoint_still_marks_later_shutdowns_as_covered() {
             "\n",
         ),
     });
-    let diagnostics = Diagnostics::without_clock("copilot");
+    let diagnostics = Diagnostics::new("copilot");
 
     let parsed =
         parse_session_state_file(&fixture.path("session/events.jsonl"), &diagnostics).unwrap();
@@ -161,7 +161,7 @@ fn reports_a_usage_record_that_does_not_decode_and_keeps_the_next_one() {
 {}
 ", record("record-2")),
     });
-    let diagnostics = Diagnostics::without_clock("copilot");
+    let diagnostics = Diagnostics::new("copilot");
 
     let parsed =
         parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics).unwrap();
@@ -195,7 +195,7 @@ fn reports_a_tokenless_usage_record_that_does_not_decode() {
 {}
 ", record("record-2")),
     });
-    let diagnostics = Diagnostics::without_clock("copilot");
+    let diagnostics = Diagnostics::new("copilot");
 
     let parsed =
         parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics).unwrap();
@@ -235,7 +235,7 @@ fn parses_session_shutdown_model_metrics() {
 
     let entries = parse_session_state_file(
         &fixture.path("session-1/events.jsonl"),
-        &Diagnostics::without_clock("copilot"),
+        &Diagnostics::new("copilot"),
     )
     .expect("session-state file should parse")
     .entries;
@@ -299,7 +299,7 @@ fn skips_malformed_lines_and_non_shutdown_events() {
 
     let entries = parse_session_state_file(
         &fixture.path("session-1/events.jsonl"),
-        &Diagnostics::without_clock("copilot"),
+        &Diagnostics::new("copilot"),
     )
     .unwrap()
     .entries;
@@ -350,7 +350,7 @@ fn parses_each_model_and_ignores_request_cost_and_empty_usage() {
 
     let entries = parse_session_state_file(
         &fixture.path("session-1/events.jsonl"),
-        &Diagnostics::without_clock("copilot"),
+        &Diagnostics::new("copilot"),
     )
     .unwrap()
     .entries;
@@ -406,7 +406,7 @@ fn parses_credit_totals_from_checkpoints_and_shutdowns() {
 
     let parsed = parse_session_state_file(
         &fixture.path("session-1/events.jsonl"),
-        &Diagnostics::without_clock("copilot"),
+        &Diagnostics::new("copilot"),
     )
     .unwrap();
 
@@ -463,7 +463,7 @@ fn marks_shutdown_credits_unknown_when_a_total_is_missing() {
 
     let parsed = parse_session_state_file(
         &fixture.path("session-1/events.jsonl"),
-        &Diagnostics::without_clock("copilot"),
+        &Diagnostics::new("copilot"),
     )
     .unwrap();
 

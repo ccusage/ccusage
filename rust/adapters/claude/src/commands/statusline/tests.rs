@@ -109,9 +109,7 @@ fn statusline_invocation_passes_config_pricing_overrides_to_cost_loading() {
             }),
             effort: None,
         };
-        let output =
-            render_statusline(&hook, &args, &shared, &Diagnostics::without_clock("claude"))
-                .unwrap();
+        let output = render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
     })
 }

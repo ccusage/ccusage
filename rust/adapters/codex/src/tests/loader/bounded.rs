@@ -44,7 +44,7 @@ fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
                 single_thread,
                 ..shared.clone()
             },
-            &Diagnostics::without_clock("codex"),
+            &Diagnostics::new("codex"),
         );
 
         assert!(detected, "single_thread={single_thread}");
@@ -108,7 +108,7 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
                 single_thread,
                 ..shared.clone()
             },
-            &Diagnostics::without_clock("codex"),
+            &Diagnostics::new("codex"),
         );
 
         assert!(detected, "single_thread={single_thread}");
@@ -172,7 +172,7 @@ fn bounded_loading_uses_the_first_duplicate_parent_id() {
                 single_thread,
                 ..shared.clone()
             },
-            &Diagnostics::without_clock("codex"),
+            &Diagnostics::new("codex"),
         );
 
         assert!(detected, "single_thread={single_thread}");
@@ -232,7 +232,7 @@ fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
                 single_thread,
                 ..shared.clone()
             },
-            &Diagnostics::without_clock("codex"),
+            &Diagnostics::new("codex"),
         );
 
         assert!(detected, "single_thread={single_thread}");
@@ -341,7 +341,7 @@ fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
         ..SharedArgs::default()
     };
 
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
     let (sessions, detected) = session_input_tokens(&sources, &shared, &diagnostics);
 
     assert!(detected);
@@ -371,7 +371,7 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
     let parent = fixture.path("sessions/2025/01/01/parent.jsonl");
     let child = fixture.path("sessions/2025/01/02/child.jsonl");
     let files = vec![parent.clone(), child];
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
 
     let plan_files = [(sessions.as_path(), files.as_slice())];
     let plan = CodexReplayPlan::for_selection(&plan_files, plan_files, true, &diagnostics);
@@ -412,7 +412,7 @@ fn the_fused_fork_pass_records_a_parent_skip_once() {
             single_thread,
             ..Default::default()
         };
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let (groups, _) = crate::aggregate::load_groups_from_sources_with_diagnostics(
             &[CodexUsageSource::new(
                 fixture.path("sessions"),
@@ -470,7 +470,7 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
             debug: true,
             ..Default::default()
         };
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let (sessions, _) = session_input_tokens(&sources, &shared, &diagnostics);
 
         let expected = [
@@ -490,7 +490,7 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
                 .contains("SECRET_CANARY")
         );
 
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let (groups, _) = crate::aggregate::load_groups_from_sources_with_diagnostics(
             &[CodexUsageSource::new(
                 fixture.path("sessions"),

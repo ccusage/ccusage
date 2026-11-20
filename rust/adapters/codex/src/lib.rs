@@ -44,7 +44,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let report_pricing = ReportPricing::for_load(&shared, None);
     let sources = paths::codex_usage_sources()?;
     let pricing = report_pricing.get();
-    let diagnostics = ccusage_core::Diagnostics::for_report("codex", shared.clock);
+    let diagnostics = ccusage_core::Diagnostics::new("codex");
     let (mut groups, _) = aggregate::load_groups_from_sources_with_diagnostics(
         &sources,
         &shared,

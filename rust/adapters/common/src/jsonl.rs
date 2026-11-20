@@ -857,10 +857,7 @@ mod tests {
 
     use serde::{Deserialize, de::DeserializeOwned};
 
-    use ccusage_core::{
-        Diagnostics, SkipKind,
-        cli::{ReportClock, SharedArgs},
-    };
+    use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
     use ccusage_test_support::{Environment, Fixture, instant, set_modified};
 
     use super::{
@@ -907,7 +904,7 @@ mod tests {
         let mut compressed = zstd::stream::encode_all(b"complete\npartial".as_slice(), 0).unwrap();
         compressed.extend_from_slice(b"invalid next frame");
         std::fs::write(&path, compressed).unwrap();
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let mut lines = Vec::new();
         read(
             &path,
@@ -950,7 +947,7 @@ mod tests {
         let content =
             b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n{\"model\":\"b\",\"tokens\":2}\n";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let parsed = decode_fixture::<Record>(
             content,
             Some(&prefilter),
@@ -996,10 +993,6 @@ mod tests {
             .unwrap();
     }
 
-    fn report_diagnostics() -> Diagnostics {
-        Diagnostics::for_report("test", ReportClock::Fixed(instant(NOW).into()))
-    }
-
     fn debug_warnings(diagnostics: &Diagnostics) -> Vec<String> {
         Environment::with_var("LOG_LEVEL", "1").run(|| {
             diagnostics.warnings(&SharedArgs {
@@ -1035,7 +1028,7 @@ mod tests {
             let fixture = Fixture::new();
             let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
             set_modified(&live, instant(modified));
-            let diagnostics = report_diagnostics();
+            let diagnostics = Diagnostics::new("test");
 
             let tokens = read_tokens(&live, &diagnostics, ReadPolicy::PLAIN, || {
                 append(&live, b"el");
@@ -1065,7 +1058,7 @@ mod tests {
             let fixture = Fixture::new();
             let quiet = fixture.write_file("quiet.jsonl", CUT_LAST_LINE);
             set_modified(&quiet, instant(modified));
-            let diagnostics = report_diagnostics();
+            let diagnostics = Diagnostics::new("test");
 
             let tokens = read_tokens(&quiet, &diagnostics, ReadPolicy::PLAIN, || {});
 
@@ -1109,7 +1102,7 @@ mod tests {
         for modified in MTIMES {
             let fixture = Fixture::new();
             let path = torn_zstd_session(&fixture, modified);
-            let diagnostics = report_diagnostics();
+            let diagnostics = Diagnostics::new("test");
 
             let tokens = read_tokens(&path, &diagnostics, TORN_ZSTD, || {
                 set_modified(
@@ -1136,7 +1129,7 @@ mod tests {
         for modified in MTIMES {
             let fixture = Fixture::new();
             let path = torn_zstd_session(&fixture, modified);
-            let diagnostics = report_diagnostics();
+            let diagnostics = Diagnostics::new("test");
 
             let tokens = read_tokens(&path, &diagnostics, TORN_ZSTD, || {});
 
@@ -1159,7 +1152,7 @@ mod tests {
             b"{\"tokens\":2,\"mod\n{\"tokens\":1}".as_slice(),
             b"{\"tokens\":1}\n{\"tokens\":2,\"mod\n",
         ] {
-            let diagnostics = Diagnostics::without_clock("test");
+            let diagnostics = Diagnostics::new("test");
             let _ = decode_fixture::<Record>(
                 content,
                 None,
@@ -1176,7 +1169,7 @@ mod tests {
     #[test]
     fn records_skips_unparsable_lines() {
         let content = b"{\"tokens\":1}\nnot json\n{\"tokens\":2}\n";
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let parsed = decode_fixture::<Record>(
             content,
             None,
@@ -1206,7 +1199,7 @@ mod tests {
 
         let content = b"{\"model\":\"before\",\"tokens\":1}\n{\"other\":\"SECRET_CANARY\",\"tokens\":}\n{\"model\":\"broken\",\"tokens\":\"SECRET_CANARY\"}\n{\"model\":\"after\",\"tokens\":2}";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let records = decode_fixture::<StrictRecord>(
             content,
@@ -1242,7 +1235,7 @@ mod tests {
         struct Record {
             tokens: u64,
         }
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let records = decode_fixture::<Record>(
             b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
             None,
@@ -1271,7 +1264,7 @@ mod tests {
             r#"{"kind":"usage","tokens":2}"#,
         )
         .as_bytes();
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let records = decode_fixture::<UsageRecord>(
             content,
             None,
@@ -1297,7 +1290,7 @@ mod tests {
             assert!(!warnings.contains("/logs/session.jsonl:2:"));
             assert!(!warnings.contains("SECRET_CANARY"));
 
-            let database_diagnostics = Diagnostics::without_clock("test");
+            let database_diagnostics = Diagnostics::new("test");
             assert!(
                 super::decode_record::<UsageRecord>(
                     b" \t\r",

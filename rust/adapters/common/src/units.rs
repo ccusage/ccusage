@@ -326,11 +326,7 @@ where
 pub(crate) mod tests {
     use std::{fs, path::Path};
 
-    use ccusage_core::{
-        Diagnostics, Result, SkipKind,
-        cli::{ReportClock, SharedArgs},
-        cli_error,
-    };
+    use ccusage_core::{Diagnostics, Result, SkipKind, cli::SharedArgs, cli_error};
     use ccusage_test_support::{Fixture, instant, set_modified};
 
     use super::{Fault, SqliteStage, UnitError, decode_json, read_units, read_units_flat};
@@ -362,7 +358,7 @@ pub(crate) mod tests {
             },
         ];
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::without_clock("test");
+            let diagnostics = Diagnostics::new("test");
             let loaded = super::read_typed_units(&units, single_thread, &diagnostics, |unit| {
                 if unit.id == 3 {
                     Err(UnitError::new(SkipKind::InvalidData, "rejected"))
@@ -395,7 +391,7 @@ pub(crate) mod tests {
             fixture.write_file("empty.txt", ""),
             fixture.write_file("broken.txt", "3 four"),
         ];
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(&files, true, &diagnostics, numbers);
 
@@ -424,7 +420,7 @@ pub(crate) mod tests {
             .collect::<Vec<_>>();
 
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::without_clock("test");
+            let diagnostics = Diagnostics::new("test");
 
             let loaded = read_units_flat(&files, single_thread, &diagnostics, numbers);
 
@@ -437,7 +433,7 @@ pub(crate) mod tests {
     fn a_reader_chooses_the_kind_of_its_failure() {
         let fixture = Fixture::new();
         let files = vec![fixture.write_file("state.db", "SQLite format 3")];
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(&files, true, &diagnostics, |_| {
             Err::<(), _>(UnitError::new(SkipKind::Invariant, "no usage table"))
@@ -452,7 +448,7 @@ pub(crate) mod tests {
     fn io_errors_convert_without_a_wrapper() {
         let fixture = Fixture::new();
         let files = vec![fixture.create_dir_all("directory.txt")];
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(&files, true, &diagnostics, |file| fs::read(file));
 
@@ -466,7 +462,7 @@ pub(crate) mod tests {
         let missing = fixture.path("missing.json");
         let empty = fixture.write_file("empty.json", "");
         let files = vec![missing.clone(), empty.clone()];
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(
             &files,
@@ -502,7 +498,7 @@ pub(crate) mod tests {
             fixture.create_dir_all("directory.json"),
             fixture.write_file("broken.json", "{\"value\":}"),
         ];
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(
             &files,
@@ -525,10 +521,6 @@ pub(crate) mod tests {
         "2026-01-02T00:00:30Z",
     ];
 
-    fn report_diagnostics() -> Diagnostics {
-        Diagnostics::for_report("test", ReportClock::Fixed(instant(NOW).into()))
-    }
-
     fn debug_warnings(diagnostics: &Diagnostics) -> Vec<String> {
         diagnostics.warnings(&SharedArgs {
             debug: true,
@@ -542,7 +534,7 @@ pub(crate) mod tests {
             let fixture = Fixture::new();
             let cut = fixture.write_file("cut.json", CUT_DOCUMENT);
             set_modified(&cut, instant(modified));
-            let diagnostics = report_diagnostics();
+            let diagnostics = Diagnostics::new("test");
 
             let loaded = read_units(std::slice::from_ref(&cut), true, &diagnostics, |path| {
                 super::read_filtered_json::<serde_json::Value>(path, |_| {
@@ -575,7 +567,7 @@ pub(crate) mod tests {
                 fixture.write_file("broken.json", "{\"value\":}"),
             ];
             set_modified(&cut, instant(modified));
-            let diagnostics = report_diagnostics();
+            let diagnostics = Diagnostics::new("test");
 
             let loaded = read_units(
                 &files,
@@ -605,7 +597,7 @@ pub(crate) mod tests {
     fn a_whitespace_only_document_is_noted_like_an_empty_file() {
         let fixture = Fixture::new();
         let blank = fixture.write_file("blank.json", " \n\t\r\n");
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(
             std::slice::from_ref(&blank),

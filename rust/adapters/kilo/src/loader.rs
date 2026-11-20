@@ -273,7 +273,7 @@ mod tests {
             (wrong_schema, SkipKind::Invariant),
             (fixture.path("not-a-database.db"), SkipKind::InvalidData),
         ] {
-            let diagnostics = Diagnostics::without_clock("kilo");
+            let diagnostics = Diagnostics::new("kilo");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
@@ -317,7 +317,7 @@ mod tests {
                 ..SharedArgs::default()
             };
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::without_clock("kilo");
+            let diagnostics = Diagnostics::new("kilo");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

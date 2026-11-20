@@ -60,7 +60,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
         mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
-    let diagnostics = Diagnostics::for_report("claude", shared.clock);
+    let diagnostics = Diagnostics::new("claude");
     let statusline_result = render_statusline(&hook, &args, &shared, &diagnostics);
     diagnostics.emit(args.debug);
     match statusline_result {

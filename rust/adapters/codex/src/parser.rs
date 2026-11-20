@@ -1834,7 +1834,7 @@ mod diagnostic_tests {
     fn a_rollout_removed_after_discovery_is_noted_not_skipped() {
         let fixture = Fixture::new();
         let path = fixture.path("session.jsonl");
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
 
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
@@ -1867,7 +1867,7 @@ mod diagnostic_tests {
         let path = fixture.path("session.jsonl");
         let compressed = fixture.write_file("session.jsonl.zst", "rollout");
         fs::set_permissions(&compressed, fs::Permissions::from_mode(0o000)).unwrap();
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
 
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
@@ -1900,7 +1900,7 @@ mod diagnostic_tests {
     fn visit_rollout_cut_short(on_event: impl Fn(&Path)) -> (usize, Diagnostics) {
         let fixture = Fixture::new();
         let path = fixture.write_file("session.jsonl", ROLLOUT_CUT_SHORT);
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let mut events = 0;
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
@@ -1954,7 +1954,7 @@ mod diagnostic_tests {
                 ]
                 .join("\n"),
             );
-            let diagnostics = Diagnostics::without_clock("codex");
+            let diagnostics = Diagnostics::new("codex");
             visit_codex_session_file_with_diagnostics(
                 fixture.root(),
                 &path,
@@ -1975,7 +1975,7 @@ mod diagnostic_tests {
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
             r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0}}}}"#,
         ].join("\n"));
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let mut events = Vec::new();
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
@@ -2001,7 +2001,7 @@ mod diagnostic_tests {
     fn session_events(lines: &[&str]) -> (Vec<CodexTokenUsageEvent>, Diagnostics) {
         let fixture = Fixture::new();
         let path = fixture.write_file("session.jsonl", lines.join("\n"));
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let mut events = Vec::new();
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
