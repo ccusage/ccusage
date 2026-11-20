@@ -1621,6 +1621,20 @@ impl PricingMap {
         None
     }
 
+    fn models_dev_names<'a, 'n>(
+        &'a self,
+        name: Name<'n>,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> impl Iterator<Item = Name<'n>> {
+        // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
+        let unclaimed = move |suffix: &Name<'_>| {
+            self.authoritative(*suffix, lookup, false, models_dev, |_| true)
+                .is_none()
+        };
+        std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
+    }
+
     fn search_pass<'a>(
         &'a self,
         model: &str,
@@ -1667,13 +1681,7 @@ impl PricingMap {
                     }
                     let rows = models_dev()?;
                     slot.names(model, |name| {
-                        // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
-                        let unclaimed = |suffix: &Name<'_>| {
-                            self.authoritative(*suffix, lookup, false, models_dev, |_| true)
-                                .is_none()
-                        };
-                        std::iter::once(name)
-                            .chain(name.suffixes().take_while(unclaimed))
+                        self.models_dev_names(name, lookup, models_dev)
                             .find_map(|name| rows.exact(name, lookup))
                     })
                     .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
@@ -1684,7 +1692,10 @@ impl PricingMap {
                 if let Some(rows) = secondary
                     && slot
                         .names(model, |name| {
-                            rows.contains_exact_only_identity(name.raw(), name.identity())
+                            self.models_dev_names(name, lookup, models_dev)
+                                .any(|name| {
+                                    rows.contains_exact_only_identity(name.raw(), name.identity())
+                                })
                                 .then_some(())
                         })
                         .is_some()
@@ -7822,6 +7833,39 @@ mod tests {
                 .unwrap()
                 .input,
             6e-6
+        );
+    }
+
+    #[test]
+    fn a_router_path_to_an_exact_only_tier_does_not_take_the_base_models_limit() {
+        crate::test_support::install_pricing_snapshots();
+        let mut secondary = PricingMap::default();
+        assert_eq!(
+            secondary.load_models_dev_json_for_tests(
+                r#"{
+            "sample-1":{"cost":{"input":3,"output":4},"limit":{"context":123456}},
+            "sample-1-fast":{"cost":{"input":6,"output":8},"exactOnly":true},
+            "sample-2":{"cost":{"input":3,"output":4},"limit":{"context":123456}},
+            "sample-2-fast":{"cost":{"input":6,"output":8},"exactOnly":true,"limit":{"context":654321}}
+        }"#
+            ),
+            Some(4)
+        );
+        let pricing = layered(&PricingMap::default(), Some(&secondary));
+        assert_eq!(
+            pricing
+                .find_with_live("router/sample-1-fast", || None)
+                .unwrap()
+                .input,
+            6e-6
+        );
+        assert_eq!(
+            pricing.context_limit_entry("router/sample-1-fast", MatchKind::Fuzzy),
+            None
+        );
+        assert_eq!(
+            pricing.context_limit_entry("router/sample-2-fast", MatchKind::Fuzzy),
+            Some(654_321)
         );
     }
 
