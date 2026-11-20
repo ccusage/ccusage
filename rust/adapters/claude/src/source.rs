@@ -230,7 +230,7 @@ mod diagnostic_tests {
                 ("session-side", "2026-01-02T12:00:00Z", false),
                 ("session-main", "2026-01-03T12:00:00Z", true),
                 ("session-main", "2025-12-01T12:00:00Z", false),
-                ("session-stale", "2026-01-03T12:00:00Z", false),
+                ("session-stale", "2026-01-03T12:00:00Z", true),
             ];
             for (session, timestamp, is_counted) in probes {
                 let kept =
