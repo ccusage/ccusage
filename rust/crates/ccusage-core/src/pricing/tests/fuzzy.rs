@@ -299,6 +299,17 @@ fn a_thinking_or_reasoning_run_bills_at_the_listed_rate_for_vendors_that_bill_it
         ("zai/glm-5.3:thinking", "zai/glm-5.3"),
         ("grok-4.7-reasoning", "grok-4.7"),
         ("grok-4-7-non-reasoning", "grok-4.7"),
+        ("qwen4-max-thinking", "qwen4-max"),
+        ("alibaba/qwen3.8-max:thinking", "alibaba/qwen3.8-max"),
+        ("qwen3-8-max-thinking", "alibaba/qwen3.8-max"),
+        ("qwen3.5-plus-thinking", "qwen3.5-plus"),
+        ("kimi-k3-thinking", "kimi-k3"),
+        ("moonshot/kimi-k2.6-thinking", "moonshot/kimi-k2.6"),
+        (
+            "mistral/mistral-large-4-thinking",
+            "mistral/mistral-large-4",
+        ),
+        ("mistral-medium-3.5-thinking", "mistral-medium-3.5"),
     ] {
         let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
         let expected = pricing.find(listed).unwrap();
@@ -311,13 +322,12 @@ fn a_thinking_or_reasoning_run_bills_at_the_listed_rate_for_vendors_that_bill_it
 }
 
 #[test]
-fn a_thinking_variant_of_a_vendor_that_may_price_it_separately_stays_unpriced() {
+fn a_thinking_variant_without_a_documented_billing_rule_stays_unpriced() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
     for model in [
-        "qwen4-max-thinking",
-        "kimi-k3-thinking",
-        "mistral/mistral-large-4-thinking",
+        "gemma-4-31b-it-thinking",
+        "mistral-large-4-reasoning",
         "claude-sonnet-5-5-reasoning",
         "grok-4.7-thinking",
     ] {
