@@ -81,7 +81,10 @@
            (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" nil "/e") (benchmark/command-argv "/b" "daily")))))
   (testing "a Grok fixture is pointed at through GROK_HOME"
     (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x GROK_HOME=/f/g HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
-           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" "/f/g" "/e") (benchmark/command-argv "/b" "daily"))))))
+           (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" "/f/g" "/e") (benchmark/command-argv "/b" "daily")))))
+  (testing "a Claude-only shape fixture leaves CODEX_HOME unset"
+    (is (not (.contains (data/benchmark-command-text (system/fixture-env "/f/c" nil nil "/e") (benchmark/command-argv "/b" "daily"))
+                        "CODEX_HOME")))))
 
 (deftest statistics
   (is (= 4 (data/median [9 1 2 4 7])))
@@ -171,19 +174,33 @@
                 :comparison (benchmark/compare-variants rounds "base" "PR" 0.1)}
         context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :runs 3 :warmup 1
                  :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
-        markdown (report/render-report context [result] {:base 2048 :head 1024})
+        markdown (report/render-report context [result] [] {:base 2048 :head 1024})
         header (slurp (system/path (.getParent (babashka.fs/file *file*)) "testdata" "perf-comment-header.txt"))]
     (testing "the PR comment upsert reads its marker from this header"
       (is (.startsWith markdown header)))
     (testing "a report without a head commit carries no comment marker"
-      (is (.startsWith (report/render-report (dissoc context :head-sha) [result] {:base 2048 :head 1024})
+      (is (.startsWith (report/render-report (dissoc context :head-sha) [result] [] {:base 2048 :head 1024})
                        "## ccusage performance comparison\n")))
     (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
     (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))
     (is (.contains markdown "Claude logs (1.00 GiB on disk, 10 files) and Codex logs"))
     (is (.contains (report/fixture-line (assoc context :grok-fixture-stats {:bytes 2097152 :files 3}))
-                   "Claude logs (1.00 GiB on disk, 10 files), Codex logs (1.00 MiB on disk, 2 files, mostly zstd-compressed), and Grok logs (2.00 MiB on disk, 3 files) shaped"))))
+                   "Claude logs (1.00 GiB on disk, 10 files), Codex logs (1.00 MiB on disk, 2 files, mostly zstd-compressed), and Grok logs (2.00 MiB on disk, 3 files) shaped"))
+    (testing "without shape results there is no second table"
+      (is (not (.contains markdown "### Targeted shapes"))))
+    (testing "shape results get their own table, named by fixture"
+      (let [shapes [{:label "main"} {:label "tiny" :desc "startup dominates" :stats {:bytes 4194304 :files 5}}]
+            slower {:command "daily" :fixture-label "tiny" :base (benchmark/variant-summary rounds "PR")
+                    :head (benchmark/variant-summary rounds "base")
+                    :comparison (benchmark/compare-variants rounds "PR" "base" 0.1)}
+            markdown (report/render-report (assoc context :shapes shapes) [result] [slower] {:base 2048 :head 1024})]
+        (is (.contains markdown "### Targeted shapes"))
+        (is (.contains markdown "- **tiny** (4.00 MiB on disk, 5 files): startup dominates."))
+        (is (.contains markdown "- **main**: the fixture above."))
+        (is (.contains markdown "| Fixture | Command | CPU base |"))
+        (is (.contains markdown "| tiny | `daily` | 610ms | 1.00s |"))
+        (is (.contains markdown "**Verdict: ⚠️ possible regression** in `daily` on tiny (slower)"))))))
 
 (deftest overall-verdicts
   (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]

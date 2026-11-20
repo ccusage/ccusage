@@ -26,11 +26,14 @@
 
 (defn- verdicts [result] [(get-in result [:comparison :cpu :verdict]) (get-in result [:comparison :rss :verdict])])
 
+(defn- result-name [{:keys [command fixture-label]}]
+  (str "`" command "`" (when fixture-label (str " on " fixture-label))))
+
 (defn overall-verdict [results threshold]
   (let [percent (Math/round (* 100 threshold))
         regressions (filter #(some #{:regression} (verdicts %)) results)
         improvements (filter #(some #{:improvement} (verdicts %)) results)
-        commands (fn [rs] (str/join ", " (map #(format "`%s` (%s)" (:command %) (str/replace (comparison-verdict (:comparison %)) #"^\S+ " "")) rs)))]
+        commands (fn [rs] (str/join ", " (map #(format "%s (%s)" (result-name %) (str/replace (comparison-verdict (:comparison %)) #"^\S+ " "")) rs)))]
     (cond
       (seq regressions) {:regression? true
                          :text (format "**Verdict: ⚠️ possible regression** in %s; CPU time or peak RSS above +%d%%, consistent across rounds."
@@ -54,11 +57,19 @@
                "and at least four in five rounds agree. Wall time is shown but not judged.")
           runs warmup (Math/round (* 100 threshold))))
 
+(defn shape-lines [shapes]
+  (map (fn [{:keys [label desc stats]}]
+         (if stats
+           (format "- **%s** (%s on disk, %d files): %s." label (data/format-data-size (:bytes stats)) (:files stats) desc)
+           (format "- **%s**: the fixture above. Each file's mtime is its last record, so `--since 20260801` skips about half of the Claude files, and one Codex rollout in eight is a fork of the one before it." label)))
+       shapes))
+
 (defn comparison-rows [results]
   (let [instructions? (every? #(get-in % [:comparison :instructions]) results)]
-    (mapv (fn [{:keys [command base head comparison]}]
+    (mapv (fn [{:keys [command fixture-label base head comparison]}]
             (apply array-map
-                   (concat ["Command" (str "`" command "`")
+                   (concat (when fixture-label ["Fixture" fixture-label])
+                           ["Command" (str "`" command "`")
                             "CPU base" (data/format-duration (get-in base [:cpu :median]))
                             "CPU PR" (data/format-duration (get-in head [:cpu :median]))
                             "CPU ratio" (format-ratio-spread (:cpu comparison))
@@ -73,16 +84,21 @@
 
 (defn comment-marker [head-sha] (str "<!-- ccusage-perf-comment:" head-sha " -->"))
 
-(defn render-report [{:keys [base-sha head-sha] :as context} results sizes]
+(defn render-report [{:keys [base-sha head-sha shapes] :as context} results shape-results sizes]
   (str (str/join "\n" (concat (when head-sha [(comment-marker head-sha)])
                               ["## ccusage performance comparison" ""]
                               (when head-sha [(str "PR: `" (data/format-sha head-sha) "`"
                                                    (when base-sha (str " merged onto Base: `" (data/format-sha base-sha) "`")))
                                               ""])
-                              [(:text (overall-verdict results (:threshold context))) ""
+                              [(:text (overall-verdict (concat results shape-results) (:threshold context))) ""
                                (fixture-line context) "" (method-line context) ""
-                               (table-md (comparison-rows results)) ""
-                               "### Binary size" ""
+                               (table-md (comparison-rows results)) ""]
+                              (when (seq shape-results)
+                                (concat ["### Targeted shapes" ""
+                                         "Commands and fixtures that reach code paths the table above does not:" ""]
+                                        (shape-lines shapes)
+                                        ["" (table-md (comparison-rows shape-results)) ""]))
+                              ["### Binary size" ""
                                (table-md [(array-map "Artifact" "release binary" "Base" (data/format-optional-size (:base sizes))
                                                      "PR" (data/format-optional-size (:head sizes))
                                                      "Delta" (data/format-size-delta (:base sizes) (:head sizes)))])
