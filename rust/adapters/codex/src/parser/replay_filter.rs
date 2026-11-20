@@ -105,6 +105,7 @@ impl<'a> CodexReplayFilter<'a> {
             .iter()
             .filter(|event| is_replayable(event))
             .map(CodexTokenUsageEvent::raw_usage)
+            .take(fork.parent_usage.len())
             .collect::<Vec<_>>();
         let inherited = replayed_parent_len(fork.parent_usage, &leading);
         self.emit_after(inherited, visit);
