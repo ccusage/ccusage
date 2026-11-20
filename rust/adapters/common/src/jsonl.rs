@@ -454,8 +454,7 @@ impl<'a> Line<'a> {
 
 #[inline]
 pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
-    // serde_json skips ignored strings without checking their UTF-8, so a line that fails the
-    // whole-line check can still decode; only the slice reader keeps that behavior and its errors.
+    // NOTE(2026-11-20): serde_json 1.0.154 skips ignored strings without checking their UTF-8, so a line that fails the whole-line check can still decode. Only the slice reader keeps that behavior and its error positions.
     match std::str::from_utf8(bytes) {
         Ok(text) => serde_json::from_str(text),
         Err(_) => serde_json::from_slice(bytes),
