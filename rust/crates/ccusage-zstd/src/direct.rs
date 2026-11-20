@@ -173,7 +173,7 @@ impl Drop for Direct {
         let input = mem::take(&mut self.input);
         let output = mem::take(&mut self.output.0);
         if input.len() <= RECYCLED_SIZE_MAX && output.len() <= RECYCLED_SIZE_MAX {
-            BUFFERS.set((input, output));
+            let _ = BUFFERS.try_with(|buffers| buffers.replace((input, output)));
         }
     }
 }
@@ -200,7 +200,7 @@ impl Direct {
     pub(crate) fn new(file: File, capacity: usize) -> io::Result<Self> {
         let context = Context::new()?;
         // NOTE(2026-11-20): Each worker reuses its ring and input buffer across files. A fresh zero-filled ring per file cost more than the copy this decoder removes.
-        let (mut input, output) = BUFFERS.take();
+        let (mut input, output) = BUFFERS.try_with(RefCell::take).unwrap_or_default();
         if input.len() < capacity {
             input = vec![0; capacity];
         }
