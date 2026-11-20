@@ -395,7 +395,7 @@ pub(super) struct CodexSessionMetadata {
     session_id: Option<String>,
     parent_id: Option<String>,
     lineage_parent_id: Option<String>,
-    pub(super) timestamp: Option<TimestampMs>,
+    timestamp: Option<TimestampMs>,
     spawned: bool,
 }
 
