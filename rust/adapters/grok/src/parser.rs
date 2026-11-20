@@ -1370,6 +1370,79 @@ mod tests {
         assert_eq!(entries[0].usage.output_tokens, 20);
     }
 
+    fn calculated_turn(cache_creation: u64) -> (LoadedEntry, Diagnostics) {
+        ccusage_test_support::install_pricing_snapshots();
+        let key = "grok-4.5".to_string();
+        let pricing_override = crate::cli::PricingOverride {
+            input_cost_per_token: Some(1.0),
+            cache_creation_input_token_cost: Some(10.0),
+            cache_read_input_token_cost: Some(100.0),
+            output_cost_per_token: Some(1000.0),
+            ..crate::cli::PricingOverride::default()
+        };
+        let pricing =
+            ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let usage = serde_json::json!({
+            "inputTokens": 1000,
+            "outputTokens": 5,
+            "cachedReadTokens": 600,
+            "cacheCreationTokens": cache_creation,
+        });
+        let mut total = usage.clone();
+        total["modelUsage"] = serde_json::json!({ "grok-4.5-build": usage });
+        let line = serde_json::json!({
+            "timestamp": 1_750_000_000,
+            "params": {
+                "sessionId": "sess-1",
+                "update": { "sessionUpdate": "turn_completed", "usage": total },
+                "_meta": { "eventId": "evt-calc" },
+            },
+        })
+        .to_string();
+        let fixture = fs_fixture!({ "sessions/proj/sess-1/updates.jsonl": line });
+        let diagnostics = Diagnostics::new("grok");
+        let mut entries = parse_session_files_with_diagnostics(
+            &fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        (entries.remove(0).1, diagnostics)
+    }
+
+    #[test]
+    fn prices_cache_creation_carved_from_the_full_prompt_input() {
+        let (entry, diagnostics) = calculated_turn(300);
+
+        assert_eq!(entry.usage.input_tokens, 100);
+        assert_eq!(entry.usage.cache_read_input_tokens, 600);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 300);
+        assert_eq!(entry.cost, 100.0 + 3_000.0 + 60_000.0 + 5_000.0);
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs::default())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn prices_the_full_uncached_input_without_cache_creation() {
+        let (entry, diagnostics) = calculated_turn(0);
+
+        assert_eq!(entry.usage.input_tokens, 400);
+        assert_eq!(entry.usage.cache_read_input_tokens, 600);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.cost, 400.0 + 60_000.0 + 5_000.0);
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs::default())
+                .is_empty()
+        );
+    }
+
     #[test]
     fn auto_prefers_recorded_ticks_while_calculate_recomputes() {
         ccusage_test_support::install_pricing_snapshots();
