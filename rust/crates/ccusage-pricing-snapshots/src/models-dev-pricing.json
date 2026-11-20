@@ -10824,9 +10824,9 @@
 	},
 	"deepseek-ai/DeepSeek-V3.1-Terminus": {
 		"cost": {
-			"cache_read": 0.125,
-			"input": 0.25,
-			"output": 0.7
+			"cache_read": 0.32,
+			"input": 0.34,
+			"output": 1.24
 		},
 		"limit": {
 			"context": 128000
@@ -10834,9 +10834,9 @@
 	},
 	"deepseek-ai/DeepSeek-V3.1-Terminus:thinking": {
 		"cost": {
-			"cache_read": 0.125,
-			"input": 0.25,
-			"output": 0.7
+			"cache_read": 0.32,
+			"input": 0.34,
+			"output": 1.24
 		},
 		"limit": {
 			"context": 128000
@@ -11069,9 +11069,9 @@
 	},
 	"deepseek-chat": {
 		"cost": {
-			"cache_read": 0.05,
-			"input": 0.1,
-			"output": 0.425
+			"cache_read": 0.29,
+			"input": 0.29,
+			"output": 1.16
 		},
 		"exactOnly": true,
 		"limit": {
@@ -11200,9 +11200,9 @@
 	},
 	"deepseek-v3-0324": {
 		"cost": {
-			"cache_read": 0.135,
-			"input": 0.2,
-			"output": 0.77
+			"cache_read": 0.29,
+			"input": 0.29,
+			"output": 1.16
 		},
 		"exactOnly": true,
 		"limit": {
@@ -31951,6 +31951,16 @@
 			"context": 131072
 		}
 	},
+	"radixark/daisyrose-27b": {
+		"cost": {
+			"cache_read": 0.0375,
+			"input": 0.15,
+			"output": 1.875
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"reax-1": {
 		"cost": {
 			"input": 0.097,
@@ -37642,9 +37652,9 @@
 	},
 	"z-ai/glm-5-original": {
 		"cost": {
-			"cache_read": 0.1,
-			"input": 0.6,
-			"output": 1.9
+			"cache_read": 0.17,
+			"input": 0.86,
+			"output": 2.74
 		},
 		"limit": {
 			"context": 200000
@@ -37652,9 +37662,9 @@
 	},
 	"z-ai/glm-5-original:thinking": {
 		"cost": {
-			"cache_read": 0.1,
-			"input": 0.6,
-			"output": 1.9
+			"cache_read": 0.17,
+			"input": 0.86,
+			"output": 2.74
 		},
 		"limit": {
 			"context": 200000
@@ -37739,9 +37749,9 @@
 	},
 	"z-ai/glm-5.2:thinking": {
 		"cost": {
-			"cache_read": 0.078,
-			"input": 0.42,
-			"output": 1.32
+			"cache_read": 0.1,
+			"input": 0.53,
+			"output": 1.79
 		},
 		"limit": {
 			"context": 1048576
@@ -37891,9 +37901,9 @@
 	},
 	"z-ai/glm-5:thinking": {
 		"cost": {
-			"cache_read": 0.1,
-			"input": 0.6,
-			"output": 1.9
+			"cache_read": 0.17,
+			"input": 0.86,
+			"output": 2.74
 		},
 		"limit": {
 			"context": 200000
