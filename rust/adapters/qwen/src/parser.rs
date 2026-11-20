@@ -106,7 +106,7 @@ fn parse_line(
     let Some(usage) = record.usage_metadata.as_ref() else {
         return Ok(None);
     };
-    // NOTE(2026-11-20, #2363): Qwen Code counts `cachedContentTokenCount` inside `promptTokenCount` and takes `totalTokenCount - promptTokenCount` as output including thinking, because its OpenAI-compatible converters put thinking inside `candidatesTokenCount` and Gemini puts it outside (QwenLM/qwen-code `packages/cli/src/commands/review/cost-ledger.ts`, `packages/core/src/core/anthropicContentGenerator/usage.ts`). Without a total, thinking is taken to be inside candidates, as Qwen Code does.
+    // NOTE(2026-11-20, #2363): Qwen Code counts `cachedContentTokenCount` inside `promptTokenCount` (QwenLM/qwen-code `packages/cli/src/commands/review/cost-ledger.ts`, `packages/core/src/core/anthropicContentGenerator/usage.ts`). It takes `totalTokenCount - promptTokenCount` as output including thinking, because its OpenAI-compatible converter sets `candidatesTokenCount` from `completion_tokens` and `thoughtsTokenCount` from its `reasoning_tokens` subset (`packages/core/src/core/openaiContentGenerator/converter.ts`), while Gemini puts thinking outside the candidates. Without a total, thinking is taken to be inside candidates, as Qwen Code does.
     let prompt_tokens = usage.prompt_token_count;
     let total_tokens = usage.total_token_count;
     let cache_read_tokens = usage.cached_content_token_count.min(prompt_tokens);
