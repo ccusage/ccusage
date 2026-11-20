@@ -211,8 +211,7 @@ impl Pricing {
             OverrideFields::CACHE_READ
         );
         let overridden = |bit: u16| explicit.is_some_and(|entry| entry.explicit_fields & bit != 0);
-        // `scheduled!` already resolved each base field to its override or schedule rate,
-        // so the fields above the split inherit `self.$field` unless a long rate is explicit.
+        // NOTE(2026-11-20, #2373): `scheduled!` already resolved each base field to its override or schedule rate. The fields above the split therefore inherit `self.$field` unless a long rate is explicit.
         macro_rules! long_scheduled {
             ($field:ident, $bit:expr, $wrap:expr) => {
                 long_context.rates.$field = if overridden($bit) {
