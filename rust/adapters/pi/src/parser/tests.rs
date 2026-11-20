@@ -17,7 +17,7 @@ fn read_session_file(
         mode,
         pricing,
         "pi",
-        &Diagnostics::without_clock("pi"),
+        &Diagnostics::new("pi"),
     )
     .map(|data| data.entries)
     .map_err(|error| ccusage_core::cli_error(error.to_string()))
@@ -38,7 +38,7 @@ fn read_session_file_for_store(
         mode,
         pricing,
         store_name,
-        &Diagnostics::without_clock("pi"),
+        &Diagnostics::new("pi"),
     )
     .map(|data| data.entries)
     .map_err(|error| ccusage_core::cli_error(error.to_string()))
@@ -191,7 +191,7 @@ fn diagnoses_assistant_usage_without_a_valid_timestamp() {
         ),
     });
     let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
-    let diagnostics = Diagnostics::without_clock("pi");
+    let diagnostics = Diagnostics::new("pi");
 
     let data = read_session_file_data_for_store_with_diagnostics(
         &file,
@@ -549,6 +549,7 @@ fn auto_recalculates_non_finite_source_cost_while_display_preserves_it() {
     let cost = |stored_cost, mode| {
         price_entry(
             EntryPricing {
+                granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
                 residual_tokens: 0,

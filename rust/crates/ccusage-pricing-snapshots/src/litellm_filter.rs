@@ -15,7 +15,7 @@ const LOADED_FIELDS: [&str; 12] = [
     "litellm_provider",
 ];
 
-// NOTE(2026-11-19, #2187): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai, https://docs.litellm.ai/docs/providers/moonshot and https://docs.litellm.ai/docs/providers/xai. Use those IDs for direct-provider pricing.
+// NOTE(2026-11-19, #2187): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai, https://docs.litellm.ai/docs/providers/moonshot, https://docs.litellm.ai/docs/providers/xai and https://docs.litellm.ai/docs/providers/dashscope. Use those IDs for direct-provider pricing.
 const SOURCES: &str = include_str!("litellm-sources.json");
 
 pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
@@ -135,9 +135,8 @@ mod tests {
     fn keeps_service_tier_multipliers_in_embedded_pricing() {
         ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
             litellm_sources: crate::LITELLM_SOURCES,
-            litellm_pricing: crate::LITELLM_PRICING,
-            models_dev_pricing: crate::MODELS_DEV_PRICING,
             models_dev_catalog_rules: crate::MODELS_DEV_CATALOG_RULES,
+            pricing_table: crate::PRICING_TABLE,
         });
         let filtered = filter_pricing_json(
             r#"{

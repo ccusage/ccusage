@@ -135,6 +135,7 @@ bunx ccusage zcode daily
 bunx ccusage dsh daily
 bunx ccusage pi daily --pi-path /path/to/sessions
 bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions
+bunx ccusage pi daily --pi-agent-dir ~/.pi/agent
 
 # Explicit unified report
 bunx ccusage daily --all

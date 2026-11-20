@@ -55,7 +55,7 @@ fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTr
             },
             AgentReportKind::Session,
             Some(&crate::PricingMap::load_embedded()),
-            &Diagnostics::without_clock("codex"),
+            &Diagnostics::new("codex"),
         )
         .unwrap();
         assert!(detected);
@@ -146,7 +146,7 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
     );
 
     assert_eq!(
-        collect_codex_usage_files(fixture.root(), &Diagnostics::without_clock("codex")),
+        collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex")),
         vec![fixture.path("session.jsonl")]
     );
     let events = crate::test_support::rollout_events(fixture.root());
@@ -230,7 +230,7 @@ fn keeps_usage_decoded_before_a_truncated_frame() {
 fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     let fixture = Fixture::new();
     let plain = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:00Z", 100));
-    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::without_clock("codex"));
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     write_compressed(
         &fixture,
@@ -247,7 +247,7 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
         |event| {
             visited.push(event);
         },
-        &Diagnostics::without_clock("codex"),
+        &Diagnostics::new("codex"),
     );
     assert_eq!(visited.len(), 1);
     assert_eq!(visited[0].session_id, "session");
@@ -262,7 +262,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
     }})
     .to_string();
     let plain = fixture.write_file("run.jsonl", &headless);
-    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::without_clock("codex"));
+    let files = collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
     crate::test_support::set_file_modified(
@@ -278,7 +278,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
         |event| {
             visited.push(event);
         },
-        &Diagnostics::without_clock("codex"),
+        &Diagnostics::new("codex"),
     );
 
     assert_eq!(visited.len(), 1);
@@ -363,7 +363,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
                 &shared,
                 AgentReportKind::Monthly,
                 None,
-                &Diagnostics::without_clock("codex"),
+                &Diagnostics::new("codex"),
             )
             .unwrap();
             assert_eq!(groups["2026-10"].total_tokens, 70);
@@ -372,7 +372,12 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
 }
 
 #[test]
-fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
+fn finds_the_fork_boundary_in_a_compressed_child_without_its_parent() {
+    let settings = |thread_id: &str| {
+        json!({"timestamp": "2026-10-14T00:00:10.020Z", "type": "event_msg",
+            "payload": {"type": "thread_settings_applied", "thread_id": thread_id, "thread_settings": {}}})
+        .to_string()
+    };
     let fixture = Fixture::new();
     write_compressed(
         &fixture,
@@ -381,8 +386,10 @@ fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
             json!({"timestamp": "2026-10-14T00:00:10Z", "type": "session_meta",
                 "payload": {"id": "child", "forked_from_id": "missing-parent"}})
             .to_string(),
+            settings("missing-parent"),
             usage_log("2026-10-14T00:00:10.000Z", 100),
             usage_log("2026-10-14T00:00:10.010Z", 200),
+            settings("child"),
             usage_log("2026-10-14T00:00:12Z", 50),
         ]
         .join("\n"),

@@ -1,0 +1,206 @@
+name: Profile instructions
+
+on:
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: Git refs to profile, separated by spaces or commas. Branches, tags, and commit SHAs (full or abbreviated) are accepted. With two refs the first is the base and the report adds per-function deltas.
+        type: string
+        default: main
+      commands:
+        description: Report commands, one per line or comma-separated, each optionally prefixed with `large:`, `golden:`, `many-files:` or `proxy:`. Empty profiles every adapter.
+        type: string
+        default: ''
+      fixture-mib:
+        description: Size of the generated Claude and Codex fixtures, and of the proxy fixture, in MiB.
+        type: string
+        default: '1024'
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      refs: ${{ steps.plan.outputs.refs }}
+      runs: ${{ steps.plan.outputs.runs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: 'false'
+      - id: plan
+        env:
+          REFS: ${{ inputs.refs }}
+          COMMANDS: ${{ inputs.commands }}
+        run: |
+          nix shell --inputs-from . nixpkgs#nushell --command \
+            nu .github/scripts/profile-instructions.nu plan --refs "$REFS" --commands "$COMMANDS"
+
+  build:
+    name: build ${{ matrix.ref.ref }}
+    needs: plan
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        ref: ${{ fromJSON(needs.plan.outputs.refs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: test
+          save: 'false'
+      - run: nix profile install --inputs-from . nixpkgs#nushell nixpkgs#patchelf
+      - name: Build release binary with line tables
+        env:
+          REF: ${{ matrix.ref.ref }}
+        run: nu .github/scripts/profile-instructions.nu build "$REF" --out "$RUNNER_TEMP/ccusage-bin"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ccusage-${{ matrix.ref.slug }}
+          path: ${{ runner.temp }}/ccusage-bin
+          if-no-files-found: error
+
+  golden:
+    needs: plan
+    if: contains(needs.plan.outputs.runs, '"fixture":"golden"')
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: test
+          save: 'false'
+      - run: nix profile install --inputs-from . nixpkgs#nushell
+      - name: Export golden seeds
+        run: |
+          nu .github/scripts/profile-instructions.nu golden --out "$RUNNER_TEMP/ccusage-golden-fixture"
+          tar --create --file "$RUNNER_TEMP/ccusage-golden-fixture.tar" --directory "$RUNNER_TEMP" ccusage-golden-fixture
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ccusage-golden-fixture
+          path: ${{ runner.temp }}/ccusage-golden-fixture.tar
+          if-no-files-found: error
+
+  profile:
+    name: ${{ matrix.run.ref }} / ${{ matrix.run.label }}
+    needs: [plan, build, golden]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.golden.result != 'failure' }}
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON(needs.plan.outputs.runs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: test
+          save: 'false'
+      - run: nix profile install --inputs-from . nixpkgs#nushell nixpkgs#valgrind
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ccusage-${{ matrix.run.ref_slug }}
+          path: ${{ runner.temp }}/ccusage-bin
+      - name: Generate fixture
+        if: matrix.run.fixture != 'golden'
+        env:
+          FIXTURE: ${{ matrix.run.fixture }}
+          FIXTURE_MIB: ${{ inputs.fixture-mib }}
+        run: |
+          nu .github/scripts/profile-instructions.nu generate \
+            --fixture "$FIXTURE" \
+            --out "$RUNNER_TEMP/ccusage-$FIXTURE-fixture" \
+            --mib "$FIXTURE_MIB"
+      - name: Download golden seeds
+        if: matrix.run.fixture == 'golden'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ccusage-golden-fixture
+          path: ${{ runner.temp }}
+      - name: Unpack golden seeds
+        if: matrix.run.fixture == 'golden'
+        run: tar --extract --file "$RUNNER_TEMP/ccusage-golden-fixture.tar" --directory "$RUNNER_TEMP"
+      - name: Profile under callgrind
+        env:
+          COMMAND: ${{ matrix.run.args }}
+          FIXTURE: ${{ matrix.run.fixture }}
+        run: |
+          chmod +x "$RUNNER_TEMP/ccusage-bin/ccusage"
+          nu .github/scripts/profile-instructions.nu run \
+            --bin "$RUNNER_TEMP/ccusage-bin/ccusage" \
+            --command "$COMMAND" \
+            --fixture "$FIXTURE" \
+            --fixture-dir "$RUNNER_TEMP/ccusage-$FIXTURE-fixture" \
+            --out "$RUNNER_TEMP/profile"
+          cat "$RUNNER_TEMP/profile/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: callgrind-${{ matrix.run.id }}
+          path: ${{ runner.temp }}/profile
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: summary-${{ matrix.run.id }}
+          path: |
+            ${{ runner.temp }}/profile/summary.json
+            ${{ runner.temp }}/profile/summary.md
+          if-no-files-found: error
+
+  report:
+    needs: [plan, profile]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: 'false'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: summary-*
+          path: ${{ runner.temp }}/summaries
+      - name: Rank functions across commands
+        env:
+          REFS: ${{ needs.plan.outputs.refs }}
+        run: |
+          nix shell --inputs-from . nixpkgs#nushell --command \
+            nu .github/scripts/profile-instructions.nu merge \
+              --dir "$RUNNER_TEMP/summaries" --refs "$REFS" --out "$RUNNER_TEMP/ranking"
+          cat "$RUNNER_TEMP/ranking/ranking.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: instruction-ranking
+          path: ${{ runner.temp }}/ranking
+          if-no-files-found: error

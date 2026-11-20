@@ -1,6 +1,12 @@
-use ccusage_adapter_common::jsonl::{Interruption, ReadPolicy};
+use ccusage_adapter_common::{
+    UnitError,
+    jsonl::{Interruption, ReadFailure, ReadPolicy},
+};
 use ccusage_core::SkipKind;
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
 // NOTE(2026-11-16, #2102): Codex embeds `base_instructions` in the first `session_meta` line. A 64 KiB probe fits the observed first lines of up to 49.4 KB without growing.
@@ -45,12 +51,7 @@ pub(super) fn rollout_policy(path: &Path, capacity: usize, keep_records: bool) -
         retry_missing: Some(other_encoding_path),
         open_failure: Some("rollout open failed"),
         interrupted: if keep_records {
-            |failure| {
-                if failure.complete_lines == 0 {
-                    return reject_interruption(failure);
-                }
-                Interruption::KeepRecords(SkipKind::ReadInterrupted, "rollout read failed")
-            }
+            keep_interruption
         } else {
             reject_interruption
         },
@@ -58,12 +59,25 @@ pub(super) fn rollout_policy(path: &Path, capacity: usize, keep_records: bool) -
     }
 }
 
-fn reject_interruption(failure: ccusage_adapter_common::jsonl::ReadFailure) -> Interruption {
-    Interruption::RejectRecords(
-        SkipKind::ReadInterrupted,
-        "rollout read failed",
-        failure.error.into(),
-    )
+fn keep_interruption(failure: ReadFailure) -> Interruption {
+    if failure.complete_lines == 0 {
+        return reject_interruption(failure);
+    }
+    if failure.error.kind() == io::ErrorKind::UnexpectedEof {
+        Interruption::KeepUnit(
+            failure.incomplete("zstd stream ends inside a frame; earlier records were kept"),
+        )
+    } else {
+        Interruption::KeepRecords(SkipKind::ReadInterrupted, "rollout read failed")
+    }
+}
+
+fn reject_interruption(failure: ReadFailure) -> Interruption {
+    Interruption::RejectRecords(if failure.error.kind() == io::ErrorKind::UnexpectedEof {
+        failure.incomplete("zstd stream ends inside its first frame")
+    } else {
+        UnitError::new(SkipKind::ReadInterrupted, "rollout read failed")
+    })
 }
 
 #[cfg(test)]

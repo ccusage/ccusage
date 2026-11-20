@@ -1,0 +1,345 @@
+use ccusage_cli::PricingOverride;
+
+use crate::{MILLIS_PER_DAY, MILLIS_PER_HOUR, TimestampMs};
+
+use super::data;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pricing {
+    pub input: f64,
+    pub output: f64,
+    pub(super) cache_create: Option<f64>,
+    pub(super) cache_read: Option<f64>,
+    pub(super) cache_create_1h: Option<f64>,
+    pub long_context: Option<LongContext>,
+    pub fast_multiplier: f64,
+    pub ultrafast_multiplier: f64,
+    pub flex_multiplier: f64,
+    pub(super) cache_defaults: &'static CacheDefaults,
+    pub(super) explicit_fields: u16,
+}
+
+pub const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LongContextMode {
+    Marginal,
+    WholeRequest,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct LongContextRates {
+    pub input: Option<f64>,
+    pub output: Option<f64>,
+    pub cache_create: Option<f64>,
+    pub(super) cache_create_1h: Option<f64>,
+    pub cache_read: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LongContext {
+    pub(crate) threshold: u64,
+    pub rates: LongContextRates,
+    pub(crate) mode: LongContextMode,
+}
+
+impl LongContext {
+    const fn empty_marginal() -> Self {
+        Self {
+            threshold: DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+            mode: LongContextMode::Marginal,
+            rates: LongContextRates {
+                input: None,
+                output: None,
+                cache_create: None,
+                cache_create_1h: None,
+                cache_read: None,
+            },
+        }
+    }
+}
+
+impl LongContextRates {
+    pub(super) fn marginal(self) -> Option<LongContext> {
+        [
+            self.input,
+            self.output,
+            self.cache_create,
+            self.cache_create_1h,
+            self.cache_read,
+        ]
+        .iter()
+        .any(Option::is_some)
+        .then_some(LongContext {
+            rates: self,
+            ..LongContext::empty_marginal()
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub(super) struct CacheDefaults {
+    pub(super) write_x: f64,
+    pub(super) write_1h_x: f64,
+    pub(super) read_x: f64,
+}
+
+impl Pricing {
+    pub fn long_context_split_threshold(self) -> u64 {
+        self.long_context
+            .map_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, |context| {
+                context.threshold
+            })
+    }
+
+    pub fn cache_creation_rate(self) -> f64 {
+        self.cache_create
+            .unwrap_or(self.input * self.cache_defaults.write_x)
+    }
+
+    pub(crate) fn one_hour_cache_creation_rate(self) -> f64 {
+        self.cache_create_1h
+            .unwrap_or(self.input * self.cache_defaults.write_1h_x)
+    }
+
+    pub(crate) fn one_hour_cache_creation_rate_above_200k(self) -> Option<f64> {
+        let rates = self.long_context?.rates;
+        rates.cache_create_1h.or_else(|| {
+            rates
+                .input
+                .map(|input| input * self.cache_defaults.write_1h_x)
+        })
+    }
+
+    pub fn cache_read_rate_at(self, input_rate: f64) -> f64 {
+        self.cache_read
+            .unwrap_or(input_rate * self.cache_defaults.read_x)
+    }
+
+    pub(super) const fn empty() -> Self {
+        Self {
+            input: 0.0,
+            output: 0.0,
+            cache_create: None,
+            cache_read: None,
+            cache_create_1h: None,
+            long_context: None,
+            fast_multiplier: 1.0,
+            ultrafast_multiplier: 1.0,
+            flex_multiplier: 1.0,
+            cache_defaults: &data::WRITES_SURCHARGED,
+            explicit_fields: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ScheduledRates {
+    pub(super) input: f64,
+    pub(super) output: f64,
+    pub(super) cache_create: f64,
+    pub(super) cache_read: f64,
+}
+
+#[derive(Debug)]
+pub(super) struct PricingSchedule {
+    pub(super) cutoff_ms: i64,
+    pub(super) peak_weekdays: std::ops::RangeInclusive<u32>,
+    pub(super) peak_hours: &'static [std::ops::Range<i64>],
+    pub(super) before: ScheduledRates,
+    pub(super) off_peak: ScheduledRates,
+    pub(super) peak: ScheduledRates,
+}
+
+impl PricingSchedule {
+    fn rates_at(&self, timestamp: TimestampMs) -> ScheduledRates {
+        if timestamp.as_millis() < self.cutoff_ms {
+            return self.before;
+        }
+        let weekday =
+            ccusage_cli::weekday_from_epoch_days(timestamp.as_millis().div_euclid(MILLIS_PER_DAY));
+        let hour = timestamp.as_millis().rem_euclid(MILLIS_PER_DAY) / MILLIS_PER_HOUR;
+        if self.peak_weekdays.contains(&weekday)
+            && self.peak_hours.iter().any(|window| window.contains(&hour))
+        {
+            self.peak
+        } else {
+            self.off_peak
+        }
+    }
+}
+
+struct OverrideFields;
+
+impl OverrideFields {
+    const INPUT: u16 = 1;
+    const OUTPUT: u16 = 2;
+    const CACHE_CREATE: u16 = 4;
+    const CACHE_READ: u16 = 8;
+    const LONG_INPUT: u16 = 16;
+    const LONG_OUTPUT: u16 = 32;
+    const LONG_CACHE_CREATE: u16 = 64;
+    const LONG_CACHE_READ: u16 = 128;
+    const CACHE_CREATE_1H: u16 = 256;
+    const FAST: u16 = 512;
+    const FLEX: u16 = 1024;
+}
+
+impl Pricing {
+    pub(super) fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
+        let explicit = (self.explicit_fields != 0).then_some(self);
+        let rates = schedule.rates_at(timestamp);
+        let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
+        macro_rules! scheduled {
+            ($field:ident, $rate:expr, $bit:expr) => {
+                self.$field = match explicit {
+                    Some(entry) if entry.explicit_fields & $bit != 0 => entry.$field,
+                    _ => $rate,
+                };
+            };
+        }
+        scheduled!(input, rates.input, OverrideFields::INPUT);
+        scheduled!(output, rates.output, OverrideFields::OUTPUT);
+        scheduled!(
+            cache_create,
+            Some(rates.cache_create),
+            OverrideFields::CACHE_CREATE
+        );
+        scheduled!(
+            cache_read,
+            Some(rates.cache_read),
+            OverrideFields::CACHE_READ
+        );
+        long_context.rates.input = match explicit {
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_INPUT != 0 => {
+                entry.long_context.and_then(|context| context.rates.input)
+            }
+            _ => Some(rates.input),
+        };
+        long_context.rates.output = match explicit {
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_OUTPUT != 0 => {
+                entry.long_context.and_then(|context| context.rates.output)
+            }
+            _ => Some(rates.output),
+        };
+        long_context.rates.cache_create = match explicit {
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_CACHE_CREATE != 0 => entry
+                .long_context
+                .and_then(|context| context.rates.cache_create),
+            _ => Some(rates.cache_create),
+        };
+        long_context.rates.cache_read = match explicit {
+            Some(entry) if entry.explicit_fields & OverrideFields::LONG_CACHE_READ != 0 => entry
+                .long_context
+                .and_then(|context| context.rates.cache_read),
+            _ => Some(rates.cache_read),
+        };
+        scheduled!(
+            cache_create_1h,
+            self.cache_create_1h,
+            OverrideFields::CACHE_CREATE_1H
+        );
+        scheduled!(fast_multiplier, self.fast_multiplier, OverrideFields::FAST);
+        scheduled!(flex_multiplier, self.flex_multiplier, OverrideFields::FLEX);
+        self.long_context = Some(long_context);
+        self
+    }
+
+    pub(super) fn apply_override(&mut self, value: &PricingOverride) {
+        self.explicit_fields = 0;
+        macro_rules! rate {
+            ($source:ident, $field:ident, $wrap:expr, $bit:expr) => {
+                if let Some(value) = value.$source {
+                    self.$field = $wrap(value);
+                    self.explicit_fields |= $bit;
+                }
+            };
+        }
+        rate!(
+            input_cost_per_token,
+            input,
+            std::convert::identity,
+            OverrideFields::INPUT
+        );
+        rate!(
+            output_cost_per_token,
+            output,
+            std::convert::identity,
+            OverrideFields::OUTPUT
+        );
+        rate!(
+            cache_creation_input_token_cost,
+            cache_create,
+            Some,
+            OverrideFields::CACHE_CREATE
+        );
+        rate!(
+            cache_read_input_token_cost,
+            cache_read,
+            Some,
+            OverrideFields::CACHE_READ
+        );
+        let mut context = self.long_context.unwrap_or(LongContext::empty_marginal());
+        let mut changed = false;
+        macro_rules! long_rate {
+            ($source:ident, $field:ident, $bit:expr) => {
+                if let Some(value) = value.$source {
+                    context.rates.$field = Some(value);
+                    self.explicit_fields |= $bit;
+                    changed = true;
+                }
+            };
+        }
+        long_rate!(
+            input_cost_per_token_above_200k_tokens,
+            input,
+            OverrideFields::LONG_INPUT
+        );
+        long_rate!(
+            output_cost_per_token_above_200k_tokens,
+            output,
+            OverrideFields::LONG_OUTPUT
+        );
+        long_rate!(
+            cache_creation_input_token_cost_above_200k_tokens,
+            cache_create,
+            OverrideFields::LONG_CACHE_CREATE
+        );
+        long_rate!(
+            cache_read_input_token_cost_above_200k_tokens,
+            cache_read,
+            OverrideFields::LONG_CACHE_READ
+        );
+        if changed {
+            self.long_context = Some(context);
+        }
+        rate!(
+            cache_creation_input_token_cost_above_1hr,
+            cache_create_1h,
+            Some,
+            OverrideFields::CACHE_CREATE_1H
+        );
+        rate!(
+            fast_multiplier,
+            fast_multiplier,
+            std::convert::identity,
+            OverrideFields::FAST
+        );
+        rate!(
+            flex_multiplier,
+            flex_multiplier,
+            std::convert::identity,
+            OverrideFields::FLEX
+        );
+    }
+}
+
+pub(super) const fn rates(input: f64, output: f64, cache_create: f64, cache_read: f64) -> Pricing {
+    Pricing {
+        input,
+        output,
+        cache_create: Some(cache_create),
+        cache_read: Some(cache_read),
+        ..Pricing::empty()
+    }
+}

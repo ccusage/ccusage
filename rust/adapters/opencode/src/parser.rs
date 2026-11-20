@@ -11,12 +11,12 @@ use std::fmt;
 use crate::{
     LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
     cli::CostMode,
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity},
     date_at,
     pricing::MatchKind,
     stored_cost_for_mode,
 };
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{billing::price_entry_for_provider, json::JsonText, jsonl};
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct OpenCodeMessage {
@@ -126,7 +126,10 @@ impl<'de> Visitor<'de> for TimeField<'_> {
 pub(crate) fn message_time_created(data: &[u8]) -> Option<i64> {
     let mut time = None;
     // NOTE(2026-11-19, #2242): Reading stops at the payload's top-level time, so serde_json reports the unread rest as an error. Whether the record is valid stays the typed reader's decision.
-    let _ = serde_json::Deserializer::from_slice(data).deserialize_map(TimeField(&mut time));
+    let _ = JsonText::new(data).parse_with(|text| {
+        time = None;
+        serde_json::Deserializer::from_str(text).deserialize_map(TimeField(&mut time))
+    });
     time?.created.filter(|millis| *millis > 0)
 }
 
@@ -355,27 +358,26 @@ impl OpenCodeUsage {
             .filter(|millis| *millis > 0)
             .ok_or(MissingTimestamp)?;
         let timestamp = crate::TimestampMs::from_millis(timestamp);
-        let pricing_timestamp = match self.kind {
-            UsageKind::Message => Some(timestamp),
-            UsageKind::Aggregate => None,
+        let (pricing_timestamp, granularity) = match self.kind {
+            UsageKind::Message => (Some(timestamp), UsageGranularity::Request),
+            UsageKind::Aggregate => (None, UsageGranularity::Aggregate),
         };
         let candidates = open_code_model_candidates(&model, &provider);
         let candidates: Vec<_> = candidates
             .iter()
             .map(|(name, kind)| (name.as_str(), *kind))
             .collect();
-        let priced = price_entry(
-            EntryPricing {
-                usage,
-                reasoning_tokens: 0,
-                residual_tokens: extra_total_tokens,
-                reported_model: Some(&model),
-                candidates: &candidates,
-                stored_cost: recorded_cost,
-                timestamp: pricing_timestamp,
-            },
-            pricing,
-        );
+        let entry_pricing = EntryPricing {
+            granularity,
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: extra_total_tokens,
+            reported_model: Some(&model),
+            candidates: &candidates,
+            stored_cost: recorded_cost,
+            timestamp: pricing_timestamp,
+        };
+        let priced = price_entry_for_provider(entry_pricing, Some(provider.as_str()), pricing);
         let missing_pricing_model = priced.missing_pricing.then(|| model.clone());
         let stored_cost = stored_cost_for_mode(recorded_cost, mode);
         let loaded_session_id = self.session_id.unwrap_or_else(|| "unknown".to_string());

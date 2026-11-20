@@ -1256,7 +1256,7 @@ fn returns_empty_report_when_only_zero_byte_databases_exist() {
     let database = fixture.write_file("conversations/empty.db", "");
 
     assert!(matches!(
-        parse_sqlite_file(&database, &Diagnostics::without_clock("antigravity")).unwrap(),
+        parse_sqlite_file(&database, &Diagnostics::new("antigravity")).unwrap(),
         ParsedDatabase::EmptySnapshot
     ));
 
@@ -1282,12 +1282,9 @@ fn returns_empty_report_for_fresh_install_without_conversations_directory() {
     ])
     .run(|| {
         assert!(
-            super::super::paths::conversation_db_paths(
-                &Diagnostics::without_clock("antigravity"),
-                false
-            )
-            .unwrap()
-            .is_empty()
+            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"), false)
+                .unwrap()
+                .is_empty()
         );
 
         let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
@@ -1496,7 +1493,7 @@ fn structured_loads_tally_skipped_databases_without_their_content() {
         let shared = shared(true);
         let pricing = PricingMap::load_embedded();
         let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::without_clock("antigravity");
+        let diagnostics = Diagnostics::new("antigravity");
         let cx = LoadContext {
             shared: &shared,
             kind: AgentReportKind::Daily,

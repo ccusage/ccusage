@@ -10,21 +10,21 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1660,
       "date": "2025-12-31",
-      "inputTokens": 3610,
+      "inputTokens": 1950,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 160,
-          "cost": 0.006648,
-          "inputTokens": 1000,
+          "cost": 0.006168000000000001,
+          "inputTokens": 840,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 240
         },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.00415,
-          "inputTokens": 2000,
+          "cost": 0.0028,
+          "inputTokens": 500,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 300
         },
@@ -62,20 +62,20 @@ exit: 0
         "qwen-mystery-1"
       ],
       "outputTokens": 1319,
-      "totalCost": 0.010999700000000001,
-      "totalTokens": 6689
+      "totalCost": 0.009169700000000001,
+      "totalTokens": 5029
     },
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100100,
       "date": "2026-01-01",
-      "inputTokens": 300781,
+      "inputTokens": 200681,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
-          "inputTokens": 300531,
+          "cost": 0.231316,
+          "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
         },
@@ -93,17 +93,17 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 2163,
-      "totalCost": 0.32294100000000003,
-      "totalTokens": 403111
+      "totalCost": 0.232816,
+      "totalTokens": 303004
     }
   ],
   "totals": {
     "cacheCreationTokens": 0,
     "cacheReadTokens": 101760,
-    "inputTokens": 304391,
+    "inputTokens": 202631,
     "outputTokens": 3482,
-    "totalCost": 0.33394070000000003,
-    "totalTokens": 409800,
+    "totalCost": 0.2419857,
+    "totalTokens": 308033,
     "unpricedModels": [
       "qwen-mystery-1"
     ]

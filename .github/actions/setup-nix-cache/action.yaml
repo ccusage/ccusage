@@ -13,7 +13,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: x-ryoppippi/setup-nix@cc98b0de25b209ad988c04bfd270017b12298d1f
+    - uses: x-ryoppippi/setup-nix@f3480576f3ae7660b286c4ea88245925d91fb672 # v0.0.2
       with:
         cache: auto
         cache-scope: ${{ inputs.cache-scope }}

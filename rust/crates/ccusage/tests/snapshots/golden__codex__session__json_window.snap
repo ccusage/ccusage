@@ -249,40 +249,16 @@ exit: 0
       "sessionFile": "headless-run",
       "sessionId": "exec/headless-run",
       "totalTokens": 2244
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 400,
-      "costUSD": 0.0018,
-      "directory": "",
-      "inputTokens": 600,
-      "lastActivity": "2025-12-31T16:00:10.000Z",
-      "models": {
-        "gpt-5-codex": {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 400,
-          "inputTokens": 600,
-          "isFallback": false,
-          "outputTokens": 100,
-          "reasoningOutputTokens": 0,
-          "totalTokens": 1100
-        }
-      },
-      "outputTokens": 100,
-      "reasoningOutputTokens": 0,
-      "sessionFile": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      "sessionId": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      "totalTokens": 1100
     }
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 9650,
-    "costUSD": 0.040584875000000006,
-    "inputTokens": 9100,
-    "outputTokens": 1905,
+    "cacheReadTokens": 9250,
+    "costUSD": 0.038784875,
+    "inputTokens": 8500,
+    "outputTokens": 1805,
     "reasoningOutputTokens": 94,
-    "totalTokens": 20955,
+    "totalTokens": 19855,
     "unpricedModels": [
       "codex-mystery-1"
     ]

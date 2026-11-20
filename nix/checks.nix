@@ -64,6 +64,17 @@ in
           '';
         }
       );
+      ccusage-unsafe-code = import ./unsafe-code-check.nix {
+        inherit
+          commonArgs
+          craneLib
+          lib
+          root
+          ;
+        inherit (pkgs) nushell;
+        inherit cargoArtifacts;
+        withScriptTests = true;
+      };
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
@@ -137,6 +148,7 @@ in
               nu .github/scripts/pricing-lock.test.nu
               nu .github/scripts/upsert-pr-comment.test.nu
               nu .github/scripts/check-links.test.nu
+              nu .github/scripts/profile-instructions.test.nu
               nu .github/scripts/workflow-shell.test.nu
               nu .github/scripts/install.test.nu
             '';
@@ -145,6 +157,7 @@ in
           ccusage-clippy
           ccusage-fmt
           ccusage-hawk
+          ccusage-unsafe-code
           ;
         oxlint = mkRepoCheck "oxlint-check" [ config.packages.oxlint ] ''
           oxlint --config nix/oxlint-check.json .
@@ -154,12 +167,6 @@ in
         '';
         nushell-ide-check = mkRepoCheck "nushell-ide-check" [ pkgs.nushell ] ''
           nu --no-config-file scripts/check-nushell.nu .
-        '';
-        nushell-version = mkRepoCheck "nushell-version-check" [ ] ''
-          if ! grep -qxF '        version: ${pkgs.nushell.version}' .github/actions/setup-nu/action.yaml; then
-            echo "ERROR: .github/actions/setup-nu must install Nushell ${pkgs.nushell.version}, the flake's version." >&2
-            exit 1
-          fi
         '';
         config-example = mkRepoCheck "config-example-check" [ pkgs.check-jsonschema ] ''
           check-jsonschema --schemafile apps/ccusage/config-schema.json ccusage.example.json

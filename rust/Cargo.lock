@@ -122,7 +122,6 @@ dependencies = [
  "ccusage-core",
  "ccusage-environment",
  "ccusage-pricing-snapshots",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "jiff",
@@ -163,7 +162,6 @@ dependencies = [
  "ccusage-adapter-zcode",
  "ccusage-cli",
  "ccusage-core",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "serde",
@@ -204,8 +202,8 @@ dependencies = [
  "ccusage-cli-parser",
  "ccusage-config",
  "ccusage-core",
- "ccusage-report",
  "ccusage-test-support",
+ "insta",
  "jiff",
  "memchr",
  "rustc-hash",
@@ -263,8 +261,10 @@ version = "0.0.0"
 dependencies = [
  "ccusage-core",
  "ccusage-test-support",
+ "ccusage-zstd",
  "serde",
  "serde_json",
+ "simdutf8",
  "sqlite",
  "zstd",
 ]
@@ -514,16 +514,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ccusage-report"
-version = "0.0.0"
-dependencies = [
- "ccusage-core",
- "insta",
- "jiff",
- "serde_json",
-]
-
-[[package]]
 name = "ccusage-terminal"
 version = "0.0.0"
 dependencies = [
@@ -541,6 +531,17 @@ dependencies = [
  "ccusage-core",
  "ccusage-pricing-snapshots",
  "jiff",
+]
+
+[[package]]
+name = "ccusage-zstd"
+version = "0.0.0"
+dependencies = [
+ "ccusage-core",
+ "ccusage-test-support",
+ "memchr",
+ "zstd",
+ "zstd-sys",
 ]
 
 [[package]]
@@ -1207,6 +1208,12 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "similar"

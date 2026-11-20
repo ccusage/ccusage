@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309967,
-    "inputTokens": 1346424,
-    "outputTokens": 58620,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1261107,
+    "outputTokens": 60466,
     "totalCost": 23.343299999999996,
-    "totalTokens": 2736193
+    "totalTokens": 2650938
   },
   "weekly": [
     {
@@ -200,8 +200,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1306874,
-      "inputTokens": 1337930,
+      "cacheReadTokens": 1305207,
+      "inputTokens": 1252613,
       "metadata": {
         "agents": [
           "amp",
@@ -246,9 +246,9 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
-          "cacheReadTokens": 108220,
+          "cacheReadTokens": 106720,
           "cost": 3.451,
-          "inputTokens": 31408,
+          "inputTokens": 30748,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 9744
         },
@@ -289,9 +289,9 @@ exit: 0
           "cacheCreationTokens": 300,
           "cacheReadTokens": 33435,
           "cost": 0.8500000000000001,
-          "inputTokens": 18830,
+          "inputTokens": 36606,
           "modelName": "gpt-5",
-          "outputTokens": 5293
+          "outputTokens": 7069
         },
         {
           "cacheCreationTokens": 100,
@@ -495,11 +495,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 452300,
+          "cacheReadTokens": 452600,
           "cost": 0.0,
-          "inputTokens": 103900,
+          "inputTokens": 104300,
           "modelName": "gpt-5.5",
-          "outputTokens": 2220
+          "outputTokens": 2290
         },
         {
           "cacheCreationTokens": 0,
@@ -769,15 +769,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
           "cost": 0.0,
-          "inputTokens": 305531,
+          "inputTokens": 202731,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 3014
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
         },
@@ -925,10 +925,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56453,
+      "outputTokens": 58299,
       "period": "2025-12-29",
       "totalCost": 19.533299999999997,
-      "totalTokens": 2721145
+      "totalTokens": 2635890
     },
     {
       "agent": "all",

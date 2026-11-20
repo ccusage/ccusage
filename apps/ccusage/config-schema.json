@@ -17302,6 +17302,11 @@
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
+										"piAgentDir": {
+											"description": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+											"markdownDescription": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+											"type": "string"
+										},
 										"piPath": {
 											"description": "Path or comma-separated paths to pi-agent sessions directories.",
 											"markdownDescription": "Path or comma-separated paths to pi-agent sessions directories.",
@@ -17465,6 +17470,11 @@
 											"description": "Sort order.",
 											"enum": ["desc", "asc"],
 											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"piAgentDir": {
+											"description": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+											"markdownDescription": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
 											"type": "string"
 										},
 										"piPath": {
@@ -17632,6 +17642,11 @@
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
+										"piAgentDir": {
+											"description": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+											"markdownDescription": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+											"type": "string"
+										},
 										"piPath": {
 											"description": "Path or comma-separated paths to pi-agent sessions directories.",
 											"markdownDescription": "Path or comma-separated paths to pi-agent sessions directories.",
@@ -17795,6 +17810,11 @@
 											"description": "Sort order.",
 											"enum": ["desc", "asc"],
 											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"piAgentDir": {
+											"description": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+											"markdownDescription": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
 											"type": "string"
 										},
 										"piPath": {
@@ -17963,6 +17983,11 @@
 									"description": "Sort order.",
 									"enum": ["desc", "asc"],
 									"markdownDescription": "Sort order.",
+									"type": "string"
+								},
+								"piAgentDir": {
+									"description": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+									"markdownDescription": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
 									"type": "string"
 								},
 								"piPath": {

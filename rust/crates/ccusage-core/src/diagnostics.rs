@@ -5,12 +5,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use crate::{
-    TimestampMs,
-    cli::{ReportClock, SharedArgs},
-    log_level,
-    output::sanitize_terminal_text,
-};
+use crate::{cli::SharedArgs, log_level, output::sanitize_terminal_text};
 
 const SAMPLES_PER_KIND: usize = 5;
 
@@ -26,10 +21,11 @@ pub enum SkipKind {
     Invariant,
     InvalidData,
     UnreadableForkParent,
+    MissingForkParent,
 }
 
 impl SkipKind {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Unreadable,
         Self::ReadInterrupted,
         Self::UndecodedUsage,
@@ -37,6 +33,7 @@ impl SkipKind {
         Self::Invariant,
         Self::InvalidData,
         Self::UnreadableForkParent,
+        Self::MissingForkParent,
     ];
 
     fn label(self) -> &'static str {
@@ -48,17 +45,27 @@ impl SkipKind {
             Self::Invariant => "unexpected shape",
             Self::InvalidData => "invalid data",
             Self::UnreadableForkParent => "unreadable fork parent",
+            Self::MissingForkParent => "missing fork parent",
         }
     }
 
     fn summary(self, tally: &Tally) -> String {
-        if self == Self::UnreadableForkParent {
-            let sessions = counted(tally.whole_units(), "forked session");
-            return format!(
-                "could not read the parent rollout for {sessions}. Replayed usage may be counted twice."
-            );
-        }
-        format!("skipped {} ({})", tally.skipped_description(), self.label())
+        let parent = match self {
+            Self::UnreadableForkParent => "read",
+            Self::MissingForkParent => "find",
+            Self::Unreadable
+            | Self::ReadInterrupted
+            | Self::UndecodedUsage
+            | Self::InvalidTimestamp
+            | Self::Invariant
+            | Self::InvalidData => {
+                return format!("skipped {} ({})", tally.skipped_description(), self.label());
+            }
+        };
+        let sessions = counted(tally.whole_units(), "forked session");
+        format!(
+            "could not {parent} the parent rollout for {sessions}. Replayed usage may be counted twice."
+        )
     }
 }
 
@@ -237,41 +244,23 @@ fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
 
 pub struct Diagnostics {
     source: &'static str,
-    assessment_instant: Option<TimestampMs>,
     table: Option<&'static str>,
     row_id: Option<Arc<str>>,
     state: Arc<Mutex<State>>,
 }
 
 impl Diagnostics {
-    pub fn for_report(source: &'static str, clock: ReportClock) -> Self {
-        Self::at(source, clock.now().into())
-    }
-
-    fn at(source: &'static str, assessment_instant: TimestampMs) -> Self {
-        Self::build(source, Some(assessment_instant))
-    }
-
-    pub fn without_clock(source: &'static str) -> Self {
-        Self::build(source, None)
-    }
-
-    fn build(source: &'static str, assessment_instant: Option<TimestampMs>) -> Self {
+    pub fn new(source: &'static str) -> Self {
         Self {
             source,
-            assessment_instant,
             table: None,
             row_id: None,
             state: Arc::new(Mutex::new(State::default())),
         }
     }
 
-    pub fn assessment_instant(&self) -> Option<TimestampMs> {
-        self.assessment_instant
-    }
-
     pub fn isolated(&self) -> Self {
-        Self::build(self.source, self.assessment_instant)
+        Self::new(self.source)
     }
 
     pub fn source(&self) -> &'static str {
@@ -281,7 +270,6 @@ impl Diagnostics {
     pub fn for_table(&self, table: &'static str) -> Self {
         Self {
             source: self.source,
-            assessment_instant: self.assessment_instant,
             table: Some(table),
             row_id: self.row_id.clone(),
             state: Arc::clone(&self.state),
@@ -291,7 +279,6 @@ impl Diagnostics {
     pub fn for_row(&self, id: Option<&str>) -> Self {
         Self {
             source: self.source,
-            assessment_instant: self.assessment_instant,
             table: self.table,
             row_id: id.map(Arc::from),
             state: Arc::clone(&self.state),

@@ -86,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn a_thread_file_cut_mid_write_is_noted_under_debug_and_the_rest_still_counts() {
+    fn a_thread_file_left_cut_off_is_skipped_and_the_rest_still_counts() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
         Environment::with_var("AMP_DATA_DIR", fixture.root()).run(|| {
@@ -116,14 +116,18 @@ mod tests {
             assert_eq!(sessions, ["T-ledger", "T-messages"]);
             assert!(rows.detected);
             let truncated = fixture.path("threads/T-truncated.json");
+            let summary = "WARN  amp: skipped 1 input (invalid data)".to_owned();
             assert_eq!(
                 rows.diagnostics.warnings(&shared),
-                [format!(
-                    "amp: {}: incomplete, read as still being written",
-                    truncated.display()
-                )]
+                [
+                    summary.clone(),
+                    format!(
+                        "amp: invalid data: {}: JSON document is truncated at line 1, column 63",
+                        truncated.display()
+                    )
+                ]
             );
-            assert!(rows.diagnostics.warnings(&quiet).is_empty());
+            assert_eq!(rows.diagnostics.warnings(&quiet), [summary]);
         })
     }
 }

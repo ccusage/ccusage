@@ -26,7 +26,7 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         set_modified(&path, mtime);
     };
 
-    let a1_usage = r#""promptTokenCount":1000,"candidatesTokenCount":200,"thoughtsTokenCount":50,"cachedContentTokenCount":400,"totalTokenCount":1650"#;
+    let a1_usage = r#""promptTokenCount":1000,"candidatesTokenCount":200,"thoughtsTokenCount":50,"cachedContentTokenCount":400,"totalTokenCount":1250"#;
     let a1 = assistant("sess-a", "2025-12-30T09:00:00.000Z", CODER, a1_usage);
     let a2_usage =
         r#""promptTokenCount":500,"candidatesTokenCount":120,"cachedContentTokenCount":80"#;
@@ -44,7 +44,7 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "sess-a",
                 "2025-12-30T09:00:00.000Z",
                 CODER,
-                r#""promptTokenCount":1000,"candidatesTokenCount":201,"thoughtsTokenCount":50,"cachedContentTokenCount":400,"totalTokenCount":1651"#,
+                r#""promptTokenCount":1000,"candidatesTokenCount":201,"thoughtsTokenCount":50,"cachedContentTokenCount":400,"totalTokenCount":1251"#,
             ),
             a2.clone(),
             assistant("sess-a", "2025-12-31T23:59:59.999Z", UNPRICED, r#""totalTokenCount":654"#),
@@ -104,7 +104,7 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "sess-b",
                 "2025-12-31T14:59:59.000Z",
                 CODER,
-                r#""promptTokenCount":2000,"candidatesTokenCount":300,"thoughtsTokenCount":100,"cachedContentTokenCount":1500,"totalTokenCount":3900"#,
+                r#""promptTokenCount":2000,"candidatesTokenCount":300,"thoughtsTokenCount":100,"cachedContentTokenCount":1500,"totalTokenCount":2400"#,
             ),
             assistant(
                 "sess-b",

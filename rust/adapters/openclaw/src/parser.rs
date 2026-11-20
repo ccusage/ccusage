@@ -1,11 +1,11 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity},
     pricing::AgentModel,
 };
 use std::{path::Path, sync::Arc};
 
-use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -394,18 +394,17 @@ pub(super) fn entry_to_loaded(
         cache_creation: None,
     };
     let candidates = identity.candidates();
-    let priced = price_entry(
-        EntryPricing {
-            usage,
-            reasoning_tokens: 0,
-            residual_tokens: 0,
-            reported_model: Some(identity.display()),
-            candidates: &candidates,
-            stored_cost: entry.cost,
-            timestamp: Some(entry.timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
+        usage,
+        reasoning_tokens: 0,
+        residual_tokens: 0,
+        reported_model: Some(identity.display()),
+        candidates: &candidates,
+        stored_cost: entry.cost,
+        timestamp: Some(entry.timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, entry.provider.as_deref(), pricing);
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
@@ -531,7 +530,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":2}}}"#,
         });
-        let diagnostics = Diagnostics::without_clock("openclaw");
+        let diagnostics = Diagnostics::new("openclaw");
         let events = parse_session_file(
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
@@ -549,7 +548,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00Z","message":{"role":"assistant","timestamp":"invalid","usage":{"input":10,"output":2}}}"#,
         });
-        let diagnostics = Diagnostics::without_clock("openclaw");
+        let diagnostics = Diagnostics::new("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
@@ -574,7 +573,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::without_clock("openclaw");
+        let diagnostics = Diagnostics::new("openclaw");
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
@@ -609,7 +608,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::without_clock("openclaw");
+        let diagnostics = Diagnostics::new("openclaw");
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
@@ -648,7 +647,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
-            &Diagnostics::without_clock("openclaw"),
+            &Diagnostics::new("openclaw"),
         )
         .unwrap();
 
@@ -669,7 +668,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::without_clock("openclaw");
+        let diagnostics = Diagnostics::new("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::UTC,
@@ -766,7 +765,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("openclaw"),
+            &Diagnostics::new("openclaw"),
         )
         .unwrap();
 
@@ -799,7 +798,7 @@ mod pricing_identity_tests {
             &JiffTimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("openclaw"),
+            &Diagnostics::new("openclaw"),
         )
         .unwrap();
         assert_eq!(
@@ -807,5 +806,32 @@ mod pricing_identity_tests {
             Some("[openclaw] deepseek.v4.flash")
         );
         assert!((rows[0].cost - 0.00022).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "router.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","provider":"openrouter","usage":{"input":1000,"output":1000,"totalTokens":2000},"timestamp":"2026-11-17T10:00:00Z"}}"#,
+            "deepseek.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","provider":"deepseek","usage":{"input":1000,"output":1000,"totalTokens":2000},"timestamp":"2026-11-17T10:00:00Z"}}"#
+        });
+        for (name, expected) in [("router.jsonl", 0.0015), ("deepseek.jsonl", 0.00088)] {
+            let rows = parse_session_file(
+                &fixture.path(name),
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+                &Diagnostics::new("openclaw"),
+            )
+            .unwrap();
+            assert_eq!(rows.len(), 1, "{name}");
+            assert!(
+                (rows[0].cost - expected).abs() < 1e-12,
+                "{name}: {}",
+                rows[0].cost
+            );
+            assert_eq!(rows[0].missing_pricing_model, None, "{name}");
+        }
     }
 }

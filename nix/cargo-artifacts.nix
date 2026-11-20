@@ -13,9 +13,9 @@ let
     "ccusage-cli"
     "ccusage-core"
     "ccusage-environment"
-    "ccusage-report"
     "ccusage-adapter-common"
     "ccusage-terminal"
+    "ccusage-zstd"
   ];
   workspace = builtins.fromTOML (builtins.readFile (rustRoot + /Cargo.toml));
   cratePaths = lib.mapAttrs (_: dependency: dependency.path) (

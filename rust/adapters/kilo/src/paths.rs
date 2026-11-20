@@ -45,7 +45,7 @@ mod tests {
             ("HOME", Some(fixture.root().into())),
             (KILO_DATA_DIR_ENV, Some(" , ".into())),
         ]);
-        let diagnostics = Diagnostics::without_clock("kilo");
+        let diagnostics = Diagnostics::new("kilo");
 
         assert_eq!(env.run(|| paths(&diagnostics, false)), [default]);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
@@ -61,7 +61,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            env.run(|| paths(&Diagnostics::without_clock("kilo"), false)),
+            env.run(|| paths(&Diagnostics::new("kilo"), false)),
             [custom]
         );
     }
@@ -74,7 +74,7 @@ mod tests {
             ("HOME", Some(fixture.root().into())),
             (KILO_DATA_DIR_ENV, Some("~/missing,~/file".into())),
         ]);
-        let diagnostics = Diagnostics::without_clock("kilo");
+        let diagnostics = Diagnostics::new("kilo");
 
         assert!(env.run(|| paths(&diagnostics, false)).is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 2);

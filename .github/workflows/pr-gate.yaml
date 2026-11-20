@@ -16,7 +16,7 @@ defaults:
 
 jobs:
   check-contributor:
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: read
@@ -37,8 +37,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Check PR author
         id: access
@@ -46,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: nu .github/scripts/contribution-gate.nu pr-access
+        run: .github/scripts/contribution-gate.nu pr-access
 
       - name: Prepare the Pullfrog request
         id: request
@@ -57,7 +57,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number }}
-        run: nu .github/scripts/contribution-gate.nu pr-request
+        run: .github/scripts/contribution-gate.nu pr-request
 
       - name: Ask Luna for a PR verdict
         id: judge
@@ -66,7 +66,7 @@ jobs:
           steps.access.outputs.skip != 'true' &&
           steps.access.outputs.bypass != 'true'
         continue-on-error: true
-        uses: pullfrog/pullfrog@75f7ee99ad40922d195eff131f025f4ba79035ff # v0.1.131
+        uses: pullfrog/pullfrog@9eb4e93d38160a21b0e85b759ab8ea9fecaf5e58 # v0.1.138
         with:
           prompt: ${{ steps.request.outputs.prompt }}
           timeout: 15m
@@ -85,7 +85,7 @@ jobs:
       needs.check-contributor.outputs.access_outcome == 'success' &&
       needs.check-contributor.outputs.skip != 'true' &&
       needs.check-contributor.outputs.bypass != 'true'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: write
@@ -98,8 +98,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Apply the PR verdict
         env:
@@ -109,4 +109,4 @@ jobs:
           CLOSE_ALLOWED: ${{ needs.check-contributor.outputs.close_allowed }}
           JUDGE_OUTCOME: ${{ needs.check-contributor.outputs.judge_outcome }}
           RESULT: ${{ needs.check-contributor.outputs.result }}
-        run: nu .github/scripts/contribution-gate.nu pr-verdict
+        run: .github/scripts/contribution-gate.nu pr-verdict

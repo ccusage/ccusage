@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity},
     pricing::MatchKind,
 };
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{LoadedEntry, TokenUsageRaw, date_at};
-use ccusage_adapter_common::{jsonl, sqlite::read_i64};
+use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
 // NOTE(2026-05-19, #1035): Goose embeds the model name in model_config_json on the SQLite session row. Parsing that object recovers the session's model attribution.
@@ -93,18 +93,17 @@ pub(super) fn row_to_entry(
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage,
-            reasoning_tokens,
-            residual_tokens: 0,
-            reported_model: Some(&model),
-            candidates: &candidates,
-            stored_cost: None,
-            timestamp: Some(timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Aggregate,
+        usage,
+        reasoning_tokens,
+        residual_tokens: 0,
+        reported_model: Some(&model),
+        candidates: &candidates,
+        stored_cost: None,
+        timestamp: Some(timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, provider_name.as_deref(), pricing);
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
@@ -244,5 +243,51 @@ mod pricing_identity_tests {
         assert_eq!(model, "gpt-5.2");
         assert_eq!(normalize_provider(None, &model), "openai");
         assert_eq!(normalize_provider(Some("open-ai"), &model), "open_ai");
+    }
+
+    #[test]
+    fn a_session_total_is_priced_at_the_base_tier_not_the_long_context_tier() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"gemini-2.5-pro":{"litellm_provider":"gemini","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5,"input_cost_per_token_above_200k_tokens":2.5e-6,"output_cost_per_token_above_200k_tokens":1.5e-5}}"#,
+        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut row = connection
+            .prepare(r#"SELECT 's', '{"model_name":"gemini-2.5-pro"}', NULL, '2026-05-19 00:00:00', NULL, NULL, NULL, 5000000, 4900000, 100000"#)
+            .unwrap();
+        assert_eq!(row.next().unwrap(), sqlite::State::Row);
+
+        let loaded = row_to_entry(&row, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing))
+            .unwrap()
+            .unwrap();
+
+        assert!((loaded.cost - 7.125).abs() < 1e-9, "{}", loaded.cost);
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+            let mut row = connection
+                .prepare(format!(
+                    r#"SELECT 's', '{{"model_name":"deepseek-v4-flash"}}', '{provider}', '2026-11-17T10:00:00Z', 2000, 1000, 1000, 2000, 1000, 1000"#
+                ))
+                .unwrap();
+            assert_eq!(row.next().unwrap(), sqlite::State::Row);
+            let loaded = row_to_entry(&row, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing))
+                .unwrap()
+                .unwrap();
+            assert!(
+                (loaded.cost - expected).abs() < 1e-12,
+                "{provider}: {}",
+                loaded.cost
+            );
+            assert_eq!(loaded.missing_pricing_model, None, "{provider}");
+        }
     }
 }

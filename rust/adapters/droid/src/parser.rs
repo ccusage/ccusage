@@ -1,11 +1,12 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity},
     pricing::MatchKind,
 };
 use std::{ops::ControlFlow, path::Path};
 
 use ccusage_adapter_common::{
+    billing::price_entry_for_provider,
     jsonl::{self, ReadPolicy},
     units::{UnitError, read_json},
 };
@@ -181,18 +182,17 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
                 .map(|name| (name.as_str(), MatchKind::Fuzzy)),
         )
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage: entry.usage,
-            reasoning_tokens: 0,
-            residual_tokens: entry.reasoning_tokens,
-            reported_model: Some(&entry.model),
-            candidates: &candidates,
-            stored_cost: None,
-            timestamp: entry.pricing_timestamp,
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Aggregate,
+        usage: entry.usage,
+        reasoning_tokens: 0,
+        residual_tokens: entry.reasoning_tokens,
+        reported_model: Some(&entry.model),
+        candidates: &candidates,
+        stored_cost: None,
+        timestamp: entry.pricing_timestamp,
+    };
+    let priced = price_entry_for_provider(entry_pricing, Some(entry.provider.as_str()), pricing);
     (
         priced.cost,
         priced
@@ -398,7 +398,7 @@ mod tests {
         let error = load_settings_file(&path)
             .err()
             .expect("missing timestamp must be diagnosed");
-        let diagnostics = ccusage_core::Diagnostics::without_clock("droid");
+        let diagnostics = ccusage_core::Diagnostics::new("droid");
         error.record(&path, &diagnostics);
         assert_eq!(
             diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
@@ -537,7 +537,7 @@ mod pricing_identity_tests {
         for label in ["unlocked.settings.json", "locked.settings.json"] {
             let entry = load_settings_file(&fixture.path(label)).unwrap().unwrap();
             let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
-            assert!((cost - 2.03).abs() < 1e-12, "{label}: {cost}");
+            assert!((cost - 1.53).abs() < 1e-12, "{label}: {cost}");
             assert_eq!(missing, None);
         }
     }
@@ -613,6 +613,25 @@ mod pricing_identity_tests {
             price_droid(&entry, PriceTable::Calculate(&prices)),
             (500.0, None)
         );
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "router.settings.json": r#"{"model":"deepseek-v4-flash","providerLock":"openrouter","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":1000,"outputTokens":1000}}"#,
+            "deepseek.settings.json": r#"{"model":"deepseek-v4-flash","providerLock":"deepseek","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":1000,"outputTokens":1000}}"#
+        });
+        for (name, expected) in [
+            ("router.settings.json", 0.0015),
+            ("deepseek.settings.json", 0.00088),
+        ] {
+            let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
+            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{name}: {cost}");
+            assert_eq!(missing, None, "{name}");
+        }
     }
 
     #[test]
