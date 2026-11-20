@@ -50,6 +50,11 @@ pub(super) static CACHE_DEFAULTS_BY_PROVIDER: &[(&str, &CacheDefaults)] = &[
     ("vertex_ai-anthropic_models", &WRITES_SURCHARGED),
 ];
 
+// NOTE(2026-11-19, #2236): A reasoning-effort level selects how a listed model runs, `latest` or `default` selects which snapshot of it answers, and OpenRouter's `:beta` variant routes to the same listing; all bill at that model's rates. Any other word after a listed id names a different model, so a fuzzy match must not borrow the listed id's row for it.
+pub(super) static PRICE_NEUTRAL_SUFFIX_WORDS: &[&str] = &[
+    "minimal", "low", "medium", "high", "xhigh", "latest", "default", "beta",
+];
+
 pub(super) static ALIASES: &[(&str, &str)] = &[
     ("gpt-reserve", "gpt-5.6-luna"),
     ("gpt-5.6", "gpt-5.6-sol"),

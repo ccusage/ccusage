@@ -2011,21 +2011,25 @@ fn pricing_key_matches(
     model: &str,
     normalized_model: &str,
 ) -> bool {
-    if contains_pricing_key(model, candidate) || contains_pricing_key(candidate, model) {
-        return true;
-    }
-    contains_pricing_key(normalized_model, normalized_candidate)
-        || contains_pricing_key(normalized_candidate, normalized_model)
+    names_same_model(model, candidate) || names_same_model(normalized_model, normalized_candidate)
 }
 
-fn contains_pricing_key(value: &str, key: &str) -> bool {
+fn names_same_model(model: &str, key: &str) -> bool {
+    if model.len() >= key.len() {
+        contains_pricing_key(model, key, is_pricing_key_boundary)
+    } else {
+        // NOTE(2026-11-19, #2237): A key longer than the logged id names that id only behind a host or provider qualifier. A word in front, as in `chat-pro` for `pro`, makes it another model.
+        contains_pricing_key(key, model, is_qualifier_end)
+    }
+}
+
+fn contains_pricing_key(value: &str, key: &str, prefix_ends: fn(u8) -> bool) -> bool {
     value.match_indices(key).any(|(index, _)| {
         let before = index
             .checked_sub(1)
             .and_then(|before| value.as_bytes().get(before))
             .copied();
-        let suffix = &value[index + key.len()..];
-        before.is_none_or(is_pricing_key_boundary) && suffix_allows_pricing_key_match(key, suffix)
+        before.is_none_or(prefix_ends) && is_price_neutral_suffix(&value[index + key.len()..])
     })
 }
 
@@ -2033,35 +2037,67 @@ fn is_pricing_key_boundary(byte: u8) -> bool {
     !byte.is_ascii_alphanumeric()
 }
 
-fn suffix_allows_pricing_key_match(key: &str, suffix: &str) -> bool {
-    let Some(separator) = suffix.as_bytes().first().copied() else {
-        return true;
-    };
-    if !is_pricing_key_boundary(separator) {
-        return false;
-    }
-    !suffix_starts_with_numeric_model_version(key, suffix)
+fn is_qualifier_end(byte: u8) -> bool {
+    is_pricing_key_boundary(byte) && !matches!(byte, b'-' | b'_')
 }
 
-fn suffix_starts_with_numeric_model_version(key: &str, suffix: &str) -> bool {
-    if !key.as_bytes().last().is_some_and(u8::is_ascii_digit) {
-        return false;
+fn is_price_neutral_suffix(suffix: &str) -> bool {
+    let mut rest = suffix;
+    while let Some(&separator) = rest.as_bytes().first() {
+        if separator == b'[' {
+            let Some(end) = rest.find(']') else {
+                return false;
+            };
+            rest = &rest[end + 1..];
+            continue;
+        }
+        if !matches!(separator, b'-' | b'.' | b'_' | b':' | b'@') {
+            return false;
+        }
+        let word_len = rest[1..]
+            .bytes()
+            .take_while(u8::is_ascii_alphanumeric)
+            .count();
+        let (word, after) = rest[1..].split_at(word_len);
+        rest = if let Some(after) = date_suffix_end(word, after) {
+            after
+        } else if let Some(after) = deployment_revision_end(word, after) {
+            after
+        } else if data::PRICE_NEUTRAL_SUFFIX_WORDS.contains(&word) {
+            after
+        } else {
+            return false;
+        };
     }
-    if !matches!(suffix.as_bytes().first(), Some(b'-' | b'.')) {
-        return false;
-    }
+    true
+}
 
-    let rest = &suffix[1..];
-    let digit_len = rest
-        .as_bytes()
-        .iter()
-        .take_while(|byte| byte.is_ascii_digit())
-        .count();
-    if digit_len == 0 {
-        return false;
+fn date_suffix_end<'a>(word: &str, after: &'a str) -> Option<&'a str> {
+    if is_digits(word, MODEL_DATE_SUFFIX_DIGITS) {
+        return Some(after);
     }
-    let after_digits = rest.as_bytes().get(digit_len).copied();
-    !(digit_len == MODEL_DATE_SUFFIX_DIGITS && after_digits.is_none_or(is_pricing_key_boundary))
+    let month = after.strip_prefix('-')?.get(..2)?;
+    let day = after.get(3..)?.strip_prefix('-')?.get(..2)?;
+    let rest = &after[6..];
+    (is_digits(word, 4)
+        && is_digits(month, 2)
+        && is_digits(day, 2)
+        && !rest
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric()))
+    .then_some(rest)
+}
+
+fn deployment_revision_end<'a>(word: &str, after: &'a str) -> Option<&'a str> {
+    let revision = word.strip_prefix('v')?;
+    let minor = after.strip_prefix(':')?;
+    let minor_len = minor.bytes().take_while(u8::is_ascii_digit).count();
+    (is_digits(revision, revision.len().max(1)) && minor_len > 0).then(|| &minor[minor_len..])
+}
+
+fn is_digits(value: &str, len: usize) -> bool {
+    value.len() == len && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn is_pricing_key_separator(byte: u8) -> bool {
@@ -2680,7 +2716,7 @@ mod tests {
         let mut primary = PricingMap::default();
         assert_eq!(primary.load_json(r#"{
             "openai/acme-9": {"litellm_provider":"openai","input_cost_per_token":1e-6,"output_cost_per_token":1e-6},
-            "host/acme-9x": {"litellm_provider":"host","input_cost_per_token":2e-6,"output_cost_per_token":2e-6}
+            "acme-9-low": {"litellm_provider":"host","input_cost_per_token":2e-6,"output_cost_per_token":2e-6}
         }"#), 2);
         let key = "acme-9".to_owned();
         let value = ccusage_cli::PricingOverride {
@@ -2689,7 +2725,7 @@ mod tests {
             ..Default::default()
         };
         let pricing = primary.with_user_overrides([(&key, &value)]);
-        let label = "openai/acme-9+host/acme-9x-preview";
+        let label = "openai/acme-9-low-high";
         let candidates = [(label, MatchKind::Fuzzy)];
         let found = pricing.explain(Some(label), &candidates).unwrap();
         assert_eq!(
@@ -2707,18 +2743,18 @@ mod tests {
         assert_eq!(
             secondary.load_models_dev_json_for_tests(
                 r#"{
-            "hostaa/m-1":{"cost":{"input":1,"output":1}},
-            "m-1-turbo":{"cost":{"input":2,"output":2}},
-            "hostc/m-2-turbo":{"cost":{"input":2,"output":2}},
-            "hostc/long/m-2-turbo-max":{"cost":{"input":3,"output":3}}
+            "hostaaaaa/m-1":{"cost":{"input":1,"output":1}},
+            "m-1-20260101":{"cost":{"input":2,"output":2}},
+            "hostc/m-2":{"cost":{"input":2,"output":2}},
+            "hostc/long/m-2-20260101":{"cost":{"input":3,"output":3}}
         }"#
             ),
             Some(4)
         );
         let pricing = layered(&PricingMap::default(), Some(&secondary));
         for (model, row, rate) in [
-            ("hostaa/m-1-turbo", "hostaa/m-1", 1e-6),
-            ("m-2-turbo", "hostc/m-2-turbo", 2e-6),
+            ("hostaaaaa/m-1-20260101", "hostaaaaa/m-1", 1e-6),
+            ("m-2", "hostc/m-2", 2e-6),
         ] {
             let candidates = [(model, MatchKind::Fuzzy)];
             let found = pricing.explain(Some(model), &candidates).unwrap();
@@ -2855,16 +2891,16 @@ mod tests {
         crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{"sample": {"input_cost_per_token": 1, "output_cost_per_token": 2}}"#);
-        assert_eq!(pricing.find("sample-special").unwrap().input, 1.0);
+        assert_eq!(pricing.find("sample-20260101").unwrap().input, 1.0);
         assert!(pricing.find("other-model").is_none());
         let mut live = PricingMap::default();
         live.load_json(
             r#"{
-            "sample-special": {"input_cost_per_token": 3, "output_cost_per_token": 4},
+            "sample-20260101": {"input_cost_per_token": 3, "output_cost_per_token": 4},
             "other-model": {"input_cost_per_token": 5, "output_cost_per_token": 6}
         }"#,
         );
-        live.mark_test_exact_only("sample-special");
+        live.mark_test_exact_only("sample-20260101");
         let pricing = online(&pricing);
         let attempts = AtomicUsize::new(0);
         let fetch = || {
@@ -2884,13 +2920,13 @@ mod tests {
         let merged = pricing.with_live_layer("trigger", super::Lookup::Pricing, fetch);
         assert_eq!(
             merged
-                .resolve_at(None, &[("sample-special", MatchKind::Exact)], None)
+                .resolve_at(None, &[("sample-20260101", MatchKind::Exact)], None)
                 .map(|(_, rates)| rates)
                 .unwrap()
                 .input,
             3.0
         );
-        assert_eq!(pricing.find("sample-special").unwrap().input, 3.0);
+        assert_eq!(pricing.find("sample-20260101").unwrap().input, 3.0);
         assert_eq!(pricing.find("other-model").unwrap().input, 5.0);
         pricing.with_live_layer("trigger-again", super::Lookup::Pricing, fetch);
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
@@ -3301,7 +3337,7 @@ mod tests {
 
         assert_eq!(map.find_with_live(&key, load).unwrap().input, 8.0);
         assert_eq!(attempts.load(Ordering::Relaxed), 0);
-        assert!(map.find_with_live("sample-fast-preview", load).is_none());
+        assert!(map.find_with_live("sample-fast-20260101", load).is_none());
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
         assert!(map.overrides.resolved(0).unwrap().row.exact_only);
         assert_eq!(map.find_with_live(&key, load).unwrap().input, 8.0);
@@ -3352,7 +3388,7 @@ mod tests {
         };
         let overridden = pricing.with_user_overrides([(&model, &override_value)]);
         assert_eq!(overridden.find("sample-premium").unwrap().input, 5.0);
-        assert_eq!(overridden.find("sample-premium-extra").unwrap().input, 1.0);
+        assert!(overridden.find("sample-premium-20260101").is_none());
     }
 
     #[test]
@@ -3640,7 +3676,7 @@ mod tests {
             ),
             (
                 "87_longer_fuzzy_is_static",
-                "deepseek-v4-pro-0812",
+                "deepseek-v4-pro-20260812",
                 (1.32, 3.96),
                 (1.32, 3.96),
             ),
@@ -4475,7 +4511,7 @@ mod tests {
             pricing.context_limit("claude-opus-5@eu")
         );
 
-        assert!(pricing.find("claude-opus-5-eu-preview").is_some());
+        assert!(pricing.find("claude-opus-5-eu-preview").is_none());
     }
 
     #[test]
@@ -7168,15 +7204,14 @@ mod tests {
                 (0.0, 0.0),
             ),
             ("53_qualified_free", "zai/plan-2-5-flash", (0.0, 0.0)),
-            (
-                "free_tier_does_not_win_fuzzy",
-                "plan-2.5-flash-preview",
-                (1.0, 2.0),
-            ),
         ] {
             let rates = map.find(name).expect(case);
             assert_eq!((rates.input, rates.output), expected, "{case}");
         }
+        assert!(
+            map.find("plan-2.5-flash-20260101").is_none(),
+            "free_tier_does_not_win_fuzzy"
+        );
         let (_, hosted) = map
             .resolve_at(
                 None,
@@ -7437,7 +7472,7 @@ mod tests {
     fn preserves_a_fast_model_name_without_a_standard_sibling() {
         crate::test_support::install_pricing_snapshots();
         let entry = PricingMap::load_embedded()
-            .find("qwen2.5-coder-7b")
+            .find("qwen2.5-coder-7b-fast")
             .unwrap();
         assert_eq!((entry.input, entry.output), (0.00000003, 0.00000009));
     }
@@ -7665,11 +7700,100 @@ mod tests {
             },
         );
 
-        let matched = pricing
-            .find("claude-sonnet-4-20250514-via-bedrock")
-            .unwrap();
+        let matched = pricing.find("claude-sonnet-4-20250514-v1:0").unwrap();
 
         assert_eq!(matched.input, 2.0);
+    }
+
+    #[test]
+    fn an_unlisted_id_that_extends_a_listed_id_with_a_model_word_is_unpriced() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for model in [
+            "gpt-5.4-codex",
+            "gpt-5.3-codex-mini",
+            "gpt-5.3-codex-max",
+            "gpt-6.2-sol-mini",
+            "gemini-3.8-flash-lite",
+            "gemini-4-argon-lite",
+            "kimi-k3-code",
+            "kimi-k3-pro",
+            "glm-5.3-turbo",
+            "glm-5.3-air",
+            "glm-5.3-code",
+            "llama-4-scout-2",
+            "claude-sonnet-5-5-fast",
+            "claude-fable-5-1-fast",
+            "deepseek-v4-flash-0812",
+        ] {
+            assert_eq!(pricing.find(model), None, "{model}");
+        }
+    }
+
+    #[test]
+    fn a_word_or_version_after_a_live_key_does_not_borrow_its_row() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.refresh_litellm(|load| {
+            assert!(load(
+                r#"{
+                "mistral/mistral-small": {"litellm_provider":"mistral","input_cost_per_token":1e-7,"output_cost_per_token":3e-7},
+                "mistral/mistral-medium": {"litellm_provider":"mistral","input_cost_per_token":1.5e-6,"output_cost_per_token":7.5e-6},
+                "xai/grok-code-fast": {"litellm_provider":"xai","input_cost_per_token":1e-6,"output_cost_per_token":2e-6}
+            }"#
+            ));
+            Ok(())
+        });
+        for model in [
+            "mistral/mistral-small-5",
+            "mistral/mistral-medium-4",
+            "xai/grok-code-fast-2",
+        ] {
+            assert_eq!(pricing.find(model), None, "{model}");
+        }
+        let listed = pricing.find("mistral/mistral-small-4").unwrap();
+        assert_eq!((listed.input, listed.output), (0.15e-6, 0.6e-6));
+    }
+
+    #[test]
+    fn an_unlisted_id_whose_only_matches_are_longer_ids_is_unpriced() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for model in [
+            "gpt-6.2",
+            "openai/gpt-6.2",
+            "gpt-6",
+            "o4",
+            "kimi-k2.8",
+            "deepseek-v4.1",
+            "qwen2.5-coder-7b",
+            "opus",
+        ] {
+            assert_eq!(pricing.find(model), None, "{model}");
+        }
+    }
+
+    #[test]
+    fn price_neutral_suffixes_keep_the_listed_rate() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, listed) in [
+            ("o4-mini-high", "o4-mini"),
+            ("gpt-5.4-xhigh", "gpt-5.4"),
+            ("gpt-5.5-2026-11-01", "gpt-5.5"),
+            ("claude-opus-4-8[1m]", "claude-opus-4-8"),
+            ("claude-opus-4-8-20261101-v1:0", "claude-opus-4-8"),
+            ("vertex_ai/claude-opus-4-7@default", "claude-opus-4-7"),
+            ("grok-4.5-latest", "grok-4.5"),
+        ] {
+            let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
+            let expected = pricing.find(listed).unwrap();
+            assert_eq!(
+                (found.input, found.output),
+                (expected.input, expected.output),
+                "{model}"
+            );
+        }
     }
 
     #[test]
@@ -7700,7 +7824,7 @@ mod tests {
             123_456
         );
         assert_eq!(
-            map.find("custom-boundary-extra")
+            map.find("custom-boundary-high")
                 .unwrap()
                 .long_context_split_threshold(),
             123_456
@@ -7724,10 +7848,10 @@ mod tests {
             ("GLM-5-1", 32_000),
             ("anthropic-claude-5-5-haiku", 100_000),
             ("spacexai/grok-4-5", 200_001),
-            ("qwen-3-6-plus-extra", 256_000),
+            ("qwen-3-6-plus-high", 256_000),
             ("alibaba/qwen3-5-plus", 256_001),
             ("aihubmix/gpt-5-4-high", 272_000),
-            ("minimax-m-3-0-extra", 512_000),
+            ("minimax-m-3-0-high", 512_000),
         ] {
             assert_eq!(
                 pricing.find(model).unwrap().long_context_split_threshold(),
@@ -7777,10 +7901,7 @@ mod tests {
         crate::test_support::install_pricing_snapshots();
         let map = PricingMap::load_embedded();
         assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), Some(200_000));
-        assert_eq!(
-            map.context_limit("novita/zai-org/glm-5-turbo"),
-            Some(204_800)
-        );
+        assert_eq!(map.context_limit("novita/zai-org/glm-5-turbo"), None);
     }
 
     #[test]
