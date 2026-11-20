@@ -1,0 +1,1132 @@
+mod load;
+
+use std::assert_matches;
+use std::{path::Path, sync::Arc};
+
+use super::{
+    extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
+    usage_limit_reset_time_from_line_bytes,
+};
+use crate::ClaudeEntry;
+use ccusage_core::{
+    Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
+    cli::{CostMode, SharedArgs},
+    format_rfc3339_millis,
+};
+use ccusage_test_support::{Environment, fs_fixture};
+use jiff::tz::TimeZone as JiffTimeZone;
+
+struct LoadedFile {
+    entries: Vec<ClaudeEntry>,
+}
+
+fn read_usage_file_with_diagnostics(
+    path: &Path,
+    tz: &JiffTimeZone,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+) -> LoadedFile {
+    LoadedFile {
+        entries: super::read_usage_file_with_diagnostics(
+            path,
+            tz,
+            pricing.map_or(ccusage_core::cost::PriceTable::Display, |map| {
+                ccusage_core::cost::PriceTable::for_map(mode, map)
+            }),
+            diagnostics,
+        ),
+    }
+}
+
+use super::daily::push_deduped_entry;
+
+fn read_usage_file(
+    path: &Path,
+    tz: &JiffTimeZone,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> LoadedFile {
+    read_usage_file_with_diagnostics(
+        path,
+        tz,
+        mode,
+        pricing,
+        &Diagnostics::without_clock("claude"),
+    )
+}
+
+#[test]
+fn windowed_calculate_mode_prices_entries_with_shared_display_mode() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "projects/project-a/pricing.jsonl": [
+            r#"{"timestamp":"2026-01-02T10:00:00Z","sessionId":"pricing","requestId":"known","message":{"id":"known","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":1000}}}"#,
+            r#"{"timestamp":"2026-01-02T10:01:00Z","sessionId":"pricing","requestId":"unknown","message":{"id":"unknown","model":"unlisted-fixture-model","usage":{"input_tokens":1000,"output_tokens":1000}}}"#,
+        ].join("\n"),
+    });
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            offline: true,
+            single_thread: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+        let loaded = super::load_windowed_entries(
+            &shared,
+            None,
+            &Diagnostics::without_clock("claude"),
+            CostMode::Calculate,
+        )
+        .unwrap();
+        assert_eq!(loaded.entries.len(), 2);
+        let known = loaded
+            .entries
+            .iter()
+            .find(|entry| entry.model.as_deref() == Some("claude-sonnet-4-20250514"))
+            .unwrap();
+        assert!((known.cost - 0.018).abs() < 1e-12, "{}", known.cost);
+        assert_eq!(known.missing_pricing_model, None);
+        let unknown = loaded
+            .entries
+            .iter()
+            .find(|entry| entry.model.as_deref() == Some("unlisted-fixture-model"))
+            .unwrap();
+        assert_eq!(unknown.cost, 0.0);
+        assert_eq!(
+            unknown.missing_pricing_model.as_deref(),
+            Some("unlisted-fixture-model")
+        );
+    })
+}
+
+#[test]
+fn all_report_loaders_drop_timestamp_different_sidechain_replays() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": [
+            r#"{"timestamp":"2026-01-02T10:00:00Z","sessionId":"session-a","requestId":"parent","message":{"id":"msg-parent","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+            r#"{"timestamp":"2026-01-02T10:00:01Z","sessionId":"session-a","requestId":"replay","isSidechain":true,"message":{"id":"msg-parent","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+        ].join("\n"),
+    });
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            single_thread: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+        let entries = super::load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily[0].input_tokens, 10);
+    })
+}
+
+#[test]
+fn all_report_loaders_count_agent_progress_usage() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-progress","message":{"id":"msg-progress","model":"claude-sonnet-4-20250514","usage":{"input_tokens":7,"output_tokens":2}}}}}"#,
+    });
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            single_thread: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+        let entries = super::load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 7);
+        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily[0].input_tokens, 7);
+    })
+}
+
+#[test]
+fn all_report_loaders_prefer_usage_detail_over_stored_cost() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": [
+            r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","costUSD":20,"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+            r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","costUSD":1,"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1,"speed":"fast"}}}"#,
+        ].join("\n"),
+    });
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            single_thread: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+        let entries = super::load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 1.0);
+        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily[0].total_cost, 1.0);
+    })
+}
+
+#[test]
+fn counts_usage_with_nulls_in_unrelated_nested_members() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","cwd":null,"toolUseResult":{"iterations":[{"model":null,"id":null,"cwd":null,"speed":null}]},"message":{"id":"msg-a","model":"claude-sonnet-4-20250514","content":[{"id":null,"model":null}],"usage":{"input_tokens":10,"output_tokens":1,"metadata":{"cache_read_input_tokens":null}}}}"#,
+    });
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            single_thread: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..Default::default()
+        };
+        let entries = super::load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily[0].input_tokens, 10);
+    })
+}
+
+#[test]
+fn extracts_usage_limit_reset_time_from_raw_line() {
+    let line = br#"{"timestamp":"2025-01-10T10:00:00.000Z","isApiErrorMessage":true,"message":{"content":[{"text":"Claude AI usage limit reached|1736503200 remaining"}],"usage":{"input_tokens":0,"output_tokens":0}}}"#;
+    let reset_time = usage_limit_reset_time_from_line_bytes(line, Some(true)).unwrap();
+
+    assert_eq!(
+        format_rfc3339_millis(reset_time),
+        "2025-01-10T10:00:00.000Z"
+    );
+    assert!(usage_limit_reset_time_from_line_bytes(line, Some(false)).is_none());
+    assert!(
+        usage_limit_reset_time_from_line_bytes(
+            br#"{"message":{"content":[{"text":"Claude AI usage limit reached|0"}]}}"#,
+            Some(true)
+        )
+        .is_none()
+    );
+}
+
+pub(crate) const SYNTHETIC_NULL_SPEED_LINE: &str = r#"{"timestamp":"2026-01-02T10:00:01.000Z","sessionId":"session-a","isApiErrorMessage":true,"message":{"id":"msg-synthetic","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"service_tier":null,"speed":null}}}"#;
+
+#[test]
+fn null_contract_rejections_claude_code_writes_stay_quiet() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": [
+            r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+            SYNTHETIC_NULL_SPEED_LINE,
+        ]
+        .join("\n"),
+    });
+    let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
+
+    let loaded = read_usage_file_with_diagnostics(
+        &fixture.path("projects/project-a/session-a.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        None,
+        &diagnostics,
+    );
+
+    assert_eq!(loaded.entries.len(), 1);
+    assert!(
+        diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .is_empty()
+    );
+}
+
+#[test]
+fn limits_usage_file_discovery_to_requested_project() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/a.jsonl": "{}",
+        "projects/project-b/session-b/b.jsonl": "{}",
+    });
+
+    let files = super::paths::usage_files(
+        &[fixture.root().to_path_buf()],
+        Some("project-a"),
+        &ccusage_core::Diagnostics::without_clock("claude"),
+    );
+
+    assert_eq!(files.len(), 1);
+    assert!(files[0].to_string_lossy().contains("project-a"));
+}
+
+#[test]
+fn filters_non_segment_projects_before_reading_files() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/a.jsonl": "{}",
+        "projects/project-b/session-b/b.jsonl": "{}",
+    });
+
+    let files = super::paths::usage_files(
+        &[fixture.root().to_path_buf()],
+        Some("project-a/session-a"),
+        &ccusage_core::Diagnostics::without_clock("claude"),
+    );
+
+    assert!(files.is_empty());
+}
+
+#[test]
+fn rejects_dot_segments_as_project_path_segments() {
+    assert!(!is_project_path_segment(""));
+    assert!(!is_project_path_segment("."));
+    assert!(!is_project_path_segment(".."));
+    assert!(!is_project_path_segment("project-a/session-a"));
+    assert!(!is_project_path_segment("project-a\\session-a"));
+    assert!(is_project_path_segment("project-a"));
+}
+
+#[test]
+fn extracts_file_session_from_modern_claude_project_path() {
+    let (session_id, project_path) = extract_session_parts(Path::new(
+        "/home/me/.claude/projects/project-a/session-a.jsonl",
+    ));
+
+    assert_eq!(session_id, "session-a");
+    assert_eq!(project_path, "project-a");
+}
+
+#[test]
+fn extracts_parent_session_from_nested_claude_project_path() {
+    let (session_id, project_path) = extract_session_parts(Path::new(
+        "/home/me/.claude/projects/project-a/session-a/chat.jsonl",
+    ));
+
+    assert_eq!(session_id, "session-a");
+    assert_eq!(project_path, "project-a");
+}
+
+#[test]
+fn extracts_parent_session_from_claude_subagent_path() {
+    let (session_id, project_path) = extract_session_parts(Path::new(
+        "/home/me/.claude/projects/project-a/session-a/subagents/worker.jsonl",
+    ));
+
+    assert_eq!(session_id, "session-a");
+    assert_eq!(project_path, "project-a");
+}
+
+#[test]
+fn extracts_parent_session_from_claude_workflow_run_path() {
+    let (session, project) = extract_session_parts(Path::new(
+        "/home/user/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
+    ));
+    assert_eq!(
+        (session.as_str(), project.as_str()),
+        ("session-a", "project-a")
+    );
+}
+
+#[test]
+fn rejects_null_in_each_read_non_nullable_field() {
+    for pointer in [
+        "/sessionId",
+        "/requestId",
+        "/version",
+        "/costUSD",
+        "/isApiErrorMessage",
+        "/message/id",
+        "/message/model",
+        "/message/usage/speed",
+        "/message/usage/cache_read_input_tokens",
+        "/message/usage/cache_creation_input_tokens",
+    ] {
+        let mut record = serde_json::json!({
+            "timestamp": "2026-01-02T10:00:00Z", "sessionId": "session-a", "requestId": "request-a",
+            "version": "1.2.3", "costUSD": 1, "isApiErrorMessage": false,
+            "message": {"id": "msg-a", "model": "model-a", "usage": {"input_tokens": 10, "output_tokens": 1, "speed": "standard", "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}
+        });
+        *record.pointer_mut(pointer).unwrap() = serde_json::Value::Null;
+        let bytes = serde_json::to_vec(&record).unwrap();
+        assert_eq!(
+            super::daily::parse_usage_line(&bytes).unwrap_err(),
+            super::Rejection::NullContract,
+            "{pointer}"
+        );
+        let wrapped =
+            serde_json::json!({"sessionId":record["sessionId"], "data":{"message":record}});
+        if pointer != "/version" {
+            assert_eq!(
+                super::daily::parse_usage_line(&serde_json::to_vec(&wrapped).unwrap()).unwrap_err(),
+                super::Rejection::NullContract,
+                "wrapped {pointer}"
+            );
+        }
+    }
+}
+
+#[test]
+fn allows_missing_optional_fields_and_nullable_unread_members() {
+    for extra in [
+        r#","cwd":null,"content":[{"id":null,"model":null}],"toolUseResult":{"iterations":[{"model":null}]}"#,
+        r#","isSidechain":null"#,
+        "",
+    ] {
+        let line = format!(
+            r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"iterations":[{{"type":"message","model":null}}]}}}}{extra}}}"#
+        );
+        assert!(
+            super::daily::parse_usage_line(line.as_bytes()).is_ok(),
+            "{line}"
+        );
+    }
+}
+
+#[test]
+fn rejects_null_under_escaped_read_field_names() {
+    for line in [
+        br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"m\u006fdel":null,"usage":{"input_tokens":1,"output_tokens":2}}}"#.as_slice(),
+        br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"sp\u0065ed":null}}}"#,
+    ] {
+        assert_eq!(
+            super::daily::parse_usage_line(line).unwrap_err(),
+            super::Rejection::NullContract
+        );
+    }
+    let (record, _) = super::daily::parse_usage_line(
+        br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"cache_r\u0065ad_input_tokens":7,"sp\u0065ed":"fast"}}}"#,
+    )
+    .unwrap();
+    assert_eq!(record.message.usage.usage.cache_read_input_tokens, 7);
+    assert!(matches!(
+        record.message.usage.usage.speed,
+        Some(crate::Speed::Fast)
+    ));
+}
+
+#[test]
+fn malformed_required_usage_is_diagnosed_separately_from_null_contract() {
+    for usage in [
+        r#"{"input_tokens":null,"output_tokens":2}"#,
+        r#"{"input_tokens":1,"output_tokens":null}"#,
+        r#"{"input_tokens":1}"#,
+    ] {
+        let line =
+            format!(r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{usage}}}}}"#);
+        assert_eq!(
+            super::daily::parse_usage_line(line.as_bytes()).unwrap_err(),
+            super::Rejection::Malformed
+        );
+    }
+}
+
+#[test]
+fn handles_duplicate_members_the_same_with_or_without_nulls() {
+    for nulls in [
+        "",
+        r#","stop_sequence":null"#,
+        r#","iterations":[{"type":"message","model":null}]"#,
+    ] {
+        let (message_nulls, usage_nulls) = if nulls.contains("iterations") {
+            ("", nulls)
+        } else {
+            (nulls, "")
+        };
+        let duplicate_known = format!(
+            r#"{{"timestamp":"2026-09-12T04:38:42.296Z","message":{{"id":"msg_1","model":"first","model":"second"{message_nulls},"usage":{{"input_tokens":2,"output_tokens":1{usage_nulls}}}}}}}"#
+        );
+        let duplicate_unknown = format!(
+            r#"{{"timestamp":"2026-09-12T04:38:42.296Z","extra":1,"extra":2,"message":{{"id":"msg_1","model":"m"{message_nulls},"usage":{{"input_tokens":2,"output_tokens":1{usage_nulls}}}}}}}"#
+        );
+
+        assert!(
+            super::daily::parse_usage_line(duplicate_known.as_bytes()).is_err(),
+            "{duplicate_known}"
+        );
+        assert!(
+            super::daily::parse_usage_line(duplicate_unknown.as_bytes()).is_ok(),
+            "{duplicate_unknown}"
+        );
+    }
+}
+
+#[test]
+fn rejects_duplicate_known_usage_fields_but_keeps_unknown_duplicates() {
+    for (field, value) in [
+        ("input_tokens", "1"),
+        ("output_tokens", "2"),
+        ("cache_read_input_tokens", "0"),
+        ("cache_creation_input_tokens", "0"),
+        ("speed", r#""fast""#),
+        ("cache_creation", "{}"),
+        ("iterations", "[]"),
+    ] {
+        let line = format!(
+            r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"{field}":{value},"{field}":{value}}}}}}}"#
+        );
+        assert!(
+            super::daily::parse_usage_line(line.as_bytes()).is_err(),
+            "{field}"
+        );
+    }
+    let line = br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"metadata":null,"metadata":{}}}}"#;
+    assert!(super::daily::parse_usage_line(line).is_ok());
+}
+
+#[test]
+fn rejects_duplicate_members_before_typed_deserialization() {
+    assert!(super::daily::parse_usage_line(
+        br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
+    )
+    .is_err());
+}
+
+#[test]
+fn counts_entries_whose_iteration_model_is_null() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","version":"2.1.268","sessionId":"session-a","requestId":"req_1","message":{"id":"msg_1","model":"claude-fable-5-1","role":"assistant","usage":{"input_tokens":2,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0}]}}}"#,
+    });
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Calculate,
+        Some(&PricingMap::default()),
+    );
+
+    assert_eq!(loaded.entries.len(), 1);
+    assert_eq!(loaded.entries[0].model.as_deref(), Some("claude-fable-5-1"));
+    assert_eq!(loaded.entries[0].usage.output_tokens, 289);
+}
+
+#[test]
+fn calculates_advisor_cost_with_the_advisor_model() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg-parent","model":"main-model","usage":{"input_tokens":1,"output_tokens":2,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}]}},"requestId":"req-parent","costUSD":1.23}"#,
+    });
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "main-model": {
+                    "input_cost_per_token": 100,
+                    "output_cost_per_token": 100
+                },
+                "advisor-model": {
+                    "input_cost_per_token": 2,
+                    "output_cost_per_token": 3
+                }
+            }"#,
+    );
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Auto,
+        Some(&pricing),
+    );
+
+    assert_eq!(loaded.entries.len(), 2);
+    assert_eq!(loaded.entries[0].cost, 1.23);
+    assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
+    assert_eq!(loaded.entries[1].cost, 26.0);
+    assert_eq!(
+        loaded.entries[1].original_model.as_deref(),
+        Some("advisor-model")
+    );
+    assert_eq!(loaded.entries[1].recorded_cost, None);
+}
+
+#[test]
+fn reads_usage_and_advisor_iterations_under_escaped_keys() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg-parent","model":"main-model","us\u0061ge":{"input_tokens":1,"output_tokens":2,"iterations":[{"type":"advisor\u005fmessage","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"requestId":"req-parent"}"#,
+    });
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        None,
+    );
+
+    assert_eq!(loaded.entries.len(), 2);
+    assert_eq!(loaded.entries[0].usage.output_tokens, 2);
+    assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
+}
+
+#[test]
+fn keeps_gateway_usage_from_distinct_sessions_with_reused_message_id() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+        "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":300,"output_tokens":1}}}"#,
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    for path in [
+        fixture.path("projects/project-a/session-a/chat.jsonl"),
+        fixture.path("projects/project-a/session-b/chat.jsonl"),
+    ] {
+        let loaded = read_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+    }
+
+    assert_eq!(deduped.len(), 2);
+    assert_eq!(
+        deduped
+            .iter()
+            .map(|entry| entry.usage.input_tokens)
+            .sum::<u64>(),
+        400
+    );
+}
+
+#[test]
+fn keeps_requestless_usage_from_same_session_at_distinct_timestamps() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:41.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":250,"speed":"standard"}}}"#,
+        ]
+        .join("\n"),
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        None,
+    );
+    for entry in loaded.entries {
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+    }
+
+    assert_eq!(deduped.len(), 2);
+    assert_eq!(
+        deduped
+            .iter()
+            .map(|entry| entry.usage.output_tokens)
+            .sum::<u64>(),
+        275
+    );
+}
+
+#[test]
+fn keeps_the_cache_ttl_split_from_an_otherwise_equal_duplicate() {
+    for lines in [
+        [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+        ],
+        [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+        ],
+    ] {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": lines.join("\n"),
+        });
+        Environment::with_vars([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )])
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                ..SharedArgs::default()
+            };
+
+            let deduped = load_deduped_entries(&shared, None).unwrap();
+
+            assert_eq!(deduped.entries.len(), 1);
+            let mut breakdown = ModelBreakdown::default();
+            breakdown.add_usage(&deduped.entries[0].usage);
+            assert_eq!(breakdown.cache_creation_tokens, 100);
+            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+        })
+    }
+}
+
+#[test]
+fn keeps_the_fast_tier_from_an_otherwise_equal_duplicate() {
+    for lines in [
+        [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"standard","cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"fast"}}}"#,
+        ],
+        [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"fast"}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"standard","cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+        ],
+    ] {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": lines.join("\n"),
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            None,
+        );
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+
+        assert_eq!(deduped.len(), 1);
+        assert_matches!(deduped[0].usage.speed, Some(Speed::Fast));
+    }
+}
+
+#[test]
+fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+        ]
+        .join("\n"),
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        None,
+    );
+    for entry in loaded.entries {
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+    }
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].usage.output_tokens, 25);
+}
+
+#[test]
+fn dedupes_response_message_id_from_same_session_at_distinct_timestamps() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"resp_0123456789abcdef","model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"resp_0123456789abcdef","model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+        ]
+        .join("\n"),
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        None,
+    );
+    for entry in loaded.entries {
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+    }
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].usage.output_tokens, 25);
+}
+
+#[test]
+fn dedupes_repeated_requestless_writes_at_the_same_timestamp() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": [
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":250,"speed":"standard"}}}"#,
+        ]
+        .join("\n"),
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let loaded = read_usage_file(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        None,
+    );
+    for entry in loaded.entries {
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+    }
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].usage.output_tokens, 250);
+}
+
+#[test]
+fn dedupes_copied_transcripts_with_the_same_serialized_session_id() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+        "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    for path in [
+        fixture.path("projects/project-a/session-a/chat.jsonl"),
+        fixture.path("projects/project-a/session-b/chat.jsonl"),
+    ] {
+        let loaded = read_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+    }
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].usage.input_tokens, 200);
+}
+
+#[test]
+fn dedupes_copied_transcripts_with_the_same_request_id_across_sessions() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+        "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    for path in [
+        fixture.path("projects/project-a/session-a/chat.jsonl"),
+        fixture.path("projects/project-a/session-b/chat.jsonl"),
+    ] {
+        let loaded = read_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+    }
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].usage.input_tokens, 200);
+}
+
+#[test]
+fn returns_the_discarded_copy_from_another_session() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+        "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+        "projects/project-a/session-c/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-c","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":50,"output_tokens":1}}}"#,
+    });
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let discarded = ["a", "b", "c"].map(|session| {
+        let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
+        let entry = read_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None)
+            .entries
+            .into_iter()
+            .next()
+            .unwrap();
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+            .map(|(index, discarded)| (index, discarded.session_id.to_string()))
+    });
+
+    assert_eq!(
+        discarded,
+        [
+            None,
+            Some((0, "session-a".to_string())),
+            Some((0, "session-c".to_string())),
+        ]
+    );
+    assert_eq!(deduped[0].session_id.as_ref(), "session-b");
+}
+
+#[test]
+fn attributes_a_cross_session_copy_to_the_survivor_day() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+        "projects/project-a/session-b.jsonl": [
+            r#"{"timestamp":"2026-01-01T10:00:00.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            r#"{"timestamp":"2026-01-03T10:00:00.000Z","sessionId":"session-b","requestId":"req-own","message":{"id":"msg-own","model":"claude-sonnet-4-20250514","usage":{"input_tokens":7,"output_tokens":1}}}"#,
+        ]
+        .join("\n"),
+    });
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            single_thread: true,
+            json: true,
+            ..SharedArgs::default()
+        };
+        let deduped = load_deduped_entries(&shared, None).unwrap();
+        let sorted_days = |deduped: &crate::DedupedEntries| {
+            let mut days: Vec<_> = deduped
+                .main_thread_sessions()
+                .into_iter()
+                .map(|session| session.to_string())
+                .collect();
+            days.sort();
+            days
+        };
+
+        assert_eq!(deduped.entries.len(), 2);
+        assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
+        let filtered = crate::DedupedEntries {
+            entries: deduped
+                .entries
+                .into_iter()
+                .filter(|entry| entry.date != crate::cli::IsoDate::from_ymd(2026, 1, 2).unwrap())
+                .collect(),
+            ..Default::default()
+        };
+        assert_eq!(sorted_days(&filtered), ["session-b"]);
+    })
+}
+
+#[test]
+fn dedupes_sidechain_replay_after_an_equal_copy_from_another_session() {
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let mut copied_parent = loaded_usage_entry(UsageEntryFixture {
+        message_id: "msg-parent",
+        request_id: "req-parent",
+        is_sidechain: false,
+        cache_read_tokens: 20,
+        output_tokens: 10,
+    });
+    copied_parent.recorded_session_id = Some("session-b".to_string());
+    copied_parent.entry.session_id = Arc::from("session-b");
+    push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
+
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 20,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-sidechain-replay",
+            is_sidechain: true,
+            cache_read_tokens: 50_000,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
+}
+
+#[test]
+fn dedupes_sidechain_replay_after_cross_session_survivor_replacement() {
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let mut copied_parent = loaded_usage_entry(UsageEntryFixture {
+        message_id: "msg-parent",
+        request_id: "req-parent",
+        is_sidechain: false,
+        cache_read_tokens: 20,
+        output_tokens: 10,
+    });
+    copied_parent.recorded_session_id = Some("session-b".to_string());
+    copied_parent.entry.session_id = Arc::from("session-b");
+    push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
+
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 30,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+
+    let mut copied_session_replay = loaded_usage_entry(UsageEntryFixture {
+        message_id: "msg-parent",
+        request_id: "req-sidechain-replay",
+        is_sidechain: true,
+        cache_read_tokens: 50_000,
+        output_tokens: 10,
+    });
+    copied_session_replay.recorded_session_id = Some("session-b".to_string());
+    copied_session_replay.entry.session_id = Arc::from("session-b");
+    push_deduped_entry(copied_session_replay, &mut deduped_indexes, &mut deduped);
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].session_id.as_ref(), "session-a");
+    assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
+}
+
+#[test]
+fn keeps_parent_usage_when_sidechain_replays_message_with_new_request_id() {
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 20,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-sidechain-replay",
+            is_sidechain: true,
+            cache_read_tokens: 50_000,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-sidechain-answer",
+            request_id: "req-sidechain-answer",
+            is_sidechain: true,
+            cache_read_tokens: 700,
+            output_tokens: 30,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+
+    assert_eq!(deduped.len(), 2);
+    assert_eq!(deduped[0].message_id.as_deref(), Some("msg-parent"));
+    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
+    assert_eq!(
+        deduped[1].message_id.as_deref(),
+        Some("msg-sidechain-answer")
+    );
+    assert_eq!(deduped[1].usage.cache_read_input_tokens, 700);
+}
+
+#[test]
+fn refreshes_dedupe_indexes_when_parent_replaces_sidechain_replay() {
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-sidechain-replay",
+            is_sidechain: true,
+            cache_read_tokens: 50_000,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 20,
+            output_tokens: 10,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+    push_deduped_entry(
+        loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 5,
+            output_tokens: 5,
+        }),
+        &mut deduped_indexes,
+        &mut deduped,
+    );
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
+}
+
+struct UsageEntryFixture {
+    message_id: &'static str,
+    request_id: &'static str,
+    is_sidechain: bool,
+    cache_read_tokens: u64,
+    output_tokens: u64,
+}
+
+fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
+    ClaudeEntry {
+        source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
+        recorded_session_id: Some("session-a".to_string()),
+        original_model: Some("claude-sonnet-4-20250514".to_string()),
+        request_id: Some(fixture.request_id.to_string()),
+        is_sidechain: Some(fixture.is_sidechain),
+        entry: LoadedEntry {
+            usage: TokenUsageRaw {
+                input_tokens: 0,
+                output_tokens: fixture.output_tokens,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: fixture.cache_read_tokens,
+                speed: None,
+                cache_creation: None,
+            },
+            message_id: Some(fixture.message_id.to_string()),
+            version: Some("1.0.0".to_string()),
+            recorded_cost: None,
+            timestamp: TimestampMs::from_millis(1_775_000_000_000),
+            date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
+            project: Arc::from("project-a"),
+            session_id: Arc::from("session-a"),
+            project_path: Arc::from("project-a"),
+            cost: 0.0,
+            extra_total_tokens: 0,
+            credits: None,
+            message_count: None,
+            model: Some("claude-sonnet-4-20250514".to_string()),
+            usage_limit_reset_time: None,
+            missing_pricing_model: None,
+            stored_cost: None,
+        },
+    }
+}
