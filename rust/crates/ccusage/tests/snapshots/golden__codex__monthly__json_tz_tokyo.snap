@@ -47,9 +47,9 @@ exit: 0
     },
     {
       "cacheCreationTokens": 300,
-      "cacheReadTokens": 459120,
-      "costUSD": 0.61035675,
-      "inputTokens": 109650,
+      "cacheReadTokens": 459420,
+      "costUSD": 0.6124817499999999,
+      "inputTokens": 110050,
       "models": {
         "codex-mystery-1": {
           "cacheCreationTokens": 0,
@@ -99,28 +99,28 @@ exit: 0
         },
         "gpt-5.5": {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 450900,
-          "inputTokens": 101400,
+          "cacheReadTokens": 451200,
+          "inputTokens": 101800,
           "isFallback": false,
-          "outputTokens": 1730,
-          "reasoningOutputTokens": 20,
-          "totalTokens": 554030
+          "outputTokens": 1800,
+          "reasoningOutputTokens": 30,
+          "totalTokens": 554800
         }
       },
       "month": "2026-01",
-      "outputTokens": 3407,
-      "reasoningOutputTokens": 84,
-      "totalTokens": 572477
+      "outputTokens": 3477,
+      "reasoningOutputTokens": 94,
+      "totalTokens": 573247
     }
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 460650,
-    "costUSD": 0.67445425,
-    "inputTokens": 113170,
-    "outputTokens": 4052,
-    "reasoningOutputTokens": 139,
-    "totalTokens": 578172,
+    "cacheReadTokens": 460950,
+    "costUSD": 0.67657925,
+    "inputTokens": 113570,
+    "outputTokens": 4122,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 578942,
     "unpricedModels": [
       "codex-mystery-1"
     ]

@@ -37,8 +37,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13185,
-      "cacheReadTokens": 295429,
-      "inputTokens": 113250,
+      "cacheReadTokens": 295729,
+      "inputTokens": 113650,
       "metadata": {
         "agents": [
           "amp",
@@ -84,11 +84,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "cost": 0.05785,
-          "inputTokens": 3300,
+          "cacheReadTokens": 2300,
+          "cost": 0.059975,
+          "inputTokens": 3700,
           "modelName": "gpt-5.5",
-          "outputTokens": 630
+          "outputTokens": 700
         },
         {
           "cacheCreationTokens": 0,
@@ -514,10 +514,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29801,
+      "outputTokens": 29871,
       "period": "2025-12",
-      "totalCost": 1.0303404099999998,
-      "totalTokens": 452735
+      "totalCost": 1.0324654099999997,
+      "totalTokens": 453505
     },
     {
       "agent": "all",
@@ -1197,11 +1197,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17725,
-    "cacheReadTokens": 1309937,
-    "inputTokens": 1346414,
-    "outputTokens": 58600,
-    "totalCost": 4.795892424999998,
-    "totalTokens": 2736093,
+    "cacheReadTokens": 1310237,
+    "inputTokens": 1346814,
+    "outputTokens": 58670,
+    "totalCost": 4.7980174249999985,
+    "totalTokens": 2736863,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
