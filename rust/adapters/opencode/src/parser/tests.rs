@@ -555,7 +555,7 @@ fn preserves_legacy_prices_for_provider_qualified_models() {
             ("openrouter", format!("openrouter/{provider}/{model}")),
         ] {
             for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
-                // NOTE(2026-11-20, #2332): A foreign-routed DeepSeek V4 request now keeps the flat rate instead of DeepSeek's schedule, so the legacy comparison only covers the other identities.
+                // NOTE(2026-11-20, #2332): A foreign-routed DeepSeek V4 request now keeps the flat rate instead of DeepSeek's schedule. The legacy comparison therefore only covers the other identities.
                 if provider == "openrouter" && model.contains("deepseek-v4-flash") {
                     continue;
                 }

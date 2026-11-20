@@ -403,7 +403,7 @@ pub(super) fn price_codebuff(
         stored_cost: None,
         timestamp: Some(entry.timestamp),
     };
-    // NOTE(2026-11-20, #2332): Codebuff bills every request through its own service, so a vendor it cannot infer is still a third party and must not inherit DeepSeek's schedule.
+    // NOTE(2026-11-20, #2332): Codebuff bills every request through its own service. A vendor it cannot infer is therefore a third party and must not inherit DeepSeek's schedule.
     let route = billing_route(Some(entry.provider.as_str())).unwrap_or(BillingRoute::Foreign);
     let priced = price_entry_on_route(entry_pricing, route, pricing);
     (
