@@ -2011,34 +2011,31 @@ fn pricing_key_matches(
     model: &str,
     normalized_model: &str,
 ) -> bool {
-    names_same_model(model, candidate) || names_same_model(normalized_model, normalized_candidate)
+    names_same_model((model, model), (candidate, candidate))
+        || names_same_model((normalized_model, model), (normalized_candidate, candidate))
 }
 
-fn names_same_model(model: &str, key: &str) -> bool {
+// NOTE(2026-11-20, #2236, #2237): Either id may carry only a host or provider qualifier in front of the other; a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`.
+fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
     if model.len() >= key.len() {
-        contains_pricing_key(model, key, is_pricing_key_boundary)
+        contains_pricing_key(model, raw_model, key)
     } else {
-        // NOTE(2026-11-19, #2237): A key longer than the logged id names that id only behind a host or provider qualifier. A word in front, as in `chat-pro` for `pro`, makes it another model.
-        contains_pricing_key(key, model, is_qualifier_end)
+        contains_pricing_key(key, raw_key, model)
     }
 }
 
-fn contains_pricing_key(value: &str, key: &str, prefix_ends: fn(u8) -> bool) -> bool {
+fn contains_pricing_key(value: &str, raw_value: &str, key: &str) -> bool {
     value.match_indices(key).any(|(index, _)| {
         let before = index
             .checked_sub(1)
-            .and_then(|before| value.as_bytes().get(before))
+            .and_then(|before| raw_value.as_bytes().get(before))
             .copied();
-        before.is_none_or(prefix_ends) && is_price_neutral_suffix(&value[index + key.len()..])
+        before.is_none_or(is_qualifier_end) && is_price_neutral_suffix(&value[index + key.len()..])
     })
 }
 
-fn is_pricing_key_boundary(byte: u8) -> bool {
-    !byte.is_ascii_alphanumeric()
-}
-
 fn is_qualifier_end(byte: u8) -> bool {
-    is_pricing_key_boundary(byte) && !matches!(byte, b'-' | b'_')
+    !byte.is_ascii_alphanumeric() && !matches!(byte, b'-' | b'_')
 }
 
 fn is_price_neutral_suffix(suffix: &str) -> bool {
@@ -7731,6 +7728,15 @@ mod tests {
     }
 
     #[test]
+    fn a_model_word_in_front_of_a_listed_id_names_another_model() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for model in ["chat-gpt-5.4", "my-gpt-5.4-high"] {
+            assert_eq!(pricing.find(model), None, "{model}");
+        }
+    }
+
+    #[test]
     fn a_word_or_version_after_a_live_key_does_not_borrow_its_row() {
         crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::load_embedded();
@@ -7785,6 +7791,8 @@ mod tests {
             ("claude-opus-4-8-20261101-v1:0", "claude-opus-4-8"),
             ("vertex_ai/claude-opus-4-7@default", "claude-opus-4-7"),
             ("grok-4.5-latest", "grok-4.5"),
+            ("host/gpt-5.4-high", "gpt-5.4"),
+            ("host.gpt-5-4-high", "gpt-5.4"),
         ] {
             let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
             let expected = pricing.find(listed).unwrap();
