@@ -12,12 +12,21 @@ State the concrete outcome or benefit, rather than listing implementation
 changes. For performance improvements, include measured before/after values or
 the measured improvement; never invent numbers or infer gains from code alone.
 
+- ❌ `perf(server): negotiate permessage-deflate on the websocket`
+- ✅ `perf(server): cut websocket frame size by 70%+ with gzipping`
+
 Squash-merge turns the title into the commit subject on `main`, so write it as a
 commit subject. `.github/workflows/check-pr-title.yaml` checks the Conventional
 Commit shape and then re-runs `scripts/validate-commit-scope.nu` against the PR
 diff, so the scope rules from the `commit` skill apply to the title too.
 
 ## Body
+
+Start agent-authored PR descriptions with
+`🤖 **<model> opened this on behalf of <user>**`, using the actual model name
+exposed by the harness and the user's name or GitHub login. Use the harness
+name if it exposes no model name. Omit this only when the user supplies the
+body verbatim.
 
 List the checks actually run. For a bug fix, state the root cause and name the
 regression test. If report output or snapshots must change, name the affected
