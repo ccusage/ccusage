@@ -31,6 +31,17 @@ fn statusline_accepts_valid_root_flags() {
 }
 
 #[test]
+fn statusline_accepts_the_short_debug_flag() {
+    for namespace in [&["statusline"][..], &["claude", "statusline"][..]] {
+        let argv = [&["ccusage"][..], namespace, &["-d"]].concat();
+        let Command::Statusline(args) = parse(&argv) else {
+            panic!("expected statusline");
+        };
+        assert!(args.debug);
+    }
+}
+
+#[test]
 fn parses_codex_statusline_with_offline_pricing_by_default() {
     let cli = parse(&["ccusage", "codex", "statusline"]);
     let Command::Agent(StandardAgent::Codex, AgentCommand::Statusline(args)) = cli else {
