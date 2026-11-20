@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       refs:
-        description: Git refs to profile, separated by spaces or commas. With two refs the first is the base and the report adds per-function deltas.
+        description: Git refs to profile, separated by spaces or commas. Branches, tags, and commit SHAs (full or abbreviated) are accepted. With two refs the first is the base and the report adds per-function deltas.
         type: string
         default: main
       commands:
@@ -103,7 +103,7 @@ jobs:
           if-no-files-found: error
 
   profile:
-    name: ${{ matrix.run.ref }} / ${{ matrix.run.command }}
+    name: ${{ matrix.run.ref }} / ${{ matrix.run.label }}
     needs: [plan, build, golden]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.golden.result != 'failure' }}
     runs-on: blacksmith-32vcpu-ubuntu-2404

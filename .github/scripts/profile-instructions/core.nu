@@ -37,9 +37,60 @@ export def split-list [value: string]: nothing -> list<string> {
     $value | split row --regex '[\s,]+' | where $it != '' | uniq
 }
 
+def rev-parse-ref [ref: string]: nothing -> any {
+    let found = [$"origin/($ref)" $ref]
+    | each {|candidate| ^git rev-parse --verify --quiet $"($candidate)^{commit}" | complete }
+    | where exit_code == 0
+    | get --optional 0
+    match $found {
+        null => null
+        $row => ($row.stdout | str trim)
+    }
+}
+
+# Resolve a dispatch ref to a full commit SHA. The checkout is searched first; `--fetch` then
+# refreshes refs from `origin` so a branch, tag, or abbreviated SHA it has never seen resolves.
+export def resolve-ref [ref: string, --fetch]: nothing -> string {
+    let local = rev-parse-ref $ref
+    if $local != null { return $local }
+    if $fetch {
+        ^git fetch --no-tags --quiet --force origin $ref | complete | ignore
+        (
+            ^git fetch --no-tags --quiet --force --prune origin
+            '+refs/heads/*:refs/remotes/origin/*'
+            '+refs/tags/*:refs/tags/*'
+            '+refs/pull/*/head:refs/remotes/pull/*'
+            | complete
+            | ignore
+        )
+        let fetched = rev-parse-ref $ref
+        if $fetched != null { return $fetched }
+    }
+    let matches = ^git rev-parse $"--disambiguate=($ref)" | complete
+    let ambiguous = $matches.exit_code == 0 and ($matches.stdout | lines | length) > 1
+    match $ambiguous {
+        true => {
+            error make {
+                msg: $"Ref '($ref)' matches several objects in this checkout; use more characters or a full SHA"
+            }
+        }
+        false => {
+            error make {
+                msg: $"Cannot resolve ref '($ref)' to a commit; pass a branch, tag, or abbreviated SHA that origin has"
+            }
+        }
+    }
+}
+
+# A matrix entry is `[large:|golden:]<command>`, and its label carries the fixture so the same
+# command can be profiled on both fixtures in one dispatch without the rows colliding.
+export def label [command: string, fixture: string]: nothing -> string {
+    if $fixture == 'large' { $command } else { $"($fixture):($command)" }
+}
+
 # An entry is `[large:|golden:]<command>`; without a prefix the generated large fixture covers
 # Claude, Codex, Grok, and the unified reports, and every other agent reads the golden seeds.
-export def parse-command [entry: string]: nothing -> record<command: string, fixture: string> {
+export def parse-command [entry: string]: nothing -> record<command: string, fixture: string, label: string> {
     match (
         $entry
         | str trim
@@ -53,7 +104,11 @@ export def parse-command [entry: string]: nothing -> record<command: string, fix
                 null => 'golden'
                 $explicit => $explicit
             }
-            {command: $command, fixture: $fixture}
+            {
+                command: $command
+                fixture: $fixture
+                label: (label $command $fixture)
+            }
         }
         _ => { error make {msg: $"Empty profile command entry: '($entry)'"} }
     }
@@ -70,13 +125,13 @@ export def plan [refs: string, commands: string]: nothing -> record<refs: list<a
     let entries = $commands | lines | each { split row ',' } | flatten | str trim | where $it != ''
     let command_rows = if ($entries | is-empty) { $default_commands } else { $entries }
     | each {|entry| parse-command $entry }
-    | uniq-by command
+    | uniq-by label
     let runs = $ref_rows | each {|ref|
         $command_rows | each {|command|
             $command | merge {
                 ref: $ref.ref
                 ref_slug: $ref.slug
-                id: $"($ref.slug)--(slug $command.command)"
+                id: $"($ref.slug)--(slug $command.label)"
             }
         }
     } | flatten
@@ -138,7 +193,7 @@ export def rank [runs: list<any>, --top: int = 50]: nothing -> list<any> {
     $runs
     | each {|run|
         $run.self | first $top | each {|row|
-            {function: $row.function ir: $row.ir share: (share $row.ir $run.total) command: $run.command}
+            {function: $row.function ir: $row.ir share: (share $row.ir $run.total) label: $run.label}
         }
     }
     | flatten
@@ -164,13 +219,13 @@ def sum-by-function [runs: list<any>]: nothing -> list<any> {
 }
 
 export def deltas [base: list<any>, head: list<any>]: nothing -> record<commands: list<any>, functions: list<any>> {
-    let shared = $base.command | where $it in $head.command
-    let base_runs = $base | where command in $shared
-    let head_runs = $head | where command in $shared
-    let commands = $shared | each {|command|
-        let before = $base_runs | where command == $command | first | get total
-        let after = $head_runs | where command == $command | first | get total
-        {command: $command base: $before head: $after delta: ($after - $before) ratio: (share $after $before)}
+    let shared = $base.label | where $it in $head.label
+    let base_runs = $base | where label in $shared
+    let head_runs = $head | where label in $shared
+    let commands = $shared | each {|label|
+        let before = $base_runs | where label == $label | first | get total
+        let after = $head_runs | where label == $label | first | get total
+        {label: $label base: $before head: $after delta: ($after - $before) ratio: (share $after $before)}
     }
     let functions = sum-by-function $base_runs
     | rename function base
@@ -297,7 +352,7 @@ export def deltas-md [
             table-md ['Command' $base $head 'Δ Ir' 'Ratio'] (
                 $result.commands | each {|row|
                     [
-                        (cell $row.command)
+                        (cell $row.label)
                         (number $row.base)
                         (number $row.head)
                         (signed $row.delta)

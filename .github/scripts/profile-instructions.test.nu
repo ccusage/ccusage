@@ -4,6 +4,13 @@
 use std/assert
 use ./profile-instructions/core.nu
 
+const commit_env = {
+    GIT_AUTHOR_NAME: 'Profile Test'
+    GIT_AUTHOR_EMAIL: 'profile-test@example.com'
+    GIT_COMMITTER_NAME: 'Profile Test'
+    GIT_COMMITTER_EMAIL: 'profile-test@example.com'
+}
+
 const annotate_self = '--------------------------------------------------------------------------------
 Profile data file ''callgrind.out'' (creator: callgrind-3.25.1)
 --------------------------------------------------------------------------------
@@ -30,12 +37,15 @@ def fake-run [
     command: string
     total: int
     self: list<any>
+    --label: string
+    --fixture: string = 'large'
 ]: nothing -> record {
     {
         ref: $ref
         sha: ('0' | fill --character '0' --width 40)
         command: $command
-        fixture: large
+        label: ($label | default $command)
+        fixture: $fixture
         total: $total
         self: $self
         inclusive: $self
@@ -64,10 +74,26 @@ def main []: nothing -> nothing {
         | get file
     ) '/build/rust/crates/core/src/lib.rs'
 
-    assert equal (core parse-command 'claude daily') {command: 'claude daily' fixture: large}
-    assert equal (core parse-command 'daily --breakdown') {command: 'daily --breakdown' fixture: large}
-    assert equal (core parse-command 'amp daily') {command: 'amp daily' fixture: golden}
-    assert equal (core parse-command 'golden: claude  session') {command: 'claude session' fixture: golden}
+    assert equal (core parse-command 'claude daily') {
+        command: 'claude daily'
+        fixture: large
+        label: 'claude daily'
+    }
+    assert equal (core parse-command 'daily --breakdown') {
+        command: 'daily --breakdown'
+        fixture: large
+        label: 'daily --breakdown'
+    }
+    assert equal (core parse-command 'amp daily') {
+        command: 'amp daily'
+        fixture: golden
+        label: 'golden:amp daily'
+    }
+    assert equal (core parse-command 'golden: claude  session') {
+        command: 'claude session'
+        fixture: golden
+        label: 'golden:claude session'
+    }
 
     let plan = core plan 'main, feature/x main' "claude daily\namp daily, claude daily"
     assert equal $plan.refs [
@@ -76,11 +102,21 @@ def main []: nothing -> nothing {
     ]
     assert equal ($plan.runs.id) [
         main--claude-daily
-        main--amp-daily
+        main--golden-amp-daily
         feature-x--claude-daily
-        feature-x--amp-daily
+        feature-x--golden-amp-daily
     ]
     assert equal ((core plan main '').runs | length) ($core.default_commands | length)
+
+    let both_fixtures = core plan main 'codex daily, golden:codex daily'
+    assert equal ($both_fixtures.runs | select label fixture id) [
+        {label: 'codex daily', fixture: large, id: main--codex-daily}
+        {
+            label: 'golden:codex daily'
+            fixture: golden
+            id: main--golden-codex-daily
+        }
+    ]
 
     let shared = {function: shared, ir: 10}
     let base = [
@@ -110,7 +146,7 @@ def main []: nothing -> nothing {
     let result = core deltas $base $head
     assert equal $result.commands [
         {
-            command: 'claude daily'
+            label: 'claude daily'
             base: 100
             head: 80
             delta: -20
@@ -134,5 +170,99 @@ def main []: nothing -> nothing {
     assert str contains (core deltas-md $result main head) '| `big` | 60 | 40 | -20 |'
     assert str contains (core section-md main $base (core rank $base)) '## Hot functions at `main` (000000000000)'
     assert str contains (core section-md missing [] []) '## Hot functions at `missing` (no completed runs)'
+
+    let base_fixtures = [
+        (fake-run main 'codex daily' 100 [
+            {function: shared, ir: 10}
+        ])
+        (
+            fake-run main 'codex daily' 200 [{function: shared, ir: 20}]
+            --label 'golden:codex daily'
+            --fixture golden
+        )
+    ]
+    let head_fixtures = [
+        (fake-run head 'codex daily' 80 [
+            {function: shared, ir: 8}
+        ])
+        (
+            fake-run head 'codex daily' 160 [{function: shared, ir: 16}]
+            --label 'golden:codex daily'
+            --fixture golden
+        )
+    ]
+    assert equal (
+        (core deltas $base_fixtures $head_fixtures).commands
+        | select label base head
+    ) [
+        {label: 'codex daily', base: 100, head: 80}
+        {label: 'golden:codex daily', base: 200, head: 160}
+    ]
+
+    let repo = mktemp -d
+    try {
+        ^git init --quiet --initial-branch main $repo
+        with-env $commit_env { ^git -C $repo commit --quiet --allow-empty --message first }
+        ^git -C $repo branch profile
+        ^git -C $repo tag release
+        let head = ^git -C $repo rev-parse HEAD | str trim
+        let short = $head | str substring 0..<8
+        assert equal ($head | str length) 40
+        assert equal (do {
+            cd $repo
+            {
+                sha: (core resolve-ref $head)
+                short: (core resolve-ref $short)
+                branch: (core resolve-ref profile)
+                tag: (core resolve-ref release)
+            }
+        }) {
+            sha: $head
+            short: $head
+            branch: $head
+            tag: $head
+        }
+        let missing = do {
+            cd $repo
+            try { core resolve-ref 0123456789abcdef } catch {|err| $err.msg }
+        }
+        assert str contains $missing "Cannot resolve ref '0123456789abcdef' to a commit"
+    } catch {|err|
+        rm -rf $repo
+        error make $err
+    }
+    rm -rf $repo
+
+    let remotes = mktemp -d
+    let remote = $remotes | path join remote.git
+    let writer = $remotes | path join writer
+    let reader = $remotes | path join reader
+    try {
+        ^git init --quiet --initial-branch main $writer
+        with-env $commit_env { ^git -C $writer commit --quiet --allow-empty --message first }
+        ^git init --quiet --bare --initial-branch main $remote
+        ^git -C $writer remote add origin $remote
+        ^git -C $writer push --quiet origin main
+        ^git clone --quiet $remote $reader
+        with-env $commit_env {
+            ^git -C $writer commit --quiet --allow-empty --message second
+            ^git -C $writer push --quiet origin main
+        }
+        let pushed = ^git -C $writer rev-parse HEAD | str trim
+        let short = $pushed | str substring 0..<8
+        let before = do {
+            cd $reader
+            try { core resolve-ref $short } catch {|err| $err.msg }
+        }
+        assert str contains $before $"Cannot resolve ref '($short)'"
+        assert equal (do {
+            cd $reader
+            core resolve-ref $short --fetch
+        }) $pushed
+    } catch {|err|
+        rm -rf $remotes
+        error make $err
+    }
+    rm -rf $remotes
     print 'Profile instruction tests passed.'
 }
