@@ -25,10 +25,14 @@ pub(crate) fn resolve_shared(
         shared.clock.now().into(),
         &resolve_tz(shared.timezone.as_ref()),
     );
-    let Some(since) = last_periods_since(unit, last, today, start_of_week) else {
+    let (Some(since), Some(until)) = (
+        last_periods_since(unit, last, today, start_of_week),
+        last_periods_until(unit, today, start_of_week),
+    ) else {
         return Err(format!("Could not resolve --last {last} from today's date"));
     };
     shared.since = Some(since);
+    shared.until = Some(until);
     Ok(())
 }
 
@@ -53,6 +57,22 @@ pub(super) fn last_periods_since(
             .ok()?,
     };
     Some(IsoDate::from(start).into())
+}
+
+pub(super) fn last_periods_until(
+    unit: PeriodUnit,
+    today: IsoDate,
+    start_of_week: WeekDay,
+) -> Option<DateBound> {
+    let last = match unit {
+        PeriodUnit::Day => today,
+        PeriodUnit::Week => today.week_start(start_of_week).checked_add_days(6)?,
+        PeriodUnit::Month => {
+            let first = today.civil()?.first_of_month();
+            IsoDate::from(first.with().day(first.days_in_month()).build().ok()?)
+        }
+    };
+    Some(last.into())
 }
 
 #[cfg(test)]
@@ -94,9 +114,19 @@ mod tests {
     }
 
     fn resolved_since(command: Command) -> Option<ccusage_cli::DateBound> {
+        resolved_bounds(command).0
+    }
+
+    fn resolved_bounds(
+        command: Command,
+    ) -> (
+        Option<ccusage_cli::DateBound>,
+        Option<ccusage_cli::DateBound>,
+    ) {
         let mut command = command;
         resolve(&mut command).unwrap();
-        command.shared().and_then(|shared| shared.since)
+        let shared = command.shared().unwrap();
+        (shared.since, shared.until)
     }
 
     #[test]
@@ -163,6 +193,58 @@ mod tests {
         assert_eq!(
             since,
             last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Wednesday)
+        );
+    }
+
+    #[test]
+    fn caps_the_unified_window_at_the_end_of_the_current_period() {
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
+
+        assert_eq!(
+            resolved_bounds(Command::All(agent_command(AgentReportKind::Daily, 1))),
+            (Some(today.into()), Some(today.into()))
+        );
+        for (kind, unit) in [
+            (AgentReportKind::Weekly, PeriodUnit::Week),
+            (AgentReportKind::Monthly, PeriodUnit::Month),
+        ] {
+            assert_eq!(
+                resolved_bounds(Command::All(agent_command(kind, 1))).1,
+                last_periods_until(unit, today, WeekDay::Monday)
+            );
+        }
+    }
+
+    #[test]
+    fn ends_the_window_with_the_last_day_of_its_period() {
+        let day = |date: &str, unit, start_of_week| {
+            last_periods_until(unit, IsoDate::parse(date).unwrap(), start_of_week)
+                .map(|day| day.to_string())
+        };
+
+        assert_eq!(
+            day("2026-07-29", PeriodUnit::Day, WeekDay::Monday).as_deref(),
+            Some("20260729")
+        );
+        assert_eq!(
+            day("2026-07-29", PeriodUnit::Week, WeekDay::Monday).as_deref(),
+            Some("20260802")
+        );
+        assert_eq!(
+            day("2026-07-29", PeriodUnit::Week, WeekDay::Sunday).as_deref(),
+            Some("20260801")
+        );
+        assert_eq!(
+            day("2026-02-10", PeriodUnit::Month, WeekDay::Monday).as_deref(),
+            Some("20260228")
+        );
+        assert_eq!(
+            day("2026-12-31", PeriodUnit::Month, WeekDay::Monday).as_deref(),
+            Some("20261231")
+        );
+        assert_eq!(
+            day("9999-12-15", PeriodUnit::Month, WeekDay::Monday).as_deref(),
+            Some("99991231")
         );
     }
 
