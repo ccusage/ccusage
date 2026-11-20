@@ -291,8 +291,8 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                         .then_some(index)
                 })
             })
-        }
-        .or_else(|| {
+        };
+        let replayed = |deduped_indexes: &DedupeIndexes, deduped: &[E]| {
             // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
             let candidate_is_sidechain = entry.is_sidechain();
             let route_hash = if candidate_is_sidechain {
@@ -314,7 +314,18 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                     .then_some(index)
                 })
             })
-        });
+        };
+        let existing_index = match existing_index {
+            // NOTE(2026-11-20, #2255): A record can match its slot through a copy in another session while a sidechain replay of it in its own session still survives in a slot of its own. A record that is not itself a replay absorbs that slot, as the replay route would have.
+            Some(index) if !entry.is_sidechain() => Some(
+                match replayed(deduped_indexes, deduped).filter(|&replay| replay != index) {
+                    Some(replay) => merge_slots(deduped_indexes, deduped, index, replay),
+                    None => index,
+                },
+            ),
+            Some(index) => Some(index),
+            None => replayed(deduped_indexes, deduped),
+        };
         (exact_hash, existing_index)
     });
 

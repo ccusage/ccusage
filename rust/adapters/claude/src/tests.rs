@@ -1006,6 +1006,23 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "sidechain replay of a response whose first block came from another session",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent")
+                    .replace(r#""type":"assistant","#, r#""type":"assistant","requestId":"req_parent","#)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                linkless_assistant("2026-05-22T02:34:41.000Z", "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+            ],
+            1,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(
