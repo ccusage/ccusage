@@ -295,6 +295,49 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         pricing: QWEN_PLUS_THINKING,
         context_limit: None,
     },
+    // NOTE(2026-11-20): Alibaba lists qwen-plus-latest and qwen-plus-2025-12-01 at https://www.alibabacloud.com/help/en/model-studio/model-pricing, and qwen-plus-2025-09-11 and qwen-plus-2025-07-28 at https://web.archive.org/web/20260802131610/https://www.alibabacloud.com/help/en/model-studio/model-pricing, at the same $0.4 / $1.2 / $4 rates and 256K tier as qwen-plus. Both pages list qwen-plus-2025-07-14 and qwen-plus-2025-04-28 at $0.4 / $1.2 / $4 with "No tiered pricing", and qwen-plus-2025-01-25 with no thinking price.
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-latest-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-12-01-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-09-11-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-07-28-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-07-14-thinking",
+        pricing: Pricing {
+            long_context: None,
+            ..QWEN_PLUS_THINKING
+        },
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-04-28-thinking",
+        pricing: Pricing {
+            long_context: None,
+            ..QWEN_PLUS_THINKING
+        },
+        context_limit: None,
+    },
     Supplement {
         provider: "dashscope",
         model: "qwen-turbo-thinking",
