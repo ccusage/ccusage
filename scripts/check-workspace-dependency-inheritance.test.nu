@@ -12,6 +12,9 @@ members = ["crates/*", "extras/git"]
 [workspace.dependencies]
 rustix = { version = "1.1.6", features = ["process"] }
 stats_alloc = "0.1.10"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
 '
         | save ($fixture | path join Cargo.toml)
         mkdir ($fixture | path join crates/inline)
@@ -31,6 +34,9 @@ rustix.workspace = true
 [dev-dependencies]
 stats_alloc = { workspace = true, features = [] }
 self = { path = "." }
+
+[lints]
+workspace = true
 '
         | save ($fixture | path join crates/inherited/Cargo.toml)
         '[dependencies]
@@ -58,19 +64,39 @@ stats_alloc = "0.1.10"
         ) true
         assert equal ($failing.stderr | str contains 'crates/inherited') false
         assert equal ($failing.stderr | str contains 'adapters/skipped') false
+        assert equal (
+            $failing.stderr
+            | str contains 'crates/inline/Cargo.toml: must inherit [workspace.lints]'
+        ) true
         '[dev-dependencies]
 stats_alloc.workspace = true
 
 [target.unix.dependencies]
 rustix.workspace = true
+
+[lints]
+workspace = true
 '
         | save --force ($fixture | path join crates/inline/Cargo.toml)
         '[dependencies]
 rustix.workspace = true
+
+[lints]
+workspace = true
 '
         | save --force ($fixture | path join extras/git/Cargo.toml)
         let passing = nu $check $fixture | complete
         assert equal $passing.exit_code 0 $passing.stderr
+
+        open --raw ($fixture | path join Cargo.toml)
+        | str replace 'unsafe_code = "deny"' 'unsafe_code = "allow"'
+        | save --force ($fixture | path join Cargo.toml)
+        let lenient = nu $check $fixture | complete
+        assert equal $lenient.exit_code 1 $lenient.stderr
+        assert equal (
+            $lenient.stderr
+            | str contains 'Cargo.toml: [workspace.lints.rust] unsafe_code must be'
+        ) true
     } catch {|err|
         rm -rf $fixture
         error make $err

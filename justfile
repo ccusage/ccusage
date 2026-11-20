@@ -80,7 +80,7 @@ comments:
     nu --no-config-file scripts/comments/check.nu
 
 # Run every flake check (treefmt, oxlint, clippy, schema drift, gitleaks)
-check: check-pricing-data check-clippy-config check-workspace-dependency-inheritance
+check: check-pricing-data check-clippy-config check-workspace-dependency-inheritance check-unsafe-code
     nix flake check
 
 check-clippy-config:
@@ -88,6 +88,10 @@ check-clippy-config:
 
 check-workspace-dependency-inheritance:
     nu --no-config-file scripts/check-workspace-dependency-inheritance.nu rust
+
+# Check every crate but ccusage-zstd with unsafe_code forbidden on the rustc command line
+check-unsafe-code:
+    nu --no-config-file scripts/check-unsafe-code.nu rust/Cargo.toml
 
 [script('bash')]
 check-pricing-data:

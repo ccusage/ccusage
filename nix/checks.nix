@@ -64,6 +64,17 @@ in
           '';
         }
       );
+      ccusage-unsafe-code = import ./unsafe-code-check.nix {
+        inherit
+          commonArgs
+          craneLib
+          lib
+          root
+          ;
+        inherit (pkgs) nushell;
+        inherit cargoArtifacts;
+        withScriptTests = true;
+      };
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
@@ -146,6 +157,7 @@ in
           ccusage-clippy
           ccusage-fmt
           ccusage-hawk
+          ccusage-unsafe-code
           ;
         oxlint = mkRepoCheck "oxlint-check" [ config.packages.oxlint ] ''
           oxlint --config nix/oxlint-check.json .

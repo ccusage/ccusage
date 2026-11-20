@@ -4,6 +4,7 @@
   lib,
   lld,
   mold,
+  nushell,
   pkgs,
   pkg-config,
   root ? ./.,
@@ -91,6 +92,15 @@ let
     inherit (depsOnlyArgs) dummySrc;
   };
   cargoArtifacts = workspaceArtifacts.adapters;
+  unsafeCodeCheck = import ./nix/unsafe-code-check.nix {
+    inherit
+      commonArgs
+      craneLib
+      lib
+      nushell
+      root
+      ;
+  };
   systemDylibsGate = ''
     if otool -L "$out/bin/ccusage" | awk '/^\t/ { print $1 }' | grep -Ev '^(/usr/lib/|/System/Library/)'; then
       echo "error: $out/bin/ccusage links dylibs that do not exist on end-user machines" >&2
@@ -112,6 +122,7 @@ craneLib.buildPackage (
         depsOnlyArgs
         systemDylibsGate
         linkerRustflags
+        unsafeCodeCheck
         version
         workspaceArtifacts
         ;
