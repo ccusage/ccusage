@@ -3,17 +3,14 @@ use ccusage_core::{
     cost::{EntryPricing, price_entry},
     pricing::MatchKind,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        CallKey, CopilotSourceUsage, CopilotUsageEntry, parse_otel_file, parse_session_state_file,
+        CopilotSourceUsage, CopilotUsageEntry, parse_session_state_file, read_otel_calls,
+        reconcile_otel_calls,
     },
     paths::CopilotSourceKind,
 };
@@ -44,8 +41,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     let parsed = read_typed_units(&sources, shared.single_thread, cx.diagnostics, |source| {
         read_source_file(&source.path, source.kind, cx.diagnostics)
     });
-    let mut otel_entries = Vec::new();
-    let mut otel_keys = HashSet::<CallKey>::new();
+    let mut otel_calls = Vec::new();
     let mut session_state_entries = Vec::new();
     let mut usage_records = Vec::new();
     let mut credit_snapshots = Vec::new();
@@ -54,20 +50,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             continue;
         };
         match source {
-            CopilotSourceKind::Otel => {
-                let new_rows = file_usage
-                    .entries
-                    .into_iter()
-                    .filter(|entry| {
-                        entry
-                            .call_key
-                            .as_ref()
-                            .is_none_or(|key| !otel_keys.contains(key))
-                    })
-                    .collect::<Vec<_>>();
-                otel_keys.extend(new_rows.iter().filter_map(|entry| entry.call_key.clone()));
-                otel_entries.extend(new_rows);
-            }
+            CopilotSourceKind::Otel => otel_calls.extend(file_usage.otel_calls),
             CopilotSourceKind::SessionState => {
                 session_state_entries.extend(file_usage.entries);
                 usage_records.extend(file_usage.usage_records);
@@ -75,6 +58,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             }
         }
     }
+    let otel_entries = reconcile_otel_calls(otel_calls);
     let (since_millis, until_millis) = cx.window.bounds_ms();
     let session_state = reconcile_session_state_entries(
         session_state_entries,
@@ -159,7 +143,7 @@ fn read_source_file(
 ) -> std::result::Result<CopilotSourceUsage, UnitError> {
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
-            entries: parse_otel_file(path, diagnostics)?,
+            otel_calls: Some(read_otel_calls(path, diagnostics)?),
             ..CopilotSourceUsage::default()
         }),
         CopilotSourceKind::SessionState => parse_session_state_file(path, diagnostics),

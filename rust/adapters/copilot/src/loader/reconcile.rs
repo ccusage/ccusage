@@ -257,7 +257,6 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
             .zip(baseline.nano_aiu)
             .map(|(current, baseline)| current.saturating_sub(baseline)),
         dedup_key: current.dedup_key.clone(),
-        call_key: None,
         call_ids: CallIds::default(),
     }
 }

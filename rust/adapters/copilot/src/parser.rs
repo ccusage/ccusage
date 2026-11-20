@@ -5,7 +5,9 @@ use crate::TimestampMs;
 mod otel;
 mod session_state;
 
+#[cfg(test)]
 pub(super) use otel::parse_otel_file;
+pub(super) use otel::{OtelFileCalls, read_otel_calls, reconcile_otel_calls};
 pub(super) use session_state::parse_session_state_file;
 
 #[derive(Debug, Clone)]
@@ -23,7 +25,6 @@ pub(super) struct CopilotUsageEntry {
     pub(super) request_count: u64,
     pub(super) nano_aiu: Option<u64>,
     pub(super) dedup_key: String,
-    pub(super) call_key: Option<CallKey>,
     pub(super) call_ids: CallIds,
 }
 
@@ -90,6 +91,7 @@ pub(super) struct CopilotUsageRecordEntry {
 
 #[derive(Debug, Default)]
 pub(super) struct CopilotSourceUsage {
+    pub(super) otel_calls: Option<OtelFileCalls>,
     pub(super) entries: Vec<CopilotUsageEntry>,
     pub(super) usage_records: Vec<CopilotUsageRecordEntry>,
     pub(super) credit_snapshots: Vec<CopilotCreditSnapshot>,
