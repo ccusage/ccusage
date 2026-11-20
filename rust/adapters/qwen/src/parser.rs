@@ -38,8 +38,8 @@ struct QwenLine {
 struct QwenUsageMetadata {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     prompt_token_count: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    candidates_token_count: u64,
+    #[serde(default, deserialize_with = "present_u64")]
+    candidates_token_count: Option<u64>,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cached_content_token_count: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -57,6 +57,13 @@ impl std::ops::Deref for QwenEntry {
     fn deref(&self) -> &Self::Target {
         &self.entry
     }
+}
+
+fn present_u64<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    jsonl::lenient_u64(deserializer).map(Some)
 }
 
 pub(super) fn read_chat_file(
@@ -110,12 +117,11 @@ fn parse_line(
     let prompt_tokens = usage.prompt_token_count;
     let total_tokens = usage.total_token_count;
     let cache_read_tokens = usage.cached_content_token_count.min(prompt_tokens);
+    let candidates_tokens = usage.candidates_token_count.unwrap_or(0);
     let output_tokens = if total_tokens > prompt_tokens {
-        usage
-            .candidates_token_count
-            .min(total_tokens - prompt_tokens)
+        candidates_tokens.min(total_tokens - prompt_tokens)
     } else {
-        usage.candidates_token_count
+        candidates_tokens
     };
     let display_usage = TokenUsageRaw {
         input_tokens: prompt_tokens - cache_read_tokens,
@@ -125,8 +131,12 @@ fn parse_line(
         speed: None,
         cache_creation: None,
     };
-    let (display_usage, extra_total_tokens) =
-        apply_total_token_fallback(display_usage, 0, total_tokens);
+    let (display_usage, extra_total_tokens) = if usage.candidates_token_count.is_some() {
+        let residual = total_tokens.saturating_sub(prompt_tokens.saturating_add(output_tokens));
+        (display_usage, residual)
+    } else {
+        apply_total_token_fallback(display_usage, 0, total_tokens)
+    };
     if display_usage.input_tokens == 0
         && display_usage.output_tokens == 0
         && display_usage.cache_read_input_tokens == 0
@@ -430,6 +440,19 @@ mod tests {
 
         let expected = 600.0 * 0.000001 + 400.0 * 0.0000001 + 250.0 * 0.000005;
         assert!((entry.cost - expected).abs() < 1e-12, "{}", entry.cost);
+    }
+
+    #[test]
+    fn thinking_with_zero_candidates_stays_reasoning() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 0,
+            "thoughtsTokenCount": 50,
+            "totalTokenCount": 1050
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 50);
     }
 
     #[test]
