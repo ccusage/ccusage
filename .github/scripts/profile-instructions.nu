@@ -183,10 +183,10 @@ def "main run" [
         'many-files' | 'proxy' => (claude-env $fixture_dir $home)
         _ => { error make {msg: $"Unknown fixture '($fixture)'"} }
     }
-    let args = (core parse-command $command).args
+    let report_args = (core parse-command $command).args
     let vars = $context.vars | merge $report_vars | merge {PATH: ($env.PATH | str join (char esep))}
     let profile = $out | path join callgrind.out
-    let args = [
+    let argv = [
         '-i'
         ...($vars | items {|key value| $"($key)=($value)" })
         (which valgrind | first | get path)
@@ -196,14 +196,14 @@ def "main run" [
         '--dump-instr=no'
         '--'
         $bin
-        ...($args | split row ' ')
+        ...($report_args | split row ' ')
         '--offline'
         '--json'
     ]
-    print --stderr $"profiling: ccusage ($args) --offline --json \(($fixture) fixture\)"
+    print --stderr $"profiling: ccusage ($report_args) --offline --json \(($fixture) fixture\)"
     let result = do {
         cd $context.cwd
-        run-external env ...$args | complete
+        run-external env ...$argv | complete
     }
     if $result.exit_code != 0 {
         let log = $out | path join valgrind.log
