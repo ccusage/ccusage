@@ -146,7 +146,11 @@ fn counts_a_dense_first_request_pair_of_a_spawned_child_with_own_records() {
         replay_token_count("2026-11-01T09:05:00.000Z", 600),
     ];
 
-    assert_child_usage(&load_fork(None, &child), &[400, 500, 600], &[]);
+    assert_child_usage(
+        &load_fork(None, &child),
+        &[400, 500, 600],
+        &[MISSING_PARENT_WARNING],
+    );
     assert_child_usage(
         &load_fork(Some(&parent_rollout()), &child),
         &[400, 500, 600],
@@ -232,4 +236,41 @@ fn keeps_the_settings_boundary_when_a_spawned_child_logs_an_untagged_record() {
     ];
 
     assert_child_usage(&load_fork(None, &child), &[400], &[]);
+}
+
+#[test]
+fn keeps_own_turns_a_legacy_fork_wrote_before_an_upgraded_codex_resumed_it() {
+    let child = [
+        replay_metadata("2026-11-01T09:00:00.000Z", CHILD, Some(PARENT)),
+        settings_applied("2026-11-01T09:00:00.000Z", None),
+        replay_token_count("2026-11-01T09:01:00.000Z", 700),
+        replay_token_count("2026-11-01T09:02:00.000Z", 800),
+        usage_record("2026-11-03T09:00:00.000Z", CHILD, "resp_child_9", 900),
+        replay_token_count("2026-11-03T09:00:00.000Z", 900),
+    ];
+
+    assert_child_usage(
+        &load_fork(Some(&parent_rollout()), &child),
+        &[700, 800, 900],
+        &[],
+    );
+    assert_child_usage(
+        &load_fork(None, &child),
+        &[700, 800, 900],
+        &[MISSING_PARENT_WARNING],
+    );
+}
+
+#[test]
+fn matches_the_parent_before_an_own_marker_that_follows_threadless_copies() {
+    let child = [
+        replay_metadata("2026-11-01T09:00:00.000Z", CHILD, Some(PARENT)),
+        settings_applied("2026-11-01T09:00:00.000Z", None),
+        replay_token_count("2026-11-01T09:00:00.000Z", 100),
+        replay_token_count("2026-11-01T09:00:00.000Z", 200),
+        settings_applied("2026-11-01T09:00:00.010Z", Some(CHILD)),
+        replay_token_count("2026-11-01T09:05:00.000Z", 400),
+    ];
+
+    assert_child_usage(&load_fork(Some(&parent_rollout()), &child), &[400], &[]);
 }

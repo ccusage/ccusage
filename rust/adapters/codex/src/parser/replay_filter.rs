@@ -45,8 +45,7 @@ impl<'a> CodexReplayFilter<'a> {
         if is_own {
             self.own_start.get_or_insert(self.pending.len());
             if marker == CodexOwnershipMarker::UsageRecord {
-                self.resolve_by_ownership(visit);
-                return Some(CodexReplayResolution::Deterministic);
+                return Some(self.resolve_leading(visit));
             }
             return None;
         }
@@ -56,11 +55,7 @@ impl<'a> CodexReplayFilter<'a> {
         {
             return Some(self.resolve_leading(visit));
         }
-        let is_foreign = match marker {
-            CodexOwnershipMarker::UsageRecord => thread_id.is_some(),
-            CodexOwnershipMarker::ThreadSettings => true,
-        };
-        if is_foreign && self.own_start.is_none() {
+        if thread_id.is_some() && self.own_start.is_none() {
             self.foreign_before_own = true;
         }
         None
@@ -90,40 +85,23 @@ impl<'a> CodexReplayFilter<'a> {
         &mut self,
         visit: &mut impl FnMut(CodexTokenUsageEvent),
     ) -> CodexReplayResolution<'a> {
-        if self.own_start.is_none() {
-            return self.resolve_by_parent(visit);
-        }
-        self.resolve_by_ownership(visit);
-        CodexReplayResolution::Deterministic
-    }
-
-    fn resolve_by_ownership(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
-        let inherited = if self.foreign_before_own {
-            self.pending[..self.own_start.unwrap_or(0)]
-                .iter()
-                .filter(|event| is_replayable(event))
-                .count()
-        } else {
-            0
-        };
-        self.emit_after(inherited, visit);
-    }
-
-    fn resolve_by_parent(
-        &mut self,
-        visit: &mut impl FnMut(CodexTokenUsageEvent),
-    ) -> CodexReplayResolution<'a> {
         let Some(fork) = self.fork else {
             return CodexReplayResolution::Deterministic;
         };
+        let leading_end = self.own_start.unwrap_or(self.pending.len());
+        let leading = &self.pending[..leading_end];
+        if self.foreign_before_own {
+            let inherited = leading.iter().filter(|event| is_replayable(event)).count();
+            self.emit_after(inherited, visit);
+            return CodexReplayResolution::Deterministic;
+        }
         let resolution = match fork.missing_parent {
-            Some(parent_id) if !self.pending.is_empty() => {
+            Some(parent_id) if leading.iter().any(is_replayable) => {
                 CodexReplayResolution::MissingParent(parent_id)
             }
             _ => CodexReplayResolution::Deterministic,
         };
-        let leading = self
-            .pending
+        let leading = leading
             .iter()
             .filter(|event| is_replayable(event))
             .map(CodexTokenUsageEvent::raw_usage)
