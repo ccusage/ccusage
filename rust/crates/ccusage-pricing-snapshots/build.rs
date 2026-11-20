@@ -17,69 +17,68 @@ const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
-fn main() {
+fn main() -> Result<(), String> {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
 
-    let out_path = out_dir_path(OUT_PRICING_JSON);
+    let out_path = out_dir_path(OUT_PRICING_JSON)?;
     let pricing_json = if let Some(path) = Environment::current().var_os(PRICING_JSON_PATH_ENV) {
         let path = PathBuf::from(path);
         println!("cargo:rerun-if-changed={}", path.display());
-        fs::read_to_string(path).expect("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH")
+        fs::read_to_string(path).map_err(|error| {
+            format!("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH: {error}")
+        })?
     } else {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
-        fetch_pricing_json()
+        fetch_pricing_json()?
     };
-    let pricing_json =
-        litellm_filter::filter_pricing_json(&pricing_json).expect("filter LiteLLM pricing JSON");
+    let pricing_json = litellm_filter::filter_pricing_json(&pricing_json)
+        .ok_or_else(|| "filter LiteLLM pricing JSON".to_string())?;
 
     fs::write(out_path, deflate(pricing_json.as_bytes()))
-        .expect("write build-time pricing snapshot");
+        .map_err(|error| format!("write build-time pricing snapshot: {error}"))?;
 
-    embed_snapshot("src/litellm-sources.json", "litellm-sources.json.deflate");
-    embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON);
+    embed_snapshot("src/litellm-sources.json", "litellm-sources.json.deflate")?;
+    embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
     embed_snapshot(
         MODELS_DEV_CATALOG_RULES_JSON,
         OUT_MODELS_DEV_CATALOG_RULES_JSON,
-    );
+    )
 }
 
-fn embed_snapshot(source: &str, out_name: &str) {
+fn embed_snapshot(source: &str, out_name: &str) -> Result<(), String> {
     println!("cargo:rerun-if-changed={source}");
-    let snapshot =
-        fs::read_to_string(source).unwrap_or_else(|error| panic!("read {source}: {error}"));
+    let snapshot = fs::read_to_string(source).map_err(|error| format!("read {source}: {error}"))?;
     let value = serde_json::from_str::<Value>(&snapshot)
-        .unwrap_or_else(|error| panic!("parse {source}: {error}"));
+        .map_err(|error| format!("parse {source}: {error}"))?;
     let minified =
-        serde_json::to_string(&value).unwrap_or_else(|error| panic!("serialize {source}: {error}"));
-    fs::write(out_dir_path(out_name), deflate(minified.as_bytes()))
-        .unwrap_or_else(|error| panic!("write {out_name}: {error}"));
+        serde_json::to_string(&value).map_err(|error| format!("serialize {source}: {error}"))?;
+    fs::write(out_dir_path(out_name)?, deflate(minified.as_bytes()))
+        .map_err(|error| format!("write {out_name}: {error}"))
 }
 
 fn deflate(bytes: &[u8]) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec(bytes, 10)
 }
 
-fn out_dir_path(file_name: &str) -> PathBuf {
-    PathBuf::from(
-        Environment::current()
-            .var_os("OUT_DIR")
-            .expect("OUT_DIR is set by cargo"),
-    )
-    .join(file_name)
+fn out_dir_path(file_name: &str) -> Result<PathBuf, String> {
+    let out_dir = Environment::current()
+        .var_os("OUT_DIR")
+        .ok_or_else(|| "OUT_DIR is set by cargo".to_string())?;
+    Ok(PathBuf::from(out_dir).join(file_name))
 }
 
 #[cfg(not(feature = "fetch-litellm-pricing"))]
-fn fetch_pricing_json() -> String {
-    panic!(
+fn fetch_pricing_json() -> Result<String, String> {
+    Err(format!(
         "no LiteLLM pricing snapshot available: set {PRICING_JSON_PATH_ENV} to a \
          model_prices_and_context_window.json, or build with \
          --features fetch-litellm-pricing to download it"
-    );
+    ))
 }
 
 #[cfg(feature = "fetch-litellm-pricing")]
-fn fetch_pricing_json() -> String {
-    download_pricing_json().expect("fetch LiteLLM pricing for embed")
+fn fetch_pricing_json() -> Result<String, String> {
+    download_pricing_json().map_err(|error| format!("fetch LiteLLM pricing for embed: {error}"))
 }
 
 #[cfg(feature = "fetch-litellm-pricing")]

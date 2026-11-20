@@ -2,7 +2,12 @@ use ccusage_adapter_common::{
     read_discovered_paths,
     source::{ProgressOwner, UsageLoadContext},
 };
-use ccusage_core::*;
+use ccusage_core::{
+    Diagnostics, LoadedEntry, MILLIS_PER_DAY, ModelBreakdown, ReportWindow, Result, Speed,
+    TimestampMs, TokenCounts, TokenUsageRaw, UsageSummary, cli, cli_error, cost, date_at,
+    date_range_bounds_ms, debug_log, fast, model_aliases, parse_ts_timestamp, pricing, progress,
+    resolve_tz,
+};
 
 mod blocks;
 mod commands;
@@ -37,14 +42,12 @@ use serde::{
 };
 use smallvec::SmallVec;
 
-use crate::{
-    LoadedEntry, Result, Speed, TimestampMs, TokenUsageRaw, UsageSummary,
+use ccusage_core::{
     cli::{CostMode, SharedArgs},
-    daily::DedupEntry as _,
-    debug_log,
     fast::{FxHashMap, LinePrefilter},
-    progress,
 };
+
+use crate::daily::DedupEntry as _;
 
 pub(crate) use paths::{
     claude_paths, extract_session_parts, usage_files_before_since, visit_usage_files,
@@ -169,7 +172,7 @@ pub(crate) fn load_daily_summaries(
             daily::load_daily_entries(shared, project_filter, &diagnostics)
         })?;
     diagnostics.emit(shared.debug);
-    Ok(daily.summaries(group_by_project))
+    Ok(daily.summaries(group_by_project, None))
 }
 
 pub(crate) type MainThreadSessions = HashSet<Arc<str>>;
@@ -193,14 +196,14 @@ pub(crate) struct DailySummaries {
 pub(crate) fn load_daily_summaries_with_detection_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    group_by_project: bool,
+    report_window: Option<&crate::ReportWindow>,
     owner: ProgressOwner,
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let load = || daily::load_daily_entries(shared, project_filter, diagnostics);
     let daily = owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)?;
     Ok(DailySummaries {
-        summaries: daily.summaries(group_by_project),
+        summaries: daily.summaries(false, report_window),
         detected: daily.detected,
         sessions: daily.sessions(),
     })
@@ -217,7 +220,7 @@ fn load_windowed_entries(
         &mut loaded.entries,
         &mut loaded.copies,
         &crate::ReportWindow::from_shared(shared),
-        |entry| &entry.date,
+        |entry| entry.date,
     );
     Ok(loaded)
 }
@@ -226,19 +229,19 @@ fn retain_copied_entries<T>(
     entries: &mut Vec<T>,
     copies: &mut Vec<(usize, Arc<str>)>,
     window: &crate::ReportWindow,
-    date: impl Fn(&T) -> &str,
+    date: impl Fn(&T) -> crate::cli::IsoDate,
 ) {
     if window.is_unbounded() {
         return;
     }
     if copies.is_empty() {
-        entries.retain(|entry| window.contains_date(date(entry)));
+        entries.retain(|entry| window.contains_entry_date(date(entry)));
         return;
     }
     let mut kept_indexes = Vec::with_capacity(entries.len());
     let mut next_index = 0;
     entries.retain(|entry| {
-        let keep = window.contains_date(date(entry));
+        let keep = window.contains_entry_date(date(entry));
         kept_indexes.push(keep.then_some(next_index));
         if keep {
             next_index += 1;
@@ -743,12 +746,12 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
             if !is_guarded_usage_member(key.as_str()) {
                 return key.into_seed(seed).map(Some);
             }
-            match self.map.next_value::<serde_json::Value>()? {
-                serde_json::Value::Null => self.has_null = true,
-                value => {
-                    self.pending = Some(value);
-                    return key.into_seed(seed).map(Some);
-                }
+            let value = self.map.next_value::<serde_json::Value>()?;
+            if value.is_null() {
+                self.has_null = true;
+            } else {
+                self.pending = Some(value);
+                return key.into_seed(seed).map(Some);
             }
         }
     }
@@ -872,9 +875,9 @@ mod tests {
         extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
         usage_limit_reset_time_from_line_bytes,
     };
-    use crate::{
-        ClaudeEntry, Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs,
-        TokenUsageRaw,
+    use crate::ClaudeEntry;
+    use ccusage_core::{
+        Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
         format_rfc3339_millis,
     };
@@ -912,7 +915,13 @@ mod tests {
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> LoadedFile {
-        read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+        read_usage_file_with_diagnostics(
+            path,
+            tz,
+            mode,
+            pricing,
+            &Diagnostics::without_clock("claude"),
+        )
     }
 
     #[test]
@@ -939,7 +948,7 @@ mod tests {
             let loaded = super::load_windowed_entries(
                 &shared,
                 None,
-                &Diagnostics::new("claude"),
+                &Diagnostics::without_clock("claude"),
                 CostMode::Calculate,
             )
             .unwrap();
@@ -1096,7 +1105,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let diagnostics = ccusage_core::Diagnostics::new("claude");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
 
         let loaded = read_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
@@ -1127,7 +1136,7 @@ mod tests {
         let files = super::paths::usage_files(
             &[fixture.root().to_path_buf()],
             Some("project-a"),
-            &ccusage_core::Diagnostics::new("claude"),
+            &ccusage_core::Diagnostics::without_clock("claude"),
         );
 
         assert_eq!(files.len(), 1);
@@ -1144,7 +1153,7 @@ mod tests {
         let files = super::paths::usage_files(
             &[fixture.root().to_path_buf()],
             Some("project-a/session-a"),
-            &ccusage_core::Diagnostics::new("claude"),
+            &ccusage_core::Diagnostics::without_clock("claude"),
         );
 
         assert!(files.is_empty());
@@ -1756,7 +1765,9 @@ mod tests {
                 entries: deduped
                     .entries
                     .into_iter()
-                    .filter(|entry| entry.date != "2026-01-02")
+                    .filter(|entry| {
+                        entry.date != crate::cli::IsoDate::from_ymd(2026, 1, 2).unwrap()
+                    })
                     .collect(),
                 ..Default::default()
             };
@@ -1975,7 +1986,7 @@ mod tests {
                 version: Some("1.0.0".to_string()),
                 recorded_cost: None,
                 timestamp: TimestampMs::from_millis(1_775_000_000_000),
-                date: "2026-03-29".to_string(),
+                date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
                 project: Arc::from("project-a"),
                 session_id: Arc::from("session-a"),
                 project_path: Arc::from("project-a"),

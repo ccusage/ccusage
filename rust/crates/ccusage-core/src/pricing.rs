@@ -89,7 +89,9 @@ fn litellm_sources() -> Option<&'static LiteLlmSources> {
             match serde_json::from_str(inflate_snapshot(&JSON, snapshots.litellm_sources)) {
                 Ok(sources) => Some(sources),
                 Err(error) => {
-                    eprintln!("WARN  Failed to parse embedded pricing source rules ({error}).");
+                    ccusage_terminal::errln!(
+                        "WARN  Failed to parse embedded pricing source rules ({error})."
+                    );
                     None
                 }
             }
@@ -180,6 +182,7 @@ pub enum MatchKind {
     StrictExact,
     Exact,
     Fuzzy,
+    Fallback,
 }
 
 pub struct AgentModel<'a> {
@@ -1202,11 +1205,13 @@ impl PricingMap {
         }
         match fetched {
             Ok(()) if loaded_count == 0 => {
-                eprintln!("WARN  Failed to parse LiteLLM pricing; using embedded pricing.");
+                ccusage_terminal::errln!(
+                    "WARN  Failed to parse LiteLLM pricing; using embedded pricing."
+                );
             }
             Ok(()) => {}
             Err(error) => {
-                eprintln!(
+                ccusage_terminal::errln!(
                     "WARN  Failed to fetch LiteLLM pricing ({error}); using embedded pricing."
                 );
             }
@@ -1603,22 +1608,45 @@ impl PricingMap {
                 row,
             });
         }
-        for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
-            if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
-                continue;
+        let has_fallback = candidates
+            .iter()
+            .any(|&(_, kind)| kind == MatchKind::Fallback);
+        for fallback in [false, true] {
+            if fallback && !has_fallback {
+                break;
             }
-            for (index, &(model, kind)) in candidates.iter().enumerate() {
-                if pass.allows(kind)
-                    && let Some(row) = matching(model, pass)
-                {
-                    return Some(RequestHit {
-                        candidate: Some(index),
-                        row,
-                    });
+            for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
+                if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
+                    continue;
+                }
+                for (index, &(model, kind)) in candidates.iter().enumerate() {
+                    if (kind == MatchKind::Fallback) == fallback
+                        && pass.allows(kind)
+                        && let Some(row) = matching(model, pass)
+                    {
+                        return Some(RequestHit {
+                            candidate: Some(index),
+                            row,
+                        });
+                    }
                 }
             }
         }
         None
+    }
+
+    fn models_dev_names<'a, 'n>(
+        &'a self,
+        name: Name<'n>,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> impl Iterator<Item = Name<'n>> {
+        // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
+        let unclaimed = move |suffix: &Name<'_>| {
+            self.authoritative(*suffix, lookup, false, models_dev, |_| true)
+                .is_none()
+        };
+        std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
     }
 
     fn search_pass<'a>(
@@ -1666,8 +1694,11 @@ impl PricingMap {
                         return None;
                     }
                     let rows = models_dev()?;
-                    slot.names(model, |name| rows.exact(name, lookup))
-                        .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
+                    slot.names(model, |name| {
+                        self.models_dev_names(name, lookup, models_dev)
+                            .find_map(|name| rows.exact(name, lookup))
+                    })
+                    .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
                 })
             }
             Pass::S56 => {
@@ -1675,7 +1706,10 @@ impl PricingMap {
                 if let Some(rows) = secondary
                     && slot
                         .names(model, |name| {
-                            rows.contains_exact_only_identity(name.raw(), name.identity())
+                            self.models_dev_names(name, lookup, models_dev)
+                                .any(|name| {
+                                    rows.contains_exact_only_identity(name.raw(), name.identity())
+                                })
                                 .then_some(())
                         })
                         .is_some()
@@ -2028,12 +2062,18 @@ fn names_pricing_key(
         || contains_pricing_key(normalized_model, model, normalized_candidate)
 }
 
-// NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`.
+// NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`. Only the logged id may add a price-neutral suffix: a catalogue lists a dated, `[1m]` or effort-level id because it prices that variant itself.
 fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
     if model.len() >= key.len() {
         contains_pricing_key(model, raw_model, key)
     } else {
-        contains_pricing_key(key, raw_key, model)
+        key.strip_suffix(model).is_some_and(|qualifier| {
+            raw_key
+                .as_bytes()
+                .get(qualifier.len() - 1)
+                .copied()
+                .is_some_and(is_qualifier_end)
+        })
     }
 }
 
@@ -2243,13 +2283,15 @@ where
         Ok(()) if loaded => Some(map),
         Ok(()) => {
             if should_log_pricing_refresh_details() {
-                eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
+                ccusage_terminal::errln!(
+                    "WARN  Failed to parse models.dev pricing; using LiteLLM pricing."
+                );
             }
             None
         }
         Err(error) => {
             if should_log_pricing_refresh_details() {
-                eprintln!(
+                ccusage_terminal::errln!(
                     "WARN  Failed to fetch models.dev pricing ({error}); using LiteLLM pricing."
                 );
             }
@@ -2773,8 +2815,18 @@ mod tests {
             Some(4)
         );
         let pricing = layered(&PricingMap::default(), Some(&secondary));
+        let found = pricing
+            .explain(
+                Some("hostaaaaa/m-1-20260101"),
+                &[("hostaaaaa/m-1-20260101", MatchKind::Fuzzy)],
+            )
+            .unwrap();
+        assert_eq!(
+            (found.step, found.row_key),
+            (super::ResolutionStep::ModelsDevIdentity, "m-1-20260101")
+        );
         for (model, row, rate) in [
-            ("hostaaaaa/m-1-20260101", "hostaaaaa/m-1", 1e-6),
+            ("hostaaaaa/m-1-20260101-high", "hostaaaaa/m-1", 1e-6),
             ("m-2", "hostc/m-2", 2e-6),
         ] {
             let candidates = [(model, MatchKind::Fuzzy)];
@@ -2831,10 +2883,10 @@ mod tests {
             ),
             (
                 "openrouter/z-ai/glm-4.7-flash",
-                0.0,
-                0.0,
-                AuthoritativeSuffix,
-                "zai/glm-4.7-flash",
+                0.13225e-6,
+                0.529e-6,
+                ModelsDevIdentity,
+                "z-ai/glm-4.7-flash",
             ),
             (
                 "kyma/glm-4.7-flash",
@@ -3321,7 +3373,7 @@ mod tests {
         assert_eq!(
             primary.load_json(
                 r#"{
-            "sample-20260101": {"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2}
+            "host/sample": {"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":2}
         }"#
             ),
             1
@@ -3331,7 +3383,7 @@ mod tests {
         assert_eq!(
             embedded.load_models_dev_json_for_tests(
                 r#"{
-            "sample-20260101":{"cost":{"input":3,"output":4}}
+            "host/sample":{"cost":{"input":3,"output":4}}
         }"#
             ),
             Some(1)
@@ -3339,7 +3391,7 @@ mod tests {
         assert_eq!(
             live.load_models_dev_json_for_tests(
                 r#"{
-            "sample-20260101":{"cost":{"input":5,"output":6},"exactOnly":true}
+            "host/sample":{"cost":{"input":5,"output":6},"exactOnly":true}
         }"#
             ),
             Some(1)
@@ -3348,7 +3400,7 @@ mod tests {
             input_cost_per_token: Some(8.0),
             ..Default::default()
         };
-        let key = "sample-20260101".to_owned();
+        let key = "host/sample".to_owned();
         let map = layered(&primary, Some(&embedded)).with_user_overrides([(&key, &fields)]);
         let attempts = AtomicUsize::new(0);
         let load = || {
@@ -7807,6 +7859,34 @@ mod tests {
     }
 
     #[test]
+    fn only_the_logged_id_may_add_a_price_neutral_suffix() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "sample-1-20260101": {"input_cost_per_token": 1, "output_cost_per_token": 1},
+                "sample-2[1m]": {"input_cost_per_token": 2, "output_cost_per_token": 2},
+                "sample-3-high": {"input_cost_per_token": 3, "output_cost_per_token": 3},
+                "host/sample-4": {"input_cost_per_token": 4, "output_cost_per_token": 4},
+                "sample-5": {"input_cost_per_token": 5, "output_cost_per_token": 5}
+            }"#,
+        );
+        for model in ["sample-1", "sample-2", "sample-3", "other/sample-3"] {
+            assert_eq!(pricing.find(model), None, "{model}");
+        }
+        for (model, input) in [
+            ("sample-1-20260101", 1.0),
+            ("sample-4", 4.0),
+            ("sample-5-20260101", 5.0),
+            ("sample-5[1m]", 5.0),
+            ("host/sample-5-high", 5.0),
+        ] {
+            let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
+            assert_eq!(found.input, input, "{model}");
+        }
+    }
+
+    #[test]
     fn price_neutral_suffixes_keep_the_listed_rate() {
         crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
@@ -7847,6 +7927,40 @@ mod tests {
             "gemini-3.5-flash-lite-20261101",
         ] {
             assert_eq!(pricing.find(model), Some(tier), "{model}");
+        }
+    }
+
+    #[test]
+    fn a_router_path_reaches_the_models_dev_row_of_the_vendor_id_behind_it() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, row) in [
+            (
+                "openrouter/anthropic/claude-opus-4.8-fast",
+                "anthropic/claude-opus-4.8-fast",
+            ),
+            (
+                "openrouter/openai/gpt-6.2-sol-fast",
+                "openai/gpt-6.2-sol-fast",
+            ),
+            (
+                "openrouter/deepseek/deepseek-v4-flash-0731",
+                "deepseek/deepseek-v4-flash-0731",
+            ),
+            (
+                "openrouter/deepseek/deepseek-v4-pro-0813",
+                "deepseek/deepseek-v4-pro-0813",
+            ),
+        ] {
+            let found = pricing
+                .explain(Some(model), &[(model, MatchKind::Fuzzy)])
+                .unwrap();
+            assert_eq!(
+                (found.step, found.row_key),
+                (super::ResolutionStep::ModelsDevIdentity, row),
+                "{model}"
+            );
+            assert_eq!(pricing.find(model), pricing.find(row), "{model}");
         }
     }
 
@@ -7947,6 +8061,39 @@ mod tests {
                 .unwrap()
                 .input,
             6e-6
+        );
+    }
+
+    #[test]
+    fn a_router_path_to_an_exact_only_tier_does_not_take_the_base_models_limit() {
+        crate::test_support::install_pricing_snapshots();
+        let mut secondary = PricingMap::default();
+        assert_eq!(
+            secondary.load_models_dev_json_for_tests(
+                r#"{
+            "sample-1":{"cost":{"input":3,"output":4},"limit":{"context":123456}},
+            "sample-1-fast":{"cost":{"input":6,"output":8},"exactOnly":true},
+            "sample-2":{"cost":{"input":3,"output":4},"limit":{"context":123456}},
+            "sample-2-fast":{"cost":{"input":6,"output":8},"exactOnly":true,"limit":{"context":654321}}
+        }"#
+            ),
+            Some(4)
+        );
+        let pricing = layered(&PricingMap::default(), Some(&secondary));
+        assert_eq!(
+            pricing
+                .find_with_live("router/sample-1-fast", || None)
+                .unwrap()
+                .input,
+            6e-6
+        );
+        assert_eq!(
+            pricing.context_limit_entry("router/sample-1-fast", MatchKind::Fuzzy),
+            None
+        );
+        assert_eq!(
+            pricing.context_limit_entry("router/sample-2-fast", MatchKind::Fuzzy),
+            Some(654_321)
         );
     }
 

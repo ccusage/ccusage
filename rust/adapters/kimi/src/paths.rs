@@ -137,7 +137,7 @@ mod tests {
             "backup/sessions/kimi/sessions/group/session/wire.jsonl": "{}\n",
         });
         Environment::with_var(KIMI_DATA_DIR_ENV, fixture.path("backup/sessions/kimi")).run(|| {
-            let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
+            let files = discover_wire_files(&Diagnostics::without_clock("kimi")).unwrap();
             assert_eq!(
                 files
                     .iter()
@@ -157,7 +157,7 @@ mod tests {
             "sessions/nested/path/session/wire.jsonl": "{}\n",
         });
         Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
-            let files = discover_wire_files(&Diagnostics::new("kimi"))
+            let files = discover_wire_files(&Diagnostics::without_clock("kimi"))
                 .unwrap()
                 .into_iter()
                 .map(|file| file.path)
@@ -178,7 +178,7 @@ mod tests {
             "sessions/group/session-d/wire.jsonl": "{}\n",
         });
         Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
-            let files = discover_wire_files(&Diagnostics::new("kimi"))
+            let files = discover_wire_files(&Diagnostics::without_clock("kimi"))
                 .unwrap()
                 .into_iter()
                 .map(|file| file.path)

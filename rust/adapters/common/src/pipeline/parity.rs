@@ -44,8 +44,10 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
     };
     let everything = focused_totals(source, AgentReportKind::Daily, &unbounded);
     assert!(
-        everything.total_tokens > 0 || everything.total_cost > 0.0,
-        "{}: the focused report read no usage, so there is nothing to compare; point the source at its fixture first",
+        everything
+            .as_ref()
+            .is_ok_and(|totals| totals.total_tokens > 0 || totals.total_cost > 0.0),
+        "{}: the focused report read no usage, so there is nothing to compare; point the source at its fixture first ({everything:?})",
         descriptor.id
     );
     assert_eq!(
@@ -57,7 +59,7 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
         assert!(
-            focused.matches(&unified),
+            matches!((&focused, &unified), (Ok(focused), Ok(unified)) if focused.matches(unified)),
             "{} {kind:?}: focused totals {focused:?} differ from the unified slice {unified:?} (since {:?}, until {:?}, timezone {:?})",
             descriptor.id,
             shared.since,
@@ -71,7 +73,7 @@ fn focused_totals<S: EntrySource>(
     source: &S,
     kind: AgentReportKind,
     shared: &SharedArgs,
-) -> Totals {
+) -> Result<Totals, String> {
     let args = AgentCommandArgs {
         options: Default::default(),
         shared: shared.clone(),
@@ -85,11 +87,11 @@ fn focused_totals<S: EntrySource>(
         sources: BTreeMap::new(),
     };
     let rows = focused_rows(source, &args)
-        .unwrap_or_else(|error| panic!("focused {kind:?} load failed: {error}"));
+        .map_err(|error| format!("focused {kind:?} load failed: {error}"))?;
     let report = source.report_json(&rows, kind);
     let totals = &report["totals"];
     let tokens = |key: &str| totals.get(key).and_then(Value::as_u64).unwrap_or(0);
-    Totals {
+    Ok(Totals {
         input_tokens: tokens("inputTokens"),
         output_tokens: tokens("outputTokens"),
         cache_creation_tokens: tokens("cacheCreationTokens"),
@@ -99,14 +101,14 @@ fn focused_totals<S: EntrySource>(
             .get("totalCost")
             .and_then(Value::as_f64)
             .unwrap_or(0.0),
-    }
+    })
 }
 
 fn unified_totals<S: EntrySource>(
     source: &S,
     kind: AgentReportKind,
     shared: &SharedArgs,
-) -> Totals {
+) -> Result<Totals, String> {
     let load_kind = crate::source::LoadKind::for_report(kind).report_kind();
     let rows = load_rows(
         source,
@@ -118,19 +120,19 @@ fn unified_totals<S: EntrySource>(
             progress: ProgressOwner::Caller,
         },
     )
-    .unwrap_or_else(|error| panic!("unified {kind:?} load failed: {error}"))
+    .map_err(|error| format!("unified {kind:?} load failed: {error}"))?
     .rows;
     let sum = |tokens: fn(&crate::rows::SourceRow) -> u64| {
         rows.iter().map(tokens).fold(0, u64::saturating_add)
     };
-    Totals {
+    Ok(Totals {
         input_tokens: sum(|row| row.input_tokens),
         output_tokens: sum(|row| row.output_tokens),
         cache_creation_tokens: sum(|row| row.cache_creation_tokens),
         cache_read_tokens: sum(|row| row.cache_read_tokens),
         total_tokens: sum(|row| row.total_tokens),
         total_cost: rows.iter().map(|row| row.total_cost).sum(),
-    }
+    })
 }
 
 #[cfg(test)]

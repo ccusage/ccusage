@@ -18,7 +18,6 @@ use crate::{
     ColumnKind, ModelBreakdown, PricingMap,
     cli::{AgentReportKind, CostMode, SharedArgs, SourceArgs, WeekDay},
     loader::{aggregate_rows, load_agent_rows_parallel, load_rows, load_sections},
-    model_aliases::set_model_aliases_for_tests,
     report::{
         all_report_title, all_table_columns, all_table_row, report_json_with_agents,
         sections_report_json, source_table_row,
@@ -31,6 +30,7 @@ use ccusage_adapter_common::{
     filter_loaded_entries_by_date,
     rows::{RowUsage, SourceRow},
 };
+use ccusage_core::model_aliases::set_model_aliases_for_tests;
 use ccusage_test_support::{Environment, fs_fixture, instant, set_modified};
 
 pub(crate) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
@@ -60,7 +60,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             },
         }],
         detected: true,
-        diagnostics: Diagnostics::new(agent),
+        diagnostics: Diagnostics::without_clock(agent),
     }
 }
 
@@ -1602,7 +1602,7 @@ fn native_claims_widen_by_calendar_days_across_months_and_clock_changes() {
             "claude/projects/p/native.jsonl",
             claude_usage_line("native", call, "m", 100),
         );
-        let created = crate::parse_ts_timestamp(turn).unwrap().as_millis();
+        let created = ccusage_core::parse_ts_timestamp(turn).unwrap().as_millis();
         write_opencode_rows(
             &fixture.create_dir_all("opencode").join("opencode.db"),
             &[(
@@ -1639,7 +1639,7 @@ fn native_claims_keep_turns_when_claude_usage_is_beyond_the_one_day_margin() {
         "claude/projects/p/native.jsonl",
         claude_usage_line("native", "2099-01-02T00:00:05Z", "m", 100),
     );
-    let created = crate::parse_ts_timestamp("2099-01-04T12:00:00Z")
+    let created = ccusage_core::parse_ts_timestamp("2099-01-04T12:00:00Z")
         .unwrap()
         .as_millis();
     write_opencode_rows(

@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
-    format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
+    stored_cost_for_mode,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -154,7 +154,7 @@ pub(super) fn message_value_to_entry(
     Ok(Some((
         message_id.clone(),
         LoadedEntry {
-            date: format_date_tz(timestamp, tz),
+            date: date_at(timestamp, tz),
             timestamp,
             project: Arc::from("kilo"),
             session_id: Arc::from(session_id),
@@ -312,7 +312,7 @@ mod tests {
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(timestamp),
+                        timestamp: ccusage_core::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -342,7 +342,7 @@ mod tests {
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(timestamp),
+                        timestamp: ccusage_core::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -381,7 +381,7 @@ mod tests {
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(timestamp),
+                        timestamp: ccusage_core::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -467,7 +467,7 @@ mod pricing_identity_tests {
                 reported_model: Some(model),
                 candidates: &candidates,
                 stored_cost: None,
-                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z"),
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z"),
             },
             PriceTable::Calculate(&pricing),
         );

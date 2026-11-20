@@ -408,9 +408,10 @@ fn offline_flags_override_config_in_both_directions_and_positions() {
                     .collect::<Vec<_>>();
                 let config = ccusage_config::ConfigContext::from_args(&config_args);
                 let command = parse_with_config(&argv, &config);
-                let offline = match command {
-                    Command::Statusline(args) => args.offline,
-                    command => command.shared().unwrap().offline,
+                let offline = if let Command::Statusline(args) = &command {
+                    args.offline
+                } else {
+                    command.shared().unwrap().offline
                 };
                 assert_eq!(offline, expected, "{argv:?}, {config_json}");
             }
@@ -486,16 +487,14 @@ fn false_negation_and_color_keys_leave_lower_config_layers_in_force() {
             .map(|arg| arg.to_string())
             .collect::<Vec<_>>();
         let config = ccusage_config::ConfigContext::from_args(&config_args);
-        match parse_with_config(&argv, &config) {
-            Command::Statusline(args) => {
-                assert!(args.offline);
-                assert!(!args.cache);
-            }
-            command => {
-                let shared = command.shared().unwrap();
-                assert!(shared.offline);
-                assert_eq!(shared.color, ColorChoice::Never);
-            }
+        let command = parse_with_config(&argv, &config);
+        if let Command::Statusline(args) = &command {
+            assert!(args.offline);
+            assert!(!args.cache);
+        } else {
+            let shared = command.shared().unwrap();
+            assert!(shared.offline);
+            assert_eq!(shared.color, ColorChoice::Never);
         }
     }
 }
@@ -536,16 +535,13 @@ fn higher_config_layers_override_negated_defaults() {
             .collect::<Vec<_>>();
         let config = ccusage_config::ConfigContext::from_args(&config_args);
         let command = parse_with_config(&argv, &config);
-        match command {
-            Command::Statusline(args) => {
-                assert!(args.offline);
-                assert!(args.cache);
-            }
-            command => {
-                let shared = command.shared().unwrap();
-                assert!(shared.offline);
-                assert_eq!(shared.color, ColorChoice::Always);
-            }
+        if let Command::Statusline(args) = &command {
+            assert!(args.offline);
+            assert!(args.cache);
+        } else {
+            let shared = command.shared().unwrap();
+            assert!(shared.offline);
+            assert_eq!(shared.color, ColorChoice::Always);
         }
     }
 }

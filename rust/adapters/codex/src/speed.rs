@@ -10,7 +10,7 @@ pub enum CodexSpeedPolicy {
     Forced(CodexServiceTier),
 }
 
-pub fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
+pub(crate) fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
     match requested {
         CodexSpeed::Auto => CodexSpeedPolicy::Auto(detect_codex_service_tier()),
         CodexSpeed::Standard => CodexSpeedPolicy::Forced(CodexServiceTier::Standard),

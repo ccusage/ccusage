@@ -136,7 +136,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].date.to_string(), "2026-01-02");
             assert_eq!(entries[0].session_id.as_ref(), "session-a");
             assert_eq!(
                 entries[0].model.as_deref(),
@@ -273,7 +273,7 @@ mod tests {
             (wrong_schema, SkipKind::Invariant),
             (fixture.path("not-a-database.db"), SkipKind::InvalidData),
         ] {
-            let diagnostics = Diagnostics::new("kilo");
+            let diagnostics = Diagnostics::without_clock("kilo");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,
@@ -317,7 +317,7 @@ mod tests {
                 ..SharedArgs::default()
             };
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::new("kilo");
+            let diagnostics = Diagnostics::without_clock("kilo");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

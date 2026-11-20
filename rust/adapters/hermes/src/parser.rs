@@ -10,7 +10,7 @@ use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
 };
 
 pub(super) struct HermesEntry {
@@ -159,7 +159,7 @@ pub(super) fn to_loaded_entry(
     let (cost, missing_pricing_model) = price_hermes(&entry, pricing);
     let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("hermes"),
         session_id: Arc::from(entry.session_id.as_str()),
@@ -223,7 +223,7 @@ mod tests {
     fn zero_rates_stop_candidate_fallback() {
         ccusage_test_support::install_pricing_snapshots();
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
 
             session_id: "s".into(),
             model: "sample".into(),
@@ -262,7 +262,7 @@ mod tests {
                 (CostMode::Calculate, 0.26),
             ] {
                 let entry = HermesEntry {
-                    timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+                    timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
 
                     session_id: "s".to_string(),
                     model: "sample".to_string(),
@@ -340,7 +340,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         for model in ["gpt-5.5", "grok-4.3"] {
             let entry = HermesEntry {
-                timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
+                timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
 
                 session_id: format!("session-{model}"),
                 model: model.to_string(),
@@ -370,7 +370,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
 
             session_id: "subscription-included".to_string(),
             model: "gpt-5.5".to_string(),
@@ -399,7 +399,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
 
             session_id: "metered".to_string(),
             model: "gpt-5.5".to_string(),
@@ -424,7 +424,7 @@ mod tests {
     fn tries_provider_qualified_model_candidate_first() {
         ccusage_test_support::install_pricing_snapshots();
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
 
             session_id: "session-provider".to_string(),
             model: "gpt-5.5".to_string(),
@@ -472,7 +472,7 @@ mod tests {
             }"#,
         );
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
 
             session_id: "session-deepseek".to_string(),
             model: "deepseek-v4-flash".to_string(),
@@ -505,7 +505,7 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
 
             session_id: "session-deepseek-fallback".to_string(),
             model: "deepseek-v4-flash".to_string(),
@@ -560,7 +560,7 @@ mod tests {
             }"#,
         );
         let entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
 
             session_id: "session-deepseek-fuzzy-fallback".to_string(),
             model: "deepseek.v4.flash".to_string(),
@@ -636,7 +636,7 @@ mod pricing_identity_tests {
             let pricing =
                 pricing.with_user_overrides([(&id, &rates), (&qualified_id, &provider_override)]);
             let entry = HermesEntry {
-                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
 
                 session_id: "s".into(),
                 model: reported.into(),
@@ -663,7 +663,7 @@ mod pricing_identity_tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         let model = "deepseek.v4.flash";
         let mut entry = HermesEntry {
-            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
 
             session_id: "s".into(),
             model: model.into(),
@@ -731,11 +731,11 @@ mod pricing_identity_tests {
                 0.0004747,
             ),
             (
-                "55_free_suffix",
+                "55_router_listing_behind_the_path",
                 "openrouter/z-ai/glm-4.7-flash",
                 "openrouter",
                 &pricing,
-                0.0,
+                0.00066125,
             ),
             (
                 "54_free_identity",
@@ -746,7 +746,7 @@ mod pricing_identity_tests {
             ),
         ] {
             let entry = HermesEntry {
-                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
 
                 session_id: "s".into(),
                 model: model.into(),

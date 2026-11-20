@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use ccusage_test_support::{Fixture, instant};
 use serde_json::Value;
 

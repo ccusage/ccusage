@@ -200,7 +200,12 @@ fn codex_file_date(sessions_dir: &Path, file: &Path) -> Option<Date> {
         let year = parse_date_part(parts[0], 4)?;
         let month = parse_date_part(parts[1], 2)?;
         let day = parse_date_part(parts[2], 2)?;
-        Date::new(year as i16, month as i8, day as i8).ok()
+        Date::new(
+            i16::try_from(year).ok()?,
+            i8::try_from(month).ok()?,
+            i8::try_from(day).ok()?,
+        )
+        .ok()
     })
 }
 
@@ -341,7 +346,8 @@ mod tests {
         fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
-        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
+        let groups =
+            collect_deduped_codex_usage_files(&sources, &Diagnostics::without_clock("codex"));
 
         assert_eq!(
             groups,
@@ -368,7 +374,7 @@ mod tests {
         let blocked = fixture.create_dir_all("codex/sessions/2026/01/02");
         fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
-        let diagnostics = Diagnostics::new("codex");
+        let diagnostics = Diagnostics::without_clock("codex");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
         let groups = collect_deduped_codex_usage_files(&sources, &diagnostics);
@@ -396,7 +402,8 @@ mod tests {
         fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
-        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
+        let groups =
+            collect_deduped_codex_usage_files(&sources, &Diagnostics::without_clock("codex"));
 
         assert_eq!(
             groups,
@@ -426,7 +433,8 @@ mod tests {
 
         let sources =
             codex_usage_sources_from_homes(vec![fixture.path("work"), fixture.path("personal")]);
-        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
+        let groups =
+            collect_deduped_codex_usage_files(&sources, &Diagnostics::without_clock("codex"));
 
         assert_eq!(
             groups,

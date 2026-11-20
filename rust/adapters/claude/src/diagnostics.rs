@@ -39,15 +39,19 @@ pub(super) fn rejected(path: &Path, line: Line<'_>, diagnostics: &Diagnostics) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs::File, ops::ControlFlow};
+    use std::ops::ControlFlow;
 
     use ccusage_adapter_common::jsonl::{self, ReadPolicy};
-    use ccusage_core::{cli::CostMode, cost::PriceTable};
+    use ccusage_core::{
+        cli::{CostMode, ReportClock},
+        cost::PriceTable,
+    };
+    use ccusage_test_support::{instant, set_modified};
 
     #[test]
     fn a_file_removed_after_discovery_is_not_a_skip() {
         let fixture = ccusage_test_support::Fixture::new();
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
 
         let pricing = ccusage_core::PricingMap::default();
         let entries = crate::daily::read_usage_file(
@@ -69,7 +73,7 @@ mod tests {
 
     #[test]
     fn malformed_usage_is_diagnosed() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
 
         let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
         reject_terminated(line, &diagnostics);
@@ -106,9 +110,11 @@ mod tests {
 
     #[test]
     fn a_usage_line_still_being_written_is_not_a_skip() {
-        let diagnostics = Diagnostics::new("claude");
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.write_file("session.jsonl", CUT_LAST_LINE);
+        let now = instant("2026-01-02T00:00:00Z");
+        set_modified(&path, now);
+        let diagnostics = Diagnostics::for_report("claude", ReportClock::Fixed(now.into()));
 
         reject_last_line(&path, &diagnostics);
 
@@ -117,15 +123,11 @@ mod tests {
 
     #[test]
     fn a_usage_line_left_cut_short_is_skipped_as_truncated() {
-        let diagnostics = Diagnostics::new("claude");
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.write_file("session.jsonl", CUT_LAST_LINE);
-        File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(120))
-            .unwrap();
+        let now = instant("2026-01-02T00:00:00Z");
+        set_modified(&path, instant("2026-01-01T23:58:00Z"));
+        let diagnostics = Diagnostics::for_report("claude", ReportClock::Fixed(now.into()));
 
         reject_last_line(&path, &diagnostics);
 
@@ -134,7 +136,7 @@ mod tests {
 
     #[test]
     fn unrelated_and_intentionally_unsupported_records_stay_quiet() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         for line in [
             br#"{"metadata":{"usage":{}}}"#.as_slice(),
             br#"{"data":{"usage":{},"content":[{"text":"\uD83D\uDE00"},true,false,null,-1,2,3.5]}}"#,
@@ -148,7 +150,7 @@ mod tests {
 
     #[test]
     fn a_rejected_wrapped_usage_record_is_invalid_data() {
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         reject_terminated(
             br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
             &diagnostics,
@@ -164,7 +166,7 @@ mod tests {
             b"{\"data\":{\"usage\":{},\"content\":\"\xff\"}}",
             br#"{"data":{"usage":{},"value":1e400}}"#,
         ] {
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::without_clock("claude");
             reject_terminated(line, &diagnostics);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         }

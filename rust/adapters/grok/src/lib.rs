@@ -1,5 +1,8 @@
 use ccusage_adapter_common::source::{Detection, EntryDescriptor, EntrySource, LoadContext};
-use ccusage_core::{cli::*, *};
+use ccusage_core::{
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli, cli::AgentCommandArgs, date_at,
+    model_aliases, stored_cost_for_mode, total_usage_tokens,
+};
 
 mod loader;
 mod parser;
@@ -34,8 +37,8 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 
 #[cfg(test)]
 mod smoke_tests {
-    use super::*;
     use crate::cli::SharedArgs;
+    use ccusage_core::PricingMap;
 
     #[test]
     #[ignore = "requires real Grok home with sessions/**/updates.jsonl"]
@@ -62,6 +65,8 @@ mod tests {
         parity::assert_focused_matches_unified,
         source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
+    use ccusage_core::UsageSummary;
+    use ccusage_core::cli::AgentReportKind;
     use ccusage_test_support::{Environment, fs_fixture};
     use std::ffi::OsString;
 

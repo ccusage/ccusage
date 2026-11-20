@@ -114,7 +114,7 @@ mod tests {
         let (entries, diagnostics) = load(&fixture);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-07-25");
+        assert_eq!(entries[0].date.to_string(), "2026-07-25");
         assert_eq!(entries[0].session_id.as_ref(), "sid-1");
         assert_eq!(entries[0].model.as_deref(), Some("deepseek-v4-pro"));
         assert_eq!(entries[0].usage.input_tokens, 1200);

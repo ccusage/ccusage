@@ -13,7 +13,7 @@ use serde::{
 };
 use serde_json::{Map, Value};
 
-use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, format_date_tz};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, date_at};
 
 const DEFAULT_MODEL: &str = "unknown";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -589,7 +589,7 @@ pub(super) fn event_to_loaded(
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&event.model).into_owned());
     LoadedEntry {
-        date: format_date_tz(event.timestamp, tz),
+        date: date_at(event.timestamp, tz),
         timestamp: event.timestamp,
         project: Arc::from("gemini"),
         session_id: Arc::from(event.session_id),
@@ -642,7 +642,7 @@ mod tests {
             .unwrap()
             .set_modified(modified)
             .unwrap();
-        let diagnostics = Diagnostics::new("gemini");
+        let diagnostics = Diagnostics::without_clock("gemini");
         let events = parse_json_file(&path, &diagnostics).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].timestamp.as_millis(), 1_767_312_000_000);
@@ -657,7 +657,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "chat.jsonl": r#"{"type":"gemini","model":"gemini-3-flash-preview","tokens":{"input":10,"output":2}}"#,
         });
-        let diagnostics = ccusage_core::Diagnostics::new("gemini");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("gemini");
         let events = parse_jsonl_file(&fixture.path("chat.jsonl"), &diagnostics).unwrap();
         assert!(events.is_empty());
         assert_eq!(
@@ -678,7 +678,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = ccusage_core::Diagnostics::new("gemini");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("gemini");
         let events = parse_jsonl_file(&fixture.path("chat.jsonl"), &diagnostics).unwrap();
         assert!(events.is_empty());
         assert_eq!(
@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn diagnoses_malformed_whole_file_json() {
         let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":}"});
-        let diagnostics = Diagnostics::new("gemini");
+        let diagnostics = Diagnostics::without_clock("gemini");
 
         let loaded = ccusage_adapter_common::units::read_units(
             &[fixture.path("chat.json")],
@@ -718,7 +718,7 @@ mod tests {
             "broken-logs.json",
         ]
         .map(|name| fixture.path(name));
-        let diagnostics = Diagnostics::new("gemini");
+        let diagnostics = Diagnostics::without_clock("gemini");
 
         let loaded =
             ccusage_adapter_common::units::read_units(&files, true, &diagnostics, |path| {
@@ -744,7 +744,7 @@ mod tests {
             ),
         });
         let path = fixture.path("session.jsonl");
-        let diagnostics = Diagnostics::new("gemini");
+        let diagnostics = Diagnostics::without_clock("gemini");
 
         let events = parse_jsonl_file(&path, &diagnostics).unwrap();
 

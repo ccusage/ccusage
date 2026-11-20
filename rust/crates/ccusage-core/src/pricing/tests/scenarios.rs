@@ -40,6 +40,7 @@ fn check_cases(base: &PricingMap, cases: &str) {
                     "S" => MatchKind::StrictExact,
                     "E" => MatchKind::Exact,
                     "F" => MatchKind::Fuzzy,
+                    "B" => MatchKind::Fallback,
                     _ => panic!("{name}: unknown candidate kind {kind}"),
                 };
                 (model, kind)

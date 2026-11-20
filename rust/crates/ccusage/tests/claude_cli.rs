@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use ccusage_test_support::{Fixture, Instant, instant, set_modified};

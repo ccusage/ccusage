@@ -18,7 +18,7 @@ fn builds_amp_daily_json_report() {
         version: None,
         recorded_cost: None,
         timestamp: parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
-        date: "2026-05-01".to_string(),
+        date: ccusage_core::cli::IsoDate::parse("2026-05-01").unwrap(),
         project: Arc::from("amp"),
         session_id: Arc::from("thread-a"),
         project_path: Arc::from("Amp"),

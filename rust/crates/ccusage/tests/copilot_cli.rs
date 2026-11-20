@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use ccusage_test_support::{Fixture, fs_fixture};
 
 mod support;

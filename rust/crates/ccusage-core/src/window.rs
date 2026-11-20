@@ -49,8 +49,9 @@ impl ReportWindow {
             && self.until.is_none_or(|until| day <= until.day())
     }
 
-    pub fn contains_date(&self, date: &str) -> bool {
-        self.is_unbounded() || IsoDate::parse(date).is_some_and(|day| self.contains_day(day))
+    pub fn contains_entry_date(&self, day: IsoDate) -> bool {
+        // NOTE(2026-11-19, #2247): Bounded entry reports previously rejected years outside 0000–9999 when parsing the formatted date. Preserve that rule even for a one-sided window.
+        self.is_unbounded() || ((0..=9999).contains(&day.parts().0) && self.contains_day(day))
     }
 
     pub fn contains_timestamp(&self, timestamp: TimestampMs) -> bool {
@@ -65,7 +66,10 @@ impl ReportWindow {
 #[cfg(test)]
 mod tests {
     use super::ReportWindow;
-    use crate::{MILLIS_PER_HOUR, TimestampMs, cli::SharedArgs};
+    use crate::{
+        MILLIS_PER_HOUR, TimestampMs,
+        cli::{IsoDate, SharedArgs},
+    };
 
     fn window(since: Option<&str>, until: Option<&str>, timezone: Option<&str>) -> ReportWindow {
         ReportWindow::from_shared(&SharedArgs {
@@ -79,10 +83,21 @@ mod tests {
     #[test]
     fn contains_both_date_bounds_inclusively() {
         let window = window(Some("20260101"), Some("20260131"), None);
-        assert!(!window.contains_date("2025-12-31"));
-        assert!(window.contains_date("2026-01-01"));
-        assert!(window.contains_date("2026-01-31"));
-        assert!(!window.contains_date("2026-02-01"));
+        assert!(!window.contains_entry_date(IsoDate::from_ymd(2025, 12, 31).unwrap()));
+        assert!(window.contains_entry_date(IsoDate::from_ymd(2026, 1, 1).unwrap()));
+        assert!(window.contains_entry_date(IsoDate::from_ymd(2026, 1, 31).unwrap()));
+        assert!(!window.contains_entry_date(IsoDate::from_ymd(2026, 2, 1).unwrap()));
+    }
+
+    #[test]
+    fn only_unbounded_entry_reports_accept_extended_years() {
+        let before = IsoDate::from_ymd(-1, 12, 31).unwrap();
+        let after = IsoDate::from_ymd(10000, 1, 1).unwrap();
+        let unbounded = ReportWindow::unbounded();
+        assert!(unbounded.contains_entry_date(before));
+        assert!(unbounded.contains_entry_date(after));
+        assert!(!window(None, Some("20260131"), None).contains_entry_date(before));
+        assert!(!window(Some("20260101"), None, None).contains_entry_date(after));
     }
 
     #[test]

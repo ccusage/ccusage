@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
     total_usage_tokens,
 };
 
@@ -160,11 +160,11 @@ fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64
     (uncached - cache_creation, cache_read, cache_creation)
 }
 
-fn pricing_candidates(raw_model: &str) -> Vec<String> {
-    let mut candidates = Vec::new();
-    let mut push = |value: String| {
-        if !candidates.iter().any(|existing| existing == &value) {
-            candidates.push(value);
+fn pricing_candidates(raw_model: &str) -> Vec<(String, MatchKind)> {
+    let mut candidates: Vec<(String, MatchKind)> = Vec::new();
+    let mut push = |value: String, kind| {
+        if !candidates.iter().any(|(existing, _)| existing == &value) {
+            candidates.push((value, kind));
         }
     };
 
@@ -173,14 +173,19 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
         return candidates;
     }
 
-    let normalized = stripped.trim_suffix("-build").to_string();
+    let normalized = stripped.trim_suffix("-build");
+    let raw_kind = if normalized == stripped {
+        MatchKind::Fuzzy
+    } else {
+        MatchKind::Exact
+    };
 
-    push(stripped.to_string());
-    push(format!("xai/{stripped}"));
-    push(format!("x-ai/{stripped}"));
-    push(normalized.clone());
-    push(format!("xai/{normalized}"));
-    push(format!("x-ai/{normalized}"));
+    push(stripped.to_string(), raw_kind);
+    push(format!("xai/{stripped}"), raw_kind);
+    push(format!("x-ai/{stripped}"), raw_kind);
+    push(normalized.to_string(), MatchKind::Fuzzy);
+    push(format!("xai/{normalized}"), MatchKind::Fuzzy);
+    push(format!("x-ai/{normalized}"), MatchKind::Fuzzy);
     candidates
 }
 
@@ -289,7 +294,7 @@ pub(super) fn parse_session_files_with_diagnostics(
                         version: None,
                         recorded_cost: cost_usd,
                         timestamp: timestamp_ms,
-                        date: format_date_tz(timestamp_ms, tz),
+                        date: date_at(timestamp_ms, tz),
                         project: Arc::from("grok"),
                         session_id: Arc::from(session_id.clone()),
                         project_path: Arc::from(meta.project_path.as_str()),
@@ -375,7 +380,7 @@ fn load_session_meta(updates: &Path, diagnostics: &Diagnostics) -> SessionMeta {
         .and_then(|session| session.parent())
         .and_then(|project| project.file_name())
         .and_then(|name| name.to_str())
-        .map(url_decode_lightweight)
+        .map(decode_project_path_segment)
         .unwrap_or_else(|| "unknown".to_string());
 
     let mut session_id = session_dir_name;
@@ -500,8 +505,7 @@ fn price_grok_usage(
     let names = pricing_candidates(raw_model);
     let candidates: Vec<_> = names
         .iter()
-        .map(|name| (name.as_str(), MatchKind::StrictExact))
-        .chain(names.iter().map(|name| (name.as_str(), MatchKind::Fuzzy)))
+        .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
     let priced = price_entry(
         EntryPricing {
@@ -526,31 +530,11 @@ fn price_grok_usage(
 }
 
 // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok uses URL-encoded working directories as session parent names. Decode the name to recover the original project path.
-fn url_decode_lightweight(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(value.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2]))
-        {
-            out.push(hi * 16 + lo);
-            i += 3;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy_owned(out)
-}
-
-fn from_hex(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
+// NOTE(2026-11-19, Grok CLI 1.0.0, #2250): Names that do not decode to UTF-8 keep their encoded form. Two invalid byte paths would otherwise collapse into one project label.
+fn decode_project_path_segment(value: &str) -> String {
+    match percent_encoding::percent_decode_str(value).decode_utf8() {
+        Ok(decoded) => decoded.into_owned(),
+        Err(_) => value.to_owned(),
     }
 }
 
@@ -699,7 +683,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -719,17 +703,57 @@ mod tests {
 
     #[test]
     fn pricing_candidates_strip_build_and_add_xai() {
+        let exact = |name: &str| (name.to_string(), MatchKind::Exact);
+        let fuzzy = |name: &str| (name.to_string(), MatchKind::Fuzzy);
         assert_eq!(
             pricing_candidates("grok-4.5-build"),
             vec![
-                "grok-4.5-build".to_string(),
-                "xai/grok-4.5-build".to_string(),
-                "x-ai/grok-4.5-build".to_string(),
-                "grok-4.5".to_string(),
-                "xai/grok-4.5".to_string(),
-                "x-ai/grok-4.5".to_string(),
+                exact("grok-4.5-build"),
+                exact("xai/grok-4.5-build"),
+                exact("x-ai/grok-4.5-build"),
+                fuzzy("grok-4.5"),
+                fuzzy("xai/grok-4.5"),
+                fuzzy("x-ai/grok-4.5"),
             ]
         );
+        assert_eq!(
+            pricing_candidates("grok-4.5"),
+            vec![
+                fuzzy("grok-4.5"),
+                fuzzy("xai/grok-4.5"),
+                fuzzy("x-ai/grok-4.5")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_build_spelling_matches_fuzzily_only_through_the_stripped_id() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "azure_ai/grok-unreleased-9.9": {"litellm_provider":"azure_ai","input_cost_per_token":1e-6,"output_cost_per_token":1e-6},
+            "grok-unreleased-9.9-build-preview": {"litellm_provider":"host","input_cost_per_token":9e-6,"output_cost_per_token":9e-6}
+        }"#,
+        );
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
+        };
+        let cost = |model| {
+            price_grok_usage(
+                model,
+                usage,
+                None,
+                None,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            )
+            .0
+        };
+        assert_eq!(cost("grok-unreleased-9.9"), 2.0);
+        assert_eq!(cost("grok-unreleased-9.9-build"), 2.0);
     }
 
     #[test]
@@ -779,7 +803,7 @@ mod tests {
             output_cost_per_token: Some(0.002),
             ..crate::cli::PricingOverride::default()
         };
-        let key = "xai/grok-unreleased-9.9-20261101".to_string();
+        let key = "xai/grok-unreleased-9.9".to_string();
         let pricing =
             ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
         for unpriced in [
@@ -829,7 +853,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -867,7 +891,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -894,7 +918,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -981,7 +1005,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp.as_millis(), 1_785_328_986_355);
-        assert_eq!(entries[0].date, "2026-07-29");
+        assert_eq!(entries[0].date.to_string(), "2026-07-29");
     }
 
     #[test]
@@ -998,7 +1022,7 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp.as_millis(), 1_750_000_000_000);
-        assert_eq!(entries[0].date, "2025-06-15");
+        assert_eq!(entries[0].date.to_string(), "2025-06-15");
     }
 
     #[test]
@@ -1007,7 +1031,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1,"outputTokens":1}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::new("grok");
+        let diagnostics = Diagnostics::without_clock("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1029,7 +1053,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::new("grok");
+        let diagnostics = Diagnostics::without_clock("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1064,7 +1088,7 @@ mod tests {
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let diagnostics = Diagnostics::new("grok");
+        let diagnostics = Diagnostics::without_clock("grok");
 
         let entries = parse_session_files_with_diagnostics(
             &files,
@@ -1117,7 +1141,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -1136,16 +1160,25 @@ mod tests {
     }
 
     #[test]
-    fn url_decode_recombines_wide_scalars_and_tolerates_invalid_bytes() {
+    fn project_path_segment_keeps_distinct_names_for_invalid_utf8() {
         assert_eq!(
-            url_decode_lightweight("%2Ftmp%2F%E6%97%A5%E6%9C%AC"),
+            decode_project_path_segment("%2Ftmp%2F%E6%97%A5%E6%9C%AC"),
             "/tmp/日本"
         );
         assert_eq!(
-            url_decode_lightweight("D%3A%5Cwork%5Cproj"),
+            decode_project_path_segment("D%3A%5Cwork%5Cproj"),
             "D:\\work\\proj"
         );
-        assert_eq!(url_decode_lightweight("%2Ftmp%2F%FFx"), "/tmp/\u{fffd}x");
+        assert_eq!(decode_project_path_segment("%2Ftmp%2Fa+b"), "/tmp/a+b");
+        assert_eq!(decode_project_path_segment("%2Ftmp%2F%zz"), "/tmp/%zz");
+        assert_eq!(
+            decode_project_path_segment("%2Ftmp%2F%FFx"),
+            "%2Ftmp%2F%FFx"
+        );
+        assert_ne!(
+            decode_project_path_segment("%2Ftmp%2F%FFx"),
+            decode_project_path_segment("%2Ftmp%2F%FEx")
+        );
     }
 
     #[test]
@@ -1163,7 +1196,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -1258,7 +1291,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::new("grok"),
+            &Diagnostics::without_clock("grok"),
         )
         .map(|entries| {
             entries
@@ -1302,7 +1335,7 @@ mod tests {
                 &jiff::tz::TimeZone::UTC,
                 mode,
                 PriceTable::for_map(mode, &pricing),
-                &Diagnostics::new("grok"),
+                &Diagnostics::without_clock("grok"),
             )
             .map(|entries| {
                 entries
@@ -1421,7 +1454,10 @@ mod pricing_identity_tests {
     #[test]
     fn adapter_pricing_identity() {
         assert_eq!(
-            pricing_candidates(" grok-4.5-build "),
+            pricing_candidates(" grok-4.5-build ")
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
             [
                 "grok-4.5-build",
                 "xai/grok-4.5-build",

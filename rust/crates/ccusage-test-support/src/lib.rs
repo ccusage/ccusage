@@ -64,6 +64,12 @@ impl Instant {
     }
 }
 
+impl From<Instant> for jiff::Timestamp {
+    fn from(instant: Instant) -> Self {
+        instant.0
+    }
+}
+
 pub fn set_modified(path: &Path, modified: Instant) {
     fs::File::options()
         .write(true)

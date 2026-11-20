@@ -4,5 +4,5 @@ mod config_schema;
 mod layers;
 
 pub use config::ConfigContext;
-#[cfg(feature = "schema")]
+#[cfg(any(feature = "schema", test))]
 pub use config_schema::generator::generate_config_schema_json;

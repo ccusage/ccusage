@@ -59,7 +59,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-05-17");
+            assert_eq!(entries[0].date.to_string(), "2026-05-17");
             assert_eq!(entries[0].session_id.as_ref(), "session-a");
             assert_eq!(entries[0].model.as_deref(), Some("gemini-3-flash-preview"));
             assert_eq!(entries[0].usage.input_tokens, 3_808);

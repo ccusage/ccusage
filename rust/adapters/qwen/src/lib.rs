@@ -1,7 +1,12 @@
 use ccusage_adapter_common::source::{
     Detection, EntryDescriptor, EntrySource, LoadContext, WindowMode,
 };
-use ccusage_core::{cli::*, *};
+use ccusage_core::{
+    Diagnostics, LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageSummary,
+    apply_total_token_fallback, cli,
+    cli::{AgentCommandArgs, AgentReportKind},
+    date_at, fast, parse_ts_timestamp,
+};
 
 mod loader;
 mod parser;
@@ -39,7 +44,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 }
 
 fn has_data() -> bool {
-    paths::discover_chat_files(&ccusage_core::Diagnostics::new("qwen"))
+    paths::discover_chat_files(&ccusage_core::Diagnostics::without_clock("qwen"))
         .is_ok_and(|files| !files.is_empty())
 }
 
@@ -80,7 +85,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-02-23");
+            assert_eq!(entries[0].date.to_string(), "2026-02-23");
             assert_eq!(entries[0].session_id.as_ref(), "session-json");
             assert_eq!(entries[0].project_path.as_ref(), "myProject");
             assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));

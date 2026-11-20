@@ -78,7 +78,7 @@ impl Claude {
                     &mut deduped.entries,
                     &mut deduped.copies,
                     window,
-                    |entry| &entry.date,
+                    |entry| entry.date,
                 );
             }
             let entries = deduped
@@ -99,23 +99,14 @@ impl Claude {
         let loaded = load_daily_summaries_with_detection_progress(
             &load_shared,
             project_filter,
-            false,
+            report_window.as_ref(),
             request.progress,
             &diagnostics,
         )?;
-        let mut summaries = loaded.summaries;
-        if let Some(window) = report_window.as_ref() {
-            summaries.retain(|summary| {
-                summary
-                    .date
-                    .as_deref()
-                    .is_some_and(|date| window.contains_date(date))
-            });
-        }
         let sessions = loaded.sessions;
         Ok((
             LoadedRows {
-                rows: summary_rows("claude", summaries, false),
+                rows: summary_rows("claude", loaded.summaries, false),
                 detected: loaded.detected,
                 diagnostics,
             },
@@ -178,7 +169,7 @@ mod diagnostic_tests {
             };
             assert!(
                 SOURCE
-                    .counted(&shared, None, &Diagnostics::new("claude"))
+                    .counted(&shared, None, &Diagnostics::without_clock("claude"))
                     .is_ok()
             );
         })
@@ -219,7 +210,7 @@ mod diagnostic_tests {
                 timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
                 ..Default::default()
             };
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::without_clock("claude");
             let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
             let probe = crate::read_usage_file_with_diagnostics(
                 &main,
@@ -269,7 +260,7 @@ mod diagnostic_tests {
                 debug: true,
                 ..Default::default()
             };
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::without_clock("claude");
             let focused = crate::load_deduped_entries_with_progress(
                 &shared,
                 None,

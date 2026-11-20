@@ -10,10 +10,11 @@ path = "src/bin/generate_config_schema.rs"
 required-features = ["schema"]
 
 [features]
-schema = ["dep:schemars"]
+schema = ["dep:ccusage-terminal", "dep:schemars"]
 
 [dependencies]
 ccusage-cli.workspace = true
+ccusage-terminal = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

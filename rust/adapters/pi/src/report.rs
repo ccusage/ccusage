@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::*;
+    use ccusage_core::cli::AgentReportKind;
     use serde_json::json;
 
     #[test]

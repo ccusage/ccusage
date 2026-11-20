@@ -22,9 +22,9 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
 
 #[cfg(test)]
 mod tests {
-    use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
+    use ccusage_core::PricingMap;
     use ccusage_test_support::{Environment, Fixture};
 
     #[test]
@@ -133,7 +133,7 @@ mod tests {
             assert_eq!(
                 entries
                     .iter()
-                    .map(|entry| entry.date.as_str())
+                    .map(|entry| entry.date.to_string())
                     .collect::<Vec<_>>(),
                 ["2026-10-01", "2026-11-01", "2026-11-01", "2026-11-01"]
             );
