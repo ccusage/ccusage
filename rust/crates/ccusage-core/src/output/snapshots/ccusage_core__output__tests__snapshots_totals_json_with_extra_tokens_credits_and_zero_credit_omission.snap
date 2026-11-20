@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/output.rs
+source: crates/ccusage-core/src/output/tests.rs
 expression: "totals_json(&[first, second])"
 ---
 {
