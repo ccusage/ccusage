@@ -1,9 +1,5 @@
 //! Report-only helpers for the CLI and the Claude report commands.
 
-mod last_window;
-
-pub use last_window::last_periods_since;
-
 pub fn session_cost_ordering(
     shared: &ccusage_core::cli::SharedArgs,
 ) -> ccusage_core::cli::SortOrder {

@@ -6,7 +6,6 @@ publish.workspace = true
 
 [dependencies]
 ccusage-core.workspace = true
-jiff.workspace = true
 
 [lints]
 workspace = true

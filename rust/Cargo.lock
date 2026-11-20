@@ -122,7 +122,6 @@ dependencies = [
  "ccusage-core",
  "ccusage-environment",
  "ccusage-pricing-snapshots",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "jiff",
@@ -519,7 +518,6 @@ name = "ccusage-report"
 version = "0.0.0"
 dependencies = [
  "ccusage-core",
- "jiff",
 ]
 
 [[package]]
