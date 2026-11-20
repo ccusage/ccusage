@@ -1,7 +1,9 @@
 use std::{
-    fmt, fs, io,
+    fmt,
+    fs::{self, File},
+    io::{self, Read},
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use ccusage_core::{CliError, Diagnostics, Skip, SkipKind};
@@ -24,7 +26,38 @@ pub struct UnitError {
 enum Fault {
     Skip(SkipKind),
     Unwritten,
-    Unfinished,
+    Incomplete(Completion),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Completion {
+    Changing,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct FileStamp {
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+impl FileStamp {
+    pub(crate) fn of(metadata: &fs::Metadata) -> Self {
+        Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+        }
+    }
+
+    // NOTE(2026-11-20, #2252): A writer pausing between writes and a crash leave the same unchanged file. Only a change since the open shows that the writer is still active.
+    #[cold]
+    pub(crate) fn completion(self, path: &Path) -> Completion {
+        if fs::metadata(path).is_ok_and(|now| Self::of(&now) != self) {
+            Completion::Changing
+        } else {
+            Completion::Unknown
+        }
+    }
 }
 
 impl UnitError {
@@ -35,11 +68,9 @@ impl UnitError {
         }
     }
 
-    /// Marks a unit as incomplete. Reports classify it as invalid data after the
-    /// in-progress window expires.
-    pub fn unfinished(detail: impl Into<String>) -> Self {
+    pub(crate) fn incomplete(completion: Completion, detail: impl Into<String>) -> Self {
         Self {
-            fault: Fault::Unfinished,
+            fault: Fault::Incomplete(completion),
             detail: detail.into(),
         }
     }
@@ -77,10 +108,8 @@ impl UnitError {
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
         let state = match self.fault {
             Fault::Unwritten => UNWRITTEN,
-            Fault::Unfinished if being_written(unit, diagnostics.assessment_instant()) => {
-                "incomplete, read as still being written"
-            }
-            Fault::Unfinished | Fault::Skip(_) => match fs::metadata(unit) {
+            Fault::Incomplete(Completion::Changing) => "incomplete, read as still being written",
+            Fault::Incomplete(Completion::Unknown) | Fault::Skip(_) => match fs::metadata(unit) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     "removed after discovery, read as absent"
                 }
@@ -97,7 +126,7 @@ impl UnitError {
     fn kind(&self) -> SkipKind {
         match self.fault {
             Fault::Skip(kind) => kind,
-            Fault::Unwritten | Fault::Unfinished => SkipKind::InvalidData,
+            Fault::Unwritten | Fault::Incomplete(_) => SkipKind::InvalidData,
         }
     }
 
@@ -136,44 +165,47 @@ impl From<io::Error> for UnitError {
 
 const UNWRITTEN: &str = "empty, read as not yet written";
 
-const IN_PROGRESS_WINDOW: Duration = Duration::from_secs(60);
-
-#[cold]
-pub(crate) fn being_written(unit: &Path, now: Option<ccusage_core::TimestampMs>) -> bool {
-    let Some(now) = now else {
-        return false;
-    };
-    fs::metadata(unit)
-        .and_then(|metadata| metadata.modified())
-        .is_ok_and(|modified| {
-            let nanos = |duration: Duration| {
-                i128::from(duration.as_secs()) * 1_000_000_000 + i128::from(duration.subsec_nanos())
-            };
-            let modified = match modified.duration_since(SystemTime::UNIX_EPOCH) {
-                Ok(duration) => nanos(duration),
-                Err(error) => -nanos(error.duration()),
-            };
-            i128::from(now.as_millis()) * 1_000_000 - modified <= nanos(IN_PROGRESS_WINDOW)
-        })
-}
-
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
-    decode_json(&fs::read(path)?)
+    let (content, opened) = read_document(path)?;
+    decode_document(path, &content, opened)
 }
 
 pub fn read_utf8_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
-    let content = fs::read(path)?;
+    let (content, opened) = read_document(path)?;
     std::str::from_utf8(&content)
         .map_err(|_| UnitError::new(SkipKind::InvalidData, "JSON document is not UTF-8"))?;
-    decode_json(&content)
+    decode_document(path, &content, opened)
 }
 
 pub fn read_filtered_json<T: DeserializeOwned>(
     path: &Path,
     accept: impl FnOnce(&[u8]) -> bool,
 ) -> Result<Option<T>, UnitError> {
-    let content = fs::read(path)?;
-    accept(&content).then(|| decode_json(&content)).transpose()
+    let (content, opened) = read_document(path)?;
+    accept(&content)
+        .then(|| decode_document(path, &content, opened))
+        .transpose()
+}
+
+fn read_document(path: &Path) -> io::Result<(Vec<u8>, FileStamp)> {
+    let mut file = File::open(path)?;
+    let opened = FileStamp::of(&file.metadata()?);
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)?;
+    Ok((content, opened))
+}
+
+fn decode_document<T: DeserializeOwned>(
+    path: &Path,
+    content: &[u8],
+    opened: FileStamp,
+) -> Result<T, UnitError> {
+    decode_json(content).map_err(|mut error| {
+        if let Fault::Incomplete(completion) = &mut error.fault {
+            *completion = opened.completion(path);
+        }
+        error
+    })
 }
 
 // NOTE(2026-11-16): Whole-document sources such as Cline can rewrite a JSON file in place. A read can therefore see an empty or truncated document while the writer is active.
@@ -186,14 +218,14 @@ pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> 
                 (Fault::Unwritten, "EOF")
             }
             Category::Eof => {
-                return UnitError {
-                    fault: Fault::Unfinished,
-                    detail: format!(
+                return UnitError::incomplete(
+                    Completion::Unknown,
+                    format!(
                         "JSON document is truncated at line {}, column {}",
                         error.line(),
                         error.column()
                     ),
-                };
+                );
             }
             Category::Io => (Fault::Skip(SkipKind::Unreadable), "I/O"),
             Category::Syntax => (Fault::Skip(SkipKind::InvalidData), "syntax"),
@@ -295,46 +327,13 @@ pub(crate) mod tests {
     use std::{fs, path::Path};
 
     use ccusage_core::{
-        Diagnostics, Result, SkipKind, TimestampMs,
+        Diagnostics, Result, SkipKind,
         cli::{ReportClock, SharedArgs},
         cli_error,
     };
     use ccusage_test_support::{Fixture, instant, set_modified};
 
-    use super::{
-        Fault, SqliteStage, UnitError, being_written, decode_json, read_units, read_units_flat,
-    };
-
-    #[test]
-    fn being_written_compares_file_mtime_to_the_assessment_instant() {
-        let fixture = Fixture::new();
-        let unit = fixture.write_file("frame.zst", "frame");
-        let now = TimestampMs::from_millis(instant("2026-01-02T00:00:00Z").millis());
-
-        set_modified(&unit, instant("2026-01-01T23:59:00Z"));
-        assert!(being_written(&unit, Some(now)));
-
-        set_modified(&unit, instant("2026-01-01T23:59:01Z"));
-        assert!(being_written(&unit, Some(now)));
-
-        set_modified(&unit, instant("2026-01-01T23:58:59Z"));
-        assert!(!being_written(&unit, Some(now)));
-
-        set_modified(&unit, instant("2026-01-02T00:00:30Z"));
-        assert!(being_written(&unit, Some(now)));
-        assert!(!being_written(&unit, None));
-    }
-
-    #[test]
-    fn discovery_diagnostics_classify_recent_incomplete_units_as_invalid_data() {
-        let fixture = Fixture::new();
-        let fresh = fixture.write_file("fresh.zst", "frame");
-        let diagnostics = Diagnostics::without_clock("test");
-
-        UnitError::unfinished("stream ends inside a frame").record(&fresh, &diagnostics);
-
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-    }
+    use super::{Fault, SqliteStage, UnitError, decode_json, read_units, read_units_flat};
 
     #[test]
     fn typed_units_keep_metadata_order_and_failed_slots() {
@@ -517,104 +516,89 @@ pub(crate) mod tests {
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
-    #[test]
-    fn a_document_cut_off_by_the_end_of_the_file_is_noted_as_still_being_written() {
-        let fixture = Fixture::new();
-        let cut = fixture.write_file("cut.json", r#"{"usage":{"inp"#);
-        let files = vec![
-            cut.clone(),
-            fixture.write_file("broken.json", "{\"value\":}"),
-        ];
-        let now = instant("2026-01-02T00:00:00Z");
-        set_modified(&cut, now);
-        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
+    const CUT_DOCUMENT: &str = r#"{"usage":{"inp"#;
+    const NOW: &str = "2026-01-02T00:00:00Z";
+    const MTIMES: [&str; 4] = [
+        "2020-01-01T00:00:00Z",
+        "2026-01-01T23:58:00Z",
+        NOW,
+        "2026-01-02T00:00:30Z",
+    ];
 
-        let loaded = read_units(
-            &files,
-            true,
-            &diagnostics,
-            super::read_json::<serde_json::Value>,
-        );
+    fn report_diagnostics() -> Diagnostics {
+        Diagnostics::for_report("test", ReportClock::Fixed(instant(NOW).into()))
+    }
 
-        assert_eq!(loaded, [None, None]);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
-        let debug = SharedArgs {
+    fn debug_warnings(diagnostics: &Diagnostics) -> Vec<String> {
+        diagnostics.warnings(&SharedArgs {
             debug: true,
             ..SharedArgs::default()
-        };
-        assert_eq!(
-            diagnostics.warnings(&debug)[0],
-            format!(
-                "test: {}: incomplete, read as still being written",
-                cut.display()
-            )
-        );
+        })
     }
 
     #[test]
-    fn a_document_left_cut_off_past_the_write_window_is_skipped_as_truncated() {
-        let fixture = Fixture::new();
-        let cut = fixture.write_file("cut.json", r#"{"usage":{"inp"#);
-        let now = instant("2026-01-02T00:00:00Z");
-        set_modified(&cut, instant("2026-01-01T23:58:00Z"));
-        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
+    fn a_document_cut_off_while_it_is_rewritten_is_noted_as_still_being_written() {
+        for modified in MTIMES {
+            let fixture = Fixture::new();
+            let cut = fixture.write_file("cut.json", CUT_DOCUMENT);
+            set_modified(&cut, instant(modified));
+            let diagnostics = report_diagnostics();
 
-        let loaded = read_units(
-            std::slice::from_ref(&cut),
-            true,
-            &diagnostics,
-            super::read_json::<serde_json::Value>,
-        );
+            let loaded = read_units(std::slice::from_ref(&cut), true, &diagnostics, |path| {
+                super::read_filtered_json::<serde_json::Value>(path, |_| {
+                    fs::write(path, r#"{"usage":{"input":1}}"#).unwrap();
+                    set_modified(path, instant(modified));
+                    true
+                })
+            });
 
-        assert_eq!(loaded, [None]);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        let debug = SharedArgs {
-            debug: true,
-            ..SharedArgs::default()
-        };
-        let warnings = diagnostics.warnings(&debug).join("\n");
-        assert!(
-            warnings.contains(&format!(
-                "{}: JSON document is truncated at line 1, column 14",
-                cut.display()
-            )),
-            "{warnings}"
-        );
-        assert!(!warnings.contains("still being written"), "{warnings}");
-    }
-
-    #[test]
-    fn an_unfinished_unit_is_noted_while_written_and_skipped_once_left_alone() {
-        let fixture = Fixture::new();
-        let fresh = fixture.write_file("fresh.zst", "frame");
-        let stale = fixture.write_file("stale.zst", "frame");
-        let now = instant("2026-01-02T00:00:00Z");
-        set_modified(&fresh, now);
-        set_modified(&stale, instant("2026-01-01T23:58:00Z"));
-        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
-
-        for unit in [&fresh, &stale] {
-            UnitError::unfinished("stream ends inside a frame").record(unit, &diagnostics);
+            assert_eq!(loaded, [None], "{modified}");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0, "{modified}");
+            assert_eq!(
+                debug_warnings(&diagnostics),
+                [format!(
+                    "test: {}: incomplete, read as still being written",
+                    cut.display()
+                )],
+                "{modified}"
+            );
         }
+    }
 
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        let debug = SharedArgs {
-            debug: true,
-            ..SharedArgs::default()
-        };
-        let warnings = diagnostics.warnings(&debug).join("\n");
-        assert!(
-            warnings.contains(&format!(
-                "test: {}: incomplete, read as still being written",
-                fresh.display()
-            )),
-            "{warnings}"
-        );
-        assert!(
-            warnings.contains(&format!("{}: stream ends inside a frame", stale.display())),
-            "{warnings}"
-        );
+    #[test]
+    fn a_document_left_cut_off_is_skipped_as_truncated_whatever_its_mtime() {
+        for modified in MTIMES {
+            let fixture = Fixture::new();
+            let cut = fixture.write_file("cut.json", CUT_DOCUMENT);
+            let files = vec![
+                cut.clone(),
+                fixture.write_file("broken.json", "{\"value\":}"),
+            ];
+            set_modified(&cut, instant(modified));
+            let diagnostics = report_diagnostics();
+
+            let loaded = read_units(
+                &files,
+                true,
+                &diagnostics,
+                super::read_json::<serde_json::Value>,
+            );
+
+            assert_eq!(loaded, [None, None], "{modified}");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 2, "{modified}");
+            let warnings = debug_warnings(&diagnostics).join("\n");
+            assert!(
+                warnings.contains(&format!(
+                    "{}: JSON document is truncated at line 1, column 14",
+                    cut.display()
+                )),
+                "{modified}: {warnings}"
+            );
+            assert!(
+                !warnings.contains("still being written"),
+                "{modified}: {warnings}"
+            );
+        }
     }
 
     #[test]

@@ -389,7 +389,7 @@ fn visit_codex_session_file_inner(
                         error,
                         path,
                         current.number(),
-                        current.unterminated(),
+                        current.ending(),
                         diagnostics,
                         Some(is_usage_value),
                     );
@@ -1891,26 +1891,52 @@ mod diagnostic_tests {
         );
     }
 
-    #[test]
-    fn a_rollout_line_still_being_written_is_not_a_skip() {
+    const ROLLOUT_CUT_SHORT: &str = concat!(
+        r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
+        "\n",
+        r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_tok"#,
+    );
+
+    fn visit_rollout_cut_short(on_event: impl Fn(&Path)) -> (usize, Diagnostics) {
         let fixture = Fixture::new();
-        let path = fixture.write_file(
-            "session.jsonl",
-            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_tok"#,
-        );
-        let now = ccusage_test_support::instant("2026-01-02T00:00:00Z");
-        ccusage_test_support::set_modified(&path, now);
-        let diagnostics =
-            Diagnostics::for_report("codex", ccusage_core::cli::ReportClock::Fixed(now.into()));
+        let path = fixture.write_file("session.jsonl", ROLLOUT_CUT_SHORT);
+        let diagnostics = Diagnostics::without_clock("codex");
+        let mut events = 0;
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
             &path,
             None,
-            |_| {},
+            |_| {
+                events += 1;
+                on_event(&path);
+            },
             &diagnostics,
         );
+        (events, diagnostics)
+    }
 
+    #[test]
+    fn a_rollout_line_cut_short_while_the_rollout_grows_is_not_a_skip() {
+        let (events, diagnostics) = visit_rollout_cut_short(|path| {
+            use std::io::Write;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(path)
+                .unwrap()
+                .write_all(b"al")
+                .unwrap();
+        });
+
+        assert_eq!(events, 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn a_rollout_line_left_cut_short_is_a_skip() {
+        let (events, diagnostics) = visit_rollout_cut_short(|_| {});
+
+        assert_eq!(events, 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]

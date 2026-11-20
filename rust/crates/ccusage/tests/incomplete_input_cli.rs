@@ -5,7 +5,7 @@ use ccusage_test_support::{fs_fixture, instant, set_modified};
 mod support;
 
 #[test]
-fn input_recency_uses_the_report_clock() {
+fn an_unchanged_incomplete_document_is_skipped_at_any_report_clock() {
     let fixture = fs_fixture!({
         "opencode/storage/message/session/broken.json":
             r#"{"id":"broken","role":"assistant","modelID":"gpt-5","tokens":{"input":"#,
@@ -34,9 +34,16 @@ fn input_recency_uses_the_report_clock() {
         (output.stdout, String::from_utf8(output.stderr).unwrap())
     };
     let (fresh, fresh_diagnostics) = run("2026-01-02T12:00:00Z");
-    assert!(fresh_diagnostics.contains("incomplete, read as still being written"));
-    assert!(!fresh_diagnostics.contains("WARN  opencode: skipped"));
     let (stale, stale_diagnostics) = run("2026-01-02T12:01:30Z");
-    assert!(stale_diagnostics.contains("WARN  opencode: skipped 1 input (invalid data)"));
+    for diagnostics in [&fresh_diagnostics, &stale_diagnostics] {
+        assert!(
+            diagnostics.contains("WARN  opencode: skipped 1 input (invalid data)"),
+            "{diagnostics}"
+        );
+        assert!(
+            !diagnostics.contains("still being written"),
+            "{diagnostics}"
+        );
+    }
     assert_eq!(fresh, stale);
 }

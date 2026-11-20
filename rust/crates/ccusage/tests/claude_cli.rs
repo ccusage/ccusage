@@ -453,7 +453,7 @@ fn statusline_emits_one_warning_across_repeated_usage_loads() {
 }
 
 #[test]
-fn a_transcript_line_still_being_written_is_not_warned_about() {
+fn a_transcript_line_left_cut_short_is_warned_about_however_recently_it_was_written() {
     let fixture = Fixture::new();
     let transcript = fixture.write_file(
         "projects/project-a/session-now.jsonl",
@@ -503,9 +503,14 @@ fn a_transcript_line_still_being_written_is_not_warned_about() {
         Some(&hook),
     );
 
+    let report: serde_json::Value = serde_json::from_slice(&daily.stdout).unwrap();
+    assert_eq!(report["totals"]["totalCost"], 0.5);
     for output in [daily, statusline] {
         let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(!stderr.contains("WARN"), "{stderr}");
+        assert!(
+            stderr.contains("WARN  claude: skipped 1 record in 1 input (invalid data)"),
+            "{stderr}"
+        );
     }
 }
 

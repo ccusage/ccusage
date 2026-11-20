@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage/tests/golden/mod.rs
+assertion_line: 330
 description: LOG_LEVEL=3 COLUMNS=200 ccusage dsh weekly --offline --since 20251231 --until 20260101
 ---
 exit: 0
@@ -24,6 +25,6 @@ exit: 0
 └────────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 
 --- stderr ---
-WARN  dsh: skipped 1 input and 1 record in 2 inputs (invalid data)
+WARN  dsh: skipped 2 inputs and 2 records in 4 inputs (invalid data)
 WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
