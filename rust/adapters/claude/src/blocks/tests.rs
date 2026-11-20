@@ -36,6 +36,36 @@ fn fractional_session_hours_keep_exact_millisecond_boundaries() {
 }
 
 #[test]
+fn saturated_block_buckets_do_not_overflow_the_burn_rate() {
+    let fixture = fs_fixture!({
+        "projects/p/s.jsonl": [
+            r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":18446744073709551615,"output_tokens":0}}}"#,
+            r#"{"timestamp":"2026-01-02T10:05:00Z","message":{"usage":{"input_tokens":0,"output_tokens":18446744073709551615}}}"#,
+        ]
+        .join("\n"),
+    });
+    Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root()).run(|| {
+        let entries = crate::load_entries(
+            &SharedArgs {
+                mode: ccusage_core::cli::CostMode::Display,
+                ..SharedArgs::default()
+            },
+            None,
+        )
+        .unwrap();
+        let now = crate::parse_ts_timestamp("2026-01-02T10:06:00Z").unwrap();
+        let blocks = identify_session_blocks(entries, "4.35".parse().unwrap(), now);
+
+        let json = block_json(&blocks[0], None, now);
+
+        assert_eq!(
+            json["burnRate"]["tokensPerMinuteForIndicator"].as_f64(),
+            Some(u64::MAX as f64 / 5.0)
+        );
+    })
+}
+
+#[test]
 fn block_times_follow_the_report_timezone_across_midnight() {
     let timestamp = crate::parse_ts_timestamp("2026-01-02T23:30:45Z").unwrap();
     let zone = jiff::tz::TimeZone::get("Asia/Tokyo").unwrap();

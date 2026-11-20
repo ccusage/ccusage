@@ -24,6 +24,15 @@ impl TokenUsageRaw {
         }
     }
 
+    fn checked_cache_creation_token_count(&self) -> Option<u64> {
+        match &self.cache_creation {
+            Some(b) => b
+                .ephemeral_5m_input_tokens
+                .checked_add(b.ephemeral_1h_input_tokens),
+            None => Some(self.cache_creation_input_tokens),
+        }
+    }
+
     fn cache_creation_1h_token_count(&self) -> Option<u64> {
         self.cache_creation.map(CacheCreationRaw::one_hour_tokens)
     }
@@ -302,6 +311,17 @@ pub fn total_usage_tokens(usage: TokenUsageRaw) -> u64 {
         .saturating_add(usage.cache_read_input_tokens)
 }
 
+/// Sums the token buckets without wrapping, returning `None` when a log line
+/// reports more tokens than a `u64` can hold.
+pub fn checked_total_usage_tokens(usage: TokenUsageRaw, extra_total_tokens: u64) -> Option<u64> {
+    usage
+        .input_tokens
+        .checked_add(usage.output_tokens)?
+        .checked_add(usage.checked_cache_creation_token_count()?)?
+        .checked_add(usage.cache_read_input_tokens)?
+        .checked_add(extra_total_tokens)
+}
+
 pub fn apply_total_token_fallback(
     mut usage: TokenUsageRaw,
     mut extra_total_tokens: u64,
@@ -408,5 +428,50 @@ mod tests {
 
         assert_eq!(total_usage_tokens(usage), u64::MAX);
         assert_eq!(extra_total_tokens, u64::MAX);
+    }
+
+    #[test]
+    fn checked_total_usage_tokens_reports_unrepresentable_buckets() {
+        let usage = TokenUsageRaw {
+            input_tokens: u64::MAX,
+            output_tokens: 1,
+            ..TokenUsageRaw::default()
+        };
+
+        assert_eq!(checked_total_usage_tokens(usage, 0), None);
+        assert_eq!(
+            checked_total_usage_tokens(
+                TokenUsageRaw {
+                    input_tokens: u64::MAX - 1,
+                    output_tokens: 1,
+                    ..TokenUsageRaw::default()
+                },
+                0,
+            ),
+            Some(u64::MAX)
+        );
+        assert_eq!(
+            checked_total_usage_tokens(
+                TokenUsageRaw {
+                    input_tokens: u64::MAX,
+                    ..TokenUsageRaw::default()
+                },
+                1,
+            ),
+            None
+        );
+        assert_eq!(
+            checked_total_usage_tokens(
+                TokenUsageRaw {
+                    cache_creation: Some(crate::CacheCreationRaw {
+                        ephemeral_5m_input_tokens: u64::MAX,
+                        ephemeral_1h_input_tokens: 1,
+                    }),
+                    ..TokenUsageRaw::default()
+                },
+                0,
+            ),
+            None
+        );
     }
 }

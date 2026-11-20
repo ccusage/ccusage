@@ -43,20 +43,19 @@ pub(super) fn last_periods_since(
     start_of_week: WeekDay,
 ) -> Option<DateBound> {
     let earlier = i64::from(count.get() - 1);
-    let start = match unit {
-        PeriodUnit::Day => today.civil()?.checked_sub(Span::new().days(earlier)).ok()?,
-        PeriodUnit::Week => today
-            .week_start(start_of_week)
-            .civil()?
-            .checked_sub(Span::new().weeks(earlier))
-            .ok()?,
-        PeriodUnit::Month => today
-            .civil()?
-            .first_of_month()
-            .checked_sub(Span::new().months(earlier))
-            .ok()?,
+    // NOTE(2026-11-20, #2369): Jiff's span setters panic on counts a u32 can express. Use the fallible setters so an oversized --last stays a window error.
+    let (base, span) = match unit {
+        PeriodUnit::Day => (today.civil()?, Span::new().try_days(earlier).ok()?),
+        PeriodUnit::Week => (
+            today.week_start(start_of_week).civil()?,
+            Span::new().try_weeks(earlier).ok()?,
+        ),
+        PeriodUnit::Month => (
+            today.civil()?.first_of_month(),
+            Span::new().try_months(earlier).ok()?,
+        ),
     };
-    Some(IsoDate::from(start).into())
+    Some(IsoDate::from(base.checked_sub(span).ok()?).into())
 }
 
 pub(super) fn last_periods_until(
@@ -344,6 +343,18 @@ mod tests {
             .as_deref(),
             Some("20260720")
         );
+    }
+
+    #[test]
+    fn rejects_counts_beyond_the_span_limits() {
+        let today = IsoDate::parse("2026-07-27").unwrap();
+
+        for unit in [PeriodUnit::Day, PeriodUnit::Week, PeriodUnit::Month] {
+            assert!(
+                last_periods_since(unit, periods(u32::MAX), today, WeekDay::Monday).is_none(),
+                "{unit:?} should not resolve a window beyond the representable range"
+            );
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ccusage_core::{TimestampMs, TokenUsageRaw};
 
-use super::{DedupEntry, DedupeIndexes, Request, merge_slots};
+use super::{DedupEntry, DedupeIndexes, Request, merge_slots, push_deduped_entry};
 
 struct Entry {
     session: Arc<str>,
@@ -55,6 +55,29 @@ fn entry(session: &str, sidechain: bool, input_tokens: u64) -> Entry {
             ..TokenUsageRaw::default()
         },
     }
+}
+
+#[test]
+fn dedupes_records_whose_token_buckets_exceed_a_u64() {
+    let mut indexes = DedupeIndexes::default();
+    let mut deduped = Vec::new();
+    push_deduped_entry(
+        Entry {
+            usage: TokenUsageRaw {
+                input_tokens: u64::MAX,
+                output_tokens: 50,
+                ..TokenUsageRaw::default()
+            },
+            ..entry("session-a", false, 0)
+        },
+        &mut indexes,
+        &mut deduped,
+    );
+
+    push_deduped_entry(entry("session-a", false, 1), &mut indexes, &mut deduped);
+
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].usage.input_tokens, u64::MAX);
 }
 
 #[test]

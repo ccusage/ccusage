@@ -48,6 +48,7 @@ pub(super) enum Refusal {
     NotUsage,
     Rejected(Rejection),
     InvalidTimestamp,
+    UnrepresentableUsage,
 }
 
 pub(super) struct Admitted {
@@ -71,6 +72,9 @@ pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
     if !is_valid_usage_record(&record) {
         return Err(Refusal::Rejected(Rejection::Malformed));
     }
+    if ccusage_core::checked_total_usage_tokens(record.message.usage.usage, 0).is_none() {
+        return Err(Refusal::UnrepresentableUsage);
+    }
     let advisors = match advisor_lookup.usages(line) {
         Ok(advisors) => advisors,
         Err(Rejection::Malformed) => crate::AdvisorUsages {
@@ -88,13 +92,19 @@ pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
 
 pub(super) fn read_daily_usage_file_with_diagnostics(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
-    read_usage_file(path, tz, pricing, diagnostics, |parsed, _| {
-        parsed.into_daily()
-    })
+    read_usage_file(
+        path,
+        projects_root,
+        tz,
+        pricing,
+        diagnostics,
+        |parsed, _| parsed.into_daily(),
+    )
 }
 
 struct FilePricing<'a> {
@@ -132,13 +142,14 @@ impl FilePricing<'_> {
 
 pub(crate) fn read_usage_file<E>(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
     build: impl Fn(ParsedUsage, &[u8]) -> E,
 ) -> Vec<E> {
-    let project: Arc<str> = Arc::from(extract_project(path));
-    let (path_session_id, _) = crate::paths::extract_session_parts(path);
+    let project: Arc<str> = Arc::from(extract_project(path, projects_root));
+    let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
     let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut entries = Vec::new();
@@ -173,6 +184,18 @@ pub(crate) fn read_usage_file<E>(
             }
             Err(Refusal::InvalidTimestamp) => {
                 crate::diagnostics::invalid_timestamp(path, current.index, diagnostics);
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::UnrepresentableUsage) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line, true, !current.unterminated());
+                }
+                diagnostics.record(ccusage_core::Skip::record(
+                    path,
+                    ccusage_core::Skip::line_number(current.index),
+                    ccusage_core::SkipKind::InvalidData,
+                    "Claude token counts exceed the u64 range",
+                ));
                 return ControlFlow::Continue(());
             }
         };

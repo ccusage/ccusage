@@ -85,9 +85,11 @@ fn sections_merge_pruned_session_diagnostics_without_double_counting() {
     ccusage_test_support::install_pricing_snapshots();
     let good = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#;
     let bad = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#;
+    let old_bad =
+        r#"{"timestamp":"2001-01-01T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#;
     let fixture = fs_fixture!({
         "claude/projects/p/new.jsonl": [good, bad].join("\n"),
-        "claude/projects/p/old.jsonl": [bad, bad].join("\n"),
+        "claude/projects/p/old.jsonl": [old_bad, old_bad].join("\n"),
     });
     set_modified(
         &fixture.path("claude/projects/p/old.jsonl"),

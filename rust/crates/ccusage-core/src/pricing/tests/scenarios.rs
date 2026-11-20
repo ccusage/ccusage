@@ -3,7 +3,7 @@ use ccusage_cli::PricingOverride;
 use super::super::{BillingRoute, MatchKind, PricingMap, ResolutionStep};
 use super::timestamp;
 use crate::TokenUsageRaw;
-use crate::cost::{EntryPricing, PriceTable, price_entry, price_entry_on_route};
+use crate::cost::{EntryPricing, PriceTable, UsageGranularity, price_entry, price_entry_on_route};
 
 #[test]
 fn resolver_scenarios_on_the_embedded_tables() {
@@ -118,6 +118,7 @@ fn check_cases(base: &PricingMap, cases: &str) {
                     _ => panic!("{name}: unknown token shape {shape}"),
                 };
                 let entry_pricing = EntryPricing {
+                    granularity: UsageGranularity::Request,
                     usage: TokenUsageRaw {
                         input_tokens,
                         output_tokens,

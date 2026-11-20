@@ -188,7 +188,6 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         request_count: 0,
         nano_aiu: Some(nano_aiu),
         dedup_key: snapshot.dedup_key.clone(),
-        call_key: None,
         call_ids: CallIds::default(),
     }
 }

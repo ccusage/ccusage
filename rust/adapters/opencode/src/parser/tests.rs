@@ -855,6 +855,39 @@ fn prices_cumulative_session_aggregates_with_static_rates() {
 }
 
 #[test]
+fn prices_a_session_aggregate_at_the_base_tier() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{"tiered-test":{"litellm_provider":"openai","input_cost_per_token":1,"output_cost_per_token":1,"input_cost_per_token_above_200k_tokens":2}}"#,
+    );
+    let created = ccusage_core::parse_ts_timestamp("2026-08-17T01:00:00Z")
+        .unwrap()
+        .as_millis();
+    let entry = session_value_to_entry(
+        OpenCodeSessionAggregate {
+            session_id: "session-a".to_string(),
+            created: Some(created),
+            model: "tiered-test".to_string(),
+            provider: "openai".to_string(),
+            input_tokens: 250_000,
+            output_tokens: 0,
+            reasoning_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost: None,
+        },
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Calculate,
+        ccusage_core::cost::PriceTable::Calculate(&pricing),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(entry.cost, 250_000.0);
+}
+
+#[test]
 fn prices_a_foreign_router_without_the_deepseek_schedule() {
     ccusage_test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

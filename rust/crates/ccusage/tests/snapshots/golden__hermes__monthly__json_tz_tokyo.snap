@@ -65,7 +65,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6000,
-          "cost": 0.00515,
+          "cost": 0.00475,
           "inputTokens": 800,
           "modelName": "openai/gpt-5",
           "outputTokens": 300
@@ -115,8 +115,8 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1230,
-      "totalCost": 0.583893925,
-      "totalTokens": 25455
+      "totalCost": 0.583493925,
+      "totalTokens": 25345
     }
   ],
   "totals": {
@@ -124,8 +124,8 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.5854689250000003,
-    "totalTokens": 37415,
+    "totalCost": 1.585068925,
+    "totalTokens": 37305,
     "unpricedModels": [
       "hermes-mystery-1"
     ]

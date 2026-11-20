@@ -797,6 +797,69 @@ fn claude_sessions_fold_workflow_runs_into_their_parent_session() {
 }
 
 #[test]
+fn reads_transcripts_below_a_config_directory_named_under_projects() {
+    let fixture = Fixture::new();
+    let config_dir = fixture.root().join("projects/cfg");
+    fixture.write_file(
+        "projects/cfg/projects/myproj/session-1.jsonl",
+        usage_line(
+            "2026-09-11T10:00:00.000Z",
+            "session-1",
+            "msg-main",
+            "req-main",
+            1.0,
+        ),
+    );
+    let command = || {
+        let mut command = support::hermetic_command(fixture.root());
+        command.env("CLAUDE_CONFIG_DIR", &config_dir);
+        command
+    };
+
+    let session: serde_json::Value = serde_json::from_str(&run_command(
+        command(),
+        &[
+            "claude",
+            "session",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ],
+        None,
+    ))
+    .unwrap();
+    let sessions = session["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1, "{session}");
+    assert_eq!(sessions[0]["sessionId"], "session-1", "{session}");
+    assert_eq!(sessions[0]["projectPath"], "myproj", "{session}");
+
+    let daily: serde_json::Value = serde_json::from_str(&run_command(
+        command(),
+        &[
+            "claude",
+            "daily",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+            "--instances",
+            "--project",
+            "myproj",
+        ],
+        None,
+    ))
+    .unwrap();
+    let projects = daily["projects"].as_object().unwrap();
+    assert!(projects.contains_key("myproj"), "{daily}");
+    assert!(!projects.contains_key("cfg"), "{daily}");
+}
+
+#[test]
 fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
     let fixture = Fixture::new();
     fixture.write_file(

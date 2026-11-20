@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{path::Path, sync::Arc};
@@ -38,10 +38,8 @@ struct QwenLine {
 struct QwenUsageMetadata {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     prompt_token_count: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    candidates_token_count: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    thoughts_token_count: u64,
+    #[serde(default, deserialize_with = "present_u64")]
+    candidates_token_count: Option<u64>,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cached_content_token_count: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -59,6 +57,13 @@ impl std::ops::Deref for QwenEntry {
     fn deref(&self) -> &Self::Target {
         &self.entry
     }
+}
+
+fn present_u64<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    jsonl::lenient_u64(deserializer).map(Some)
 }
 
 pub(super) fn read_chat_file(
@@ -108,21 +113,30 @@ fn parse_line(
     let Some(usage) = record.usage_metadata.as_ref() else {
         return Ok(None);
     };
-    let input_tokens = usage.prompt_token_count;
-    let output_tokens = usage.candidates_token_count;
-    let reasoning_tokens = usage.thoughts_token_count;
-    let cache_read_tokens = usage.cached_content_token_count;
+    // NOTE(2026-11-20, #2363): Qwen Code counts `cachedContentTokenCount` inside `promptTokenCount` (QwenLM/qwen-code `packages/cli/src/commands/review/cost-ledger.ts`, `packages/core/src/core/anthropicContentGenerator/usage.ts`). It takes `totalTokenCount - promptTokenCount` as output including thinking, because its OpenAI-compatible converter sets `candidatesTokenCount` from `completion_tokens` and `thoughtsTokenCount` from its `reasoning_tokens` subset (`packages/core/src/core/openaiContentGenerator/converter.ts`), while Gemini puts thinking outside the candidates. Without a total, thinking is taken to be inside candidates, as Qwen Code does.
+    let prompt_tokens = usage.prompt_token_count;
     let total_tokens = usage.total_token_count;
+    let cache_read_tokens = usage.cached_content_token_count.min(prompt_tokens);
+    let candidates_tokens = usage.candidates_token_count.unwrap_or(0);
+    let output_tokens = if total_tokens > prompt_tokens {
+        candidates_tokens.min(total_tokens - prompt_tokens)
+    } else {
+        candidates_tokens
+    };
     let display_usage = TokenUsageRaw {
-        input_tokens,
+        input_tokens: prompt_tokens - cache_read_tokens,
         output_tokens,
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: cache_read_tokens,
         speed: None,
         cache_creation: None,
     };
-    let (display_usage, extra_total_tokens) =
-        apply_total_token_fallback(display_usage, reasoning_tokens, total_tokens);
+    let (display_usage, extra_total_tokens) = if usage.candidates_token_count.is_some() {
+        let residual = total_tokens.saturating_sub(prompt_tokens.saturating_add(output_tokens));
+        (display_usage, residual)
+    } else {
+        apply_total_token_fallback(display_usage, 0, total_tokens)
+    };
     if display_usage.input_tokens == 0
         && display_usage.output_tokens == 0
         && display_usage.cache_read_input_tokens == 0
@@ -190,6 +204,7 @@ fn price_qwen(
         .collect();
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
@@ -316,6 +331,143 @@ mod tests {
         .unwrap();
 
         assert_eq!(entry.usage.output_tokens, 321);
+        assert_eq!(entry.extra_total_tokens, 0);
+    }
+
+    fn parse_usage(usage: serde_json::Value) -> QwenEntry {
+        let record = serde_json::from_value::<QwenLine>(serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-02-23T14:24:56.857Z",
+            "sessionId": "s",
+            "model": "qwen3-coder-plus",
+            "usageMetadata": usage
+        }))
+        .unwrap();
+        parse_line(
+            Path::new("/tmp/project/chat.jsonl"),
+            &record,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Display,
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    fn reported_total(entry: &QwenEntry) -> u64 {
+        ccusage_core::total_usage_tokens(entry.usage) + entry.extra_total_tokens
+    }
+
+    #[test]
+    fn cached_tokens_are_part_of_the_prompt_count() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "cachedContentTokenCount": 400,
+            "totalTokenCount": 1200
+        }));
+
+        assert_eq!(entry.usage.input_tokens, 600);
+        assert_eq!(entry.usage.cache_read_input_tokens, 400);
+        assert_eq!(entry.usage.output_tokens, 200);
+        assert_eq!(reported_total(&entry), 1200);
+    }
+
+    #[test]
+    fn thoughts_inside_candidates_are_not_added_again() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "thoughtsTokenCount": 50,
+            "cachedContentTokenCount": 400,
+            "totalTokenCount": 1200
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 200);
+        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(reported_total(&entry), 1200);
+    }
+
+    #[test]
+    fn thoughts_outside_candidates_count_once_as_reasoning() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "thoughtsTokenCount": 50,
+            "cachedContentTokenCount": 400,
+            "totalTokenCount": 1250
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 200);
+        assert_eq!(entry.extra_total_tokens, 50);
+        assert_eq!(reported_total(&entry), 1250);
+    }
+
+    #[test]
+    fn cached_prompt_tokens_are_billed_once_at_the_cache_read_rate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "qwen3-coder-plus": {
+                    "litellm_provider": "dashscope",
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000005,
+                    "cache_read_input_token_cost": 0.0000001
+                }
+            }"#,
+        );
+        let record = serde_json::from_value::<QwenLine>(serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-02-23T14:24:56.857Z",
+            "sessionId": "s",
+            "model": "qwen3-coder-plus",
+            "usageMetadata": {
+                "promptTokenCount": 1000,
+                "candidatesTokenCount": 200,
+                "thoughtsTokenCount": 50,
+                "cachedContentTokenCount": 400,
+                "totalTokenCount": 1250
+            }
+        }))
+        .unwrap();
+        let entry = parse_line(
+            Path::new("/tmp/project/chat.jsonl"),
+            &record,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+
+        let expected = 600.0 * 0.000001 + 400.0 * 0.0000001 + 250.0 * 0.000005;
+        assert!((entry.cost - expected).abs() < 1e-12, "{}", entry.cost);
+    }
+
+    #[test]
+    fn thinking_with_zero_candidates_stays_reasoning() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 0,
+            "thoughtsTokenCount": 50,
+            "totalTokenCount": 1050
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 50);
+    }
+
+    #[test]
+    fn without_a_total_thoughts_are_taken_to_be_inside_candidates() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 500,
+            "candidatesTokenCount": 120,
+            "thoughtsTokenCount": 30,
+            "cachedContentTokenCount": 80
+        }));
+
+        assert_eq!(entry.usage.input_tokens, 420);
+        assert_eq!(entry.usage.cache_read_input_tokens, 80);
+        assert_eq!(entry.usage.output_tokens, 120);
         assert_eq!(entry.extra_total_tokens, 0);
     }
 

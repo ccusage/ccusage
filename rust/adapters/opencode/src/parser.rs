@@ -9,8 +9,12 @@ use serde::{
 use std::fmt;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, cost::EntryPricing,
-    date_at, pricing::MatchKind, stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
+    cli::CostMode,
+    cost::{EntryPricing, UsageGranularity},
+    date_at,
+    pricing::MatchKind,
+    stored_cost_for_mode,
 };
 use ccusage_adapter_common::{billing::price_entry_for_provider, json::JsonText, jsonl};
 
@@ -354,9 +358,9 @@ impl OpenCodeUsage {
             .filter(|millis| *millis > 0)
             .ok_or(MissingTimestamp)?;
         let timestamp = crate::TimestampMs::from_millis(timestamp);
-        let pricing_timestamp = match self.kind {
-            UsageKind::Message => Some(timestamp),
-            UsageKind::Aggregate => None,
+        let (pricing_timestamp, granularity) = match self.kind {
+            UsageKind::Message => (Some(timestamp), UsageGranularity::Request),
+            UsageKind::Aggregate => (None, UsageGranularity::Aggregate),
         };
         let candidates = open_code_model_candidates(&model, &provider);
         let candidates: Vec<_> = candidates
@@ -364,6 +368,7 @@ impl OpenCodeUsage {
             .map(|(name, kind)| (name.as_str(), *kind))
             .collect();
         let entry_pricing = EntryPricing {
+            granularity,
             usage,
             reasoning_tokens: 0,
             residual_tokens: extra_total_tokens,
