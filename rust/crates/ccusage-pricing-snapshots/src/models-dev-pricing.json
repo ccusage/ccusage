@@ -7578,9 +7578,9 @@
 	},
 	"canopywave/kimi-k3.1-pro": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 2,
-			"output": 10
+			"cache_read": 0.19,
+			"input": 1.9,
+			"output": 9.5
 		},
 		"limit": {
 			"context": 1000000
@@ -17068,6 +17068,16 @@
 			"context": 131072
 		}
 	},
+	"google/gemma4-31b-splituntied": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.1,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
 	"gpt-3.5-turbo": {
 		"cost": {
 			"cache_read": 0,
@@ -18408,9 +18418,9 @@
 	},
 	"greenpt/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.043872,
-			"input": 0.153552,
-			"output": 0.38388
+			"cache_read": 0.043968,
+			"input": 0.153888,
+			"output": 0.38472
 		},
 		"limit": {
 			"context": 1000000
@@ -18418,9 +18428,9 @@
 	},
 	"greenpt/deepseek-v4.1-flash": {
 		"cost": {
-			"cache_read": 0.012065,
-			"input": 0.241296,
-			"output": 1.20648
+			"cache_read": 0.012091,
+			"input": 0.241824,
+			"output": 1.209119
 		},
 		"limit": {
 			"context": 1000000
@@ -18448,8 +18458,8 @@
 	},
 	"greenpt/gpt-oss-120b": {
 		"cost": {
-			"input": 0.21936,
-			"output": 0.76776
+			"input": 0.21984,
+			"output": 0.76944
 		},
 		"limit": {
 			"context": 128000
@@ -18457,8 +18467,8 @@
 	},
 	"greenpt/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 1.20648,
-			"output": 1.20648
+			"input": 1.209119,
+			"output": 1.209119
 		},
 		"limit": {
 			"context": 128000
@@ -18466,8 +18476,8 @@
 	},
 	"greenpt/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.98712,
-			"output": 2.961361
+			"input": 0.98928,
+			"output": 2.967839
 		},
 		"limit": {
 			"context": 250000
@@ -19826,8 +19836,8 @@
 	},
 	"infomaniak/mistralai/Ministral-3-14B-Instruct-2512": {
 		"cost": {
-			"input": 0.32904,
-			"output": 0.43872
+			"input": 0.32976,
+			"output": 0.43968
 		},
 		"limit": {
 			"context": 100000
@@ -19896,8 +19906,8 @@
 	},
 	"ionos/Qwen/Qwen3-Coder-Next": {
 		"cost": {
-			"input": 0.16452,
-			"output": 0.87744
+			"input": 0.16488,
+			"output": 0.87936
 		},
 		"limit": {
 			"context": 128000
@@ -19905,8 +19915,8 @@
 	},
 	"ionos/meta-llama/Llama-3.3-70B-Instruct": {
 		"cost": {
-			"input": 0.71292,
-			"output": 0.71292
+			"input": 0.71448,
+			"output": 0.71448
 		},
 		"limit": {
 			"context": 128000
@@ -19914,8 +19924,8 @@
 	},
 	"ionos/openai/gpt-oss-120b": {
 		"cost": {
-			"input": 0.16452,
-			"output": 0.71292
+			"input": 0.16488,
+			"output": 0.71448
 		},
 		"limit": {
 			"context": 128000
@@ -23707,6 +23717,15 @@
 		},
 		"limit": {
 			"context": 65536
+		}
+	},
+	"mistralai/pixtral-large-2502": {
+		"cost": {
+			"input": 2,
+			"output": 6
+		},
+		"limit": {
+			"context": 128000
 		}
 	},
 	"mistralai/voxtral-small-24b-2507": {
@@ -29014,8 +29033,8 @@
 	},
 	"particle-ai/particle-1": {
 		"cost": {
-			"cache_read": 0.0015,
-			"input": 0.03,
+			"cache_read": 0.003,
+			"input": 0.035,
 			"output": 0.25
 		},
 		"limit": {
@@ -32561,9 +32580,9 @@
 	},
 	"scaleway/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.087744,
-			"input": 0.43872,
-			"output": 0.87744
+			"cache_read": 0.087936,
+			"input": 0.43968,
+			"output": 0.87936
 		},
 		"limit": {
 			"context": 256000
@@ -32581,9 +32600,9 @@
 	},
 	"scaleway/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.131616,
-			"input": 0.65808,
-			"output": 1.974241
+			"cache_read": 0.131904,
+			"input": 0.65952,
+			"output": 1.978559
 		},
 		"limit": {
 			"context": 256000
@@ -32600,8 +32619,8 @@
 	},
 	"scaleway/gpt-oss-120b": {
 		"cost": {
-			"input": 0.16452,
-			"output": 0.65808
+			"input": 0.16488,
+			"output": 0.65952
 		},
 		"limit": {
 			"context": 128000
@@ -32609,8 +32628,8 @@
 	},
 	"scaleway/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 0.98712,
-			"output": 0.98712
+			"input": 0.98928,
+			"output": 0.98928
 		},
 		"limit": {
 			"context": 128000
@@ -32618,8 +32637,8 @@
 	},
 	"scaleway/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.8226,
-			"output": 2.467801
+			"input": 0.8244,
+			"output": 2.473199
 		},
 		"limit": {
 			"context": 250000
@@ -34348,6 +34367,16 @@
 			"context": 131072
 		}
 	},
+	"together-ai/hy4": {
+		"cost": {
+			"cache_read": 0.042,
+			"input": 0.834,
+			"output": 2.501
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"together-ai/kimi-k3": {
 		"cost": {
 			"cache_read": 0.3,
@@ -34458,6 +34487,16 @@
 			"context": 1048576
 		}
 	},
+	"together_ai/tencent/Hy4": {
+		"cost": {
+			"cache_read": 0.042,
+			"input": 0.834,
+			"output": 2.501
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"together_ai/thinkingmachines/Inkling": {
 		"cost": {
 			"cache_read": 0.17,
@@ -34520,9 +34559,9 @@
 	},
 	"tsystems/gpt-oss-120b": {
 		"cost": {
-			"cache_read": 0.032904,
-			"input": 0.21936,
-			"output": 0.71292
+			"cache_read": 0.032976,
+			"input": 0.21984,
+			"output": 0.71448
 		},
 		"limit": {
 			"context": 131072
