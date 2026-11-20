@@ -21,10 +21,11 @@ pub enum SkipKind {
     Invariant,
     InvalidData,
     UnreadableForkParent,
+    MissingForkParent,
 }
 
 impl SkipKind {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Unreadable,
         Self::ReadInterrupted,
         Self::UndecodedUsage,
@@ -32,6 +33,7 @@ impl SkipKind {
         Self::Invariant,
         Self::InvalidData,
         Self::UnreadableForkParent,
+        Self::MissingForkParent,
     ];
 
     fn label(self) -> &'static str {
@@ -43,17 +45,27 @@ impl SkipKind {
             Self::Invariant => "unexpected shape",
             Self::InvalidData => "invalid data",
             Self::UnreadableForkParent => "unreadable fork parent",
+            Self::MissingForkParent => "missing fork parent",
         }
     }
 
     fn summary(self, tally: &Tally) -> String {
-        if self == Self::UnreadableForkParent {
-            let sessions = counted(tally.whole_units(), "forked session");
-            return format!(
-                "could not read the parent rollout for {sessions}. Replayed usage may be counted twice."
-            );
-        }
-        format!("skipped {} ({})", tally.skipped_description(), self.label())
+        let parent = match self {
+            Self::UnreadableForkParent => "read",
+            Self::MissingForkParent => "find",
+            Self::Unreadable
+            | Self::ReadInterrupted
+            | Self::UndecodedUsage
+            | Self::InvalidTimestamp
+            | Self::Invariant
+            | Self::InvalidData => {
+                return format!("skipped {} ({})", tally.skipped_description(), self.label());
+            }
+        };
+        let sessions = counted(tally.whole_units(), "forked session");
+        format!(
+            "could not {parent} the parent rollout for {sessions}. Replayed usage may be counted twice."
+        )
     }
 }
 
