@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::{collections::BTreeMap, sync::Arc};
 
 use ccusage_adapter_common::billing::price_entry_for_provider;
@@ -108,6 +111,7 @@ pub(super) fn row_to_entry(
         })
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage: cost_usage,
         reasoning_tokens: 0,
         residual_tokens: 0,

@@ -59,6 +59,7 @@ fn candidate_entry_pricing_adds_only_the_supplied_extra_tokens() {
     let candidates = [("priced", crate::pricing::MatchKind::Exact)];
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage: crate::TokenUsageRaw {
                 input_tokens: 2,
                 output_tokens: 3,
@@ -94,6 +95,7 @@ fn candidate_entry_modes_keep_stored_costs_separate_from_lookup_results() {
     ] {
         let result = price_entry(
             EntryPricing {
+                granularity: UsageGranularity::Request,
                 usage: crate::TokenUsageRaw {
                     input_tokens: 100,
                     ..Default::default()
@@ -127,6 +129,7 @@ fn candidate_entry_missing_pricing_requires_billable_usage_and_a_lookup() {
     ] {
         let result = price_entry(
             EntryPricing {
+                granularity: UsageGranularity::Request,
                 usage: crate::TokenUsageRaw {
                     input_tokens,
                     ..Default::default()
@@ -158,6 +161,7 @@ fn candidate_entry_pricing_uses_the_selected_schedule_and_fast_multiplier() {
     let candidates = [("deepseek.v4.flash", crate::pricing::MatchKind::Exact)];
     let result = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage: crate::TokenUsageRaw {
                 input_tokens: 1_000_000,
                 speed: Some(Speed::Fast),
@@ -343,6 +347,7 @@ fn stored_costs_suppress_missing_pricing_detection() {
     ] {
         let price = price_entry(
             EntryPricing {
+                granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
                 residual_tokens: 0,
@@ -743,4 +748,79 @@ fn prices_a_qwen_plus_thinking_request_above_256k_at_alibabas_long_context_rates
             (input_tokens as f64 * input_rate + output_tokens as f64 * output_rate) / 1_000_000.0;
         assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
     }
+}
+
+fn price_with_granularity(map: &PricingMap, model: &str, granularity: UsageGranularity) -> f64 {
+    let candidates = [(model, crate::pricing::MatchKind::Exact)];
+    price_entry(
+        EntryPricing {
+            usage: TokenUsageRaw {
+                input_tokens: 300,
+                output_tokens: 10,
+                ..TokenUsageRaw::default()
+            },
+            granularity,
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: None,
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: None,
+        },
+        PriceTable::Calculate(map),
+    )
+    .cost
+}
+
+#[test]
+fn aggregated_usage_is_priced_at_the_base_tier_of_a_whole_request_model() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_models_dev_json_for_tests(
+        r#"{"two-stage-test": {"cost": {
+            "input": 1, "output": 10,
+            "tiers": [{"input": 2, "output": 20, "tier": {"type": "context", "size": 100}}]
+        }}}"#,
+    );
+
+    let request = price_with_granularity(&pricing, "two-stage-test", UsageGranularity::Request);
+    let aggregate = price_with_granularity(&pricing, "two-stage-test", UsageGranularity::Aggregate);
+
+    assert!((request - (300.0 * 2.0 + 10.0 * 20.0) / 1e6).abs() < 1e-12);
+    assert!((aggregate - (300.0 * 1.0 + 10.0 * 10.0) / 1e6).abs() < 1e-12);
+}
+
+#[test]
+fn aggregated_usage_is_priced_at_the_base_tier_of_a_marginal_model() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{"marginal-test": {
+            "input_cost_per_token": 1, "output_cost_per_token": 10,
+            "input_cost_per_token_above_200k_tokens": 2
+        }}"#,
+    );
+    let candidates = [("marginal-test", crate::pricing::MatchKind::Exact)];
+    let price = |granularity| {
+        price_entry(
+            EntryPricing {
+                usage: TokenUsageRaw {
+                    input_tokens: 250_000,
+                    ..TokenUsageRaw::default()
+                },
+                granularity,
+                reasoning_tokens: 0,
+                residual_tokens: 0,
+                reported_model: None,
+                candidates: &candidates,
+                stored_cost: None,
+                timestamp: None,
+            },
+            PriceTable::Calculate(&pricing),
+        )
+        .cost
+    };
+
+    assert_eq!(price(UsageGranularity::Request), 200_000.0 + 50_000.0 * 2.0);
+    assert_eq!(price(UsageGranularity::Aggregate), 250_000.0);
 }

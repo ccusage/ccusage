@@ -64,7 +64,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50100,
-          "cost": 0.84299,
+          "cost": 0.42199,
           "inputTokens": 200300,
           "modelName": "grok-4.5-build",
           "outputTokens": 1060
@@ -122,7 +122,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1815,
-      "totalCost": 0.8507049999999999,
+      "totalCost": 0.429705,
       "totalTokens": 255360
     }
   ],
@@ -131,7 +131,7 @@ exit: 0
     "cacheReadTokens": 53400,
     "inputTokens": 207415,
     "outputTokens": 3435,
-    "totalCost": 0.8665379999999999,
+    "totalCost": 0.445538,
     "totalTokens": 265100,
     "unpricedModels": [
       "grok-mystery-1",

@@ -873,7 +873,7 @@ exit: 0
       "outputTokens": 150,
       "period": "p-gpt5-estimated",
       "totalCost": 0.25,
-      "totalTokens": 3410
+      "totalTokens": 3350
     },
     {
       "agent": "opencode",
@@ -3566,7 +3566,7 @@ exit: 0
       "outputTokens": 70,
       "period": "p-mystery",
       "totalCost": 0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "agent": "hermes",
@@ -3589,7 +3589,7 @@ exit: 0
       "outputTokens": 300,
       "period": "p-openrouter",
       "totalCost": 0,
-      "totalTokens": 7140
+      "totalTokens": 7100
     },
     {
       "agent": "hermes",
@@ -4465,7 +4465,7 @@ exit: 0
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
-      "inputTokens": 3911,
+      "inputTokens": 2631,
       "metadata": {
         "lastActivity": "2026-01-01T11:00:00.000Z"
       },
@@ -4474,7 +4474,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
           "cost": 0.0,
-          "inputTokens": 3111,
+          "inputTokens": 1911,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 644
         },
@@ -4482,7 +4482,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
           "cost": 0.0,
-          "inputTokens": 500,
+          "inputTokens": 420,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 120
         },
@@ -4512,7 +4512,7 @@ exit: 0
       "outputTokens": 1478,
       "period": "sess-a",
       "totalCost": 0,
-      "totalTokens": 6886
+      "totalTokens": 5599
     },
     {
       "agent": "dsh",
@@ -4567,25 +4567,25 @@ exit: 0
     {
       "agent": "qwen",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 104080,
-      "inputTokens": 303443,
+      "cacheReadTokens": 102113,
+      "inputTokens": 201330,
       "metadata": {
         "lastActivity": "2026-01-02T23:30:00.000Z"
       },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2080,
+          "cacheReadTokens": 580,
           "cost": 0.0,
-          "inputTokens": 1100,
+          "inputTokens": 520,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 250
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "modelName": "qwen-mystery-1",
           "outputTokens": 11
         },
@@ -4593,7 +4593,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 101500,
           "cost": 0.0,
-          "inputTokens": 302000,
+          "inputTokens": 200500,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2300
         },
@@ -4615,7 +4615,7 @@ exit: 0
       "outputTokens": 2626,
       "period": "sess-b",
       "totalCost": 0,
-      "totalTokens": 410249
+      "totalTokens": 306169
     },
     {
       "agent": "dsh",
@@ -4738,7 +4738,7 @@ exit: 0
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
-      "inputTokens": 420,
+      "inputTokens": 320,
       "metadata": {
         "lastActivity": "2026-01-01T10:00:00.000Z"
       },
@@ -4747,7 +4747,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100,
           "cost": 0.0,
-          "inputTokens": 420,
+          "inputTokens": 320,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 70
         }
@@ -4758,7 +4758,7 @@ exit: 0
       "outputTokens": 70,
       "period": "sess-e",
       "totalCost": 0,
-      "totalTokens": 590
+      "totalTokens": 490
     },
     {
       "agent": "dsh",
@@ -5434,11 +5434,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17865,
-    "cacheReadTokens": 1311167,
-    "inputTokens": 1365225,
+    "cacheReadTokens": 1309200,
+    "inputTokens": 1261732,
     "outputTokens": 60568,
     "totalCost": 24.12330000000001,
-    "totalTokens": 2758262
+    "totalTokens": 2652685
   }
 }
 

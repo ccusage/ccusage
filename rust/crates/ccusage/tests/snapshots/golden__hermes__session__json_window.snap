@@ -97,7 +97,7 @@ exit: 0
       "outputTokens": 150,
       "sessionId": "p-gpt5-estimated",
       "totalCost": 0.25,
-      "totalTokens": 3410
+      "totalTokens": 3350
     },
     {
       "cacheCreationTokens": 200,
@@ -144,7 +144,7 @@ exit: 0
       "outputTokens": 70,
       "sessionId": "p-mystery",
       "totalCost": 0.0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "cacheCreationTokens": 50,
@@ -176,7 +176,7 @@ exit: 0
     "inputTokens": 3270,
     "outputTokens": 870,
     "totalCost": 0.27916812500000004,
-    "totalTokens": 17525,
+    "totalTokens": 17455,
     "unpricedModels": [
       "hermes-mystery-1"
     ]

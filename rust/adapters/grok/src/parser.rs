@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{
@@ -507,6 +507,7 @@ fn price_grok_usage(
         .collect();
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Aggregate,
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,

@@ -46,7 +46,7 @@ Grok records OpenAI-style usage where `inputTokens` includes cache reads and cac
 Grok billed. `calculate`, and `auto` for turns that recorded no ticks, fall back to
 token × LiteLLM pricing. That fallback only approximates the invoice: a
 `turn_completed` row aggregates several API requests, so it cannot reproduce Grok's
-per-request long-context tiering.
+per-request long-context tiering and is priced at the base rates.
 
 ## Model display and pricing
 

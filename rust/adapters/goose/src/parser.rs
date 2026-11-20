@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -91,6 +94,7 @@ pub(super) fn row_to_entry(
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Aggregate,
         usage,
         reasoning_tokens,
         residual_tokens: 0,
@@ -239,6 +243,27 @@ mod pricing_identity_tests {
         assert_eq!(model, "gpt-5.2");
         assert_eq!(normalize_provider(None, &model), "openai");
         assert_eq!(normalize_provider(Some("open-ai"), &model), "open_ai");
+    }
+
+    #[test]
+    fn a_session_total_is_priced_at_the_base_tier_not_the_long_context_tier() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"gemini-2.5-pro":{"litellm_provider":"gemini","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5,"input_cost_per_token_above_200k_tokens":2.5e-6,"output_cost_per_token_above_200k_tokens":1.5e-5}}"#,
+        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut row = connection
+            .prepare(r#"SELECT 's', '{"model_name":"gemini-2.5-pro"}', NULL, '2026-05-19 00:00:00', NULL, NULL, NULL, 5000000, 4900000, 100000"#)
+            .unwrap();
+        assert_eq!(row.next().unwrap(), sqlite::State::Row);
+
+        let loaded = row_to_entry(&row, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing))
+            .unwrap()
+            .unwrap();
+
+        assert!((loaded.cost - 7.125).abs() < 1e-9, "{}", loaded.cost);
     }
 
     #[test]

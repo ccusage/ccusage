@@ -37,8 +37,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295759,
-      "inputTokens": 131436,
+      "cacheReadTokens": 295292,
+      "inputTokens": 128543,
       "metadata": {
         "agents": [
           "amp",
@@ -92,7 +92,7 @@ exit: 0
           "cacheCreationTokens": 4200,
           "cacheReadTokens": 65960,
           "cost": 2.9699999999999998,
-          "inputTokens": 21421,
+          "inputTokens": 21261,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 6255
         },
@@ -397,15 +397,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
           "cost": 0.0,
-          "inputTokens": 5000,
+          "inputTokens": 2300,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
         },
@@ -503,13 +503,13 @@ exit: 0
       "outputTokens": 31667,
       "period": "2025-12",
       "totalCost": 20.392299999999995,
-      "totalTokens": 473157
+      "totalTokens": 469737
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
-      "cacheReadTokens": 1012508,
-      "inputTokens": 1232153,
+      "cacheReadTokens": 1011008,
+      "inputTokens": 1131553,
       "metadata": {
         "agents": [
           "amp",
@@ -554,9 +554,9 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2240,
-          "cacheReadTokens": 42260,
+          "cacheReadTokens": 40760,
           "cost": 0.501,
-          "inputTokens": 10987,
+          "inputTokens": 10487,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 3989
         },
@@ -1012,7 +1012,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
           "cost": 0.0,
-          "inputTokens": 300531,
+          "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
         },
@@ -1127,7 +1127,7 @@ exit: 0
       "outputTokens": 28292,
       "period": "2026-01",
       "totalCost": 2.9509999999999996,
-      "totalTokens": 2279840
+      "totalTokens": 2177683
     },
     {
       "agent": "all",
@@ -1160,11 +1160,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1310267,
-    "inputTokens": 1364600,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1261107,
     "outputTokens": 60466,
     "totalCost": 23.343299999999996,
-    "totalTokens": 2756515
+    "totalTokens": 2650938
   }
 }
 

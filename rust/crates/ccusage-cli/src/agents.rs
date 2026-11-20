@@ -116,6 +116,7 @@ pub(crate) const CLAUDE_STATUSLINE: AgentCommandSpec = AgentCommandSpec {
             ("-z", ClaudeStatuslineOption::Timezone),
             ("--timezone", ClaudeStatuslineOption::Timezone),
             ("--config", ClaudeStatuslineOption::Config),
+            ("-d", ClaudeStatuslineOption::Debug),
             ("--debug", ClaudeStatuslineOption::Debug),
         ],
     },
