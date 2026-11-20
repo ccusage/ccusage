@@ -1,6 +1,5 @@
-use ccusage_core::{MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, TimestampMs};
-use ccusage_report::{am_pm, hour_12, zoned_parts};
-use jiff::tz::TimeZone;
+use ccusage_core::{MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, TimestampMs, cli_error};
+use jiff::{Timestamp as JiffTimestamp, tz::TimeZone};
 
 use super::SessionBlock;
 
@@ -121,4 +120,36 @@ pub(crate) fn format_remaining_time(minutes: i64) -> String {
     } else {
         format!("{mins}m left")
     }
+}
+
+struct DateTimeParts {
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+}
+
+fn zoned_parts(timestamp: TimestampMs, zone: &TimeZone) -> Result<DateTimeParts> {
+    let timestamp = JiffTimestamp::from_millisecond(timestamp.as_millis())
+        .map_err(|error| cli_error(format!("Invalid block timestamp: {error}")))?;
+    let parts = zone.to_datetime(timestamp);
+    Ok(DateTimeParts {
+        year: i32::from(parts.year()),
+        month: u32::from(parts.month().unsigned_abs()),
+        day: u32::from(parts.day().unsigned_abs()),
+        hour: u32::from(parts.hour().unsigned_abs()),
+        minute: u32::from(parts.minute().unsigned_abs()),
+        second: u32::from(parts.second().unsigned_abs()),
+    })
+}
+
+fn hour_12(hour: u32) -> u32 {
+    let hour = hour % 12;
+    if hour == 0 { 12 } else { hour }
+}
+
+fn am_pm(hour: u32) -> &'static str {
+    if hour < 12 { "AM" } else { "PM" }
 }
