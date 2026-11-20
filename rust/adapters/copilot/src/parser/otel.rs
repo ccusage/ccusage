@@ -109,14 +109,21 @@ pub(crate) fn read_otel_calls(
 }
 
 pub(crate) fn reconcile_otel_calls(calls: Vec<CopilotUsageCandidate>) -> Vec<CopilotUsageEntry> {
-    let mut seen = HashSet::new();
+    let mut earliest = HashMap::<&CallKey, usize>::new();
+    for (index, call) in calls.iter().enumerate() {
+        if let Some(key) = &call.call_key {
+            let kept = earliest.entry(key).or_insert(index);
+            if call.timestamp < calls[*kept].timestamp {
+                *kept = index;
+            }
+        }
+    }
+    let earliest = earliest.into_values().collect::<HashSet<_>>();
     let candidates = calls
         .into_iter()
-        .filter(|call| {
-            call.call_key
-                .as_ref()
-                .is_none_or(|key| seen.insert(key.clone()))
-        })
+        .enumerate()
+        .filter(|(index, call)| call.call_key.is_none() || earliest.contains(index))
+        .map(|(_, call)| call)
         .collect::<Vec<_>>();
     let sets = CandidateSets::new(&candidates);
     candidates

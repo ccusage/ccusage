@@ -2362,6 +2362,20 @@ fn counts_a_re_exported_chat_span_once_in_one_file_or_several() {
 }
 
 #[test]
+fn keeps_the_earliest_copy_of_one_span_identity_in_one_file_or_several() {
+    let lines = [
+        otel_call("span-1", "2026-01-02T09:05:00.000Z"),
+        otel_call("span-1", "2026-01-02T09:00:00.000Z"),
+    ];
+
+    let [joined, split] = joined_and_split_otel_rows(&lines);
+
+    let earliest = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+    assert_eq!(joined, earliest);
+    assert_eq!(split, earliest);
+}
+
+#[test]
 fn keeps_distinct_calls_of_one_response_id_in_one_file_or_several() {
     let call = |span_id: &str, input_tokens: u64| {
         let mut span: serde_json::Value =
