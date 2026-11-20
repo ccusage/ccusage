@@ -57,9 +57,7 @@ pub(crate) fn advisor_usages_from_line(
 }
 
 #[cold]
-pub(super) fn advisor_usages_from_progress_line(
-    line: &[u8],
-) -> std::result::Result<AdvisorUsages, Rejection> {
+fn advisor_usages_from_progress_line(line: &[u8]) -> std::result::Result<AdvisorUsages, Rejection> {
     let envelope = deserialize_usage_line::<ProgressIterationsEnvelope>(line)?;
     Ok(advisor_usages_from_envelope(envelope.data.message))
 }
@@ -94,4 +92,21 @@ fn advisor_usages_from_envelope(envelope: UsageIterationsEnvelope) -> AdvisorUsa
         });
     }
     advisors
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum AdvisorLookup {
+    RuledOut,
+    AskLine,
+    AskProgress,
+}
+
+impl AdvisorLookup {
+    pub(super) fn usages(self, line: &[u8]) -> std::result::Result<AdvisorUsages, Rejection> {
+        match self {
+            Self::RuledOut => Ok(AdvisorUsages::default()),
+            Self::AskLine => advisor_usages_from_line(line),
+            Self::AskProgress => advisor_usages_from_progress_line(line),
+        }
+    }
 }

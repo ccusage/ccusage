@@ -17,8 +17,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 
 use super::{
-    claude_paths, daily, daily::DedupEntry as _, extract_session_parts, usage_files_before_since,
-    visit_usage_files,
+    claude_paths, daily, dedupe, dedupe::DedupEntry as _, extract_session_parts,
+    usage_files_before_since, visit_usage_files,
 };
 
 /// Loads every deduplicated Claude usage entry, regardless of `since`.
@@ -323,7 +323,7 @@ fn load_entries_with_mode(
             loaded_files.len()
         ),
     );
-    let (entries, copies) = daily::dedupe_files(loaded_files);
+    let (entries, copies) = dedupe::dedupe_files(loaded_files);
     debug_log(
         shared,
         format!("Kept {} usage entries after deduplication", entries.len()),
@@ -343,7 +343,7 @@ fn loaded_entry_session_id(entry: &ClaudeEntry) -> &str {
         .unwrap_or(entry.session_id.as_ref())
 }
 
-impl daily::DedupEntry for ClaudeEntry {
+impl dedupe::DedupEntry for ClaudeEntry {
     fn timestamp(&self) -> TimestampMs {
         self.timestamp
     }
