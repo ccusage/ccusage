@@ -1,11 +1,9 @@
-use std::{fmt, io};
-
 use crate::cli::{SharedArgs, environment::Environment};
 
-pub mod agent_report;
 pub mod cost;
 pub mod date_utils;
 pub mod diagnostics;
+mod error;
 pub mod fast;
 pub mod model_aliases;
 pub mod output;
@@ -15,7 +13,6 @@ pub mod progress;
 pub mod project_names;
 pub mod summary;
 pub mod types;
-pub mod utils;
 pub mod window;
 
 #[cfg(test)]
@@ -25,15 +22,16 @@ pub mod cli {
     pub use ccusage_cli::*;
 }
 
-pub use agent_report::{agent_summary_json, first_column, summary_period};
 pub use cost::{missing_pricing_model_for_token_total, stored_cost_for_mode, sum_costs};
 pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
+pub use error::{CliError, Context, Result, cli_error};
 pub use output::{
-    UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
-    format_number, json_float, print_json_or_jq, print_missing_pricing_warnings_for_models,
-    print_usage_table, print_usage_table_with_options, sanitize_terminal_text,
-    should_use_compact_layout, totals_json, wants_json,
+    UsageTableOptions, agent_summary_json, attach_unpriced_models, first_column, format_currency,
+    format_models_multiline, format_number, json_float, json_value_u64, non_empty_json_string,
+    print_json_or_jq, print_missing_pricing_warnings_for_models, print_usage_table,
+    print_usage_table_with_options, sanitize_terminal_text, should_use_compact_layout,
+    summary_period, totals_json, wants_json,
 };
 pub use pricing::{Pricing, PricingMap};
 pub(crate) use project_names::parse_project_aliases;
@@ -41,9 +39,6 @@ pub(crate) use project_names::short_model_name;
 pub use project_names::{format_breakdown_model_label, format_project_name};
 pub use summary::{SessionAccumulator, sort_summaries, summarize_by_key_target, week_start};
 pub use types::*;
-pub use utils::{
-    apply_total_token_fallback, json_value_u64, non_empty_json_string, total_usage_tokens,
-};
 pub use window::ReportWindow;
 
 pub use ccusage_terminal::{
@@ -53,33 +48,6 @@ pub use ccusage_terminal::{
 
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
-
-pub type Result<T> = std::result::Result<T, CliError>;
-
-#[derive(Debug)]
-pub struct CliError(String);
-
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl From<io::Error> for CliError {
-    fn from(error: io::Error) -> Self {
-        Self(error.to_string())
-    }
-}
-
-impl From<serde_json::Error> for CliError {
-    fn from(error: serde_json::Error) -> Self {
-        Self(error.to_string())
-    }
-}
-
-pub fn cli_error(message: impl Into<String>) -> CliError {
-    CliError(message.into())
-}
 
 pub fn terminal_style(shared: &cli::SharedArgs) -> TerminalStyle {
     TerminalStyle {
@@ -108,17 +76,4 @@ pub fn log_level() -> Option<u8> {
         .var("LOG_LEVEL")
         .ok()
         .and_then(|value| value.parse::<u8>().ok())
-}
-
-pub trait Context<T> {
-    fn context(self, message: impl Into<String>) -> Result<T>;
-}
-
-impl<T, E> Context<T> for std::result::Result<T, E>
-where
-    E: fmt::Display,
-{
-    fn context(self, message: impl Into<String>) -> Result<T> {
-        self.map_err(|error| cli_error(format!("{}: {error}", message.into())))
-    }
 }
