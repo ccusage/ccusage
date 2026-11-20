@@ -24,4 +24,6 @@ pub const MODELS_DEV_CATALOG_RULES: &[u8] = include_bytes!(concat!(
 ));
 
 #[cfg(test)]
+mod float_probe;
+#[cfg(test)]
 mod litellm_filter;

@@ -15,6 +15,9 @@ const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
 const MODELS_DEV_CATALOG_RULES_JSON: &str = "src/models-dev-catalog-rules.json";
 const OUT_MODELS_DEV_CATALOG_RULES_JSON: &str = "models-dev-catalog-rules.json.deflate";
 const OUT_PRICING_TABLE: &str = "pricing-table.bin.deflate";
+const OUT_FLOAT_PROBE: &str = "float-probe.rs";
+// NOTE(2026-11-20, #2399): serde_json's default float parser misrounds this rate by one ULP and its `float_roundtrip` parser does not. Record how this build script parses it, so a test can check that the runtime parses rates the same way.
+const FLOAT_PROBE: &str = "1.4999999999999999e-07";
 const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
@@ -35,6 +38,8 @@ fn main() -> Result<(), String> {
     };
     let pricing_json = litellm_filter::filter_pricing_json(&pricing_json)
         .ok_or_else(|| "filter LiteLLM pricing JSON".to_string())?;
+    ensure_reparses_to_itself("filtered LiteLLM pricing", &pricing_json)?;
+    write_float_probe()?;
 
     fs::write(out_path, deflate(pricing_json.as_bytes()))
         .map_err(|error| format!("write build-time pricing snapshot: {error}"))?;
@@ -69,10 +74,39 @@ fn embed_snapshot(source: &str, out_name: &str) -> Result<Snapshot, String> {
         .map_err(|error| format!("parse {source}: {error}"))?;
     let json =
         serde_json::to_string(&value).map_err(|error| format!("serialize {source}: {error}"))?;
+    ensure_reparses_to_itself(source, &json)?;
     let deflated = deflate(json.as_bytes());
     fs::write(out_dir_path(out_name)?, &deflated)
         .map_err(|error| format!("write {out_name}: {error}"))?;
     Ok(Snapshot { json, deflated })
+}
+
+// NOTE(2026-11-20, #2399): The table is encoded from rewritten JSON while fetched pricing is parsed from upstream text. When parsing the rewritten JSON and writing it again gives back the same text, every number in it is the value the parser read from the upstream text.
+fn ensure_reparses_to_itself(name: &str, json: &str) -> Result<(), String> {
+    let value =
+        serde_json::from_str::<Value>(json).map_err(|error| format!("parse {name}: {error}"))?;
+    let rewritten =
+        serde_json::to_string(&value).map_err(|error| format!("serialize {name}: {error}"))?;
+    if rewritten == json {
+        Ok(())
+    } else {
+        Err(format!(
+            "{name} changes when parsed and written again, so a rate would shift"
+        ))
+    }
+}
+
+fn write_float_probe() -> Result<(), String> {
+    let bits = serde_json::from_str::<f64>(FLOAT_PROBE)
+        .map_err(|error| format!("parse {FLOAT_PROBE}: {error}"))?
+        .to_bits();
+    fs::write(
+        out_dir_path(OUT_FLOAT_PROBE)?,
+        format!(
+            "const FLOAT_PROBE: &str = {FLOAT_PROBE:?};\nconst FLOAT_PROBE_BITS: u64 = {bits};\n"
+        ),
+    )
+    .map_err(|error| format!("write {OUT_FLOAT_PROBE}: {error}"))
 }
 
 fn deflate(bytes: &[u8]) -> Vec<u8> {
