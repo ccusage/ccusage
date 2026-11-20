@@ -61,14 +61,11 @@ jobs:
             scripts
       - if: github.event_name == 'pull_request'
         uses: ./.github/actions/setup-nix-cache
-      - name: Install Nushell
-        if: github.event_name == 'pull_request'
-        run: nix profile install --inputs-from . nixpkgs#nushell
       - name: Check title scope against the changed adapters
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: nu scripts/validate-commit-scope.nu pr
+        run: scripts/validate-commit-scope.nu pr
 
   # NOTE(2026-11-10, #2062): Dispatch check runs do not attach to the release PR. Post commit statuses on the same SHA to satisfy the required title checks.
   release-pr-statuses:

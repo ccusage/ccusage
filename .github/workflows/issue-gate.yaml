@@ -58,16 +58,13 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
 
-      - name: Install Nushell
-        run: nix profile install --inputs-from . nixpkgs#nushell
-
       - name: Resolve issue context
         id: issue
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
-        run: nu .github/scripts/contribution-gate.nu issue-context
+        run: .github/scripts/contribution-gate.nu issue-context
 
       - name: Check issue author
         id: access
@@ -75,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           AUTHOR: ${{ steps.issue.outputs.author }}
-        run: nu .github/scripts/contribution-gate.nu issue-access
+        run: .github/scripts/contribution-gate.nu issue-access
 
       - name: Prepare the Pullfrog request
         id: request
@@ -85,7 +82,7 @@ jobs:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           AUTHOR_STATUS: ${{ steps.access.outputs.author_status }}
           CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
-        run: nu .github/scripts/contribution-gate.nu issue-request
+        run: .github/scripts/contribution-gate.nu issue-request
 
       - name: Ask Pullfrog to judge the issue
         id: judge
@@ -132,9 +129,6 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
 
-      - name: Install Nushell
-        run: nix profile install --inputs-from . nixpkgs#nushell
-
       - name: Apply the issue verdict
         id: verdict
         env:
@@ -145,7 +139,7 @@ jobs:
           FORCE_IMPLEMENTATION: ${{ inputs.force_implementation == true }}
           JUDGE_OUTCOME: ${{ needs.triage.outputs.judge_outcome }}
           RESULT: ${{ needs.triage.outputs.result }}
-        run: nu .github/scripts/contribution-gate.nu issue-verdict
+        run: .github/scripts/contribution-gate.nu issue-verdict
 
       - name: Prepare the implementation request
         id: implementation_request
@@ -156,7 +150,7 @@ jobs:
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
           ISSUE_AUTHOR: ${{ needs.triage.outputs.issue_author }}
           ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
-        run: nu .github/scripts/contribution-gate.nu issue-implementation-request
+        run: .github/scripts/contribution-gate.nu issue-implementation-request
 
   implement:
     needs:
@@ -187,18 +181,11 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
 
-      - name: Install Nushell
-        run: nix profile install --inputs-from . nixpkgs#nushell
-
       - name: Record the implementation base
         id: base
-        shell: nu {0}
         run: |
-          let result = run-external git rev-parse HEAD | complete
-          if $result.exit_code != 0 {
-              error make {msg: $"Could not resolve the implementation base: ($result.stderr | str trim)"}
-          }
-          $"base_sha=($result.stdout | str trim)\n" | save --append $env.GITHUB_OUTPUT
+          base_sha=$(git rev-parse HEAD)
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
 
       - name: Guard the implementation request
         id: implementation_guard
@@ -206,11 +193,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
-        run: nu .github/scripts/contribution-gate.nu issue-implementation-guard
+        run: .github/scripts/contribution-gate.nu issue-implementation-guard
 
       - name: Keep the gate scripts out of Pullfrog's reach
         if: steps.implementation_guard.outputs.skip != 'true'
-        run: cp -R .github/scripts "$RUNNER_TEMP/contribution-gate-scripts"
+        run: |
+          mkdir -p "$RUNNER_TEMP/contribution-gate/trusted"
+          cp -R .github/scripts "$RUNNER_TEMP/contribution-gate/trusted/scripts"
+          cp flake.nix flake.lock "$RUNNER_TEMP/contribution-gate"
 
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
@@ -235,7 +225,7 @@ jobs:
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation.patch
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation.json
-        run: nu "$RUNNER_TEMP/contribution-gate-scripts/contribution-gate.nu" implementation-artifact
+        run: '"$RUNNER_TEMP/contribution-gate/trusted/scripts/contribution-gate.nu" implementation-artifact'
 
       - name: Upload the implementation artifact
         if: steps.artifact.outputs.implementation == 'prepared'
@@ -276,9 +266,6 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
 
-      - name: Install Nushell
-        run: nix profile install --inputs-from . nixpkgs#nushell
-
       - name: Download the implementation artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -298,7 +285,7 @@ jobs:
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation/implementation.json
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation/implementation.patch
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
-        run: nu .github/scripts/contribution-gate.nu publish-implementation
+        run: .github/scripts/contribution-gate.nu publish-implementation
 
       - name: Verify issue author co-authorship
         if: steps.publish.outputs.skip != 'true' && needs.apply.outputs.coauthor_email != ''
@@ -311,4 +298,4 @@ jobs:
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
           COAUTHOR_EMAIL: ${{ needs.apply.outputs.coauthor_email }}
-        run: nu .github/scripts/contribution-gate.nu verify-coauthor
+        run: .github/scripts/contribution-gate.nu verify-coauthor

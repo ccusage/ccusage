@@ -40,16 +40,13 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
 
-      - name: Install Nushell
-        run: nix profile install --inputs-from . nixpkgs#nushell
-
       - name: Check PR author
         id: access
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: nu .github/scripts/contribution-gate.nu pr-access
+        run: .github/scripts/contribution-gate.nu pr-access
 
       - name: Prepare the Pullfrog request
         id: request
@@ -60,7 +57,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number }}
-        run: nu .github/scripts/contribution-gate.nu pr-request
+        run: .github/scripts/contribution-gate.nu pr-request
 
       - name: Ask Luna for a PR verdict
         id: judge
@@ -104,9 +101,6 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
 
-      - name: Install Nushell
-        run: nix profile install --inputs-from . nixpkgs#nushell
-
       - name: Apply the PR verdict
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,4 +109,4 @@ jobs:
           CLOSE_ALLOWED: ${{ needs.check-contributor.outputs.close_allowed }}
           JUDGE_OUTCOME: ${{ needs.check-contributor.outputs.judge_outcome }}
           RESULT: ${{ needs.check-contributor.outputs.result }}
-        run: nu .github/scripts/contribution-gate.nu pr-verdict
+        run: .github/scripts/contribution-gate.nu pr-verdict
