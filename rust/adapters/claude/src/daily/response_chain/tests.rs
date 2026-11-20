@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
+use ccusage_adapter_common::json::JsonText;
 use ccusage_core::{Diagnostics, cost::PriceTable};
 use serde_json::Value;
 
@@ -566,7 +567,7 @@ fn reference_keys(lines: &[String]) -> Vec<Option<NonZeroU64>> {
     let mut keys = Vec::new();
     for line in lines {
         let value = serde_json::from_str::<Value>(line).ok();
-        match admit(line.as_bytes()) {
+        match admit(&JsonText::new(line.as_bytes())) {
             Ok(admitted) => {
                 let record = &admitted.record;
                 keys.push(match (&record.request_id, &record.message.id, &value) {

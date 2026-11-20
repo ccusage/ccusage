@@ -2,6 +2,7 @@ use std::{fmt::Write, path::Path, sync::Arc};
 
 use super::{ClaudeEntry, read_daily_usage_file_with_diagnostics};
 use crate::dedupe::push_deduped_entry;
+use ccusage_adapter_common::json::JsonText;
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
@@ -66,7 +67,7 @@ fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
                     let prefix = &bytes[..end];
                     assert_eq!(
                         !matches!(
-                            super::read::admit(prefix),
+                            super::read::admit(&JsonText::new(prefix)),
                             Err(super::read::Refusal::NotUsage)
                         ),
                         original.matches(prefix),
@@ -129,7 +130,7 @@ fn usage_prefilter_preserves_typed_record_admission() {
     ];
     for (fields, expected) in cases {
         let line = format!("{{{fields}}}");
-        let actual = match super::read::admit(line.as_bytes()) {
+        let actual = match super::read::admit(&JsonText::new(line.as_bytes())) {
             Ok(admitted) => Accepted(admitted.record.message.usage.usage.input_tokens),
             Err(super::read::Refusal::NotUsage) => NoMarker,
             Err(super::read::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
@@ -501,21 +502,46 @@ fn refreshes_daily_dedupe_indexes_when_parent_replaces_sidechain_replay() {
 
 #[test]
 fn propagates_sidechain_metadata_from_agent_progress_lines() {
-    let (data, _) = super::parse_usage_line(
+    let line = JsonText::new(
         br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
-    )
-    .unwrap();
+    );
+    let (data, _) = super::parse_usage_line(&line).unwrap();
 
     assert_eq!(data.session_id.as_deref(), Some("session-a"));
     assert_eq!(data.is_sidechain, Some(true));
 }
 
 #[test]
+fn decodes_escaped_line_scoped_fields_like_plain_ones() {
+    for (direct, progress) in [
+        (
+            r#"{"timestamp":"2026-03-29T07:00:00.000Z","version":"1.0.0","sessionId":"session-a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+        ),
+        (
+            r#"{"timestamp":"2026-03-29T07:00:00.000Z","version":"1.0.0","sessionId":"session-a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+        ),
+    ] {
+        let direct = JsonText::new(direct.as_bytes());
+        let (record, _) = super::parse_usage_line(&direct).unwrap();
+        assert_eq!(record.timestamp, "2026-03-29T07:00:00.000Z");
+        assert_eq!(record.version.as_deref(), Some("1.0.0"));
+        assert_eq!(record.session_id.as_deref(), Some("session-a"));
+
+        let progress = JsonText::new(progress.as_bytes());
+        let (record, _) = super::parse_usage_line(&progress).unwrap();
+        assert_eq!(record.timestamp, "2026-03-29T07:00:00.000Z");
+        assert_eq!(record.session_id.as_deref(), Some("session-a"));
+    }
+}
+
+#[test]
 fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-    let (data, _) = super::parse_usage_line(
+    let line = JsonText::new(
         br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
-    )
-    .unwrap();
+    );
+    let (data, _) = super::parse_usage_line(&line).unwrap();
 
     assert_eq!(data.request_id.as_deref(), Some("req-direct"));
     assert_eq!(data.message.model.as_deref(), Some("direct-model"));
@@ -777,7 +803,7 @@ fn daily_advisor_gate_preserves_the_previous_extraction() {
                 r#"{{"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
             ),
         ] {
-            let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
+            let (_, lookup) = super::parse_usage_line(&JsonText::new(line.as_bytes())).unwrap();
             let reference = format!(r#"{{"message":{message}}}"#);
             let previous = crate::advisor::advisor_usages_from_line(reference.as_bytes()).unwrap();
             let actual = lookup.usages(line.as_bytes()).unwrap();

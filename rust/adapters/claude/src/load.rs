@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
@@ -70,7 +71,7 @@ pub(crate) struct DedupedEntries {
 #[derive(Debug, Clone)]
 pub(super) struct ClaudeEntry {
     pub(super) source_timestamp: String,
-    pub(super) recorded_session_id: Option<String>,
+    pub(super) recorded_session_id: Option<Arc<str>>,
     pub(super) original_model: Option<String>,
     pub(super) request: dedupe::Request,
     pub(super) is_sidechain: Option<bool>,
@@ -349,10 +350,11 @@ impl dedupe::DedupEntry for ClaudeEntry {
     }
 
     fn owned_session_id(&self) -> Arc<str> {
-        match self.recorded_session_id.as_deref() {
-            Some(session_id) => Arc::from(session_id),
-            None => Arc::clone(&self.session_id),
-        }
+        Arc::clone(
+            self.recorded_session_id
+                .as_ref()
+                .unwrap_or(&self.session_id),
+        )
     }
 
     fn message_id(&self) -> Option<&str> {
@@ -388,7 +390,7 @@ pub(super) fn read_usage_file_with_diagnostics(
     daily::read_usage_file(path, tz, pricing, diagnostics, |parsed, line| {
         let model = daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage);
         ClaudeEntry {
-            source_timestamp: parsed.timestamp_text,
+            source_timestamp: parsed.timestamp_text.into_owned(),
             recorded_session_id: parsed.recorded_session_id,
             original_model: parsed.raw_model,
             request: parsed.key.request,
@@ -401,7 +403,7 @@ pub(super) fn read_usage_file_with_diagnostics(
                 ),
                 usage: parsed.usage,
                 message_id: parsed.key.message_id,
-                version: parsed.version,
+                version: parsed.version.map(Cow::into_owned),
                 recorded_cost: parsed.cost_usd,
                 timestamp: parsed.key.timestamp,
                 date: parsed.date,

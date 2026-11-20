@@ -27,10 +27,7 @@ use load::{
     load_entries_since_with_diagnostics, load_windowed_entries, main_thread_sessions,
     retain_copied_entries,
 };
-use usage_wire::{
-    GuardedUsage, IteratedTokenUsage, Nullable, Rejection, deserialize_usage_line, non_null,
-    nullable,
-};
+use usage_wire::{GuardedUsage, IteratedTokenUsage, Nullable, Rejection, non_null, nullable};
 
 pub(crate) use paths::{
     claude_paths, extract_session_parts, read_usage_files_since, visit_usage_files,

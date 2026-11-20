@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use ccusage_adapter_common::json::JsonText;
 use ccusage_core::{CacheCreationRaw, Speed, TokenUsageRaw};
 use serde::{
     Deserialize, Deserializer,
@@ -95,6 +98,40 @@ pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
     line: &[u8],
 ) -> std::result::Result<T, Rejection> {
     ccusage_adapter_common::json::parse(line).map_err(|_| Rejection::Malformed)
+}
+
+pub(crate) fn deserialize_borrowed_usage_line<'a, T: Deserialize<'a>>(
+    line: &'a JsonText<'a>,
+) -> std::result::Result<T, Rejection> {
+    line.parse().map_err(|_| Rejection::Malformed)
+}
+
+pub(crate) struct Text<'a>(pub(crate) Cow<'a, str>);
+
+impl<'de: 'a, 'a> Deserialize<'de> for Text<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct TextVisitor;
+        impl<'de> Visitor<'de> for TextVisitor {
+            type Value = Text<'de>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E> {
+                Ok(Text(Cow::Borrowed(value)))
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E> {
+                Ok(Text(Cow::Owned(value.to_owned())))
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E> {
+                Ok(Text(Cow::Owned(value)))
+            }
+        }
+        deserializer.deserialize_string(TextVisitor)
+    }
 }
 
 pub(crate) type Nullable<T> = Option<Option<T>>;
