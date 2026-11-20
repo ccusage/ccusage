@@ -2459,29 +2459,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 6000,
-      "inputTokens": 800,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 6000,
-          "cost": 0.00515,
-          "inputTokens": 800,
-          "modelName": "openai/gpt-5",
-          "outputTokens": 300
-        }
-      ],
-      "modelsUsed": [
-        "openai/gpt-5"
-      ],
-      "outputTokens": 300,
-      "period": "p-openrouter",
-      "totalCost": 0.00515,
-      "totalTokens": 7140
-    },
-    {
       "agent": "opencode",
       "cacheCreationTokens": 200,
       "cacheReadTokens": 7000,
@@ -2550,6 +2527,29 @@ exit: 0
       "period": "s-minimal",
       "totalCost": 0.0048375,
       "totalTokens": 465
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 6000,
+      "inputTokens": 800,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.00475,
+          "inputTokens": 800,
+          "modelName": "openai/gpt-5",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "openai/gpt-5"
+      ],
+      "outputTokens": 300,
+      "period": "p-openrouter",
+      "totalCost": 0.00475,
+      "totalTokens": 7100
     },
     {
       "agent": "opencode",
@@ -2858,29 +2858,6 @@ exit: 0
       "totalTokens": 700
     },
     {
-      "agent": "hermes",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0032875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "period": "p-gpt5-estimated",
-      "totalCost": 0.0032875,
-      "totalTokens": 3410
-    },
-    {
       "agent": "goose",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -3052,6 +3029,29 @@ exit: 0
       ],
       "outputTokens": 150,
       "period": "gpt-0003",
+      "totalCost": 0.0026875,
+      "totalTokens": 3350
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0026875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "period": "p-gpt5-estimated",
       "totalCost": 0.0026875,
       "totalTokens": 3350
     },
@@ -5241,7 +5241,7 @@ exit: 0
       "outputTokens": 70,
       "period": "p-mystery",
       "totalCost": 0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "agent": "goose",
@@ -5429,8 +5429,8 @@ exit: 0
     "cacheReadTokens": 1311137,
     "inputTokens": 1365215,
     "outputTokens": 60548,
-    "totalCost": 4.822777425000007,
-    "totalTokens": 2758162,
+    "totalCost": 4.821777425000007,
+    "totalTokens": 2758052,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

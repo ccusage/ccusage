@@ -91,7 +91,7 @@ exit: 0
       ],
       "outputTokens": 670,
       "totalCost": 0.25,
-      "totalTokens": 13200
+      "totalTokens": 13140
     },
     {
       "cacheCreationTokens": 50,
@@ -132,7 +132,7 @@ exit: 0
       ],
       "outputTokens": 200,
       "totalCost": 0.0,
-      "totalTokens": 4325
+      "totalTokens": 4315
     },
     {
       "cacheCreationTokens": 0,
@@ -173,7 +173,7 @@ exit: 0
       ],
       "outputTokens": 400,
       "totalCost": 0.3,
-      "totalTokens": 8740
+      "totalTokens": 8700
     }
   ],
   "totals": {
@@ -182,7 +182,7 @@ exit: 0
     "inputTokens": 6670,
     "outputTokens": 1720,
     "totalCost": 1.55,
-    "totalTokens": 37415
+    "totalTokens": 37305
   }
 }
 
