@@ -23,11 +23,11 @@ runs:
         cache-scope: ${{ inputs.cache-scope }}
         save: ${{ inputs.save-nix-cache }}
 
-    - name: Build Linux static binary
+    - name: Build Linux static binary and check its target under the unsafe_code forbid
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
-      run: nix build ".#ccusage-release-linux-$ARCH"
+      run: nix build ".#ccusage-release-linux-$ARCH" ".#ccusage-release-linux-$ARCH.passthru.unsafeCodeCheck"
 
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'

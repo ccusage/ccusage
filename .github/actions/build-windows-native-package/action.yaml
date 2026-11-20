@@ -45,6 +45,21 @@ runs:
         RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
       run: cargo build --manifest-path rust/Cargo.toml --release --bin ccusage --features fetch-litellm-pricing
 
+    - name: Check Windows under the unsafe_code forbid
+      shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+      run: |
+        wrapper="$RUNNER_TEMP/forbid-unsafe-rustc.exe"
+        rustc --edition 2024 -O scripts/forbid-unsafe-rustc.rs -o "$wrapper"
+        RUSTC_WORKSPACE_WRAPPER="$wrapper" cargo check \
+          --manifest-path rust/Cargo.toml \
+          --workspace \
+          --all-targets \
+          --all-features \
+          --locked \
+          --target-dir "$RUNNER_TEMP/unsafe-code"
+
     - name: Stage native package
       shell: bash
       env:

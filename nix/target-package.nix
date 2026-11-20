@@ -32,12 +32,28 @@ let
     cargoArtifacts = dependencyArtifacts;
   };
   cargoArtifacts = workspaceArtifacts.adapters;
+  unsafeCodeCheck = import ./unsafe-code-check.nix {
+    inherit
+      commonArgs
+      craneLib
+      root
+      target
+      ;
+    inherit (pkgs) lib nushell;
+  };
 in
 craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts doInstallCheck postInstall;
-    passthru = { inherit cargoArtifacts dependencyArtifacts workspaceArtifacts; };
+    passthru = {
+      inherit
+        cargoArtifacts
+        dependencyArtifacts
+        unsafeCodeCheck
+        workspaceArtifacts
+        ;
+    };
     meta = package.meta // {
       inherit description;
     };
