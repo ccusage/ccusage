@@ -454,7 +454,12 @@ impl<'a> Line<'a> {
 
 #[inline]
 pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
-    serde_json::from_slice(bytes)
+    // serde_json skips ignored strings without checking their UTF-8, so a line that fails the
+    // whole-line check can still decode; only the slice reader keeps that behavior and its errors.
+    match std::str::from_utf8(bytes) {
+        Ok(text) => serde_json::from_str(text),
+        Err(_) => serde_json::from_slice(bytes),
+    }
 }
 
 pub fn read_records<T: DeserializeOwned>(
@@ -503,7 +508,7 @@ pub fn decode_record<T: DeserializeOwned>(
     diagnostics: &Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
 ) -> Option<T> {
-    match serde_json::from_slice(content) {
+    match parse(content) {
         Ok(record) => Some(record),
         Err(error) => {
             record_decode_error(
@@ -1230,5 +1235,37 @@ mod tests {
         assert_eq!(parse("\"   \""), None);
         assert_eq!(parse("123"), None);
         assert_eq!(parse("null"), None);
+    }
+
+    #[test]
+    fn invalid_utf8_lines_decode_and_fail_as_the_slice_reader_does() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Named<'a> {
+            tokens: u64,
+            #[serde(borrow)]
+            model: Option<&'a str>,
+        }
+
+        assert_eq!(
+            super::parse::<Named<'_>>(b"{\"tokens\":1,\"note\":\"\xff\"}").unwrap(),
+            Named {
+                tokens: 1,
+                model: None
+            }
+        );
+        assert_eq!(
+            super::parse::<Named<'_>>("{\"tokens\":2,\"model\":\"\u{e9}t\u{e9}\"}".as_bytes())
+                .unwrap(),
+            Named {
+                tokens: 2,
+                model: Some("\u{e9}t\u{e9}")
+            }
+        );
+        assert_eq!(
+            super::parse::<Named<'_>>(b"{\"tokens\":3,\"model\":\"a\xffb\"}")
+                .unwrap_err()
+                .to_string(),
+            "invalid unicode code point at line 1 column 23"
+        );
     }
 }
