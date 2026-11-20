@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::{
     IteratedTokenUsage, ModelBreakdown, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
     UsageSummary,
-    cli::{IsoDate, SharedArgs},
+    cli::{DayLabel, IsoDate, SharedArgs},
     cost::{PriceTable, price_resolved_usage},
     date_at,
     fast::{FxHashMap, LinePrefilter, suffix_string},
@@ -46,9 +46,7 @@ impl DailyEntries {
         group_by_project: bool,
         window: Option<&ccusage_core::ReportWindow>,
     ) -> Vec<UsageSummary> {
-        let mut rows = summarize_daily_entries(&self.deduped.entries, group_by_project, window);
-        rows.sort_by(|a, b| a.date.cmp(&b.date));
-        rows
+        summarize_daily_entries(&self.deduped.entries, group_by_project, window)
     }
 
     pub(super) fn sessions(&self) -> MainThreadSessions {
@@ -241,35 +239,38 @@ fn summarize_daily_entries(
 ) -> Vec<UsageSummary> {
     let includes = |day| window.is_none_or(|window| window.contains_entry_date(day));
     if group_by_project {
-        let mut groups = BTreeMap::<(IsoDate, Arc<str>), DailyAccumulator>::new();
+        let mut groups = BTreeMap::<(DayLabel, Arc<str>), DailyAccumulator>::new();
         for entry in deduped {
             groups
-                .entry((entry.date, Arc::clone(&entry.project)))
+                .entry((entry.date.into(), Arc::clone(&entry.project)))
                 .or_default()
                 .add_entry(entry);
         }
         return groups
             .into_iter()
-            .filter(|((date, _), _)| includes(*date))
+            .filter(|((date, _), _)| includes(date.day()))
             .map(|((date, project), group)| {
                 let mut summary = group.into_summary();
-                summary.date = Some(date.to_string());
+                summary.date = Some(date.day().to_string());
                 summary.project = Some(project.to_string());
                 summary
             })
             .collect();
     }
 
-    let mut groups = BTreeMap::<IsoDate, DailyAccumulator>::new();
+    let mut groups = BTreeMap::<DayLabel, DailyAccumulator>::new();
     for entry in deduped {
-        groups.entry(entry.date).or_default().add_entry(entry);
+        groups
+            .entry(entry.date.into())
+            .or_default()
+            .add_entry(entry);
     }
     groups
         .into_iter()
-        .filter(|(date, _)| includes(*date))
+        .filter(|(date, _)| includes(date.day()))
         .map(|(key, group)| {
             let mut summary = group.into_summary();
-            summary.date = Some(key.to_string());
+            summary.date = Some(key.day().to_string());
             summary
         })
         .collect()
@@ -2021,6 +2022,42 @@ mod tests {
         assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
         assert_eq!(deduped[0].key.session_id.as_ref(), "session-a");
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
+    }
+
+    #[test]
+    fn daily_summaries_keep_label_order_for_extended_years() {
+        let entries = [(10000, 1, 1), (2026, 1, 1), (-2, 1, 1), (-1, 12, 31)]
+            .into_iter()
+            .map(|(y, m, d)| {
+                let mut entry = daily_loaded_entry(DailyEntryFixture {
+                    message_id: "msg",
+                    request_id: "req",
+                    is_sidechain: false,
+                    cache_read_tokens: 0,
+                    output_tokens: 1,
+                });
+                entry.date = ccusage_core::cli::IsoDate::from_ymd(y, m, d).unwrap();
+                entry
+            })
+            .collect();
+        let daily = super::DailyEntries {
+            deduped: super::DedupedDailyEntries {
+                entries,
+                copies: Vec::new(),
+            },
+            detected: true,
+        };
+        for group_by_project in [false, true] {
+            let rows = daily.summaries(group_by_project, None);
+            let dates = rows
+                .iter()
+                .map(|row| row.date.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                dates,
+                ["-001-12-31", "-002-01-01", "10000-01-01", "2026-01-01"]
+            );
+        }
     }
 
     struct DailyEntryFixture {

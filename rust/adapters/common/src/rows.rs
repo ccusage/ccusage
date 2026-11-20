@@ -166,7 +166,10 @@ pub fn summarize_entries(
     scope: crate::source::SessionScope,
 ) -> Result<Vec<UsageSummary>> {
     use crate::source::{SessionShape, SummaryKind};
-    use ccusage_core::summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target};
+    use ccusage_core::{
+        cli::DayLabel,
+        summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target},
+    };
 
     let summaries = match kind {
         SummaryKind::Session => match session {
@@ -182,13 +185,12 @@ pub fn summarize_entries(
                 .collect(),
         },
         SummaryKind::Daily | SummaryKind::Monthly | SummaryKind::Weekly(_) => {
-            let mut daily = summarize_by_key_target(
+            let daily = summarize_by_key_target(
                 entries,
-                |entry| entry.date,
-                |date| (date.to_string(), None),
+                |entry| DayLabel::from(entry.date),
+                |date| (date.day().to_string(), None),
                 KeyTarget::Date,
             )?;
-            daily.sort_by(|a, b| a.date.cmp(&b.date));
             Ok(match kind {
                 SummaryKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
                 SummaryKind::Weekly(start) => summarize_bucket(&daily, Bucket::Weekly(start)),
@@ -326,6 +328,30 @@ mod tests {
         .unwrap();
         assert_eq!(rows[0].total_cost, 1.0);
         assert_eq!(rows[0].month.as_deref(), Some("2026-01"));
+    }
+
+    #[test]
+    fn daily_rows_keep_label_order_for_extended_years() {
+        let entries = [(10000, 1, 1), (2026, 1, 1), (-2, 1, 1), (-1, 12, 31)].map(|(y, m, d)| {
+            let mut entry = entry("s", "2026-01-01T00:00:00Z", 1);
+            entry.date = ccusage_core::cli::IsoDate::from_ymd(y, m, d).unwrap();
+            entry
+        });
+        let rows = summarize_entries(
+            &entries,
+            SummaryKind::Daily,
+            SessionShape::Plain,
+            SessionScope::Source,
+        )
+        .unwrap();
+        let dates = rows
+            .iter()
+            .map(|row| row.date.as_deref().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            dates,
+            ["-001-12-31", "-002-01-01", "10000-01-01", "2026-01-01"]
+        );
     }
 
     #[test]
