@@ -106,8 +106,9 @@ check-pricing-data:
     }
     failed=0
     for file in rust/crates/ccusage-core/src/pricing.rs rust/crates/ccusage-core/src/pricing/*.rs \
+        rust/crates/ccusage-core/src/pricing/models_dev/*.rs \
         rust/crates/ccusage-core/src/cost.rs rust/crates/ccusage-pricing-snapshots/src/litellm_filter.rs; do
-        case "$file" in */pricing/data.rs|*/pricing/builtin_pricing.rs) continue ;; esac
+        case "$file" in */pricing/data.rs|*/pricing/builtin_pricing.rs|*/pricing/tests.rs) continue ;; esac
         matches="$(sed '/^mod tests/,$d' "$file" | collect "$names" -)"
         if [[ -n "$matches" ]]; then
             printf '%s\n' "$matches" | sed "s|^|$file:|"
