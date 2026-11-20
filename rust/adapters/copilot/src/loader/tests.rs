@@ -2404,6 +2404,30 @@ fn a_re_export_inherits_its_trace_model_from_another_file() {
 }
 
 #[test]
+fn keeps_distinct_service_requests_of_one_response_in_one_file_or_several() {
+    let call = |span_id: &str, request_id: &str| {
+        let mut span: serde_json::Value = serde_json::from_str(&otel_call_with(
+            span_id,
+            "2026-01-02T09:00:00.000Z",
+            ("gen_ai.response.id", "turn-response"),
+        ))
+        .unwrap();
+        span["attributes"]["github.copilot.service_request_id"] = json!(request_id);
+        span.to_string()
+    };
+
+    let [joined, split] =
+        joined_and_split_otel_rows(&[call("span-1", "request-1"), call("span-2", "request-2")]);
+
+    let both = [
+        ("2026-01-02T09:00:00.000Z".to_string(), 1),
+        ("2026-01-02T09:00:00.000Z".to_string(), 1),
+    ];
+    assert_eq!(joined, both);
+    assert_eq!(split, both);
+}
+
+#[test]
 fn keeps_distinct_calls_of_one_response_id_in_one_file_or_several() {
     let call = |span_id: &str, input_tokens: u64| {
         let mut span: serde_json::Value =

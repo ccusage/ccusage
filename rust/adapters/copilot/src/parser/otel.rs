@@ -438,7 +438,7 @@ fn keep_best_source(
 
 // NOTE(2026-10-10, #1858): Copilot CLI can re-export a chat span under new trace or span IDs with the original response ID and usage. VS Code reuses response IDs across a turn, so compare usage as well.
 fn repeated_chat_spans(candidates: &[CopilotUsageCandidate]) -> HashSet<usize> {
-    let mut earliest = HashMap::new();
+    let mut kept = HashMap::<_, Vec<usize>>::new();
     let mut repeated = HashSet::new();
     for (index, candidate) in candidates.iter().enumerate() {
         if candidate.source != CopilotUsageSource::ChatSpan {
@@ -457,13 +457,24 @@ fn repeated_chat_spans(candidates: &[CopilotUsageCandidate]) -> HashSet<usize> {
             candidate.reasoning_output_tokens,
             candidate.extra_total_tokens,
         );
-        let kept = *earliest.entry(call).or_insert(index);
-        if kept == index {
+        let copies = kept.entry(call).or_default();
+        // NOTE(2026-11-20, #2368): A service request ID names one request. Spans with different service request IDs are separate calls even when their response ID and usage match.
+        let same_request = copies.iter_mut().find(|kept| {
+            match (
+                candidates[**kept].service_request_id.as_deref(),
+                candidate.service_request_id.as_deref(),
+            ) {
+                (Some(kept), Some(current)) => kept == current,
+                _ => true,
+            }
+        });
+        let Some(earliest) = same_request else {
+            copies.push(index);
             continue;
-        }
-        if candidate.timestamp < candidates[kept].timestamp {
-            repeated.insert(kept);
-            earliest.insert(call, index);
+        };
+        if candidate.timestamp < candidates[*earliest].timestamp {
+            repeated.insert(*earliest);
+            *earliest = index;
         } else {
             repeated.insert(index);
         }
