@@ -1088,6 +1088,46 @@ mod tests {
     }
 
     #[test]
+    fn prices_gemini_2_5_flash_thinking_at_the_gemini_2_5_flash_rate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                0,
+                metadata_blob(
+                    None,
+                    Some(UsageFixture {
+                        model_id: Some(313),
+                        input_tokens: 60,
+                        total_output_tokens: 10,
+                        visible_output_tokens: 10,
+                        ..UsageFixture::default()
+                    }),
+                    Some((1_781_481_600, 0)),
+                    &[],
+                ),
+            )],
+            &[],
+            &[],
+        );
+
+        let entries = load_from_fixture(&fixture, true);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].model.as_deref(),
+            Some("gemini-2.5-flash-thinking")
+        );
+        assert!(entries[0].missing_pricing_model.is_none());
+        assert!(
+            (entries[0].cost - (60.0 * 0.3e-6 + 10.0 * 2.5e-6)).abs() < 1e-12,
+            "{}",
+            entries[0].cost
+        );
+    }
+
+    #[test]
     fn keeps_alias_mapped_ids_over_explicit_model_name() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
