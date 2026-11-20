@@ -285,3 +285,42 @@ fn price_neutral_suffixes_keep_the_listed_rate() {
         );
     }
 }
+
+#[test]
+fn a_thinking_or_reasoning_run_bills_at_the_listed_rate_for_vendors_that_bill_it_as_output() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (model, listed) in [
+        ("claude-sonnet-5-5-thinking", "claude-sonnet-5-5"),
+        ("claude-sonnet-5-5:thinking-high", "claude-sonnet-5-5"),
+        ("gemini-4-argon-thinking", "gemini-4-argon"),
+        ("gemini-4-argon-thinking-low", "gemini-4-argon"),
+        ("deepseek-v4.1-flash-thinking", "deepseek-v4.1-flash"),
+        ("zai/glm-5.3:thinking", "zai/glm-5.3"),
+        ("grok-4.7-reasoning", "grok-4.7"),
+        ("grok-4-7-non-reasoning", "grok-4.7"),
+    ] {
+        let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
+        let expected = pricing.find(listed).unwrap();
+        assert_eq!(
+            (found.input, found.output),
+            (expected.input, expected.output),
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn a_thinking_variant_of_a_vendor_that_may_price_it_separately_stays_unpriced() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for model in [
+        "qwen4-max-thinking",
+        "kimi-k3-thinking",
+        "mistral/mistral-large-4-thinking",
+        "claude-sonnet-5-5-reasoning",
+        "grok-4.7-thinking",
+    ] {
+        assert!(pricing.find(model).is_none(), "{model}");
+    }
+}

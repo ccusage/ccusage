@@ -64,6 +64,20 @@ pub(super) static PRICE_NEUTRAL_SUFFIX_WORDS: &[&str] = &[
     "beta",
 ];
 
+// NOTE(2026-11-20): These vendors bill a thinking or reasoning run as ordinary output tokens at the model's own rates, so the variant word names the same model only for that vendor's ids. Alibaba prices some Qwen models' thinking output separately (https://www.alibabacloud.com/help/en/model-studio/model-pricing), so the word stays a model word for every other family.
+pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
+    // NOTE(2026-11-20): "Tokens Claude uses while thinking (billed as output tokens)" — https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost
+    ("claude-", &["thinking"]),
+    // NOTE(2026-11-20): Each Gemini model has one "Output price (including thinking tokens)" — https://ai.google.dev/gemini-api/docs/pricing
+    ("gemini-", &["thinking"]),
+    // NOTE(2026-11-20): Each DeepSeek model has one price for both its thinking and non-thinking modes — https://api-docs.deepseek.com/quick_start/pricing
+    ("deepseek-", &["thinking"]),
+    // NOTE(2026-11-20): GLM thinking is a request parameter on the model, which has one output price — https://docs.z.ai/guides/capabilities/thinking-mode
+    ("glm-", &["thinking"]),
+    // NOTE(2026-11-20): xAI lists a model's reasoning and non-reasoning ids at identical rates — https://docs.x.ai/developers/pricing
+    ("grok-", &["non-reasoning", "reasoning"]),
+];
+
 pub(super) static ALIASES: &[(&str, &str)] = &[
     ("gpt-reserve", "gpt-5.6-luna"),
     ("gpt-5.6", "gpt-5.6-sol"),
