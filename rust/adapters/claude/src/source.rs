@@ -78,7 +78,7 @@ impl Claude {
                     &mut deduped.entries,
                     &mut deduped.copies,
                     window,
-                    |entry| &entry.date,
+                    |entry| entry.date,
                 );
             }
             let entries = deduped
@@ -99,23 +99,14 @@ impl Claude {
         let loaded = load_daily_summaries_with_detection_progress(
             &load_shared,
             project_filter,
-            false,
+            report_window.as_ref(),
             request.progress,
             &diagnostics,
         )?;
-        let mut summaries = loaded.summaries;
-        if let Some(window) = report_window.as_ref() {
-            summaries.retain(|summary| {
-                summary
-                    .date
-                    .as_deref()
-                    .is_some_and(|date| window.contains_date(date))
-            });
-        }
         let sessions = loaded.sessions;
         Ok((
             LoadedRows {
-                rows: summary_rows("claude", summaries, false),
+                rows: summary_rows("claude", loaded.summaries, false),
                 detected: loaded.detected,
                 diagnostics,
             },

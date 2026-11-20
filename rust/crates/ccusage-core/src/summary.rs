@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     LoadedEntry, ModelBreakdown, Result, TimestampMs, TokenCounts, UsageSummary,
-    cli::{SortOrder, WeekDay},
+    cli::{DayLabel, SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
     format_rfc3339_millis,
@@ -45,6 +45,15 @@ where
         rows.push(summary);
     }
     Ok(rows)
+}
+
+pub fn summarize_by_day(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
+    summarize_by_key_target(
+        entries,
+        |entry| DayLabel::from(entry.date),
+        |day| (day.day().to_string(), None),
+        KeyTarget::Date,
+    )
 }
 
 #[derive(Default)]
@@ -568,8 +577,8 @@ mod tests {
 
         let rows = summarize_by_key_target(
             &[stored.clone(), calculated, other, stored],
-            |entry| entry.date.clone(),
-            |key| (key.clone(), None),
+            |entry| entry.date,
+            |key| (key.to_string(), None),
             KeyTarget::Date,
         )
         .unwrap();
@@ -680,7 +689,7 @@ mod tests {
             version: fixture.version.map(str::to_string),
             recorded_cost: None,
             timestamp,
-            date: fixture.date.to_string(),
+            date: crate::cli::IsoDate::parse(fixture.date).unwrap(),
             project: Arc::from(fixture.project_path),
             session_id: Arc::from(fixture.session_id),
             project_path: Arc::from(fixture.project_path),

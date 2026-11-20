@@ -10,7 +10,7 @@ use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
 };
 
 pub(super) struct HermesEntry {
@@ -159,7 +159,7 @@ pub(super) fn to_loaded_entry(
     let (cost, missing_pricing_model) = price_hermes(&entry, pricing);
     let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("hermes"),
         session_id: Arc::from(entry.session_id.as_str()),

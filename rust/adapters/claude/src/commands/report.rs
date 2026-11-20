@@ -5,8 +5,8 @@ use ccusage_core::{
     UsageSummary,
     cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder},
     fast::FxHashMap,
-    print_json_or_jq, print_usage_table, sort_summaries, summarize_by_key_target,
-    summary::{Bucket, KeyTarget, summarize_bucket},
+    print_json_or_jq, print_usage_table, sort_summaries,
+    summary::{Bucket, summarize_bucket, summarize_by_day},
     totals_json, wants_json,
 };
 use ccusage_report::{
@@ -66,12 +66,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
         .into_iter()
         .map(|entry| entry.entry)
         .collect::<Vec<_>>();
-    let mut daily = summarize_by_key_target(
-        &entries,
-        |entry| entry.date.clone(),
-        |key| (key.clone(), None),
-        KeyTarget::Date,
-    )?;
+    let mut daily = summarize_by_day(&entries)?;
     sort_summaries(&mut daily, &shared.order.unwrap_or_default(), |row| {
         row.date.as_deref().unwrap_or_default()
     });

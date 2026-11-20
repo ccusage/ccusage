@@ -8,7 +8,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
-use crate::{LoadedEntry, TokenUsageRaw, format_date_tz};
+use crate::{LoadedEntry, TokenUsageRaw, date_at};
 use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
@@ -111,7 +111,7 @@ pub(super) fn row_to_entry(
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
 
     Ok(Some(LoadedEntry {
-        date: format_date_tz(timestamp, tz),
+        date: date_at(timestamp, tz),
         timestamp,
         project: Arc::from("goose"),
         session_id: Arc::from(id.as_str()),

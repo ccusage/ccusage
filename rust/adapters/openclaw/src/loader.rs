@@ -97,7 +97,7 @@ mod tests {
         let entries = load_fixture(&fixture, &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-30");
+        assert_eq!(entries[0].date.to_string(), "2026-01-30");
         assert_eq!(entries[0].session_id.as_ref(), "abc");
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
         assert_eq!(entries[0].version.as_deref(), Some("openai-codex"));
@@ -191,7 +191,7 @@ mod tests {
         let entries = load_fixture(&fixture, &shared);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-01-30");
+        assert_eq!(entries[0].date.to_string(), "2026-01-30");
         assert_eq!(entries[0].session_id.as_ref(), "session-sqlite");
         assert_eq!(
             entries[0].model.as_deref(),

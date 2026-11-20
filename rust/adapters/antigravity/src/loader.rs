@@ -818,7 +818,7 @@ mod tests {
         let entries = load_from_fixture(&fixture, true);
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-05-09");
+        assert_eq!(entries[0].date.to_string(), "2026-05-09");
         assert_eq!(
             entries[0].timestamp,
             ccusage_core::parse_ts_timestamp("2026-05-09T04:13:20.456Z").unwrap()

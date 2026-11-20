@@ -22,7 +22,7 @@ fn builds_opencode_daily_json_report() {
         version: None,
         recorded_cost: Some(0.02),
         timestamp: parse_ts_timestamp("2026-01-02T00:00:00.000Z").unwrap(),
-        date: "2026-01-02".to_string(),
+        date: ccusage_core::cli::IsoDate::parse("2026-01-02").unwrap(),
         project: Arc::from("opencode"),
         session_id: Arc::from("opencode-session"),
         project_path: Arc::from("OpenCode"),

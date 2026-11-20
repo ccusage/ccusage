@@ -37,7 +37,7 @@ fn loads_pi_agent_jsonl_usage_entries() {
     .unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].date, "2026-04-22");
+    assert_eq!(entries[0].date.to_string(), "2026-04-22");
     assert_eq!(entries[0].project.as_ref(), "project-a");
     assert_eq!(entries[0].session_id.as_ref(), "session-a");
     assert_eq!(entries[0].model.as_deref(), Some("[pi] gpt-5.4"));
@@ -63,7 +63,7 @@ fn builds_pi_daily_json_report() {
         version: None,
         recorded_cost: Some(0.05),
         timestamp: parse_ts_timestamp("2026-04-22T01:02:03.000Z").unwrap(),
-        date: "2026-04-22".to_string(),
+        date: ccusage_core::cli::IsoDate::parse("2026-04-22").unwrap(),
         project: Arc::from("project-a"),
         session_id: Arc::from("session-a"),
         project_path: Arc::from("project-a"),

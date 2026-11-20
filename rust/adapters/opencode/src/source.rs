@@ -4,7 +4,7 @@ use ccusage_adapter_common::{
     source::{LoadRequest, LoadedRows, ProgressOwner, UsageSource},
 };
 use ccusage_core::Diagnostics;
-use ccusage_core::{ReportWindow, Result, progress::UsageLoadAgent};
+use ccusage_core::{Result, progress::UsageLoadAgent};
 
 use crate::{
     has_data, loader::load_entries_with_native_sessions_with_diagnostics, summarize_entries,
@@ -67,8 +67,7 @@ fn load_rows(
     } else {
         linked.into_iter().map(|(entry, _)| entry).collect()
     };
-    let window = ReportWindow::from_shared(request.shared);
-    entries.retain(|entry| window.contains_date(&entry.date));
+    ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, request.shared);
     let summaries = summarize_entries(
         &entries,
         request.kind.report_kind(),

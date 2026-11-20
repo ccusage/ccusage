@@ -1,6 +1,6 @@
 use ccusage_adapter_common::source::{Detection, EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::{
-    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli, cli::AgentCommandArgs, format_date_tz,
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli, cli::AgentCommandArgs, date_at,
     model_aliases, stored_cost_for_mode, total_usage_tokens,
 };
 

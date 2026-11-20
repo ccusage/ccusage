@@ -1,7 +1,7 @@
 use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::{
     LoadedEntry, Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli,
-    cli::AgentCommandArgs, format_date_tz, stored_cost_for_mode,
+    cli::AgentCommandArgs, date_at, stored_cost_for_mode,
 };
 
 mod loader;

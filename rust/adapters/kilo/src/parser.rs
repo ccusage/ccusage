@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
-    format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
+    stored_cost_for_mode,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -154,7 +154,7 @@ pub(super) fn message_value_to_entry(
     Ok(Some((
         message_id.clone(),
         LoadedEntry {
-            date: format_date_tz(timestamp, tz),
+            date: date_at(timestamp, tz),
             timestamp,
             project: Arc::from("kilo"),
             session_id: Arc::from(session_id),

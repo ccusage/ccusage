@@ -1,4 +1,4 @@
-use ccusage_core::summary::KeyTarget;
+use ccusage_core::summary::{KeyTarget, summarize_by_day};
 use ccusage_test_support::{Environment, fs_fixture};
 use serde_json::Value;
 
@@ -31,13 +31,7 @@ fn rows_json(rows: &[UsageSummary]) -> Vec<Value> {
 }
 
 fn daily_from_entries(entries: &[LoadedEntry]) -> Vec<UsageSummary> {
-    summarize_by_key_target(
-        entries,
-        |entry| entry.date.clone(),
-        |key| (key.clone(), None),
-        KeyTarget::Date,
-    )
-    .unwrap()
+    summarize_by_day(entries).unwrap()
 }
 
 #[test]
@@ -64,7 +58,7 @@ fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
         let loaded = crate::load_daily_summaries_with_detection_progress(
             &shared,
             None,
-            false,
+            None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             &crate::Diagnostics::new("claude"),
         )
@@ -95,7 +89,7 @@ fn bounded_daily_detection_survives_an_empty_report_window() {
         let loaded = crate::load_daily_summaries_with_detection_progress(
             &shared,
             None,
-            false,
+            None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             &crate::Diagnostics::new("claude"),
         )
@@ -462,7 +456,7 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
         let daily = crate::load_daily_summaries_with_detection_progress(
             &shared,
             None,
-            false,
+            None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             &daily_diagnostics,
         )
