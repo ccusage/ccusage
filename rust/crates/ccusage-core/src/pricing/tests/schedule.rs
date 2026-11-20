@@ -1,4 +1,4 @@
-use super::{PricingMap, timestamp};
+use super::{BillingRoute, MatchKind, PricingMap, timestamp};
 
 fn direct_deepseek_pricing() -> PricingMap {
     crate::test_support::install_pricing_snapshots();
@@ -472,4 +472,154 @@ fn scheduled_alias_override_preserves_duration_and_speed_fields_from_the_selecte
     assert_eq!(scheduled.cache_create_1h, Some(13.0));
     assert_eq!(scheduled.fast_multiplier, 3.0);
     assert_eq!(scheduled.flex_multiplier, 0.4);
+}
+
+fn input_per_million_on_route(
+    pricing: &PricingMap,
+    model: &str,
+    candidates: &[&str],
+    route: BillingRoute,
+    instant: &str,
+) -> f64 {
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (*name, MatchKind::Fuzzy))
+        .collect();
+    let (_, rates) = pricing
+        .resolve_on_route_at(Some(model), &candidates, route, Some(timestamp(instant)))
+        .unwrap();
+    rates.input * 1e6
+}
+
+#[test]
+fn billing_route_decides_deepseek_schedule_eligibility() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "deepseek-latest",
+        "deepseek-v4-flash",
+    )]);
+    crate::test_support::install_pricing_snapshots();
+    let mut qualified_only = PricingMap::default();
+    qualified_only.load_json(
+        r#"{
+                "deepseek/deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
+                    "input_cost_per_token": 0.0000003,
+                    "output_cost_per_token": 0.0000012
+                }
+            }"#,
+    );
+    let mut bare_only = PricingMap::default();
+    bare_only.load_json(
+        r#"{
+                "deepseek-v4-flash": {
+                    "litellm_provider": "deepseek",
+                    "input_cost_per_token": 0.0000003,
+                    "output_cost_per_token": 0.0000012
+                }
+            }"#,
+    );
+    let direct = BillingRoute::Direct;
+    let foreign = BillingRoute::Foreign;
+    for (case, pricing, model, candidates, route, instant, expected) in [
+        (
+            "direct_bare_before_cutoff",
+            &bare_only,
+            "deepseek-v4-flash",
+            &["deepseek-v4-flash", "deepseek/deepseek-v4-flash"][..],
+            direct,
+            "2026-08-16T15:59:59Z",
+            0.14,
+        ),
+        (
+            "direct_bare_peak",
+            &bare_only,
+            "deepseek-v4-flash",
+            &["deepseek-v4-flash", "deepseek/deepseek-v4-flash"][..],
+            direct,
+            "2026-08-17T01:00:00Z",
+            0.44,
+        ),
+        (
+            "direct_falls_back_to_qualified_row_off_peak",
+            &qualified_only,
+            "deepseek-v4-flash",
+            &["deepseek-v4-flash", "deepseek/deepseek-v4-flash"][..],
+            direct,
+            "2026-08-17T04:00:00Z",
+            0.22,
+        ),
+        (
+            "direct_qualified_first_peak",
+            &bare_only,
+            "deepseek-v4-flash",
+            &["deepseek/deepseek-v4-flash", "deepseek-v4-flash"][..],
+            direct,
+            "2026-08-17T01:00:00Z",
+            0.44,
+        ),
+        (
+            "direct_alias_peak",
+            &bare_only,
+            "deepseek-latest",
+            &["deepseek-latest", "deepseek/deepseek-latest"][..],
+            direct,
+            "2026-08-17T01:00:00Z",
+            0.44,
+        ),
+        (
+            "foreign_missing_qualified_price_is_static_at_peak",
+            &bare_only,
+            "deepseek-v4-flash",
+            &["openrouter/deepseek-v4-flash", "deepseek-v4-flash"][..],
+            foreign,
+            "2026-08-17T01:00:00Z",
+            0.3,
+        ),
+        (
+            "foreign_missing_qualified_price_is_static_off_peak",
+            &bare_only,
+            "deepseek-v4-flash",
+            &["openrouter/deepseek-v4-flash", "deepseek-v4-flash"][..],
+            foreign,
+            "2026-08-17T04:00:00Z",
+            0.3,
+        ),
+        (
+            "foreign_missing_qualified_price_is_static_before_cutoff",
+            &bare_only,
+            "deepseek-v4-flash",
+            &["openrouter/deepseek-v4-flash", "deepseek-v4-flash"][..],
+            foreign,
+            "2026-08-16T15:59:59Z",
+            0.3,
+        ),
+    ] {
+        let actual = input_per_million_on_route(pricing, model, candidates, route, instant);
+        assert!((actual - expected).abs() < 1e-12, "{case}: {actual}");
+    }
+}
+
+#[test]
+fn user_overrides_take_precedence_over_the_route_schedule() {
+    crate::test_support::install_pricing_snapshots();
+    let model = "deepseek-v4-flash".to_string();
+    let patch = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(9e-6),
+        ..Default::default()
+    };
+    let pricing = direct_deepseek_pricing().with_user_overrides([(&model, &patch)]);
+    let candidates = [("deepseek-v4-flash", MatchKind::Fuzzy)];
+    let instant = Some(timestamp("2026-08-17T01:00:00Z"));
+
+    let (_, direct) = pricing
+        .resolve_on_route_at(Some(&model), &candidates, BillingRoute::Direct, instant)
+        .unwrap();
+    assert_eq!(direct.input * 1e6, 9.0);
+    assert!((direct.output * 1e6 - 1.32).abs() < 1e-12);
+
+    let (_, foreign) = pricing
+        .resolve_on_route_at(Some(&model), &candidates, BillingRoute::Foreign, instant)
+        .unwrap();
+    assert_eq!(foreign.input * 1e6, 9.0);
+    assert!((foreign.output * 1e6 - 0.28).abs() < 1e-12);
 }
