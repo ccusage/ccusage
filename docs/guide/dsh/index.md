@@ -60,6 +60,8 @@ DeepSeek Harness does not log usage for the requests that generate session title
 
 DeepSeek Harness does not record costs, so ccusage calculates them from token counts and known model pricing. `auto` and `calculate` produce the same result, and `display` shows `$0.00`. Requests through DeepSeek's own API-key and account providers use DeepSeek pricing; requests through other providers look up pricing for that provider's model first, then for the bare model ID. A model without known pricing remains visible with a missing-pricing warning.
 
+For `deepseek-flash`, each request's timestamp selects the peak or off-peak token rates, including cache reads. Peak windows are Monday through Friday, 01:00–04:00 and 06:00–10:00 UTC; all other hours, including weekends, use half those rates. The report timezone does not change the rate. Chinese public-holiday exceptions in [DeepSeek's pricing](https://api-docs.deepseek.com/quick_start/pricing/) are not yet modeled.
+
 ## Environment Variables
 
 | Variable   | Description                                                                 |
