@@ -32,6 +32,10 @@ pub fn f() {}
     unsafe { *std::ptr::addr_of!(value) }
 }
 '
+    gated: '#[cfg(feature = "gated")]
+#[allow(unsafe_code)]
+pub fn f() {}
+'
 }
 
 const clean = r##'#![forbid(unsafe_code)]
@@ -60,7 +64,7 @@ resolver = "2"
         | save ($fixture | path join Cargo.toml)
         for crate in [ccusage-zstd other] {
             mkdir ($fixture | path join crates $crate src)
-            $"[package]\nname = \"($crate)\"\nversion = \"0.0.0\"\nedition = \"2024\"\n"
+            $"[package]\nname = \"($crate)\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[features]\ngated = []\n"
             | save ($fixture | path join crates $crate Cargo.toml)
         }
         '#![expect(unsafe_code, reason = "the exempt crate")]

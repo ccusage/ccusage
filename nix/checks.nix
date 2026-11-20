@@ -64,22 +64,17 @@ in
           '';
         }
       );
-      ccusage-unsafe-code = craneLib.mkCargoDerivation (
-        commonArgs
-        // testArtifacts.consumerArgs
-        // {
-          pname = "ccusage-unsafe-code";
-          src = rustSrc;
-          sourceRoot = "source/rust";
-          cargoLock = root + /rust/Cargo.lock;
-          inherit cargoArtifacts;
-          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ pkgs.nushell ];
-          buildPhaseCargoCommand = ''
-            nu --no-config-file ${root + /scripts}/check-unsafe-code.test.nu
-            nu --no-config-file ${root + /scripts}/check-unsafe-code.nu Cargo.toml --target-dir "''${CARGO_TARGET_DIR:-target}"
-          '';
-        }
-      );
+      ccusage-unsafe-code = import ./unsafe-code-check.nix {
+        inherit
+          commonArgs
+          craneLib
+          lib
+          root
+          ;
+        inherit (pkgs) nushell;
+        inherit cargoArtifacts;
+        withScriptTests = true;
+      };
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
