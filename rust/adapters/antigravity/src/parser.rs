@@ -1165,7 +1165,7 @@ fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
 fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
     let mut models = vec![model];
     models.extend(gemini_flash_pricing_alias(model));
-    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it; the resolver does not treat `-thinking` as price-neutral because catalogues list separate thinking models.
+    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it. The resolver cannot treat `-thinking` as price-neutral because catalogues list separate thinking models.
     models.extend(model.strip_suffix("-thinking"));
 
     let use_google_prefixes = matches!(

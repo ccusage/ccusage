@@ -2015,7 +2015,7 @@ fn pricing_key_matches(
         || names_same_model((normalized_model, model), (normalized_candidate, candidate))
 }
 
-// NOTE(2026-11-20, #2236, #2237): Either id may carry only a host or provider qualifier in front of the other; a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`.
+// NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`.
 fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
     if model.len() >= key.len() {
         contains_pricing_key(model, raw_model, key)
