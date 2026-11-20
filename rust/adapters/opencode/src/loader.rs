@@ -3411,6 +3411,18 @@ mod tests {
                 }
             }
             create_opencode_time_index(&db_path, table);
+            let schema_table = match table {
+                MessageTable::Message => super::Table::Message,
+                MessageTable::SessionMessage => super::Table::SessionMessage,
+            };
+            let schema = super::TableSchema::probe(
+                &sqlite::open(&db_path).unwrap(),
+                schema_table,
+                &db_path,
+                &ccusage_core::Diagnostics::new("opencode"),
+            )
+            .unwrap();
+            assert!(schema.indexed_time, "{table:?}");
 
             let entries = load_local_day(fixture.root(), "Asia/Tokyo", "20260102");
 
