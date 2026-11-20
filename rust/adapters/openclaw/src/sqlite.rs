@@ -100,7 +100,7 @@ fn read_agent_database(
         true,
         diagnostics,
         |connection, _| {
-            match table_exists(connection) {
+            match ccusage_adapter_common::sqlite::table_exists(connection, "transcript_events") {
                 Ok(true) => {}
                 Ok(false) => {
                     return Err(UnitError::new(
@@ -156,16 +156,6 @@ fn read_agent_database(
                 .map(|entry| entry_to_loaded(entry, tz, mode, pricing)))
         },
     )
-}
-
-fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sqlite::Error> {
-    let mut statement = connection
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")?;
-    statement.bind((1, "transcript_events"))?;
-    match statement.next()? {
-        sqlite::State::Row => Ok(true),
-        sqlite::State::Done => Ok(false),
-    }
 }
 
 #[cfg(test)]
@@ -484,12 +474,7 @@ mod tests {
             sqlite::OpenFlags::new().with_read_only(),
         )
         .expect("SQLite should open the damaged file before probing its schema");
-        let probe = connection
-            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-            .and_then(|mut statement| {
-                statement.bind((1, "transcript_events"))?;
-                statement.next()
-            });
+        let probe = ccusage_adapter_common::sqlite::table_exists(&connection, "transcript_events");
         assert!(
             probe.is_err(),
             "the schema probe must fail for this fixture"
