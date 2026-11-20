@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from .. nixpkgs#nushell --command nu
+#! nix shell --inputs-from .. nixpkgs#nushell nixpkgs#ast-grep --command nu
 
 def dependency-tables [manifest: record]: nothing -> list<record> {
     let sections = ['dependencies' 'dev-dependencies' 'build-dependencies']
@@ -15,6 +15,25 @@ def dependency-tables [manifest: record]: nothing -> list<record> {
 
 const unsafe_site = 'crates/ccusage-zstd/src/direct.rs'
 
+const unsafe_suppression = '
+id: unsafe-code-suppressed
+language: rust
+rule:
+  kind: identifier
+  regex: ^unsafe_code$
+  all:
+    - inside:
+        kind: token_tree
+        follows:
+          kind: identifier
+          regex: ^(allow|expect|warn)$
+    - inside:
+        any:
+          - kind: attribute_item
+          - kind: inner_attribute_item
+        stopBy: end
+'
+
 def lint-violations [root: path, manifest: record, members: list<string>]: nothing -> list<string> {
     let level = $manifest | get --optional workspace.lints.rust.unsafe_code
     let workspace = if $level not-in ['deny' 'forbid'] {
@@ -28,20 +47,19 @@ def lint-violations [root: path, manifest: record, members: list<string>]: nothi
             $"($member | path relative-to $root): must inherit [workspace.lints] with [lints] workspace = true"
         }
     } | compact
-    let attributes = $members
+    let sources = $members
     | each {|member| glob ($member | path dirname | path join '**/*.rs') --exclude ['**/target/**'] }
     | flatten
     | where {|file| ($file | path relative-to $root) != $unsafe_site }
-    | each {|file|
-        open --raw $file
+    let attributes = if ($sources | is-empty) { [] } else {
+        ^ast-grep scan --inline-rules $unsafe_suppression --json=stream ...$sources
         | lines
-        | enumerate
-        | where {|line| $line.item =~ '\b(?:allow|expect)\s*\([^)]*\bunsafe_code\b' }
         | each {|line|
-            $"($file | path relative-to $root):($line.index + 1): unsafe_code may be allowed only in ($unsafe_site)"
+            let found = $line | from json
+            let file = $found.file | path expand | path relative-to $root
+            $"($file):($found.range.start.line + 1): unsafe_code may be allowed only in ($unsafe_site)"
         }
     }
-    | flatten
     $workspace | append $inheritance | append $attributes
 }
 

@@ -111,7 +111,7 @@ in
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
         workspace-dependency-inheritance =
-          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell ]
+          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell pkgs.ast-grep ]
             ''
               nu --no-config-file scripts/check-workspace-dependency-inheritance.nu rust
             '';

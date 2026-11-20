@@ -94,9 +94,25 @@ workspace = true
 workspace = true
 '
         | save ($fixture | path join crates/ccusage-zstd/Cargo.toml)
-        '#![expect(unsafe_code, reason = "the one allowed site")]
+        '#![expect(
+    unsafe_code,
+    reason = "the one allowed site"
+)]
 '
         | save ($fixture | path join crates/ccusage-zstd/src/direct.rs)
+        '#![forbid(unsafe_code)]
+#[deny(unsafe_code)]
+fn strict() {
+    let text = "allow(unsafe_code)";
+}
+// allow(unsafe_code)
+macro_rules! quoted {
+    () => {
+        allow(unsafe_code)
+    };
+}
+'
+        | save ($fixture | path join crates/inherited/src/strict.rs)
         let allowed = nu $check $fixture | complete
         assert equal $allowed.exit_code 0 $allowed.stderr
         '#![allow(unsafe_code)]
@@ -106,19 +122,47 @@ workspace = true
 fn f() {}
 '
         | save ($fixture | path join crates/inherited/src/nested/inner.rs)
+        '#![expect(
+    unsafe_code,
+    reason = "wrapped like direct.rs"
+)]
+'
+        | save ($fixture | path join crates/inherited/src/wrapped.rs)
+        '#[cfg_attr(
+    test,
+    allow(
+        dead_code,
+        unsafe_code
+    )
+)]
+fn g() {}
+'
+        | save ($fixture | path join crates/inherited/src/split.rs)
+        '#![warn(unsafe_code)]
+'
+        | save ($fixture | path join crates/inherited/src/warned.rs)
         let attributes = nu $check $fixture | complete
         assert equal $attributes.exit_code 1 $attributes.stderr
-        assert equal (
-            $attributes.stderr
-            | str contains 'crates/ccusage-zstd/src/lib.rs:1: unsafe_code may be'
-        ) true
-        assert equal (
-            $attributes.stderr
-            | str contains 'crates/inherited/src/nested/inner.rs:1: unsafe_code'
-        ) true
-        assert equal ($attributes.stderr | str contains 'direct.rs:1') false
-        rm ($fixture | path join crates/ccusage-zstd/src/lib.rs)
-        rm ($fixture | path join crates/inherited/src/nested/inner.rs)
+        for site in [
+            'crates/ccusage-zstd/src/lib.rs:1:'
+            'crates/inherited/src/nested/inner.rs:1:'
+            'crates/inherited/src/wrapped.rs:2:'
+            'crates/inherited/src/split.rs:5:'
+            'crates/inherited/src/warned.rs:1:'
+        ] {
+            assert equal ($attributes.stderr | str contains $site) true $site
+        }
+        assert equal ($attributes.stderr | str contains 'direct.rs:') false
+        assert equal ($attributes.stderr | str contains 'strict.rs:') false
+        for file in [
+            crates/ccusage-zstd/src/lib.rs
+            crates/inherited/src/nested/inner.rs
+            crates/inherited/src/wrapped.rs
+            crates/inherited/src/split.rs
+            crates/inherited/src/warned.rs
+        ] {
+            rm ($fixture | path join $file)
+        }
 
         open --raw ($fixture | path join Cargo.toml)
         | str replace 'unsafe_code = "deny"' 'unsafe_code = "allow"'
