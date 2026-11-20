@@ -22,6 +22,7 @@ Ir           file:function
 300 (30.00%)  /build/rust/crates/core/src/lib.rs:ccusage_core::parse::line::h0123456789abcdef [/tmp/bin/ccusage]
 100 (10.00%)  /other/lib.rs:ccusage_core::parse::line::hfedcba9876543210 [/tmp/bin/ccusage]
  60           ???:<alloc::vec::Vec<T> as core::ops::drop::Drop>::drop [/tmp/bin/ccusage]
+ 40 ( 4.00%)  ???:0x00000000000ab650 [/usr/lib/x86_64-linux-gnu/libc.so.6]
 '
 
 def fake-run [
@@ -54,6 +55,7 @@ def main []: nothing -> nothing {
             function: '<alloc::vec::Vec<T> as core::ops::drop::Drop>::drop'
             ir: 60
         }
+        {function: 'libc.so.6+0x00000000000ab650', ir: 40}
     ]
     assert equal (
         $parsed.functions

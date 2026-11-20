@@ -86,6 +86,7 @@ export def plan [refs: string, commands: string]: nothing -> record<refs: list<a
 # `callgrind_annotate` prints `<file>:<function> [<object>]`; legacy Rust symbols keep a hash
 # suffix that changes between builds, so drop it to line functions up across refs.
 export def split-symbol [raw: string]: nothing -> record<file: string, function: string> {
+    let object = $raw | parse --regex '\[(?<object>[^\]]*)\]$' | get --optional 0.object | default '' | path basename
     let symbol = $raw | str replace --regex '\s+\[[^\]]*\]$' ''
     let parsed = match ($symbol | parse --regex '^(?<file>[^:]*):(?<function>.+)$') {
         [$row] => $row
@@ -93,7 +94,12 @@ export def split-symbol [raw: string]: nothing -> record<file: string, function:
     }
     {
         file: $parsed.file
-        function: ($parsed.function | str replace --regex '::h[0-9a-f]{16}$' '')
+        function: (
+            match ($parsed.function | str replace --regex '::h[0-9a-f]{16}$' '') {
+                $address if ($address =~ '^0x[0-9a-f]+$' and $object != '') => $"($object)+($address)"
+                $function => $function
+            }
+        )
     }
 }
 
