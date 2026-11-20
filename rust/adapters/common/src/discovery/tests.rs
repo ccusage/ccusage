@@ -55,3 +55,35 @@ fn reads_discovered_work_before_discovery_returns() {
     assert_eq!(results[0].0.index, 0);
     assert_eq!(results[0].1, 14);
 }
+
+#[test]
+fn reads_every_path_from_concurrent_producers() {
+    let producers = 4;
+    let per_producer = 2 * super::PLAIN_PATH_BACKLOG;
+    let mut results = super::read_paths_discovered_in_parallel(
+        |emit| {
+            std::thread::scope(|scope| {
+                for producer in 0..producers {
+                    ccusage_core::parallel::spawn_scoped_worker(scope, move || {
+                        for index in 0..per_producer {
+                            emit(PathBuf::from(format!("{producer}/{index}")));
+                        }
+                    });
+                }
+            });
+        },
+        |path| {
+            std::thread::sleep(std::time::Duration::from_micros(20));
+            path.clone()
+        },
+    );
+    results.sort();
+    let mut expected = (0..producers)
+        .flat_map(|producer| {
+            (0..per_producer).map(move |index| PathBuf::from(format!("{producer}/{index}")))
+        })
+        .map(|path| (path.clone(), path))
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(results, expected);
+}

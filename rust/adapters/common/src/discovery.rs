@@ -1,7 +1,10 @@
 use std::{
     collections::VecDeque,
     path::PathBuf,
-    sync::{Condvar, Mutex, PoisonError},
+    sync::{
+        Condvar, Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
 };
 
@@ -39,6 +42,21 @@ pub fn read_discovered_paths<T: Send>(
     )
 }
 
+/// Reads files while `discover` emits them, possibly from several threads at once.
+pub fn read_paths_discovered_in_parallel<T: Send>(
+    mut discover: impl FnMut(&(dyn Fn(PathBuf) + Sync)),
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> Vec<(PathBuf, T)> {
+    collect_in_parallel(
+        ReadWorkload::PlainPaths,
+        &mut |emit| discover(&|path| emit(0, path)),
+        |file| {
+            let result = read(&file.path);
+            (file.path, result)
+        },
+    )
+}
+
 /// Reads files as discovery yields them. Parallel results have no ordering guarantee.
 pub fn read_discovered_files<T: Send>(
     single_thread: bool,
@@ -64,10 +82,25 @@ fn collect_discovered<T: Send>(
 ) -> Vec<T> {
     if single_thread {
         let mut results = Vec::new();
-        index_discovered(discover, &mut |file| results.push(read(file)));
+        let mut index = 0;
+        discover(&mut |group, path| {
+            results.push(read(DiscoveredFile { group, index, path }));
+            index += 1;
+        });
         return results;
     }
+    collect_in_parallel(
+        workload,
+        &mut |emit| discover(&mut |group, path| emit(group, path)),
+        read,
+    )
+}
 
+fn collect_in_parallel<T: Send>(
+    workload: ReadWorkload,
+    discover: &mut SharedDiscovery<'_>,
+    read: impl Fn(DiscoveredFile) -> T + Sync,
+) -> Vec<T> {
     let batches = Mutex::new(Vec::new());
     let consume = |files: &mut dyn Iterator<Item = DiscoveredFile>| {
         let results = files.map(&read).collect::<Vec<_>>();
@@ -85,20 +118,13 @@ fn collect_discovered<T: Send>(
     results
 }
 
-fn index_discovered(discover: &mut DiscoverFiles<'_>, emit: &mut dyn FnMut(DiscoveredFile)) {
-    let mut index = 0;
-    discover(&mut |group, path| {
-        emit(DiscoveredFile { group, index, path });
-        index += 1;
-    });
-}
-
+type SharedDiscovery<'a> = dyn FnMut(&(dyn Fn(usize, PathBuf) + Sync)) + 'a;
 type ConsumeFiles<'a> = dyn Fn(&mut dyn Iterator<Item = DiscoveredFile>) + Sync + 'a;
 
 #[inline(never)]
 fn read_discovered_in_parallel(
     workload: ReadWorkload,
-    discover: &mut DiscoverFiles<'_>,
+    discover: &mut SharedDiscovery<'_>,
     consume: &ConsumeFiles<'_>,
 ) {
     let parallelism = thread::available_parallelism().map_or(1, usize::from);
@@ -111,14 +137,17 @@ fn read_discovered_in_parallel(
         }
     };
     let queue = &WorkQueue::new(capacity, workers);
+    let started = AtomicUsize::new(0);
+    let index = AtomicUsize::new(0);
     thread::scope(|scope| {
         let _producer = QueueLifetime {
             queue,
             producer: true,
         };
-        let mut started = 0;
-        index_discovered(discover, &mut |file| {
-            if started < workers {
+        discover(&|group, path| {
+            if started.load(Ordering::Relaxed) < workers
+                && started.fetch_add(1, Ordering::Relaxed) < workers
+            {
                 spawn_scoped_worker(scope, || {
                     let _worker = QueueLifetime {
                         queue,
@@ -126,9 +155,9 @@ fn read_discovered_in_parallel(
                     };
                     consume(&mut std::iter::from_fn(|| queue.pop()));
                 });
-                started += 1;
             }
-            queue.push(file);
+            let index = index.fetch_add(1, Ordering::Relaxed);
+            queue.push(DiscoveredFile { group, index, path });
         });
     });
 }
@@ -144,6 +173,7 @@ struct QueueState {
     pending: VecDeque<DiscoveredFile>,
     closed: bool,
     waiting_readers: usize,
+    waiting_writers: usize,
 }
 
 impl WorkQueue {
@@ -154,6 +184,7 @@ impl WorkQueue {
                 pending: VecDeque::with_capacity(workers.min(capacity)),
                 closed: false,
                 waiting_readers: 0,
+                waiting_writers: 0,
             }),
             readable: Condvar::new(),
             writable: Condvar::new(),
@@ -161,13 +192,17 @@ impl WorkQueue {
     }
 
     fn push(&self, file: DiscoveredFile) {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut state = self
-            .writable
-            .wait_while(state, |state| {
-                state.pending.len() == self.capacity && !state.closed
-            })
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.pending.len() == self.capacity && !state.closed {
+            state.waiting_writers += 1;
+            state = self
+                .writable
+                .wait_while(state, |state| {
+                    state.pending.len() == self.capacity && !state.closed
+                })
+                .unwrap_or_else(PoisonError::into_inner);
+            state.waiting_writers -= 1;
+        }
         if !state.closed {
             state.pending.push_back(file);
             let wake_reader = state.waiting_readers != 0;
@@ -188,7 +223,7 @@ impl WorkQueue {
                 .unwrap_or_else(PoisonError::into_inner);
             state.waiting_readers -= 1;
         }
-        let wake_producer = state.pending.len() == self.capacity;
+        let wake_producer = state.waiting_writers != 0;
         let file = state.pending.pop_front();
         drop(state);
         if wake_producer {

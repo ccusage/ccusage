@@ -4,7 +4,10 @@ mod discovery;
 mod parallel;
 mod walk;
 
-pub use discovery::{DiscoverFiles, DiscoveredFile, read_discovered_files, read_discovered_paths};
+pub use discovery::{
+    DiscoverFiles, DiscoveredFile, read_discovered_files, read_discovered_paths,
+    read_paths_discovered_in_parallel,
+};
 pub use parallel::{Split, chunk_file_indexes_by_size, map_parallel, worker_count};
 pub use walk::{
     any_file_matching, collect_files_matching, collect_files_with_extension, dir_entries,
