@@ -555,10 +555,6 @@ fn preserves_legacy_prices_for_provider_qualified_models() {
             ("openrouter", format!("openrouter/{provider}/{model}")),
         ] {
             for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
-                // NOTE(2026-11-20, #2332): A foreign-routed DeepSeek V4 request now keeps the flat rate instead of DeepSeek's schedule. The legacy comparison therefore only covers the other identities.
-                if provider == "openrouter" && model.contains("deepseek-v4-flash") {
-                    continue;
-                }
                 let timestamp = ccusage_core::parse_ts_timestamp(timestamp).unwrap();
                 let old_cost = candidate_names(&model, provider)
                     .into_iter()
@@ -589,15 +585,24 @@ fn preserves_legacy_prices_for_provider_qualified_models() {
                 )
                 .unwrap()
                 .unwrap();
-                assert_eq!(entry.cost, old_cost, "{provider}/{model} at {timestamp:?}");
+                // NOTE(2026-11-20, #2332): A foreign-routed DeepSeek V4 request keeps the flat rate instead of DeepSeek's schedule. Its legacy price therefore differs, and the flat price is pinned here.
+                if provider == "openrouter" && model.contains("deepseek-v4-flash") {
+                    assert!(
+                        (entry.cost - 0.001051134).abs() < 1e-12,
+                        "{provider}/{model} at {timestamp:?}: {}",
+                        entry.cost
+                    );
+                } else {
+                    assert_eq!(entry.cost, old_cost, "{provider}/{model} at {timestamp:?}");
+                }
                 comparisons += 1;
                 priced += usize::from(old_cost > 0.0);
             }
         }
     }
-    assert_eq!(comparisons, 188);
+    assert_eq!(comparisons, 192);
     assert!(
-        priced >= 140,
+        priced >= 144,
         "only {priced}/{comparisons} cases were priced"
     );
     eprintln!("Legacy pricing parity: {comparisons} cases, {priced} priced");

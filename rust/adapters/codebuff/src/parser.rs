@@ -5,10 +5,7 @@ use ccusage_core::{
 };
 use std::path::Path;
 
-use ccusage_adapter_common::{
-    billing::billing_route,
-    units::{UnitError, read_json},
-};
+use ccusage_adapter_common::units::{UnitError, read_json};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
@@ -403,9 +400,8 @@ pub(super) fn price_codebuff(
         stored_cost: None,
         timestamp: Some(entry.timestamp),
     };
-    // NOTE(2026-11-20, #2332): Codebuff bills every request through its own service. A vendor it cannot infer is therefore a third party and must not inherit DeepSeek's schedule.
-    let route = billing_route(Some(entry.provider.as_str())).unwrap_or(BillingRoute::Foreign);
-    let priced = price_entry_on_route(entry_pricing, route, pricing);
+    // NOTE(2026-11-20, #2332): Codebuff bills every request through its own service. Every vendor it records is therefore a third party and must not inherit DeepSeek's schedule.
+    let priced = price_entry_on_route(entry_pricing, BillingRoute::Foreign, pricing);
     (
         priced.cost,
         priced
@@ -480,11 +476,7 @@ mod pricing_identity_tests {
     fn prices_a_foreign_router_without_the_deepseek_schedule() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
-        for (provider, expected) in [
-            ("unknown", 0.0015),
-            ("openrouter", 0.0015),
-            ("deepseek", 0.00088),
-        ] {
+        for (provider, expected) in [("unknown", 0.0015), ("openrouter", 0.0015)] {
             let entry = CodebuffEntry {
                 timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
 

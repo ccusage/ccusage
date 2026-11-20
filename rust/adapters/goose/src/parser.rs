@@ -1,15 +1,12 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{
-    cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
-};
+use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{LoadedEntry, TokenUsageRaw, date_at};
-use ccusage_adapter_common::{jsonl, sqlite::read_i64};
+use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
 
 // NOTE(2026-05-19, #1035): Goose embeds the model name in model_config_json on the SQLite session row. Parsing that object recovers the session's model attribution.
@@ -93,18 +90,16 @@ pub(super) fn row_to_entry(
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage,
-            reasoning_tokens,
-            residual_tokens: 0,
-            reported_model: Some(&model),
-            candidates: &candidates,
-            stored_cost: None,
-            timestamp: Some(timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        usage,
+        reasoning_tokens,
+        residual_tokens: 0,
+        reported_model: Some(&model),
+        candidates: &candidates,
+        stored_cost: None,
+        timestamp: Some(timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, provider_name.as_deref(), pricing);
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
@@ -244,5 +239,30 @@ mod pricing_identity_tests {
         assert_eq!(model, "gpt-5.2");
         assert_eq!(normalize_provider(None, &model), "openai");
         assert_eq!(normalize_provider(Some("open-ai"), &model), "open_ai");
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+            let mut row = connection
+                .prepare(format!(
+                    r#"SELECT 's', '{{"model_name":"deepseek-v4-flash"}}', '{provider}', '2026-11-17T10:00:00Z', 2000, 1000, 1000, 2000, 1000, 1000"#
+                ))
+                .unwrap();
+            assert_eq!(row.next().unwrap(), sqlite::State::Row);
+            let loaded = row_to_entry(&row, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing))
+                .unwrap()
+                .unwrap();
+            assert!(
+                (loaded.cost - expected).abs() < 1e-12,
+                "{provider}: {}",
+                loaded.cost
+            );
+            assert_eq!(loaded.missing_pricing_model, None, "{provider}");
+        }
     }
 }

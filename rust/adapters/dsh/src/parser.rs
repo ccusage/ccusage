@@ -830,6 +830,14 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn shared_route_treats_deepseek_as_direct_and_unrecorded_providers_as_inferred() {
+        assert_eq!(billing_route(Some("deepseek")), Some(BillingRoute::Direct));
+        for provider in [None, Some(""), Some("unknown")] {
+            assert_eq!(billing_route(provider), None, "{provider:?}");
+        }
+    }
+
+    #[test]
     fn prices_direct_identity_and_reported_override_through_foreign_routes() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();

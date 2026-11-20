@@ -93,14 +93,14 @@ impl PricingHandle {
         }
     }
 
-    fn on_route(row: &Row, route: BillingRoute, model: &str) -> Self {
+    fn on_route(row: &Row, route: BillingRoute, reported: &str, matched: &str) -> Self {
         let schedule = match route {
-            BillingRoute::Direct => {
-                let resolved = crate::model_aliases::resolve_model_name(model);
-                [resolved.as_ref(), model]
+            BillingRoute::Direct => [reported, matched].into_iter().find_map(|name| {
+                let resolved = crate::model_aliases::resolve_model_name(name);
+                [resolved.as_ref(), name]
                     .into_iter()
                     .find_map(|name| schedule_for(last_segment(name)))
-            }
+            }),
             BillingRoute::Foreign => None,
         };
         Self {
@@ -185,7 +185,8 @@ impl PricingMap {
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        let handle = PricingHandle::on_route(found.row, route, reported_model.unwrap_or(model));
+        let handle =
+            PricingHandle::on_route(found.row, route, reported_model.unwrap_or(model), model);
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
