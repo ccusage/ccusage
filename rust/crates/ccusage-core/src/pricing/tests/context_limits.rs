@@ -6,7 +6,10 @@ fn reads_embedded_model_context_limits() {
     let pricing = PricingMap::load_embedded();
 
     assert_eq!(
-        pricing.context_limit("anthropic.claude-3-5-sonnet-20240620-v1:0"),
+        pricing.context_limit_entry(
+            "anthropic.claude-3-5-sonnet-20240620-v1:0",
+            MatchKind::Exact
+        ),
         Some(200_000)
     );
 }
