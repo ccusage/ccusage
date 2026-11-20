@@ -108,6 +108,12 @@ fn read_line(inner: &mut Inner, capacity: usize) -> io::Result<Option<&[u8]>> {
 
 fn replay(inner: &mut Inner, capacity: usize) -> io::Result<&mut Replay> {
     if let Inner::Direct(direct) = inner {
+        // NOTE(2026-11-20): The replay reads the same open file, so a rename cannot swap it, but an in-place rewrite of equal decoded length would let it resume at the right offset in different data. The length and modification time recorded at open rule that out.
+        if !direct.unchanged()? {
+            return Err(io::Error::other(
+                "zstd replay found the file changed since it was opened",
+            ));
+        }
         let delivered = direct.delivered();
         let mut file = direct.file().try_clone()?;
         file.seek(SeekFrom::Start(0))?;

@@ -280,7 +280,14 @@ fn a_replay_that_ends_before_the_returned_lines_is_an_error() {
     for _ in 0..500 {
         reader.next_line().unwrap().unwrap();
     }
-    std::fs::write(&path, compress(b"one line\n", 3, None, true)).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let mut shorter = compress(b"one line\n", 3, None, true);
+    shorter.extend(skippable(&vec![0; stream.len() - shorter.len() - 8]));
+    assert_eq!(shorter.len(), stream.len());
+    let writer = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    std::io::Write::write_all(&mut &writer, &shorter).unwrap();
+    writer.set_modified(modified).unwrap();
+    drop(writer);
     if let super::Inner::Direct(direct) = &mut reader.inner {
         direct.fail_after = Some(0);
     }
@@ -403,4 +410,48 @@ fn a_line_spanning_many_small_frames_grows_the_ring_geometrically() {
         panic!("the direct decoder replayed");
     };
     assert!(direct.grows <= 16, "{} grows", direct.grows);
+}
+
+#[test]
+fn a_replay_rejects_a_file_rewritten_in_place() {
+    let fixture = Fixture::new();
+    let mut random = Random(0x0BAD_F11E);
+    let first = text(&mut random, 3_000, 0);
+    let path = write(
+        &fixture,
+        "rewritten.zst",
+        &compress(&first, 1, Some(17), false),
+    );
+    let file = File::open(&path).unwrap();
+    let mut reader = ZstdLines::new(file, 8 * 1024).unwrap();
+    for _ in 0..10 {
+        reader.next_line().unwrap().unwrap();
+    }
+    let mut rewritten = first.clone();
+    rewritten.reverse();
+    let rewritten = compress(&rewritten, 1, Some(17), false);
+    let mut writer = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(&mut writer, &rewritten).unwrap();
+    writer
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(86_400))
+        .unwrap();
+    drop(writer);
+    if let super::Inner::Direct(direct) = &mut reader.inner {
+        direct.fail_after = Some(0);
+    }
+    let error = loop {
+        match reader.next_line() {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("the replay resumed in a rewritten file"),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(
+        error.to_string(),
+        "zstd replay found the file changed since it was opened"
+    );
 }

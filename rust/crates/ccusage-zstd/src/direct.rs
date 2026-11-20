@@ -159,6 +159,22 @@ enum Frame {
     Zstd(Layout),
 }
 
+#[derive(PartialEq, Eq)]
+struct Stamp {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+}
+
+impl Stamp {
+    fn of(file: &File) -> io::Result<Self> {
+        let metadata = file.metadata()?;
+        Ok(Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Layout {
     size: usize,
@@ -181,6 +197,7 @@ impl Drop for Direct {
 pub(crate) struct Direct {
     context: Context,
     file: File,
+    stamp: Stamp,
     input: Vec<u8>,
     input_start: usize,
     input_end: usize,
@@ -201,6 +218,7 @@ pub(crate) struct Direct {
 impl Direct {
     pub(crate) fn new(file: File, capacity: usize) -> io::Result<Self> {
         let context = Context::new()?;
+        let stamp = Stamp::of(&file)?;
         // NOTE(2026-11-20): Each worker reuses its ring and input buffer across files. A fresh zero-filled ring per file cost more than the copy this decoder removes.
         let (mut input, output) = BUFFERS.try_with(RefCell::take).unwrap_or_default();
         if input.len() < capacity {
@@ -209,6 +227,7 @@ impl Direct {
         Ok(Self {
             context,
             file,
+            stamp,
             input,
             input_start: 0,
             input_end: 0,
@@ -229,6 +248,10 @@ impl Direct {
 
     pub(crate) fn file(&self) -> &File {
         &self.file
+    }
+
+    pub(crate) fn unchanged(&self) -> io::Result<bool> {
+        Ok(Stamp::of(&self.file)? == self.stamp)
     }
 
     pub(crate) fn delivered(&self) -> u64 {
