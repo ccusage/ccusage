@@ -212,8 +212,10 @@ mod diagnostic_tests {
             };
             let diagnostics = Diagnostics::new("claude");
             let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
+            let projects_root = fixture.root().join("projects");
             let probe = crate::load::read_usage_file_with_diagnostics(
                 &main,
+                Some(&projects_root),
                 ReportWindow::from_shared(&shared).timezone(),
                 ccusage_core::cost::PriceTable::Display,
                 &diagnostics,
