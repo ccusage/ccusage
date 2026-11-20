@@ -85,7 +85,6 @@ pub(crate) fn visit_usage_files(
     }
 }
 
-/// The `<config dir>/projects` roots that hold the discovered transcripts.
 pub(crate) fn projects_roots(config_dirs: &[PathBuf]) -> Vec<PathBuf> {
     config_dirs
         .iter()
@@ -93,7 +92,7 @@ pub(crate) fn projects_roots(config_dirs: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
-/// The deepest projects root containing `file`, so a config directory nested under another one resolves to its own root.
+// NOTE(2026-11-20, #2374): CLAUDE_CONFIG_DIR can list a config directory and one of its descendants. The deepest root keeps a transcript attributed to its own config directory.
 pub(crate) fn containing_projects_root<'a>(
     file: &Path,
     projects_roots: &'a [PathBuf],
@@ -105,7 +104,6 @@ pub(crate) fn containing_projects_root<'a>(
         .max_by_key(|root| root.components().count())
 }
 
-/// The `projects` ancestor of a fixture transcript, so tests do not have to thread a config directory.
 #[cfg(test)]
 pub(crate) fn fixture_projects_root(path: &Path) -> Option<PathBuf> {
     path.ancestors()
@@ -306,7 +304,6 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-/// Path components below the projects root, or `None` when the file is not under a known root.
 fn below_projects<'a>(path: &'a Path, projects_root: Option<&Path>) -> Option<Vec<&'a str>> {
     let relative = path.strip_prefix(projects_root?).ok()?;
     Some(
