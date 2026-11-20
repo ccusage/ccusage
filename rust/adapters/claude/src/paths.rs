@@ -63,7 +63,7 @@ fn visit_usage_files(
     diagnostics: &Diagnostics,
 ) {
     let mut filtered_visit = |path: PathBuf| {
-        if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
+        if matches_project(&path, project_filter) {
             visit(path);
         }
     };
@@ -93,7 +93,7 @@ pub(crate) fn read_usage_files<T: Send>(
     read_paths_discovered_in_parallel(
         |visit| {
             let filtered_visit = |path: PathBuf| {
-                if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
+                if matches_project(&path, project_filter) {
                     visit(path);
                 }
             };
@@ -107,6 +107,10 @@ pub(crate) fn read_usage_files<T: Send>(
         },
         read,
     )
+}
+
+fn matches_project(path: &Path, project_filter: Option<&str>) -> bool {
+    project_filter.is_none_or(|filter| extract_project(path) == filter)
 }
 
 fn projects_dir(path: &Path, project_filter: Option<&str>) -> PathBuf {
