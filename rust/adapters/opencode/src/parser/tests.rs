@@ -555,6 +555,10 @@ fn preserves_legacy_prices_for_provider_qualified_models() {
             ("openrouter", format!("openrouter/{provider}/{model}")),
         ] {
             for timestamp in ["2026-08-17T01:00:00Z", "2026-08-17T13:00:00Z"] {
+                // NOTE(2026-11-20, #2332): A foreign-routed DeepSeek V4 request now keeps the flat rate instead of DeepSeek's schedule, so the legacy comparison only covers the other identities.
+                if provider == "openrouter" && model.contains("deepseek-v4-flash") {
+                    continue;
+                }
                 let timestamp = ccusage_core::parse_ts_timestamp(timestamp).unwrap();
                 let old_cost = candidate_names(&model, provider)
                     .into_iter()
@@ -591,9 +595,9 @@ fn preserves_legacy_prices_for_provider_qualified_models() {
             }
         }
     }
-    assert_eq!(comparisons, 192);
+    assert_eq!(comparisons, 188);
     assert!(
-        priced >= 144,
+        priced >= 140,
         "only {priced}/{comparisons} cases were priced"
     );
     eprintln!("Legacy pricing parity: {comparisons} cases, {priced} priced");
@@ -843,4 +847,39 @@ fn prices_cumulative_session_aggregates_with_static_rates() {
 
     assert_eq!(entry.timestamp.as_millis(), created);
     assert_eq!(entry.cost, 0.14);
+}
+
+#[test]
+fn prices_a_foreign_router_without_the_deepseek_schedule() {
+    ccusage_test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let created = ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z")
+        .unwrap()
+        .as_millis();
+    for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+        let entry = message_value_to_entry(
+            message(json!({
+                "id": "message-deepseek",
+                "sessionID": "session-a",
+                "providerID": provider,
+                "modelID": "deepseek-v4-flash",
+                "time": { "created": created },
+                "tokens": { "input": 1000, "output": 1000 }
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(
+            (entry.cost - expected).abs() < 1e-12,
+            "{provider}: {}",
+            entry.cost
+        );
+        assert_eq!(entry.missing_pricing_model, None, "{provider}");
+    }
 }

@@ -11,6 +11,7 @@ pub use walk::{
     visit_files_matching, visit_usage_files,
 };
 
+pub mod billing;
 pub mod claims;
 pub mod dedupe;
 pub mod jsonl;

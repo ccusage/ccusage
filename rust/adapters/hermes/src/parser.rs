@@ -1,11 +1,11 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{
-    cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
-};
+use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
 use std::sync::Arc;
 
-use ccusage_adapter_common::sqlite::{read_count, read_f64};
+use ccusage_adapter_common::{
+    billing::price_entry_for_provider,
+    sqlite::{read_count, read_f64},
+};
 use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -185,18 +185,17 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage: entry.usage,
-            reasoning_tokens: entry.reasoning_tokens,
-            residual_tokens: 0,
-            reported_model: Some(&entry.model),
-            candidates: &candidates,
-            stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
-            timestamp: Some(entry.timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        usage: entry.usage,
+        reasoning_tokens: entry.reasoning_tokens,
+        residual_tokens: 0,
+        reported_model: Some(&entry.model),
+        candidates: &candidates,
+        stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
+        timestamp: Some(entry.timestamp),
+    };
+    let provider = (entry.provider != "hermes").then_some(entry.provider.as_str());
+    let priced = price_entry_for_provider(entry_pricing, provider, pricing);
     (
         priced.cost,
         priced
@@ -612,6 +611,33 @@ mod tests {
 #[cfg(test)]
 mod pricing_identity_tests {
     use super::*;
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+            let entry = HermesEntry {
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+
+                session_id: "session-deepseek".to_string(),
+                model: "deepseek-v4-flash".to_string(),
+                provider: provider.to_string(),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..TokenUsageRaw::default()
+                },
+                reasoning_tokens: 0,
+                message_count: 1,
+                cost_usd: None,
+            };
+
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{provider}: {cost}");
+            assert_eq!(missing, None, "{provider}");
+        }
+    }
 
     #[test]
     fn override_on_the_reported_id_beats_provider_pricing() {

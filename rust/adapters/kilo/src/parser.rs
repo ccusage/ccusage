@@ -1,8 +1,5 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{
-    cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
-};
+use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
 use std::{path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -12,7 +9,7 @@ use crate::{
     LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
     stored_cost_for_mode,
 };
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl};
 
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct KiloMessage {
@@ -134,18 +131,16 @@ pub(super) fn message_value_to_entry(
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage,
-            reasoning_tokens: 0,
-            residual_tokens: extra_total_tokens,
-            reported_model: Some(&model),
-            candidates: &candidates,
-            stored_cost: cost_usd.filter(|cost| mode != CostMode::Auto || *cost > 0.0),
-            timestamp: Some(timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        usage,
+        reasoning_tokens: 0,
+        residual_tokens: extra_total_tokens,
+        reported_model: Some(&model),
+        candidates: &candidates,
+        stored_cost: cost_usd.filter(|cost| mode != CostMode::Auto || *cost > 0.0),
+        timestamp: Some(timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, value.provider_id.as_deref(), pricing);
     let stored_cost = stored_cost_for_mode(cost_usd, mode);
     let cost = stored_cost.unwrap_or(priced.cost);
     let missing_pricing_model = priced
@@ -202,6 +197,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use ccusage_core::cost::price_entry;
 
     #[test]
     fn kilo_creation_time_is_always_milliseconds() {
@@ -433,6 +429,7 @@ mod cost_mode_warnings {
 #[cfg(test)]
 mod pricing_identity_tests {
     use super::*;
+    use ccusage_core::cost::price_entry;
 
     #[test]
     fn adapter_pricing_identity() {
@@ -472,5 +469,43 @@ mod pricing_identity_tests {
             PriceTable::Calculate(&pricing),
         );
         assert!((entry.cost - 0.00088).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let created = ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z")
+            .unwrap()
+            .as_millis();
+        for (provider, expected) in [(Some("openrouter"), 0.0015), (Some("deepseek"), 0.00088)] {
+            let value = serde_json::from_value::<KiloMessage>(serde_json::json!({
+                "id": "msg-deepseek",
+                "role": "assistant",
+                "providerID": provider,
+                "modelID": "deepseek-v4-flash",
+                "time": { "created": created },
+                "tokens": { "input": 1000, "output": 1000 }
+            }))
+            .unwrap();
+            let (_, entry) = message_value_to_entry(
+                &value,
+                "row-deepseek",
+                "session-a",
+                Path::new("/tmp/kilo.db"),
+                &jiff::tz::TimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+
+            assert!(
+                (entry.cost - expected).abs() < 1e-12,
+                "{provider:?}: {}",
+                entry.cost
+            );
+            assert_eq!(entry.missing_pricing_model, None, "{provider:?}");
+        }
     }
 }

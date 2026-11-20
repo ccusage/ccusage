@@ -43,8 +43,8 @@
 033-droid/deepseek|deepseek-v4-flash|S:deepseek/deepseek-v4-flash,F:deepseek-v4-flash,F:deepseek/deepseek-v4-flash,F:openrouter/deepseek/deepseek-v4-flash|0.22/0.66|S2|deepseek/deepseek-v4-flash|
 033-kilo/deepseek|deepseek-v4-flash|S:deepseek/deepseek-v4-flash,F:deepseek-v4-flash|0.22/0.66|S2|deepseek/deepseek-v4-flash|
 034-hermes/deepseek|deepseek-v4-flash|E:deepseek/deepseek-v4-flash,F:deepseek-v4-flash|0.22/0.66|S2|deepseek/deepseek-v4-flash|
-035-hermes/alibaba|deepseek-v4-flash|E:alibaba/deepseek-v4-flash,F:deepseek-v4-flash|0.22/0.66|S2|deepseek-v4-flash|
-036-dsh/openrouter|deepseek-v4-flash|F:openrouter/deepseek-v4-flash,F:deepseek-v4-flash|0.22/0.66|S2|deepseek-v4-flash|
+035-hermes/alibaba|deepseek-v4-flash|E:alibaba/deepseek-v4-flash,F:deepseek-v4-flash|0.3/1.2|S2|deepseek-v4-flash||foreign
+036-dsh/openrouter|deepseek-v4-flash|F:openrouter/deepseek-v4-flash,F:deepseek-v4-flash|0.3/1.2|S2|deepseek-v4-flash||foreign
 037-claude|deepseek/deepseek-v4-flash|F:deepseek/deepseek-v4-flash|0.22/0.66|S2|deepseek/deepseek-v4-flash|
 038-hermes/deepseek|deepseek.v4.flash|E:deepseek/deepseek.v4.flash,F:deepseek.v4.flash|0.22/0.66|S2|deepseek/deepseek-v4-flash|
 039-hermes/deepseek|deepseek-v4-pro|E:deepseek/deepseek-v4-pro,F:deepseek-v4-pro|0.66/1.98|S2|deepseek/deepseek-v4-pro|
