@@ -298,9 +298,11 @@ fn codex_daily_and_session_count_fork_requests_and_archived_copies_alike() {
                 session["totals"]["totalTokens"], expected_total,
                 "{context}"
             );
-            assert_eq!(
-                daily["totals"]["totalCost"], session["totals"]["totalCost"],
-                "{context}"
+            let cost = |report: &serde_json::Value| report["totals"]["costUSD"].as_f64().unwrap();
+            let (daily_cost, session_cost) = (cost(&daily), cost(&session));
+            assert!(
+                (daily_cost - session_cost).abs() <= 1e-9 * daily_cost.abs().max(1.0),
+                "{context}: daily {daily_cost} != session {session_cost}"
             );
             let sessions = session["sessions"].as_array().unwrap();
             let tokens = |id: &str| {
