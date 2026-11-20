@@ -206,7 +206,11 @@ fn cache_read_fallback_is_independent_of_cache_write_family() {
 #[test]
 fn model_vendor_precedence_is_independent_of_segment_order() {
     use super::super::{cache_defaults, data};
-    for model in ["claude-proxy/openai.gpt-5", "openai.gpt-5/claude-proxy"] {
+    for model in [
+        "claude-proxy/openai.gpt-5",
+        "openai.gpt-5/claude-proxy",
+        "claude-proxy.openai.gpt-5",
+    ] {
         assert_eq!(
             cache_defaults(model, Some("anthropic")),
             &data::WRITES_AT_INPUT_RATE
@@ -220,6 +224,16 @@ fn model_vendor_precedence_is_independent_of_segment_order() {
         cache_defaults("proxy/openai-claude-sonnet", None),
         &data::WRITES_SURCHARGED
     );
+    for model in [
+        "claude-proxy/openai.gpt-6.2-astra",
+        "openai.gpt-6.2-astra/claude-proxy",
+    ] {
+        assert_eq!(
+            cache_defaults(model, None),
+            &data::OPENAI_GPT_6_REDUCED_READ,
+            "{model}"
+        );
+    }
 }
 
 #[test]
@@ -251,5 +265,66 @@ fn hosted_openai_model_names_keep_openai_cache_write_defaults() {
             pricing.input,
             "{model}"
         );
+    }
+}
+
+#[test]
+fn rows_without_cache_rates_use_the_model_vendors_documented_multipliers() {
+    crate::test_support::install_pricing_snapshots();
+    let cases = [
+        ("claude-sonnet-4-5", [1.25, 2.0, 0.1]),
+        ("claude-opus-5-5", [1.25, 2.0, 0.05]),
+        ("claude-sonnet-5.5", [1.25, 2.0, 0.05]),
+        ("claude-fable-5-2", [1.25, 2.0, 0.025]),
+        ("claude-mythos-5.1", [1.25, 2.0, 0.025]),
+        ("claude-fable-5", [1.25, 2.0, 0.1]),
+        ("claude-mythos-5", [1.25, 2.0, 0.1]),
+        ("gpt-5.5", [1.0, 1.0, 0.1]),
+        ("gpt-5.6-sol", [1.25, 2.5, 0.1]),
+        ("openai/gpt-6-astra", [1.25, 2.5, 0.1]),
+        ("gpt-6.1-sol", [1.25, 2.5, 0.05]),
+        ("global.openai.gpt-6.2-astra", [1.25, 2.5, 0.05]),
+        ("gemini-3-flash", [1.0, 1.0, 0.1]),
+        ("gemini/gemini-4-carbon", [1.0, 1.0, 0.05]),
+        ("deepseek-v4-flash", [1.0, 1.0, 0.02]),
+        ("xai/grok-4.7", [1.0, 1.0, 0.25]),
+        ("grok-4.5-build", [1.0, 1.0, 0.15]),
+        ("moonshotai/kimi-k3", [1.0, 2.0, 0.1]),
+        ("zai/glm-5.3", [1.0, 1.0, 0.2]),
+        ("qwen3-coder-plus", [1.0, 1.0, 0.2]),
+        ("minimax/MiniMax-M3", [1.0, 1.0, 0.2]),
+        ("mistral/devstral-medium-2", [1.0, 1.0, 0.1]),
+        ("bedrock/amazon.nova-pro-v1:0", [1.0, 1.0, 0.25]),
+        ("unidentified-model", [1.25, 2.0, 0.1]),
+    ];
+    let rows: serde_json::Map<String, serde_json::Value> = cases
+        .iter()
+        .map(|(model, _)| {
+            (
+                (*model).to_string(),
+                serde_json::json!({"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6}),
+            )
+        })
+        .collect();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(&serde_json::Value::Object(rows).to_string());
+
+    for (model, [write, write_1h, read]) in cases {
+        let rates = pricing
+            .resolve_at(None, &[(model, MatchKind::Exact)], None)
+            .map(|(_, rates)| rates)
+            .unwrap();
+        let actual = [
+            rates.cache_creation_rate(),
+            rates.one_hour_cache_creation_rate(),
+            rates.cache_read_rate_at(rates.input),
+        ]
+        .map(|rate| rate / rates.input);
+        for (actual, expected) in actual.into_iter().zip([write, write_1h, read]) {
+            assert!(
+                (actual - expected).abs() < 1e-12,
+                "{model}: {actual} != {expected}"
+            );
+        }
     }
 }

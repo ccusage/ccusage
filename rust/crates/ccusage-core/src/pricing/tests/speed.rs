@@ -290,6 +290,10 @@ fn fills_claude_fast_multiplier_when_litellm_pricing_omits_it() {
                 "claude-opus-4-70": {
                     "input_cost_per_token": 0.000005,
                     "output_cost_per_token": 0.000025
+                },
+                "vertex_ai/xclaude-opus-4-7@default": {
+                    "input_cost_per_token": 0.000005,
+                    "output_cost_per_token": 0.000025
                 }
             }"#,
     );
@@ -324,6 +328,13 @@ fn fills_claude_fast_multiplier_when_litellm_pricing_omits_it() {
     );
     assert_eq!(
         pricing.find("claude-opus-4-70").unwrap().fast_multiplier,
+        1.0
+    );
+    assert_eq!(
+        pricing
+            .find("vertex_ai/xclaude-opus-4-7@default")
+            .unwrap()
+            .fast_multiplier,
         1.0
     );
 }
