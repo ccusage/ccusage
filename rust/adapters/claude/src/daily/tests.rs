@@ -9,7 +9,7 @@ use ccusage_core::{
 use ccusage_test_support::{Environment, fs_fixture};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
+fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::load::DailySummaries {
     crate::load_daily_summaries_with_detection_progress(
         shared,
         None,

@@ -24,7 +24,7 @@ use crate::{
 
 use super::{
     DedupeIndexVec, GuardedUsage, MainThreadSessions, Nullable, Rejection, UsageLoadContext,
-    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
+    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id,
     main_thread_sessions, non_null,
     paths::{
         claude_paths, extract_project, usage_file_order, usage_files_before_since,
@@ -778,6 +778,28 @@ fn is_valid_usage_record(data: &ClaudeUsageRecord) -> bool {
         return false;
     }
     true
+}
+
+pub(crate) fn is_semver_prefix(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    if !consume_ascii_digits(bytes, &mut index) || bytes.get(index) != Some(&b'.') {
+        return false;
+    }
+    index += 1;
+    if !consume_ascii_digits(bytes, &mut index) || bytes.get(index) != Some(&b'.') {
+        return false;
+    }
+    index += 1;
+    bytes.get(index).is_some_and(u8::is_ascii_digit)
+}
+
+fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> bool {
+    let start = *index;
+    while bytes.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index += 1;
+    }
+    *index > start
 }
 fn usage_token_total(entry: &impl DedupEntry) -> u64 {
     let usage = entry.usage();
