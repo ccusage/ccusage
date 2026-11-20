@@ -98,6 +98,7 @@ def golden-env [dir: path]: nothing -> record<vars: record, cwd: string> {
             msg: $"Golden fixture at ($dir) has no store for ($missing | str join ', ')"
         }
     }
+    mkdir $manifest.cwd
     {
         vars: ($manifest.env | reject --optional LOG_LEVEL)
         cwd: $manifest.cwd
