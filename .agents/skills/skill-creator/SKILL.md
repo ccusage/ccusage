@@ -1,12 +1,11 @@
 ---
 name: skill-creator
-description: Guides repo-local skill creation and updates. Use when adding or editing .agents/skills, root AGENTS.md routing, SKILL.md frontmatter, description trigger quality, references layout, skill scripts, or skill file line budgets.
+description: Guides repo-local skill creation and updates. Use when adding or editing .agents/skills, agent instructions, SKILL.md frontmatter, description trigger quality, references layout, skill scripts, or skill file line budgets.
 ---
 
 # Skill Creator
 
 Edit `.agents/skills` and let the Nix dev shell generate `.claude/skills`.
-Register new skills in root `AGENTS.md`.
 
 ## Frontmatter
 
@@ -23,5 +22,3 @@ agent can derive from the code or command help.
 Use `references/` for conditional material and link each file directly from
 `SKILL.md` with its trigger. Use `scripts/` for deterministic repeated work.
 Keep `SKILL.md` under 160 lines and each reference under 180 lines.
-
-Run `just fmt` after editing.
