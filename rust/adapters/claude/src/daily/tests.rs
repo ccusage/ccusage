@@ -236,8 +236,10 @@ fn unrepresentable_advisor_usage_is_diagnosed_and_dropped() {
         "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":18446744073709551615,"output_tokens":50},{"type":"advisor_message","model":"advisor-model","input_tokens":3,"output_tokens":2}]}}}"#,
     });
     let diagnostics = Diagnostics::new("claude");
+    let path = fixture.path("projects/project-a/session-a.jsonl");
     let loaded = super::read_daily_usage_file_with_diagnostics(
-        &fixture.path("projects/project-a/session-a.jsonl"),
+        &path,
+        crate::paths::fixture_projects_root(&path).as_deref(),
         &JiffTimeZone::UTC,
         PriceTable::Display,
         &diagnostics,
