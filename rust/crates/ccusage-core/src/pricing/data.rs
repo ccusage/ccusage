@@ -1,20 +1,145 @@
 use super::{CacheDefaults, PricingSchedule, ScheduledRates};
 
-// NOTE(2026-11-17): OpenAI documents no cache-write surcharge through GPT-5.5 at https://developers.openai.com/api/docs/guides/prompt-caching. Use the input rate when those models omit a write rate.
+// NOTE(2026-11-20): OpenAI charges no cache-write surcharge through GPT-5.5 and reads cached input at 0.1× on current models at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
 pub(super) const WRITES_AT_INPUT_RATE: CacheDefaults = CacheDefaults {
     write_x: 1.0,
     write_1h_x: 1.0,
     read_x: 0.1,
 };
 
-// NOTE(2026-11-17): Anthropic documents 1.25× for five-minute writes, 2× for one-hour writes and a standard 0.1× read rate at https://platform.claude.com/docs/en/build-with-claude/prompt-caching. Use these defaults for missing rates.
+// NOTE(2026-11-20): Anthropic lists 1.25× for five-minute writes, 2× for one-hour writes and 0.1× reads for models without a lower read rate at https://platform.claude.com/docs/en/about-claude/pricing. Use these multipliers when a row omits cache rates.
 pub(super) const WRITES_SURCHARGED: CacheDefaults = CacheDefaults {
     write_x: 1.25,
     write_1h_x: 2.0,
     read_x: 0.1,
 };
 
+// NOTE(2026-11-20): Anthropic reads cache at 0.05× on Opus 5.5 and Sonnet 5.5 at https://platform.claude.com/docs/en/about-claude/pricing. Use these multipliers when a row omits cache rates.
+const ANTHROPIC_5_5: CacheDefaults = CacheDefaults {
+    read_x: 0.05,
+    ..WRITES_SURCHARGED
+};
+
+// NOTE(2026-11-20): Anthropic reads cache at 0.025× on Fable and Mythos 5.1 and 5.2 at https://platform.claude.com/docs/en/about-claude/pricing. Use these multipliers when a row omits cache rates.
+const ANTHROPIC_FABLE_MYTHOS_5: CacheDefaults = CacheDefaults {
+    read_x: 0.025,
+    ..WRITES_SURCHARGED
+};
+
+// NOTE(2026-11-20): OpenAI charges 1.25× for 30-minute writes and 2.5× for 12-hour writes from GPT-5.6, with 0.1× reads at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
+const OPENAI_GPT_5_6: CacheDefaults = CacheDefaults {
+    write_x: 1.25,
+    write_1h_x: 2.5,
+    read_x: 0.1,
+};
+
+// NOTE(2026-11-20): OpenAI reads cache at 0.05× on GPT-6.2 Astra, GPT-6.2 Sol, GPT-6.1 Sol and GPT-6.1 Terra at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
+pub(super) const OPENAI_GPT_6_REDUCED_READ: CacheDefaults = CacheDefaults {
+    read_x: 0.05,
+    ..OPENAI_GPT_5_6
+};
+
+// NOTE(2026-11-20): Gemini 2.5 and 3.x read cache at 0.1× and implicit caching has no write charge; explicit caching adds an hourly storage fee instead at https://ai.google.dev/gemini-api/docs/pricing. Use these multipliers when a row omits cache rates.
+const GEMINI: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.1,
+};
+
+// NOTE(2026-11-20): Gemini 4 models read cache at 0.05× (e.g. $2.00 input, $0.10 cached) at https://ai.google.dev/gemini-api/docs/pricing. Use these multipliers when a row omits cache rates.
+const GEMINI_4: CacheDefaults = CacheDefaults {
+    read_x: 0.05,
+    ..GEMINI
+};
+
+// NOTE(2026-11-20): DeepSeek lists cache hits and misses only, so writes cost the miss rate; V4 Flash hits are $0.006 against $0.30 (0.02×) and V4 Pro 0.033×, so 0.02× is an estimate from the default model at https://api-docs.deepseek.com/quick_start/pricing. Use these multipliers when a row omits cache rates.
+const DEEPSEEK: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.02,
+};
+
+// NOTE(2026-11-20): xAI lists no cache-write charge and Grok 4.6 and 4.7 read cache at 0.25× ($2.00 input, $0.50 cached) at https://docs.x.ai/developers/pricing. Use these multipliers when a row omits cache rates.
+const XAI: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.25,
+};
+
+// NOTE(2026-11-20): xAI reads Grok 4.5 cache at 0.15× at https://docs.x.ai/developers/pricing. Use these multipliers when a row omits cache rates.
+const XAI_GROK_4_5: CacheDefaults = CacheDefaults {
+    read_x: 0.15,
+    ..XAI
+};
+
+// NOTE(2026-11-20): Moonshot lists Kimi K3 five-minute writes at the input rate, one-hour writes at 2× and cached input at 0.1× at https://platform.moonshot.ai/docs/pricing/chat. Use these multipliers when a row omits cache rates.
+const MOONSHOT_KIMI_K3: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 2.0,
+    read_x: 0.1,
+};
+
+// NOTE(2026-11-20): Z.ai lists no cache-write fee and GLM-5, GLM-5.3 and GLM-5.3-Flash cached input at 0.19–0.2× at https://docs.z.ai/guides/overview/pricing. Use these multipliers when a row omits cache rates.
+const ZAI_GLM: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.2,
+};
+
+// NOTE(2026-11-20): Alibaba Model Studio bills implicit cache creation at 100% and hits at 20% of input; explicit caching (125% / 10%) needs request markers at https://www.alibabacloud.com/help/en/model-studio/context-cache. Use these multipliers when a row omits cache rates.
+const QWEN: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.2,
+};
+
+// NOTE(2026-11-20): MiniMax bills new input at the standard rate, and M3 reads cache at 0.2× ($0.60 input, $0.12 cached) at https://platform.minimax.io/docs/guides/pricing. Use these multipliers when a row omits cache rates.
+const MINIMAX: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.2,
+};
+
+// NOTE(2026-11-20): Mistral's own models read cache at 0.1× (e.g. Large 4 $0.7 input, $0.07 cached); it lists no write price, so writes at the input rate are an estimate at https://mistral.ai/pricing/api. Use these multipliers when a row omits cache rates.
+const MISTRAL: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.1,
+};
+
+// NOTE(2026-11-20): Bedrock reads Amazon Nova cache at 75% below input and lists no Nova cache-write price at https://aws.amazon.com/bedrock/pricing/. Use these multipliers when a row omits cache rates.
+const AMAZON_NOVA: CacheDefaults = CacheDefaults {
+    write_x: 1.0,
+    write_1h_x: 1.0,
+    read_x: 0.25,
+};
+
 pub(super) static CACHE_DEFAULTS_BY_SEGMENT_PREFIX: &[(&str, &CacheDefaults)] = &[
+    ("claude-fable-5-1", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-fable-5-2", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-mythos-5-1", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-mythos-5-2", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-opus-5-5", &ANTHROPIC_5_5),
+    ("claude-sonnet-5-5", &ANTHROPIC_5_5),
+    ("claude-", &WRITES_SURCHARGED),
+    ("gpt-6-2-astra", &OPENAI_GPT_6_REDUCED_READ),
+    ("gpt-6-2-sol", &OPENAI_GPT_6_REDUCED_READ),
+    ("gpt-6-1-sol", &OPENAI_GPT_6_REDUCED_READ),
+    ("gpt-6-1-terra", &OPENAI_GPT_6_REDUCED_READ),
+    ("openai-gpt-6-2-astra", &OPENAI_GPT_6_REDUCED_READ),
+    ("openai-gpt-6-2-sol", &OPENAI_GPT_6_REDUCED_READ),
+    ("openai-gpt-6-1-sol", &OPENAI_GPT_6_REDUCED_READ),
+    ("openai-gpt-6-1-terra", &OPENAI_GPT_6_REDUCED_READ),
+    ("gpt-5-6", &OPENAI_GPT_5_6),
+    ("gpt-5-7", &OPENAI_GPT_5_6),
+    ("gpt-5-8", &OPENAI_GPT_5_6),
+    ("gpt-5-9", &OPENAI_GPT_5_6),
+    ("gpt-6", &OPENAI_GPT_5_6),
+    ("openai-gpt-5-6", &OPENAI_GPT_5_6),
+    ("openai-gpt-5-7", &OPENAI_GPT_5_6),
+    ("openai-gpt-5-8", &OPENAI_GPT_5_6),
+    ("openai-gpt-5-9", &OPENAI_GPT_5_6),
+    ("openai-gpt-6", &OPENAI_GPT_5_6),
     ("codex-", &WRITES_AT_INPUT_RATE),
     ("gpt-", &WRITES_AT_INPUT_RATE),
     ("chatgpt-", &WRITES_AT_INPUT_RATE),
@@ -27,7 +152,22 @@ pub(super) static CACHE_DEFAULTS_BY_SEGMENT_PREFIX: &[(&str, &CacheDefaults)] = 
     ("openai-o1-", &WRITES_AT_INPUT_RATE),
     ("openai-o3-", &WRITES_AT_INPUT_RATE),
     ("openai-o4-", &WRITES_AT_INPUT_RATE),
-    ("claude-", &WRITES_SURCHARGED),
+    ("gemini-4", &GEMINI_4),
+    ("gemini-", &GEMINI),
+    ("deepseek-", &DEEPSEEK),
+    ("grok-4-5", &XAI_GROK_4_5),
+    ("grok-", &XAI),
+    ("kimi-k3", &MOONSHOT_KIMI_K3),
+    ("glm-", &ZAI_GLM),
+    ("qwen", &QWEN),
+    ("minimax-m", &MINIMAX),
+    ("mistral-", &MISTRAL),
+    ("devstral-", &MISTRAL),
+    ("codestral-", &MISTRAL),
+    ("ministral-", &MISTRAL),
+    ("magistral-", &MISTRAL),
+    ("pixtral-", &MISTRAL),
+    ("nova-", &AMAZON_NOVA),
 ];
 
 pub(super) static CACHE_DEFAULTS_BY_SEGMENT: &[(&str, &CacheDefaults)] = &[
@@ -62,6 +202,20 @@ pub(super) static PRICE_NEUTRAL_SUFFIX_WORDS: &[&str] = &[
     "latest",
     "default",
     "beta",
+];
+
+// NOTE(2026-11-20): These vendors bill a thinking or reasoning run as ordinary output tokens at the model's own rates, so the variant word names the same model only for that vendor's ids. Alibaba prices some Qwen models' thinking output separately (https://www.alibabacloud.com/help/en/model-studio/model-pricing), so the word stays a model word for every other family.
+pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
+    // NOTE(2026-11-20): Anthropic bills thinking as output tokens at https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost. A thinking id bills at its model's rates.
+    ("claude-", &["thinking"]),
+    // NOTE(2026-11-20): Google lists one output price including thinking tokens per Gemini model at https://ai.google.dev/gemini-api/docs/pricing. A thinking id bills at its model's rates.
+    ("gemini-", &["thinking"]),
+    // NOTE(2026-11-20): DeepSeek lists one price for both thinking and non-thinking modes at https://api-docs.deepseek.com/quick_start/pricing. A thinking id bills at its model's rates.
+    ("deepseek-", &["thinking"]),
+    // NOTE(2026-11-20): Z.ai turns thinking on per request at https://docs.z.ai/guides/capabilities/thinking-mode and lists one output price per GLM model at https://docs.z.ai/guides/overview/pricing. A thinking id bills at its model's rates.
+    ("glm-", &["thinking"]),
+    // NOTE(2026-11-20): xAI lists reasoning and non-reasoning ids at identical rates at https://docs.x.ai/developers/pricing. Either id bills at its model's rates.
+    ("grok-", &["non-reasoning", "reasoning"]),
 ];
 
 pub(super) static ALIASES: &[(&str, &str)] = &[

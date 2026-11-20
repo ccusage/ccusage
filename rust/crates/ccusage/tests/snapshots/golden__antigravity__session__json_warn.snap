@@ -24,7 +24,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.007745,
+          "cost": 0.00772,
           "inputTokens": 1500,
           "modelName": "gemini-3-pro",
           "outputTokens": 210
@@ -64,7 +64,7 @@ exit: 0
       "outputTokens": 1460,
       "projectPath": "Antigravity",
       "sessionId": "session-alpha",
-      "totalCost": 0.68138575,
+      "totalCost": 0.6813607500000001,
       "totalTokens": 364451
     },
     {
@@ -187,7 +187,7 @@ exit: 0
     "cacheReadTokens": 127500,
     "inputTokens": 257416,
     "outputTokens": 2680,
-    "totalCost": 0.7002495,
+    "totalCost": 0.7002245,
     "totalTokens": 388216,
     "unpricedModels": [
       "antigravity-model-77",

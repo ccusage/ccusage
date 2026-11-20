@@ -556,18 +556,18 @@ exit: 0
           "outputTokens": 95
         },
         {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 6000,
-          "inputTokens": 800,
-          "modelName": "[openclaw] openclaw-mystery-1",
-          "outputTokens": 300
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
           "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "inputTokens": 800,
+          "modelName": "[openclaw] openclaw-mystery-1",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,

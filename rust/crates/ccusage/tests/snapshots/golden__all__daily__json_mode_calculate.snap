@@ -300,7 +300,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
-          "cost": 0.006875000000000001,
+          "cost": 0.006995000000000001,
           "inputTokens": 3000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 601
@@ -308,7 +308,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.006625,
+          "cost": 0.0066,
           "inputTokens": 1000,
           "modelName": "gemini-3-pro",
           "outputTokens": 200
@@ -316,7 +316,7 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 500,
-          "cost": 0.005,
+          "cost": 0.0049499999999999995,
           "inputTokens": 1400,
           "modelName": "grok-4.5-build",
           "outputTokens": 300
@@ -439,7 +439,7 @@ exit: 0
       ],
       "outputTokens": 8394,
       "period": "2025-12-30",
-      "totalCost": 0.39770242499999997,
+      "totalCost": 0.39774742499999993,
       "totalTokens": 162557
     },
     {
@@ -580,7 +580,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.00415,
+          "cost": 0.0043,
           "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 300
@@ -661,7 +661,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0006565000000000001,
+          "cost": 0.0006540000000000001,
           "inputTokens": 150,
           "modelName": "grok-code-fast-1",
           "outputTokens": 400
@@ -811,7 +811,7 @@ exit: 0
       ],
       "outputTokens": 19837,
       "period": "2025-12-31",
-      "totalCost": 0.585385485,
+      "totalCost": 0.5855329850000001,
       "totalTokens": 279518
     },
     {
@@ -863,7 +863,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
+          "cost": 0.331451,
           "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
@@ -1329,7 +1329,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 2.8412448149999996,
+      "totalCost": 2.8512548149999994,
       "totalTokens": 1608822
     },
     {
@@ -1707,7 +1707,7 @@ exit: 0
     "cacheReadTokens": 1310237,
     "inputTokens": 1346814,
     "outputTokens": 58670,
-    "totalCost": 4.787814924999999,
+    "totalCost": 4.7980174249999985,
     "totalTokens": 2736863,
     "unpricedModels": [
       "GLM-5.3",

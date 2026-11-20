@@ -169,7 +169,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
-          "cost": 0.011025,
+          "cost": 0.011295000000000001,
           "inputTokens": 5000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
@@ -219,7 +219,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.006625,
+          "cost": 0.0066,
           "inputTokens": 1000,
           "modelName": "gemini-3-pro",
           "outputTokens": 200
@@ -379,7 +379,7 @@ exit: 0
       ],
       "outputTokens": 13468,
       "period": "2025-12",
-      "totalCost": 9.73586056,
+      "totalCost": 9.736105560000002,
       "totalTokens": 206942
     },
     {
@@ -524,7 +524,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
+          "cost": 0.331451,
           "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
@@ -1109,7 +1109,7 @@ exit: 0
       ],
       "outputTokens": 44815,
       "period": "2026-01",
-      "totalCost": 18.409999114999998,
+      "totalCost": 18.420009115,
       "totalTokens": 2527603
     },
     {
@@ -1146,7 +1146,7 @@ exit: 0
     "cacheReadTokens": 1310267,
     "inputTokens": 1347824,
     "outputTokens": 58790,
-    "totalCost": 28.149213425,
+    "totalCost": 28.159468425,
     "totalTokens": 2738063,
     "unpricedModels": [
       "GLM-5.3",
