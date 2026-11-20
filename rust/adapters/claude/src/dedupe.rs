@@ -1,5 +1,6 @@
 use std::{
     hash::{Hash, Hasher},
+    num::NonZeroU64,
     path::PathBuf,
     sync::Arc,
 };
@@ -54,7 +55,7 @@ fn usage_dedupe_hash(
 }
 
 // NOTE(2026-11-20, #2255): Claude Code writes each content block of a response on its own line with its own timestamp. Without a request ID, match blocks across timestamps only when the transcript chain places them in one response (#1838, #1935).
-fn response_dedupe_hash(message_id: &str, session_id: &str, response: u64) -> u64 {
+fn response_dedupe_hash(message_id: &str, session_id: &str, response: NonZeroU64) -> u64 {
     let mut hasher = FxHasher::default();
     "response".hash(&mut hasher);
     message_id.hash(&mut hasher);
@@ -64,13 +65,9 @@ fn response_dedupe_hash(message_id: &str, session_id: &str, response: u64) -> u6
 }
 
 fn requestless_response_hash(entry: &impl DedupEntry) -> Option<u64> {
-    if entry.request_id().is_some() {
-        return None;
-    }
-    let message_id = entry.message_id()?;
-    let response = entry.response()?;
+    let response = entry.request().response()?;
     Some(response_dedupe_hash(
-        message_id,
+        entry.message_id()?,
         entry.session_id(),
         response,
     ))
@@ -160,14 +157,41 @@ pub(super) fn dedupe_files<E: DedupEntry>(
     (deduped, copies)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Request {
+    Id(String),
+    Missing(Option<NonZeroU64>),
+}
+
+const _: () = assert!(size_of::<Request>() == size_of::<Option<String>>());
+
+impl Request {
+    pub(super) fn new(request_id: Option<String>, response: Option<NonZeroU64>) -> Self {
+        request_id.map_or(Self::Missing(response), Self::Id)
+    }
+
+    pub(super) fn id(&self) -> Option<&str> {
+        match self {
+            Self::Id(id) => Some(id),
+            Self::Missing(_) => None,
+        }
+    }
+
+    fn response(&self) -> Option<NonZeroU64> {
+        match self {
+            Self::Id(_) => None,
+            Self::Missing(response) => *response,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct DedupKey {
     pub(super) timestamp: TimestampMs,
     pub(super) session_id: Arc<str>,
     pub(super) message_id: Option<String>,
-    pub(super) request_id: Option<String>,
+    pub(super) request: Request,
     pub(super) is_sidechain: Option<bool>,
-    pub(super) response: Option<u64>,
 }
 
 pub(super) trait DedupEntry {
@@ -175,8 +199,10 @@ pub(super) trait DedupEntry {
     fn session_id(&self) -> &str;
     fn owned_session_id(&self) -> Arc<str>;
     fn message_id(&self) -> Option<&str>;
-    fn request_id(&self) -> Option<&str>;
-    fn response(&self) -> Option<u64>;
+    fn request(&self) -> &Request;
+    fn request_id(&self) -> Option<&str> {
+        self.request().id()
+    }
     fn is_sidechain(&self) -> bool;
     fn usage(&self) -> &TokenUsageRaw;
     fn records_cost(&self) -> bool;
@@ -217,16 +243,14 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                 })
             })
             .or_else(|| {
-                let response = entry.response()?;
                 deduped_indexes
                     .get(&requestless_response_hash(&entry)?)?
                     .iter()
                     .find_map(|dedupe_index| {
                         let existing = &deduped[dedupe_index.index];
                         (existing.message_id() == Some(message_id)
-                            && existing.request_id().is_none()
                             && existing.session_id() == entry.session_id()
-                            && existing.response() == Some(response))
+                            && existing.request() == entry.request())
                         .then_some(dedupe_index.index)
                     })
             })

@@ -405,7 +405,7 @@ fn keeps_parent_daily_usage_when_sidechain_replays_message_with_new_request_id()
 
     assert_eq!(deduped.len(), 2);
     assert_eq!(deduped[0].key.message_id.as_deref(), Some("msg-parent"));
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     assert_eq!(
         deduped[1].key.message_id.as_deref(),
@@ -451,7 +451,7 @@ fn dedupes_timestamp_different_daily_sidechain_replay_with_parent() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -495,7 +495,7 @@ fn refreshes_daily_dedupe_indexes_when_parent_replaces_sidechain_replay() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -567,7 +567,7 @@ fn keeps_timestamp_different_requestless_daily_entries_without_sidechain() {
         "session-a",
         TimestampMs::from_millis(1_774_000_000_000),
     );
-    first.key.request_id = None;
+    first.key.request = crate::dedupe::Request::Missing(None);
     push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
     let mut second = daily_loaded_entry_at(
@@ -581,7 +581,7 @@ fn keeps_timestamp_different_requestless_daily_entries_without_sidechain() {
         "session-a",
         TimestampMs::from_millis(1_774_000_001_000),
     );
-    second.key.request_id = None;
+    second.key.request = crate::dedupe::Request::Missing(None);
     push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
     assert_eq!(deduped.len(), 2);
@@ -912,7 +912,7 @@ fn dedupes_daily_sidechain_replay_after_an_equal_copy_from_another_session() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -968,7 +968,7 @@ fn dedupes_daily_sidechain_replay_after_cross_session_survivor_replacement() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].key.session_id.as_ref(), "session-a");
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
 }
@@ -1023,9 +1023,8 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
             timestamp: TimestampMs::from_millis(1_774_000_000_000),
             session_id: Arc::from("session-a"),
             message_id: Some(fixture.message_id.to_string()),
-            request_id: Some(fixture.request_id.to_string()),
+            request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
             is_sidechain: Some(fixture.is_sidechain),
-            response: None,
         },
         date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
         project: Arc::from("project-a"),

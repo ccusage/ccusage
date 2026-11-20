@@ -1019,7 +1019,7 @@ fn dedupes_sidechain_replay_after_an_equal_copy_from_another_session() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -1063,7 +1063,7 @@ fn dedupes_sidechain_replay_after_cross_session_survivor_replacement() {
     push_deduped_entry(copied_session_replay, &mut deduped_indexes, &mut deduped);
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].session_id.as_ref(), "session-a");
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
 }
@@ -1109,7 +1109,7 @@ fn keeps_parent_usage_when_sidechain_replays_message_with_new_request_id() {
 
     assert_eq!(deduped.len(), 2);
     assert_eq!(deduped[0].message_id.as_deref(), Some("msg-parent"));
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     assert_eq!(
         deduped[1].message_id.as_deref(),
@@ -1158,7 +1158,7 @@ fn refreshes_dedupe_indexes_when_parent_replaces_sidechain_replay() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -1175,9 +1175,8 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
         source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
         recorded_session_id: Some("session-a".to_string()),
         original_model: Some("claude-sonnet-4-20250514".to_string()),
-        request_id: Some(fixture.request_id.to_string()),
+        request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
         is_sidechain: Some(fixture.is_sidechain),
-        response: None,
         entry: LoadedEntry {
             usage: TokenUsageRaw {
                 input_tokens: 0,
