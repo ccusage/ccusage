@@ -13,7 +13,7 @@ const UNKNOWN_PROVIDERS: &[&str] = &["", "unknown"];
 /// `Direct` means DeepSeek billed the request itself, so its time-of-day
 /// schedule applies. `Foreign` means another provider billed it, so the
 /// schedule must not. `None` means the record does not name a provider, and the
-/// caller keeps the inferred behaviour.
+/// caller keeps the inferred behavior.
 pub fn billing_route(provider: Option<&str>) -> Option<BillingRoute> {
     let provider = provider?.trim().to_ascii_lowercase().replace('_', "-");
     if UNKNOWN_PROVIDERS.contains(&provider.as_str()) {
@@ -28,7 +28,7 @@ pub fn billing_route(provider: Option<&str>) -> Option<BillingRoute> {
 
 /// Prices an entry on the route its recorded provider implies.
 ///
-/// A record with no provider keeps the inferred pricing behaviour.
+/// A record with no provider keeps the inferred pricing behavior.
 pub fn price_entry_for_provider<'a>(
     entry: EntryPricing<'a>,
     provider: Option<&str>,
