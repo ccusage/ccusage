@@ -249,7 +249,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
-          "cost": 0.011025,
+          "cost": 0.011295000000000001,
           "inputTokens": 5000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
@@ -282,7 +282,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.007745,
+          "cost": 0.00772,
           "inputTokens": 1500,
           "modelName": "gemini-3-pro",
           "outputTokens": 210
@@ -534,7 +534,7 @@ exit: 0
       ],
       "outputTokens": 29921,
       "period": "2025-12",
-      "totalCost": 21.169601409999995,
+      "totalCost": 21.169846409999995,
       "totalTokens": 453935
     },
     {
@@ -640,6 +640,14 @@ exit: 0
           "storedCost": 0.37
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100100,
+          "cost": 0.331451,
+          "inputTokens": 300531,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 2113
+        },
+        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 6000,
           "cost": 0.33,
@@ -647,14 +655,6 @@ exit: 0
           "modelName": "[openclaw] openclaw-mystery-1",
           "outputTokens": 300,
           "storedCost": 0.33
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
-          "inputTokens": 300531,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -1191,7 +1191,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalCost": 6.974133265000001,
+      "totalCost": 6.984143265000001,
       "totalTokens": 2279840
     },
     {
@@ -1228,7 +1228,7 @@ exit: 0
     "cacheReadTokens": 1309967,
     "inputTokens": 1347424,
     "outputTokens": 58720,
-    "totalCost": 28.147088425,
+    "totalCost": 28.157343424999997,
     "totalTokens": 2737293,
     "unpricedModels": [
       "GLM-5.3",

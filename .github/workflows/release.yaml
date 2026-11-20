@@ -41,7 +41,7 @@ jobs:
   ci:
     needs: tagpr
     if: needs.tagpr.outputs.tag == '' && needs.tagpr.outputs.pull_request != ''
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       actions: write
