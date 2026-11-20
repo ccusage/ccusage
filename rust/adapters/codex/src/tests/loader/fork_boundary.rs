@@ -274,3 +274,24 @@ fn matches_the_parent_before_an_own_marker_that_follows_threadless_copies() {
 
     assert_child_usage(&load_fork(Some(&parent_rollout()), &child), &[400], &[]);
 }
+
+#[test]
+fn counts_and_warns_when_a_fork_names_no_child_id() {
+    let child = [
+        json!({
+            "timestamp": "2026-11-01T09:00:00.000Z",
+            "type": "session_meta",
+            "payload": {"forked_from_id": PARENT},
+        })
+        .to_string(),
+        replay_token_count("2026-11-01T09:00:01.000Z", 100),
+        settings_applied("2026-11-01T09:00:02.000Z", Some(CHILD)),
+        replay_token_count("2026-11-01T09:00:03.000Z", 200),
+    ];
+
+    assert_child_usage(
+        &load_fork(None, &child),
+        &[100, 200],
+        &[MISSING_PARENT_WARNING],
+    );
+}

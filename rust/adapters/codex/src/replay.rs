@@ -161,7 +161,11 @@ impl CodexReplayPlan {
                     ParentReplay {
                         path,
                         parent_id: parent_id.to_string(),
-                        child_id: file.metadata.session_id.clone(),
+                        child_id: file
+                            .metadata
+                            .session_id
+                            .clone()
+                            .filter(|id| !id.trim().is_empty()),
                         unreadable,
                         forked_at: file.metadata.timestamp,
                         spawned: file.metadata.spawned,

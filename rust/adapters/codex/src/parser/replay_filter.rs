@@ -55,7 +55,7 @@ impl<'a> CodexReplayFilter<'a> {
         {
             return Some(self.resolve_leading(visit));
         }
-        if thread_id.is_some() && self.own_start.is_none() {
+        if thread_id.is_some() && fork.child_id.is_some() && self.own_start.is_none() {
             self.foreign_before_own = true;
         }
         None
