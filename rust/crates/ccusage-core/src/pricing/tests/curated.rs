@@ -205,7 +205,7 @@ fn cache_read_fallback_is_independent_of_cache_write_family() {
 
 #[test]
 fn model_vendor_precedence_is_independent_of_segment_order() {
-    use super::super::{cache_defaults, data};
+    use super::super::{data, row::cache_defaults};
     for model in [
         "claude-proxy/openai.gpt-5",
         "openai.gpt-5/claude-proxy",
