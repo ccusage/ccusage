@@ -206,6 +206,7 @@ dependencies = [
  "ccusage-core",
  "ccusage-report",
  "ccusage-test-support",
+ "insta",
  "jiff",
  "memchr",
  "rustc-hash",
@@ -518,9 +519,7 @@ name = "ccusage-report"
 version = "0.0.0"
 dependencies = [
  "ccusage-core",
- "insta",
  "jiff",
- "serde_json",
 ]
 
 [[package]]

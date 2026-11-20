@@ -1,10 +1,8 @@
 //! Report-only helpers for the CLI and the Claude report commands.
 
 mod last_window;
-mod output;
 
 pub use last_window::last_periods_since;
-pub use output::{group_project_output, session_summary_json, summary_json};
 
 pub fn session_cost_ordering(
     shared: &ccusage_core::cli::SharedArgs,

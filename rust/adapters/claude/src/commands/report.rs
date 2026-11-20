@@ -9,9 +9,7 @@ use ccusage_core::{
     summary::{Bucket, summarize_bucket, summarize_by_day},
     totals_json, wants_json,
 };
-use ccusage_report::{
-    group_project_output, session_cost_ordering, session_summary_json, summary_json,
-};
+use ccusage_report::session_cost_ordering;
 use serde_json::json;
 
 use crate::{
@@ -21,6 +19,10 @@ use crate::{
     },
     load_daily_summaries, load_entries, load_entries_since,
 };
+
+mod json;
+
+use json::{group_project_output, session_summary_json, summary_json};
 
 pub fn run_daily(args: DailyArgs) -> Result<()> {
     let shared = args.shared.clone();
