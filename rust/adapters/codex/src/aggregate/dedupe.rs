@@ -78,7 +78,7 @@ impl CodexAttribution {
             file_index,
             rollout_count: 0,
             session,
-            last_activity: CompactString::new(&event.last_activity),
+            last_activity: event.last_activity.clone(),
             is_fallback: event.is_fallback_model,
             service_tier: event.service_tier,
         }

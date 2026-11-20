@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     TimestampMs,
@@ -32,20 +32,20 @@ impl CodexAutoReviewFallback {
 pub(super) fn resolve_codex_usage_model(
     parsed_model: Option<String>,
     timestamp: TimestampMs,
-    current_model: &mut Option<String>,
+    current_model: &mut Option<Arc<str>>,
     current_model_is_fallback: &mut bool,
-) -> (String, bool) {
+) -> (Arc<str>, bool) {
     if let Some(model) = parsed_model {
-        *current_model = Some(model);
+        *current_model = Some(model.into());
         *current_model_is_fallback = false;
     }
     let model = current_model.get_or_insert_with(|| {
         *current_model_is_fallback = true;
-        "gpt-5".to_string()
+        "gpt-5".into()
     });
     match codex_log_model_fallback(model, timestamp) {
-        Some(fallback) => (fallback.to_string(), true),
-        None => (model.clone(), *current_model_is_fallback),
+        Some(fallback) => (fallback.into(), true),
+        None => (Arc::clone(model), *current_model_is_fallback),
     }
 }
 

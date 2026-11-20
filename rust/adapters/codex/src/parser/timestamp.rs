@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use compact_str::CompactString;
+
 use crate::{
     TimestampMs,
     types::{CodexLogEntry, CodexResultFields, CodexTimestamp},
@@ -20,11 +22,11 @@ pub(super) fn codex_session_timestamp(value: Option<&CodexTimestamp<'_>>) -> Opt
 
 pub(super) fn codex_usage_timestamp(
     value: Option<&CodexTimestamp<'_>>,
-) -> Option<(TimestampMs, String)> {
+) -> Option<(TimestampMs, CompactString)> {
     let instant = codex_timestamp_instant(value)?;
     let raw = match value? {
-        CodexTimestamp::String(text) => text.trim().to_string(),
-        CodexTimestamp::Number(_) => crate::format_rfc3339_millis(instant),
+        CodexTimestamp::String(text) => CompactString::new(text.trim()),
+        CodexTimestamp::Number(_) => crate::format_rfc3339_millis(instant).into(),
         CodexTimestamp::Invalid => return None,
     };
     Some((instant, raw))

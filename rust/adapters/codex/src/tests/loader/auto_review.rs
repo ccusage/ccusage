@@ -66,11 +66,11 @@ fn resolves_codex_auto_review_at_documented_model_boundaries() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 5);
-    assert_eq!(events[0].model.as_str(), "gpt-5.3-codex");
-    assert_eq!(events[1].model.as_str(), "gpt-5.4");
-    assert_eq!(events[2].model.as_str(), "gpt-5.4");
-    assert_eq!(events[3].model.as_str(), "gpt-5.4");
-    assert_eq!(events[4].model.as_str(), "gpt-5.6-luna");
+    assert_eq!(&*events[0].model, "gpt-5.3-codex");
+    assert_eq!(&*events[1].model, "gpt-5.4");
+    assert_eq!(&*events[2].model, "gpt-5.4");
+    assert_eq!(&*events[3].model, "gpt-5.4");
+    assert_eq!(&*events[4].model, "gpt-5.6-luna");
     assert!(events.iter().all(|event| event.is_fallback_model));
 }
 
@@ -128,7 +128,7 @@ fn resolves_codex_auto_review_uses_created_at_when_top_level_timestamp_is_malfor
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
+    assert_eq!(&*events[0].model, "gpt-5.2-codex");
     assert!(events[0].is_fallback_model);
 }
 
@@ -196,9 +196,9 @@ fn resolves_codex_auto_review_turn_context_for_each_event_date() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 3);
-    assert_eq!(events[0].model.as_str(), "gpt-5.2-codex");
-    assert_eq!(events[1].model.as_str(), "gpt-5.4");
-    assert_eq!(events[2].model.as_str(), "gpt-5.6-luna");
+    assert_eq!(&*events[0].model, "gpt-5.2-codex");
+    assert_eq!(&*events[1].model, "gpt-5.4");
+    assert_eq!(&*events[2].model, "gpt-5.6-luna");
     assert!(events.iter().all(|event| event.is_fallback_model));
 }
 
@@ -219,7 +219,7 @@ fn auto_review_is_dated_by_the_utc_day_of_the_event_instant() {
         crate::parse_ts_timestamp("2026-07-29T23:30:00Z").unwrap()
     );
     assert_eq!(events[0].last_activity, "2026-07-29T23:30:00.000Z");
-    assert_eq!(events[0].model, "gpt-5.4");
+    assert_eq!(&*events[0].model, "gpt-5.4");
     assert!(events[0].is_fallback_model);
 }
 
@@ -241,6 +241,6 @@ fn auto_review_is_dated_by_the_field_that_dates_the_event() {
         crate::parse_ts_timestamp("2026-03-05T00:00:00Z").unwrap()
     );
     assert_eq!(events[0].last_activity, "2026-03-05T00:00:00.000Z");
-    assert_eq!(events[0].model, "gpt-5.4");
+    assert_eq!(&*events[0].model, "gpt-5.4");
     assert!(events[0].is_fallback_model);
 }

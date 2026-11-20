@@ -91,7 +91,7 @@ fn parent_compaction_records_do_not_change_the_normal_replay_prefix() {
     assert_eq!(
         events
             .iter()
-            .filter(|event| event.session_id == "b-child")
+            .filter(|event| &*event.session_id == "b-child")
             .count(),
         1
     );

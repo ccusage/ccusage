@@ -4,7 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::ControlFlow,
     path::Path,
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
 };
 
 use memchr::memmem::Finder;
@@ -76,7 +76,7 @@ struct CodexPendingUsage {
 #[derive(Default)]
 struct CodexSessionUsageState {
     previous_totals: Option<CodexRawUsage>,
-    current_model: Option<String>,
+    current_model: Option<Arc<str>>,
     current_model_is_fallback: bool,
     current_service_tier: Option<CodexServiceTier>,
     compaction_usage: CodexCompactionUsageState,
@@ -183,7 +183,7 @@ fn visit_codex_session_file_inner(
     diagnostics: &Diagnostics,
     mut first_line: Option<(&mut CodexSessionMetadata, bool)>,
 ) -> bool {
-    let session_id = codex_session_id(sessions_dir, path);
+    let session_id: Arc<str> = codex_session_id(sessions_dir, path).into();
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
@@ -355,7 +355,7 @@ fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -
 }
 
 fn visit_codex_session_entry(
-    session_id: &str,
+    session_id: &Arc<str>,
     value: CodexLogEntry<'_>,
     state: &mut CodexSessionUsageState,
     replay: &mut CodexReplayFilter<'_>,
@@ -445,7 +445,7 @@ fn visit_codex_session_entry(
             &mut request_model_is_fallback,
         );
         let event = CodexTokenUsageEvent {
-            session_id: session_id.to_string(),
+            session_id: Arc::clone(session_id),
             response_id: Some(response_id.clone()),
             record_response_id: None,
             timestamp,
@@ -487,7 +487,7 @@ fn visit_codex_session_entry(
     }
     if entry_type == Some("turn_context") {
         if let Some(model) = value.payload.as_ref().and_then(codex_model_from_payload) {
-            *current_model = Some(model);
+            *current_model = Some(model.into());
             *current_model_is_fallback = false;
         }
         return;
@@ -577,7 +577,7 @@ fn visit_codex_session_entry(
 
     replay.visit(
         CodexTokenUsageEvent {
-            session_id: session_id.to_string(),
+            session_id: Arc::clone(session_id),
             response_id: None,
             record_response_id,
             timestamp,

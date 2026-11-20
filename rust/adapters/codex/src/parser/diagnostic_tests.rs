@@ -263,7 +263,7 @@ fn malformed_descriptive_session_fields_keep_the_usage() {
     ]);
     assert_eq!(events.len(), 1);
     assert_eq!((events[0].input_tokens, events[0].output_tokens), (10, 2));
-    assert_eq!(events[0].model, "gpt-5.4");
+    assert_eq!(&*events[0].model, "gpt-5.4");
     assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
     assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
 }

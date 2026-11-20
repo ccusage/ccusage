@@ -8,10 +8,10 @@ use super::{
 };
 
 pub(super) fn add_codex_exec_event(
-    session_id: &str,
+    session_id: &std::sync::Arc<str>,
     value: &CodexLogEntry<'_>,
     fallback_timestamp: impl FnOnce() -> TimestampMs,
-    current_model: &mut Option<String>,
+    current_model: &mut Option<std::sync::Arc<str>>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent),
     location: &RecordLocation<'_>,
@@ -37,11 +37,11 @@ pub(super) fn add_codex_exec_event(
 }
 
 fn visit_codex_exec_usage_event(
-    session_id: &str,
+    session_id: &std::sync::Arc<str>,
     raw_usage: CodexRawUsage,
     parsed_model: Option<String>,
     timestamp: TimestampMs,
-    current_model: &mut Option<String>,
+    current_model: &mut Option<std::sync::Arc<str>>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent),
 ) {
@@ -53,11 +53,11 @@ fn visit_codex_exec_usage_event(
         current_model_is_fallback,
     );
     visit(CodexTokenUsageEvent {
-        session_id: session_id.to_string(),
+        session_id: std::sync::Arc::clone(session_id),
         response_id: None,
         record_response_id: None,
         timestamp,
-        last_activity: crate::format_rfc3339_millis(timestamp),
+        last_activity: crate::format_rfc3339_millis(timestamp).into(),
         model,
         input_tokens: raw_usage.input_tokens,
         cached_input_tokens: raw_usage.cached_input_tokens,

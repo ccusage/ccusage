@@ -47,12 +47,12 @@ fn usage(input_tokens: u64) -> CodexRawUsage {
 
 fn event(input_tokens: u64) -> CodexTokenUsageEvent {
     CodexTokenUsageEvent {
-        session_id: CHILD.to_string(),
+        session_id: CHILD.into(),
         response_id: None,
         record_response_id: None,
         timestamp: TimestampMs::from_millis(0),
-        last_activity: String::new(),
-        model: "gpt-5".to_string(),
+        last_activity: Default::default(),
+        model: "gpt-5".into(),
         input_tokens,
         cached_input_tokens: 0,
         cache_creation_tokens: 0,
