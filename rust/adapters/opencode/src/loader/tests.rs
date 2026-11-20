@@ -51,7 +51,7 @@ fn reports_failed_schema_probes_without_database_details() {
         .execute("CREATE TABLE session_message (id TEXT, session_id TEXT, seq INTEGER)")
         .unwrap();
     let diagnostics = Diagnostics::new("opencode");
-    assert!(super::table_exists(
+    assert!(super::schema::table_exists(
         &connection,
         super::Table::SessionMessage,
         &path,

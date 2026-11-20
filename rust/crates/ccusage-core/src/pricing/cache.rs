@@ -119,7 +119,7 @@ impl Pass {
         match self {
             Self::S2 => true,
             Self::S34 | Self::S3f => kind != MatchKind::StrictExact,
-            Self::S56 => kind == MatchKind::Fuzzy,
+            Self::S56 => matches!(kind, MatchKind::Fuzzy | MatchKind::Fallback),
             Self::Label => false,
         }
     }

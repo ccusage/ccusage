@@ -212,7 +212,7 @@ mod diagnostic_tests {
             };
             let diagnostics = Diagnostics::new("claude");
             let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
-            let probe = crate::read_usage_file_with_diagnostics(
+            let probe = crate::load::read_usage_file_with_diagnostics(
                 &main,
                 ReportWindow::from_shared(&shared).timezone(),
                 ccusage_core::cost::PriceTable::Display,
@@ -261,7 +261,7 @@ mod diagnostic_tests {
                 ..Default::default()
             };
             let diagnostics = Diagnostics::new("claude");
-            let focused = crate::load_deduped_entries_with_progress(
+            let focused = crate::load::load_deduped_entries_with_progress(
                 &shared,
                 None,
                 ProgressOwner::Caller,

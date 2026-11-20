@@ -615,9 +615,9 @@ fn attributes_step_and_retry_usage_to_their_token_models() {
             .find(|entry| entry.message_id.as_deref() == Some("retry-opus"))
             .unwrap();
         assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
-        assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
+        assert_eq!(retry.model.as_deref(), Some("claude-opus-4"));
         let step_pricing = pricing.find("gemini-2.5-pro").unwrap();
-        let retry_pricing = pricing.find("claude-4-opus").unwrap();
+        let retry_pricing = pricing.find("claude-opus-4").unwrap();
         let expected_step_cost = 10.0 * step_pricing.input + 5.0 * step_pricing.output;
         let expected_retry_cost = 20.0 * retry_pricing.input + 4.0 * retry_pricing.output;
         assert!((step.cost - expected_step_cost).abs() < 1e-15);
@@ -994,6 +994,46 @@ fn prefers_explicit_model_name_over_placeholder_for_unknown_ids() {
 }
 
 #[test]
+fn prices_gemini_2_5_flash_thinking_at_the_gemini_2_5_flash_rate() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = Fixture::new();
+    create_database(
+        &fixture.path("conversations/session.db"),
+        &[(
+            0,
+            metadata_blob(
+                None,
+                Some(UsageFixture {
+                    model_id: Some(313),
+                    input_tokens: 60,
+                    total_output_tokens: 10,
+                    visible_output_tokens: 10,
+                    ..UsageFixture::default()
+                }),
+                Some((1_781_481_600, 0)),
+                &[],
+            ),
+        )],
+        &[],
+        &[],
+    );
+
+    let entries = load_from_fixture(&fixture, true);
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].model.as_deref(),
+        Some("gemini-2.5-flash-thinking")
+    );
+    assert!(entries[0].missing_pricing_model.is_none());
+    assert!(
+        (entries[0].cost - (60.0 * 0.3e-6 + 10.0 * 2.5e-6)).abs() < 1e-12,
+        "{}",
+        entries[0].cost
+    );
+}
+
+#[test]
 fn keeps_alias_mapped_ids_over_explicit_model_name() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
@@ -1025,6 +1065,8 @@ fn keeps_alias_mapped_ids_over_explicit_model_name() {
         entries[0].model.as_deref(),
         Some("gemini-3.5-flash-extra-low")
     );
+    assert!(entries[0].cost > 0.0);
+    assert!(entries[0].missing_pricing_model.is_none());
 }
 
 #[test]

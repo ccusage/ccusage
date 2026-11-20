@@ -245,6 +245,7 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opus; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
