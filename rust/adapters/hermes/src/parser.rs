@@ -20,7 +20,6 @@ pub(super) struct HermesEntry {
     model: String,
     provider: String,
     usage: TokenUsageRaw,
-    reasoning_tokens: u64,
     message_count: u64,
     cost_usd: Option<f64>,
 }
@@ -99,7 +98,6 @@ pub(super) fn read_session_row(
             speed: None,
             cache_creation: None,
         },
-        reasoning_tokens,
         message_count,
         cost_usd,
     }))
@@ -232,7 +230,6 @@ mod tests {
                 input_tokens: 100,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -272,7 +269,6 @@ mod tests {
                         output_tokens: 50,
                         ..TokenUsageRaw::default()
                     },
-                    reasoning_tokens: 30,
                     message_count: 1,
                     cost_usd: stored,
                 };
@@ -300,20 +296,13 @@ mod tests {
         pricing.load_json(
             r#"{"gpt-5":{"litellm_provider":"openai","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5}}"#,
         );
-        let entry = HermesEntry {
-            timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
-            session_id: "s".to_string(),
-            model: "gpt-5".to_string(),
-            provider: "openai".to_string(),
-            usage: TokenUsageRaw {
-                input_tokens: 1_000_000,
-                output_tokens: 500_000,
-                ..TokenUsageRaw::default()
-            },
-            reasoning_tokens: 300_000,
-            message_count: 1,
-            cost_usd: None,
-        };
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT 's1', 'gpt-5', 'openai', 1767312000, 1, 1000000, 500000, 0, 0, 300000, NULL, NULL")
+            .unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+        let entry = read_session_row(&statement).unwrap().unwrap();
 
         let loaded = to_loaded_entry(
             entry,
@@ -389,7 +378,6 @@ mod tests {
                     speed: None,
                     cache_creation: None,
                 },
-                reasoning_tokens: 50,
                 message_count: 1,
                 cost_usd: None,
             };
@@ -419,7 +407,6 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
-            reasoning_tokens: 3_216,
             message_count: 72,
             cost_usd: Some(0.0),
         };
@@ -448,7 +435,6 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: Some(0.42),
         };
@@ -466,7 +452,6 @@ mod tests {
             model: "gpt-5.5".to_string(),
             provider: "openai".to_string(),
             usage: TokenUsageRaw::default(),
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -517,7 +502,6 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -550,7 +534,6 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -605,7 +588,6 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -665,7 +647,6 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..TokenUsageRaw::default()
                 },
-                reasoning_tokens: 0,
                 message_count: 1,
                 cost_usd: None,
             };
@@ -709,7 +690,6 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..Default::default()
                 },
-                reasoning_tokens: 0,
                 message_count: 1,
                 cost_usd: None,
             };
@@ -736,7 +716,6 @@ mod pricing_identity_tests {
                 output_tokens: 1000,
                 ..Default::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -819,7 +798,6 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..Default::default()
                 },
-                reasoning_tokens: 0,
                 message_count: 1,
                 cost_usd: None,
             };
