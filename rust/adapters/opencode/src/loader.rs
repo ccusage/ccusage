@@ -296,12 +296,21 @@ impl Table {
             Self::SessionV2 => "session_v2",
         }
     }
+
+    // NOTE(2026-11-19, #2244): OpenCode's own writers copy each message's time.created into time_created, and only its migrations create these indexes. Any other table gives the column no such guarantee, so the payload alone dates its rows.
+    fn opencode_time_index(self) -> Option<&'static str> {
+        match self {
+            Self::Message => Some("message_session_time_created_id_idx"),
+            Self::SessionMessage => Some("session_message_time_created_idx"),
+            Self::Session | Self::SessionV2 => None,
+        }
+    }
 }
 
 struct TableSchema {
     table: Table,
     columns: HashSet<String>,
-    millis_scaled: bool,
+    indexed_time: bool,
 }
 
 impl TableSchema {
@@ -337,12 +346,15 @@ impl TableSchema {
                 return None;
             }
         };
-        let millis_scaled =
-            columns.contains("time_created") && time_created_looks_like_millis(connection, table);
+        let indexed_time = columns.contains("time_created")
+            && table
+                .opencode_time_index()
+                .is_some_and(|index| index_exists(connection, table, index))
+            && time_created_looks_like_millis(connection, table);
         Some(Self {
             table,
             columns,
-            millis_scaled,
+            indexed_time,
         })
     }
 
@@ -362,13 +374,13 @@ impl TableSchema {
         if context.window.is_unbounded() {
             return DateWindow::UNBOUNDED;
         }
-        if self.millis_scaled {
-            return context.window.with_sql_timestamp_margin();
+        if self.indexed_time {
+            return context.window;
         }
         debug_log(
             context.shared,
             format!(
-                "OpenCode {}.time_created is missing or not millisecond-scale; scanning unfiltered: {}",
+                "OpenCode {}.time_created is not OpenCode's indexed millisecond time; scanning unfiltered: {}",
                 self.table.name(),
                 context.db_path.display()
             ),
@@ -671,6 +683,19 @@ fn read_message_file(
     message_value_to_entry(value, None, None, tz, mode, pricing).map_err(|MissingTimestamp| {
         UnitError::new(SkipKind::InvalidTimestamp, MissingTimestamp::REASON)
     })
+}
+
+fn index_exists(connection: &sqlite::Connection, table: Table, index: &str) -> bool {
+    connection
+        .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND tbl_name = ?1 AND name = ?2 LIMIT 1",
+        )
+        .and_then(|mut statement| {
+            statement.bind((1, table.name()))?;
+            statement.bind((2, index))?;
+            statement.next()
+        })
+        .is_ok_and(|state| state == sqlite::State::Row)
 }
 
 fn table_exists(
@@ -988,13 +1013,6 @@ impl DateWindow {
 
     fn is_unbounded(self) -> bool {
         self == Self::UNBOUNDED
-    }
-
-    fn with_sql_timestamp_margin(self) -> Self {
-        Self {
-            start: self.start.map(|start| start - crate::MILLIS_PER_DAY),
-            end: self.end.map(|end| end + crate::MILLIS_PER_DAY),
-        }
     }
 
     fn contains(self, millis: i64) -> bool {
@@ -3247,34 +3265,6 @@ mod tests {
         assert_eq!(entries[0].date, "2026-01-01");
     }
 
-    #[test]
-    fn pushdown_margin_keeps_rows_whose_column_drifts_from_the_payload() {
-        let fixture = fs_fixture!({});
-        create_db_message_with_time(
-            &fixture.path("opencode.db"),
-            "msg-drifted",
-            "session-a",
-            1_767_312_000_000 + 26 * 60 * 60 * 1000,
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
-        );
-
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260102".parse().unwrap()),
-            until: Some("20260102".parse().unwrap()),
-            ..SharedArgs::default()
-        };
-        let entries = load_entries_from_directory(fixture.root(), &shared);
-
-        assert_eq!(
-            entries.len(),
-            1,
-            "the payload decides the window, so a drifting column must not exclude the row"
-        );
-        assert_eq!(entries[0].date, "2026-01-02");
-    }
-
     const NOON_UTC_2026_01_01_V2: &str = r#"{"model":{"id":"claude-sonnet-4-20250514","providerID":"anthropic"},"time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
 
     const NOON_UTC_2026_01_01_MS: i64 = 1_767_268_800_000;
@@ -3442,6 +3432,7 @@ mod tests {
             1_767_312_000,
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
         );
+        create_opencode_time_index(&fixture.path("opencode.db"), MessageTable::Message);
 
         let shared = SharedArgs {
             mode: CostMode::Display,
