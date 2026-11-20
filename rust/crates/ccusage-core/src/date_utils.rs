@@ -101,7 +101,7 @@ pub fn parse_ts_timestamp(value: &str) -> Option<TimestampMs> {
     {
         return None;
     }
-    let year = parse_digits(&bytes[0..4])? as i32;
+    let year = i32::try_from(parse_digits(&bytes[0..4])?).ok()?;
     let month = parse_digits(&bytes[5..7])?;
     let day = parse_digits(&bytes[8..10])?;
     let hour = parse_digits(&bytes[11..13])?;

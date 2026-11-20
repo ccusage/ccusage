@@ -2,11 +2,13 @@ use ccusage_core::summary::{KeyTarget, summarize_by_day};
 use ccusage_test_support::{Environment, fs_fixture};
 use serde_json::Value;
 
-use crate::{
+use ccusage_core::{
     LoadedEntry, UsageSummary,
     cli::{CostMode, SharedArgs},
-    load_daily_summaries, load_entries, summarize_by_key_target,
+    summarize_by_key_target,
 };
+
+use crate::{load_daily_summaries, load_entries};
 
 fn display_shared() -> SharedArgs {
     SharedArgs {
@@ -449,7 +451,7 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
                 .sum::<u64>(),
             110
         );
-        assert_eq!(diagnostics.skipped(crate::SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         let daily_diagnostics = crate::Diagnostics::new("claude");
         let daily = crate::load_daily_summaries_with_detection_progress(
             &shared,
@@ -460,6 +462,9 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
         )
         .unwrap();
         assert_eq!(daily.summaries[0].input_tokens, 110);
-        assert_eq!(daily_diagnostics.skipped(crate::SkipKind::InvalidData), 1);
+        assert_eq!(
+            daily_diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
+            1
+        );
     })
 }

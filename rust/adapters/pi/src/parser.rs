@@ -542,7 +542,7 @@ fn source_cost_for_mode(
     match mode {
         CostMode::Auto if has_override => None,
         CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0),
-        _ => display_cost,
+        CostMode::Calculate | CostMode::Display => display_cost,
     }
 }
 
@@ -598,7 +598,7 @@ mod tests {
             &Diagnostics::new("pi"),
         )
         .map(|data| data.entries)
-        .map_err(|error| crate::cli_error(error.to_string()))
+        .map_err(|error| ccusage_core::cli_error(error.to_string()))
     }
 
     fn read_session_file_for_store(
@@ -619,7 +619,7 @@ mod tests {
             &Diagnostics::new("pi"),
         )
         .map(|data| data.entries)
-        .map_err(|error| crate::cli_error(error.to_string()))
+        .map_err(|error| ccusage_core::cli_error(error.to_string()))
     }
 
     fn pricing_for_cost_tests() -> ccusage_core::PricingMap {

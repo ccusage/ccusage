@@ -331,7 +331,7 @@ fn timestamp_value(value: Option<&Value>) -> Option<crate::TimestampMs> {
         Value::Number(value) => {
             ccusage_adapter_common::timestamps::epoch_secs_or_millis(value.as_i64()?)
         }
-        _ => None,
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
     }
 }
 

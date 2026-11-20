@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use crate::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
+    use ccusage_core::cli::AgentReportKind;
+    use ccusage_core::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
     use std::sync::Arc;
 
     fn entry(session_id: &str, date: &str, millis: i64) -> LoadedEntry {

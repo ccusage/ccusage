@@ -340,7 +340,7 @@ pub(super) fn codex_model_missing_pricing(
     .is_some()
 }
 
-pub fn codex_missing_pricing_models(
+pub(crate) fn codex_missing_pricing_models(
     groups: &BTreeMap<String, CodexGroup>,
     pricing: Option<&PricingMap>,
 ) -> Vec<String> {
@@ -576,7 +576,7 @@ pub(super) fn print_table_from_groups(
 ) -> Result<()> {
     let pricing = pricing.filter(|_| shared.mode != CostMode::Display);
     if groups.is_empty() {
-        eprintln!("No Codex usage data found.");
+        ccusage_core::errln!("No Codex usage data found.");
         return Ok(());
     }
     let first_column = match kind {
@@ -596,7 +596,7 @@ pub(super) fn print_table_from_groups(
             }
         ),
         shared,
-    );
+    )?;
     let terminal_width = crate::terminal_width();
     let (headers, columns) = codex_table_columns(first_column, shared.no_cost);
     let mut table = SimpleTable::new(headers, columns, crate::terminal_style(shared))

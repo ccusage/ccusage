@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use ccusage_core::cli::AgentReportKind;
     use std::sync::Arc;
 
     use crate::*;

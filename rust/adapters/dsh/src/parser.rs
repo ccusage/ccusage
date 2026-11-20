@@ -191,26 +191,30 @@ pub(super) fn read_session_file(
 fn compressed_interruption(failure: ReadFailure) -> Interruption {
     let has_content = failure.complete_lines != 0
         || (failure.tail_bytes != 0 && failure.error.kind() != io::ErrorKind::UnexpectedEof);
-    let error = match failure.error.kind() {
-        // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
-        io::ErrorKind::UnexpectedEof => UnitError::unfinished(if has_content {
+    let kind = failure.error.kind();
+    // NOTE(2026-11-16, #2112): DeepSeek Harness appends one zstd frame per write batch. A partial line at the decoded end of a torn frame belongs to the interrupted write.
+    let error = if kind == io::ErrorKind::UnexpectedEof {
+        UnitError::unfinished(if has_content {
             "zstd stream ends inside a frame; earlier records were kept"
         } else {
             "zstd stream ends inside its first frame"
-        }),
-        io::ErrorKind::Other => UnitError::new(
+        })
+    } else if kind == io::ErrorKind::Other {
+        UnitError::new(
             SkipKind::InvalidData,
             if has_content {
                 "zstd stream is corrupt; earlier records were kept"
             } else {
                 "not a valid zstd stream"
             },
-        ),
-        _ if has_content => UnitError::new(
+        )
+    } else if has_content {
+        UnitError::new(
             SkipKind::ReadInterrupted,
             "zstd stream read stopped early; earlier records were kept",
-        ),
-        _ => UnitError::from(failure.error),
+        )
+    } else {
+        UnitError::from(failure.error)
     };
     if has_content {
         Interruption::KeepUnit(error)

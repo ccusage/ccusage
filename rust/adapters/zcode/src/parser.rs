@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(entry.version.as_deref(), Some("0.16.3"));
         assert_eq!(
             entry.timestamp,
-            crate::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
+            ccusage_core::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
         );
     }
 

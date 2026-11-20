@@ -102,7 +102,7 @@ fn parse_date(value: &str, dashed_only: bool) -> Option<IsoDate> {
         ),
         _ => return None,
     };
-    IsoDate::from_ymd(year as i32, month, day)
+    IsoDate::from_ymd(i32::try_from(year).ok()?, month, day)
 }
 
 impl IsoDate {

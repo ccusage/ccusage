@@ -19,7 +19,7 @@ whose session is `sourceSessionId`, or else the copy in the lowest session ID. A
 `sourceSessionId` or a positive `sequence` is deduplicated by its event `id` within its own file.
 A receipt without tokens still counts as a request. Shutdown `modelMetrics` total every call before
 them, including receipted ones, so once a session has a receipt its later shutdowns and checkpoints
-are ignored. A shutdown or checkpoint with a positive `usageAccountingWatermarks` entry is ignored the
+are ignored. For token reporting, a shutdown or checkpoint with a positive `usageAccountingWatermarks` entry is ignored the
 same way, along with every later one, even without a receipt in its file: its watermarks say its
 totals include receipts that may be stored with the session they belong to. Each receipt is one
 entry at its own timestamp, outside the shutdown interval reconciliation below. A receipt replaces at
@@ -66,12 +66,15 @@ and `requests.cost` are premium-request multipliers and are ignored.
 
 `modelMetrics` only covers the running Copilot process, while the session-wide `totalNanoAiu`
 on `session.shutdown` and `session.usage_checkpoint` covers the whole session (1 AIU is one
-GitHub AI credit, $0.01). At every shutdown, and at checkpoints after the last one, the session total
-minus the per-model `totalNanoAiu` reported so far is unexplained; what stays unexplained at every
-later snapshot becomes cost-only `unknown` entries, dated where it first stays. Sessions without checkpoints
-(older Copilot versions restart both totals on every resume), with a shutdown missing either total,
-with usage records or with a shutdown or checkpoint whose watermarks cover usage records, or with
-OpenTelemetry rows get no such entries.
+GitHub AI credit, $0.01). At each shutdown and each checkpoint after the last shutdown, the
+adapter subtracts the recorded model credits and any credits covered by a verified local receipt
+watermark. A watermark needs a contiguous sequence of priced receipts that follows any legacy
+shutdown or checkpoint. An OpenTelemetry span covered by a shutdown or a same-session receipt
+adds no credits to reconcile. A retained span with unknown billed credits leaves subsequent
+residuals unresolved. A residual that persists across later snapshots becomes a cost-only
+`unknown` entry at the first snapshot where it persists. The credit reconciliation uses the full
+ledger before applying date filters. It requires a checkpoint and complete shutdown credit
+totals.
 
 ## Build layer
 

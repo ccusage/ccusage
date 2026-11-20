@@ -312,7 +312,7 @@ mod tests {
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(timestamp),
+                        timestamp: ccusage_core::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -342,7 +342,7 @@ mod tests {
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(timestamp),
+                        timestamp: ccusage_core::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -381,7 +381,7 @@ mod tests {
                         reported_model: None,
                         candidates: &candidates,
                         stored_cost: None,
-                        timestamp: crate::parse_ts_timestamp(timestamp),
+                        timestamp: ccusage_core::parse_ts_timestamp(timestamp),
                     },
                     PriceTable::for_map(CostMode::Calculate, &pricing),
                 )
@@ -467,7 +467,7 @@ mod pricing_identity_tests {
                 reported_model: Some(model),
                 candidates: &candidates,
                 stored_cost: None,
-                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z"),
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z"),
             },
             PriceTable::Calculate(&pricing),
         );

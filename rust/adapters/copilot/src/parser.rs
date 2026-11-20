@@ -116,6 +116,7 @@ pub(super) struct CopilotCreditSnapshot {
     pub(super) session_id: String,
     pub(super) is_shutdown: bool,
     pub(super) total_nano_aiu: Option<u64>,
+    pub(super) receipt_watermark: Option<u64>,
     pub(super) dedup_key: String,
 }
 
@@ -123,6 +124,7 @@ pub(super) struct CopilotCreditSnapshot {
 pub(super) struct CopilotUsageRecordEntry {
     pub(super) entry: CopilotUsageEntry,
     pub(super) source_session_id: Option<String>,
+    pub(super) sequence: Option<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -445,6 +447,7 @@ pub(super) fn parse_session_state_file(
     let mut parsed = CopilotSourceUsage::default();
     let mut records = Vec::new();
     let mut covered_by_records = false;
+    let mut unproven_receipt_coverage = false;
     jsonl::read_records::<CopilotSessionStateEvent>(
         path,
         Some(&prefilter),
@@ -471,7 +474,13 @@ pub(super) fn parse_session_state_file(
                         return;
                     };
                     let record = usage_record(event, timestamp);
-                    covered_by_records |= record.is_some();
+                    if let Some(record) = &record {
+                        covered_by_records = true;
+                        unproven_receipt_coverage |= record
+                            .accounting
+                            .as_ref()
+                            .is_none_or(|(source, _)| source != &session_id);
+                    }
                     records.extend(record);
                     return;
                 }
@@ -480,8 +489,20 @@ pub(super) fn parse_session_state_file(
             let carries_usage = event.carries_usage();
             let data = event.data.unwrap_or_default();
             // NOTE(2026-11-16, #2108): Copilot shutdowns and checkpoints can total calls already represented by usage records. Watermarks can refer to receipts in a different session file, so those snapshots also overlap.
+            let receipt_watermark =
+                data.usage_accounting_watermarks
+                    .as_ref()
+                    .and_then(|watermarks| {
+                        let local = watermarks.get(&session_id)?.as_u64()?;
+                        (local > 0
+                            && watermarks.iter().all(|(source, sequence)| {
+                                source == &session_id || sequence.as_u64() == Some(0)
+                            }))
+                        .then_some(local)
+                    });
             covered_by_records |= data.covers_usage_records();
-            if covered_by_records {
+            if covered_by_records && (receipt_watermark.is_none() || timestamp.is_none()) {
+                unproven_receipt_coverage = true;
                 return;
             }
             let Some(timestamp) = timestamp else {
@@ -500,14 +521,15 @@ pub(super) fn parse_session_state_file(
                     |event_id| format!("credits:{session_id}:{event_id}"),
                 )
             };
-            if !is_shutdown {
-                if let Some(total) = session_nano_aiu {
+            if !is_shutdown || receipt_watermark.is_some() {
+                if is_shutdown || session_nano_aiu.is_some() {
                     parsed.credit_snapshots.push(CopilotCreditSnapshot {
                         timestamp,
                         session_id: session_id.clone(),
                         is_shutdown,
-                        total_nano_aiu: Some(total),
-                        dedup_key: snapshot_key(Some(total)),
+                        total_nano_aiu: session_nano_aiu,
+                        receipt_watermark,
+                        dedup_key: snapshot_key(session_nano_aiu),
                     });
                 }
                 return;
@@ -561,11 +583,18 @@ pub(super) fn parse_session_state_file(
                 session_id: session_id.clone(),
                 is_shutdown,
                 total_nano_aiu,
+                receipt_watermark: None,
                 dedup_key: snapshot_key(total_nano_aiu),
             });
         },
     )?;
-    if covered_by_records {
+    if covered_by_records
+        && (unproven_receipt_coverage
+            || !parsed
+                .credit_snapshots
+                .iter()
+                .any(|snapshot| snapshot.receipt_watermark.is_some()))
+    {
         parsed.credit_snapshots.clear();
     }
     parsed.usage_records = usage_record_entries(records, &session_id);
@@ -653,6 +682,7 @@ fn usage_record_entries(
                     call_key: None,
                     call_ids: record.call_ids,
                 },
+                sequence: record.accounting.as_ref().map(|(_, sequence)| *sequence),
                 source_session_id: record.accounting.map(|(source, _)| source),
             }
         })
@@ -1076,7 +1106,7 @@ fn number_value(value: Option<&Value>) -> Option<u64> {
                 .and_then(|value| (value >= 0).then_some(value as u64))
         }),
         Value::String(text) => text.trim().parse::<u64>().ok(),
-        _ => None,
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
     }
 }
 

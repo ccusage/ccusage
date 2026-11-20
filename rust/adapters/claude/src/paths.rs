@@ -364,7 +364,7 @@ mod tests {
     fn an_unreadable_project_directory_is_reported_and_the_rest_still_found() {
         use std::{fs, os::unix::fs::PermissionsExt};
 
-        use crate::{Diagnostics, SkipKind};
+        use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = fs_fixture!({
             "projects/blocked/s.jsonl": "{}",
@@ -389,7 +389,7 @@ mod tests {
     fn the_streaming_walk_reports_an_unreadable_project_directory() {
         use std::{fs, os::unix::fs::PermissionsExt};
 
-        use crate::{Diagnostics, SkipKind};
+        use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = fs_fixture!({
             "projects/blocked/s.jsonl": "{}",

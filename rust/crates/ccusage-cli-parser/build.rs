@@ -14,63 +14,76 @@ mod help_codegen;
 const CLI_HELP_JSON: &str = "src/cli-help.json";
 const CLI_COMMANDS_JSON: &str = "src/cli-commands.json";
 
-fn main() {
+fn main() -> Result<(), String> {
     println!("cargo:rerun-if-changed={CLI_HELP_JSON}");
     println!("cargo:rerun-if-changed={CLI_COMMANDS_JSON}");
-    generate_cli_help_rs();
+    generate_cli_help_rs()
 }
 
-fn out_dir_path(file_name: &str) -> PathBuf {
-    PathBuf::from(
-        Environment::current()
-            .var_os("OUT_DIR")
-            .expect("OUT_DIR is set by cargo"),
-    )
-    .join(file_name)
+fn out_dir_path(file_name: &str) -> Result<PathBuf, String> {
+    let out_dir = Environment::current()
+        .var_os("OUT_DIR")
+        .ok_or_else(|| "OUT_DIR is set by cargo".to_string())?;
+    Ok(PathBuf::from(out_dir).join(file_name))
 }
 
-fn generate_cli_help_rs() {
-    let option_source = fs::read_to_string(CLI_HELP_JSON).expect("read CLI help spec");
-    let command_source = fs::read_to_string(CLI_COMMANDS_JSON).expect("read CLI command spec");
-    let option_sets = serde_json::from_str::<Value>(&option_source).expect("parse CLI help spec");
-    let command_spec =
-        serde_json::from_str::<Value>(&command_source).expect("parse CLI command spec");
-    check_agent_pages(&command_spec);
-    let output = help_codegen::generate_cli_help_source(&option_sets, &command_spec);
-    fs::write(out_dir_path("cli-help.rs"), output).expect("write generated CLI help");
+fn generate_cli_help_rs() -> Result<(), String> {
+    let option_source = fs::read_to_string(CLI_HELP_JSON)
+        .map_err(|error| format!("read CLI help spec: {error}"))?;
+    let command_source = fs::read_to_string(CLI_COMMANDS_JSON)
+        .map_err(|error| format!("read CLI command spec: {error}"))?;
+    let option_sets = serde_json::from_str::<Value>(&option_source)
+        .map_err(|error| format!("parse CLI help spec: {error}"))?;
+    let command_spec = serde_json::from_str::<Value>(&command_source)
+        .map_err(|error| format!("parse CLI command spec: {error}"))?;
+    check_agent_pages(&command_spec)?;
+    let output = help_codegen::generate_cli_help_source(&option_sets, &command_spec)?;
+    fs::write(out_dir_path("cli-help.rs")?, output)
+        .map_err(|error| format!("write generated CLI help: {error}"))
 }
 
-fn page_path(page: &Value) -> Vec<&str> {
+fn page_path(page: &Value) -> Result<Vec<&str>, String> {
     page["path"]
         .as_array()
-        .expect("page has a path")
+        .ok_or_else(|| "page has a path".to_string())?
         .iter()
-        .map(|segment| segment.as_str().expect("page path is text"))
+        .map(|segment| {
+            segment
+                .as_str()
+                .ok_or_else(|| "page path is text".to_string())
+        })
         .collect()
 }
 
-fn check_agent_pages(command_spec: &Value) {
+fn command_names(commands: &[Value]) -> Result<impl Iterator<Item = &str>, String> {
+    let names = commands
+        .iter()
+        .map(|command| {
+            command["name"]
+                .as_str()
+                .ok_or_else(|| "command has a name".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(names.into_iter())
+}
+
+fn check_agent_pages(command_spec: &Value) -> Result<(), String> {
     let pages = command_spec["pages"]
         .as_array()
-        .expect("CLI command spec has pages");
-    let index_pages = pages
-        .iter()
-        .filter_map(|page| {
-            let [agent] = page_path(page)[..] else {
-                return None;
-            };
-            let commands = page["commands"]
-                .as_array()?
-                .iter()
-                .map(|command| command["name"].as_str().expect("command has a name"))
-                .collect::<BTreeSet<_>>();
-            Some((agent, commands))
-        })
-        .collect::<BTreeMap<_, _>>();
+        .ok_or_else(|| "CLI command spec has pages".to_string())?;
+    let mut index_pages = BTreeMap::new();
     let mut leaf_pages = BTreeMap::<&str, BTreeSet<&str>>::new();
     for page in pages {
-        if let [agent, command] = page_path(page)[..] {
-            leaf_pages.entry(agent).or_default().insert(command);
+        match page_path(page)?[..] {
+            [agent] => {
+                if let Some(commands) = page["commands"].as_array() {
+                    index_pages.insert(agent, command_names(commands)?.collect::<BTreeSet<_>>());
+                }
+            }
+            [agent, command] => {
+                leaf_pages.entry(agent).or_default().insert(command);
+            }
+            _ => {}
         }
     }
     let table = AGENTS
@@ -85,40 +98,45 @@ fn check_agent_pages(command_spec: &Value) {
             (spec.name, commands)
         })
         .collect::<BTreeMap<_, _>>();
-    assert!(
-        index_pages == table,
-        "{CLI_COMMANDS_JSON} agent pages differ from ccusage_cli::AGENTS\n  help:  {index_pages:?}\n  table: {table:?}"
-    );
-    assert!(
-        leaf_pages == table,
-        "{CLI_COMMANDS_JSON} agent command pages differ from ccusage_cli::AGENTS\n  help:  {leaf_pages:?}\n  table: {table:?}"
-    );
+    if index_pages != table {
+        return Err(format!(
+            "{CLI_COMMANDS_JSON} agent pages differ from ccusage_cli::AGENTS\n  help:  {index_pages:?}\n  table: {table:?}"
+        ));
+    }
+    if leaf_pages != table {
+        return Err(format!(
+            "{CLI_COMMANDS_JSON} agent command pages differ from ccusage_cli::AGENTS\n  help:  {leaf_pages:?}\n  table: {table:?}"
+        ));
+    }
 
-    let root = command_spec["root"]["commands"]
-        .as_array()
-        .expect("CLI command spec has root commands")
-        .iter()
-        .map(|command| command["name"].as_str().expect("command has a name"))
-        .collect::<Vec<_>>();
+    let root = command_names(
+        command_spec["root"]["commands"]
+            .as_array()
+            .ok_or_else(|| "CLI command spec has root commands".to_string())?,
+    )?
+    .collect::<Vec<_>>();
     let agent_names = AGENTS.iter().map(|spec| spec.name).collect::<BTreeSet<_>>();
     let root_agents = root
         .iter()
         .copied()
         .filter(|name| agent_names.contains(name))
         .collect::<BTreeSet<_>>();
-    assert!(
-        root_agents == agent_names,
-        "{CLI_COMMANDS_JSON} root agent commands differ from ccusage_cli::AGENTS\n  help:  {root_agents:?}\n  table: {agent_names:?}"
-    );
+    if root_agents != agent_names {
+        return Err(format!(
+            "{CLI_COMMANDS_JSON} root agent commands differ from ccusage_cli::AGENTS\n  help:  {root_agents:?}\n  table: {agent_names:?}"
+        ));
+    }
     let root_reports = root
         .iter()
         .copied()
         .filter(|name| !agent_names.contains(name))
         .collect::<BTreeSet<_>>();
     let default_agent = &table[AGENTS[0].name];
-    assert!(
-        &root_reports == default_agent,
-        "{CLI_COMMANDS_JSON} root report commands differ from {}'s in ccusage_cli::AGENTS\n  help:  {root_reports:?}\n  table: {default_agent:?}",
-        AGENTS[0].name
-    );
+    if &root_reports != default_agent {
+        return Err(format!(
+            "{CLI_COMMANDS_JSON} root report commands differ from {}'s in ccusage_cli::AGENTS\n  help:  {root_reports:?}\n  table: {default_agent:?}",
+            AGENTS[0].name
+        ));
+    }
+    Ok(())
 }

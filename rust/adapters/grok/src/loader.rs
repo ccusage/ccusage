@@ -43,7 +43,8 @@ pub(super) fn has_data() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PricingMap, cli::SharedArgs};
+    use crate::cli::SharedArgs;
+    use ccusage_core::PricingMap;
     use ccusage_test_support::{Environment, fs_fixture};
     use std::ffi::OsString;
 

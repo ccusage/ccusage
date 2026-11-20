@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeSet;
 
 use ccusage_test_support::{Fixture, fs_fixture, instant};

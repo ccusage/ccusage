@@ -52,7 +52,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
         && let Some(output) =
             cached_statusline_output(cache, current_mtime, now_millis(), args.refresh_interval)
     {
-        println!("{output}");
+        ccusage_core::outln!("{output}")?;
         return Ok(());
     }
 
@@ -65,7 +65,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
     diagnostics.emit(args.debug);
     match statusline_result {
         Ok(statusline) => {
-            println!("{statusline}");
+            ccusage_core::outln!("{statusline}")?;
             if cache_enabled {
                 write_statusline_cache(
                     &cache_path,
@@ -74,17 +74,16 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
             }
         }
         Err(error) => {
-            if let Some(cache) = initial_cache
+            let fallback = initial_cache
                 .as_ref()
-                .filter(|cache| !cache.last_output.is_empty())
-            {
-                println!("{}", cache.last_output);
-            } else {
-                println!("❌ Error generating status");
-            }
+                .map(|cache| cache.last_output.as_str())
+                .filter(|output| !output.is_empty())
+                .unwrap_or("❌ Error generating status");
+            let shown = ccusage_core::outln!("{fallback}");
             if cache_enabled {
                 release_statusline_cache(&cache_path);
             }
+            shown?;
             return Err(error);
         }
     }
@@ -619,7 +618,9 @@ fn now_millis() -> u64 {
 }
 
 fn format_cache_date(millis: u64) -> String {
-    format_rfc3339_millis(TimestampMs::from_millis(millis.min(i64::MAX as u64) as i64))
+    format_rfc3339_millis(TimestampMs::from_millis(
+        i64::try_from(millis).unwrap_or(i64::MAX),
+    ))
 }
 
 #[derive(Debug, Deserialize)]

@@ -606,7 +606,7 @@ mod tests {
 
         let entries = read_thread(
             &fixture.path("threads/thread.json"),
-            &crate::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC)),
+            &ccusage_core::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC)),
             ccusage_core::cost::PriceTable::Display,
             &Diagnostics::new("amp"),
         )

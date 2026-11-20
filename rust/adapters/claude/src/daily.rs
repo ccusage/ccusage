@@ -1003,11 +1003,11 @@ mod tests {
     use std::{fmt::Write, path::Path, sync::Arc};
 
     use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
-    use crate::{
+    use ccusage_core::cost::PriceTable;
+    use ccusage_core::{
         Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
     };
-    use ccusage_core::cost::PriceTable;
     use ccusage_test_support::{Environment, fs_fixture};
     use jiff::tz::TimeZone as JiffTimeZone;
 
