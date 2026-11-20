@@ -210,3 +210,26 @@ fn counts_all_usage_of_a_legacy_fork_whose_parent_is_missing_and_warns() {
         &[MISSING_PARENT_WARNING],
     );
 }
+
+#[test]
+fn keeps_the_settings_boundary_when_a_spawned_child_logs_an_untagged_record() {
+    let child = [
+        spawned_meta("2026-11-01T09:00:00.000Z"),
+        settings_applied("2026-11-01T09:00:00.000Z", Some(PARENT)),
+        replay_token_count("2026-11-01T09:00:00.010Z", 100),
+        replay_token_count("2026-11-01T09:00:00.020Z", 200),
+        settings_applied("2026-11-01T09:00:00.040Z", Some(CHILD)),
+        json!({
+            "timestamp": "2026-11-01T09:00:05.000Z",
+            "type": "token_usage_record",
+            "payload": {
+                "response_id": "resp_child_1",
+                "usage": {"input_tokens": 400, "output_tokens": 1, "total_tokens": 401},
+            },
+        })
+        .to_string(),
+        replay_token_count("2026-11-01T09:00:05.000Z", 400),
+    ];
+
+    assert_child_usage(&load_fork(None, &child), &[400], &[]);
+}

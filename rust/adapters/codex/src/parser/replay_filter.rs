@@ -54,7 +54,7 @@ impl<'a> CodexReplayFilter<'a> {
             && thread_id.is_none()
             && fork.ends_at_usage_record
         {
-            return Some(self.resolve_by_parent(visit));
+            return Some(self.resolve_leading(visit));
         }
         let is_foreign = match marker {
             CodexOwnershipMarker::UsageRecord => thread_id.is_some(),
@@ -71,11 +71,7 @@ impl<'a> CodexReplayFilter<'a> {
         visit: &mut impl FnMut(CodexTokenUsageEvent),
     ) -> Option<CodexReplayResolution<'a>> {
         self.fork?;
-        if self.own_start.is_some() {
-            self.resolve_by_ownership(visit);
-            return Some(CodexReplayResolution::Deterministic);
-        }
-        Some(self.resolve_by_parent(visit))
+        Some(self.resolve_leading(visit))
     }
 
     pub(super) fn visit(
@@ -88,6 +84,17 @@ impl<'a> CodexReplayFilter<'a> {
             return;
         }
         self.pending.push(event);
+    }
+
+    fn resolve_leading(
+        &mut self,
+        visit: &mut impl FnMut(CodexTokenUsageEvent),
+    ) -> CodexReplayResolution<'a> {
+        if self.own_start.is_none() {
+            return self.resolve_by_parent(visit);
+        }
+        self.resolve_by_ownership(visit);
+        CodexReplayResolution::Deterministic
     }
 
     fn resolve_by_ownership(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
