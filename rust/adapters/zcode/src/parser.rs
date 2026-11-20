@@ -100,7 +100,14 @@ pub(super) fn row_to_entry(
     };
     let candidates: Vec<_> = candidates
         .iter()
-        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .map(|name| {
+            let kind = if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+                MatchKind::Exact
+            } else {
+                MatchKind::Fuzzy
+            };
+            (name.as_str(), kind)
+        })
         .collect();
     let priced = price_entry(
         EntryPricing {
@@ -287,6 +294,36 @@ mod tests {
                 assert!(entry.missing_pricing_model.is_none(), "{provider} {model}");
             }
         }
+    }
+
+    #[test]
+    fn a_mixed_case_model_id_matches_fuzzily_only_through_its_lowercase_form() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "zai/glm-5.2": {"litellm_provider":"zai","input_cost_per_token":1e-6,"output_cost_per_token":1e-6},
+            "zai/GLM-5.2": {"litellm_provider":"host","input_cost_per_token":9e-6,"output_cost_per_token":9e-6}
+        }"#,
+        );
+        let cost = |model: &str| {
+            let mut row = row();
+            row.provider_id = Some("zai".to_string());
+            row.model_id = Some(model.to_string());
+            row_to_entry(
+                row,
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                ccusage_core::cost::PriceTable::Calculate(&pricing),
+                &BTreeMap::new(),
+            )
+            .unwrap()
+            .expect("test row has usage")
+            .1
+            .cost
+        };
+        assert!(cost("glm-5.2-20261101") > 0.0);
+        assert_eq!(cost("GLM-5.2-20261101"), cost("glm-5.2-20261101"));
     }
 
     #[test]

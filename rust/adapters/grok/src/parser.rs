@@ -160,11 +160,11 @@ fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64
     (uncached - cache_creation, cache_read, cache_creation)
 }
 
-fn pricing_candidates(raw_model: &str) -> Vec<String> {
-    let mut candidates = Vec::new();
-    let mut push = |value: String| {
-        if !candidates.iter().any(|existing| existing == &value) {
-            candidates.push(value);
+fn pricing_candidates(raw_model: &str) -> Vec<(String, MatchKind)> {
+    let mut candidates: Vec<(String, MatchKind)> = Vec::new();
+    let mut push = |value: String, kind| {
+        if !candidates.iter().any(|(existing, _)| existing == &value) {
+            candidates.push((value, kind));
         }
     };
 
@@ -173,14 +173,19 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
         return candidates;
     }
 
-    let normalized = stripped.trim_suffix("-build").to_string();
+    let normalized = stripped.trim_suffix("-build");
+    let raw_kind = if normalized == stripped {
+        MatchKind::Fuzzy
+    } else {
+        MatchKind::Exact
+    };
 
-    push(stripped.to_string());
-    push(format!("xai/{stripped}"));
-    push(format!("x-ai/{stripped}"));
-    push(normalized.clone());
-    push(format!("xai/{normalized}"));
-    push(format!("x-ai/{normalized}"));
+    push(stripped.to_string(), raw_kind);
+    push(format!("xai/{stripped}"), raw_kind);
+    push(format!("x-ai/{stripped}"), raw_kind);
+    push(normalized.to_string(), MatchKind::Fuzzy);
+    push(format!("xai/{normalized}"), MatchKind::Fuzzy);
+    push(format!("x-ai/{normalized}"), MatchKind::Fuzzy);
     candidates
 }
 
@@ -500,8 +505,7 @@ fn price_grok_usage(
     let names = pricing_candidates(raw_model);
     let candidates: Vec<_> = names
         .iter()
-        .map(|name| (name.as_str(), MatchKind::StrictExact))
-        .chain(names.iter().map(|name| (name.as_str(), MatchKind::Fuzzy)))
+        .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
     let priced = price_entry(
         EntryPricing {
@@ -719,17 +723,57 @@ mod tests {
 
     #[test]
     fn pricing_candidates_strip_build_and_add_xai() {
+        let exact = |name: &str| (name.to_string(), MatchKind::Exact);
+        let fuzzy = |name: &str| (name.to_string(), MatchKind::Fuzzy);
         assert_eq!(
             pricing_candidates("grok-4.5-build"),
             vec![
-                "grok-4.5-build".to_string(),
-                "xai/grok-4.5-build".to_string(),
-                "x-ai/grok-4.5-build".to_string(),
-                "grok-4.5".to_string(),
-                "xai/grok-4.5".to_string(),
-                "x-ai/grok-4.5".to_string(),
+                exact("grok-4.5-build"),
+                exact("xai/grok-4.5-build"),
+                exact("x-ai/grok-4.5-build"),
+                fuzzy("grok-4.5"),
+                fuzzy("xai/grok-4.5"),
+                fuzzy("x-ai/grok-4.5"),
             ]
         );
+        assert_eq!(
+            pricing_candidates("grok-4.5"),
+            vec![
+                fuzzy("grok-4.5"),
+                fuzzy("xai/grok-4.5"),
+                fuzzy("x-ai/grok-4.5")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_build_spelling_matches_fuzzily_only_through_the_stripped_id() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+            "azure_ai/grok-unreleased-9.9": {"litellm_provider":"azure_ai","input_cost_per_token":1e-6,"output_cost_per_token":1e-6},
+            "grok-unreleased-9.9-build-preview": {"litellm_provider":"host","input_cost_per_token":9e-6,"output_cost_per_token":9e-6}
+        }"#,
+        );
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
+        };
+        let cost = |model| {
+            price_grok_usage(
+                model,
+                usage,
+                None,
+                None,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            )
+            .0
+        };
+        assert_eq!(cost("grok-unreleased-9.9"), 2.0);
+        assert_eq!(cost("grok-unreleased-9.9-build"), 2.0);
     }
 
     #[test]
@@ -1421,7 +1465,10 @@ mod pricing_identity_tests {
     #[test]
     fn adapter_pricing_identity() {
         assert_eq!(
-            pricing_candidates(" grok-4.5-build "),
+            pricing_candidates(" grok-4.5-build ")
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
             [
                 "grok-4.5-build",
                 "xai/grok-4.5-build",
