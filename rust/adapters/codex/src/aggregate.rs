@@ -1315,7 +1315,7 @@ mod tests {
         };
 
         let load = |shared: &SharedArgs| {
-            let diagnostics = Diagnostics::new("codex");
+            let diagnostics = Diagnostics::without_clock("codex");
             let (groups, _) = load_groups_from_sources_with_diagnostics(
                 &[directory_source(&fixture.path("sessions"))],
                 shared,
@@ -2469,7 +2469,7 @@ mod tests {
                     &shared,
                     AgentReportKind::Session,
                     None,
-                    &Diagnostics::new("codex"),
+                    &Diagnostics::without_clock("codex"),
                 )
                 .unwrap();
                 assert_eq!(

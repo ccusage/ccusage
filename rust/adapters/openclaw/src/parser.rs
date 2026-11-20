@@ -531,7 +531,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":2}}}"#,
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
         let events = parse_session_file(
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
@@ -549,7 +549,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00Z","message":{"role":"assistant","timestamp":"invalid","usage":{"input":10,"output":2}}}"#,
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &JiffTimeZone::UTC,
@@ -574,7 +574,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
@@ -609,7 +609,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
@@ -648,7 +648,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Auto,
             PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
-            &Diagnostics::new("openclaw"),
+            &Diagnostics::without_clock("openclaw"),
         )
         .unwrap();
 
@@ -669,7 +669,7 @@ mod tests {
                 "\n",
             ),
         });
-        let diagnostics = Diagnostics::new("openclaw");
+        let diagnostics = Diagnostics::without_clock("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
             &jiff::tz::TimeZone::UTC,
@@ -766,7 +766,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("openclaw"),
+            &Diagnostics::without_clock("openclaw"),
         )
         .unwrap();
 
@@ -799,7 +799,7 @@ mod pricing_identity_tests {
             &JiffTimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::new("openclaw"),
+            &Diagnostics::without_clock("openclaw"),
         )
         .unwrap();
         assert_eq!(

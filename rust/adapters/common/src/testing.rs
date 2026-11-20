@@ -12,7 +12,7 @@ pub fn load_entries(
     pricing: Option<&PricingMap>,
 ) -> Result<(Vec<LoadedEntry>, Diagnostics)> {
     let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new(source.descriptor().id);
+    let diagnostics = Diagnostics::for_report(source.descriptor().id, shared.clock);
     let pricing = ReportPricing::for_load(shared, pricing);
     let entries = source.load_entries(&LoadContext {
         shared,

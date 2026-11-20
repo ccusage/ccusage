@@ -1032,7 +1032,7 @@ mod tests {
             path,
             tz,
             pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
-            &Diagnostics::new("claude"),
+            &Diagnostics::without_clock("claude"),
         )
     }
 
@@ -1163,7 +1163,7 @@ mod tests {
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":1,"output_tokens":2,"cache_read_input_tokens":null}]}}}"#,
         });
         let path = fixture.path("projects/project-a/session-a.jsonl");
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
@@ -1185,7 +1185,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
             &JiffTimeZone::UTC,
@@ -1205,7 +1205,7 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"x"},{"type":"advisor_message","model":"good","input_tokens":3,"output_tokens":2}]}}}"#,
         });
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
             &JiffTimeZone::UTC,
@@ -1232,7 +1232,7 @@ mod tests {
                 "projects/project-a/session-a.jsonl": format!(r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}}}}}"#),
             });
             let path = fixture.path("projects/project-a/session-a.jsonl");
-            let diagnostics = Diagnostics::new("claude");
+            let diagnostics = Diagnostics::without_clock("claude");
             let loaded = super::read_daily_usage_file_with_diagnostics(
                 &path,
                 &JiffTimeZone::UTC,
@@ -1252,7 +1252,7 @@ mod tests {
             "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":"SECRET_CANARY","output_tokens":1}]}}}"#,
         });
         let path = fixture.path("projects/project-a/session-a.jsonl");
-        let diagnostics = Diagnostics::new("claude");
+        let diagnostics = Diagnostics::without_clock("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
@@ -1287,7 +1287,7 @@ mod tests {
                 debug: true,
                 ..SharedArgs::default()
             };
-            let diagnostics = ccusage_core::Diagnostics::new("claude");
+            let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
 
             let daily = load_daily(&shared, &diagnostics);
 
@@ -1315,7 +1315,7 @@ mod tests {
                 ..SharedArgs::default()
             };
 
-            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
+            let daily = load_daily(&shared, &ccusage_core::Diagnostics::without_clock("claude"));
 
             assert_eq!(
                 daily.sessions.into_iter().collect::<Vec<_>>(),
@@ -1352,7 +1352,7 @@ mod tests {
                 single_thread: true,
                 ..SharedArgs::default()
             };
-            let diagnostics = ccusage_core::Diagnostics::new("claude");
+            let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
 
             let daily = load_daily(&shared, &diagnostics);
 
@@ -1619,7 +1619,8 @@ mod tests {
                     ..SharedArgs::default()
                 };
 
-                let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
+                let daily =
+                    load_daily(&shared, &ccusage_core::Diagnostics::without_clock("claude"));
 
                 let breakdown = &daily.summaries[0].model_breakdowns[0];
                 assert_eq!(breakdown.cache_creation_tokens, 100);

@@ -773,7 +773,8 @@ mod tests {
                 effort: None,
             };
             let output =
-                render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
+                render_statusline(&hook, &args, &shared, &Diagnostics::without_clock("claude"))
+                    .unwrap();
             assert!(output.contains("💰 $0.40 session"), "{output}");
         })
     }

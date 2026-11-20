@@ -167,7 +167,7 @@ impl EntryCollector {
 }
 
 pub(crate) fn has_source(opencode_dir: &Path) -> bool {
-    if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
+    if db_path(opencode_dir, &Diagnostics::without_clock("opencode")).is_some() {
         return true;
     }
     any_file_matching(
@@ -176,7 +176,7 @@ pub(crate) fn has_source(opencode_dir: &Path) -> bool {
             path.extension()
                 .is_some_and(|extension| extension == "json")
         },
-        &Diagnostics::new("opencode"),
+        &Diagnostics::without_clock("opencode"),
     )
 }
 
@@ -1066,7 +1066,7 @@ mod tests {
             &directories,
             shared,
             report_kind,
-            &Diagnostics::new("opencode"),
+            &Diagnostics::without_clock("opencode"),
         )
     }
 
@@ -1095,7 +1095,7 @@ mod tests {
         connection
             .execute("CREATE TABLE session_message (id TEXT, session_id TEXT, seq INTEGER)")
             .unwrap();
-        let diagnostics = Diagnostics::new("opencode");
+        let diagnostics = Diagnostics::without_clock("opencode");
         assert!(super::table_exists(
             &connection,
             super::Table::SessionMessage,
@@ -1141,7 +1141,7 @@ mod tests {
             mode: CostMode::Display,
             ..Default::default()
         };
-        let diagnostics = Diagnostics::new("opencode");
+        let diagnostics = Diagnostics::without_clock("opencode");
         load_directories(
             &[fixture.root().to_path_buf()],
             &shared,
@@ -1174,7 +1174,7 @@ mod tests {
             mode: CostMode::Display,
             ..Default::default()
         };
-        let diagnostics = Diagnostics::new("opencode");
+        let diagnostics = Diagnostics::without_clock("opencode");
         load_directories(
             std::slice::from_ref(&data),
             &shared,
@@ -1206,7 +1206,7 @@ mod tests {
             debug: true,
             ..Default::default()
         };
-        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
         let loaded = load_directories(
             &[fixture.root().to_path_buf()],
             &shared,
@@ -1246,7 +1246,7 @@ mod tests {
             debug: true,
             ..Default::default()
         };
-        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
 
         let loaded = load_directories(
             &[fixture.root().to_path_buf()],
@@ -1283,7 +1283,7 @@ mod tests {
             debug: true,
             ..Default::default()
         };
-        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
         let loaded = load_directories(
             &[fixture.root().to_path_buf()],
             &shared,
@@ -1305,7 +1305,7 @@ mod tests {
         let path = fixture.path("opencode.db");
         create_db_session_aggregate_table(&path, "session_v2");
         let connection = sqlite::open(&path).unwrap();
-        let diagnostics = Diagnostics::new("opencode");
+        let diagnostics = Diagnostics::without_clock("opencode");
         let schema =
             TableSchema::probe(&connection, Table::SessionV2, &path, &diagnostics).unwrap();
         connection.execute("DROP TABLE session_v2").unwrap();
@@ -1385,7 +1385,7 @@ mod tests {
                 until: until.map(|date| date.parse().unwrap()),
                 ..SharedArgs::default()
             };
-            let diagnostics = Diagnostics::new("opencode");
+            let diagnostics = Diagnostics::without_clock("opencode");
 
             let entries = load_directories(
                 &[fixture.root().to_path_buf()],
@@ -1426,7 +1426,7 @@ mod tests {
             mode: CostMode::Display,
             ..SharedArgs::default()
         };
-        let diagnostics = Diagnostics::new("opencode");
+        let diagnostics = Diagnostics::without_clock("opencode");
         assert!(
             load_directories(
                 &[fixture.root().to_path_buf()],
@@ -1480,7 +1480,7 @@ mod tests {
             debug: true,
             ..Default::default()
         };
-        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
         let loaded = load_directories(
             &[fixture.root().to_path_buf()],
             &shared,
@@ -3455,7 +3455,7 @@ mod tests {
                 &sqlite::open(&db_path).unwrap(),
                 schema_table,
                 &db_path,
-                &ccusage_core::Diagnostics::new("opencode"),
+                &ccusage_core::Diagnostics::without_clock("opencode"),
             )
             .unwrap();
             assert!(schema.indexed_time, "{table:?}");

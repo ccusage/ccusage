@@ -44,7 +44,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 }
 
 fn has_data() -> bool {
-    paths::discover_chat_files(&ccusage_core::Diagnostics::new("qwen"))
+    paths::discover_chat_files(&ccusage_core::Diagnostics::without_clock("qwen"))
         .is_ok_and(|files| !files.is_empty())
 }
 

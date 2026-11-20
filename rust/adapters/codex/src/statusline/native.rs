@@ -9,7 +9,7 @@ use std::{
 use ccusage_adapter_common::{source::ReportPricing, units::UnitError};
 use ccusage_core::{
     Diagnostics, Result,
-    cli::{AgentReportKind, CodexStatuslineArgs, SharedArgs},
+    cli::{AgentReportKind, CodexStatuslineArgs, DateBound, SharedArgs},
     date_at, format_currency, format_number, log_level, resolve_tz, sanitize_terminal_text,
 };
 use serde_json::Value;
@@ -54,8 +54,19 @@ impl NativeUsageReader {
                     };
                     thread_id
                 };
-                let diagnostics = Diagnostics::for_report("codex", args.shared.clock);
-                let result = refresh(&args, &pricing, &thread_id, &mut cached, &diagnostics);
+                let now = args.shared.clock.now();
+                let diagnostics =
+                    Diagnostics::for_report("codex", ccusage_core::cli::ReportClock::Fixed(now));
+                let timezone = resolve_tz(args.shared.timezone.as_ref());
+                let today = date_at(now.into(), &timezone).into();
+                let result = refresh(
+                    &args,
+                    &pricing,
+                    &thread_id,
+                    &mut cached,
+                    &diagnostics,
+                    today,
+                );
                 let (output, warnings) =
                     refresh_output(result, &diagnostics, &args.shared, &mut last_warnings);
                 for warning in warnings {
@@ -138,12 +149,11 @@ fn refresh(
     thread_id: &str,
     cached: &mut Option<CachedUsage>,
     diagnostics: &Diagnostics,
+    today: DateBound,
 ) -> Result<String> {
     let mut shared = args.shared.clone();
     shared.since = None;
     shared.until = None;
-    let timezone = resolve_tz(shared.timezone.as_ref());
-    let today = date_at(diagnostics.report_now(), &timezone).into();
     let file_groups =
         paths::collect_deduped_codex_usage_files(&paths::codex_usage_sources()?, diagnostics);
     let speed = resolve_codex_speed(args.codex_speed);
@@ -255,7 +265,7 @@ mod tests {
 
     #[test]
     fn refresh_failure_is_reported_once_until_the_warning_changes() {
-        let diagnostics = Diagnostics::new("codex");
+        let diagnostics = Diagnostics::without_clock("codex");
         let shared = SharedArgs {
             debug: true,
             ..Default::default()

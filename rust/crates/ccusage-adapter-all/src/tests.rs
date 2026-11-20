@@ -60,7 +60,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             },
         }],
         detected: true,
-        diagnostics: Diagnostics::new(agent),
+        diagnostics: Diagnostics::without_clock(agent),
     }
 }
 

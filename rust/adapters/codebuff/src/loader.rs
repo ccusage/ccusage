@@ -200,7 +200,7 @@ mod tests {
                 std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_767_312_000),
             ))
             .unwrap();
-        let diagnostics = Diagnostics::new("codebuff");
+        let diagnostics = Diagnostics::without_clock("codebuff");
         let entries = load_chat_file(&path, &diagnostics).unwrap();
         assert!(entries.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
@@ -258,7 +258,7 @@ mod tests {
             let shared = SharedArgs::default();
             let pricing = ccusage_core::PricingMap::load_embedded();
             let window = ReportWindow::from_shared(&shared);
-            let diagnostics = Diagnostics::new("codebuff");
+            let diagnostics = Diagnostics::without_clock("codebuff");
             let cx = LoadContext {
                 shared: &shared,
                 kind: AgentReportKind::Daily,

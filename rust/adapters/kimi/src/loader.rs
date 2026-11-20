@@ -130,7 +130,7 @@ mod tests {
             ]
             .join("\n"),
         });
-        let diagnostics = Diagnostics::new("kimi");
+        let diagnostics = Diagnostics::without_clock("kimi");
 
         let entries = super::super::parser::read_wire_file(
             &crate::paths::WireFile::from_paths(vec![

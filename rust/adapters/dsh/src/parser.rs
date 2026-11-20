@@ -530,7 +530,7 @@ mod tests {
     }
 
     fn parse_diagnosed(content: &[u8]) -> (Vec<DshUsageEntry>, Diagnostics) {
-        let diagnostics = Diagnostics::new("dsh");
+        let diagnostics = Diagnostics::without_clock("dsh");
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.path("sessions/--p--/fallback/session.v4.jsonl");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
