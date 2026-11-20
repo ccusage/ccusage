@@ -10,6 +10,10 @@ use crate::{
     deserialize_usage_line, non_null,
 };
 
+mod links;
+
+pub(super) use links::parse_links;
+
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {
     pub(super) key: DedupKey,

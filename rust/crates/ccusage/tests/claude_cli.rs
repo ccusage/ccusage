@@ -1157,7 +1157,7 @@ fn chained_requestless_line(line: ChainedLine<'_>) -> String {
         |id| format!(r#"[{{"type":"tool_use","id":"{id}","name":"Read","input":{{}}}}]"#),
     );
     format!(
-        r#"{{"type":"assistant","uuid":"{uuid}","parentUuid":{parent},"timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message}","model":"claude-sonnet-4-20250514","role":"assistant","content":{content},"usage":{{"input_tokens":{input_tokens},"output_tokens":2,"cache_read_input_tokens":0}}}}}}"#,
+        r#"{{"parentUuid":{parent},"type":"assistant","uuid":"{uuid}","timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message}","model":"claude-sonnet-4-20250514","role":"assistant","content":{content},"usage":{{"input_tokens":{input_tokens},"output_tokens":2,"cache_read_input_tokens":0}}}}}}"#,
         uuid = line.uuid,
         timestamp = line.timestamp,
         message = line.message,
@@ -1167,13 +1167,13 @@ fn chained_requestless_line(line: ChainedLine<'_>) -> String {
 
 fn tool_result_line(uuid: &str, parent: &str, tool_use_id: &str) -> String {
     format!(
-        r#"{{"type":"user","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-09-11T12:00:00.250Z","sessionId":"session-a","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]}}}}"#
+        r#"{{"parentUuid":"{parent}","type":"user","uuid":"{uuid}","timestamp":"2026-09-11T12:00:00.250Z","sessionId":"session-a","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]}}}}"#
     )
 }
 
 fn prompt_line(uuid: &str, parent: &str) -> String {
     format!(
-        r#"{{"type":"user","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-09-11T12:00:00.250Z","sessionId":"session-a","message":{{"role":"user","content":"next question"}}}}"#
+        r#"{{"parentUuid":"{parent}","type":"user","uuid":"{uuid}","timestamp":"2026-09-11T12:00:00.250Z","sessionId":"session-a","message":{{"role":"user","content":"next question"}}}}"#
     )
 }
 

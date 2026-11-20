@@ -1,173 +1,78 @@
 use std::{
-    borrow::Cow,
-    fmt,
+    collections::VecDeque,
     hash::{Hash, Hasher},
     num::NonZeroU64,
 };
 
 use ccusage_core::{TokenUsageRaw, fast::FxHashMap};
+use memchr::memmem;
 use rustc_hash::FxHasher;
-use serde::{
-    Deserialize, Deserializer,
-    de::{IgnoredAny, MapAccess, SeqAccess, Visitor},
-};
 use smallvec::SmallVec;
 
-type ToolUseIds = SmallVec<[u64; 2]>;
+mod skim;
+
+use super::record::parse_links;
+
+use skim::{Skim, Want, skim};
 
 enum Node {
-    Link {
-        parent: Option<u64>,
-        answers: ToolUseIds,
-    },
-    Block(usize),
+    Link { parent: u64, owner: Option<u32> },
+    Block(u32),
 }
 
 struct Response {
     key: NonZeroU64,
-    message_id: u64,
-    prompt: (u64, u64, u64),
-    tool_uses: ToolUseIds,
+    signature: u64,
 }
+
+struct RecentBlock {
+    response: u32,
+    line: Vec<u8>,
+}
+
+const RECENT_BLOCKS: usize = 64;
 
 // NOTE(2026-11-20, #2255): With parallel tool use, Claude Code writes the tool results of one response between its content blocks. A chain may pass through those, but a prompt or a result for another response's tool starts a new response.
 #[derive(Default)]
 pub(super) struct ResponseChains {
     nodes: FxHashMap<u64, Node>,
     responses: Vec<Response>,
+    recent: VecDeque<RecentBlock>,
 }
 
-#[derive(Deserialize)]
-struct Line<'a> {
-    #[serde(borrow, rename = "type")]
-    kind: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    uuid: Option<Cow<'a, str>>,
-    #[serde(borrow, rename = "parentUuid")]
-    parent_uuid: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    message: Option<Message<'a>>,
+#[derive(Debug)]
+pub(super) struct Links {
+    pub(super) uuid: Option<u64>,
+    pub(super) parent: Option<u64>,
 }
 
-#[derive(Deserialize)]
-struct Message<'a> {
-    #[serde(borrow, default, deserialize_with = "content_blocks")]
-    content: Option<Vec<Block<'a>>>,
-    usage: Option<IgnoredAny>,
-}
-
-#[derive(Deserialize)]
-struct Block<'a> {
-    #[serde(borrow, rename = "type")]
-    kind: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    id: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    tool_use_id: Option<Cow<'a, str>>,
-}
-
-fn content_blocks<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Vec<Block<'de>>>, D::Error> {
-    struct Blocks;
-
-    impl<'de> Visitor<'de> for Blocks {
-        type Value = Option<Vec<Block<'de>>>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("message content")
-        }
-
-        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-            let mut blocks = Vec::with_capacity(seq.size_hint().unwrap_or(1));
-            while let Some(block) = seq.next_element()? {
-                blocks.push(block);
-            }
-            Ok(Some(blocks))
-        }
-
-        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-            while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-            Ok(None)
-        }
-
-        fn visit_str<E>(self, _: &str) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_unit<E>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_bool<E>(self, _: bool) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_i64<E>(self, _: i64) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_u64<E>(self, _: u64) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_f64<E>(self, _: f64) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-    }
-
-    deserializer.deserialize_any(Blocks)
-}
-
-fn key(value: &str) -> u64 {
+pub(super) fn key(value: &[u8]) -> u64 {
     let mut hasher = FxHasher::default();
     value.hash(&mut hasher);
     hasher.finish()
 }
 
-impl Line<'_> {
-    fn parse(line: &[u8]) -> Option<Line<'_>> {
-        ccusage_adapter_common::jsonl::parse(line).ok()
-    }
-
-    fn blocks(&self) -> &[Block<'_>] {
-        self.message
-            .as_ref()
-            .and_then(|message| message.content.as_deref())
-            .unwrap_or_default()
-    }
-
-    fn tool_uses(&self) -> ToolUseIds {
-        self.blocks()
-            .iter()
-            .filter(|block| block.kind.as_deref() == Some("tool_use"))
-            .filter_map(|block| block.id.as_deref().map(key))
-            .collect()
-    }
-
-    fn tool_result_answers(&self) -> Option<ToolUseIds> {
-        let blocks = self.blocks();
-        if blocks.is_empty() {
-            return None;
-        }
+impl<'a> Skim<'a> {
+    fn tool_result_answers(&self) -> Option<SmallVec<[&'a [u8]; 2]>> {
+        let blocks = self.blocks.as_ref().filter(|blocks| !blocks.is_empty())?;
         blocks
             .iter()
             .map(|block| {
-                (block.kind.as_deref() == Some("tool_result"))
-                    .then_some(block.tool_use_id.as_deref())
+                (block.kind == Some(b"tool_result"))
+                    .then_some(block.tool_use_id)
                     .flatten()
-                    .map(key)
             })
             .collect()
     }
 }
 
-fn prompt_usage(usage: &TokenUsageRaw) -> (u64, u64, u64) {
-    (
-        usage.input_tokens,
-        usage.cache_creation_token_count(),
-        usage.cache_read_input_tokens,
-    )
+fn signature(message_id: &str, usage: &TokenUsageRaw) -> u64 {
+    let mut hasher = FxHasher::default();
+    message_id.hash(&mut hasher);
+    usage.input_tokens.hash(&mut hasher);
+    usage.cache_creation_token_count().hash(&mut hasher);
+    usage.cache_read_input_tokens.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl ResponseChains {
@@ -175,35 +80,57 @@ impl ResponseChains {
         !self.responses.is_empty()
     }
 
-    pub(super) fn link(&mut self, line: &[u8]) {
-        let Some(parsed) = Line::parse(line) else {
-            return;
-        };
-        let Some(uuid) = parsed.uuid.as_deref() else {
-            return;
-        };
-        if parsed
-            .message
-            .as_ref()
-            .is_some_and(|message| message.usage.is_some())
-        {
+    // NOTE(2026-11-20, #2255): Claude Code writes `parentUuid` first on every line of the conversation chain, and parents precede children, so a line whose parent is not yet tracked can never lead a later block back to a response. Rejecting lines at that first key keeps requestless transcripts from paying for a full parse of every line; a chain line written another way only keeps its response from merging.
+    pub(super) fn link(&mut self, line: &[u8], may_carry_usage: bool) {
+        if !line.starts_with(br#"{"parentUuid":""#) {
             return;
         }
-        let answers = if parsed.kind.as_deref() == Some("user") {
-            match parsed.tool_result_answers() {
-                Some(answers) => answers,
-                None => return,
-            }
+        let want = if may_carry_usage {
+            Want::Block
         } else {
-            ToolUseIds::new()
+            Want::Link
         };
-        self.nodes.insert(
-            key(uuid),
-            Node::Link {
-                parent: parsed.parent_uuid.as_deref().map(key),
-                answers,
-            },
-        );
+        let nodes = &self.nodes;
+        let Some(parsed) = skim(line, want, |parent| {
+            parent.is_some_and(|parent| nodes.contains_key(&key(parent)))
+        }) else {
+            return;
+        };
+        let (Some(uuid), Some(parent)) = (parsed.uuid, parsed.parent) else {
+            return;
+        };
+        if parsed.has_usage {
+            return;
+        }
+        let parent = key(parent);
+        let owner = if parsed.kind == Some(b"user") {
+            let Some(answers) = parsed.tool_result_answers() else {
+                return;
+            };
+            let Some(owner) = self.response_of(parent) else {
+                return;
+            };
+            if !answers.iter().all(|answer| self.emitted(owner, answer)) {
+                return;
+            }
+            Some(owner)
+        } else {
+            None
+        };
+        self.nodes.insert(key(uuid), Node::Link { parent, owner });
+    }
+
+    // NOTE(2026-11-20, #2255): A tool result arrives right after the blocks of the response that asked for it, so the most recent block lines are searched for the tool use id instead of decoding the tool uses of every requestless block. A response with more blocks than are kept only fails to merge.
+    fn emitted(&self, response: u32, tool_use_id: &[u8]) -> bool {
+        let mut needle = Vec::with_capacity(tool_use_id.len() + 8);
+        needle.extend_from_slice(br#""id":""#);
+        needle.extend_from_slice(tool_use_id);
+        needle.push(b'"');
+        let finder = memmem::Finder::new(&needle);
+        self.recent
+            .iter()
+            .filter(|block| block.response == response)
+            .any(|block| finder.find(&block.line).is_some())
     }
 
     pub(super) fn response_key(
@@ -212,58 +139,67 @@ impl ResponseChains {
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
-        let parsed = Line::parse(line);
-        let uuid = parsed
-            .as_ref()
-            .and_then(|parsed| parsed.uuid.as_deref())
-            .map(key);
-        let message_id = key(message_id);
-        let prompt = prompt_usage(usage);
-        let joined = parsed
-            .as_ref()
-            .and_then(|parsed| parsed.parent_uuid.as_deref())
-            .and_then(|parent| self.chained_response(key(parent), message_id, prompt));
-        let tool_uses = parsed.as_ref().map(Line::tool_uses).unwrap_or_default();
-        let index = if let Some(index) = joined {
-            self.responses[index].tool_uses.extend(tool_uses);
-            index
-        } else {
-            let uuid = uuid?;
-            self.responses.push(Response {
-                key: NonZeroU64::new(uuid).unwrap_or(NonZeroU64::MIN),
-                message_id,
-                prompt,
-                tool_uses,
-            });
-            self.responses.len() - 1
+        let links = parse_links(line)?;
+        let signature = signature(message_id, usage);
+        let joined = links
+            .parent
+            .and_then(|parent| self.chained_response(parent, signature));
+        let index = match joined {
+            Some(index) => index,
+            None => {
+                let index = u32::try_from(self.responses.len()).ok()?;
+                self.responses.push(Response {
+                    key: NonZeroU64::new(links.uuid?).unwrap_or(NonZeroU64::MIN),
+                    signature,
+                });
+                index
+            }
         };
-        if let Some(uuid) = uuid {
+        self.remember(index, line);
+        if let Some(uuid) = links.uuid {
             self.nodes.insert(uuid, Node::Block(index));
         }
-        Some(self.responses[index].key)
+        Some(self.responses[index as usize].key)
     }
 
-    fn chained_response(
-        &self,
-        parent: u64,
-        message_id: u64,
-        prompt: (u64, u64, u64),
-    ) -> Option<usize> {
-        let mut answered = ToolUseIds::new();
+    fn remember(&mut self, response: u32, line: &[u8]) {
+        let mut block = if self.recent.len() == RECENT_BLOCKS {
+            self.recent.pop_front()
+        } else {
+            None
+        }
+        .unwrap_or_else(|| RecentBlock {
+            response,
+            line: Vec::new(),
+        });
+        block.response = response;
+        block.line.clear();
+        block.line.extend_from_slice(line);
+        self.recent.push_back(block);
+    }
+
+    fn response_of(&self, mut current: u64) -> Option<u32> {
+        for _ in 0..=self.nodes.len() {
+            match self.nodes.get(&current)? {
+                Node::Link { parent, .. } => current = *parent,
+                Node::Block(index) => return Some(*index),
+            }
+        }
+        None
+    }
+
+    fn chained_response(&self, parent: u64, signature: u64) -> Option<u32> {
+        let mut owners: SmallVec<[u32; 2]> = SmallVec::new();
         let mut current = parent;
         for _ in 0..=self.nodes.len() {
             match self.nodes.get(&current)? {
-                Node::Link { parent, answers } => {
-                    answered.extend_from_slice(answers);
-                    current = (*parent)?;
+                Node::Link { parent, owner } => {
+                    owners.extend(*owner);
+                    current = *parent;
                 }
                 Node::Block(index) => {
-                    let response = &self.responses[*index];
-                    let joins = response.message_id == message_id
-                        && response.prompt == prompt
-                        && answered
-                            .iter()
-                            .all(|answer| response.tool_uses.contains(answer));
+                    let joins = self.responses[*index as usize].signature == signature
+                        && owners.iter().all(|owner| owner == index);
                     return joins.then_some(*index);
                 }
             }

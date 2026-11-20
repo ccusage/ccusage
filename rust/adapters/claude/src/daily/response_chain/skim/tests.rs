@@ -1,0 +1,54 @@
+use super::{Want, skim};
+
+#[test]
+fn reads_top_level_links_past_escaped_quotes_and_nested_values() {
+    let line = br#"{"parentUuid":"p","nested":{"uuid":"inner","list":[1,{"a":"}"}]},"text":"say \"uuid\":\"x\" \\","type":"user","uuid":"u","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":"\"]}"}]}}"#;
+
+    let parsed = skim(line, Want::Link, |_| true).unwrap();
+
+    assert_eq!(parsed.parent, Some(&b"p"[..]));
+    assert_eq!(parsed.uuid, Some(&b"u"[..]));
+    assert_eq!(parsed.kind, Some(&b"user"[..]));
+    let blocks = parsed.blocks.unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].kind, Some(&b"tool_result"[..]));
+    assert_eq!(blocks[0].tool_use_id, Some(&b"t"[..]));
+}
+
+#[test]
+fn stops_at_an_untracked_parent() {
+    let line = br#"{"parentUuid":"p","uuid":"u","truncated":"#;
+
+    assert!(skim(line, Want::Link, |parent| parent != Some(b"p")).is_none());
+}
+
+#[test]
+fn rejects_a_line_without_a_parent() {
+    let line = br#"{"parentUuid":null,"uuid":"u","type":"system"}"#;
+
+    assert!(skim(line, Want::Link, |parent| parent.is_some()).is_none());
+}
+
+#[test]
+fn stops_reading_a_user_prompt_at_its_content() {
+    let line = br#"{"parentUuid":"p","type":"user","uuid":"u","message":{"content":"prompt"#;
+
+    assert!(skim(line, Want::Link, |_| true).is_none());
+}
+
+#[test]
+fn stops_once_a_non_user_line_has_its_links() {
+    let line = br#"{"parentUuid":"p","type":"attachment","uuid":"u","attachment":"#;
+
+    let parsed = skim(line, Want::Link, |_| true).unwrap();
+
+    assert_eq!(parsed.uuid, Some(&b"u"[..]));
+    assert!(parsed.blocks.is_none());
+}
+
+#[test]
+fn notices_usage_on_a_line_that_may_carry_it() {
+    let line = br#"{"parentUuid":"p","type":"assistant","uuid":"u","message":{"usage":{"input_tokens":1}}}"#;
+
+    assert!(skim(line, Want::Block, |_| true).unwrap().has_usage);
+}

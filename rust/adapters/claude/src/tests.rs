@@ -708,13 +708,13 @@ fn chained_assistant(
         |id| format!(r#"[{{"type":"tool_use","id":"{id}","name":"Read","input":{{}}}}]"#),
     );
     format!(
-        r#"{{"type":"assistant","uuid":"{uuid}","parentUuid":{parent},"timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message_id}","model":"claude-sonnet-4-20250514","role":"assistant","content":{content},"usage":{{"input_tokens":{input_tokens},"output_tokens":25,"cache_read_input_tokens":0}}}}}}"#
+        r#"{{"parentUuid":{parent},"type":"assistant","uuid":"{uuid}","timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message_id}","model":"claude-sonnet-4-20250514","role":"assistant","content":{content},"usage":{{"input_tokens":{input_tokens},"output_tokens":25,"cache_read_input_tokens":0}}}}}}"#
     )
 }
 
 fn chained_user(uuid: &str, parent: &str, content: &str) -> String {
     format!(
-        r#"{{"type":"user","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{{"role":"user","content":{content}}}}}"#
+        r#"{{"parentUuid":"{parent}","type":"user","uuid":"{uuid}","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{{"role":"user","content":{content}}}}}"#
     )
 }
 
@@ -746,10 +746,33 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "blocks around a tool use on a later block",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user("u1", "a2", &tool_result("toolu_1")),
+                chained_assistant("a3", Some("u1"), "2026-05-22T02:34:41.000Z", "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks around a tool result whose text holds quotes and brackets",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user(
+                    "u1",
+                    "a1",
+                    r#"[{"tool_use_id":"toolu_1","type":"tool_result","content":"a \"}]} {\"type\":\"text\"} \\"}]"#,
+                ),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
             "blocks around their own agent tool result",
             vec![
                 chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
-                r#"{"type":"user","uuid":"u1","parentUuid":"a1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done"}]},"toolUseResult":{"usage":{"input_tokens":7777,"output_tokens":7777}}}"#.to_string(),
+                r#"{"parentUuid":"a1","type":"user","uuid":"u1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done"}]},"toolUseResult":{"usage":{"input_tokens":7777,"output_tokens":7777}}}"#.to_string(),
                 chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
             ],
             1,
@@ -758,7 +781,7 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             "blocks through a non-usage line",
             vec![
                 chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
-                r#"{"type":"system","uuid":"s1","parentUuid":"a1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a"}"#.to_string(),
+                r#"{"parentUuid":"a1","type":"system","uuid":"s1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a"}"#.to_string(),
                 chained_assistant("a2", Some("s1"), LATER_BLOCK, "gateway-7f3a", 100, None),
             ],
             1,
