@@ -196,6 +196,7 @@ impl Marker {
 
     fn spelled_at_anchor(&self, line: &[u8], anchor: &Anchor) -> bool {
         let marker = self.finder.needle();
+        let mut first_backslash = None;
         let mut from = 0;
         while let Some(found) = anchor.literal.find(&line[from..]) {
             let run_at = from + found;
@@ -207,7 +208,12 @@ impl Marker {
             let verbatim = run_at
                 .checked_sub(anchor.run_start)
                 .is_some_and(|start| line[start..run_at].iter().eq(&marker[..anchor.run_start]));
-            if verbatim || self.spelled_before(line, anchor.run_start, run_at) {
+            if verbatim
+                || first_backslash
+                    .get_or_insert_with(|| memchr(b'\\', line))
+                    .is_some_and(|backslash| backslash < run_at)
+                    && self.spelled_before(line, anchor.run_start, run_at)
+            {
                 return true;
             }
         }
