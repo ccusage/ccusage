@@ -1,8 +1,0 @@
-name: Set up Nushell
-description: Install the Nushell release the flake's dev shell uses, without setting up Nix
-runs:
-  using: composite
-  steps:
-    - uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
-      with:
-        version: 0.116.1

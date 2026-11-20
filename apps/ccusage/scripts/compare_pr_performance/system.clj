@@ -37,12 +37,29 @@
   (let [files (filter fs/regular-file? (file-seq (fs/file directory)))]
     {:bytes (reduce + 0 (map fs/size files)) :files (count files)}))
 
+(defn median-mtime-date
+  [claude-dir]
+  (let [mtimes (->> (fs/glob claude-dir "**.jsonl")
+                    (map #(.toMillis (fs/last-modified-time %)))
+                    sort vec)]
+    (when (empty? mtimes)
+      (data/fail! (str "No Claude transcripts under " claude-dir) {:kind :empty-fixture :dir (str claude-dir)}))
+    (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd")
+             (java.time.LocalDate/ofInstant (java.time.Instant/ofEpochMilli (nth mtimes (quot (count mtimes) 2)))
+                                            java.time.ZoneOffset/UTC))))
+
+(defn resolve-command [command claude-dir]
+  (if (str/includes? command data/median-mtime)
+    (str/replace command data/median-mtime (median-mtime-date claude-dir))
+    command))
+
 (def report-vars (sorted-map "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"))
 
 (defn fixture-env
   [fixture-dir codex-fixture-dir grok-fixture-dir empty-home]
   {:clean? true
-   :vars (into (cond-> (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir)
+   :vars (into (cond-> (array-map "CLAUDE_CONFIG_DIR" fixture-dir)
+                 codex-fixture-dir (assoc "CODEX_HOME" codex-fixture-dir)
                  grok-fixture-dir (assoc "GROK_HOME" grok-fixture-dir)
                  true (assoc "HOME" empty-home))
                (assoc report-vars "LOG_LEVEL" "0"))})

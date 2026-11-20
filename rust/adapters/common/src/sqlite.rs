@@ -14,6 +14,13 @@ pub fn open_read_only(path: &Path) -> Result<Connection, UnitError> {
     Ok(connection)
 }
 
+pub fn table_exists(connection: &Connection, table: &str) -> sqlite::Result<bool> {
+    let mut statement = connection
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")?;
+    statement.bind((1, table))?;
+    Ok(matches!(statement.next()?, State::Row))
+}
+
 pub fn sqlite_units<U, T, P, R>(
     units: &[U],
     single_thread: bool,
@@ -133,6 +140,32 @@ pub fn read_count(statement: &Statement<'_>, index: usize) -> u64 {
 mod tests {
     use super::{Number, read_count, read_f64, read_i64, read_number};
 
+    fn table_probe(table: &str) -> Option<bool> {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path(format!("{table}.db"));
+        sqlite::open(&path)
+            .unwrap()
+            .execute("CREATE TABLE records (value INTEGER); CREATE VIEW record_view AS SELECT value FROM records")
+            .unwrap();
+        let connection = super::open_read_only(&path).unwrap();
+        super::table_exists(&connection, table).ok()
+    }
+
+    #[test]
+    fn table_exists_sees_tables_but_not_views_or_missing_names() {
+        assert_eq!(table_probe("records"), Some(true));
+        assert_eq!(table_probe("record_view"), Some(false));
+        assert_eq!(table_probe("missing"), Some(false));
+    }
+
+    #[test]
+    fn table_exists_reports_a_corrupt_database_instead_of_claiming_the_table_is_absent() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.write_file("corrupt.db", "not a SQLite database");
+        let connection = super::open_read_only(&path).unwrap();
+        assert!(super::table_exists(&connection, "records").is_err());
+    }
+
     #[test]
     fn read_only_database_waits_for_an_exclusive_writer() {
         let fixture = ccusage_test_support::Fixture::new();
@@ -182,7 +215,7 @@ mod tests {
             )
             .unwrap();
         for single_thread in [true, false] {
-            let diagnostics = Diagnostics::without_clock("test");
+            let diagnostics = Diagnostics::new("test");
             let loaded = super::sqlite_units(
                 std::slice::from_ref(&path),
                 single_thread,
@@ -236,7 +269,7 @@ mod tests {
             .execute("CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (2)")
             .unwrap();
         let corrupt = fixture.write_file("corrupt.db", "SECRET_CANARY is not a database");
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = values(
             &[healthy, corrupt],
@@ -268,7 +301,7 @@ mod tests {
                 "CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (2), (3), (4)",
             )
             .unwrap();
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let loaded = values(
             &[path],

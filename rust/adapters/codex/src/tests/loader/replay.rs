@@ -6,6 +6,12 @@ fn skips_replayed_parent_token_history_in_thread_spawn_subagent_files() {
         "2026-05-12T08-00-00-parent.jsonl": [
             json!({
                 "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "parent-xyz"},
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
                 "type": "turn_context",
                 "payload": {"model": "gpt-5.2", "model_name": null, "metadata": null},
             })
@@ -208,6 +214,12 @@ fn skips_replayed_parent_token_history_in_forked_session_files() {
         "2026-05-12T08-00-00-parent.jsonl": [
             json!({
                 "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "parent-xyz"},
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
                 "type": "turn_context",
                 "payload": {"model": "gpt-5.2"},
             })
@@ -371,6 +383,47 @@ fn skips_replayed_parent_token_history_in_forked_session_files() {
 #[test]
 fn keeps_cumulative_baseline_when_skipping_subagent_replay() {
     let fixture = fs_fixture!({
+        "2026-05-12T08-00-00-parent.jsonl": [
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "parent-xyz"},
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:01:00.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 1_000,
+                            "cached_input_tokens": 100,
+                            "output_tokens": 200,
+                            "total_tokens": 1_200,
+                        },
+                    },
+                },
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:02:00.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 1_500,
+                            "cached_input_tokens": 150,
+                            "output_tokens": 300,
+                            "total_tokens": 1_800,
+                        },
+                    },
+                },
+            })
+            .to_string(),
+        ]
+        .join("\n"),
         "2026-05-12T08-03-00-subagent.jsonl": [
             json!({
                 "timestamp": "2026-05-12T08:03:00.000Z",
@@ -440,7 +493,10 @@ fn keeps_cumulative_baseline_when_skipping_subagent_replay() {
         .join("\n"),
     });
 
-    let events = crate::test_support::rollout_events(fixture.root());
+    let events = crate::test_support::rollout_events(fixture.root())
+        .into_iter()
+        .filter(|event| event.session_id.contains("subagent"))
+        .collect::<Vec<_>>();
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].input_tokens, 100);
@@ -451,29 +507,51 @@ fn keeps_cumulative_baseline_when_skipping_subagent_replay() {
 
 #[test]
 fn skips_replayed_history_across_multiple_subagent_files() {
-    let parent_line = json!({
-        "timestamp": "2026-05-12T08:01:00.000Z",
-        "type": "event_msg",
-        "payload": {
-            "type": "token_count",
-            "info": {
-                "last_token_usage": {
-                    "input_tokens": 1_000,
-                    "cached_input_tokens": 100,
-                    "output_tokens": 200,
-                    "total_tokens": 1_200,
+    let parent_usage =
+        |timestamp: &str, last: (u64, u64, u64, u64), total: (u64, u64, u64, u64)| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": last.0,
+                            "cached_input_tokens": last.1,
+                            "output_tokens": last.2,
+                            "total_tokens": last.3,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": total.0,
+                            "cached_input_tokens": total.1,
+                            "output_tokens": total.2,
+                            "total_tokens": total.3,
+                        },
+                        "model": "gpt-5.2",
+                    },
                 },
-                "total_token_usage": {
-                    "input_tokens": 1_000,
-                    "cached_input_tokens": 100,
-                    "output_tokens": 200,
-                    "total_tokens": 1_200,
-                },
-                "model": "gpt-5.2",
-            },
-        },
-    })
-    .to_string();
+            })
+            .to_string()
+        };
+    let parent = [
+        json!({
+            "timestamp": "2026-05-12T08:00:00.000Z",
+            "type": "session_meta",
+            "payload": {"id": "parent"},
+        })
+        .to_string(),
+        parent_usage(
+            "2026-05-12T08:00:30.000Z",
+            (700, 70, 140, 840),
+            (700, 70, 140, 840),
+        ),
+        parent_usage(
+            "2026-05-12T08:01:00.000Z",
+            (300, 30, 60, 360),
+            (1_000, 100, 200, 1_200),
+        ),
+    ]
+    .join("\n");
 
     fn subagent_file(creation_ts: &str, real_ts: &str, input_tokens: u64) -> String {
         [
@@ -570,7 +648,7 @@ fn skips_replayed_history_across_multiple_subagent_files() {
     }
 
     let fixture = fs_fixture!({
-        "2026-05-12T08-01-00-parent.jsonl": parent_line,
+        "2026-05-12T08-01-00-parent.jsonl": parent,
         "2026-05-12T08-02-00-subagent-a.jsonl": subagent_file(
             "2026-05-12T08:02:00.000Z",
             "2026-05-12T08:04:00.000Z",
@@ -593,8 +671,8 @@ fn skips_replayed_history_across_multiple_subagent_files() {
 
         assert_eq!(
             events.len(),
-            4,
-            "expected 4 events (1 parent + 3 subagent real), got {} with single_thread={}",
+            5,
+            "expected 5 events (2 parent + 3 subagent real), got {} with single_thread={}",
             events.len(),
             single_thread
         );
@@ -640,7 +718,7 @@ fn bounds_the_replay_at_a_numeric_fork_timestamp() {
 }
 
 #[test]
-fn falls_back_to_rewritten_second_when_the_replay_starts_mid_parent_stream() {
+fn skips_a_replayed_parent_suffix_that_starts_mid_stream() {
     let fixture = fs_fixture!({
         "01-parent.jsonl": [
             replay_metadata("2026-07-10T08:00:00.000Z", "parent", None),

@@ -51,18 +51,18 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 330,
-      "costUSD": 0.020435000000000002,
+      "costUSD": 0.040425,
       "date": "2025-12-31",
-      "inputTokens": 1620,
+      "inputTokens": 19396,
       "models": {
         "gpt-5": {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
-          "inputTokens": 400,
+          "inputTokens": 18176,
           "isFallback": false,
-          "outputTokens": 48,
+          "outputTokens": 1824,
           "reasoningOutputTokens": 0,
-          "totalTokens": 528
+          "totalTokens": 20080
         },
         "gpt-5.5": {
           "cacheCreationTokens": 0,
@@ -83,16 +83,16 @@ exit: 0
           "totalTokens": 627
         }
       },
-      "outputTokens": 195,
+      "outputTokens": 1971,
       "reasoningOutputTokens": 5,
-      "totalTokens": 2145
+      "totalTokens": 21697
     },
     {
       "cacheCreationTokens": 300,
-      "cacheReadTokens": 8720,
-      "costUSD": 0.026280500000000002,
+      "cacheReadTokens": 9020,
+      "costUSD": 0.0284055,
       "date": "2026-01-01",
-      "inputTokens": 7300,
+      "inputTokens": 7700,
       "models": {
         "codex-mystery-1": {
           "cacheCreationTokens": 0,
@@ -133,17 +133,17 @@ exit: 0
         },
         "gpt-5.5": {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 700,
-          "inputTokens": 1000,
+          "cacheReadTokens": 1000,
+          "inputTokens": 1400,
           "isFallback": false,
-          "outputTokens": 170,
-          "reasoningOutputTokens": 20,
-          "totalTokens": 1870
+          "outputTokens": 240,
+          "reasoningOutputTokens": 30,
+          "totalTokens": 2640
         }
       },
-      "outputTokens": 1632,
-      "reasoningOutputTokens": 84,
-      "totalTokens": 17952
+      "outputTokens": 1702,
+      "reasoningOutputTokens": 94,
+      "totalTokens": 18722
     },
     {
       "cacheCreationTokens": 0,
@@ -187,12 +187,12 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 460650,
-    "costUSD": 0.6744542499999999,
-    "inputTokens": 113170,
-    "outputTokens": 4052,
-    "reasoningOutputTokens": 139,
-    "totalTokens": 578172,
+    "cacheReadTokens": 460950,
+    "costUSD": 0.69656925,
+    "inputTokens": 131346,
+    "outputTokens": 5898,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 598494,
     "unpricedModels": [
       "codex-mystery-1"
     ]

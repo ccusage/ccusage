@@ -1,11 +1,22 @@
 use crate::{
     cli::CostMode,
-    pricing::{Pricing, PricingHandle, PricingMap},
+    pricing::{BillingRoute, Pricing, PricingHandle, PricingMap},
     types::Speed,
 };
 
+/// Whether an entry's usage is one model request or a total over several.
+///
+/// The long-context tier is chosen per request, so it applies only to
+/// `Request` entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageGranularity {
+    Request,
+    Aggregate,
+}
+
 pub struct EntryPricing<'a> {
     pub usage: crate::TokenUsageRaw,
+    pub granularity: UsageGranularity,
     pub reasoning_tokens: u64,
     pub residual_tokens: u64,
     pub reported_model: Option<&'a str>,
@@ -46,6 +57,31 @@ impl<'a> PriceTable<'a> {
 }
 
 pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> EntryPrice<'a> {
+    price_entry_with(entry, pricing, |map, entry| {
+        map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp)
+    })
+}
+
+pub fn price_entry_on_route<'a>(
+    entry: EntryPricing<'a>,
+    route: BillingRoute,
+    pricing: PriceTable<'_>,
+) -> EntryPrice<'a> {
+    price_entry_with(entry, pricing, |map, entry| {
+        map.resolve_on_route_at(
+            entry.reported_model,
+            entry.candidates,
+            route,
+            entry.timestamp,
+        )
+    })
+}
+
+fn price_entry_with<'a>(
+    entry: EntryPricing<'a>,
+    pricing: PriceTable<'_>,
+    resolve: impl FnOnce(&PricingMap, &EntryPricing<'a>) -> Option<(&'a str, Pricing)>,
+) -> EntryPrice<'a> {
     let Some(map) = pricing.as_map() else {
         return EntryPrice {
             cost: entry.stored_cost.unwrap_or(0.0),
@@ -70,10 +106,9 @@ pub fn price_entry<'a>(entry: EntryPricing<'a>, pricing: PriceTable<'_>) -> Entr
             .saturating_add(entry.residual_tokens),
         ..entry.usage
     };
-    let resolved = map.resolve_at(entry.reported_model, entry.candidates, entry.timestamp);
-    match resolved {
+    match resolve(map, &entry) {
         Some((model, rates)) => EntryPrice {
-            cost: cost_at_speed(usage, &rates),
+            cost: cost_at_speed(usage, &rates_for(entry.granularity, rates)),
             matched: Some(model),
             missing_pricing: false,
         },
@@ -102,6 +137,14 @@ pub fn price_resolved_usage(
             (0.0, missing)
         }
     }
+}
+
+// NOTE(2026-11-20, #2365): Vendors choose the long-context tier per request. An aggregate entry records no per-request split, so it is priced at the base tier as the closest estimate.
+fn rates_for(granularity: UsageGranularity, mut rates: Pricing) -> Pricing {
+    if granularity == UsageGranularity::Aggregate {
+        rates.long_context = None;
+    }
+    rates
 }
 
 fn cost_at_speed(usage: crate::TokenUsageRaw, rates: &Pricing) -> f64 {

@@ -35,8 +35,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295459,
-      "inputTokens": 114260,
+      "cacheReadTokens": 295292,
+      "inputTokens": 129543,
       "metadata": {
         "agents": [
           "amp",
@@ -87,7 +87,7 @@ exit: 0
         {
           "cacheCreationTokens": 4200,
           "cacheReadTokens": 65960,
-          "inputTokens": 21421,
+          "inputTokens": 21261,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 6255
@@ -124,9 +124,9 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 20480,
-          "inputTokens": 10382,
+          "inputTokens": 28158,
           "modelName": "gpt-5",
-          "outputTokens": 2300
+          "outputTokens": 4076
         },
         {
           "cacheCreationTokens": 100,
@@ -181,10 +181,10 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "inputTokens": 3300,
+          "cacheReadTokens": 2300,
+          "inputTokens": 3700,
           "modelName": "gpt-5.5",
-          "outputTokens": 630
+          "outputTokens": 700
         },
         {
           "cacheCreationTokens": 0,
@@ -209,13 +209,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2700,
-          "inputTokens": 5000,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 901
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 4400,
           "inputTokens": 2400,
           "modelName": "gpt-5-codex",
@@ -234,6 +227,13 @@ exit: 0
           "inputTokens": 520,
           "modelName": "gpt-6.1-sol",
           "outputTokens": 57
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2700,
+          "inputTokens": 2300,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 901
         },
         {
           "cacheCreationTokens": 50,
@@ -406,8 +406,8 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
-          "inputTokens": 33,
+          "cacheReadTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
@@ -463,15 +463,15 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29921,
+      "outputTokens": 31767,
       "period": "2025-12",
-      "totalTokens": 453935
+      "totalTokens": 470837
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
-      "cacheReadTokens": 1012508,
-      "inputTokens": 1232153,
+      "cacheReadTokens": 1011008,
+      "inputTokens": 1131553,
       "metadata": {
         "agents": [
           "amp",
@@ -514,8 +514,8 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2240,
-          "cacheReadTokens": 42260,
-          "inputTokens": 10987,
+          "cacheReadTokens": 40760,
+          "inputTokens": 10487,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 3989
         },
@@ -565,7 +565,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "inputTokens": 300531,
+          "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
         },
@@ -628,18 +628,18 @@ exit: 0
           "outputTokens": 1050
         },
         {
-          "cacheCreationTokens": 60,
-          "cacheReadTokens": 6040,
-          "inputTokens": 1300,
-          "modelName": "openai/gpt-5",
-          "outputTokens": 420
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "inputTokens": 2100,
           "modelName": "[pi] claude-opus-4-20250514",
           "outputTokens": 550
+        },
+        {
+          "cacheCreationTokens": 60,
+          "cacheReadTokens": 6040,
+          "inputTokens": 1300,
+          "modelName": "openai/gpt-5",
+          "outputTokens": 420
         },
         {
           "cacheCreationTokens": 0,
@@ -1045,7 +1045,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalTokens": 2279840
+      "totalTokens": 2177683
     },
     {
       "agent": "all",
@@ -1076,10 +1076,10 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309967,
-    "inputTokens": 1347424,
-    "outputTokens": 58720,
-    "totalTokens": 2737293,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1262107,
+    "outputTokens": 60566,
+    "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

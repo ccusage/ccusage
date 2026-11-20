@@ -42,7 +42,16 @@ in
         text = ''
           tmp="$(mktemp --suffix=.json)"
           trap 'rm -f "$tmp"' EXIT
-          generate-config-schema "$tmp"
+          # NOTE(2026-11-20, #2343): a dev shell reuses this wrapper from its last
+          # evaluation, so a baked-in generator misses newer config fields. The dev
+          # shell sets this variable to build from the working tree; the pure flake
+          # check leaves it unset and keeps the store-built generator.
+          if [[ -n "''${CCUSAGE_SCHEMA_GEN_FROM_WORKSPACE:-}" ]]; then
+            cargo run --locked --manifest-path rust/Cargo.toml \
+              -p ccusage-config --features schema --bin generate-config-schema -- "$tmp"
+          else
+            generate-config-schema "$tmp"
+          fi
           oxfmt --write "$tmp"
           cmp -s "$tmp" apps/ccusage/config-schema.json || cp "$tmp" apps/ccusage/config-schema.json
         '';
@@ -156,10 +165,13 @@ in
           rustfmt.priority = 9;
           schema-gen = {
             command = lib.getExe schemaGen;
+            # NOTE(2026-11-20, #2361): the schema also depends on the option structs in `config_schema` and the `ccusage-cli` agent specs. The includes are listed by hand because treefmt cannot derive the Rust module graph.
             includes = [
               "apps/ccusage/config-schema.json"
-              "rust/crates/ccusage-config/src/config_schema.rs"
+              "rust/crates/ccusage-cli/src/*.rs"
               "rust/crates/ccusage-config/src/bin/generate_config_schema.rs"
+              "rust/crates/ccusage-config/src/config_schema.rs"
+              "rust/crates/ccusage-config/src/config_schema/*.rs"
             ];
             priority = 10;
           };

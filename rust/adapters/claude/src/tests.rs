@@ -1,11 +1,10 @@
-mod load;
-
 use std::assert_matches;
 use std::{path::Path, sync::Arc};
 
 use super::{
-    extract_session_parts, load_deduped_entries, paths::is_project_path_segment,
-    usage_limit_reset_time_from_line_bytes,
+    extract_session_parts,
+    load::{load_deduped_entries, usage_limit_reset_time_from_line_bytes},
+    paths::is_project_path_segment,
 };
 use crate::ClaudeEntry;
 use ccusage_core::{
@@ -28,7 +27,7 @@ fn read_usage_file_with_diagnostics(
     diagnostics: &Diagnostics,
 ) -> LoadedFile {
     LoadedFile {
-        entries: super::read_usage_file_with_diagnostics(
+        entries: super::load::read_usage_file_with_diagnostics(
             path,
             tz,
             pricing.map_or(ccusage_core::cost::PriceTable::Display, |map| {
@@ -39,7 +38,7 @@ fn read_usage_file_with_diagnostics(
     }
 }
 
-use super::daily::push_deduped_entry;
+use super::dedupe::push_deduped_entry;
 
 fn read_usage_file(
     path: &Path,
@@ -47,13 +46,7 @@ fn read_usage_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedFile {
-    read_usage_file_with_diagnostics(
-        path,
-        tz,
-        mode,
-        pricing,
-        &Diagnostics::without_clock("claude"),
-    )
+    read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
 }
 
 #[test]
@@ -80,7 +73,7 @@ fn windowed_calculate_mode_prices_entries_with_shared_display_mode() {
         let loaded = super::load_windowed_entries(
             &shared,
             None,
-            &Diagnostics::without_clock("claude"),
+            &Diagnostics::new("claude"),
             CostMode::Calculate,
         )
         .unwrap();
@@ -237,7 +230,7 @@ fn null_contract_rejections_claude_code_writes_stay_quiet() {
         ]
         .join("\n"),
     });
-    let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
+    let diagnostics = ccusage_core::Diagnostics::new("claude");
 
     let loaded = read_usage_file_with_diagnostics(
         &fixture.path("projects/project-a/session-a.jsonl"),
@@ -268,7 +261,7 @@ fn limits_usage_file_discovery_to_requested_project() {
     let files = super::paths::usage_files(
         &[fixture.root().to_path_buf()],
         Some("project-a"),
-        &ccusage_core::Diagnostics::without_clock("claude"),
+        &ccusage_core::Diagnostics::new("claude"),
     );
 
     assert_eq!(files.len(), 1);
@@ -285,7 +278,7 @@ fn filters_non_segment_projects_before_reading_files() {
     let files = super::paths::usage_files(
         &[fixture.root().to_path_buf()],
         Some("project-a/session-a"),
-        &ccusage_core::Diagnostics::without_clock("claude"),
+        &ccusage_core::Diagnostics::new("claude"),
     );
 
     assert!(files.is_empty());
@@ -701,56 +694,420 @@ fn keeps_the_fast_tier_from_an_otherwise_equal_duplicate() {
     }
 }
 
-#[test]
-fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
-    let fixture = fs_fixture!({
-        "projects/project-a/session-a/chat.jsonl": [
-            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-            r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-        ]
-        .join("\n"),
-    });
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
-
-    let loaded = read_usage_file(
-        &fixture.path("projects/project-a/session-a/chat.jsonl"),
-        &jiff::tz::TimeZone::UTC,
-        CostMode::Display,
-        None,
+fn chained_assistant(
+    uuid: &str,
+    parent: Option<&str>,
+    timestamp: &str,
+    message_id: &str,
+    input_tokens: u64,
+    tool_use: Option<&str>,
+) -> String {
+    let parent = parent.map_or_else(|| "null".to_string(), |parent| format!(r#""{parent}""#));
+    let content = tool_use.map_or_else(
+        || r#"[{"type":"text","text":"ok"}]"#.to_string(),
+        |id| format!(r#"[{{"type":"tool_use","id":"{id}","name":"Read","input":{{}}}}]"#),
     );
-    for entry in loaded.entries {
-        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
-    }
+    format!(
+        r#"{{"parentUuid":{parent},"type":"assistant","uuid":"{uuid}","timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message_id}","model":"claude-sonnet-4-20250514","role":"assistant","content":{content},"usage":{{"input_tokens":{input_tokens},"output_tokens":25,"cache_read_input_tokens":0}}}}}}"#
+    )
+}
 
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
+fn chained_user(uuid: &str, parent: &str, content: &str) -> String {
+    format!(
+        r#"{{"parentUuid":"{parent}","type":"user","uuid":"{uuid}","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{{"role":"user","content":{content}}}}}"#
+    )
+}
+
+fn tool_result(tool_use_id: &str) -> String {
+    format!(r#"[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]"#)
+}
+
+fn message_first(
+    uuid: &str,
+    parent: Option<&str>,
+    timestamp: &str,
+    input: &str,
+    trailing: &str,
+) -> String {
+    let parent = parent.map_or_else(|| "null".to_string(), |parent| format!(r#""{parent}""#));
+    format!(
+        r#"{{"parentUuid":{parent},"isSidechain":false,"message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","role":"assistant","content":[{{"type":"tool_use","id":"toolu_{uuid}","name":"Read","input":{input}}}],"usage":{{"input_tokens":100,"output_tokens":25,"cache_read_input_tokens":0}}}},"type":"assistant","uuid":"{uuid}","timestamp":"{timestamp}","sessionId":"session-a"{trailing}}}"#
+    )
+}
+
+fn linkless_assistant(timestamp: &str, message_id: &str) -> String {
+    format!(
+        r#"{{"type":"assistant","timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message_id}","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":25,"cache_read_input_tokens":0}}}}}}"#
+    )
+}
+
+fn with_tool_input(line: String, input: &str) -> String {
+    line.replace(r#""input":{}"#, &format!(r#""input":{input}"#))
+}
+
+const FIRST_BLOCK: &str = "2026-05-22T02:34:40.000Z";
+const LATER_BLOCK: &str = "2026-05-22T02:34:40.500Z";
+
+pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, usize)> {
+    let two_blocks = |message_id: &str| {
+        vec![
+            chained_assistant("a1", None, FIRST_BLOCK, message_id, 100, None),
+            chained_assistant("a2", Some("a1"), LATER_BLOCK, message_id, 100, None),
+        ]
+    };
+    vec![
+        ("chained anthropic message id", two_blocks("msg_01AbC2DeF3"), 1),
+        ("chained response message id", two_blocks("resp_0123456789abcdef"), 1),
+        ("chained proxy message id", two_blocks("gateway-7f3a"), 1),
+        (
+            "blocks around their own tool result",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks around a tool use on a later block",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user("u1", "a2", &tool_result("toolu_1")),
+                chained_assistant("a3", Some("u1"), "2026-05-22T02:34:41.000Z", "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks around a tool result whose text holds quotes and brackets",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user(
+                    "u1",
+                    "a1",
+                    r#"[{"tool_use_id":"toolu_1","type":"tool_result","content":"a \"}]} {\"type\":\"text\"} \\"}]"#,
+                ),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks around their own agent tool result",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                r#"{"parentUuid":"a1","type":"user","uuid":"u1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done"}]},"toolUseResult":{"usage":{"input_tokens":7777,"output_tokens":7777}}}"#.to_string(),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks through a non-usage line",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                r#"{"parentUuid":"a1","type":"system","uuid":"s1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a"}"#.to_string(),
+                chained_assistant("a2", Some("s1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "reused id after a tool result with new input",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_1")),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "msg_01AbC2DeF3", 150, None),
+            ],
+            2,
+        ),
+        (
+            "reused id after a user prompt",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, None),
+                chained_user("u1", "a1", r#""next question""#),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, None),
+            ],
+            2,
+        ),
+        (
+            "reused id after a tool result for another response",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user("u1", "a1", &tool_result("toolu_9")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "blocks whose tool input holds a uuid",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_1")),
+                    r#"{"path":"a","uuid":"x"}"#,
+                ),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, None),
+            ],
+            1,
+        ),
+        (
+            "message-first blocks whose tool input holds a uuid",
+            vec![
+                message_first("a1", None, FIRST_BLOCK, r#"{"uuid":"x"}"#, ""),
+                message_first("a2", Some("a1"), LATER_BLOCK, "{}", ""),
+            ],
+            1,
+        ),
+        (
+            "message-first blocks with a trailing object that holds a uuid",
+            vec![
+                message_first("a1", None, FIRST_BLOCK, "{}", r#","toolUseResult":{"a":1,"uuid":"x1"}"#),
+                message_first("a2", Some("a1"), LATER_BLOCK, "{}", r#","toolUseResult":{"a":1,"uuid":"x2"}"#),
+            ],
+            1,
+        ),
+        (
+            "distinct responses whose tool inputs share a uuid",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_1")),
+                    r#"{"uuid":"shared"}"#,
+                ),
+                chained_user("u1", "a1", r#""next question""#),
+                with_tool_input(
+                    chained_assistant("a2", Some("u1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_2")),
+                    r#"{"uuid":"shared"}"#,
+                ),
+            ],
+            2,
+        ),
+        (
+            "reused id after a tool result for an id named only in tool input",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_own")),
+                    r#"{"id":"toolu_foreign"}"#,
+                ),
+                chained_user("u1", "a1", &tool_result("toolu_foreign")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "reused id after a user prompt whose type follows its message",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                r#"{"parentUuid":"a1","uuid":"u1","message":{"role":"user","content":"next question"},"type":"user","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a"}"#.to_string(),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "later block of a discarded same-timestamp rewrite",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a1-rewrite", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a2", Some("a1-rewrite"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "later block of the original after a surviving same-timestamp rewrite",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a1-rewrite", None, FIRST_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":250"#),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "reused id after a user prompt whose type is escaped",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_user("u1", "a1", r#""next question""#).replace(r#""type":"user""#, r#""type":"\u0075ser""#),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "blocks around a tool result for a tool whose input holds usage",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                    r#"{"usage":{"window":"7d"}}"#,
+                ),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "linkless record at the timestamp of a replaced survivor",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":250"#),
+                linkless_assistant(FIRST_BLOCK, "gateway-7f3a"),
+            ],
+            1,
+        ),
+        (
+            "linkless record at the timestamp of a discarded block",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":250"#),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+                linkless_assistant(LATER_BLOCK, "gateway-7f3a"),
+            ],
+            1,
+        ),
+        (
+            "block that connects an earlier response and a same-timestamp record",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("b1", None, LATER_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("c1", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks whose parent belongs to another session",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("b1", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                chained_assistant("b2", Some("a1"), "2026-05-22T02:34:41.000Z", "gateway-7f3a", 100, None)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+            ],
+            3,
+        ),
+        (
+            "blocks around a tool result after another session reused the tool id",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_assistant("b1", None, FIRST_BLOCK, "gateway-copy", 100, Some("toolu_1"))
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "requestless record at the timestamp of a sidechain replay its parent absorbed",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+                linkless_assistant(FIRST_BLOCK, "msg_parent"),
+            ],
+            1,
+        ),
+        (
+            "sidechain replay of a response whose first block came from another session",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent")
+                    .replace(r#""type":"assistant","#, r#""type":"assistant","requestId":"req_parent","#)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                linkless_assistant("2026-05-22T02:34:41.000Z", "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+            ],
+            1,
+        ),
+        (
+            "explicit parent written again after a requestless rewrite won its slot",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+                linkless_assistant(FIRST_BLOCK, "msg_parent")
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":500"#),
+                linkless_assistant("2026-05-22T02:34:41.000Z", "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+            ],
+            1,
+        ),
+        (
+            "explicit parent after a requestless record took its replay's slot",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent")
+                    .replace(r#""type":"assistant","#, r#""type":"assistant","requestId":"req_parent","#)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                linkless_assistant(FIRST_BLOCK, "msg_parent")
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":500"#),
+                linkless_assistant("2026-05-22T02:34:41.000Z", "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+            ],
+            1,
+        ),
+        (
+            "blocks around an interrupted write that the next record continued",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                [
+                    r#"{"parentUuid":"a1","isSidechain":false,"sessionId":"session-a","type":"attachment","uuid":"x1","times"#,
+                    r#"{"parentUuid":"a1","isSidechain":false,"sessionId":"session-a","type":"system","uuid":"s1","timestamp":"2026-05-22T02:34:40.250Z"}"#,
+                ]
+                .concat(),
+                chained_assistant("a2", Some("x1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "blocks without transcript links",
+            vec![
+                format!(
+                    r#"{{"timestamp":"{FIRST_BLOCK}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":25}}}}}}"#
+                ),
+                format!(
+                    r#"{{"timestamp":"{LATER_BLOCK}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":25}}}}}}"#
+                ),
+            ],
+            2,
+        ),
+    ]
 }
 
 #[test]
-fn dedupes_response_message_id_from_same_session_at_distinct_timestamps() {
-    let fixture = fs_fixture!({
-        "projects/project-a/session-a/chat.jsonl": [
-            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"resp_0123456789abcdef","model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-            r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"resp_0123456789abcdef","model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-        ]
-        .join("\n"),
-    });
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
+fn requestless_content_blocks_collapse_only_along_their_transcript_chain() {
+    let mut failures = Vec::new();
+    for (case, lines, responses) in requestless_response_cases() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": lines.join("\n"),
+        });
+        let path = fixture.path("projects/project-a/session-a/chat.jsonl");
+        let loaded = read_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        let (deduped, _) = crate::dedupe::dedupe_files(vec![(path, loaded.entries)]);
 
-    let loaded = read_usage_file(
-        &fixture.path("projects/project-a/session-a/chat.jsonl"),
-        &jiff::tz::TimeZone::UTC,
-        CostMode::Display,
-        None,
-    );
-    for entry in loaded.entries {
-        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        if deduped.len() != responses {
+            failures.push(format!(
+                "{case}: {} entries, expected {responses}",
+                deduped.len()
+            ));
+        }
     }
-
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]
@@ -880,7 +1237,7 @@ fn attributes_a_cross_session_copy_to_the_survivor_day() {
             ..SharedArgs::default()
         };
         let deduped = load_deduped_entries(&shared, None).unwrap();
-        let sorted_days = |deduped: &crate::DedupedEntries| {
+        let sorted_days = |deduped: &crate::load::DedupedEntries| {
             let mut days: Vec<_> = deduped
                 .main_thread_sessions()
                 .into_iter()
@@ -892,7 +1249,7 @@ fn attributes_a_cross_session_copy_to_the_survivor_day() {
 
         assert_eq!(deduped.entries.len(), 2);
         assert_eq!(sorted_days(&deduped), ["session-a", "session-b"]);
-        let filtered = crate::DedupedEntries {
+        let filtered = crate::load::DedupedEntries {
             entries: deduped
                 .entries
                 .into_iter()
@@ -944,7 +1301,7 @@ fn dedupes_sidechain_replay_after_an_equal_copy_from_another_session() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -988,7 +1345,7 @@ fn dedupes_sidechain_replay_after_cross_session_survivor_replacement() {
     push_deduped_entry(copied_session_replay, &mut deduped_indexes, &mut deduped);
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].session_id.as_ref(), "session-a");
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
 }
@@ -1034,7 +1391,7 @@ fn keeps_parent_usage_when_sidechain_replays_message_with_new_request_id() {
 
     assert_eq!(deduped.len(), 2);
     assert_eq!(deduped[0].message_id.as_deref(), Some("msg-parent"));
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     assert_eq!(
         deduped[1].message_id.as_deref(),
@@ -1083,7 +1440,7 @@ fn refreshes_dedupe_indexes_when_parent_replaces_sidechain_replay() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -1100,7 +1457,7 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
         source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
         recorded_session_id: Some("session-a".to_string()),
         original_model: Some("claude-sonnet-4-20250514".to_string()),
-        request_id: Some(fixture.request_id.to_string()),
+        request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
         is_sidechain: Some(fixture.is_sidechain),
         entry: LoadedEntry {
             usage: TokenUsageRaw {
@@ -1129,4 +1486,94 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
             stored_cost: None,
         },
     }
+}
+
+#[cfg(unix)]
+const INVALID_UTF8_PROJECTS: [(&[u8], u64); 2] = [(b"p\xfe", 100), (b"p\xff", 1)];
+
+#[cfg(unix)]
+fn shared_copy_line(input_tokens: u64) -> String {
+    let output_tokens = 101 - input_tokens;
+    format!(
+        r#"{{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session","requestId":"req-shared","message":{{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":{input_tokens},"output_tokens":{output_tokens}}}}}}}"#
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn dedupe_keeps_the_same_copy_from_project_dirs_that_differ_only_in_invalid_utf8() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let fixture = ccusage_test_support::Fixture::new();
+    let mut files = INVALID_UTF8_PROJECTS
+        .iter()
+        .enumerate()
+        .map(|(index, &(name, input_tokens))| {
+            let readable = fixture.write_file(
+                format!("{index}/session.jsonl"),
+                shared_copy_line(input_tokens),
+            );
+            let loaded = read_usage_file(&readable, &JiffTimeZone::UTC, CostMode::Display, None);
+            let path = Path::new("/projects")
+                .join(std::ffi::OsStr::from_bytes(name))
+                .join("session.jsonl");
+            (path, loaded.entries)
+        })
+        .collect::<Vec<_>>();
+    let survivor = |files: Vec<(std::path::PathBuf, Vec<ClaudeEntry>)>| {
+        let (entries, _) = super::dedupe::dedupe_files(files);
+        assert_eq!(entries.len(), 1);
+        entries[0].usage.input_tokens
+    };
+
+    let forward = survivor(files.clone());
+    files.reverse();
+
+    assert_eq!(forward, survivor(files));
+}
+
+#[cfg(unix)]
+#[test]
+fn single_and_multi_thread_keep_the_same_copy_from_invalid_utf8_project_dirs() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let fixture = ccusage_test_support::Fixture::new();
+    for (name, input_tokens) in INVALID_UTF8_PROJECTS {
+        let dir = fixture
+            .root()
+            .join("projects")
+            .join(std::ffi::OsStr::from_bytes(name));
+        if std::fs::create_dir_all(&dir).is_err() {
+            // NOTE(2026-11-20, #2359): APFS rejects invalid UTF-8 file names with EILSEQ, so this fixture cannot exist on macOS. The test runs on Linux CI instead.
+            return;
+        }
+        std::fs::write(dir.join("session.jsonl"), shared_copy_line(input_tokens)).unwrap();
+    }
+    Environment::with_vars([(
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.root().as_os_str().to_os_string()),
+    )])
+    .run(|| {
+        let load = |single_thread| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..Default::default()
+            };
+            let entries = super::load_entries(&shared, None).unwrap();
+            let daily = super::load_daily_summaries(&shared, None, false).unwrap();
+            (
+                entries
+                    .iter()
+                    .map(|entry| (entry.usage.input_tokens, entry.project.to_string()))
+                    .collect::<Vec<_>>(),
+                daily.iter().map(|day| day.input_tokens).collect::<Vec<_>>(),
+            )
+        };
+        let single = load(true);
+        for _ in 0..20 {
+            assert_eq!(load(false), single);
+        }
+    });
 }

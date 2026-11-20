@@ -14,7 +14,7 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 1900,
-          "cost": 0.01482,
+          "cost": 0.014769999999999998,
           "inputTokens": 4000,
           "modelName": "grok-4.5-build",
           "outputTokens": 1000
@@ -22,7 +22,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0010655,
+          "cost": 0.0010630000000000001,
           "inputTokens": 1070,
           "modelName": "grok-code-fast-1",
           "outputTokens": 550
@@ -53,7 +53,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 1620,
-      "totalCost": 0.0158855,
+      "totalCost": 0.015833,
       "totalTokens": 9740
     },
     {
@@ -64,7 +64,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50100,
-          "cost": 0.84299,
+          "cost": 0.42199,
           "inputTokens": 200300,
           "modelName": "grok-4.5-build",
           "outputTokens": 1060
@@ -122,7 +122,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1815,
-      "totalCost": 0.8507049999999999,
+      "totalCost": 0.429705,
       "totalTokens": 255360
     }
   ],
@@ -131,7 +131,7 @@ exit: 0
     "cacheReadTokens": 53400,
     "inputTokens": 207415,
     "outputTokens": 3435,
-    "totalCost": 0.8665904999999999,
+    "totalCost": 0.445538,
     "totalTokens": 265100,
     "unpricedModels": [
       "grok-mystery-1",

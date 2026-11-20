@@ -174,6 +174,10 @@ impl SharedArgs {
     }
 }
 
+pub fn session_cost_ordering(shared: &SharedArgs) -> SortOrder {
+    shared.requested_order().unwrap_or(SortOrder::Desc)
+}
+
 /// The two documented spellings of a `--since` / `--until` bound.
 pub const DATE_BOUND_FORMATS: &str = "YYYY-MM-DD or YYYYMMDD";
 
@@ -272,6 +276,7 @@ pub struct AgentOptions {
     pub claude_project: Option<String>,
     pub codex_speed: CodexSpeed,
     pub pi_path: Option<String>,
+    pub pi_agent_dir: Option<String>,
     pub open_claw_path: Option<String>,
 }
 
@@ -551,5 +556,20 @@ mod tests {
     fn rejects_non_ascii_values_without_panicking() {
         assert_eq!(DateBound::parse("２０２６０７１０"), None);
         assert_eq!(DateBound::parse("2026-07-1０"), None);
+    }
+
+    #[test]
+    fn session_cost_order_defaults_to_descending_and_preserves_explicit_orders() {
+        assert_eq!(
+            session_cost_ordering(&SharedArgs::default()),
+            SortOrder::Desc
+        );
+        for order in [SortOrder::Asc, SortOrder::Desc] {
+            let shared = SharedArgs {
+                order: Some(order),
+                ..SharedArgs::default()
+            };
+            assert_eq!(session_cost_ordering(&shared), order);
+        }
     }
 }

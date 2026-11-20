@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{
@@ -153,7 +153,7 @@ fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
     (uncached, cache)
 }
 
-// NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok session totals match `logs/unified.jsonl` with `cachedReadTokens` inside `inputTokens`. Only zero `cacheCreationTokens` values were observed, so reserve cache creation from the same input total.
+// NOTE(2026-11-20, Grok CLI 1.0.45, #2257): Grok Build's `PromptUsageModel` sums the full prompt into `inputTokens`, folding in both `cachedReadTokens` and `cacheCreationTokens`; only its Anthropic Messages path reports cache writes, and the xAI Responses path always reports zero. Subtracting both from the input total leaves the uncached prompt tokens.
 fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64, u64, u64) {
     let (uncached, cache_read) = split_tokens(input, cached_read);
     let cache_creation = cache_creation.min(uncached);
@@ -237,10 +237,8 @@ pub(super) fn parse_session_files_with_diagnostics(
                         cache_creation: None,
                     };
                     let reasoning_tokens = model_usage.reasoning_tokens;
-                    (ccusage_core::utils::total_usage_tokens(usage_raw)
-                        .saturating_add(reasoning_tokens)
-                        > 0)
-                    .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
+                    (total_usage_tokens(usage_raw).saturating_add(reasoning_tokens) > 0)
+                        .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
                 })
                 .collect::<Vec<_>>();
             if model_rows.is_empty() {
@@ -509,6 +507,7 @@ fn price_grok_usage(
         .collect();
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Aggregate,
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
@@ -683,7 +682,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -853,7 +852,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -891,7 +890,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -918,7 +917,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1031,7 +1030,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1,"outputTokens":1}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::without_clock("grok");
+        let diagnostics = Diagnostics::new("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1053,7 +1052,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::without_clock("grok");
+        let diagnostics = Diagnostics::new("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1088,7 +1087,7 @@ mod tests {
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let diagnostics = Diagnostics::without_clock("grok");
+        let diagnostics = Diagnostics::new("grok");
 
         let entries = parse_session_files_with_diagnostics(
             &files,
@@ -1141,7 +1140,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1196,7 +1195,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1291,7 +1290,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1335,7 +1334,7 @@ mod tests {
                 &jiff::tz::TimeZone::UTC,
                 mode,
                 PriceTable::for_map(mode, &pricing),
-                &Diagnostics::without_clock("grok"),
+                &Diagnostics::new("grok"),
             )
             .map(|entries| {
                 entries
@@ -1370,6 +1369,79 @@ mod tests {
         assert_eq!(entries[0].usage.cache_read_input_tokens, 40);
         assert_eq!(entries[0].usage.cache_creation_input_tokens, 25);
         assert_eq!(entries[0].usage.output_tokens, 20);
+    }
+
+    fn calculated_turn(cache_creation: u64) -> (LoadedEntry, Diagnostics) {
+        ccusage_test_support::install_pricing_snapshots();
+        let key = "grok-4.5".to_string();
+        let pricing_override = crate::cli::PricingOverride {
+            input_cost_per_token: Some(1.0),
+            cache_creation_input_token_cost: Some(10.0),
+            cache_read_input_token_cost: Some(100.0),
+            output_cost_per_token: Some(1000.0),
+            ..crate::cli::PricingOverride::default()
+        };
+        let pricing =
+            ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let usage = serde_json::json!({
+            "inputTokens": 1000,
+            "outputTokens": 5,
+            "cachedReadTokens": 600,
+            "cacheCreationTokens": cache_creation,
+        });
+        let mut total = usage.clone();
+        total["modelUsage"] = serde_json::json!({ "grok-4.5-build": usage });
+        let line = serde_json::json!({
+            "timestamp": 1_750_000_000,
+            "params": {
+                "sessionId": "sess-1",
+                "update": { "sessionUpdate": "turn_completed", "usage": total },
+                "_meta": { "eventId": "evt-calc" },
+            },
+        })
+        .to_string();
+        let fixture = fs_fixture!({ "sessions/proj/sess-1/updates.jsonl": line });
+        let diagnostics = Diagnostics::new("grok");
+        let mut entries = parse_session_files_with_diagnostics(
+            &fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        (entries.remove(0).1, diagnostics)
+    }
+
+    #[test]
+    fn prices_cache_creation_carved_from_the_full_prompt_input() {
+        let (entry, diagnostics) = calculated_turn(300);
+
+        assert_eq!(entry.usage.input_tokens, 100);
+        assert_eq!(entry.usage.cache_read_input_tokens, 600);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 300);
+        assert_eq!(entry.cost, 100.0 + 3_000.0 + 60_000.0 + 5_000.0);
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs::default())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn prices_the_full_uncached_input_without_cache_creation() {
+        let (entry, diagnostics) = calculated_turn(0);
+
+        assert_eq!(entry.usage.input_tokens, 400);
+        assert_eq!(entry.usage.cache_read_input_tokens, 600);
+        assert_eq!(entry.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.cost, 400.0 + 60_000.0 + 5_000.0);
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs::default())
+                .is_empty()
+        );
     }
 
     #[test]

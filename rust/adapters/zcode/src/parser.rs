@@ -1,10 +1,11 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity},
     pricing::MatchKind,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
+use ccusage_adapter_common::billing::price_entry_for_provider;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
@@ -109,18 +110,17 @@ pub(super) fn row_to_entry(
             (name.as_str(), kind)
         })
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage: cost_usage,
-            reasoning_tokens: 0,
-            residual_tokens: 0,
-            reported_model: Some(&raw_model),
-            candidates: &candidates,
-            stored_cost: None,
-            timestamp: Some(timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
+        usage: cost_usage,
+        reasoning_tokens: 0,
+        residual_tokens: 0,
+        reported_model: Some(&raw_model),
+        candidates: &candidates,
+        stored_cost: None,
+        timestamp: Some(timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, row.provider_id.as_deref(), pricing);
     let cost = priced.cost;
     let missing_pricing_model = (mode != CostMode::Display
         && priced.matched.is_none()
@@ -507,5 +507,41 @@ mod pricing_identity_tests {
             ordered_pricing_candidates(" GLM-4.7 ", None, &BTreeMap::new()),
             ["zai/GLM-4.7", "zai/glm-4.7", "GLM-4.7", "glm-4.7"]
         );
+    }
+
+    #[test]
+    fn prices_a_foreign_provider_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let row = ZcodeUsageRow {
+            id: Some("usage-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            started_at: Some(
+                ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z")
+                    .unwrap()
+                    .as_millis(),
+            ),
+            model_id: Some("deepseek-v4-flash".to_string()),
+            provider_id: Some("zai".to_string()),
+            input_tokens: 1000,
+            output_tokens: 1000,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            computed_total_tokens: 2000,
+            directory: Some("/workspace/project".to_string()),
+            version: Some("0.16.3".to_string()),
+        };
+        let entry = row_to_entry(
+            row,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+            &BTreeMap::new(),
+        )
+        .unwrap()
+        .expect("test row has usage")
+        .1;
+        assert!((entry.cost - 0.0015).abs() < 1e-12, "{}", entry.cost);
+        assert_eq!(entry.missing_pricing_model, None);
     }
 }

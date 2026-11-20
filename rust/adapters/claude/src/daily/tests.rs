@@ -1,6 +1,7 @@
 use std::{fmt::Write, path::Path, sync::Arc};
 
-use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
+use super::{ClaudeEntry, read_daily_usage_file_with_diagnostics};
+use crate::dedupe::push_deduped_entry;
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
@@ -9,7 +10,7 @@ use ccusage_core::{
 use ccusage_test_support::{Environment, fs_fixture};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
+fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::load::DailySummaries {
     crate::load_daily_summaries_with_detection_progress(
         shared,
         None,
@@ -30,7 +31,7 @@ fn read_daily_usage_file(
         path,
         tz,
         pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
-        &Diagnostics::without_clock("claude"),
+        &Diagnostics::new("claude"),
     )
 }
 
@@ -64,7 +65,10 @@ fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
                 for end in 0..=bytes.len() {
                     let prefix = &bytes[..end];
                     assert_eq!(
-                        !matches!(super::admit(prefix), Err(super::Refusal::NotUsage)),
+                        !matches!(
+                            super::read::admit(prefix),
+                            Err(super::read::Refusal::NotUsage)
+                        ),
                         original.matches(prefix),
                         "prefilter decision for {:?}",
                         &line[..end],
@@ -125,10 +129,10 @@ fn usage_prefilter_preserves_typed_record_admission() {
     ];
     for (fields, expected) in cases {
         let line = format!("{{{fields}}}");
-        let actual = match super::admit(line.as_bytes()) {
+        let actual = match super::read::admit(line.as_bytes()) {
             Ok(admitted) => Accepted(admitted.record.message.usage.usage.input_tokens),
-            Err(super::Refusal::NotUsage) => NoMarker,
-            Err(super::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
+            Err(super::read::Refusal::NotUsage) => NoMarker,
+            Err(super::read::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
             Err(_) => panic!("unexpected refusal for {line}"),
         };
         assert_eq!(actual, expected, "{line}");
@@ -139,7 +143,7 @@ fn usage_prefilter_preserves_typed_record_admission() {
 fn usage_prefilter_reads_a_marker_across_the_buffer_boundary() {
     let prefix = r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"content":""#;
     let separator = r#"","#;
-    let padding_len = super::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
+    let padding_len = super::read::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
     let line = format!(
         "{prefix}{}{separator}{}",
         "x".repeat(padding_len),
@@ -161,7 +165,7 @@ fn detection_and_reports_keep_parent_usage_with_a_null_advisor() {
         "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":1,"output_tokens":2,"cache_read_input_tokens":null}]}}}"#,
     });
     let path = fixture.path("projects/project-a/session-a.jsonl");
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &path,
         &JiffTimeZone::UTC,
@@ -183,7 +187,7 @@ fn guards_only_the_advisor_iterations_it_reads() {
         ]
         .join("\n"),
     });
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &fixture.path("projects/project-a/session-a.jsonl"),
         &JiffTimeZone::UTC,
@@ -203,7 +207,7 @@ fn malformed_advisors_preserve_parent_and_valid_sibling_usage() {
     let fixture = fs_fixture!({
         "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"x"},{"type":"advisor_message","model":"good","input_tokens":3,"output_tokens":2}]}}}"#,
     });
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &fixture.path("projects/project-a/session-a.jsonl"),
         &JiffTimeZone::UTC,
@@ -230,7 +234,7 @@ fn irrelevant_outer_advisor_fields_do_not_reject_progress_usage() {
             "projects/project-a/session-a.jsonl": format!(r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":10,"output_tokens":1}}}}}}}}}}"#),
         });
         let path = fixture.path("projects/project-a/session-a.jsonl");
-        let diagnostics = Diagnostics::without_clock("claude");
+        let diagnostics = Diagnostics::new("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
             &JiffTimeZone::UTC,
@@ -250,7 +254,7 @@ fn records_a_malformed_advisor_iteration_as_invalid_data() {
         "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":"SECRET_CANARY","output_tokens":1}]}}}"#,
     });
     let path = fixture.path("projects/project-a/session-a.jsonl");
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &path,
         &JiffTimeZone::UTC,
@@ -285,7 +289,7 @@ fn null_contract_rejections_claude_code_writes_stay_quiet() {
             debug: true,
             ..SharedArgs::default()
         };
-        let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
+        let diagnostics = ccusage_core::Diagnostics::new("claude");
 
         let daily = load_daily(&shared, &diagnostics);
 
@@ -313,7 +317,7 @@ fn collects_sessions_of_counted_main_thread_usage_only() {
             ..SharedArgs::default()
         };
 
-        let daily = load_daily(&shared, &ccusage_core::Diagnostics::without_clock("claude"));
+        let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
         assert_eq!(
             daily.sessions.into_iter().collect::<Vec<_>>(),
@@ -350,7 +354,7 @@ fn detecting_usage_in_files_outside_the_window_records_no_skips() {
             single_thread: true,
             ..SharedArgs::default()
         };
-        let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
+        let diagnostics = ccusage_core::Diagnostics::new("claude");
 
         let daily = load_daily(&shared, &diagnostics);
 
@@ -401,7 +405,7 @@ fn keeps_parent_daily_usage_when_sidechain_replays_message_with_new_request_id()
 
     assert_eq!(deduped.len(), 2);
     assert_eq!(deduped[0].key.message_id.as_deref(), Some("msg-parent"));
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     assert_eq!(
         deduped[1].key.message_id.as_deref(),
@@ -447,7 +451,7 @@ fn dedupes_timestamp_different_daily_sidechain_replay_with_parent() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -491,7 +495,7 @@ fn refreshes_daily_dedupe_indexes_when_parent_replaces_sidechain_replay() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -563,7 +567,7 @@ fn keeps_timestamp_different_requestless_daily_entries_without_sidechain() {
         "session-a",
         TimestampMs::from_millis(1_774_000_000_000),
     );
-    first.key.request_id = None;
+    first.key.request = crate::dedupe::Request::Missing(None);
     push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
 
     let mut second = daily_loaded_entry_at(
@@ -577,7 +581,7 @@ fn keeps_timestamp_different_requestless_daily_entries_without_sidechain() {
         "session-a",
         TimestampMs::from_millis(1_774_000_001_000),
     );
-    second.key.request_id = None;
+    second.key.request = crate::dedupe::Request::Missing(None);
     push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
 
     assert_eq!(deduped.len(), 2);
@@ -617,7 +621,7 @@ fn keeps_the_cache_ttl_split_from_an_otherwise_equal_daily_duplicate() {
                 ..SharedArgs::default()
             };
 
-            let daily = load_daily(&shared, &ccusage_core::Diagnostics::without_clock("claude"));
+            let daily = load_daily(&shared, &ccusage_core::Diagnostics::new("claude"));
 
             let breakdown = &daily.summaries[0].model_breakdowns[0];
             assert_eq!(breakdown.cache_creation_tokens, 100);
@@ -627,77 +631,25 @@ fn keeps_the_cache_ttl_split_from_an_otherwise_equal_daily_duplicate() {
 }
 
 #[test]
-fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
+fn requestless_daily_content_blocks_collapse_only_along_their_transcript_chain() {
+    let mut failures = Vec::new();
+    for (case, lines, responses) in crate::tests::requestless_response_cases() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": lines.join("\n"),
+        });
+        let path = fixture.path("projects/project-a/session-a/chat.jsonl");
+        let loaded =
+            read_daily_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        let (deduped, _) = crate::dedupe::dedupe_files(vec![(path, loaded)]);
 
-    let mut first = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "msg_01AbC2DeF3",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_000),
-    );
-    first.key.request_id = None;
-    push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
-
-    let mut second = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "msg_01AbC2DeF3",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_500),
-    );
-    second.key.request_id = None;
-    push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
-
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
-}
-
-#[test]
-fn dedupes_response_message_id_from_same_session_at_distinct_timestamps() {
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
-
-    let mut first = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "resp_0123456789abcdef",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_000),
-    );
-    first.key.request_id = None;
-    push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
-
-    let mut second = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "resp_0123456789abcdef",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_500),
-    );
-    second.key.request_id = None;
-    push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
-
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
+        if deduped.len() != responses {
+            failures.push(format!(
+                "{case}: {} entries, expected {responses}",
+                deduped.len()
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]
@@ -827,20 +779,20 @@ fn daily_advisor_gate_preserves_the_previous_extraction() {
         ] {
             let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
             let reference = format!(r#"{{"message":{message}}}"#);
-            let previous = super::advisor_usages_from_line(reference.as_bytes()).unwrap();
+            let previous = crate::advisor::advisor_usages_from_line(reference.as_bytes()).unwrap();
             let actual = lookup.usages(line.as_bytes()).unwrap();
             match lookup {
-                super::AdvisorLookup::AskLine => {
+                crate::advisor::AdvisorLookup::AskLine => {
                     retained += 1;
                     assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
                     assert_eq!(actual.malformed, previous.malformed, "{line}");
                 }
-                super::AdvisorLookup::AskProgress => {
+                crate::advisor::AdvisorLookup::AskProgress => {
                     retained += 1;
                     assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
                     assert_eq!(actual.malformed, previous.malformed, "{line}");
                 }
-                super::AdvisorLookup::RuledOut => {
+                crate::advisor::AdvisorLookup::RuledOut => {
                     skipped += 1;
                     assert!(previous.usages.is_empty(), "{line}");
                     assert!(actual.usages.is_empty(), "{line}");
@@ -959,7 +911,7 @@ fn dedupes_daily_sidechain_replay_after_an_equal_copy_from_another_session() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
 }
 
@@ -1015,7 +967,7 @@ fn dedupes_daily_sidechain_replay_after_cross_session_survivor_replacement() {
     );
 
     assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].key.request_id.as_deref(), Some("req-parent"));
+    assert_eq!(deduped[0].key.request.id(), Some("req-parent"));
     assert_eq!(deduped[0].key.session_id.as_ref(), "session-a");
     assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
 }
@@ -1070,7 +1022,7 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
             timestamp: TimestampMs::from_millis(1_774_000_000_000),
             session_id: Arc::from("session-a"),
             message_id: Some(fixture.message_id.to_string()),
-            request_id: Some(fixture.request_id.to_string()),
+            request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
             is_sidechain: Some(fixture.is_sidechain),
         },
         date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),

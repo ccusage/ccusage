@@ -79,7 +79,7 @@ ccusage daily --last 1
 ccusage daily --last 7
 ```
 
-`--last` cannot be combined with `--since` or `--until`. See [Command-Line Options](/guide/cli-options#recent-periods) for how it behaves on the other reports.
+`--last` cannot be combined with `--since` or `--until` on the command line. A `since` or `until` set in a [configuration file](/guide/config-files) is not a conflict: `--last` replaces that window. See [Command-Line Options](/guide/cli-options#recent-periods) for how it behaves on the other reports.
 
 ### Sort Order
 

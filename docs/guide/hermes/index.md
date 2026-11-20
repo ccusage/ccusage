@@ -48,7 +48,7 @@ These views support `--json`, `--compact`, `--offline`, `--since`, `--until`, an
 ## What Gets Calculated
 
 - **Token usage** - Reads input, output, cache read, cache write, and reasoning token totals from Hermes session rows.
-- **Total tokens** - Includes reasoning tokens in the total token count.
+- **Reasoning tokens** - Hermes records reasoning as part of output tokens, so reasoning is neither added to the total token count nor billed again.
 - **Costs** - Selects recorded actual cost when present, otherwise estimated cost. Auto uses that value when positive and otherwise prices tokens. Calculate always prices tokens. Display uses only the selected recorded cost. See [Cost Modes](/guide/cost-modes).
 - **Message count** - Preserves Hermes `message_count` in JSON metadata.
 

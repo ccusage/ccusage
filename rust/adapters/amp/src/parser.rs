@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
@@ -378,6 +378,7 @@ fn amp_entry(
     let candidates = [(record.model.as_str(), MatchKind::Fuzzy)];
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage: TokenUsageRaw {
                 cache_creation: None,
                 ..record.usage
@@ -475,7 +476,7 @@ mod tests {
 
     #[test]
     fn returns_on_every_damaged_thread() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
         for fixture in [LEDGER_THREAD, MESSAGES_THREAD] {
             assert_eq!(parse(fixture.as_bytes(), &diagnostics).unwrap().len(), 2);
             assert_parser_survives_mutations(fixture.as_bytes(), |content| {
@@ -486,7 +487,7 @@ mod tests {
 
     #[test]
     fn records_usage_whose_timestamp_cannot_be_placed() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
         let ledger = LEDGER_THREAD.replace("23:30:00.000Z", "23:30:00.000000Z");
         let messages = MESSAGES_THREAD.replace("2026-02-01T23:59:59Z", "yesterday");
 
@@ -502,7 +503,7 @@ mod tests {
             LEDGER_THREAD.replace("\"timestamp\":\"2026-01-30T23:30:00.000Z\",", ""),
             MESSAGES_THREAD.replace("\"timestamp\":\"2026-01-31T11:42:10.652Z\",", ""),
         ] {
-            let diagnostics = Diagnostics::without_clock("amp");
+            let diagnostics = Diagnostics::new("amp");
             assert_eq!(parse(content.as_bytes(), &diagnostics).unwrap().len(), 1);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         }
@@ -510,7 +511,7 @@ mod tests {
 
     #[test]
     fn diagnoses_usage_without_an_identifier_or_model() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
         let no_id = MESSAGES_THREAD.replace("\"id\":\"T-messages\",", "");
         assert!(parse(no_id.as_bytes(), &diagnostics).is_err());
 
@@ -521,7 +522,7 @@ mod tests {
 
     #[test]
     fn reads_a_thread_without_id_whose_usage_is_not_an_object_as_empty() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
         let content =
             br#"{"messages":[{"role":"assistant","model":"gpt-5","usage":"SECRET_CANARY"}]}"#;
 
@@ -530,7 +531,7 @@ mod tests {
 
     #[test]
     fn reads_a_thread_without_id_whose_records_hold_no_counted_usage_as_empty() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
         for content in [
             r#"{"usageLedger":{"events":[{}]}}"#,
             r#"{"usageLedger":{"events":[{"tokens":"SECRET_CANARY"}]}}"#,
@@ -546,7 +547,7 @@ mod tests {
 
     #[test]
     fn uses_message_timestamp_when_usage_timestamp_is_invalid() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
         let content = br#"{"id":"thread","messages":[{"role":"assistant","model":"gpt-5","timestamp":"2026-01-31T11:42:10Z","usage":{"inputTokens":10,"timestamp":"SECRET_CANARY"}}]}"#;
 
         let entries = parse(content, &diagnostics).unwrap();
@@ -561,7 +562,7 @@ mod tests {
 
     #[test]
     fn fails_content_that_is_not_a_thread() {
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
 
         assert!(parse(&LEDGER_THREAD.as_bytes()[..80], &diagnostics).is_err());
         assert!(parse(b"7", &diagnostics).is_err());
@@ -575,7 +576,7 @@ mod tests {
     #[test]
     fn a_thread_file_not_written_yet_is_not_reported_as_skipped() {
         let fixture = fs_fixture!({"threads/T-new.json": ""});
-        let diagnostics = Diagnostics::without_clock("amp");
+        let diagnostics = Diagnostics::new("amp");
 
         let loaded = ccusage_adapter_common::read_units(
             &[fixture.path("threads/T-new.json")],
@@ -608,7 +609,7 @@ mod tests {
             &fixture.path("threads/thread.json"),
             &ccusage_core::resolve_tz(Some(&ccusage_core::cli::ReportTimezone::UTC)),
             ccusage_core::cost::PriceTable::Display,
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -640,7 +641,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -685,7 +686,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -732,7 +733,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -767,7 +768,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -797,7 +798,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -831,7 +832,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -866,7 +867,7 @@ mod tests {
                 ccusage_core::cli::CostMode::Auto,
                 &ccusage_core::PricingMap::default(),
             ),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
 
@@ -891,7 +892,7 @@ mod pricing_identity_tests {
             &fixture.path("thread.json"),
             &JiffTimeZone::UTC,
             ccusage_core::cost::PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("amp"),
+            &Diagnostics::new("amp"),
         )
         .unwrap();
         assert_eq!(rows[0].model.as_deref(), Some("gpt-5.2"));

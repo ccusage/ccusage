@@ -36,9 +36,9 @@ ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
 ccusage-environment = { path = "crates/ccusage-environment" }
 ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
-ccusage-report = { path = "crates/ccusage-report" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
 ccusage-test-support = { path = "crates/ccusage-test-support", features = ["test-environment"] }
+ccusage-zstd = { path = "crates/ccusage-zstd" }
 assert_fs = "1.1.4"
 compact_str = "0.10.0"
 insta = { version = "1.49.0", features = ["json"] }
@@ -49,6 +49,7 @@ jiff = { version = "0.2.46", default-features = false, features = [
 	"tzdb-bundle-platform",
 ] }
 memchr = "2.8.3"
+simdutf8 = "0.1.5"
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
@@ -73,6 +74,7 @@ ureq = { version = "3.5.2", default-features = false, features = [
 	"rustls-webpki-roots",
 ] }
 zstd = { version = "0.14.4", default-features = false }
+zstd-sys = { version = "2.1.3", default-features = false, features = ["experimental"] }
 
 [profile.release]
 codegen-units = 1
@@ -98,12 +100,15 @@ unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
 unfulfilled_lint_expectations = "deny"
 elided_lifetimes_in_paths = "deny"
 unreachable_pub = "deny"
 
 [workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 dbg_macro = "deny"

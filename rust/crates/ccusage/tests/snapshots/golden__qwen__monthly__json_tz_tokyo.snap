@@ -8,14 +8,14 @@ exit: 0
   "monthly": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 3200,
-      "inputTokens": 5133,
+      "cacheReadTokens": 2733,
+      "inputTokens": 2400,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
-          "cost": 0.011025,
-          "inputTokens": 5000,
+          "cost": 0.008595,
+          "inputTokens": 2300,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
         },
@@ -29,9 +29,9 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 11
@@ -44,27 +44,27 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 962,
-      "totalCost": 0.012075000000000002,
-      "totalTokens": 9545
+      "totalCost": 0.009645,
+      "totalTokens": 6345
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 102260,
-      "inputTokens": 302961,
+      "cacheReadTokens": 100760,
+      "inputTokens": 202201,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
-          "inputTokens": 300531,
+          "cost": 0.231316,
+          "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2160,
-          "cost": 0.011448,
-          "inputTokens": 1750,
+          "cacheReadTokens": 660,
+          "cost": 0.009018000000000002,
+          "inputTokens": 1090,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 370
         },
@@ -113,17 +113,17 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 3292,
-      "totalCost": 0.3330907,
-      "totalTokens": 408580
+      "totalCost": 0.24053569999999996,
+      "totalTokens": 306313
     }
   ],
   "totals": {
     "cacheCreationTokens": 0,
-    "cacheReadTokens": 105460,
-    "inputTokens": 308094,
+    "cacheReadTokens": 103493,
+    "inputTokens": 204601,
     "outputTokens": 4254,
-    "totalCost": 0.3451657,
-    "totalTokens": 418125,
+    "totalCost": 0.2501807,
+    "totalTokens": 312658,
     "unpricedModels": [
       "qwen-mystery-1",
       "unknown"

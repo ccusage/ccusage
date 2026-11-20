@@ -27,7 +27,7 @@ By default, ccusage reads session logs from:
 ~/.dsh/sessions/<project>/<session-id>/session.v<N>.jsonl
 ```
 
-Either file can also be zstd-compressed with a `.zstd` suffix. A compressed log that is still being written can end in an incomplete frame; ccusage reads the complete part and skips the rest. A log left that way for more than a minute, or one with a corrupt frame, is reported in a skipped-input warning, and its complete part still counts (see [Debug Options](/guide/cli-options#debug-options)).
+Either file can also be zstd-compressed with a `.zstd` suffix. A compressed log that is still being written can end in an incomplete frame; ccusage reads the complete part and skips the rest. A log that ends in an incomplete frame and does not change while ccusage reads it, or one with a corrupt frame, is reported in a skipped-input warning, and its complete part still counts (see [Debug Options](/guide/cli-options#debug-options)).
 
 DeepSeek Harness keeps older log generations next to the newest one after it migrates a session to a new format. ccusage reads only the newest generation in each session directory, so the same requests are not counted twice.
 
@@ -58,7 +58,7 @@ A forked session starts with a copy of its parent's log. ccusage counts only the
 
 DeepSeek Harness does not log usage for the requests that generate session titles, so those requests are not included.
 
-DeepSeek Harness does not record costs, so ccusage calculates them from token counts and known model pricing. `auto` and `calculate` produce the same result, and `display` shows `$0.00`. Requests through DeepSeek's own API-key and account providers use DeepSeek pricing; requests through other providers look up pricing for that provider's model first, then for the bare model ID. A model without known pricing remains visible with a missing-pricing warning.
+DeepSeek Harness does not record costs, so ccusage calculates them from token counts and known model pricing. `auto` and `calculate` produce the same result, and `display` shows `$0.00`. Requests through DeepSeek's own API-key and account providers use DeepSeek pricing, including DeepSeek's peak and off-peak rates. Requests that name another provider look up pricing for that provider's model first, then for the bare model ID, and keep that flat rate even when the bare DeepSeek model ID resolves to DeepSeek's own row. A model without known pricing remains visible with a missing-pricing warning.
 
 ## Environment Variables
 
