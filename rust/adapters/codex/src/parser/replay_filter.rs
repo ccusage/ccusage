@@ -164,3 +164,6 @@ fn longest_parent_suffix_prefix(parent: &[CodexRawUsage], child: &[CodexRawUsage
     }
     matched
 }
+
+#[cfg(test)]
+mod tests;
