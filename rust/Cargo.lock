@@ -162,7 +162,6 @@ dependencies = [
  "ccusage-adapter-zcode",
  "ccusage-cli",
  "ccusage-core",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "serde",
@@ -203,7 +202,6 @@ dependencies = [
  "ccusage-cli-parser",
  "ccusage-config",
  "ccusage-core",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "jiff",
@@ -516,9 +514,6 @@ dependencies = [
 [[package]]
 name = "ccusage-report"
 version = "0.0.0"
-dependencies = [
- "ccusage-core",
-]
 
 [[package]]
 name = "ccusage-terminal"
