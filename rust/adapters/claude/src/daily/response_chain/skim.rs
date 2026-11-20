@@ -1,4 +1,6 @@
-use memchr::memchr;
+use std::sync::LazyLock;
+
+use memchr::{memchr, memchr2, memchr2_iter, memmem::Finder, memrchr_iter};
 use smallvec::SmallVec;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -268,6 +270,145 @@ pub(super) fn skim<'a>(
         return None;
     }
     Some(skim)
+}
+
+#[derive(Default)]
+pub(super) struct BlockLinks<'a> {
+    pub(super) uuid: Option<&'a [u8]>,
+    pub(super) parent: Option<&'a [u8]>,
+    pub(super) tool_uses: SmallVec<[&'a [u8]; 2]>,
+}
+
+static TOOL_USE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type":"tool_use""#));
+const UUID_MEMBER: &[u8] = br#","uuid":""#;
+
+impl<'a> Cursor<'a> {
+    fn tool_uses(
+        &mut self,
+        usage_at: Option<usize>,
+        tool_uses: &mut SmallVec<[&'a [u8]; 2]>,
+    ) -> Option<()> {
+        self.eat(b'{')?;
+        loop {
+            if self.peek()? == b'}' {
+                return Some(());
+            }
+            let key = self.string()?;
+            if memchr(b'\\', key).is_some() {
+                return None;
+            }
+            self.eat(b':')?;
+            if key == b"content" {
+                if self.peek()? == b'[' {
+                    let end = usage_at
+                        .filter(|&end| end > self.at)
+                        .unwrap_or(self.line.len());
+                    self.content_tool_uses(end, tool_uses)?;
+                }
+                return Some(());
+            }
+            self.skip_value()?;
+            if self.peek()? == b',' {
+                self.at += 1;
+            }
+        }
+    }
+
+    // NOTE(2026-11-20, #2255): A JSON string cannot hold `"type":"tool_use"` unescaped, so once no such bytes remain before the message usage, which Claude Code writes after the content, the rest of the content holds no tool use block and is not read. A layout that puts usage first only hides tool uses, which keeps responses apart.
+    fn content_tool_uses(
+        &mut self,
+        end: usize,
+        tool_uses: &mut SmallVec<[&'a [u8]; 2]>,
+    ) -> Option<()> {
+        self.eat(b'[')?;
+        loop {
+            if TOOL_USE.find(self.line.get(self.at..end)?).is_none() {
+                return Some(());
+            }
+            match self.peek()? {
+                b']' => return Some(()),
+                b',' => self.at += 1,
+                _ => {}
+            }
+            if self.peek()? != b'{' {
+                self.skip_value()?;
+                continue;
+            }
+            let block = self.block()?;
+            if block.kind == Some(b"tool_use")
+                && let Some(id) = block.id
+            {
+                tool_uses.push(id);
+            }
+        }
+    }
+
+    fn ends_object(&mut self) -> Option<()> {
+        loop {
+            match self.peek()? {
+                b',' => {
+                    self.at += 1;
+                    self.string()?;
+                    self.eat(b':')?;
+                    self.skip_value()?;
+                }
+                b'}' => {
+                    self.at += 1;
+                    return (self.peek().is_none()).then_some(());
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
+// NOTE(2026-11-20, #2255): A `uuid` member nested in an object needs at least two closing brackets after it, and brackets inside strings only add to the count, so a candidate followed by no opening bracket and a single closer is a member of the line object. Any other tail is parsed member by member.
+fn top_level_uuid(line: &[u8]) -> Option<&[u8]> {
+    let at = memrchr_iter(b',', line).find(|&at| line[at..].starts_with(UUID_MEMBER))?;
+    let mut cursor = Cursor {
+        line,
+        at: at + UUID_MEMBER.len() - 1,
+    };
+    let uuid = cursor.link()??;
+    let rest = &line[cursor.at..];
+    let closes_only_the_line =
+        memchr2(b'{', b'[', rest).is_none() && memchr2_iter(b'}', b']', rest).nth(1).is_none();
+    if !closes_only_the_line {
+        cursor.ends_object()?;
+    }
+    Some(uuid)
+}
+
+pub(super) fn block_links(line: &[u8], usage_at: Option<usize>) -> Option<BlockLinks<'_>> {
+    let mut cursor = Cursor { line, at: 0 };
+    let mut links = BlockLinks::default();
+    let (mut seen_uuid, mut seen_parent) = (false, false);
+    cursor.object(|key, cursor| {
+        match key {
+            b"uuid" => {
+                links.uuid = cursor.link()?;
+                seen_uuid = true;
+            }
+            b"parentUuid" => {
+                links.parent = cursor.link()?;
+                seen_parent = true;
+            }
+            b"message" => {
+                cursor.tool_uses(usage_at, &mut links.tool_uses)?;
+                return Some(Step::Stop);
+            }
+            _ => return Some(Step::Skip),
+        }
+        Some(Step::Read)
+    })?;
+    if !seen_parent {
+        return None;
+    }
+    if !seen_uuid {
+        links.uuid = top_level_uuid(line);
+        links.uuid?;
+    }
+    Some(links)
 }
 
 #[cfg(test)]

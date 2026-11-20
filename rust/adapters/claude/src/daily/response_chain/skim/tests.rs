@@ -1,4 +1,4 @@
-use super::{Want, skim};
+use super::{Want, block_links, skim};
 
 #[test]
 fn reads_top_level_links_past_escaped_quotes_and_nested_values() {
@@ -60,4 +60,37 @@ fn reads_the_record_type_that_follows_the_message() {
     let parsed = skim(line, Want::Link, |_| true).unwrap();
 
     assert_eq!(parsed.kind, Some(&b"user"[..]));
+}
+
+#[test]
+fn reads_the_top_level_uuid_after_a_message_whose_tool_input_holds_one() {
+    let line = br#"{"parentUuid":"p","message":{"content":[{"type":"tool_use","id":"t","input":{"uuid":"nested"}}],"usage":{"input_tokens":1}},"type":"assistant","uuid":"u","timestamp":"x"}"#;
+
+    let links = block_links(line, None).unwrap();
+
+    assert_eq!(links.uuid, Some(&b"u"[..]));
+    assert_eq!(links.parent, Some(&b"p"[..]));
+}
+
+#[test]
+fn leaves_a_uuid_it_cannot_place_at_the_top_level_to_the_full_parse() {
+    let line = br#"{"parentUuid":"p","message":{"content":[]},"uuid":"u","toolUseResult":{"a":1,"uuid":"nested"}}"#;
+
+    assert!(block_links(line, None).is_none());
+}
+
+#[test]
+fn counts_only_tool_use_blocks_of_the_message_content() {
+    let line = br#"{"parentUuid":"p","uuid":"u","message":{"content":[{"type":"text","text":"say \"type\":\"tool_use\""},{"type":"tool_use","id":"own","input":{"type":"tool_use","id":"inner"}}]}}"#;
+
+    let links = block_links(line, None).unwrap();
+
+    assert_eq!(links.tool_uses.as_slice(), [&b"own"[..]]);
+}
+
+#[test]
+fn stops_reading_content_once_no_tool_use_remains() {
+    let line = br#"{"parentUuid":"p","uuid":"u","message":{"content":[{"type":"text","text":"a"},{"type":"text","text":"#;
+
+    assert!(block_links(line, None).unwrap().tool_uses.is_empty());
 }

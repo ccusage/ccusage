@@ -722,6 +722,19 @@ fn tool_result(tool_use_id: &str) -> String {
     format!(r#"[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]"#)
 }
 
+fn message_first(
+    uuid: &str,
+    parent: Option<&str>,
+    timestamp: &str,
+    input: &str,
+    trailing: &str,
+) -> String {
+    let parent = parent.map_or_else(|| "null".to_string(), |parent| format!(r#""{parent}""#));
+    format!(
+        r#"{{"parentUuid":{parent},"isSidechain":false,"message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","role":"assistant","content":[{{"type":"tool_use","id":"toolu_{uuid}","name":"Read","input":{input}}}],"usage":{{"input_tokens":100,"output_tokens":25,"cache_read_input_tokens":0}}}},"type":"assistant","uuid":"{uuid}","timestamp":"{timestamp}","sessionId":"session-a"{trailing}}}"#
+    )
+}
+
 fn with_tool_input(line: String, input: &str) -> String {
     line.replace(r#""input":{}"#, &format!(r#""input":{input}"#))
 }
@@ -825,6 +838,22 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
                     r#"{"path":"a","uuid":"x"}"#,
                 ),
                 chained_assistant("a2", Some("a1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, None),
+            ],
+            1,
+        ),
+        (
+            "message-first blocks whose tool input holds a uuid",
+            vec![
+                message_first("a1", None, FIRST_BLOCK, r#"{"uuid":"x"}"#, ""),
+                message_first("a2", Some("a1"), LATER_BLOCK, "{}", ""),
+            ],
+            1,
+        ),
+        (
+            "message-first blocks with a trailing object that holds a uuid",
+            vec![
+                message_first("a1", None, FIRST_BLOCK, "{}", r#","toolUseResult":{"a":1,"uuid":"x1"}"#),
+                message_first("a2", Some("a1"), LATER_BLOCK, "{}", r#","toolUseResult":{"a":1,"uuid":"x2"}"#),
             ],
             1,
         ),

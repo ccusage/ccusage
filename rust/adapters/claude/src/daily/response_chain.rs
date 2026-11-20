@@ -11,7 +11,7 @@ mod skim;
 
 use super::record::parse_links;
 
-use skim::{Skim, Want, skim};
+use skim::{Skim, Want, block_links, skim};
 
 enum Node {
     Link { parent: u64, owner: Option<u32> },
@@ -44,14 +44,6 @@ pub(super) fn key(value: &[u8]) -> u64 {
 }
 
 impl<'a> Skim<'a> {
-    fn tool_uses(&self) -> impl Iterator<Item = u64> + '_ {
-        self.blocks
-            .iter()
-            .flatten()
-            .filter(|block| block.kind == Some(b"tool_use"))
-            .filter_map(|block| block.id.map(key))
-    }
-
     fn tool_result_answers(&self) -> Option<SmallVec<[&'a [u8]; 2]>> {
         let blocks = self.blocks.as_ref().filter(|blocks| !blocks.is_empty())?;
         blocks
@@ -126,10 +118,11 @@ impl ResponseChains {
     pub(super) fn response_key(
         &mut self,
         line: &[u8],
+        usage_at: Option<usize>,
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
-        let skimmed = skim(line, Want::Block, |_| true);
+        let skimmed = block_links(line, usage_at);
         let links = skimmed
             .as_ref()
             .map(|skimmed| Links {
@@ -152,8 +145,8 @@ impl ResponseChains {
                 index
             }
         };
-        for tool_use in skimmed.iter().flat_map(Skim::tool_uses) {
-            self.tool_use_owners.insert(tool_use, index);
+        for tool_use in skimmed.iter().flat_map(|skimmed| &skimmed.tool_uses) {
+            self.tool_use_owners.insert(key(tool_use), index);
         }
         if let Some(uuid) = links.uuid {
             self.nodes.insert(uuid, Node::Block(index));
