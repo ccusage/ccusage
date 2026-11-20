@@ -34,7 +34,7 @@ const OPENAI_GPT_5_6: CacheDefaults = CacheDefaults {
 };
 
 // NOTE(2026-11-20): OpenAI reads cache at 0.05× on GPT-6.2 Astra, GPT-6.2 Sol, GPT-6.1 Sol and GPT-6.1 Terra at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
-const OPENAI_GPT_6_REDUCED_READ: CacheDefaults = CacheDefaults {
+pub(super) const OPENAI_GPT_6_REDUCED_READ: CacheDefaults = CacheDefaults {
     read_x: 0.05,
     ..OPENAI_GPT_5_6
 };

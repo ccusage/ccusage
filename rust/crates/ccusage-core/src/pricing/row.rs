@@ -138,28 +138,33 @@ pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static Ca
     };
     model
         .split('/')
-        .filter_map(|part| {
+        .flat_map(|part| {
             std::iter::once(part)
                 .chain(part.match_indices('.').map(|(index, _)| &part[index + 1..]))
-                .find_map(|suffix| {
-                    let suffix = normalized_pricing_key(suffix);
-                    let suffix = suffix.as_bytes();
-                    CACHE_DEFAULTS_BY_SEGMENT_PREFIX
-                        .iter()
-                        .find(|(prefix, _)| {
-                            suffix
-                                .get(..prefix.len())
-                                .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
-                        })
-                        .or_else(|| {
-                            CACHE_DEFAULTS_BY_SEGMENT
-                                .iter()
-                                .find(|(key, _)| suffix.eq_ignore_ascii_case(key.as_bytes()))
-                        })
-                        .map(|(_, defaults)| *defaults)
-                })
         })
-        .min_by(|left, right| left.write_x.total_cmp(&right.write_x))
+        .filter_map(|suffix| {
+            let suffix = normalized_pricing_key(suffix);
+            let suffix = suffix.as_bytes();
+            CACHE_DEFAULTS_BY_SEGMENT_PREFIX
+                .iter()
+                .find(|(prefix, _)| {
+                    suffix
+                        .get(..prefix.len())
+                        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
+                })
+                .or_else(|| {
+                    CACHE_DEFAULTS_BY_SEGMENT
+                        .iter()
+                        .find(|(key, _)| suffix.eq_ignore_ascii_case(key.as_bytes()))
+                })
+                .map(|(key, defaults)| (key.len(), *defaults))
+        })
+        .min_by(|(left_len, left), (right_len, right)| {
+            left.write_x
+                .total_cmp(&right.write_x)
+                .then_with(|| right_len.cmp(left_len))
+        })
+        .map(|(_, defaults)| defaults)
         .or_else(|| {
             CACHE_DEFAULTS_BY_PROVIDER
                 .iter()

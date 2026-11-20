@@ -206,7 +206,11 @@ fn cache_read_fallback_is_independent_of_cache_write_family() {
 #[test]
 fn model_vendor_precedence_is_independent_of_segment_order() {
     use super::super::{cache_defaults, data};
-    for model in ["claude-proxy/openai.gpt-5", "openai.gpt-5/claude-proxy"] {
+    for model in [
+        "claude-proxy/openai.gpt-5",
+        "openai.gpt-5/claude-proxy",
+        "claude-proxy.openai.gpt-5",
+    ] {
         assert_eq!(
             cache_defaults(model, Some("anthropic")),
             &data::WRITES_AT_INPUT_RATE
@@ -220,6 +224,16 @@ fn model_vendor_precedence_is_independent_of_segment_order() {
         cache_defaults("proxy/openai-claude-sonnet", None),
         &data::WRITES_SURCHARGED
     );
+    for model in [
+        "claude-proxy/openai.gpt-6.2-astra",
+        "openai.gpt-6.2-astra/claude-proxy",
+    ] {
+        assert_eq!(
+            cache_defaults(model, None),
+            &data::OPENAI_GPT_6_REDUCED_READ,
+            "{model}"
+        );
+    }
 }
 
 #[test]
