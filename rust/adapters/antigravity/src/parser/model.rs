@@ -159,7 +159,7 @@ pub(super) fn price_antigravity(
     } else {
         MatchKind::Fuzzy
     };
-    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it. The resolver cannot treat `-thinking` as price-neutral because catalogues list separate thinking models, so the base id only prices records whose full id no catalogue row names.
+    // NOTE(2026-11-20, #2236): The resolver treats `-thinking` as price-neutral only for the families in `FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS` (`ccusage-core`). A `gpt-…` or passed-through id keeps the suffix, so its base id needs a fallback. The stripped base is therefore tried only after every candidate that names the full id.
     let thinking_base = model
         .strip_suffix("-thinking")
         .into_iter()

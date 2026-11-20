@@ -1,11 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{
-    cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
-};
+use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
 use std::sync::Arc;
 
-use ccusage_adapter_common::{UnitError, units::read_json};
+use ccusage_adapter_common::{UnitError, billing::price_entry_for_provider, units::read_json};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
@@ -206,18 +203,16 @@ fn loaded_entry(
         .chain(provider_model.as_deref())
         .map(|name| (name, MatchKind::Fuzzy))
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage,
-            reasoning_tokens: 0,
-            residual_tokens: 0,
-            reported_model: Some(&model),
-            candidates: &candidates,
-            stored_cost: reported_cost,
-            timestamp: Some(timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        usage,
+        reasoning_tokens: 0,
+        residual_tokens: 0,
+        reported_model: Some(&model),
+        candidates: &candidates,
+        stored_cost: reported_cost,
+        timestamp: Some(timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, provider.as_deref(), pricing);
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
@@ -1023,6 +1018,43 @@ mod tests {
 #[cfg(test)]
 mod pricing_identity_tests {
     use super::*;
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, expected) in [(Some("openrouter"), 0.0015), (Some("deepseek"), 0.00088)] {
+            let entry = loaded_entry(
+                &SourceFile {
+                    path: std::path::PathBuf::from("fixture.json"),
+                    kind: SourceKind::Extension,
+                    session_id: "task-a".to_string(),
+                },
+                EntryInput {
+                    timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                    model: "deepseek-v4-flash".to_string(),
+                    provider: provider.map(str::to_string),
+                    usage: TokenUsageRaw {
+                        input_tokens: 1_000,
+                        output_tokens: 1_000,
+                        ..TokenUsageRaw::default()
+                    },
+                    reported_cost: None,
+                    request_id: None,
+                },
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+                &jiff::tz::TimeZone::UTC,
+            );
+
+            assert!(
+                (entry.cost - expected).abs() < 1e-12,
+                "{provider:?}: {}",
+                entry.cost
+            );
+            assert_eq!(entry.missing_pricing_model, None, "{provider:?}");
+        }
+    }
 
     #[test]
     fn adapter_pricing_identity() {

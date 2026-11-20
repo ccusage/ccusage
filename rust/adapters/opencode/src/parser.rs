@@ -9,14 +9,10 @@ use serde::{
 use std::fmt;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
-    cli::CostMode,
-    cost::{EntryPricing, price_entry},
-    date_at,
-    pricing::MatchKind,
-    stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, cost::EntryPricing,
+    date_at, pricing::MatchKind, stored_cost_for_mode,
 };
-use ccusage_adapter_common::{json::JsonText, jsonl};
+use ccusage_adapter_common::{billing::price_entry_for_provider, json::JsonText, jsonl};
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct OpenCodeMessage {
@@ -367,18 +363,16 @@ impl OpenCodeUsage {
             .iter()
             .map(|(name, kind)| (name.as_str(), *kind))
             .collect();
-        let priced = price_entry(
-            EntryPricing {
-                usage,
-                reasoning_tokens: 0,
-                residual_tokens: extra_total_tokens,
-                reported_model: Some(&model),
-                candidates: &candidates,
-                stored_cost: recorded_cost,
-                timestamp: pricing_timestamp,
-            },
-            pricing,
-        );
+        let entry_pricing = EntryPricing {
+            usage,
+            reasoning_tokens: 0,
+            residual_tokens: extra_total_tokens,
+            reported_model: Some(&model),
+            candidates: &candidates,
+            stored_cost: recorded_cost,
+            timestamp: pricing_timestamp,
+        };
+        let priced = price_entry_for_provider(entry_pricing, Some(provider.as_str()), pricing);
         let missing_pricing_model = priced.missing_pricing.then(|| model.clone());
         let stored_cost = stored_cost_for_mode(recorded_cost, mode);
         let loaded_session_id = self.session_id.unwrap_or_else(|| "unknown".to_string());

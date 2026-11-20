@@ -30,26 +30,16 @@ def --wrapped run-checked [label: string, command: string, ...args: string]: not
     }
 }
 
-def resolve-ref [ref: string]: nothing -> string {
-    [$"origin/($ref)" $ref]
-    | each {|candidate| ^git rev-parse --verify --quiet $"($candidate)^{commit}" | complete }
-    | where exit_code == 0
-    | match $in {
-        [$found, ..] => ($found.stdout | str trim)
-        _ => { error make {msg: $"Cannot resolve ref '($ref)'"} }
-    }
-}
-
 # Emit the build and profile matrices for the dispatch inputs.
 def "main plan" [--refs: string = 'main', --commands: string = '']: nothing -> nothing {
     let plan = core plan $refs $commands
     github-output {refs: $plan.refs, runs: $plan.runs}
-    $plan.runs | select id fixture command | table --expand | print --stderr
+    $plan.runs | select id label fixture | table --expand | print --stderr
 }
 
 # Build one ref as the shipped release binary plus line tables and symbols, runnable on the host.
 def "main build" [ref: string, --out: path]: nothing -> nothing {
-    let sha = resolve-ref $ref
+    let sha = core resolve-ref $ref --fetch
     let repo = $env.PWD
     let source = mktemp -d | path join src
     run-checked 'worktree' git worktree add --detach $source $sha
@@ -183,7 +173,8 @@ def "main run" [
         'many-files' | 'proxy' => (claude-env $fixture_dir $home)
         _ => { error make {msg: $"Unknown fixture '($fixture)'"} }
     }
-    let report_args = core resolve-args (core parse-command $command).args ($fixture_dir | path join claude)
+    let entry = core labeled-entry $command $fixture
+    let report_args = core resolve-args $entry.args ($fixture_dir | path join claude)
     let vars = $context.vars | merge $report_vars | merge {PATH: ($env.PATH | str join (char esep))}
     let profile = $out | path join callgrind.out
     let argv = [
@@ -209,7 +200,7 @@ def "main run" [
         let log = $out | path join valgrind.log
         if ($log | path exists) { print --stderr (open --raw $log) }
         error make {
-            msg: $"ccusage ($command) exited with ($result.exit_code): ($result.stderr)"
+            msg: $"ccusage ($entry.label) exited with ($result.exit_code): ($result.stderr)"
         }
     }
     $result.stdout | save --force ($out | path join report.json)
@@ -221,8 +212,9 @@ def "main run" [
     let summary = {
         ref: $build.ref
         sha: $build.sha
-        command: $command
-        fixture: $fixture
+        args: $entry.args
+        label: $entry.label
+        fixture: $entry.fixture
         report_bytes: ($result.stdout | str length --utf-8-bytes)
         total: $self_rows.total
         self: $self_rows.functions
@@ -238,7 +230,7 @@ def "main merge" [--dir: path, --refs: string, --out: path]: nothing -> nothing 
     let refs = $refs | from json
     let summaries = glob ($dir | path join '**/summary.json') | each { open }
     let sections = $refs | each {|ref|
-        let runs = $summaries | where ref == $ref.ref | sort-by command
+        let runs = $summaries | where ref == $ref.ref | sort-by label
         let ranked = core rank $runs
         {
             ref: $ref.ref
@@ -267,7 +259,11 @@ def "main merge" [--dir: path, --refs: string, --out: path]: nothing -> nothing 
     {
         refs: (
             $sections
-            | each {|section| $section | reject markdown runs | insert commands ($section.runs | select command fixture total) }
+            | each {|section|
+                $section
+                | reject markdown runs
+                | insert commands ($section.runs | select label args fixture total)
+            }
         )
         comparison: $comparison
     } | to json | save --force ($out | path join ranking.json)

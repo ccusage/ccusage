@@ -450,6 +450,32 @@ fn provider_specific_variant_pricing_precedes_base_fallback() {
 }
 
 #[test]
+fn a_gpt_thinking_id_prices_at_the_stripped_base_rate() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gpt-oss-120b": {"input_cost_per_token": 1, "output_cost_per_token": 1}
+        }"#,
+    );
+
+    let (cost, missing) = price_antigravity(
+        "gpt-oss-120b-thinking",
+        None,
+        None,
+        TokenUsageRaw {
+            input_tokens: 1,
+            ..TokenUsageRaw::default()
+        },
+        TimestampMs::UNIX_EPOCH,
+        ccusage_core::cost::PriceTable::Calculate(&pricing),
+    );
+
+    assert_eq!(cost, 1.0);
+    assert!(missing.is_none());
+}
+
+#[test]
 fn a_row_for_the_thinking_id_precedes_the_stripped_fallback() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = ccusage_core::PricingMap::default();
