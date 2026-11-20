@@ -420,7 +420,35 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
             );
         }
     }
-    t.lines
+    interrupt_writes(rng, t.lines)
+}
+
+fn cut(rng: &mut Rng, line: &str) -> String {
+    let mut at = 1 + rng.below(line.len() as u64 - 1) as usize;
+    while !line.is_char_boundary(at) {
+        at -= 1;
+    }
+    line[..at].to_string()
+}
+
+fn interrupt_writes(rng: &mut Rng, lines: Vec<String>) -> Vec<String> {
+    let mut written = Vec::with_capacity(lines.len());
+    for (index, line) in lines.into_iter().enumerate() {
+        if rng.chance(4) {
+            written.push(
+                cut(rng, &line)
+                    + &format!(
+                        r#"{{"parentUuid":null,"isSidechain":false,"sessionId":"session-a","type":"system","uuid":"z{index}","timestamp":"2026-05-22T02:00:00.000Z"}}"#
+                    ),
+            );
+        } else {
+            written.push(line);
+        }
+    }
+    if let Some(last) = written.last_mut().filter(|_| rng.chance(10)) {
+        *last = cut(rng, last);
+    }
+    written
 }
 
 enum Node {
