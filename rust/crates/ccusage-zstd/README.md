@@ -28,7 +28,7 @@ runtime does not provide it.
 ```sh
 direnv exec . sh -c 'RUSTC_BOOTSTRAP=1 RUSTFLAGS="$RUSTFLAGS -Zsanitizer=address" \
   CFLAGS="-fsanitize=address -fsanitize-address-use-after-return=never -fno-omit-frame-pointer" \
-  CARGO_TARGET_DIR=target-asan cargo test --manifest-path rust/Cargo.toml \
+  CARGO_TARGET_DIR=rust/target/asan cargo test --manifest-path rust/Cargo.toml \
   -p ccusage-zstd --target "$(rustc -vV | sed -n "s/^host: //p")"'
 ```
 
