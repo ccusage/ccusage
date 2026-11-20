@@ -631,77 +631,26 @@ fn keeps_the_cache_ttl_split_from_an_otherwise_equal_daily_duplicate() {
 }
 
 #[test]
-fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
+fn requestless_daily_content_blocks_collapse_only_along_their_transcript_chain() {
+    for (case, lines, responses) in crate::tests::requestless_response_cases() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": lines.join("\n"),
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
 
-    let mut first = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "msg_01AbC2DeF3",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_000),
-    );
-    first.key.request_id = None;
-    push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
+        let loaded = read_daily_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            None,
+        );
+        for entry in loaded {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
 
-    let mut second = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "msg_01AbC2DeF3",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_500),
-    );
-    second.key.request_id = None;
-    push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
-
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
-}
-
-#[test]
-fn dedupes_response_message_id_from_same_session_at_distinct_timestamps() {
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
-
-    let mut first = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "resp_0123456789abcdef",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_000),
-    );
-    first.key.request_id = None;
-    push_deduped_entry(first, &mut deduped_indexes, &mut deduped);
-
-    let mut second = daily_loaded_entry_at(
-        DailyEntryFixture {
-            message_id: "resp_0123456789abcdef",
-            request_id: "unused",
-            is_sidechain: false,
-            cache_read_tokens: 0,
-            output_tokens: 25,
-        },
-        "session-a",
-        TimestampMs::from_millis(1_774_000_000_500),
-    );
-    second.key.request_id = None;
-    push_deduped_entry(second, &mut deduped_indexes, &mut deduped);
-
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
+        assert_eq!(deduped.len(), responses, "{case}");
+    }
 }
 
 #[test]
@@ -1076,6 +1025,7 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
             message_id: Some(fixture.message_id.to_string()),
             request_id: Some(fixture.request_id.to_string()),
             is_sidechain: Some(fixture.is_sidechain),
+            response: None,
         },
         date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
         project: Arc::from("project-a"),

@@ -67,6 +67,10 @@ impl DedupEntry for ClaudeEntry {
         self.key.request_id.as_deref()
     }
 
+    fn response(&self) -> Option<u64> {
+        self.key.response
+    }
+
     fn is_sidechain(&self) -> bool {
         self.key.is_sidechain == Some(true)
     }

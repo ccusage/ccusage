@@ -694,56 +694,138 @@ fn keeps_the_fast_tier_from_an_otherwise_equal_duplicate() {
     }
 }
 
-#[test]
-fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
-    let fixture = fs_fixture!({
-        "projects/project-a/session-a/chat.jsonl": [
-            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-            r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-        ]
-        .join("\n"),
-    });
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
-
-    let loaded = read_usage_file(
-        &fixture.path("projects/project-a/session-a/chat.jsonl"),
-        &jiff::tz::TimeZone::UTC,
-        CostMode::Display,
-        None,
+fn chained_assistant(
+    uuid: &str,
+    parent: Option<&str>,
+    timestamp: &str,
+    message_id: &str,
+    input_tokens: u64,
+    tool_use: Option<&str>,
+) -> String {
+    let parent = parent.map_or_else(|| "null".to_string(), |parent| format!(r#""{parent}""#));
+    let content = tool_use.map_or_else(
+        || r#"[{"type":"text","text":"ok"}]"#.to_string(),
+        |id| format!(r#"[{{"type":"tool_use","id":"{id}","name":"Read","input":{{}}}}]"#),
     );
-    for entry in loaded.entries {
-        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
-    }
+    format!(
+        r#"{{"type":"assistant","uuid":"{uuid}","parentUuid":{parent},"timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message_id}","model":"claude-sonnet-4-20250514","role":"assistant","content":{content},"usage":{{"input_tokens":{input_tokens},"output_tokens":25,"cache_read_input_tokens":0}}}}}}"#
+    )
+}
 
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
+fn chained_user(uuid: &str, parent: &str, content: &str) -> String {
+    format!(
+        r#"{{"type":"user","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{{"role":"user","content":{content}}}}}"#
+    )
+}
+
+fn tool_result(tool_use_id: &str) -> String {
+    format!(r#"[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]"#)
+}
+
+const FIRST_BLOCK: &str = "2026-05-22T02:34:40.000Z";
+const LATER_BLOCK: &str = "2026-05-22T02:34:40.500Z";
+
+pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, usize)> {
+    let two_blocks = |message_id: &str| {
+        vec![
+            chained_assistant("a1", None, FIRST_BLOCK, message_id, 100, None),
+            chained_assistant("a2", Some("a1"), LATER_BLOCK, message_id, 100, None),
+        ]
+    };
+    vec![
+        ("chained anthropic message id", two_blocks("msg_01AbC2DeF3"), 1),
+        ("chained response message id", two_blocks("resp_0123456789abcdef"), 1),
+        ("chained proxy message id", two_blocks("gateway-7f3a"), 1),
+        (
+            "blocks around their own tool result",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks around their own agent tool result",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                r#"{"type":"user","uuid":"u1","parentUuid":"a1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done"}]},"toolUseResult":{"usage":{"input_tokens":7777,"output_tokens":7777}}}"#.to_string(),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "blocks through a non-usage line",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                r#"{"type":"system","uuid":"s1","parentUuid":"a1","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a"}"#.to_string(),
+                chained_assistant("a2", Some("s1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "reused id after a tool result with new input",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_1")),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "msg_01AbC2DeF3", 150, None),
+            ],
+            2,
+        ),
+        (
+            "reused id after a user prompt",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, None),
+                chained_user("u1", "a1", r#""next question""#),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, None),
+            ],
+            2,
+        ),
+        (
+            "reused id after a tool result for another response",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                chained_user("u1", "a1", &tool_result("toolu_9")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "blocks without transcript links",
+            vec![
+                format!(
+                    r#"{{"timestamp":"{FIRST_BLOCK}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":25}}}}}}"#
+                ),
+                format!(
+                    r#"{{"timestamp":"{LATER_BLOCK}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":25}}}}}}"#
+                ),
+            ],
+            2,
+        ),
+    ]
 }
 
 #[test]
-fn dedupes_response_message_id_from_same_session_at_distinct_timestamps() {
-    let fixture = fs_fixture!({
-        "projects/project-a/session-a/chat.jsonl": [
-            r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"resp_0123456789abcdef","model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-            r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"resp_0123456789abcdef","model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":25}}}"#,
-        ]
-        .join("\n"),
-    });
-    let mut deduped_indexes = Default::default();
-    let mut deduped = Vec::new();
+fn requestless_content_blocks_collapse_only_along_their_transcript_chain() {
+    for (case, lines, responses) in requestless_response_cases() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": lines.join("\n"),
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
 
-    let loaded = read_usage_file(
-        &fixture.path("projects/project-a/session-a/chat.jsonl"),
-        &jiff::tz::TimeZone::UTC,
-        CostMode::Display,
-        None,
-    );
-    for entry in loaded.entries {
-        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            None,
+        );
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+
+        assert_eq!(deduped.len(), responses, "{case}");
     }
-
-    assert_eq!(deduped.len(), 1);
-    assert_eq!(deduped[0].usage.output_tokens, 25);
 }
 
 #[test]
@@ -1095,6 +1177,7 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
         original_model: Some("claude-sonnet-4-20250514".to_string()),
         request_id: Some(fixture.request_id.to_string()),
         is_sidechain: Some(fixture.is_sidechain),
+        response: None,
         entry: LoadedEntry {
             usage: TokenUsageRaw {
                 input_tokens: 0,

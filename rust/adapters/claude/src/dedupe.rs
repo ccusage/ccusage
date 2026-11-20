@@ -48,16 +48,32 @@ fn usage_dedupe_hash(
     if request_id.is_none() {
         session_id.hash(&mut hasher);
         // NOTE(2026-09-25, #1799): Some gateways reuse a message ID for independent responses without request IDs. Keep their distinct timestamps separate.
-        if !is_per_response_message_id(message_id) {
-            timestamp.hash(&mut hasher);
-        }
+        timestamp.hash(&mut hasher);
     }
     hasher.finish()
 }
 
-// NOTE(2026-10-10, #1838): Claude Code writes content blocks of one response on separate lines with the same response ID and different timestamps. Match those IDs across timestamps, including OpenAI Responses IDs (#1935).
-fn is_per_response_message_id(message_id: &str) -> bool {
-    message_id.starts_with("msg_") || message_id.starts_with("resp_")
+// NOTE(2026-11-20, #2255): Claude Code writes each content block of a response on its own line with its own timestamp. Without a request ID, match blocks across timestamps only when the transcript chain places them in one response (#1838, #1935).
+fn response_dedupe_hash(message_id: &str, session_id: &str, response: u64) -> u64 {
+    let mut hasher = FxHasher::default();
+    "response".hash(&mut hasher);
+    message_id.hash(&mut hasher);
+    session_id.hash(&mut hasher);
+    response.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn requestless_response_hash(entry: &impl DedupEntry) -> Option<u64> {
+    if entry.request_id().is_some() {
+        return None;
+    }
+    let message_id = entry.message_id()?;
+    let response = entry.response()?;
+    Some(response_dedupe_hash(
+        message_id,
+        entry.session_id(),
+        response,
+    ))
 }
 
 fn sidechain_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
@@ -151,6 +167,7 @@ pub(super) struct DedupKey {
     pub(super) message_id: Option<String>,
     pub(super) request_id: Option<String>,
     pub(super) is_sidechain: Option<bool>,
+    pub(super) response: Option<u64>,
 }
 
 pub(super) trait DedupEntry {
@@ -159,6 +176,7 @@ pub(super) trait DedupEntry {
     fn owned_session_id(&self) -> Arc<str>;
     fn message_id(&self) -> Option<&str>;
     fn request_id(&self) -> Option<&str>;
+    fn response(&self) -> Option<u64>;
     fn is_sidechain(&self) -> bool;
     fn usage(&self) -> &TokenUsageRaw;
     fn records_cost(&self) -> bool;
@@ -194,10 +212,23 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                         && existing.request_id() == request_id
                         && (request_id.is_some()
                             || (existing.session_id() == entry.session_id()
-                                && (is_per_response_message_id(message_id)
-                                    || existing.timestamp() == entry.timestamp()))))
+                                && existing.timestamp() == entry.timestamp())))
                     .then_some(dedupe_index.index)
                 })
+            })
+            .or_else(|| {
+                let response = entry.response()?;
+                deduped_indexes
+                    .get(&requestless_response_hash(&entry)?)?
+                    .iter()
+                    .find_map(|dedupe_index| {
+                        let existing = &deduped[dedupe_index.index];
+                        (existing.message_id() == Some(message_id)
+                            && existing.request_id().is_none()
+                            && existing.session_id() == entry.session_id()
+                            && existing.response() == Some(response))
+                        .then_some(dedupe_index.index)
+                    })
             })
             .or_else(|| {
                 // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
@@ -243,6 +274,11 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
             if entry_exact_hash(&previous) != Some(hash) {
                 push_deduped_index(deduped_indexes, hash, index);
             }
+            if let Some(response_hash) = requestless_response_hash(&deduped[index])
+                && requestless_response_hash(&previous) != Some(response_hash)
+            {
+                push_deduped_index(deduped_indexes, response_hash, index);
+            }
             let survivor = &deduped[index];
             let replay_route_changed = previous.session_id() != survivor.session_id()
                 || previous.is_sidechain() != survivor.is_sidechain()
@@ -273,6 +309,9 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
     deduped.push(entry);
     if let Some((hash, None)) = dedupe_lookup {
         push_new_deduped_index(deduped_indexes, hash, index);
+        if let Some(response_hash) = requestless_response_hash(&deduped[index]) {
+            push_new_deduped_index(deduped_indexes, response_hash, index);
+        }
         let survivor = &deduped[index];
         if let Some(message_id) = survivor.message_id() {
             let session_id = survivor.session_id();

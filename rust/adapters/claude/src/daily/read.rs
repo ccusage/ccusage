@@ -23,6 +23,7 @@ use crate::{
 use super::{
     ClaudeEntry, ParsedUsage, parse_usage_line,
     record::{ClaudeUsageRecord, is_valid_usage_record},
+    response_chain::ResponseChains,
 };
 
 pub(super) const READ_POLICY: ReadPolicy = ReadPolicy {
@@ -152,6 +153,7 @@ pub(crate) fn read_usage_file<E>(
         table: pricing,
         models: smallvec::SmallVec::new(),
     };
+    let mut response_chains = ResponseChains::default();
     let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |current, _, _| {
         let line = current.bytes();
         let Admitted {
@@ -160,10 +162,19 @@ pub(crate) fn read_usage_file<E>(
             advisors,
         } = match admit(line) {
             Ok(admitted) => admitted,
-            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::NullContract)) => {
+            Err(Refusal::NotUsage) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line);
+                }
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::Rejected(Rejection::NullContract)) => {
                 return ControlFlow::Continue(());
             }
             Err(Refusal::Rejected(Rejection::Malformed)) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line);
+                }
                 crate::diagnostics::rejected(path, current, diagnostics);
                 return ControlFlow::Continue(());
             }
@@ -181,6 +192,10 @@ pub(crate) fn read_usage_file<E>(
             ));
         }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
+        let response = match (&data.request_id, &data.message.id) {
+            (None, Some(message_id)) => response_chains.response_key(line, message_id, &usage),
+            _ => None,
+        };
         let raw_model = data.message.model;
         let (cost, missing_pricing_model) =
             file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
@@ -199,6 +214,7 @@ pub(crate) fn read_usage_file<E>(
                 message_id: data.message.id,
                 request_id: data.request_id,
                 is_sidechain: data.is_sidechain,
+                response,
             },
             date: date_at(timestamp, tz),
             project: Arc::clone(&project),
@@ -233,6 +249,7 @@ pub(crate) fn read_usage_file<E>(
                             .map(|id| format!("{id}:advisor:{index}")),
                         request_id: parent.key.request_id.clone(),
                         is_sidechain: parent.key.is_sidechain,
+                        response: parent.key.response,
                     },
                     date: parent.date,
                     project: Arc::clone(&project),

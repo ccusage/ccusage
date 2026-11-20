@@ -1165,6 +1165,18 @@ fn chained_requestless_line(line: ChainedLine<'_>) -> String {
     )
 }
 
+fn tool_result_line(uuid: &str, parent: &str, tool_use_id: &str) -> String {
+    format!(
+        r#"{{"type":"user","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-09-11T12:00:00.250Z","sessionId":"session-a","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]}}}}"#
+    )
+}
+
+fn prompt_line(uuid: &str, parent: &str) -> String {
+    format!(
+        r#"{{"type":"user","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-09-11T12:00:00.250Z","sessionId":"session-a","message":{{"role":"user","content":"next question"}}}}"#
+    )
+}
+
 fn two_block_response(message: &str) -> [String; 2] {
     [
         chained_requestless_line(ChainedLine {
@@ -1260,6 +1272,107 @@ fn requestless_response_message_id_content_blocks_are_counted_once_in_every_repo
 
     for (command, total) in claude_report_totals(&fixture) {
         assert_eq!(total, 102, "claude {command}");
+    }
+}
+
+#[test]
+fn requestless_proxy_message_id_content_blocks_are_counted_once_in_every_report() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        two_block_response("gateway-7f3a").join("\n"),
+    );
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 102, "claude {command}");
+    }
+}
+
+#[test]
+fn requestless_content_blocks_around_their_own_tool_results_are_counted_once_in_every_report() {
+    let fixture = Fixture::new();
+    let lines = [
+        chained_requestless_line(ChainedLine {
+            uuid: "a1",
+            parent: None,
+            timestamp: "2026-09-11T12:00:00.000Z",
+            message: "gateway-7f3a",
+            input_tokens: 100,
+            tool_use: Some("toolu_1"),
+        }),
+        tool_result_line("u1", "a1", "toolu_1"),
+        chained_requestless_line(ChainedLine {
+            uuid: "a2",
+            parent: Some("u1"),
+            timestamp: "2026-09-11T12:00:00.500Z",
+            message: "gateway-7f3a",
+            input_tokens: 100,
+            tool_use: Some("toolu_2"),
+        }),
+    ];
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 102, "claude {command}");
+    }
+}
+
+#[test]
+fn requestless_message_id_reused_after_a_tool_result_with_new_input_is_counted_twice_in_every_report()
+ {
+    let fixture = Fixture::new();
+    let lines = [
+        chained_requestless_line(ChainedLine {
+            uuid: "a1",
+            parent: None,
+            timestamp: "2026-09-11T12:00:00.000Z",
+            message: "msg_01AbC2DeF3",
+            input_tokens: 100,
+            tool_use: Some("toolu_1"),
+        }),
+        tool_result_line("u1", "a1", "toolu_1"),
+        chained_requestless_line(ChainedLine {
+            uuid: "a2",
+            parent: Some("u1"),
+            timestamp: "2026-09-11T12:00:01.000Z",
+            message: "msg_01AbC2DeF3",
+            input_tokens: 150,
+            tool_use: None,
+        }),
+    ];
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 254, "claude {command}");
+    }
+}
+
+#[test]
+fn requestless_message_id_reused_after_a_user_prompt_is_counted_twice_in_every_report() {
+    let fixture = Fixture::new();
+    let lines = [
+        chained_requestless_line(ChainedLine {
+            uuid: "a1",
+            parent: None,
+            timestamp: "2026-09-11T12:00:00.000Z",
+            message: "msg_01AbC2DeF3",
+            input_tokens: 100,
+            tool_use: None,
+        }),
+        prompt_line("u1", "a1"),
+        chained_requestless_line(ChainedLine {
+            uuid: "a2",
+            parent: Some("u1"),
+            timestamp: "2026-09-11T12:00:01.000Z",
+            message: "msg_01AbC2DeF3",
+            input_tokens: 100,
+            tool_use: None,
+        }),
+    ];
+    fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 204, "claude {command}");
     }
 }
 

@@ -18,6 +18,7 @@ use super::{
 mod accumulate;
 mod read;
 mod record;
+mod response_chain;
 
 use accumulate::summarize_daily_entries;
 use read::read_daily_usage_file_with_diagnostics;

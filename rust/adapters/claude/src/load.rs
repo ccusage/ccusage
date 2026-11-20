@@ -74,6 +74,7 @@ pub(super) struct ClaudeEntry {
     pub(super) original_model: Option<String>,
     pub(super) request_id: Option<String>,
     pub(super) is_sidechain: Option<bool>,
+    pub(super) response: Option<u64>,
     pub(super) entry: LoadedEntry,
 }
 
@@ -367,6 +368,10 @@ impl dedupe::DedupEntry for ClaudeEntry {
         self.request_id.as_deref()
     }
 
+    fn response(&self) -> Option<u64> {
+        self.response
+    }
+
     fn is_sidechain(&self) -> bool {
         self.is_sidechain == Some(true)
     }
@@ -397,6 +402,7 @@ pub(super) fn read_usage_file_with_diagnostics(
             original_model: parsed.raw_model,
             request_id: parsed.key.request_id,
             is_sidechain: parsed.key.is_sidechain,
+            response: parsed.key.response,
             entry: LoadedEntry {
                 model,
                 usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
