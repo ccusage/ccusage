@@ -372,7 +372,12 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
 }
 
 #[test]
-fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
+fn finds_the_fork_boundary_in_a_compressed_child_without_its_parent() {
+    let settings = |thread_id: &str| {
+        json!({"timestamp": "2026-10-14T00:00:10.020Z", "type": "event_msg",
+            "payload": {"type": "thread_settings_applied", "thread_id": thread_id, "thread_settings": {}}})
+        .to_string()
+    };
     let fixture = Fixture::new();
     write_compressed(
         &fixture,
@@ -381,8 +386,10 @@ fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
             json!({"timestamp": "2026-10-14T00:00:10Z", "type": "session_meta",
                 "payload": {"id": "child", "forked_from_id": "missing-parent"}})
             .to_string(),
+            settings("missing-parent"),
             usage_log("2026-10-14T00:00:10.000Z", 100),
             usage_log("2026-10-14T00:00:10.010Z", 200),
+            settings("child"),
             usage_log("2026-10-14T00:00:12Z", 50),
         ]
         .join("\n"),

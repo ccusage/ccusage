@@ -8965,26 +8965,6 @@
 			"context": 128000
 		}
 	},
-	"cloudflare/@cf/deepseek-ai/deepseek-v4-flash-0731": {
-		"cost": {
-			"cache_read": 0.014,
-			"input": 0.44,
-			"output": 1.32
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"cloudflare/@cf/deepseek-ai/deepseek-v4-pro-0813": {
-		"cost": {
-			"cache_read": 0.044,
-			"input": 1.32,
-			"output": 3.96
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
 	"cloudflare/@cf/deepseek-ai/deepseek-v4.1-flash-1017": {
 		"cost": {
 			"cache_read": 0.006,
@@ -8993,15 +8973,6 @@
 		},
 		"limit": {
 			"context": 1048576
-		}
-	},
-	"cloudflare/@cf/meta/llama-3.2-1b-instruct": {
-		"cost": {
-			"input": 0.027,
-			"output": 0.201
-		},
-		"limit": {
-			"context": 60000
 		}
 	},
 	"cloudflare/@cf/meta/llama-3.2-3b-instruct": {
@@ -36039,105 +36010,6 @@
 			"cache_write": 0.4125,
 			"input": 4.4,
 			"output": 22
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-carbon": {
-		"cost": {
-			"cache_read": 0.2,
-			"cache_write": 0.375,
-			"input": 4,
-			"output": 20
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-carbon@eu": {
-		"cost": {
-			"cache_read": 0.22,
-			"cache_write": 0.4125,
-			"input": 4.4,
-			"output": 22
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-carbon@us": {
-		"cost": {
-			"cache_read": 0.22,
-			"cache_write": 0.4125,
-			"input": 4.4,
-			"output": 22
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-hydrogen": {
-		"cost": {
-			"cache_read": 0.075,
-			"cache_write": 0.083333,
-			"input": 1.5,
-			"output": 7.5
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-hydrogen@eu": {
-		"cost": {
-			"cache_read": 0.0825,
-			"cache_write": 0.091667,
-			"input": 1.65,
-			"output": 8.25
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-hydrogen@us": {
-		"cost": {
-			"cache_read": 0.0825,
-			"cache_write": 0.091667,
-			"input": 1.65,
-			"output": 8.25
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-neon": {
-		"cost": {
-			"cache_read": 0.15,
-			"cache_write": 0.083333,
-			"input": 3,
-			"output": 15
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-neon@eu": {
-		"cost": {
-			"cache_read": 0.165,
-			"cache_write": 0.091667,
-			"input": 3.3,
-			"output": 16.5
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"vertex/gemini-4-neon@us": {
-		"cost": {
-			"cache_read": 0.165,
-			"cache_write": 0.091667,
-			"input": 3.3,
-			"output": 16.5
 		},
 		"limit": {
 			"context": 1048576

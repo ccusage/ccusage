@@ -4,11 +4,9 @@ use serde_json::Value;
 use crate::fast::FxHashMap;
 
 use super::{
-    LongContextRates, Pricing, PricingMap, Row, Scope, Source, cache_defaults,
-    embedded::litellm_sources,
-    row_scope, schedule_for,
-    speed::{PublishedSpeed, SpeedMultipliers},
-    vendor_start,
+    LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope, Source,
+    embedded::litellm_sources, provider_cache_defaults, row_scope, schedule_for,
+    speed::PublishedSpeed, vendor_start,
 };
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +40,6 @@ impl PricingMap {
         let Ok(raw) = serde_json::from_str::<FxHashMap<String, serde_json::Value>>(json) else {
             return 0;
         };
-        let speed = SpeedMultipliers::get();
         let mut loaded_count = 0;
         for (model, value) in raw {
             let Some(pricing) = parse_litellm_pricing(value) else {
@@ -73,8 +70,7 @@ impl PricingMap {
                     flex: entry.flex,
                 })
                 .unwrap_or_default();
-            let published_speed = provider_specific.or(speed.for_model(&model));
-            let defaults = cache_defaults(&model, pricing.litellm_provider.as_deref());
+            let cache_fallback = provider_cache_defaults(provider);
             let schedule = vendor_id.and_then(schedule_for);
             let vendor_start = vendor_id.and_then(|id| vendor_start(&model, id));
             let Some(row) = self.rows_mut().entries.get_or_insert(model, Row::default) else {
@@ -85,8 +81,8 @@ impl PricingMap {
             row.schedule = schedule;
             row.vendor_start = vendor_start;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);
-            row.pricing = published_speed
-                .applied_to(Pricing {
+            row.pricing = RowPricing::by_key(
+                Pricing {
                     input,
                     output,
                     cache_create: pricing.cache_creation_input_token_cost,
@@ -101,10 +97,11 @@ impl PricingMap {
                             .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
                     }
                     .marginal(),
-                    cache_defaults: defaults,
                     ..Pricing::empty()
-                })
-                .into();
+                },
+                provider_specific,
+                cache_fallback,
+            );
             loaded_count += 1;
         }
         self.clear_find_cache();

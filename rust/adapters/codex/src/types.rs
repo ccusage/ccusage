@@ -184,6 +184,7 @@ codex_record! { CodexPayload {
     model: Option<Cow<'a, str>> = "model" => Model, LossyString,
     model_name: Option<Cow<'a, str>> = "model_name" => ModelName, LossyString,
     response_id: Option<Cow<'a, str>> = "response_id" => ResponseId, LossyString,
+    thread_id: Option<Cow<'a, str>> = "thread_id" => ThreadId, LossyString,
     compaction_response_id: Option<Cow<'a, str>> = "compaction_response_id" => CompactionResponseId, LossyString,
     usage: CodexUsageCandidate = "usage" => Usage, DecodedField,
     thread_token_usage: CodexUsageCandidate = "thread_token_usage" => ThreadTokenUsage, LossyRawUsage,

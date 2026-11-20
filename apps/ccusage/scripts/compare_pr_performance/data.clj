@@ -5,6 +5,23 @@
 
 (def default-commands ["claude daily" "claude session" "codex daily" "daily"])
 
+(def shape-fixtures
+  [{:fixture :many-files :option :many-files-fixture-dir :label "many small files"
+    :desc "Claude logs spread as many small files over many project directories, so discovery dominates"}
+   {:fixture :proxy :option :proxy-fixture-dir :label "requestless proxy"
+    :desc "Claude logs written through a gateway that drops `requestId`, so responses are deduplicated along `uuid`/`parentUuid` chains"}
+   {:fixture :small :option :small-fixture-dir :label "tiny"
+    :desc "a few MiB of Claude logs, so fixed startup cost such as building the pricing map dominates"}])
+
+(def median-mtime "{median-mtime}")
+
+(def shape-commands
+  [{:fixture :large :command (str "claude daily --since " median-mtime)}
+   {:fixture :large :command "codex session"}
+   {:fixture :many-files :command "claude daily"}
+   {:fixture :proxy :command "claude daily"}
+   {:fixture :small :command "daily"}])
+
 (def cli-spec
   {:base-bin {:ref "FILE" :desc "Base ccusage binary, built from the PR's base commit"}
    :base-sha {:ref "SHA"}
@@ -13,6 +30,9 @@
    :fixture-dir {:ref "DIR" :desc "Claude fixture (CLAUDE_CONFIG_DIR)"}
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture (CODEX_HOME)"}
    :grok-fixture-dir {:ref "DIR" :desc "Grok fixture (GROK_HOME); optional"}
+   :many-files-fixture-dir {:ref "DIR" :desc "Claude fixture generated with --claude-shape many-small-files; optional"}
+   :proxy-fixture-dir {:ref "DIR" :desc "Claude fixture generated with --claude-shape requestless-proxy; optional"}
+   :small-fixture-dir {:ref "DIR" :desc "Claude fixture of a few MiB; optional"}
    :output {:ref "FILE"}
    :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}

@@ -337,3 +337,22 @@ fn keeps_a_stale_transcript_whose_recorded_session_links_it_after_its_live_sibli
     assert_eq!(split.kept, [live, stale_copy, stale_resumed]);
     assert!(split.pruned.is_empty());
 }
+
+#[test]
+fn splits_a_window_that_keeps_or_prunes_every_file() {
+    let fixture = fs_fixture!({
+        "projects/p/old.jsonl": "{}",
+        "projects/p/margin.jsonl": "{}",
+        "projects/p/fresh.jsonl": "{}",
+    });
+    let files = fixture_files(fixture.root());
+    let now = TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis());
+
+    let keep_all = split_files_before_since(files.clone(), &shared_since(Some("20260918")), now);
+    let prune_all = split_files_before_since(files.clone(), &shared_since(Some("20260923")), now);
+
+    assert_eq!(keep_all.kept, files);
+    assert!(keep_all.pruned.is_empty());
+    assert!(prune_all.kept.is_empty());
+    assert_eq!(prune_all.pruned, files);
+}

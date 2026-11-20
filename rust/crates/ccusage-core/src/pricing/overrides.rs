@@ -202,12 +202,10 @@ impl PricingMap {
                 });
             }
             let (mut pricing, mut context_limit, schedule) = match &slot.base {
-                Some(Base::Authority(row)) => {
-                    (row.pricing.rates(), row.context_limit, row.schedule)
-                }
+                Some(Base::Authority(row)) => (row.rates(), row.context_limit, row.schedule),
                 Some(Base::Override(id)) => {
                     let row = self.resolve_override(*id, models_dev, false)?.row;
-                    (row.pricing.rates(), row.context_limit, row.schedule)
+                    (row.rates(), row.context_limit, row.schedule)
                 }
                 None => {
                     let base = secondary.and_then(|rows| {
@@ -219,7 +217,7 @@ impl PricingMap {
                         Some(found) => (
                             Pricing {
                                 long_context: None,
-                                ..found.row.pricing.rates()
+                                ..found.row.rates()
                             },
                             found.row.context_limit,
                             None,

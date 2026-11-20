@@ -98,36 +98,53 @@ def main []: nothing -> nothing {
     ) '/build/rust/crates/core/src/lib.rs'
 
     assert equal (core parse-command 'claude daily') {
-        command: 'claude daily'
+        args: 'claude daily'
         fixture: large
         label: 'claude daily'
     }
     assert equal (core parse-command 'daily --breakdown') {
-        command: 'daily --breakdown'
+        args: 'daily --breakdown'
         fixture: large
         label: 'daily --breakdown'
     }
     assert equal (core parse-command 'amp daily') {
-        command: 'amp daily'
+        args: 'amp daily'
         fixture: golden
-        label: 'golden:amp daily'
+        label: 'amp daily'
     }
     assert equal (core parse-command 'golden: claude  session') {
-        command: 'claude session'
+        args: 'claude session'
         fixture: golden
         label: 'golden:claude session'
     }
+    assert equal (core parse-command 'many-files:claude daily') {
+        args: 'claude daily'
+        fixture: 'many-files'
+        label: 'many-files:claude daily'
+    }
+    assert equal (core parse-command 'proxy:claude daily') {
+        args: 'claude daily'
+        fixture: proxy
+        label: 'proxy:claude daily'
+    }
+    assert equal (core parse-command 'large:amp daily') {
+        args: 'amp daily'
+        fixture: large
+        label: 'large:amp daily'
+    }
 
-    let plan = core plan 'main, feature/x main' "claude daily\namp daily, claude daily"
+    let plan = core plan 'main, feature/x main' "claude daily\namp daily, claude daily, many-files:claude daily"
     assert equal $plan.refs [
         {ref: main, slug: main}
         {ref: feature/x, slug: feature-x}
     ]
     assert equal ($plan.runs.id) [
         main--claude-daily
-        main--golden-amp-daily
+        main--amp-daily
+        main--many-files-claude-daily
         feature-x--claude-daily
-        feature-x--golden-amp-daily
+        feature-x--amp-daily
+        feature-x--many-files-claude-daily
     ]
     assert equal ((core plan main '').runs | length) ($core.default_commands | length)
 
@@ -140,6 +157,29 @@ def main []: nothing -> nothing {
             id: main--golden-codex-daily
         }
     ]
+
+    let since_dir = mktemp -d
+    try {
+        [202606010000 202606040000 202606080000 202606130000 202606210000] | enumerate | each {|row|
+            let file = $since_dir | path join projects $"p($row.index)" s.jsonl
+            mkdir ($file | path dirname)
+            '{}' | save $file
+            with-env {TZ: UTC} { ^touch -t ($row.item | into string) $file }
+        } | ignore
+        let since = core resolve-args $"claude daily --since ($core.median_mtime)" $since_dir
+        assert equal $since 'claude daily --since 20260608'
+        let cut = $since | split row ' ' | last
+        let pruned = glob ($since_dir | path join '**/*.jsonl')
+        | where {|file| (ls --long $file | first | get modified | date to-timezone UTC | format date '%Y%m%d') < $cut }
+        | length
+        assert ($pruned > 0 and $pruned < 5) 'the median-mtime cut-off prunes some but not all files'
+        assert equal (core resolve-args 'claude daily' $since_dir) 'claude daily'
+        assert error { core resolve-args $"claude daily --since ($core.median_mtime)" ($since_dir | path join none) }
+    } catch {|error|
+        rm --recursive --force $since_dir
+        error make $error
+    }
+    rm --recursive --force $since_dir
 
     let shared = {function: shared, ir: 10}
     let base = [

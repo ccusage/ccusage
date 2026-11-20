@@ -11,7 +11,7 @@ const report_vars = {
 }
 
 def main []: nothing -> nothing {
-    print --stderr 'usage: profile-instructions.nu <plan|build|golden|run|merge> ...'
+    print --stderr 'usage: profile-instructions.nu <plan|build|golden|generate|run|merge> ...'
     exit 1
 }
 
@@ -78,6 +78,38 @@ def "main golden" [--out: path]: nothing -> nothing {
     }
 }
 
+# Generate the fixture a non-golden run reads, laid out as `large-env` and `claude-env` expect.
+def "main generate" [--fixture: string, --out: path, --mib: int]: nothing -> nothing {
+    let generator = $env.FILE_PWD | path join ../../apps/ccusage/scripts/generate-large-fixture.ts
+    let claude = [
+        --output-dir
+        ($out | path join claude)
+    ]
+    let args = match $fixture {
+        'large' => [
+            ...$claude
+            --codex-output-dir
+            ($out | path join codex)
+            --grok-output-dir
+            ($out | path join grok)
+            --size-mib
+            ($mib | into string)
+            --codex-size-mib
+            ($mib | into string)
+        ]
+        'many-files' => [...$claude --claude-shape many-small-files]
+        'proxy' => [
+            ...$claude
+            --claude-shape
+            requestless-proxy
+            --size-mib
+            ($mib | into string)
+        ]
+        _ => { error make {msg: $"No generated fixture '($fixture)'"} }
+    }
+    run-checked 'generate' $generator ...$args
+}
+
 def golden-env [dir: path]: nothing -> record<vars: record, cwd: string> {
     let manifest = open ($dir | path join golden-env.json)
     let missing = $manifest.seeded | where {|name|
@@ -106,6 +138,16 @@ def large-env [dir: path, home: path]: nothing -> record<vars: record, cwd: stri
     }
 }
 
+def claude-env [dir: path, home: path]: nothing -> record<vars: record, cwd: string> {
+    {
+        vars: {
+            CLAUDE_CONFIG_DIR: ($dir | path join claude)
+            HOME: $home
+        }
+        cwd: $home
+    }
+}
+
 def annotate [file: path, inclusive: bool]: nothing -> string {
     let result = ^callgrind_annotate '--auto=no' '--threshold=100' $"--inclusive=(if $inclusive { 'yes' } else { 'no' })" $file | complete
     if $result.exit_code != 0 {
@@ -128,11 +170,14 @@ def "main run" [
     let context = match $fixture {
         'large' => (large-env $fixture_dir $home)
         'golden' => (golden-env $fixture_dir)
+        'many-files' | 'proxy' => (claude-env $fixture_dir $home)
         _ => { error make {msg: $"Unknown fixture '($fixture)'"} }
     }
+    let parsed = core parse-command $command
+    let report_args = core resolve-args $parsed.args ($fixture_dir | path join claude)
     let vars = $context.vars | merge $report_vars | merge {PATH: ($env.PATH | str join (char esep))}
     let profile = $out | path join callgrind.out
-    let args = [
+    let argv = [
         '-i'
         ...($vars | items {|key value| $"($key)=($value)" })
         (which valgrind | first | get path)
@@ -142,20 +187,20 @@ def "main run" [
         '--dump-instr=no'
         '--'
         $bin
-        ...($command | split row ' ')
+        ...($report_args | split row ' ')
         '--offline'
         '--json'
     ]
-    print --stderr $"profiling: ccusage ($command) --offline --json \(($fixture) fixture\)"
+    print --stderr $"profiling: ccusage ($report_args) --offline --json \(($fixture) fixture\)"
     let result = do {
         cd $context.cwd
-        run-external env ...$args | complete
+        run-external env ...$argv | complete
     }
     if $result.exit_code != 0 {
         let log = $out | path join valgrind.log
         if ($log | path exists) { print --stderr (open --raw $log) }
         error make {
-            msg: $"ccusage ($command) exited with ($result.exit_code): ($result.stderr)"
+            msg: $"ccusage ($parsed.label) exited with ($result.exit_code): ($result.stderr)"
         }
     }
     $result.stdout | save --force ($out | path join report.json)
@@ -167,8 +212,8 @@ def "main run" [
     let summary = {
         ref: $build.ref
         sha: $build.sha
-        command: $command
-        label: (core label $command $fixture)
+        args: $parsed.args
+        label: $parsed.label
         fixture: $fixture
         report_bytes: ($result.stdout | str length --utf-8-bytes)
         total: $self_rows.total
@@ -217,7 +262,7 @@ def "main merge" [--dir: path, --refs: string, --out: path]: nothing -> nothing 
             | each {|section|
                 $section
                 | reject markdown runs
-                | insert commands ($section.runs | select label command fixture total)
+                | insert commands ($section.runs | select label args fixture total)
             }
         )
         comparison: $comparison

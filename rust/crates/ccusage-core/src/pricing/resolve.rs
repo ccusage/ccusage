@@ -88,7 +88,7 @@ pub struct PricingHandle {
 impl PricingHandle {
     fn new(row: &Row, hit: CachedHit) -> Self {
         Self {
-            rates: row.pricing.rates(),
+            rates: row.rates(),
             schedule: row.schedule.filter(|_| hit.scheduled()),
         }
     }
@@ -104,7 +104,7 @@ impl PricingHandle {
             BillingRoute::Foreign => None,
         };
         Self {
-            rates: row.pricing.rates(),
+            rates: row.rates(),
             schedule,
         }
     }
@@ -133,7 +133,7 @@ impl PricingMap {
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        Some(found.row.pricing.rates())
+        Some(found.row.rates())
     }
 
     #[cfg(feature = "resolver-trace")]

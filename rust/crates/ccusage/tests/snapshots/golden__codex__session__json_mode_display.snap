@@ -353,34 +353,34 @@ exit: 0
       "cacheReadTokens": 50,
       "costUSD": 0,
       "directory": "",
-      "inputTokens": 300,
+      "inputTokens": 18076,
       "lastActivity": "2025-12-30T20:00:10.000Z",
       "models": {
         "gpt-5": {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
-          "inputTokens": 300,
+          "inputTokens": 18076,
           "isFallback": false,
-          "outputTokens": 35,
+          "outputTokens": 1811,
           "reasoningOutputTokens": 0,
-          "totalTokens": 385
+          "totalTokens": 19937
         }
       },
-      "outputTokens": 35,
+      "outputTokens": 1811,
       "reasoningOutputTokens": 0,
       "sessionFile": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
       "sessionId": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
-      "totalTokens": 385
+      "totalTokens": 19937
     }
   ],
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 460950,
     "costUSD": 0,
-    "inputTokens": 113570,
-    "outputTokens": 4122,
+    "inputTokens": 131346,
+    "outputTokens": 5898,
     "reasoningOutputTokens": 149,
-    "totalTokens": 578942
+    "totalTokens": 598494
   }
 }
 

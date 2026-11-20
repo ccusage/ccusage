@@ -1,8 +1,13 @@
 const large_agents = [claude codex grok]
 const reports = [daily weekly monthly session blocks]
+export const fixtures = [large golden many-files proxy]
+export const median_mtime = '{median-mtime}'
 
 export const default_commands = [
     'claude daily'
+    'claude daily --since {median-mtime}'
+    'many-files:claude daily'
+    'proxy:claude daily'
     'claude session'
     'claude blocks'
     'claude monthly'
@@ -10,6 +15,7 @@ export const default_commands = [
     'codex session'
     'grok daily'
     'daily'
+    'golden:daily'
     'opencode daily'
     'amp daily'
     'droid daily'
@@ -28,6 +34,19 @@ export const default_commands = [
     'cline daily'
     'dsh daily'
 ]
+
+# `--since` the day of the median transcript mtime prunes about half of any generated fixture.
+export def resolve-args [args: string, claude_dir: path]: nothing -> string {
+    if not ($args | str contains $median_mtime) {
+        return $args
+    }
+    let mtimes = glob ($claude_dir | path join '**/*.jsonl') | each { ls --long $in | first | get modified } | sort
+    if ($mtimes | is-empty) {
+        error make {msg: $"No Claude transcripts under ($claude_dir)"}
+    }
+    let day = $mtimes | get (($mtimes | length) // 2) | date to-timezone UTC | format date '%Y%m%d'
+    $args | str replace --all $median_mtime $day
+}
 
 export def slug [value: string]: nothing -> string {
     $value | str replace --all --regex '[^A-Za-z0-9._-]+' '-' | str trim --char '-'
@@ -93,32 +112,36 @@ export def resolve-ref [ref: string, --fetch]: nothing -> string {
     }
 }
 
-# A matrix entry is `[large:|golden:]<command>`, and its label carries the fixture so the same
-# command can be profiled on both fixtures in one dispatch without the rows colliding.
-export def label [command: string, fixture: string]: nothing -> string {
-    if $fixture == 'large' { $command } else { $"($fixture):($command)" }
+# A command reads the generated large fixture when it names one of its agents or a unified report,
+# and the golden seeds otherwise.
+def implicit-fixture [args: string]: nothing -> string {
+    let first = $args | split row ' ' | first
+    if $first in $large_agents or $first in $reports { 'large' } else { 'golden' }
 }
 
-# An entry is `[large:|golden:]<command>`; without a prefix the generated large fixture covers
+# A run's label carries its fixture whenever that differs from the implicit one, so the same
+# command can be profiled on both fixtures in one dispatch without the rows colliding.
+export def label [args: string, fixture: string]: nothing -> string {
+    if $fixture == (implicit-fixture $args) { $args } else { $"($fixture):($args)" }
+}
+
+# An entry is `[<fixture>:]<command>`; without a prefix the generated large fixture covers
 # Claude, Codex, Grok, and the unified reports, and every other agent reads the golden seeds.
-export def parse-command [entry: string]: nothing -> record<command: string, fixture: string, label: string> {
+# `args` is what ccusage receives and `label` names the run, so one report can be profiled on
+# several fixtures in one dispatch.
+export def parse-command [entry: string]: nothing -> record<args: string, fixture: string, label: string> {
     match (
         $entry
         | str trim
-        | parse --regex '^(?:(?<fixture>large|golden):)?\s*(?<command>.+)$'
+        | parse --regex ('^(?:(?<fixture>' + ($fixtures | str join '|') + '):)?\s*(?<command>.+)$')
     ) {
         [$row] => {
-            let command = $row.command | split row --regex '\s+' | str join ' '
-            let first = $command | split row ' ' | first
-            let fixture = match $row.fixture {
-                null if ($first in $large_agents or $first in $reports) => 'large'
-                null => 'golden'
-                $explicit => $explicit
-            }
+            let args = $row.command | split row --regex '\s+' | str join ' '
+            let fixture = $row.fixture | default (implicit-fixture $args)
             {
-                command: $command
+                args: $args
                 fixture: $fixture
-                label: (label $command $fixture)
+                label: (label $args $fixture)
             }
         }
         _ => { error make {msg: $"Empty profile command entry: '($entry)'"} }
@@ -288,7 +311,7 @@ export def function-table-md [rows: list<any>, total: int, label: string]: nothi
 
 export def run-md [summary: record, --top: int = 50]: nothing -> string {
     [
-        $"### `ccusage ($summary.command) --offline --json` at `($summary.ref)` \(($summary.sha | str substring 0..<12)\)"
+        $"### `ccusage ($summary.args) --offline --json` at `($summary.ref)` \(($summary.sha | str substring 0..<12)\)"
         ''
         $"Total Ir: **(number $summary.total)** · fixture: ($summary.fixture)"
         ''
