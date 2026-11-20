@@ -934,6 +934,17 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "blocks whose parent belongs to another session",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("b1", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+                chained_assistant("b2", Some("a1"), "2026-05-22T02:34:41.000Z", "gateway-7f3a", 100, None)
+                    .replace(r#""sessionId":"session-a""#, r#""sessionId":"session-b""#),
+            ],
+            3,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(

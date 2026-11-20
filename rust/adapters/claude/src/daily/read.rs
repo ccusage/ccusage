@@ -146,7 +146,7 @@ pub(crate) fn read_usage_file<E>(
         table: pricing,
         models: smallvec::SmallVec::new(),
     };
-    let mut response_chains = ResponseChains::default();
+    let mut response_chains = ResponseChains::new(&path_session_id);
     let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |current, _, _| {
         let line = current.bytes();
         let Admitted {
@@ -185,13 +185,6 @@ pub(crate) fn read_usage_file<E>(
             ));
         }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
-        let response = match (&data.request_id, &data.message.id) {
-            (None, Some(message_id)) => response_chains.response_key(line, message_id, &usage),
-            _ => None,
-        };
-        let raw_model = data.message.model;
-        let (cost, missing_pricing_model) =
-            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let session_id = if let Some(session_id) = data.session_id.as_deref() {
             if recorded_session_id.as_ref() != session_id {
                 recorded_session_id = Arc::from(session_id);
@@ -200,6 +193,15 @@ pub(crate) fn read_usage_file<E>(
         } else {
             Arc::clone(&path_session_id)
         };
+        let response = match (&data.request_id, &data.message.id) {
+            (None, Some(message_id)) => {
+                response_chains.response_key(line, &session_id, message_id, &usage)
+            }
+            _ => None,
+        };
+        let raw_model = data.message.model;
+        let (cost, missing_pricing_model) =
+            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let parent = ParsedUsage {
             key: DedupKey {
                 timestamp,

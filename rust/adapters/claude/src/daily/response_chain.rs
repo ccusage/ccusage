@@ -26,8 +26,8 @@ struct Response {
 }
 
 // NOTE(2026-11-20, #2255): With parallel tool use, Claude Code writes the tool results of one response between its content blocks. A chain may pass through those, but a prompt or a result for another response's tool starts a new response.
-#[derive(Default)]
 pub(super) struct ResponseChains {
+    path_session: u64,
     nodes: FxHashMap<u64, Node>,
     responses: Vec<Response>,
     tool_use_owners: FxHashMap<u64, u32>,
@@ -40,6 +40,7 @@ pub(super) struct BlockLinks {
 }
 
 pub(super) struct LineLinks {
+    pub(super) session: Option<u64>,
     pub(super) uuid: u64,
     pub(super) parent: u64,
     pub(super) has_usage: bool,
@@ -65,6 +66,7 @@ impl<'a> Skim<'a> {
             None
         };
         Some(LineLinks {
+            session: self.session.map(key),
             uuid: key(self.uuid?),
             parent: key(self.parent?),
             has_usage: self.has_usage,
@@ -102,7 +104,21 @@ fn may_spell_parent(line: &[u8]) -> bool {
         || (memchr::memchr(b'\\', line).is_some() && UNICODE_ESCAPE.find(line).is_some())
 }
 
+// NOTE(2026-11-20, #2255): A transcript file can hold lines of more than one session, and a block must not join a response of another session. Chain nodes are keyed by the line's effective session as well as its `uuid`.
+fn scoped(session: u64, uuid: u64) -> u64 {
+    session.rotate_left(17) ^ uuid
+}
+
 impl ResponseChains {
+    pub(super) fn new(path_session: &str) -> Self {
+        Self {
+            path_session: key(path_session.as_bytes()),
+            nodes: FxHashMap::default(),
+            responses: Vec::new(),
+            tool_use_owners: FxHashMap::default(),
+        }
+    }
+
     pub(super) fn is_tracking(&self) -> bool {
         !self.responses.is_empty()
     }
@@ -119,8 +135,10 @@ impl ResponseChains {
             Want::Link
         };
         let nodes = &self.nodes;
-        let links = match skim(line, want, |parent| {
-            parent.is_some_and(|parent| nodes.contains_key(&key(parent)))
+        let path_session = self.path_session;
+        let links = match skim(line, want, |parent, session| {
+            let session = session.map_or(path_session, key);
+            parent.is_some_and(|parent| nodes.contains_key(&scoped(session, key(parent))))
         }) {
             Scan::Read(parsed) => parsed.line_links(),
             Scan::Skip => return,
@@ -129,12 +147,14 @@ impl ResponseChains {
         let Some(links) = links.filter(|links| !(may_carry_usage && links.has_usage)) else {
             return;
         };
-        if !self.nodes.contains_key(&links.parent) {
+        let session = links.session.unwrap_or(self.path_session);
+        let (uuid, parent) = (scoped(session, links.uuid), scoped(session, links.parent));
+        if !self.nodes.contains_key(&parent) {
             return;
         }
         let owner = match &links.answers {
             Some(answers) => {
-                let Some(owner) = self.response_of(links.parent) else {
+                let Some(owner) = self.response_of(parent) else {
                     return;
                 };
                 if !answers
@@ -147,22 +167,18 @@ impl ResponseChains {
             }
             None => None,
         };
-        self.nodes.insert(
-            links.uuid,
-            Node::Link {
-                parent: links.parent,
-                owner,
-            },
-        );
+        self.nodes.insert(uuid, Node::Link { parent, owner });
     }
 
     #[inline(never)]
     pub(super) fn response_key(
         &mut self,
         line: &[u8],
+        session: &str,
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
+        let session = key(session.as_bytes());
         let links = block_links(line)
             .map(|raw| BlockLinks {
                 uuid: raw.uuid.map(key),
@@ -173,7 +189,7 @@ impl ResponseChains {
         let signature = signature(message_id, usage);
         let joined = links
             .parent
-            .and_then(|parent| self.chained_response(parent, signature));
+            .and_then(|parent| self.chained_response(scoped(session, parent), signature));
         let index = match joined {
             Some(index) => index,
             None => {
@@ -189,7 +205,7 @@ impl ResponseChains {
             self.tool_use_owners.insert(tool_use, index);
         }
         if let Some(uuid) = links.uuid {
-            self.nodes.insert(uuid, Node::Block(index));
+            self.nodes.insert(scoped(session, uuid), Node::Block(index));
         }
         Some(self.responses[index as usize].key)
     }

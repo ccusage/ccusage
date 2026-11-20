@@ -50,6 +50,7 @@ pub(in crate::daily) fn parse_line_links(line: &[u8]) -> Option<LineLinks> {
         None
     };
     Some(LineLinks {
+        session: hashed(&line["sessionId"]),
         uuid: hashed(&line["uuid"])?,
         parent: hashed(&line["parentUuid"])?,
         has_usage: !line["message"]["usage"].is_null(),

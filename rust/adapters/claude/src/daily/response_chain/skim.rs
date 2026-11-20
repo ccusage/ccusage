@@ -14,8 +14,10 @@ pub(super) struct Skim<'a> {
     pub(super) kind: Option<&'a [u8]>,
     pub(super) uuid: Option<&'a [u8]>,
     pub(super) parent: Option<&'a [u8]>,
+    pub(super) session: Option<&'a [u8]>,
     pub(super) has_usage: bool,
     pub(super) blocks: Option<SmallVec<[Block<'a>; 4]>>,
+    seen_session: bool,
     seen_kind: bool,
     seen_uuid: bool,
     seen_parent: bool,
@@ -223,6 +225,7 @@ impl Skim<'_> {
     fn complete(&self, want: Want) -> bool {
         self.seen_uuid
             && self.seen_parent
+            && self.seen_session
             && self.seen_kind
             && match want {
                 Want::Block => self.seen_message,
@@ -248,7 +251,7 @@ pub(super) enum Scan<T> {
 pub(super) fn skim<'a>(
     line: &'a [u8],
     want: Want,
-    keep_parent: impl Fn(Option<&[u8]>) -> bool,
+    keep_parent: impl Fn(Option<&[u8]>, Option<&[u8]>) -> bool,
 ) -> Scan<Skim<'a>> {
     let mut cursor = Cursor { line, at: 0 };
     let mut skim = Skim::default();
@@ -265,11 +268,19 @@ pub(super) fn skim<'a>(
             }
             b"parentUuid" => {
                 skim.parent = cursor.plain()?;
-                if !keep_parent(skim.parent) {
+                skim.seen_parent = true;
+                if skim.seen_session && !keep_parent(skim.parent, skim.session) {
                     rejected.set(true);
                     return None;
                 }
-                skim.seen_parent = true;
+            }
+            b"sessionId" => {
+                skim.session = cursor.plain()?;
+                skim.seen_session = true;
+                if skim.seen_parent && !keep_parent(skim.parent, skim.session) {
+                    rejected.set(true);
+                    return None;
+                }
             }
             b"message" => {
                 cursor.message(&mut skim, &rejected)?;
@@ -284,7 +295,7 @@ pub(super) fn skim<'a>(
         })
     });
     match read {
-        Some(()) if skim.seen_parent || keep_parent(None) => Scan::Read(skim),
+        Some(()) if keep_parent(skim.parent, skim.session) => Scan::Read(skim),
         Some(()) => Scan::Skip,
         None if rejected.get() => Scan::Skip,
         None => Scan::Unsure,
