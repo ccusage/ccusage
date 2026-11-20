@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-cli-parser/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests/statusline.rs
 expression: "help_text_for_args(&[\"ccusage\".into(), \"codex\".into(), \"statusline\".into()])"
 ---
 Show a Codex usage summary, or serve its native statusline with --mcp

@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli-parser/src/tests/help.rs
 expression: "help_text_for_args(&[\"ccusage\".to_string(), \"claude\".to_string()])"
 ---
 Usage reports for claude.

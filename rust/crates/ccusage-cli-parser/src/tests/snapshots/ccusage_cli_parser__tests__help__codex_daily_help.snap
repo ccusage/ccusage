@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests/help.rs
 expression: "help_text_for_args(&[\"ccusage\".to_string(), \"codex\".to_string(),\n\"daily\".to_string(),])"
 ---
 Show Codex token usage grouped by day
