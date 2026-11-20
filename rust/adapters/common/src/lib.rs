@@ -11,7 +11,7 @@ pub use discovery::{
 pub use parallel::{Split, chunk_file_indexes_by_size, map_parallel, worker_count};
 pub use walk::{
     any_file_matching, collect_files_matching, collect_files_with_extension, dir_entries,
-    visit_files_matching, visit_usage_files,
+    visit_files_matching, visit_usage_files, visit_usage_files_in_parallel,
 };
 
 pub mod claims;

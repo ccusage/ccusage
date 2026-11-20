@@ -184,3 +184,127 @@ fn discovery_reports_failed_roots_without_losing_healthy_roots() {
     assert_eq!(files, [healthy]);
     assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
 }
+
+fn parallel_usage_files(
+    root: &std::path::Path,
+    diagnostics: &ccusage_core::Diagnostics,
+) -> Vec<std::path::PathBuf> {
+    let files = std::sync::Mutex::new(Vec::new());
+    super::visit_usage_files_in_parallel(
+        root,
+        &|path| files.lock().unwrap().push(path),
+        diagnostics,
+    );
+    let mut files = files.into_inner().unwrap();
+    files.sort();
+    files
+}
+
+fn sequential_usage_files(
+    root: &std::path::Path,
+    diagnostics: &ccusage_core::Diagnostics,
+) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    super::visit_usage_files(root, &mut |path| files.push(path), diagnostics);
+    files.sort();
+    files
+}
+
+#[test]
+fn parallel_discovery_finds_the_sequential_file_set() {
+    let fixture = Fixture::new();
+    for project in 0..12 {
+        fixture.write_file(format!("project-{project}/session.jsonl"), "");
+        fixture.write_file(
+            format!("project-{project}/session/subagents/agent.jsonl"),
+            "",
+        );
+        fixture.write_file(format!("project-{project}/notes.txt"), "");
+    }
+    fixture.write_file("top-level.jsonl", "");
+    fixture.create_dir_all("empty-project");
+    let diagnostics = ccusage_core::Diagnostics::new("test");
+
+    let files = parallel_usage_files(fixture.root(), &diagnostics);
+
+    assert_eq!(files.len(), 25);
+    assert_eq!(files, sequential_usage_files(fixture.root(), &diagnostics));
+}
+
+#[cfg(unix)]
+#[test]
+fn parallel_discovery_keeps_ordinary_paths_and_the_first_alias_across_walkers() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = Fixture::new();
+    let root = fixture.create_dir_all("root");
+    let original = fixture.write_file("root/b/original.jsonl", "");
+    fixture.create_dir_all("root/a");
+    symlink(&original, root.join("a/alias.jsonl")).unwrap();
+    for (name, links) in [
+        ("x.jsonl", ["a/x.jsonl", "b/x.jsonl"]),
+        ("y.jsonl", ["c.jsonl", "b/y.jsonl"]),
+        ("z.jsonl", ["0.jsonl", "b/z.jsonl"]),
+    ] {
+        let target = fixture.write_file(format!("external/{name}"), "");
+        for link in links {
+            symlink(&target, root.join(link)).unwrap();
+        }
+    }
+    symlink(root.join("b"), root.join("d")).unwrap();
+    let diagnostics = ccusage_core::Diagnostics::new("test");
+
+    let files = parallel_usage_files(&root, &diagnostics);
+
+    let mut expected = ["0.jsonl", "a/x.jsonl", "b/original.jsonl", "b/y.jsonl"]
+        .map(|name| root.join(name))
+        .to_vec();
+    expected.sort();
+    assert_eq!(files, expected);
+    assert_eq!(files, sequential_usage_files(&root, &diagnostics));
+}
+
+#[cfg(unix)]
+#[test]
+fn parallel_discovery_stops_at_symlink_cycles() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = Fixture::new();
+    let root = fixture.create_dir_all("root");
+    let first = fixture.write_file("root/a/first.jsonl", "");
+    let second = fixture.write_file("root/b/second.jsonl", "");
+    symlink(&root, root.join("a/back")).unwrap();
+    symlink(root.join("a"), root.join("b/sibling")).unwrap();
+    let diagnostics = ccusage_core::Diagnostics::new("test");
+
+    assert_eq!(parallel_usage_files(&root, &diagnostics), [first, second]);
+    assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn parallel_discovery_reports_unreadable_entries_like_the_sequential_walk() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let fixture = Fixture::new();
+    let root = fixture.create_dir_all("root");
+    let healthy = fixture.write_file("root/healthy/session.jsonl", "");
+    fixture.write_file("root/locked/session.jsonl", "");
+    symlink(fixture.path("missing"), root.join("healthy/dangling.jsonl")).unwrap();
+    let locked = root.join("locked");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let parallel = ccusage_core::Diagnostics::new("test");
+    let sequential = ccusage_core::Diagnostics::new("test");
+
+    let files = parallel_usage_files(&root, &parallel);
+    let expected = sequential_usage_files(&root, &sequential);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(files, [healthy]);
+    assert_eq!(files, expected);
+    assert_eq!(parallel.skipped(ccusage_core::SkipKind::Unreadable), 2);
+    assert_eq!(
+        parallel.skipped(ccusage_core::SkipKind::Unreadable),
+        sequential.skipped(ccusage_core::SkipKind::Unreadable)
+    );
+}
