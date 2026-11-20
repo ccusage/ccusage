@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1310267,
-    "inputTokens": 1365600,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.179058425,
-    "totalTokens": 2757505,
+    "totalCost": 28.073793424999998,
+    "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -243,8 +243,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1307174,
-      "inputTokens": 1356106,
+      "cacheReadTokens": 1305207,
+      "inputTokens": 1252613,
       "metadata": {
         "agents": [
           "amp",
@@ -291,9 +291,9 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
-          "cacheReadTokens": 108220,
-          "cost": 3.6477850000000003,
-          "inputTokens": 31408,
+          "cacheReadTokens": 106720,
+          "cost": 3.6453550000000003,
+          "inputTokens": 30748,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 9744,
@@ -402,8 +402,8 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
-          "cost": 0.342746,
-          "inputTokens": 305531,
+          "cost": 0.23991099999999999,
+          "inputTokens": 202731,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 3014
         },
@@ -919,9 +919,9 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
@@ -1017,8 +1017,8 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-28",
-      "totalCost": 24.344337175,
-      "totalTokens": 2741357
+      "totalCost": 24.239072174999997,
+      "totalTokens": 2635890
     },
     {
       "agent": "all",

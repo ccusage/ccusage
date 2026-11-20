@@ -9,6 +9,12 @@ into the usage entries the reports render.
 - `${QWEN_DATA_DIR:-~/.qwen}/projects/<project>/chats/archive/*.jsonl`, where Qwen Code moves
   archived sessions. A record present in both locations counts once.
 
+`cachedContentTokenCount` is part of `promptTokenCount`, and output including
+thinking is `totalTokenCount - promptTokenCount`, as in Qwen Code itself.
+`thoughtsTokenCount` is never added on top: OpenAI-compatible providers count it
+inside `candidatesTokenCount`. Without a total, thinking is taken to be inside
+the candidates.
+
 Each assistant usage record must carry a valid timestamp. Records without one
 are skipped with an invalid-timestamp diagnostic instead of using the chat
 file's modification time.
