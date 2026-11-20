@@ -63,10 +63,12 @@ impl Ring {
     }
 
     fn tail(&mut self, start: usize) -> (*mut u8, usize) {
-        (
-            self.0.as_mut_ptr().wrapping_add(start),
-            self.0.len() - start,
-        )
+        let capacity = self.0.len() - start;
+        if capacity == 0 {
+            (ptr::null_mut(), 0)
+        } else {
+            (self.0.as_mut_ptr().wrapping_add(start), capacity)
+        }
     }
 }
 
@@ -429,7 +431,7 @@ impl Direct {
 
         let (destination, capacity) = self.output.tail(self.end);
         let source = &self.input[self.input_start..self.input_start + available];
-        // SAFETY: `destination` is `capacity` writable ring bytes and `source` is initialized input, in separate allocations. Every pointer libzstd kept is into the ring or history, both still allocated and reached since only through their Vec::as_ptr base (crate docs).
+        // SAFETY: `destination` is null or `capacity` writable ring bytes and `source` is initialized input, in separate allocations. Every pointer libzstd kept is into the ring or history, both still allocated and reached since only through their Vec::as_ptr base (crate docs).
         let written = unsafe {
             ZSTD_decompressContinue(
                 self.context.0.as_ptr(),
