@@ -512,6 +512,17 @@ fn propagates_sidechain_metadata_from_agent_progress_lines() {
 }
 
 #[test]
+fn reads_the_agent_progress_envelope_when_the_top_level_timestamp_is_null() {
+    let line = JsonText::new(
+        br#"{"timestamp":null,"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+    );
+    let (data, _) = super::parse_usage_line(&line).unwrap();
+
+    assert_eq!(data.timestamp, "2026-03-29T07:00:00.000Z");
+    assert_eq!(data.session_id.as_deref(), Some("session-a"));
+}
+
+#[test]
 fn decodes_escaped_line_scoped_fields_like_plain_ones() {
     for (direct, progress) in [
         (
