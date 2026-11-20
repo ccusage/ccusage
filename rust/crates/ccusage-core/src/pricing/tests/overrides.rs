@@ -177,7 +177,7 @@ fn override_with_zero_cache_read_preserves_zero() {
     pricing.apply_overrides(overrides.iter());
 
     let entry = pricing.find("new-model").unwrap();
-    assert!(entry.cache_read.is_some());
+    assert_eq!(entry.cache_read, Some(0.0));
 }
 
 #[test]
