@@ -36,8 +36,8 @@ fn read_daily_usage_file(
 }
 
 #[test]
-fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
-    let original = ccusage_core::fast::LinePrefilter::all(&[br#""usage":{"#]);
+fn usage_prefilter_matches_the_gate_marker_on_generated_lines() {
+    let marker = ccusage_core::fast::LinePrefilter::all(&[br#""usage""#]);
     for escaped_letters in 0_u8..32 {
         let mut key = String::new();
         for (index, &letter) in b"usage".iter().enumerate() {
@@ -69,7 +69,7 @@ fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
                             super::read::admit(prefix),
                             Err(super::read::Refusal::NotUsage)
                         ),
-                        original.matches(prefix),
+                        marker.matches(prefix),
                         "prefilter decision for {:?}",
                         &line[..end],
                     );
@@ -112,11 +112,11 @@ fn usage_prefilter_preserves_typed_record_admission() {
         ),
         (
             r#""timestamp":"2026-01-02T10:00:00Z","message":{"\u0075sage": {"input_tokens":30,"output_tokens":1}}"#,
-            NoMarker,
+            Accepted(30),
         ),
         (
             r#""timestamp":"2026-01-02T10:00:00Z","message":{"usage": {"input_tokens":30,"output_tokens":1}}"#,
-            NoMarker,
+            Accepted(30),
         ),
         (
             r#""timestamp":"2026-01-02T10:00:00Z","decoy":{"\u0075sage":{}},"message":{"usage": {"input_tokens":30,"output_tokens":1}}"#,
@@ -137,6 +137,46 @@ fn usage_prefilter_preserves_typed_record_admission() {
         };
         assert_eq!(actual, expected, "{line}");
     }
+}
+
+#[test]
+fn counts_usage_written_with_json_whitespace() {
+    for (key, colon) in [
+        ("usage", ":"),
+        ("usage", ": "),
+        ("usage", " : "),
+        ("usage", ":\t"),
+        (r"\u0075sage", ": "),
+    ] {
+        let fields = format!(
+            r#""message":{{"id":"m1","model":"claude-sonnet-4-20250514","{key}"{colon}{{"input_tokens":100,"output_tokens":2}}}}"#
+        );
+        let line = format!(
+            r#"{{"type":"assistant","timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a",{fields}}}"#
+        );
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": line,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let loaded = read_daily_usage_file(&path, &JiffTimeZone::UTC, CostMode::Display, None);
+        assert_eq!(loaded.len(), 1, "{key}{colon}");
+        assert_eq!(loaded[0].usage.input_tokens, 100, "{key}{colon}");
+        assert_eq!(loaded[0].usage.output_tokens, 2, "{key}{colon}");
+        assert!(super::has_usage(&path), "{key}{colon}");
+    }
+}
+
+#[test]
+fn counts_wrapped_usage_written_with_json_whitespace() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"type":"progress","sessionId":"session-a","data":{"message":{"timestamp":"2026-09-11T12:00:00.000Z","message":{"id":"m1","model":"claude-sonnet-4-20250514","usage": {"input_tokens":100,"output_tokens":2}}}}}"#,
+    });
+    let path = fixture.path("projects/project-a/session-a.jsonl");
+    let loaded = read_daily_usage_file(&path, &JiffTimeZone::UTC, CostMode::Display, None);
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].usage.input_tokens, 100);
+    assert_eq!(loaded[0].usage.output_tokens, 2);
+    assert!(super::has_usage(&path));
 }
 
 #[test]
